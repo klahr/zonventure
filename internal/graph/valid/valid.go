@@ -290,7 +290,7 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 				r.err("node.config.missing", n.Slug, "", "effect has no configuration")
 				continue
 			}
-			checkEffect(r, n)
+			checkEffect(r, g, n)
 
 		case graph.Switch:
 			checkSwitch(r, g, n)
@@ -359,7 +359,7 @@ func answerExists(g *graph.Graph, ref string) bool {
 	return false
 }
 
-func checkEffect(r *reporter, n graph.Node) {
+func checkEffect(r *reporter, g *graph.Graph, n graph.Node) {
 	e := n.EffectCfg
 	switch e.Kind {
 	case graph.GrantItem:
@@ -392,8 +392,8 @@ func checkEffect(r *reporter, n graph.Node) {
 	case graph.SetTheme:
 		if e.Theme == "" {
 			r.err("effect.theme.missing", n.Slug, "", "theme effect names no theme")
-		} else if !slices.Contains(graph.Themes, e.Theme) {
-			r.err("effect.theme.unknown", n.Slug, "", "theme %q must be one of %s", e.Theme, strings.Join(graph.Themes, ", "))
+		} else if !slices.Contains(graph.Themes, e.Theme) && g.Theme(e.Theme) == nil {
+			r.err("effect.theme.unknown", n.Slug, "", "theme %q must be one of %s, or one of the adventure's saved themes", e.Theme, strings.Join(graph.Themes, ", "))
 		}
 	default:
 		r.err("effect.kind.unknown", n.Slug, "", "unknown effect kind %q", e.Kind)
@@ -842,6 +842,18 @@ func checkResources(r *reporter, g *graph.Graph) {
 	checkUnique(r, "item", len(g.Items), func(i int) string { return g.Items[i].Slug })
 	checkUnique(r, "counter", len(g.Counters), func(i int) string { return g.Counters[i].Slug })
 	checkUnique(r, "journal entry", len(g.Journal), func(i int) string { return g.Journal[i].Slug })
+	checkUnique(r, "theme", len(g.Themes), func(i int) string { return g.Themes[i].Slug })
+	for _, th := range g.Themes {
+		if slices.Contains(graph.Themes, th.Slug) {
+			r.err("theme.slug.builtin", "", "", "saved theme %q has the name of a built-in theme; give it another slug", th.Slug)
+		}
+		if strings.TrimSpace(th.Name) == "" {
+			r.err("theme.name.missing", "", "", "saved theme %q has no name", th.Slug)
+		}
+		if err := th.Look.Validate(); err != nil {
+			r.err("theme.look.invalid", "", "", "saved theme %q: %s", th.Slug, err.Error())
+		}
+	}
 
 	offGlobe := func(lat, lng float64) bool { return lat < -90 || lat > 90 || lng < -180 || lng > 180 }
 	for _, z := range g.Zones {
@@ -1158,6 +1170,20 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 			seen[b.ID] = true
 			bad := func(code, format string, args ...any) {
 				r.err(code, n.Slug, "", "the %s on this step "+format, append([]any{b.Kind}, args...)...)
+			}
+			if a := b.Animation; a != nil {
+				switch {
+				case a.Entrance != "" && !slices.Contains(graph.Entrances, a.Entrance):
+					bad("block.animation.entrance", "enters as %q, which is not one of %s", a.Entrance, strings.Join(graph.Entrances, ", "))
+				case a.Attention != "" && !slices.Contains(graph.Attentions, a.Attention):
+					bad("block.animation.attention", "draws the eye with %q, which is not one of %s", a.Attention, strings.Join(graph.Attentions, ", "))
+				case a.Duration != 0 && (a.Duration < graph.MinAnimationDuration || a.Duration > graph.MaxAnimationDuration):
+					bad("block.animation.duration", "takes %g seconds; keep it %g–%d", a.Duration, graph.MinAnimationDuration, graph.MaxAnimationDuration)
+				case a.Repeat != "" && !slices.Contains(graph.AnimationRepeats, a.Repeat):
+					bad("block.animation.repeat", "repeats %q; use three, forever or leave it out", a.Repeat)
+				case a.Delay < 0 || a.Delay > graph.MaxAnimationDelay:
+					bad("block.animation.delay", "waits %g seconds; keep it 0–%d", a.Delay, graph.MaxAnimationDelay)
+				}
 			}
 			switch b.Kind {
 			case graph.BlockText, graph.BlockImage, graph.BlockAudio, graph.BlockVideo, graph.BlockOverlay,

@@ -513,20 +513,29 @@ export function suggestionsFor(from: DragFrom | null): string[] {
  *
  * Label beats keywords beats hint, and a prefix beats a substring, so
  * "gat" puts Gate first rather than anything whose hint mentions a gate.
- * Every word of the query must match somewhere.
+ * Every word of the query must match somewhere. With tr, the preset's
+ * label, hint and keywords in the author's language count too, so a
+ * Swedish author finds "Byt tema" by "tema" — the English words still
+ * work as well.
  */
-export function scorePreset(p: Preset, query: string): number {
+export function scorePreset(p: Preset, query: string, tr?: (s: string) => string): number {
   const words = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return 1;
-  const label = p.label.toLowerCase();
-  const keywords = (p.keywords ?? "").toLowerCase();
-  const hint = p.hint.toLowerCase();
+  const english = { label: p.label, keywords: p.keywords ?? "", hint: p.hint };
+  if (!tr) return scoreWords(english, words);
+  const local = { label: tr(p.label), keywords: p.keywords ? tr(p.keywords) : "", hint: tr(p.hint) };
+  return Math.max(scoreWords(english, words), scoreWords(local, words));
+}
 
+function scoreWords(f: { label: string; keywords: string; hint: string }, words: string[]): number {
+  const label = f.label.toLowerCase();
+  const keywords = f.keywords.toLowerCase();
+  const hint = f.hint.toLowerCase();
   let total = 0;
   for (const w of words) {
     let s = 0;
     if (label.startsWith(w)) s = 100;
-    else if (label.split(/\W+/).some((part) => part.startsWith(w))) s = 80;
+    else if (label.split(/[^\p{L}\p{N}]+/u).some((part) => part.startsWith(w))) s = 80;
     else if (label.includes(w)) s = 60;
     else if (keywords.split(/\s+/).some((k) => k.startsWith(w))) s = 40;
     else if (hint.includes(w)) s = 20;

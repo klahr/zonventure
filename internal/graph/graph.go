@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/klahr/zonventure/internal/graph/cond"
+	"github.com/klahr/zonventure/internal/graph/look"
 	"github.com/klahr/zonventure/internal/graph/match"
 )
 
@@ -86,6 +87,12 @@ type Graph struct {
 	// them — one per suspect, say. Cosmetic, like positions: evaluation
 	// never reads them.
 	Frames []Frame `json:"frames,omitempty"`
+
+	// Themes are looks of the adventure's own, saved under a name: a theme
+	// effect switches to one by slug, and the designer can make one the
+	// adventure's main look. They live in the graph, so a running event
+	// keeps the themes its effects name.
+	Themes []Theme `json:"themes,omitempty"`
 
 	// Language is the BCP 47 tag the graph's own text is written in.
 	Language string `json:"language,omitempty"`
@@ -959,9 +966,29 @@ type Header struct {
 // send no body; the team and step go in the query instead.
 var WebhookMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
 
-// Themes are the looks a theme effect may switch to, the phone's own
-// presets (play-ui THEMES). "default" goes back to the adventure's palette.
+// Themes are the built-in looks a theme effect may switch to, the phone's
+// own presets (play-ui THEMES). "default" goes back to the adventure's
+// palette. An effect may also name one of the graph's own Themes.
 var Themes = []string{"default", "dark", "night", "alarm", "parchment"}
+
+// Theme is a look saved in the adventure under a name: the whole look —
+// colours, fonts, shapes and backdrop — which replaces the adventure's
+// own while it is on. Its slug may not be a built-in theme's name.
+type Theme struct {
+	Slug string    `json:"slug"`
+	Name string    `json:"name"`
+	Look look.Look `json:"look"`
+}
+
+// Theme is the saved theme with this slug, or nil.
+func (g *Graph) Theme(slug string) *Theme {
+	for i := range g.Themes {
+		if g.Themes[i].Slug == slug {
+			return &g.Themes[i]
+		}
+	}
+	return nil
+}
 
 // EmailPlaceholders are the names an email's subject and body may use
 // as {{name}}: the team's name, the event's name and the step's title.
@@ -1364,7 +1391,20 @@ func (g *Graph) MediaIDs() []int64 {
 			add([]Media{*ro.Image})
 		}
 	}
+	for _, th := range g.Themes {
+		if id := th.PictureID(); id > 0 {
+			add([]Media{{ID: id, Kind: MediaImage}})
+		}
+	}
 	return out
+}
+
+// PictureID is the image of the theme's picture backdrop, or 0.
+func (th Theme) PictureID() int64 {
+	if b := th.Look.Backdrop; b != nil && b.Kind == "picture" {
+		return b.Media
+	}
+	return 0
 }
 
 // MediaLists returns the node's own media, then each hint's in order.

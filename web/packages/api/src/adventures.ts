@@ -2,7 +2,7 @@
 // handlers: internal/admin/handlers.go (list) and internal/admin/graph.go.
 
 import { ApiError, get, patch, post, put, request } from "./http.ts";
-import type { Brand } from "./play.ts";
+import type { Backdrop, Brand, LookStyle } from "./play.ts";
 
 /** internal/admin/handlers.go: adventureDTO */
 export interface AdventureSummary {
@@ -120,6 +120,8 @@ interface AdventureEdit {
   corners?: string;
   cards?: string;
   card_outline?: boolean;
+  backdrop?: Backdrop | null;
+  style?: LookStyle | null;
 }
 
 /**
@@ -140,6 +142,8 @@ export async function getLook(slug: string, signal?: AbortSignal): Promise<Look>
   if (a.corners === "rounded" || a.corners === "soft" || a.corners === "sharp") b.corners = a.corners;
   if (a.cards === "raised" || a.cards === "flat") b.cards = a.cards;
   if (a.card_outline) b.card_outline = true;
+  if (a.backdrop) b.backdrop = a.backdrop;
+  if (a.style) b.style = a.style;
   return { title: a.title, intro: a.intro_text, outro: a.outro_text, language: a.language, brand: b };
 }
 
@@ -170,6 +174,8 @@ export const saveBrand = (slug: string, b: Brand) =>
     corners: b.corners ?? "",
     cards: b.cards ?? "",
     card_outline: !!b.card_outline,
+    backdrop: b.backdrop ?? { kind: "" },
+    style: b.style ?? {},
   });
 
 // --- media -----------------------------------------------------------------

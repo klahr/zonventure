@@ -9,6 +9,7 @@ import (
 
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/cond"
+	"github.com/klahr/zonventure/internal/graph/look"
 	"github.com/klahr/zonventure/internal/graph/match"
 )
 
@@ -526,6 +527,26 @@ func TestEffectRules(t *testing.T) {
 	assertCode(t, withEffect(&graph.EffectConfig{Kind: graph.SetTheme, Theme: "sepia"}), "effect.theme.unknown")
 	assertNoCode(t, withEffect(&graph.EffectConfig{Kind: graph.SetTheme, Theme: "night"}), "effect.theme.unknown")
 	assertCode(t, withEffect(&graph.EffectConfig{Kind: "invented"}), "effect.kind.unknown")
+
+	// A theme effect may also name one of the adventure's saved themes.
+	saved := func(themes ...graph.Theme) Report {
+		g := valid3()
+		g.Themes = themes
+		g.Nodes = append(g.Nodes, graph.Node{Slug: "fx", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.SetTheme, Theme: "jungle"}})
+		g.Edges[1] = edge("p1", "solved", "fx")
+		g.Edges = append(g.Edges, edge("fx", graph.PortOut, "p2"))
+		return Check(g)
+	}
+	jungle := graph.Theme{Slug: "jungle", Name: "Jungle", Look: look.Look{Accent: "#1f8036", Font: "baloo-2"}}
+	ok = saved(jungle)
+	assertNoCode(t, ok, "effect.theme.unknown")
+	assertNoCode(t, ok, "theme.look.invalid")
+	assertCode(t, saved(), "effect.theme.unknown")
+	assertCode(t, saved(jungle, jungle), "resource.slug.duplicate")
+	assertCode(t, saved(jungle, graph.Theme{Slug: "night", Name: "My night"}), "theme.slug.builtin")
+	assertCode(t, saved(jungle, graph.Theme{Slug: "x", Name: " "}), "theme.name.missing")
+	assertCode(t, saved(graph.Theme{Slug: "jungle", Name: "Jungle", Look: look.Look{Accent: "green"}}), "theme.look.invalid")
+	assertCode(t, saved(graph.Theme{Slug: "jungle", Name: "Jungle", Look: look.Look{Font: "comic-sans"}}), "theme.look.invalid")
 	assertCode(t, withEffect(&graph.EffectConfig{Kind: graph.AdjustScore}), "effect.score.zero")
 }
 
@@ -1008,4 +1029,23 @@ func TestSlotItemFromKit(t *testing.T) {
 	assertCode(t, Check(g), "slots.item.never")
 	g.Roles = []graph.Role{{Slug: "lockpick", Kit: []string{"key"}}}
 	assertNoCode(t, Check(g), "slots.item.never")
+}
+
+func TestBlockAnimationRules(t *testing.T) {
+	animated := func(a *graph.Animation) Report {
+		g := valid3()
+		n := &g.Nodes[1]
+		n.PuzzleCfg.Blocks = append(n.PuzzleCfg.Blocks, graph.Block{ID: "moving", Kind: graph.BlockText, Text: "Hi", Animation: a})
+		return Check(g)
+	}
+	ok := animated(&graph.Animation{Entrance: "bounceIn", Attention: "pulse", Delay: 1.5, Duration: 2.5, Repeat: "forever"})
+	for _, code := range []string{"block.animation.entrance", "block.animation.attention", "block.animation.duration", "block.animation.repeat", "block.animation.delay"} {
+		assertNoCode(t, ok, code)
+	}
+	assertCode(t, animated(&graph.Animation{Entrance: "spinIn"}), "block.animation.entrance")
+	assertCode(t, animated(&graph.Animation{Attention: "explode"}), "block.animation.attention")
+	assertCode(t, animated(&graph.Animation{Duration: 0.05}), "block.animation.duration")
+	assertCode(t, animated(&graph.Animation{Duration: 9}), "block.animation.duration")
+	assertCode(t, animated(&graph.Animation{Repeat: "twice"}), "block.animation.repeat")
+	assertCode(t, animated(&graph.Animation{Delay: 30}), "block.animation.delay")
 }

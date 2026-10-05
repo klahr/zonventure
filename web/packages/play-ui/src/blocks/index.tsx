@@ -1,5 +1,6 @@
 import { useCallback, useState, type ReactNode } from "react";
 import type { play } from "@zonventure/api";
+import { animationCSS } from "../animations.ts";
 import { MediaList } from "../Media.tsx";
 import { AudioFxBlock } from "./AudioFx.tsx";
 import { BearingBlock } from "./Bearing.tsx";
@@ -107,9 +108,27 @@ export function Blocks({ blocks, ...rest }: BlocksProps) {
     if (run.length) out.push(<MediaList key={`media-${out.length}`} media={run} />);
     run = [];
   };
+  // A block that moves is wrapped, so its own layout is left alone.
+  const moving = (b: play.PlayBlock, node: ReactNode) => {
+    const animation = animationCSS(b.animation);
+    return animation ? (
+      <div key={b.id} className="pv-anim" style={{ animation }}>
+        {node}
+      </div>
+    ) : (
+      node
+    );
+  };
   for (const b of blocks) {
     if (!b.locked && (b.kind === "image" || b.kind === "audio") && !hasFx(b)) {
-      run.push({ id: b.media, kind: b.kind, ...(b.alt ? { alt: b.alt } : {}) });
+      const media = { id: b.media, kind: b.kind, ...(b.alt ? { alt: b.alt } : {}) };
+      // A moving picture or sound leaves the run, so it can move on its own.
+      if (animationCSS(b.animation)) {
+        flush();
+        out.push(moving(b, <MediaList key={b.id} media={[media]} />));
+        continue;
+      }
+      run.push(media);
       continue;
     }
     flush();
@@ -118,7 +137,7 @@ export function Blocks({ blocks, ...rest }: BlocksProps) {
       continue;
     }
     const Render = (b.kind === "audio" ? AudioFxBlock : RENDER[b.kind as keyof typeof RENDER]) as Renderer<Kind> | undefined;
-    if (Render) out.push(<Render key={b.id} block={b} ctx={ctx} />);
+    if (Render) out.push(moving(b, <Render key={b.id} block={b} ctx={ctx} />));
     if (b.kind === "chat" && !done.has(b.id)) break;
   }
   flush();

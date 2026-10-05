@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { FIXED_KINDS, blocksOf, isFixed, mediaBlock, moveBlock, needsFile, newBlock, updateNode, withBlocks, type Block, type BlockKind, type FileKind, type Graph, type Node, type Zone } from "@zonventure/graph";
-import { Camera, ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Plus, Power, PowerOff, X } from "lucide-react";
+import { Camera, ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Plus, Power, PowerOff, Sparkles, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { ConfirmModal, DzPortal, ICON, useAnchoredPop, useDismiss } from "./dz/ui.tsx";
 import { useMediaUpload } from "./MediaEditor.tsx";
@@ -8,6 +8,7 @@ import { isNarrow, isTouch } from "./device.ts";
 import { ACCEPT } from "./blocks/Media.tsx";
 import { GROUPS, KINDS } from "./blocks/registry.tsx";
 import { ShowEditor } from "./blocks/Show.tsx";
+import { AnimationEditor } from "./blocks/Animation.tsx";
 import { summarize } from "./blocks/summary.ts";
 import type { Editor, T } from "./blocks/types.ts";
 
@@ -44,6 +45,7 @@ export function BlocksEditor({ blocks, node, graph, onChange, onGraphChange, tex
   const settle = useRef<{ id: string; dy: number; moved: boolean } | null>(null);
   // Blocks whose show rule is open for editing, and blocks folded away.
   const [rules, setRules] = useState<Set<string>>(new Set());
+  const [anims, setAnims] = useState<Set<string>>(() => new Set());
   const [folded, setFolded] = useState<Set<string>>(new Set());
   // The block whose delete waits for a yes.
   const [removing, setRemoving] = useState<Block | null>(null);
@@ -190,6 +192,7 @@ export function BlocksEditor({ blocks, node, graph, onChange, onGraphChange, tex
         const Icon = kind.icon;
         const label = labelOf(b);
         const ruleOpen = rules.has(b.id) || !!b.show;
+        const animOpen = anims.has(b.id);
         const isFolded = folded.has(b.id);
         // While dragging: the held block follows the pointer, and those
         // between where it was and where it would go step aside.
@@ -257,6 +260,24 @@ export function BlocksEditor({ blocks, node, graph, onChange, onGraphChange, tex
               </button>
               <button
                 type="button"
+                className={"blk__rule" + (b.animation ? " is-on" : "")}
+                aria-pressed={animOpen}
+                aria-label={b.animation ? t.t("Animated: change how it moves") : t.t("Animate…")}
+                title={b.animation ? t.t("Animated: change how it moves") : t.t("Animate…")}
+                onClick={() => {
+                  if (isFolded) fold(b.id);
+                  setAnims((r) => {
+                    const n = new Set(r);
+                    if (n.has(b.id)) n.delete(b.id);
+                    else n.add(b.id);
+                    return n;
+                  });
+                }}
+              >
+                <Sparkles size={ICON.sm} />
+              </button>
+              <button
+                type="button"
                 className={"blk__rule" + (b.disabled ? " is-on" : "")}
                 aria-pressed={!!b.disabled}
                 aria-label={b.disabled ? t.t("Switched off: turn {{block}} on", { block: label }) : t.t("Turn {{block}} off", { block: label })}
@@ -274,6 +295,7 @@ export function BlocksEditor({ blocks, node, graph, onChange, onGraphChange, tex
             </div>
             {!isFolded && body(b, (next) => set(i, next), t, label, graph, node, onGraphChange)}
             {!isFolded && ruleOpen && <ShowEditor block={b} set={(next) => set(i, next)} graph={graph} t={t} />}
+            {!isFolded && animOpen && <AnimationEditor block={b} set={(next) => set(i, next)} t={t} />}
           </div>
         );
       })}

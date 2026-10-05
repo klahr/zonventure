@@ -10,6 +10,7 @@ import (
 
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/cond"
+	"github.com/klahr/zonventure/internal/graph/look"
 	"github.com/klahr/zonventure/internal/graph/match"
 )
 
@@ -130,6 +131,9 @@ type View struct {
 	// player shows its button from the start, empty until notes arrive.
 	HasJournal bool   `json:"has_journal,omitempty"`
 	Theme      string `json:"theme,omitempty"`
+	// ThemeLook is the look of a saved theme Theme names, which replaces
+	// the adventure's own; empty for a built-in theme the phone knows.
+	ThemeLook *look.Look `json:"theme_look,omitempty"`
 
 	// Now is the engine's clock when the view was built. Every deadline
 	// above is relative to it, so a client counts down from Now rather
@@ -839,6 +843,9 @@ func (t *Team) view() View {
 		Theme:          t.Theme,
 		Now:            t.Now,
 	}
+	if th := t.G.Theme(t.Theme); th != nil {
+		v.ThemeLook = &th.Look
+	}
 	for _, slug := range sortedKeys(t.Items) {
 		if q := t.Items[slug]; q > 0 {
 			iv := ItemView{Slug: slug, Qty: q}
@@ -1078,6 +1085,14 @@ func (t *Team) VisibleMedia(strict bool) []int64 {
 				seen[m.ID] = true
 				out = append(out, m.ID)
 			}
+		}
+	}
+	// A saved theme's picture is part of how the adventure looks, never a
+	// secret: a team may fetch it before any step switches to the theme.
+	for _, th := range t.G.Themes {
+		if id := th.PictureID(); id > 0 && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
 		}
 	}
 	// A role's picture comes with the role: a secret one only to its player.

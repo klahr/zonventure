@@ -99,7 +99,9 @@ An adventure is a graph. Nodes are steps; edges run from a node's output port to
 
 Node types: start (port out), story (text to read; port out), puzzle (a question; one port per output), hub (a choice or shuffle of branches), gate and switch (conditions), effect (grant an item, add score…; port out), end.
 
-A theme effect restyles the phone from that step on: "theme" is one of dark, night, alarm or parchment, or default to go back to the adventure's own palette.
+A theme effect restyles the phone from that step on: "theme" is one of dark, night, alarm or parchment, the slug of one of the adventure's saved themes, or default to go back to the adventure's own look. Saved themes live in the graph's "themes": {slug, name, look}, a whole look (colours, fonts, corners, cards, backdrop) that replaces the adventure's while it is on; add one with edit_adventure_graph put_theme. A look's style.transition (none, fade, slide, zoom, flip, pop) sets how each step comes in.
+
+Any block may move: "animation": {"entrance": one of fadeIn, fadeInUp, fadeInDown, slideInLeft, slideInRight, zoomIn, bounceIn, flipInX, backInUp, lightSpeedInRight, rollIn; "attention": one of pulse, bounce, shakeX, wobble, tada, heartBeat, swing, rubberBand, jello, flash, headShake; "delay": seconds 0–10, so blocks can arrive one after another; "duration": seconds per run, 0.2–5 (default 1); "repeat": three or forever, for the attention effect}. Use it sparingly — a bounce on the answer that matters, a slow pulse on a clue — and never as decoration on every block.
 
 ## Working with edit_adventure_graph
 

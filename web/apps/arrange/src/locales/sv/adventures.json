@@ -60,10 +60,5 @@
   "Cheat password": "Fusklösenord",
   "Optional, for testing. Leave empty for none. On the phone, tap the adventure's title 7 times and enter it: every answer then counts as right, for no points, and the team is left out of the rankings.": "Valfritt, för test. Lämna tomt för inget. Tryck 7 gånger på äventyrets titel i telefonen och ange det: alla svar räknas då som rätt, utan poäng, och laget räknas inte med i resultatlistan.",
   "Show password": "Visa lösenord",
-  "Hide password": "Dölj lösenord",
-  "Send a ticket": "Skicka en biljett",
-  "Send ticket": "Skicka biljett",
-  "Email someone a free link to play": "Mejla någon en gratis länk för att spela",
-  "Ticket sent to {{email}}": "Biljett skickad till {{email}}",
-  "Emails a link to play, free. They get their own team and a code they can also type at /play.": "Mejlar en gratis länk för att spela. Mottagaren får ett eget lag och en kod som också kan skrivas in på /play."
+  "Hide password": "Dölj lösenord"
 }

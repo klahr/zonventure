@@ -73,6 +73,11 @@ func remapGraphMedia(g *graph.Graph, ids map[int64]int64) {
 	for i := range g.Roles {
 		one(g.Roles[i].Image)
 	}
+	for i := range g.Themes {
+		if b := g.Themes[i].Look.Backdrop; b != nil && b.Media != 0 {
+			b.Media = id(b.Media)
+		}
+	}
 }
 
 // copyGraphMedia copies the source adventure's media rows named by ids

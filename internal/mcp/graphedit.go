@@ -32,7 +32,8 @@ func (s *Server) registerGraphEditTools() {
 			"Ops: put_node {node} adds or replaces the node with that slug (same shape as nodes in get_adventure_graph); " +
 			"delete_node {slug} also removes its edges; put_zone {zone} adds or replaces a zone — with here: true it is centred where the author's phone last reported standing " +
 			"(lat/lng are taken from there, radius_m defaults from the fix's accuracy; refused if the fix is older than two minutes); delete_zone {slug}; " +
-			"connect {from, from_port, to} points an output port at a node, replacing where it pointed before; disconnect {from, from_port}. " +
+			"connect {from, from_port, to} points an output port at a node, replacing where it pointed before; disconnect {from, from_port}; " +
+			"put_theme {theme} adds or replaces a saved theme {slug, name, look} (look has the update_adventure_meta look fields without the _color suffix: accent, accent_secondary, background, text, submit_bg, font, heading_font, corners, cards, card_outline, backdrop); delete_theme {slug}, refused while a theme effect names it. " +
 			"An adventure without a graph starts from an empty one.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -47,10 +48,11 @@ func (s *Server) registerGraphEditTools() {
 						"type":     "object",
 						"required": []string{"op"},
 						"properties": map[string]any{
-							"op":        map[string]any{"type": "string", "enum": []string{"put_node", "delete_node", "put_zone", "delete_zone", "connect", "disconnect"}},
+							"op":        map[string]any{"type": "string", "enum": []string{"put_node", "delete_node", "put_zone", "delete_zone", "put_theme", "delete_theme", "connect", "disconnect"}},
 							"node":      map[string]any{"type": "object", "description": "put_node: the full node."},
 							"zone":      map[string]any{"type": "object", "description": "put_zone: {slug, name, lat, lng, radius_m, polygon?, group?}."},
-							"slug":      map[string]any{"type": "string", "description": "delete_node / delete_zone: what to delete."},
+							"theme":     map[string]any{"type": "object", "description": "put_theme: {slug, name, look}."},
+							"slug":      map[string]any{"type": "string", "description": "delete_node / delete_zone / delete_theme: what to delete."},
 							"from":      map[string]any{"type": "string"},
 							"from_port": map[string]any{"type": "string"},
 							"to":        map[string]any{"type": "string"},
@@ -108,6 +110,7 @@ type graphOp struct {
 	Op       string          `json:"op"`
 	Node     json.RawMessage `json:"node,omitempty"`
 	Zone     json.RawMessage `json:"zone,omitempty"`
+	Theme    json.RawMessage `json:"theme,omitempty"`
 	Slug     string          `json:"slug,omitempty"`
 	From     string          `json:"from,omitempty"`
 	FromPort string          `json:"from_port,omitempty"`
@@ -366,6 +369,34 @@ func applyGraphOp(g *graph.Graph, op graphOp, here *position) error {
 			}
 		}
 		return fmt.Errorf("no zone %q", op.Slug)
+	case "put_theme":
+		var th graph.Theme
+		if err := decodeStrict(op.Theme, &th); err != nil {
+			return fmt.Errorf("theme: %w", err)
+		}
+		if th.Slug == "" {
+			return fmt.Errorf("theme needs a slug")
+		}
+		for i := range g.Themes {
+			if g.Themes[i].Slug == th.Slug {
+				g.Themes[i] = th
+				return nil
+			}
+		}
+		g.Themes = append(g.Themes, th)
+	case "delete_theme":
+		for _, n := range g.Nodes {
+			if n.EffectCfg != nil && n.EffectCfg.Kind == graph.SetTheme && n.EffectCfg.Theme == op.Slug {
+				return fmt.Errorf("theme %q is still switched to by %q", op.Slug, n.Slug)
+			}
+		}
+		for i := range g.Themes {
+			if g.Themes[i].Slug == op.Slug {
+				g.Themes = append(g.Themes[:i], g.Themes[i+1:]...)
+				return nil
+			}
+		}
+		return fmt.Errorf("no theme %q", op.Slug)
 	case "connect":
 		if op.From == "" || op.FromPort == "" || op.To == "" {
 			return fmt.Errorf("from, from_port and to are required")

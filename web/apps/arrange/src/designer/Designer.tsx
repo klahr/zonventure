@@ -77,6 +77,7 @@ import { Resources } from "./Resources.tsx";
 import { Simulator, type SimMode } from "./Simulator.tsx";
 import { EventSim } from "./EventSim.tsx";
 import { FloatingWindow } from "./FloatingWindow.tsx";
+import { OpenThemes, ThemesModal } from "./ThemesModal.tsx";
 import { useInspectorWidth } from "./InspectorResize.tsx";
 import { TopBarPortal, useTopBarTitle } from "../topbar.tsx";
 import { Look } from "./Look.tsx";
@@ -213,6 +214,12 @@ export function Designer({ slug }: { slug: string }) {
   const [celebrate, setCelebrate] = useState(false);
   const [diff, setDiff] = useState<{ loading: boolean; diff: GraphDiff | null } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The theme editor, open on a theme or on the first; null when closed.
+  const [themesOpen, setThemesOpen] = useState<{ theme?: string } | null>(null);
+  const openThemes = useCallback((theme?: string) => {
+    setSettingsOpen(false);
+    setThemesOpen(theme ? { theme } : {});
+  }, []);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -232,8 +239,7 @@ export function Designer({ slug }: { slug: string }) {
   const [focusRequest, setFocusRequest] = useState(0);
   const [revealRequest, setRevealRequest] = useState(0);
 
-  // The adventure's palette, edited in Adventure settings.
-  const [brandSaved, setBrandSaved] = useState<play.Brand>({});
+  // The adventure's main look, picked in Adventure settings.
   const [brand, setBrand] = useState<play.Brand>({});
   const [brandSaving, setBrandSaving] = useState(false);
   const [brandError, setBrandError] = useState<string | null>(null);
@@ -242,7 +248,6 @@ export function Designer({ slug }: { slug: string }) {
   // too; they live on the adventure, not in the graph.
   const [adventureLang, setAdventureLang] = useState("");
   const [meta, setMeta] = useState<AdventureMeta>({});
-  const brandDirty = useMemo(() => JSON.stringify(brand) !== JSON.stringify(brandSaved), [brand, brandSaved]);
 
   const draft = history.present;
   // What the canvas shows: an older version while previewing, else the draft.
@@ -280,7 +285,6 @@ export function Designer({ slug }: { slug: string }) {
           if (title) setAdventureTitle(title);
           setAdventureLang(language);
           setMeta({ title, intro, outro });
-          setBrandSaved(b);
           setBrand(b);
         })
         .catch(() => {
@@ -960,6 +964,7 @@ export function Designer({ slug }: { slug: string }) {
     // Saved first: renaming the adventure moves its draft along with it.
     { label: t.t("Edit details"), onClick: () => void (async () => { if (unsaved && !(await saveNow())) return; setDetailsOpen(true); })() },
     { label: t.t("Adventure settings"), onClick: () => setSettingsOpen(true) },
+    { label: t.t("Themes"), onClick: () => openThemes() },
     // A phone has no keyboard to take shortcuts from.
     ...(isTouch() ? [] : [{ label: t.t("Keyboard shortcuts"), shortcut: "?", onClick: () => setHelpOpen(true) }]),
   ];
@@ -1349,82 +1354,84 @@ export function Designer({ slug }: { slug: string }) {
             <TranslateStep node={node} graph={graph} lang={editLang} onGraphChange={change} onClose={() => choose(null)} readOnly={readOnly} />
           ) : node ? (
             <AdventureSlug.Provider value={slug}>
-              {changed.has(node.slug) && (
-                <div key={fxSeq} className="inspector__flash" style={{ "--changed": changed.get(node.slug) } as React.CSSProperties} aria-hidden />
-              )}
-              {proposing ? (
-                <div className="inspector__held suggest-bar" role="status">
-                  <span>
-                    <strong>{t.t("Suggesting a change.")}</strong> {t.t("Your edits here are a proposal: the step itself is not touched until it is accepted.")}
-                  </span>
-                  <input
-                    className="field__input"
-                    value={proposing.note}
-                    placeholder={t.t("Why? (optional)")}
-                    aria-label={t.t("Why?")}
-                    onChange={(e) => setSuggesting((x) => x && { ...x, note: e.target.value })}
-                  />
-                  <span className="suggest-bar__actions">
-                    <Button size="sm" variant="primary" disabled={!proposed || sendingSuggestion} loading={sendingSuggestion} onClick={() => void sendSuggestion()}>
-                      {t.t("Send suggestion")}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setSuggesting(null)}>
-                      {t.t("Discard")}
-                    </Button>
-                  </span>
-                </div>
-              ) : (
-                holder && (
-                  <div className="inspector__held" role="status" style={{ "--peer": peerColor(holder) } as React.CSSProperties}>
-                    <span>{t.t("{{name}} is editing this step. Your changes would mix with theirs.", { name: holder.name.replace(/@.*/, "") })}</span>
-                    <Button size="sm" variant="primary" onClick={() => startSuggesting(node)}>
-                      {t.t("Suggest a change")}
-                    </Button>
-                    <Button size="sm" onClick={() => setTakenOver((s) => new Set(s).add(node.slug))}>
-                      {t.t("Edit anyway")}
-                    </Button>
+              <OpenThemes.Provider value={openThemes}>
+                {changed.has(node.slug) && (
+                  <div key={fxSeq} className="inspector__flash" style={{ "--changed": changed.get(node.slug) } as React.CSSProperties} aria-hidden />
+                )}
+                {proposing ? (
+                  <div className="inspector__held suggest-bar" role="status">
+                    <span>
+                      <strong>{t.t("Suggesting a change.")}</strong> {t.t("Your edits here are a proposal: the step itself is not touched until it is accepted.")}
+                    </span>
+                    <input
+                      className="field__input"
+                      value={proposing.note}
+                      placeholder={t.t("Why? (optional)")}
+                      aria-label={t.t("Why?")}
+                      onChange={(e) => setSuggesting((x) => x && { ...x, note: e.target.value })}
+                    />
+                    <span className="suggest-bar__actions">
+                      <Button size="sm" variant="primary" disabled={!proposed || sendingSuggestion} loading={sendingSuggestion} onClick={() => void sendSuggestion()}>
+                        {t.t("Send suggestion")}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setSuggesting(null)}>
+                        {t.t("Discard")}
+                      </Button>
+                    </span>
                   </div>
-                )
-              )}
-              <Inspector
-                key={node.slug + (proposing ? ":suggesting" : "")}
-                node={proposing ? proposing.draft : node}
-                graph={graph}
-                readOnly={readOnly || (!!holder && !proposing)}
-                {...(preview
-                  ? {}
-                  : {
-                      after: (
-                        <StepTalk
-                          slug={slug}
-                          node={node}
-                          graph={graph}
-                          collab={collab}
-                          me={me}
-                          onChanged={reloadCollab}
-                          onSuggest={proposing ? undefined : () => startSuggesting(node)}
-                          onAccept={acceptSuggestion}
-                        />
-                      ),
-                    })}
-                issues={shownIssues.filter((i) => i.node === node.slug)}
-                onChange={(n) => (proposing ? setSuggesting((x) => x && { ...x, draft: n }) : change(updateNode(graph, node.slug, () => n)))}
-                onGraphChange={(g) => {
-                  if (!proposing) return change(g);
-                  // A proposal is the step alone: what it changes elsewhere is not part of it.
-                  const n = nodeBySlug(g, node.slug);
-                  if (n) setSuggesting((x) => x && { ...x, draft: n });
-                }}
-                onClose={() => choose(null)}
-                onPreview={() => {
-                  setSimMode("step");
-                  setPreviewing(true);
-                }}
-                onDelete={() => {
-                  change(removeNode(graph, node.slug));
-                  setSelected(null);
-                }}
-              />
+                ) : (
+                  holder && (
+                    <div className="inspector__held" role="status" style={{ "--peer": peerColor(holder) } as React.CSSProperties}>
+                      <span>{t.t("{{name}} is editing this step. Your changes would mix with theirs.", { name: holder.name.replace(/@.*/, "") })}</span>
+                      <Button size="sm" variant="primary" onClick={() => startSuggesting(node)}>
+                        {t.t("Suggest a change")}
+                      </Button>
+                      <Button size="sm" onClick={() => setTakenOver((s) => new Set(s).add(node.slug))}>
+                        {t.t("Edit anyway")}
+                      </Button>
+                    </div>
+                  )
+                )}
+                <Inspector
+                  key={node.slug + (proposing ? ":suggesting" : "")}
+                  node={proposing ? proposing.draft : node}
+                  graph={graph}
+                  readOnly={readOnly || (!!holder && !proposing)}
+                  {...(preview
+                    ? {}
+                    : {
+                        after: (
+                          <StepTalk
+                            slug={slug}
+                            node={node}
+                            graph={graph}
+                            collab={collab}
+                            me={me}
+                            onChanged={reloadCollab}
+                            onSuggest={proposing ? undefined : () => startSuggesting(node)}
+                            onAccept={acceptSuggestion}
+                          />
+                        ),
+                      })}
+                  issues={shownIssues.filter((i) => i.node === node.slug)}
+                  onChange={(n) => (proposing ? setSuggesting((x) => x && { ...x, draft: n }) : change(updateNode(graph, node.slug, () => n)))}
+                  onGraphChange={(g) => {
+                    if (!proposing) return change(g);
+                    // A proposal is the step alone: what it changes elsewhere is not part of it.
+                    const n = nodeBySlug(g, node.slug);
+                    if (n) setSuggesting((x) => x && { ...x, draft: n });
+                  }}
+                  onClose={() => choose(null)}
+                  onPreview={() => {
+                    setSimMode("step");
+                    setPreviewing(true);
+                  }}
+                  onDelete={() => {
+                    change(removeNode(graph, node.slug));
+                    setSelected(null);
+                  }}
+                />
+              </OpenThemes.Provider>
             </AdventureSlug.Provider>
           ) : null}
         </div>
@@ -1524,26 +1531,52 @@ export function Designer({ slug }: { slug: string }) {
             />
             <Look
               brand={brand}
-              dirty={brandDirty}
               saving={brandSaving}
               error={brandError}
-              onChange={setBrand}
-              onSave={async () => {
+              savedThemes={graph.themes ?? []}
+              onApply={async (b) => {
+                const before = brand;
+                setBrand(b);
                 setBrandSaving(true);
                 setBrandError(null);
                 try {
-                  await adventures.saveBrand(slug, brand);
-                  setBrandSaved(brand);
+                  await adventures.saveBrand(slug, b);
                 } catch (e) {
+                  setBrand(before);
                   setBrandError(e instanceof ApiError ? e.message : t.t("Could not reach the server. Check your connection."));
                 } finally {
                   setBrandSaving(false);
                 }
               }}
-              onRevert={() => setBrand(brandSaved)}
+              {...(readOnly
+                ? {}
+                : {
+                    onSaveAsTheme: () => {
+                      const themes = graph.themes ?? [];
+                      let n = 1;
+                      while (themes.some((th) => th.slug === `theme-${n}`)) n++;
+                      change({ ...graph, themes: [...themes, { slug: `theme-${n}`, name: t.t("Theme {{n}}", { n: themes.length + 1 }), look: structuredClone(brand) }] });
+                      openThemes(`theme-${n}`);
+                    },
+                    onEditThemes: () => openThemes(),
+                  })}
             />
           </div>
         </PanelModal>
+      )}
+      {themesOpen && draft && simEnvelope && (
+        <AdventureSlug.Provider value={slug}>
+          <ThemesModal
+            slug={slug}
+            graph={graph}
+            envelope={simEnvelope}
+            title={adventureTitle}
+            selected={selected}
+            initial={themesOpen.theme ?? null}
+            onChange={change}
+            onClose={() => setThemesOpen(null)}
+          />
+        </AdventureSlug.Provider>
       )}
       {detailsOpen && (
         <EditDetailsDialog

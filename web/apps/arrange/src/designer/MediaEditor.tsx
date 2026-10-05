@@ -156,7 +156,7 @@ const SERVER_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
  * wifi. Anything that cannot be decoded, or would not get smaller, goes
  * up as it is; GIF and SVG are left alone (animation, vector).
  */
-async function downscale(file: File, maxDim = 1600, quality = 0.85): Promise<File> {
+export async function downscale(file: File, maxDim = 1600, quality = 0.85): Promise<File> {
   if (!file.type.startsWith("image/") || file.type === "image/gif" || file.type === "image/svg+xml") return file;
   if (typeof createImageBitmap !== "function") return file;
   let bitmap: ImageBitmap;

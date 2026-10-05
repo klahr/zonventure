@@ -595,9 +595,26 @@ func (e *Engine) Media(ctx context.Context, teamID int64) ([]int64, error) {
 // session.Team.VisibleMedia), honouring the adventure's strict-assets
 // setting, or with prefetch only those worth downloading ahead.
 func (e *Engine) media(ctx context.Context, teamID int64, prefetch bool) ([]int64, error) {
+	var (
+		strict  bool
+		picture int64
+	)
+	// The adventure's own look may be a picture: every team sees it, an
+	// adventure with a graph or without.
+	if err := e.DB.QueryRowContext(ctx, `
+		SELECT a.strict_assets, COALESCE(CASE WHEN a.backdrop->>'kind' = 'picture' THEN (a.backdrop->>'media')::bigint END, 0)
+		FROM teams t JOIN events ev ON ev.id = t.event_id JOIN adventures a ON a.slug = ev.adventure_slug
+		WHERE t.id = $1
+	`, teamID).Scan(&strict, &picture); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	var ids []int64
+	if picture > 0 {
+		ids = append(ids, picture)
+	}
 	s, err := e.loadCore(ctx, e.DB, teamID, false)
 	if errors.Is(err, ErrNoGraph) {
-		return nil, nil
+		return ids, nil
 	}
 	if err != nil {
 		return nil, err
@@ -608,17 +625,16 @@ func (e *Engine) media(ctx context.Context, teamID int64, prefetch bool) ([]int6
 	if err := e.locate(ctx, e.DB, s); err != nil {
 		return nil, err
 	}
-	var strict bool
-	if err := e.DB.QueryRowContext(ctx, `
-		SELECT a.strict_assets FROM events ev JOIN adventures a ON a.slug = ev.adventure_slug
-		WHERE ev.id = $1
-	`, s.eventID).Scan(&strict); err != nil {
-		return nil, err
-	}
+	seen := s.VisibleMedia(strict)
 	if prefetch {
-		return s.PrefetchMedia(strict), nil
+		seen = s.PrefetchMedia(strict)
 	}
-	return s.VisibleMedia(strict), nil
+	for _, id := range seen {
+		if id != picture {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 // CanSeeMedia reports whether a team may fetch one media file.

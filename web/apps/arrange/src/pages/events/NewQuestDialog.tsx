@@ -12,11 +12,12 @@ const CURRENCIES = ["EUR", "USD", "SEK", "GBP", "NOK", "DKK"];
  * the org's store. Tickets pay for it, so no event pass is needed —
  * only an adventure the org owns or was commissioned. Created, priced,
  * given its cover and started in one go, as the classic console does.
+ * Given a slug, it is for that adventure only.
  */
-export function NewQuestDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; onClose: () => void; onCreated: (id: number) => void }) {
   const t = useT();
   const toast = useToast();
-  const advs = useLoad((signal) => listAdventures(signal).then((l) => l.filter((a) => a.mine_to_edit || a.shared)), []);
+  const advs = useLoad((signal) => listAdventures(signal).then((l) => l.filter((a) => (a.mine_to_edit || a.shared) && (!slug || a.slug === slug))), [slug]);
   const [picked, setPicked] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [blurb, setBlurb] = useState("");
@@ -92,7 +93,7 @@ export function NewQuestDialog({ onClose, onCreated }: { onClose: () => void; on
     }
     toast.ok(t.t("Self-guided adventure created and listed in your store"));
     onClose();
-    onCreated();
+    onCreated(id);
   }
 
   if (!advs.data) {

@@ -61,7 +61,7 @@ export function App() {
   // adventure's, or the organisation's for an adventure without one,
   // under the step's theme.
   const look = s?.brand ?? s?.org_brand ?? null;
-  const chrome = withTheme(look, view?.theme);
+  const chrome = withTheme(look, view?.theme, view?.theme_look);
   useEffect(() => loadFont(look?.font), [look?.font]);
   useEffect(() => loadFont(look?.heading_font), [look?.heading_font]);
   // The phone's own bar matches the app bar.

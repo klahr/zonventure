@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Copy, Eye, EyeOff, Link2 } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
@@ -7,9 +7,6 @@ import { href } from "../../router.ts";
 import { Button, Dialog, Field, HelpPopover, ICON, ImageDrop, MarkdownArea, Row, fmtDateTime, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 import { createAdventure, downscaleImage, firstPlaceOf, getEdit, getGraphState, importAdventure, orgName, removeCover, updateAdventure, uploadCover, type AdventurePatch, type AdventureEdit, type Assignment } from "./api.ts";
 import { PointMap } from "../../designer/PointMap.tsx";
-import type { EventRow } from "../events/api.ts";
-import { giveFreeTicket, type FreeTicket } from "../event/api.ts";
-import { copyText } from "../event/util.ts";
 
 const SLUG = /^[a-z0-9-]+$/;
 
@@ -452,78 +449,6 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
           </Field>
           <p className="cs-field__hint">{t.t("The language, translations, colours and fonts are under Adventure settings in the designer.")}</p>
         </>
-      )}
-    </Dialog>
-  );
-}
-
-/**
- * A ticket to play, sent from the adventure's page: a free team in one
- * of its live events, emailed the same link and voucher code a buyer
- * gets. Both show here too, to hand over by hand when the mail is slow.
- * With several live events the sender picks one, self-guided first.
- */
-export function SendTicketDialog({ events, onClose }: { events: EventRow[]; onClose: () => void }) {
-  const t = useT();
-  const toast = useToast();
-  const [eventId, setEventId] = useState(events[0]?.id ?? 0);
-  const [email, setEmail] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [given, setGiven] = useState<(FreeTicket & { email: string }) | null>(null);
-  const name = (e: EventRow) => (e.name || e.adventure_title || e.adventure_slug) + (e.public_for_sale ? ` · ${t.t("Self-guided adventure")}` : "");
-  const send = async () => {
-    const to = email.trim();
-    if (!to || !eventId || busy) return;
-    setBusy(true);
-    try {
-      const r = await giveFreeTicket(eventId, to);
-      setGiven({ ...r, email: to });
-      setEmail("");
-      if (r.emailed) toast.ok(t.t("Ticket sent to {{email}}", { email: to }));
-      else toast.err(t.t("The team was made, but the email could not be sent. Copy the link or code below."));
-    } catch (e) {
-      toast.err(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const copy = async (text: string, done: string) => {
-    if (await copyText(text)) toast.ok(done);
-    else toast.err(t.t("Clipboard blocked — select and copy by hand"));
-  };
-  return (
-    <Dialog
-      title={t.t("Send a ticket")}
-      onClose={onClose}
-      onSubmit={() => void send()}
-      footer={
-        <>
-          <Button onClick={onClose}>{given ? t.t("Done") : t.t("Cancel")}</Button>
-          <Button type="submit" variant="primary" filled loading={busy} disabled={!email.trim() || !eventId}>{t.t("Send ticket")}</Button>
-        </>
-      }
-    >
-      <p className="adv-muted">{t.t("Emails a link to play, free. They get their own team and a code they can also type at /play.")}</p>
-      {events.length > 1 && (
-        <Field label={t.t("Event")}>
-          <select value={eventId} onChange={(e) => setEventId(Number(e.target.value))}>
-            {events.map((e) => <option key={e.id} value={e.id}>{name(e)}</option>)}
-          </select>
-        </Field>
-      )}
-      <Field label={t.t("Email address")}>
-        <input type="email" required autoFocus value={email} placeholder="name@example.com" onChange={(e) => setEmail(e.target.value)} />
-      </Field>
-      {given && (
-        <p className="adv-ticket">
-          {t.t("Ticket for {{email}}:", { email: given.email })} <strong className="adv-ticket__code">{given.voucher_code}</strong>
-          <Button size="sm" variant="ghost" icon={<Copy size={ICON.sm} aria-hidden />} onClick={() => void copy(given.voucher_code, t.t("Code copied"))}>
-            {t.t("Copy code")}
-          </Button>
-          <Button size="sm" variant="ghost" icon={<Link2 size={ICON.sm} aria-hidden />} onClick={() => void copy(given.team_url, t.t("Link copied"))}>
-            {t.t("Copy link")}
-          </Button>
-        </p>
       )}
     </Dialog>
   );

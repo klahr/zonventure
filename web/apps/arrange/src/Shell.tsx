@@ -198,6 +198,8 @@ export function Shell({ user }: { user: Whoami }) {
   }
 
   const org = user.memberships.find((m) => m.org_id === user.org_id);
+  // Where the organisation's name leads: its settings, for those who may change them.
+  const orgHref = !org ? null : user.role === "org_admin" ? href({ name: "settings", tab: "organization" }) : user.role === "admin" ? href({ name: "organization", id: org.org_id }) : null;
   // The notifications this person gets are written in the language they
   // use the console in: tell the server whenever that changes.
   const lang = t.current();
@@ -249,12 +251,18 @@ export function Shell({ user }: { user: Whoami }) {
           </nav>
         )}
         <span className="shell__live" ref={setLiveSlot} />
-        {org && (
-          <span className="shell__org">
-            <Avatar name={org.org_name} src={org.org_logo_url} size={22} />
-            <span className="shell__org-name">{org.org_name}</span>
-          </span>
-        )}
+        {org &&
+          (orgHref ? (
+            <a className="shell__org" href={orgHref} title={t.t("Organization settings")}>
+              <Avatar name={org.org_name} src={org.org_logo_url} size={22} />
+              <span className="shell__org-name">{org.org_name}</span>
+            </a>
+          ) : (
+            <span className="shell__org">
+              <Avatar name={org.org_name} src={org.org_logo_url} size={22} />
+              <span className="shell__org-name">{org.org_name}</span>
+            </span>
+          ))}
       </header>
 
       {drawer && <div className="shell__backdrop" onClick={() => setDrawer(false)} aria-hidden="true" />}

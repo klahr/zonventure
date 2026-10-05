@@ -10,8 +10,9 @@ import { SpoofMap, type Point } from "./SpoofMap.tsx";
 import { DevicePanel } from "./DevicePanel.tsx";
 import { VISIBLE } from "./dz/types.tsx";
 import { locationError, zoneName } from "./zones.ts";
-import { LocateFixed } from "lucide-react";
+import { Clapperboard, LocateFixed } from "lucide-react";
 import { ICON } from "./dz/ui.tsx";
+import { REPLAY_EVENT } from "./blocks/Animation.tsx";
 
 /** internal/graph/session.StartPlaceSlug: the start screen's zone for a required starting point. */
 const START_PLACE = "_start";
@@ -48,7 +49,8 @@ interface Props {
   envelope: Envelope;
   selected: string | null;
   mode: SimMode;
-  onMode: (m: SimMode) => void;
+  /** Without it the mode is fixed and its toggle hidden. */
+  onMode?: (m: SimMode) => void;
   /** Bumped by the parent to start a run over. */
   restart: number;
   /** Reports where the simulated team is, for the canvas. */
@@ -57,6 +59,8 @@ interface Props {
   brand: play.Brand;
   /** Shown in the start ceremony. */
   title: string;
+  /** Only the phone, small, without the controls beside it: a preview of the look. */
+  bare?: boolean;
 }
 
 interface LogLine {
@@ -117,7 +121,7 @@ function useWindowHeight(): number {
 /** The player app's own catalogs, so the phone reads as a team's would. */
 const PHONE_CATALOGS = { en: {}, sv: playSv as Record<string, string> };
 
-export function Simulator({ slug, graph, envelope, selected, mode, onMode, restart, onPosition, brand, title }: Props) {
+export function Simulator({ slug, graph, envelope, selected, mode, onMode, restart, onPosition, brand, title, bare }: Props) {
   const t = useT();
 
   const [team, setTeam] = useState<play.SimTeam | null>(null);
@@ -143,7 +147,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   const frameH = device.h + 2 * BEZEL;
   // Room left under the designer's toolbar, less the window's title bar,
   // padding and a margin: about 180 px.
-  const scale = zoom || Math.min(1, Math.max(0.3, (winH - 180) / frameH));
+  const scale = bare ? Math.min(0.6, Math.max(0.3, (winH - 260) / frameH)) : zoom || Math.min(1, Math.max(0.3, (winH - 180) / frameH));
 
   // The latest draft, read at send time so a run in progress uses the
   // graph as it is now rather than as it was when the run started.
@@ -232,6 +236,14 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     return () => ac.abort();
     // Deliberately not keyed on the graph: a run carries on across edits.
   }, [mode, restart, nonce, run]);
+
+  // Play again (the block animation editor): remount the step so it enters anew.
+  const [replay, setReplay] = useState(0);
+  useEffect(() => {
+    const again = () => setReplay((n) => n + 1);
+    window.addEventListener(REPLAY_EVENT, again);
+    return () => window.removeEventListener(REPLAY_EVENT, again);
+  }, []);
 
   // Clear the canvas marker when the simulator goes away.
   useEffect(() => () => onPosition(null), [onPosition]);
@@ -366,118 +378,134 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   const current = view?.type === "puzzle" && view.node && !view.finished ? nodeBySlug(graph, view.node) : undefined;
 
   return (
-    <div className="sim">
-      <div className="sim__side">
-        <div className="seg sim__mode" role="group" aria-label={t.t("Preview mode")}>
-          <button type="button" className={mode === "step" ? "is-on" : ""} onClick={() => onMode("step")}>
-            {t.t("This step")}
-          </button>
-          <button type="button" className={mode === "run" ? "is-on" : ""} onClick={() => onMode("run")}>
-            {t.t("Play from start")}
-          </button>
-        </div>
-
-        <div className="sim__device">
-          <label className="field">
-            <span className="field__label">{t.t("Device")}</span>
-            <select
-              className="field__input"
-              value={device.id}
-              onChange={(e) => {
-                setDeviceId(e.target.value as DeviceId);
-                keep("zonventure.preview.device", e.target.value);
-              }}
-            >
-              {DEVICES.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.label} · {d.w}×{d.h}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">{t.t("Zoom")}</span>
-            <select
-              className="field__input"
-              value={zoom}
-              onChange={(e) => {
-                const z = Number(e.target.value);
-                setZoom(z);
-                keep("zonventure.preview.zoom", z);
-              }}
-            >
-              {ZOOMS.map((z) => (
-                <option key={z} value={z}>
-                  {z === 0 ? t.t("Fit ({{pct}} %)", { pct: Math.round(scale * 100) }) : `${z * 100} %`}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="sim__controls">
-          <span className="sim__clock" title={t.t("Time since the team started")}>⏱ {formatSeconds(elapsed)}</span>
-          {[60, 300, 1800].map((s) => (
-            <button key={s} type="button" className="btn btn--ghost btn--sm" disabled={!team || busy} onClick={() => wait(s)}>
-              +{s / 60} {t.t("min")}
-            </button>
-          ))}
-          {mode === "run" && (
-            <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => setNonce((n) => n + 1)}
-              aria-label={t.t("Start over")} title={t.t("Start over")}>
-              ↺
-            </button>
+    <div className={"sim" + (bare ? " sim--bare" : "")}>
+      {!bare && (
+        <div className="sim__side">
+          {onMode && (
+            <div className="seg sim__mode" role="group" aria-label={t.t("Preview mode")}>
+              <button type="button" className={mode === "step" ? "is-on" : ""} onClick={() => onMode("step")}>
+                {t.t("This step")}
+              </button>
+              <button type="button" className={mode === "run" ? "is-on" : ""} onClick={() => onMode("run")}>
+                {t.t("Play from start")}
+              </button>
+            </div>
           )}
-        </div>
 
-        <label className="field sim__where">
-          <span className="field__label">{t.t("Team is at")}</span>
-          <select className="field__input" value={zone} disabled={!team || busy} onChange={(e) => move(e.target.value)}>
-            <option value="">{t.t("Nowhere in particular")}</option>
-            {places.map((z) => (
-              <option key={z.slug} value={z.slug}>
-                {placeName(z)}
-              </option>
-            ))}
-          </select>
-        </label>
+          <div className="sim__device">
+            <label className="field">
+              <span className="field__label">{t.t("Device")}</span>
+              <select
+                className="field__input"
+                value={device.id}
+                onChange={(e) => {
+                  setDeviceId(e.target.value as DeviceId);
+                  keep("zonventure.preview.device", e.target.value);
+                }}
+              >
+                {DEVICES.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.label} · {d.w}×{d.h}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span className="field__label">{t.t("Zoom")}</span>
+              <select
+                className="field__input"
+                value={zoom}
+                onChange={(e) => {
+                  const z = Number(e.target.value);
+                  setZoom(z);
+                  keep("zonventure.preview.zoom", z);
+                }}
+              >
+                {ZOOMS.map((z) => (
+                  <option key={z} value={z}>
+                    {z === 0 ? t.t("Fit ({{pct}} %)", { pct: Math.round(scale * 100) }) : `${z * 100} %`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
 
-        <div className="sim__follow">
-          <button type="button" className={"btn btn--ghost btn--sm" + (follow ? " is-on" : "")} aria-pressed={follow} disabled={!team} onClick={() => setFollow((f) => !f)}>
-            <LocateFixed size={ICON.sm} aria-hidden="true" />
-            {follow ? t.t("Stop following my location") : t.t("Test here with my location")}
-          </button>
-          {followNote && <span className={"field__hint" + (followNote.warn ? " zone-here__warn" : "")}>{followNote.text}</span>}
-        </div>
-
-        <SpoofMap zones={places} position={pos ?? null} focus={focus} onPick={moveTo} disabled={!team || busy || follow} />
-
-        {view?.blocks?.some((b) => !b.locked && (b.kind === "compass" || b.kind === "level" || b.kind === "bearing")) && <DevicePanel motion={motion} onChange={setMotion} />}
-
-        {current?.puzzle?.outputs?.length ? (
-          <div className="sim__pass">
-            <span className="field__label">{t.t("Get past it")}</span>
-            <span className="field__hint">{t.t("Leave by an output without the answer — for a QR code you can't scan, or a place you're not at.")}</span>
-            {current.puzzle.outputs.map((o) => (
-              <button key={o.port} type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => void act({ kind: "force", node: current.slug, port: o.port })}>
-                {t.t("Pass: {{port}}", { port: portLabel(current, o.port) })}
+          <div className="sim__controls">
+            <span className="sim__clock" title={t.t("Time since the team started")}>⏱ {formatSeconds(elapsed)}</span>
+            {[60, 300, 1800].map((s) => (
+              <button key={s} type="button" className="btn btn--ghost btn--sm" disabled={!team || busy} onClick={() => wait(s)}>
+                +{s / 60} {t.t("min")}
               </button>
             ))}
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              disabled={!view}
+              onClick={() => setReplay((n) => n + 1)}
+              title={t.t("Show this step again, animations and all")}
+            >
+              <Clapperboard size={ICON.sm} aria-hidden="true" />
+              {t.t("Show again")}
+            </button>
+            {mode === "run" && (
+              <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => setNonce((n) => n + 1)}
+                aria-label={t.t("Start over")} title={t.t("Start over")}>
+                ↺
+              </button>
+            )}
           </div>
-        ) : null}
 
-        {error && <div className="alert alert--danger">{error}</div>}
+          <label className="field sim__where">
+            <span className="field__label">{t.t("Team is at")}</span>
+            <select className="field__input" value={zone} disabled={!team || busy} onChange={(e) => move(e.target.value)}>
+              <option value="">{t.t("Nowhere in particular")}</option>
+              {places.map((z) => (
+                <option key={z.slug} value={z.slug}>
+                  {placeName(z)}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        {log.length > 0 && (
-          <ol className="sim__log" aria-label={t.t("What happened")}>
-            {log.map((l) => (
-              <li key={l.id} className={l.tone === "warn" ? "is-warn" : ""}>
-                {l.text}
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
+          <div className="sim__follow">
+            <button type="button" className={"btn btn--ghost btn--sm" + (follow ? " is-on" : "")} aria-pressed={follow} disabled={!team} onClick={() => setFollow((f) => !f)}>
+              <LocateFixed size={ICON.sm} aria-hidden="true" />
+              {follow ? t.t("Stop following my location") : t.t("Test here with my location")}
+            </button>
+            {followNote && <span className={"field__hint" + (followNote.warn ? " zone-here__warn" : "")}>{followNote.text}</span>}
+          </div>
+
+          <SpoofMap zones={places} position={pos ?? null} focus={focus} onPick={moveTo} disabled={!team || busy || follow} />
+
+          {view?.blocks?.some((b) => !b.locked && (b.kind === "compass" || b.kind === "level" || b.kind === "bearing")) && <DevicePanel motion={motion} onChange={setMotion} />}
+
+          {current?.puzzle?.outputs?.length ? (
+            <div className="sim__pass">
+              <span className="field__label">{t.t("Get past it")}</span>
+              <span className="field__hint">{t.t("Leave by an output without the answer — for a QR code you can't scan, or a place you're not at.")}</span>
+              {current.puzzle.outputs.map((o) => (
+                <button key={o.port} type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => void act({ kind: "force", node: current.slug, port: o.port })}>
+                  {t.t("Pass: {{port}}", { port: portLabel(current, o.port) })}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {error && <div className="alert alert--danger">{error}</div>}
+
+          {log.length > 0 && (
+            <ol className="sim__log" aria-label={t.t("What happened")}>
+              {log.map((l) => (
+                <li key={l.id} className={l.tone === "warn" ? "is-warn" : ""}>
+                  {l.text}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
+
+      {bare && error && <div className="alert alert--danger">{error}</div>}
 
       {/* Laid out at the device's real size, then scaled: the step wraps
           and fits exactly as on the device, only smaller. The scale also
@@ -488,6 +516,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
           <div className="phone__screen">
             {view ? (
               <PlayView
+                key={replay}
                 view={view}
                 onAction={(a) => void act(a)}
                 busy={busy}

@@ -11,6 +11,150 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — buttons, answer bar, text size and titles
+
+- **Buttons:** shape (pill, rounded, square), fill (classic, gradient,
+  flat, outline, soft) and size (small, normal, large). A chosen fill
+  keeps the accent on a coloured answer bar too; classic keeps the old
+  look, where the button punches through the bar.
+- **Answer bar:** along the bottom, or floating — a panel off the edge.
+- **Text size** from 85 to 140 %, titles with it.
+- **Titles:** plain, ribbon, underline or shadow, and in capitals.
+- All in the theme editor, stored with the look's `style`; the starter
+  themes use them. The contrast warning covers outlined and soft buttons.
+- **Show again** in the preview reopens the step, so its entrance,
+  animations and transition play once more.
+
+### Added — a picture as background
+
+- **Any image of the adventure can be the page.** The background
+  picker's Picture tile uploads one; strength lets the page colour show
+  through (dimming or lightening it), blur softens it (0–20 px) so text
+  reads, and it can fade toward the bottom and stay still while the
+  page scrolls. It works in saved themes and as the main look.
+- Teams may always fetch a look's picture, before any step shows it. A
+  main look's picture must be the adventure's own image; a theme's is
+  part of the graph's media, so it is checked, duplicated and exported
+  with the rest. Duplicating an adventure copies its main look's
+  picture too.
+
+### Added — animations
+
+- **Blocks can move.** A sparkle button on every block opens its
+  animation: an entrance as it appears (fade, slide, zoom, bounce, flip,
+  rise, whoosh, roll…), an effect to catch the eye after it (pulse,
+  bounce, shake, wobble, tada, heartbeat, swing, rubber band, jelly,
+  flash, head shake) once, three times or over and over, a duration
+  (0.2–5 seconds), and a delay so blocks arrive one after another. A
+  sample card in the panel plays each change at once, and Play again
+  replays the step in the preview. Stored on the block
+  (`animation`), so it is versioned and published with the step.
+- **Step transitions, in and out.** A look's step transition — fade,
+  slide, zoom, flip, pop or none — sets how each new step comes in, and
+  the step it replaces leaves with the matching exit (sliding out the
+  other way, fading, zooming or flipping away) in a quarter of a second.
+  What leaves is a still copy of its page, so nothing in it plays again.
+  Themes carry the transition, and several starter themes have one.
+- Our own keyframes, named as animate.style names its effects; no
+  third-party code. Phones set to reduce motion show everything still.
+
+### Added — saved themes
+
+- **An adventure can keep looks of its own.** The designer's ⋯ menu has
+  a Themes editor: name a theme and set its whole look — colours, fonts,
+  corners, cards and background — with the same controls as the main
+  look, previewed on a phone. A Change the theme step can switch to a
+  saved theme as well as to the built-in ones. Adventure settings now
+  only picks the main look — the standard look or a saved theme, applied
+  at once — and a main look that is no saved theme can be saved as one
+  to edit it. Themes live in the graph: they are part of the draft,
+  reach players on Publish, travel with export and duplicate, and a
+  running event keeps the themes its steps switch to. A theme a step
+  still uses cannot be deleted.
+- MCP: `edit_adventure_graph` has `put_theme` and `delete_theme`; a theme
+  effect may name a saved theme's slug.
+- **Starter themes.** New theme offers the default look or one of 19
+  ready-made ones to adjust, each with its own colours, fonts,
+  background and cards, shown large enough to choose by eye: Playful
+  (Unicorn, Rainbow, Party, Sunshine, Ice cream, Candy), Adventure
+  (Jungle, Space, Detective, Pirate, Ocean, Pen & paper), then Hacker,
+  Cyberpunk, Retro 80s, Office, Scary, Sad and Love. Every one passes the contrast check.
+- **Rainbows and party confetti.** Stripes and confetti take a list of
+  up to 8 colours used in turn (`colors` on the backdrop).
+- **Retro horizon and lined paper.** Two new backgrounds: an 1980s
+  synthwave scene — starry sky in the colours you list, a striped sun,
+  a neon grid running to the horizon — and a notebook page with ruled
+  lines and a margin.
+- **Seven more typefaces:** Nunito ("Friendly") and Inter ("Clean") for
+  text; Creepster ("Spooky"), Pacifico ("Romantic"), VT323 ("Retro
+  terminal"), Orbitron ("Futuristic") and Press Start 2P ("Arcade") for
+  titles; self-hosted with their licences.
+- **See-through cards.** A look's card opacity lets the background show
+  through text cards, optionally frosted so the text stays readable.
+  Stored with the look's other finer choices in one `style` object
+  (`look_style` on the adventure; `style` in the API and MCP).
+- **Contrast warning.** The theme editor says when text or titles would
+  be hard to read outdoors, with the ratio and the WCAG aim — also for
+  text on see-through cards over the background.
+
+### Added — colour spots
+
+- **A background of colours that blend.** The "Colour spots" pattern
+  paints soft spots that fade into each other. Click the page in the
+  theme editor to add a spot (up to 12), drag one to move it, and pick it
+  to change its colour; a spot without a colour follows the palette.
+  Spread sets how far each reaches, and spots may go to full strength.
+
+### Fixed — roles lost when the designer saved
+
+- Roles made in the designer's Resources panel were dropped by the
+  next save. The designer now keeps them, and a test checks that a save
+  keeps every part of the graph.
+
+### Fixed — finding steps in Swedish
+
+- **The designer's Add step search understands Swedish.** It matched only
+  the English names, so "tema" did not find "Byt tema". It now matches
+  each step's name, description and search words in the designer's
+  language as well as in English, å, ä and ö included. Every step in the
+  list has Swedish search words, and the steps that showed in English in
+  a Swedish designer have Swedish names and descriptions.
+
+### Added — background patterns
+
+- **A pattern behind the cards.** The theme editor has a background
+  designer: pick a preset (polka dots, candy stripes, picnic
+  checks, graph paper, comic sunburst, waves, zigzag, party confetti,
+  soft glow), then adjust its colours, strength, size and angle, and
+  switch on a fade toward the bottom, a still pattern while the page
+  scrolls, or a slow drift (never on phones set to reduce motion). Only
+  the values are saved, not the preset. Empty colours follow the
+  palette, and a step's theme replaces colours picked by hand.
+- Stored as `backdrop` on the adventure — a kind and numbers, never
+  CSS: `PATCH /api/admin/adventures/{slug}` and the MCP's
+  `update_adventure_meta` take `{"backdrop": {"kind": "dots", "opacity":
+  0.12, "scale": 24, …}}`, and `{"kind": ""}` removes it. Text stays on
+  the solid cards, so a pattern never sits under it.
+
+### Added — playful fonts
+
+- **Four more typefaces for an adventure's look:** Baloo 2 ("Bubbly")
+  and Patrick Hand ("Handwritten") for text and titles, Chewy
+  ("Cartoon") and Luckiest Guy ("Comic") for titles only. Keys
+  `baloo-2`, `patrick-hand`, `chewy`, `luckiest-guy` in `font` and
+  `heading_font`. Self-hosted like the others, with their licences.
+
+### Added — self-guided adventures and test play from an adventure
+
+- **Start a self-guided adventure from the adventure itself.** Its card
+  on the Adventures page and its own page have a "Self-guided adventure"
+  button, for adventures the organisation owns or was commissioned. It
+  opens the new self-guided adventure dialog with that adventure chosen,
+  and goes to the new event once created.
+- **Test play from the adventure's page.** Its editors get a "Test play"
+  button that plays the saved draft from Start in the designer's
+  simulator, in a floating window, without opening the designer.
+
 ### Added — free tickets for testers and guests
 
 - **Give someone a ticket without payment.** On an event's Teams tab,

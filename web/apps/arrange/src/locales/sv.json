@@ -261,6 +261,10 @@
   "Typewriter": "Skrivmaskin",
   "Book": "Bok",
   "Playful": "Lekfull",
+  "Bubbly": "Bubblig",
+  "Handwritten": "Handskriven",
+  "Cartoon": "Tecknad",
+  "Comic": "Serietidning",
   "Name this group": "Namnge gruppen",
   "Colour": "Färg",
   "Rose": "Rosa",
@@ -473,5 +477,12 @@
   "The team sees this name.": "Laget ser det här namnet.",
   "New place": "Ny plats",
   "Click the map to move the pin, or drag it.": "Klicka på kartan för att flytta nålen, eller dra den.",
-  "Click the map to put the pin there.": "Klicka på kartan för att sätta nålen där."
+  "Click the map to put the pin there.": "Klicka på kartan för att sätta nålen där.",
+  "Friendly": "Vänlig",
+  "Clean": "Stilren",
+  "Spooky": "Läskig",
+  "Romantic": "Romantisk",
+  "Retro terminal": "Retroterminal",
+  "Futuristic": "Futuristisk",
+  "Arcade": "Arkad"
 }

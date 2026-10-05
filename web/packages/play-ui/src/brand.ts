@@ -11,6 +11,7 @@
 // derived, so any accent an author types produces a readable button.
 
 import type { play } from "@zonventure/api";
+import { backdropVars } from "./backdrop.ts";
 
 const HEX = /^#?([0-9a-f]{6})$/i;
 
@@ -50,6 +51,19 @@ export function luminance(hex: string): number {
 }
 
 /** Black or white, whichever reads better on bg. */
+/** WCAG contrast between two #rrggbb colours: 1 (none) to 21 (black on white). */
+export function contrastRatio(a: string, b: string): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** Lay `top` over `under` at the given opacity, as the eye sees it. */
+export function blend(under: string, top: string, opacity: number): string {
+  const u = rgb(under);
+  const t = rgb(top);
+  return "#" + u.map((v, i) => Math.round(v + (t[i]! - v) * opacity).toString(16).padStart(2, "0")).join("");
+}
+
 export function readableOn(bg: string): "#000000" | "#ffffff" {
   if (!isHex(bg)) return "#ffffff";
   // The crossover where black and white have equal contrast; play.html
@@ -62,11 +76,35 @@ export function readableOn(bg: string): "#000000" | "#ffffff" {
  * in Go. Self-hosted: @font-face rules in fonts/adventure-fonts.css,
  * which PlayView imports; see fonts/README.md.
  */
+/**
+ * The default Zonventure look spelled out: tokens.css's light colours,
+ * the standard typeface, rounded corners and raised cards. What a new
+ * saved theme starts from, so every control shows a real value.
+ */
+export const DEFAULT_LOOK: play.Brand = {
+  accent: "#ad1357",
+  accent_secondary: "#ad1357",
+  background: "#fbfbfd",
+  text: "#1f3349",
+  submit_bg: "#fbfbfd",
+};
+
 export const FONTS: Record<string, string> = {
   inconsolata: "Inconsolata",
   "special-elite": "Special Elite",
   merriweather: "Merriweather",
   fredoka: "Fredoka",
+  "baloo-2": "Baloo 2",
+  "patrick-hand": "Patrick Hand",
+  chewy: "Chewy",
+  "luckiest-guy": "Luckiest Guy",
+  nunito: "Nunito",
+  inter: "Inter",
+  creepster: "Creepster",
+  pacifico: "Pacifico",
+  vt323: "VT323",
+  orbitron: "Orbitron",
+  "press-start-2p": "Press Start 2P",
 };
 
 /**
@@ -92,10 +130,22 @@ export const THEMES: Record<string, play.Brand> = {
   parchment: { background: "#f3e7c9", text: "#3b2a17", accent: "#8a4b1d", accent_secondary: "#8a4b1d", submit_bg: "#e4d3a8" },
 };
 
-/** A palette with a step's theme laid over it. */
-export function withTheme(b: play.Brand | null | undefined, theme: string | undefined): play.Brand | null {
+/**
+ * A palette with a step's theme laid over it. A saved theme's look (the
+ * view's theme_look) replaces the palette whole. A built-in theme swaps
+ * the colours; a backdrop keeps its pattern but drops colours picked by
+ * hand, so it follows the theme's.
+ */
+export function withTheme(b: play.Brand | null | undefined, theme: string | undefined, look?: play.Brand | null): play.Brand | null {
+  if (look) return look;
   const t = theme ? THEMES[theme] : undefined;
-  return t ? { ...b, ...t } : (b ?? null);
+  if (!t) return b ?? null;
+  const out: play.Brand = { ...b, ...t };
+  if (b?.backdrop) {
+    const { color: _c, color2: _c2, ...rest } = b.backdrop;
+    out.backdrop = rest;
+  }
+  return out;
 }
 
 /** Start fetching an adventure's typeface before text needs it. Offline and uncached, text falls back to the system font. */
@@ -165,9 +215,33 @@ export function brandVars(b: play.Brand | null | undefined): Record<string, stri
     }
   }
   if (b.card_outline) out["--pv-card-line"] = `color-mix(in srgb, ${ink} 30%, transparent)`;
+  // Text and titles, larger or smaller together.
+  const scale = b.style?.text_scale;
+  if (scale && scale !== 1) {
+    const k = Math.min(1.4, Math.max(0.85, scale));
+    out["--pv-text-scale"] = String(k);
+    out["--text-sm"] = `${0.875 * k}rem`;
+    out["--text-base"] = `${k}rem`;
+    out["--text-lg"] = `${1.15 * k}rem`;
+  }
+  // Buttons' corners: a pill unless chosen otherwise.
+  const shape = b.style?.button_shape;
+  if (shape === "rounded") out["--pv-btn-radius"] = "0.75rem";
+  else if (shape === "square") out["--pv-btn-radius"] = "3px";
+  // Text on a ribbon title: picked for the titles colour, as on the accent.
+  const titles = isHex(b.accent_secondary) ? b.accent_secondary : isHex(b.accent) ? b.accent : null;
+  if (titles) out["--pv-on-titles"] = readableOn(titles);
+  // See-through cards: the card's own fill, thinned, so the backdrop shows.
+  const opacity = b.style?.card_opacity;
+  if (opacity && opacity < 1) {
+    const fill = out["--pv-card-bg"] ?? (isHex(b.background) ? b.background : "var(--surface)");
+    out["--pv-card-bg"] = `color-mix(in srgb, ${fill} ${Math.round(Math.max(0.2, opacity) * 100)}%, transparent)`;
+    if (b.style?.card_blur) out["--pv-card-blur"] = "blur(10px)";
+  }
   if (isHex(b.submit_bg)) {
     out["--pv-dock-bg"] = b.submit_bg;
     out["--pv-dock-fg"] = readableOn(b.submit_bg);
   }
+  Object.assign(out, backdropVars(b.backdrop, b));
   return out;
 }

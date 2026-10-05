@@ -1,20 +1,22 @@
-import { useState, type ReactNode } from "react";
-import { CalendarPlus, ChevronLeft, Coins, Copy, Download, ExternalLink, MapPin, Pencil, Ticket, Trash2, Workflow } from "lucide-react";
+import { Suspense, lazy, useState, type ReactNode } from "react";
+import { CalendarPlus, ChevronLeft, Coins, Compass, Copy, Download, ExternalLink, MapPin, Pencil, Play, Trash2, Workflow } from "lucide-react";
 import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { useTopBarTitle } from "../../topbar.tsx";
-import { CATALOG_ENABLED, href } from "../../router.ts";
+import { CATALOG_ENABLED, href, navigate } from "../../router.ts";
 import { Button, Card, ErrorBox, ICON, Loading, Page, PageHeader, Pill, Stat, Stats, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 import { NewEventDialog } from "../events/NewEventDialog.tsx";
-import { listEvents, type EventRow } from "../events/api.ts";
+import { NewQuestDialog } from "../events/NewQuestDialog.tsx";
 import { deleteAdventure, duplicateAdventure, exportURL, firstPlaceOf, getAdventure, getGraphState, isPublisher, listAdventures, listAssignments, type AdventureDetail, type Assignment } from "./api.ts";
 import { AdventureMap } from "./AdventureMap.tsx";
-import { EditDetailsDialog, PickPassDialog, SendTicketDialog } from "./dialogs.tsx";
+import { EditDetailsDialog, PickPassDialog } from "./dialogs.tsx";
 import { extentKm, formatKm, pinsOf } from "./facts.ts";
 import type { Schedule } from "./List.tsx";
 import { Cover, LanguagePill, puzzleCount } from "./parts.tsx";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
+
+const TestPlay = lazy(() => import("../../designer/TestPlay.tsx"));
 
 /**
  * An adventure's own page: what it is, where it happens and what it is
@@ -25,13 +27,7 @@ export function AdventurePage({ slug }: { slug: string }) {
   const t = useT();
   // The list row says whether the org holds it through a commission; the detail payload doesn't.
   const load = useLoad(
-    (signal) =>
-      Promise.all([
-        getAdventure(slug, signal),
-        listAssignments(signal).catch(() => [] as Assignment[]),
-        listAdventures(signal).catch(() => []),
-        listEvents(undefined, signal).catch(() => [] as EventRow[]),
-      ]),
+    (signal) => Promise.all([getAdventure(slug, signal), listAssignments(signal).catch(() => [] as Assignment[]), listAdventures(signal).catch(() => [])]),
     [slug],
   );
   useTopBarTitle(load.data?.[0].title ?? null);
@@ -45,26 +41,23 @@ export function AdventurePage({ slug }: { slug: string }) {
     );
   }
   if (!load.data) return <Page><Loading label={t.t("Loading…")} /></Page>;
-  const [a, assignments, rows, events] = load.data;
-  // Where a ticket can go: its events still taking teams, self-guided first.
-  const live = events
-    .filter((e) => e.adventure_slug === a.slug && (e.state === "scheduled" || e.state === "running" || e.state === "paused"))
-    .sort((x, y) => Number(y.public_for_sale) - Number(x.public_for_sale));
-  return <Detail a={a} shared={!a.mine_to_edit && !!rows.find((r) => r.slug === a.slug)?.shared} passes={assignments.filter((x) => x.adventure_slug === a.slug && !x.event_id)} live={live} reload={load.reload} />;
+  const [a, assignments, rows] = load.data;
+  return <Detail a={a} shared={!a.mine_to_edit && !!rows.find((r) => r.slug === a.slug)?.shared} passes={assignments.filter((x) => x.adventure_slug === a.slug && !x.event_id)} reload={load.reload} />;
 }
 
-function Detail({ a, shared, passes, live, reload }: { a: AdventureDetail; shared: boolean; passes: Assignment[]; live: EventRow[]; reload: () => void }) {
+function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boolean; passes: Assignment[]; reload: () => void }) {
   const t = useT();
   const toast = useToast();
   const dialogs = useDialogs();
   const { state } = useSession();
   const user = state.status === "authenticated" ? state.user : null;
   const [schedule, setSchedule] = useState<Schedule | null>(null);
+  const [selling, setSelling] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState(false);
   const [cover, setCover] = useState(a.avatar_url);
   const [copying, setCopying] = useState(false);
-  const [ticketing, setTicketing] = useState(false);
 
   const g = a.graph ?? null;
   const pins = pinsOf(a);
@@ -183,9 +176,14 @@ function Detail({ a, shared, passes, live, reload }: { a: AdventureDetail; share
           {t.t("Buy an event pass")}
         </Button>
       )}
-      {live.length > 0 && (
-        <Button icon={<Ticket size={ICON.md} aria-hidden />} title={t.t("Email someone a free link to play")} onClick={() => setTicketing(true)}>
-          {t.t("Send a ticket")}
+      {a.mine_to_edit && (
+        <Button icon={<Play size={ICON.md} aria-hidden />} title={t.t("Play the draft from the start, as a team")} onClick={() => setTesting(true)}>
+          {t.t("Test play")}
+        </Button>
+      )}
+      {(a.mine_to_edit || shared) && !designed && (
+        <Button icon={<Compass size={ICON.md} aria-hidden />} title={t.t("New self-guided adventure")} onClick={() => setSelling(true)}>
+          {t.t("Self-guided adventure")}
         </Button>
       )}
       {more.length > 0 && <MoreMenu label={t.t("More")} items={more} />}
@@ -297,7 +295,6 @@ function Detail({ a, shared, passes, live, reload }: { a: AdventureDetail; share
           }}
         />
       )}
-      {ticketing && <SendTicketDialog events={live} onClose={() => setTicketing(false)} />}
       {picking && (
         <PickPassDialog
           title={a.title}
@@ -310,6 +307,12 @@ function Detail({ a, shared, passes, live, reload }: { a: AdventureDetail; share
         />
       )}
       {schedule && <NewEventDialog {...schedule} onClose={() => setSchedule(null)} />}
+      {testing && (
+        <Suspense fallback={null}>
+          <TestPlay slug={a.slug} title={a.title} onClose={() => setTesting(false)} />
+        </Suspense>
+      )}
+      {selling && <NewQuestDialog slug={a.slug} onClose={() => setSelling(false)} onCreated={(id) => navigate({ name: "event", id })} />}
     </Page>
   );
 }

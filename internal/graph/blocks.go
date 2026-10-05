@@ -258,7 +258,50 @@ type Block struct {
 	// Disabled switches the block off: kept for the author, never shown,
 	// as if it were not there. Any kind may be, the title and points too.
 	Disabled bool `json:"disabled,omitempty"`
+	// Animation moves the block as it appears, or to catch the eye. Any
+	// kind may have one.
+	Animation *Animation `json:"animation,omitempty"`
 }
+
+// Animation is how a block moves: an entrance as it appears, an
+// attention effect after it, or both. The player draws them with its own
+// keyframes, named as animate.style names its effects so authors who
+// know them recognise them, and never on a phone set to reduce motion.
+type Animation struct {
+	// Entrance is one of Entrances; empty, the block just appears.
+	Entrance string `json:"entrance,omitempty"`
+	// Attention is one of Attentions, played once the block is in.
+	Attention string `json:"attention,omitempty"`
+	// Delay holds the block back, in seconds (0–MaxAnimationDelay), so
+	// blocks can arrive one after another.
+	Delay float64 `json:"delay,omitempty"`
+	// Duration is how long one run of an effect takes, in seconds
+	// (MinAnimationDuration–MaxAnimationDuration); 0 is the default, 1.
+	Duration float64 `json:"duration,omitempty"`
+	// Repeat is how often the attention effect plays: one of
+	// AnimationRepeats; empty is once.
+	Repeat string `json:"repeat,omitempty"`
+}
+
+// The effects an Animation may name.
+var (
+	Entrances = []string{
+		"fadeIn", "fadeInUp", "fadeInDown", "slideInLeft", "slideInRight", "zoomIn",
+		"bounceIn", "flipInX", "backInUp", "lightSpeedInRight", "rollIn",
+	}
+	Attentions = []string{
+		"pulse", "bounce", "shakeX", "wobble", "tada", "heartBeat",
+		"swing", "rubberBand", "jello", "flash", "headShake",
+	}
+	AnimationRepeats = []string{"three", "forever"}
+)
+
+// The bounds of an Animation's timing, in seconds.
+const (
+	MaxAnimationDelay    = 10
+	MinAnimationDuration = 0.2
+	MaxAnimationDuration = 5
+)
 
 // ChatLine is one message in a chat. Me puts it on the team's side.
 type ChatLine struct {

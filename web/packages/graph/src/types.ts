@@ -35,10 +35,71 @@ export interface Graph {
   time_limit?: TimeLimit;
   /** Designer-only grouping boxes drawn behind steps. */
   frames?: Frame[];
+  /** Looks of the adventure's own: a theme effect switches to one by slug. */
+  themes?: Theme[];
   /** The BCP 47 tag the graph's own text is in. */
   language?: string;
   /** Other languages: language → field key → text. See i18n.ts. */
   translations?: Record<string, Record<string, string>>;
+}
+
+/**
+ * graph.Theme — a look saved in the adventure under a name. It replaces
+ * the adventure's own look while it is on. The slug may not be a
+ * built-in theme's (BUILTIN_THEMES).
+ */
+export interface Theme {
+  slug: string;
+  name: string;
+  look: ThemeLook;
+}
+
+/** The built-in themes a theme effect may name: graph.Themes. */
+export const BUILTIN_THEMES = ["default", "dark", "night", "alarm", "parchment"] as const;
+
+/**
+ * adventure.Colors — a whole look. The same shape as @zonventure/api's
+ * play.Brand, so one passes for the other; spelled out here because
+ * this package depends on nothing.
+ */
+export interface ThemeLook {
+  accent?: string;
+  accent_secondary?: string;
+  background?: string;
+  text?: string;
+  submit_bg?: string;
+  font?: string;
+  heading_font?: string;
+  corners?: "rounded" | "soft" | "sharp";
+  cards?: "raised" | "flat";
+  card_outline?: boolean;
+  backdrop?: {
+    kind: "dots" | "stripes" | "checks" | "grid" | "sunburst" | "waves" | "zigzag" | "confetti" | "gradient" | "spots" | "horizon" | "lined" | "picture";
+    color?: string;
+    color2?: string;
+    opacity: number;
+    scale: number;
+    angle?: number;
+    fade?: boolean;
+    fixed?: boolean;
+    motion?: boolean;
+    points?: { x: number; y: number; color?: string }[];
+    colors?: string[];
+    media?: number;
+    blur?: number;
+  };
+  style?: {
+    card_opacity?: number;
+    card_blur?: boolean;
+    transition?: "none" | "fade" | "slide" | "zoom" | "flip" | "pop";
+    button_shape?: "rounded" | "square";
+    button_fill?: "gradient" | "flat" | "outline" | "soft";
+    button_size?: "small" | "large";
+    dock?: "floating";
+    text_scale?: number;
+    title_style?: "ribbon" | "underline" | "shadow";
+    title_upper?: boolean;
+  };
 }
 
 /** graph.Frame — cosmetic, like a card's position. */
@@ -128,7 +189,25 @@ export type Block = BlockBody & {
   show?: Show;
   /** Switched off: kept for the author, never shown. Any kind, the title and points too. */
   disabled?: boolean;
+  /** How the block moves as it appears, or to catch the eye. Any kind. */
+  animation?: Animation;
 };
+
+/** graph.Animation — the player's own keyframes, named as animate.style names its effects. */
+export interface Animation {
+  entrance?: (typeof ENTRANCES)[number];
+  attention?: (typeof ATTENTIONS)[number];
+  /** Seconds before the block appears: 0–10. */
+  delay?: number;
+  /** Seconds per run of an effect: 0.2–5; absent is 1. */
+  duration?: number;
+  /** How often the attention effect plays; absent is once. */
+  repeat?: "three" | "forever";
+}
+
+/** graph.Entrances and graph.Attentions. */
+export const ENTRANCES = ["fadeIn", "fadeInUp", "fadeInDown", "slideInLeft", "slideInRight", "zoomIn", "bounceIn", "flipInX", "backInUp", "lightSpeedInRight", "rollIn"] as const;
+export const ATTENTIONS = ["pulse", "bounce", "shakeX", "wobble", "tada", "heartBeat", "swing", "rubberBand", "jello", "flash", "headShake"] as const;
 
 export interface Show {
   when: Predicate;

@@ -1,5 +1,8 @@
 export { PlayView, Sheet, StartCeremony, type PlayViewProps } from "./PlayView.tsx";
-export { FONTS, THEMES, brandVars, isHex, loadFont, readableOn, shade, withTheme } from "./brand.ts";
+export { DEFAULT_LOOK, FONTS, THEMES, blend, brandVars, contrastRatio, isHex, loadFont, readableOn, shade, withTheme } from "./brand.ts";
+export { BACKDROP_KINDS, BACKDROP_LIMITS, FULL_STRENGTH, backdropPalette, backdropVars, hasPicture } from "./backdrop.ts";
+export { lookContrast, type ContrastIssue } from "./contrast.ts";
+export { ATTENTIONS, ENTRANCES, TRANSITIONS, animationCSS } from "./animations.ts";
 export { Markdown, MarkdownInline } from "./Markdown.tsx";
 export { parseMarkdown, parseInline, safeHref, type Block, type Inline } from "./markdown.ts";
 export { english, feedbackForRefusal, feedbackForResult, type Feedback, type Translate } from "./feedback.ts";

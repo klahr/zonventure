@@ -152,6 +152,11 @@
   letter-spacing: 0.18em;
   color: var(--muted);
 }
+.alert--warn {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+}
 .alert--ok {
   background: var(--success-bg);
   color: var(--success);
@@ -276,6 +281,8 @@
   color: var(--ink-soft);
 }
 .shell__org-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.shell__org { margin-right: calc(-1 * var(--sp-2)); padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm); text-decoration: none; }
+a.shell__org:hover, a.shell__org:focus-visible { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); }
 /* An organisation's logo, or its initials, beside its name in the top
    bar and the account menu's switcher. Pages style theirs under .dz. */
 .shell__org .cs-avatar, .account-pop__row .cs-avatar {

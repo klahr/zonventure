@@ -210,6 +210,27 @@ describe("persistence", () => {
     for (const e of cleaned.edges) assert.deepEqual(Object.keys(e), ["from", "from_port", "to"], "an edge keeps only its own fields");
   });
 
+  // A field cleanGraph does not name is dropped from every save: roles
+  // once were, losing what the Resources panel made.
+  test("cleanGraph keeps every graph-level field", () => {
+    const full: Required<Graph> = {
+      ...linear3(),
+      zones: [{ slug: "z", lat: 1, lng: 2, radius_m: 10 }],
+      items: [{ slug: "i" }],
+      counters: [{ slug: "c" }],
+      journal: [{ slug: "j" }],
+      roles: [{ slug: "r" }],
+      themes: [{ slug: "t", name: "T", look: { accent: "#123456" } }],
+      journal_by_unlock: true,
+      hide_score: true,
+      time_limit: { seconds: 60, to: "end" },
+      frames: [{ id: "f", x: 0, y: 0, width: 10, height: 10 }],
+      language: "sv",
+      translations: { en: { "meta:title": "T" } },
+    };
+    assert.deepEqual(Object.keys(cleanGraph(full)).sort(), Object.keys(full).sort());
+  });
+
   test("differs notices content and layout changes, not identity", () => {
     const g = linear3();
     assert.equal(differs(g, structuredClone(g)), false);

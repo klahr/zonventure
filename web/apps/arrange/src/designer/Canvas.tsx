@@ -129,23 +129,6 @@ export function cardSizes(): Map<string, Size> {
   return sizes;
 }
 
-/** Where the inspector opens as a sheet over the canvas (dz.css). */
-const SHEET = "(max-width: 768px)";
-
-/** Whether a media query matches, following it as the window changes. */
-function useMedia(query: string): boolean {
-  const [on, setOn] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.(query).matches);
-  useEffect(() => {
-    const mq = window.matchMedia?.(query);
-    if (!mq) return;
-    const update = () => setOn(mq.matches);
-    update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, [query]);
-  return on;
-}
-
 /** Below this zoom a card's text is too small to read. */
 const READABLE_ZOOM = 0.6;
 /** The zoom a large adventure opens at, around its start. */
@@ -169,7 +152,6 @@ const START_ZOOM = 0.75;
 export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, revealRequest = 0, playing = null, changed, marks, fx, live, talk }: Props) {
   const rf = useReactFlow();
   const t = useT();
-  const inspectorCovers = useMedia(SHEET);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   const [nodes, setNodes] = useState<CardNode[]>([]);
   const [frameNodes, setFrameNodes] = useState<FrameNode[]>([]);
@@ -744,10 +726,11 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         deleteKeyCode={["Delete", "Backspace"]}
         minZoom={0.2}
         proOptions={{ hideAttribution: true }}
-        // Where the inspector is a sheet over the canvas, a step opens on
-        // release — a tap — not on press, or the sheet would cover the
-        // canvas mid-drag and abort it. Dragging a step then only moves it.
-        selectNodesOnDrag={!inspectorCovers}
+        // A step opens on release — a click or a tap — not on press, so
+        // moving a step or drawing a wire from it leaves the inspector as
+        // it was. Where the inspector is a sheet over the canvas, opening
+        // on press would also cover the canvas mid-drag and abort it.
+        selectNodesOnDrag={false}
         onMoveStart={(e) => {
           // Only a pan or zoom the author made; a programmatic one has no event.
           if (e) live?.onUserMove();

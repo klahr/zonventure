@@ -71,6 +71,10 @@ type adventureEditDTO struct {
 	Corners              string `json:"corners"`
 	Cards                string `json:"cards"`
 	CardOutline          bool   `json:"card_outline"`
+	// Backdrop is null for the plain page colour.
+	Backdrop *adventure.Backdrop `json:"backdrop"`
+	// Style is null for the defaults.
+	Style *adventure.Style `json:"style"`
 	// Language is the BCP 47 tag of the puzzle content (e.g. "en",
 	// "sv"). Defaults to "en" via the schema's column default.
 	Language  string `json:"language"`
@@ -338,6 +342,10 @@ type updateAdventureRequest struct {
 	StartRadiusM Nullable[float64] `json:"start_radius_m"`
 	// Brief replaces the whole brief.
 	Brief *Brief `json:"brief,omitempty"`
+	// Backdrop replaces the pattern; an empty kind removes it.
+	Backdrop *adventure.Backdrop `json:"backdrop,omitempty"`
+	// Style replaces the look's finer choices; an empty one clears them.
+	Style *adventure.Style `json:"style,omitempty"`
 }
 
 // Brief records an adventure's intent. Every field is free text, or a
@@ -519,6 +527,41 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 	}
 	if req.CardOutline != nil {
 		add("card_outline", *req.CardOutline)
+	}
+	if req.Backdrop != nil {
+		if req.Backdrop.Kind == "" {
+			add("backdrop", nil)
+		} else {
+			if err := req.Backdrop.Validate(); err != nil {
+				return badRequestf("backdrop %s", err.Error())
+			}
+			// A picture must be one of this adventure's own images.
+			if req.Backdrop.Kind == "picture" {
+				var ok bool
+				if err := db.QueryRowContext(ctx, `
+					SELECT EXISTS (SELECT 1 FROM adventure_media m JOIN adventures a ON a.id = m.adventure_id
+					               WHERE m.id = $1 AND a.slug = $2 AND m.kind = 'image')
+				`, req.Backdrop.Media, slug).Scan(&ok); err != nil {
+					return err
+				}
+				if !ok {
+					return badRequestf("backdrop picture is not one of this adventure's images")
+				}
+			}
+			b, _ := json.Marshal(req.Backdrop)
+			add("backdrop", string(b))
+		}
+	}
+	if req.Style != nil {
+		if err := req.Style.Validate(); err != nil {
+			return badRequestf("style %s", err.Error())
+		}
+		if *req.Style == (adventure.Style{}) {
+			add("look_style", nil)
+		} else {
+			b, _ := json.Marshal(req.Style)
+			add("look_style", string(b))
+		}
 	}
 	if req.Language != nil {
 		lang := strings.TrimSpace(*req.Language)
@@ -706,12 +749,12 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		published                          int
 		orgID                              sql.NullInt64
 		startLat, startLng, startRadius    sql.NullFloat64
-		brief                              []byte
+		brief, backdrop, style             []byte
 	)
 	if err := db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font,
-		       heading_font, corners, cards, card_outline,
+		       heading_font, corners, cards, card_outline, backdrop, look_style,
 		       language,
 		       (avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       published, org_id, strict_assets, COALESCE(cheat_password, ''),
@@ -719,12 +762,22 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
 		&a.IntroText, &a.OutroText,
-		&accent, &accent2, &bg, &ink, &submitBG, &a.Font, &a.HeadingFont, &a.Corners, &a.Cards, &a.CardOutline, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets, &a.CheatPassword,
+		&accent, &accent2, &bg, &ink, &submitBG, &a.Font, &a.HeadingFont, &a.Corners, &a.Cards, &a.CardOutline, &backdrop, &style, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets, &a.CheatPassword,
 		&startLat, &startLng, &a.StartLabel, &startRadius, &brief); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(brief, &a.Brief); err != nil {
 		return nil, fmt.Errorf("decoding brief: %w", err)
+	}
+	if backdrop != nil {
+		if err := json.Unmarshal(backdrop, &a.Backdrop); err != nil {
+			return nil, fmt.Errorf("decoding backdrop: %w", err)
+		}
+	}
+	if style != nil {
+		if err := json.Unmarshal(style, &a.Style); err != nil {
+			return nil, fmt.Errorf("decoding look_style: %w", err)
+		}
 	}
 	if startLat.Valid {
 		v := startLat.Float64

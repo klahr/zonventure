@@ -172,14 +172,14 @@ func (h *Handlers) cloneAdventure(ctx context.Context, sourceSlug, newSlug strin
 		INSERT INTO adventures(
 			slug, title, description, author, intro_text, outro_text,
 			accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
-			font, heading_font, corners, cards, card_outline, brief,
+			font, heading_font, corners, cards, card_outline, backdrop, look_style, brief,
 			org_id, created_by_user_id, published, language,
 			forked_from_slug,
 			avatar_mime_type, avatar_size_bytes, avatar_content)
 		SELECT
 			$1, $2, description, author, intro_text, outro_text,
 			accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
-			font, heading_font, corners, cards, card_outline, brief,
+			font, heading_font, corners, cards, card_outline, backdrop, look_style, brief,
 			$3, $4, 0, language,
 			slug,
 			avatar_mime_type, avatar_size_bytes, avatar_content
@@ -199,8 +199,36 @@ func (h *Handlers) cloneAdventure(ctx context.Context, sourceSlug, newSlug strin
 	if err := cloneGraph(ctx, tx, sourceAdvID, newAdvID, byUserID); err != nil {
 		return err
 	}
+	if err := clonePicture(ctx, tx, sourceAdvID, newAdvID, byUserID); err != nil {
+		return err
+	}
 
 	return tx.Commit()
+}
+
+// clonePicture copies the image of the source's own look, when that is
+// a picture, and points the copy's backdrop at its own copy of it: the
+// graph's media are copied with the graph, but the look is not in it.
+func clonePicture(ctx context.Context, tx *sql.Tx, sourceAdvID, newAdvID, byUserID int64) error {
+	var id int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE((backdrop->>'media')::bigint, 0) FROM adventures
+		WHERE id = $1 AND backdrop->>'kind' = 'picture'
+	`, sourceAdvID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && id == 0 {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load picture: %w", err)
+	}
+	idMap, err := copyGraphMedia(ctx, tx, sourceAdvID, newAdvID, byUserID, []int64{id})
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE adventures SET backdrop = jsonb_set(backdrop, '{media}', to_jsonb($1::bigint)) WHERE id = $2`, idMap[id], newAdvID); err != nil {
+		return fmt.Errorf("point picture: %w", err)
+	}
+	return nil
 }
 
 // cloneGraph copies the source's published graph and draft, with the

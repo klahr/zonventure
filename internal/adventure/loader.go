@@ -10,6 +10,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+
+	"github.com/klahr/zonventure/internal/graph/look"
 )
 
 // Adventure is an in-memory representation ready to be handed to handlers.
@@ -58,59 +60,24 @@ type Meta struct {
 	OutroText string
 }
 
-// Colors is the optional per-adventure brand palette. Any field left at
-// the zero value means "fall back to the default theme". Values are stored
-// as "#rrggbb" strings so they paste straight into CSS.
-type Colors struct {
-	Accent          string `json:"accent,omitempty"`
-	AccentSecondary string `json:"accent_secondary,omitempty"`
-	Background      string `json:"background,omitempty"`
-	Text            string `json:"text,omitempty"`
-	// SubmitBackground paints the sticky answer dock at the bottom of
-	// /play. Independent of Background so a brand can keep a neutral
-	// page body and still have a contrasting brand panel hosting the
-	// submit / scan buttons. The play UI also reuses this value as
-	// the buttons' text colour, producing the "punched-through"
-	// effect the customisation copy describes.
-	SubmitBackground string `json:"submit_bg,omitempty"`
-	// Font is one of Fonts by key; empty is the default typeface.
-	Font string `json:"font,omitempty"`
-	// HeadingFont sets titles apart from body text, from the same list;
-	// empty follows Font.
-	HeadingFont string `json:"heading_font,omitempty"`
-	// Corners is one of Corners; empty is "rounded".
-	Corners string `json:"corners,omitempty"`
-	// Cards is one of Cards; empty is "raised".
-	Cards string `json:"cards,omitempty"`
-	// CardOutline draws a clear line round cards, raised or flat.
-	CardOutline bool `json:"card_outline,omitempty"`
-}
+// Colors is the adventure's look: its palette, typefaces, shapes and
+// backdrop. It lives in the graph domain (look.Look) because a theme
+// saved in a graph is the same look; these names keep the adventure's
+// callers unchanged.
+type Colors = look.Look
 
-// Corners are the corner styles a theme may pick: pills and round cards,
-// small radii, or square. Cards are how panels stand off the page: a
-// shadow, or a tinted fill.
+// Backdrop is a pattern behind the cards: see look.Backdrop.
+type Backdrop = look.Backdrop
+
+// Style is a look's finer choices: see look.Style.
+type Style = look.Style
+
+// The lists a look's choices come from: see package look.
 var (
-	Corners = map[string]bool{"rounded": true, "soft": true, "sharp": true}
-	Cards   = map[string]bool{"raised": true, "flat": true}
+	Corners = look.Corners
+	Cards   = look.Cards
+	Fonts   = look.Fonts
 )
-
-// Fonts are the typefaces an adventure may choose, by key. A short list
-// rather than any font name: the player loads them from Google Fonts,
-// which the page's security policy allows and nothing else, and each has
-// been checked to stay legible outdoors on a phone.
-var Fonts = map[string]string{
-	"inconsolata":   "Inconsolata",   // terminal — the Obscurium mysteries
-	"special-elite": "Special Elite", // typewriter
-	"merriweather":  "Merriweather",  // book
-	"fredoka":       "Fredoka",       // playful
-}
-
-// Empty reports whether no colours are set — handy for skipping the field
-// entirely in JSON responses.
-func (c Colors) Empty() bool {
-	return c.Accent == "" && c.AccentSecondary == "" && c.Background == "" && c.Text == "" && c.SubmitBackground == "" && c.Font == "" &&
-		c.HeadingFont == "" && c.Corners == "" && c.Cards == "" && !c.CardOutline
-}
 
 // Library is the concurrency-safe lookup surface for adventures. Queries
 // go straight to the database — simpler than caching, and the data is

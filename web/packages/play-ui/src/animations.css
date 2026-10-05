@@ -1,0 +1,158 @@
+/* The player's own animations: a block's entrance and attention effects
+ * (animations.ts names them as animate.style does) and the ways a step
+ * may enter. Written for Zonventure; under reduced motion play-ui.css
+ * turns every animation inside .pv off. */
+
+/* --- Entrances ------------------------------------------------------------ */
+
+@keyframes pv-a-fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pv-a-fadeInUp { from { opacity: 0; transform: translate3d(0, 2rem, 0); } to { opacity: 1; transform: none; } }
+@keyframes pv-a-fadeInDown { from { opacity: 0; transform: translate3d(0, -2rem, 0); } to { opacity: 1; transform: none; } }
+@keyframes pv-a-slideInLeft { from { transform: translate3d(-120%, 0, 0); } to { transform: none; } }
+@keyframes pv-a-slideInRight { from { transform: translate3d(120%, 0, 0); } to { transform: none; } }
+@keyframes pv-a-zoomIn {
+  from { opacity: 0; transform: scale3d(0.3, 0.3, 0.3); }
+  60% { opacity: 1; }
+  to { transform: none; }
+}
+@keyframes pv-a-bounceIn {
+  0%, 25%, 50%, 70%, 85%, 100% { animation-timing-function: cubic-bezier(0.2, 0.6, 0.35, 1); }
+  0% { opacity: 0; transform: scale3d(0.3, 0.3, 0.3); }
+  25% { transform: scale3d(1.12, 1.12, 1.12); }
+  50% { transform: scale3d(0.92, 0.92, 0.92); }
+  70% { opacity: 1; transform: scale3d(1.04, 1.04, 1.04); }
+  85% { transform: scale3d(0.98, 0.98, 0.98); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes pv-a-flipInX {
+  0% { opacity: 0; transform: perspective(500px) rotateX(85deg); animation-timing-function: ease-in; }
+  45% { transform: perspective(500px) rotateX(-18deg); animation-timing-function: ease-in; }
+  65% { opacity: 1; transform: perspective(500px) rotateX(8deg); }
+  85% { transform: perspective(500px) rotateX(-4deg); }
+  100% { transform: perspective(500px); }
+}
+@keyframes pv-a-backInUp {
+  0% { opacity: 0.6; transform: translate3d(0, 60vh, 0) scale(0.7); }
+  75% { opacity: 0.6; transform: translate3d(0, 0, 0) scale(0.7); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes pv-a-lightSpeedInRight {
+  0% { opacity: 0; transform: translate3d(110%, 0, 0) skewX(-28deg); }
+  60% { opacity: 1; transform: skewX(18deg); }
+  80% { transform: skewX(-6deg); }
+  100% { transform: none; }
+}
+@keyframes pv-a-rollIn {
+  from { opacity: 0; transform: translate3d(-110%, 0, 0) rotate(-110deg); }
+  to { opacity: 1; transform: none; }
+}
+
+/* --- Attention ------------------------------------------------------------ */
+
+@keyframes pv-a-pulse { 0%, 100% { transform: none; } 50% { transform: scale3d(1.06, 1.06, 1.06); } }
+@keyframes pv-a-bounce {
+  0%, 22%, 55%, 85%, 100% { transform: none; animation-timing-function: cubic-bezier(0.2, 0.6, 0.35, 1); }
+  38%, 42% { transform: translate3d(0, -1.1rem, 0) scaleY(1.06); animation-timing-function: cubic-bezier(0.75, 0.05, 0.85, 0.06); }
+  70% { transform: translate3d(0, -0.5rem, 0) scaleY(1.03); animation-timing-function: cubic-bezier(0.75, 0.05, 0.85, 0.06); }
+  92% { transform: translate3d(0, -0.15rem, 0); }
+}
+@keyframes pv-a-shakeX {
+  0%, 100% { transform: none; }
+  10%, 30%, 50%, 70%, 90% { transform: translate3d(-0.5rem, 0, 0); }
+  20%, 40%, 60%, 80% { transform: translate3d(0.5rem, 0, 0); }
+}
+@keyframes pv-a-wobble {
+  0%, 100% { transform: none; }
+  15% { transform: translate3d(-12%, 0, 0) rotate(-4deg); }
+  30% { transform: translate3d(9%, 0, 0) rotate(3deg); }
+  45% { transform: translate3d(-6%, 0, 0) rotate(-2deg); }
+  60% { transform: translate3d(4%, 0, 0) rotate(1.5deg); }
+  75% { transform: translate3d(-2%, 0, 0) rotate(-0.5deg); }
+}
+@keyframes pv-a-tada {
+  0%, 100% { transform: none; }
+  10%, 20% { transform: scale3d(0.92, 0.92, 0.92) rotate(-3deg); }
+  30%, 50%, 70%, 90% { transform: scale3d(1.08, 1.08, 1.08) rotate(3deg); }
+  40%, 60%, 80% { transform: scale3d(1.08, 1.08, 1.08) rotate(-3deg); }
+}
+@keyframes pv-a-heartBeat {
+  0%, 28%, 70%, 100% { transform: none; }
+  14%, 42% { transform: scale(1.22); }
+}
+@keyframes pv-a-swing {
+  0% { transform-origin: top center; transform: none; }
+  20% { transform-origin: top center; transform: rotate(12deg); }
+  40% { transform-origin: top center; transform: rotate(-8deg); }
+  60% { transform-origin: top center; transform: rotate(4deg); }
+  80% { transform-origin: top center; transform: rotate(-3deg); }
+  100% { transform-origin: top center; transform: none; }
+}
+@keyframes pv-a-rubberBand {
+  0%, 100% { transform: none; }
+  30% { transform: scale3d(1.2, 0.8, 1); }
+  40% { transform: scale3d(0.8, 1.2, 1); }
+  50% { transform: scale3d(1.12, 0.88, 1); }
+  65% { transform: scale3d(0.96, 1.04, 1); }
+  75% { transform: scale3d(1.03, 0.97, 1); }
+}
+@keyframes pv-a-jello {
+  0%, 11%, 100% { transform: none; }
+  22% { transform: skew(-11deg, -11deg); }
+  33% { transform: skew(5.5deg, 5.5deg); }
+  44% { transform: skew(-2.8deg, -2.8deg); }
+  55% { transform: skew(1.4deg, 1.4deg); }
+  66% { transform: skew(-0.7deg, -0.7deg); }
+  77% { transform: skew(0.35deg, 0.35deg); }
+}
+@keyframes pv-a-flash { 0%, 50%, 100% { opacity: 1; } 25%, 75% { opacity: 0.15; } }
+@keyframes pv-a-headShake {
+  0%, 50%, 100% { transform: none; }
+  7% { transform: translateX(-0.4rem) rotateY(-9deg); }
+  19% { transform: translateX(0.3rem) rotateY(7deg); }
+  31% { transform: translateX(-0.2rem) rotateY(-5deg); }
+  43% { transform: translateX(0.1rem) rotateY(3deg); }
+}
+
+/* A block that moves keeps its place in the flow; only its picture moves. */
+.pv-anim { min-width: 0; }
+
+/* --- Step transitions (a look's style.transition) --------------------------- */
+
+/* A chosen transition moves the whole step, so its pieces stop rising one by one. */
+.pv-step.is-entered[data-transition] > :not(.pv-dock):not(.pv-anim) { animation: none; }
+.pv-step.is-entered[data-transition="fade"] { animation: pv-t-fade 0.5s ease-out both; }
+.pv-step.is-entered[data-transition="slide"] { animation: pv-t-slide 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.pv-step.is-entered[data-transition="zoom"] { animation: pv-t-zoom 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.pv-step.is-entered[data-transition="flip"] { animation: pv-t-flip 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.pv-step.is-entered[data-transition="pop"] { animation: pv-t-pop 0.5s cubic-bezier(0.2, 0.6, 0.35, 1) both; }
+@keyframes pv-t-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pv-t-slide { from { opacity: 0; transform: translate3d(2.5rem, 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes pv-t-zoom { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: none; } }
+@keyframes pv-t-flip { from { opacity: 0; transform: perspective(900px) rotateY(-60deg); } to { opacity: 1; transform: none; } }
+/* --- Paired exits: the step that was here leaves as the next enters ----------- */
+
+/* Clipped, not scrolled: a step sliding out must not widen the page. */
+.pv.is-leaving { position: relative; overflow-x: clip; }
+.pv-leave { position: absolute; left: var(--pv-pad); right: var(--pv-pad); z-index: 1; pointer-events: none; }
+/* More specific than play-ui.css's hold on a step not yet entered. */
+.pv-leave > .pv-step.pv-step--leaving { opacity: 1; }
+.pv-leave * { animation: none !important; transition: none !important; }
+.pv-leave .pv-dock { display: none; }
+/* The new step waits a beat, so the two never read on top of each other. */
+.pv.is-leaving > .pv-step.is-entered[data-transition] { animation-delay: 0.15s; }
+.pv-leave[data-transition="fade"] { animation: pv-x-fade 0.25s ease-in both; }
+.pv-leave[data-transition="slide"] { animation: pv-x-slide 0.25s ease-in both; }
+.pv-leave[data-transition="zoom"] { animation: pv-x-zoom 0.25s ease-in both; }
+.pv-leave[data-transition="flip"] { animation: pv-x-flip 0.3s ease-in both; }
+.pv-leave[data-transition="pop"] { animation: pv-x-pop 0.2s ease-in both; }
+@keyframes pv-x-fade { to { opacity: 0; } }
+@keyframes pv-x-slide { to { opacity: 0; transform: translate3d(-2.5rem, 0, 0); } }
+@keyframes pv-x-zoom { to { opacity: 0; transform: scale(1.06); } }
+@keyframes pv-x-flip { to { opacity: 0; transform: perspective(900px) rotateY(60deg); } }
+@keyframes pv-x-pop { to { opacity: 0; transform: scale(0.85); } }
+
+@keyframes pv-t-pop {
+  0% { opacity: 0; transform: scale(0.8); }
+  70% { opacity: 1; transform: scale(1.03); }
+  100% { transform: none; }
+}

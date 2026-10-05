@@ -91,7 +91,20 @@ export type PlayBlock = PlayBlockBody & {
   id: string;
   locked?: boolean;
   place?: PlayZone;
+  /** How the block moves as it appears, or to catch the eye. */
+  animation?: BlockAnimation;
 };
+
+/** internal/graph: Animation. Names are the player's own effects (play-ui/animations.ts). */
+export interface BlockAnimation {
+  entrance?: string;
+  attention?: string;
+  /** Seconds before the block appears: 0–10. */
+  delay?: number;
+  /** Seconds per run of an effect: 0.2–5; absent is 1. */
+  duration?: number;
+  repeat?: "three" | "forever";
+}
 
 export type PlayBlockBody =
   | { kind: "text"; text: string }
@@ -327,6 +340,8 @@ export interface View {
   /** The adventure keeps a journal, so its button shows even while empty. */
   has_journal?: boolean;
   theme?: string;
+  /** The look of a saved theme `theme` names; it replaces the adventure's own. Absent for a built-in theme. */
+  theme_look?: Brand;
   now: string;
 }
 
@@ -425,6 +440,68 @@ export interface Brand {
   cards?: "raised" | "flat";
   /** A clear line round cards, raised or flat. */
   card_outline?: boolean;
+  /** A pattern behind the cards; none is the plain page colour. */
+  backdrop?: Backdrop;
+  /** The look's finer choices; none is the defaults. */
+  style?: LookStyle;
+}
+
+/** internal/graph/look: Style — every field optional, absent is the default. */
+export interface LookStyle {
+  /** 0.2–1: how solid the cards are, so the backdrop can show through. Absent is solid. */
+  card_opacity?: number;
+  /** Frost what shows through a see-through card. */
+  card_blur?: boolean;
+  /** How one step gives way to the next; absent is the player's gentle rise. */
+  transition?: "none" | "fade" | "slide" | "zoom" | "flip" | "pop";
+  /** Buttons: absent is a pill, filled with the accent's gradient, normal size. */
+  button_shape?: "rounded" | "square";
+  button_fill?: "gradient" | "flat" | "outline" | "soft";
+  button_size?: "small" | "large";
+  /** The answer bar: absent is across the bottom. */
+  dock?: "floating";
+  /** 0.85–1.4: text and titles together; absent is 1. */
+  text_scale?: number;
+  /** Step titles: absent is plain. */
+  title_style?: "ribbon" | "underline" | "shadow";
+  title_upper?: boolean;
+}
+
+/** internal/adventure: BackdropKinds. */
+export type BackdropKind = "dots" | "stripes" | "checks" | "grid" | "sunburst" | "waves" | "zigzag" | "confetti" | "gradient" | "spots" | "horizon" | "lined" | "picture";
+
+/** internal/graph/look: Spot — a colour spot, in percent across and down; no colour follows the palette. */
+export interface BackdropSpot {
+  x: number;
+  y: number;
+  color?: string;
+}
+
+/**
+ * internal/adventure: Backdrop — a pattern's kind and settings, never
+ * CSS; play-ui/backdrop.ts paints it. An empty colour follows the
+ * palette: color the text colour, color2 the accent.
+ */
+export interface Backdrop {
+  kind: BackdropKind;
+  color?: string;
+  color2?: string;
+  /** 0.02–0.6; up to 1 for spots. */
+  opacity: number;
+  /** One repeat, in CSS pixels: 8–200; for spots, how far each spreads. */
+  scale: number;
+  /** Degrees, 0–359, for the kinds with a direction. */
+  angle?: number;
+  fade?: boolean;
+  fixed?: boolean;
+  motion?: boolean;
+  /** The colour spots of a "spots" backdrop: 1–12. */
+  points?: BackdropSpot[];
+  /** Confetti's or stripes' colours in turn (up to 8), in place of color and color2. */
+  colors?: string[];
+  /** A picture backdrop's image (an adventure media id) and its blur, in CSS pixels (0–20). */
+  media?: number;
+  blur?: number;
 }
 
 // --- player ---------------------------------------------------------------

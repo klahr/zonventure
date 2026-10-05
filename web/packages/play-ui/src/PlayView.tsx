@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { play } from "@zonventure/api";
 import { play as playApi } from "@zonventure/api";
 import { Markdown } from "./Markdown.tsx";
@@ -14,7 +14,9 @@ import type { BlockContext, Motion } from "./blocks/context.ts";
 import type { MapPoint } from "./StaticMap.tsx";
 import { QrButton, canScan } from "./Qr.tsx";
 import { brandVars, isHex, loadFont, withTheme } from "./brand.ts";
+import { hasPicture } from "./backdrop.ts";
 import "./fonts/adventure-fonts.css";
+import "./animations.css";
 import { formatSeconds, secondsUntil, useEngineClock } from "./clock.ts";
 import { english, type Feedback, type Translate } from "./feedback.ts";
 
@@ -103,12 +105,39 @@ export interface PlayViewProps {
 
 export function PlayView(props: PlayViewProps) {
   const { view } = props;
-  const brand = useMemo(() => withTheme(props.brand, view.theme), [props.brand, view.theme]);
+  const brand = useMemo(() => withTheme(props.brand, view.theme, view.theme_look), [props.brand, view.theme, view.theme_look]);
   const t = props.t ?? english;
   const live = props.live ?? true;
   const now = useEngineClock(view.now, live);
   const burst = useBurst(props.feedback ?? null);
   const [hintsOpen, setHintsOpen] = useState(false);
+
+  // Paired exits: with a step transition, the step that was here leaves
+  // as the next one enters. What leaves is a copy of its page, kept from
+  // the last render, never its live parts, so nothing in it plays again.
+  const transition = brand?.style?.transition;
+  const moves = !!transition && transition !== "none";
+  const rootRef = useRef<HTMLDivElement>(null);
+  const stepRef = useRef<HTMLDivElement>(null);
+  const kept = useRef<{ node: string | undefined; page: HTMLElement | null; top: number }>({ node: view.node, page: null, top: 0 });
+  const [leaving, setLeaving] = useState<{ page: HTMLElement; top: number; id: number } | null>(null);
+  useLayoutEffect(() => {
+    const was = kept.current;
+    if (was.page && was.node !== view.node && moves && burst?.kind !== "celebrate" && !prefersReducedMotion()) {
+      setLeaving({ page: was.page, top: was.top, id: Date.now() });
+    }
+    const el = stepRef.current;
+    const root = rootRef.current;
+    kept.current =
+      el && root && moves
+        ? { node: view.node, page: el.cloneNode(true) as HTMLElement, top: el.getBoundingClientRect().top - root.getBoundingClientRect().top }
+        : { node: view.node, page: null, top: 0 };
+  });
+  useEffect(() => {
+    if (!leaving) return;
+    const id = setTimeout(() => setLeaving(null), 300);
+    return () => clearTimeout(id);
+  }, [leaving]);
   const [bagOpen, setBagOpen] = useState(false);
   const [journalOpen, setJournalOpen] = useState(false);
   const storageKey = props.storageKey ?? "local";
@@ -159,7 +188,8 @@ export function PlayView(props: PlayViewProps) {
   const readyHints = view.next_hint && secondsUntil(view.next_hint.available_at, now) <= 0 ? 1 : 0;
 
   return (
-    <div className={`pv pv--${kind ?? "none"}` + (isHex(brand?.submit_bg) ? " pv--dock-brand" : "")} data-theme="light" style={style}>
+    <div ref={rootRef} className={`pv pv--${kind ?? "none"}` + (isHex(brand?.submit_bg) ? " pv--dock-brand" : "") + (leaving ? " is-leaving" : "") + (hasPicture(brand) ? " pv--photo" : "")} data-theme="light" style={style} {...styleAttrs(brand?.style)}>
+      {hasPicture(brand) && <div className="pv-photo" aria-hidden />}
       <header className="pv-head">
         {!view.hide_score && (
           <div className="pv-score" aria-label={t("Score")}>
@@ -226,9 +256,15 @@ export function PlayView(props: PlayViewProps) {
 
       {/* Keyed on the node, so each step plays its entrance — held back
           while a celebration covers the screen, then released. */}
-      <div key={view.node ?? "none"} className={"pv-step" + (burst?.kind === "celebrate" ? "" : " is-entered")}>
+      <div
+        key={view.node ?? "none"}
+        ref={stepRef}
+        className={"pv-step" + (burst?.kind === "celebrate" ? "" : " is-entered")}
+        {...(transition ? { "data-transition": transition } : {})}
+      >
         {body}
       </div>
+      {leaving && transition && <Leaving key={leaving.id} page={leaving.page} top={leaving.top} transition={transition} />}
 
       {hintsOpen && <HintSheet {...step} onClose={() => setHintsOpen(false)} />}
       {bagOpen && (
@@ -285,6 +321,43 @@ function useBurst(feedback: Feedback | null): Burst | null {
     return () => clearTimeout(id);
   }, [feedback]);
   return burst;
+}
+
+/**
+ * A look's styles as data attributes play-ui.css reads: buttons, the
+ * answer bar and titles. Only the names in these lists ever reach the
+ * page; anything else from a newer server is left off.
+ */
+function styleAttrs(st: play.LookStyle | undefined): Record<string, string> {
+  if (!st) return {};
+  const out: Record<string, string> = {};
+  const pick = (attr: string, v: string | undefined, list: readonly string[]) => {
+    if (v && list.includes(v)) out[attr] = v;
+  };
+  pick("data-btn-fill", st.button_fill, ["gradient", "flat", "outline", "soft"]);
+  pick("data-btn-size", st.button_size, ["small", "large"]);
+  pick("data-dock", st.dock, ["floating"]);
+  pick("data-titles", st.title_style, ["ribbon", "underline", "shadow"]);
+  if (st.title_upper) out["data-titles-upper"] = "";
+  return out;
+}
+
+/**
+ * The step that was here, leaving: its copied page, stilled, under a
+ * layer that plays the exit matching the step transition. Not something
+ * to read or press — it is gone in a quarter of a second.
+ */
+function Leaving({ page, top, transition }: { page: HTMLElement; top: number; transition: string }) {
+  const layer = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const copy = page.cloneNode(true) as HTMLElement;
+    copy.classList.remove("is-entered");
+    copy.classList.add("pv-step--leaving");
+    copy.removeAttribute("data-transition");
+    for (const el of copy.querySelectorAll("[id]")) el.removeAttribute("id");
+    layer.current?.replaceChildren(copy);
+  }, [page]);
+  return <div ref={layer} className="pv-leave" data-transition={transition} style={{ top }} aria-hidden inert />;
 }
 
 function prefersReducedMotion(): boolean {

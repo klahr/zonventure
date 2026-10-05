@@ -297,15 +297,16 @@ func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
 		accent, second, bg, ink, dock sql.NullString
 		lat, lng, radius              sql.NullFloat64
 		label                         sql.NullString
+		backdrop, style               []byte
 	)
 	err := db.QueryRowContext(ctx, `
 		SELECT title, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font,
-		       heading_font, corners, cards, card_outline,
+		       heading_font, corners, cards, card_outline, backdrop, look_style,
 		       start_lat, start_lng, start_label, start_radius_m, (cheat_password IS NOT NULL)
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&l.title, &l.intro, &l.outro, &accent, &second, &bg, &ink, &dock, &l.brand.Font,
-		&l.brand.HeadingFont, &l.brand.Corners, &l.brand.Cards, &l.brand.CardOutline, &lat, &lng, &label, &radius, &l.cheat)
+		&l.brand.HeadingFont, &l.brand.Corners, &l.brand.Cards, &l.brand.CardOutline, &backdrop, &style, &lat, &lng, &label, &radius, &l.cheat)
 	if errors.Is(err, sql.ErrNoRows) {
 		return look{}, nil
 	}
@@ -313,6 +314,18 @@ func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
 		Accent: accent.String, AccentSecondary: second.String, Background: bg.String,
 		Text: ink.String, SubmitBackground: dock.String, Font: l.brand.Font,
 		HeadingFont: l.brand.HeadingFont, Corners: l.brand.Corners, Cards: l.brand.Cards, CardOutline: l.brand.CardOutline,
+	}
+	if backdrop != nil {
+		var b adventure.Backdrop
+		if json.Unmarshal(backdrop, &b) == nil {
+			l.brand.Backdrop = &b
+		}
+	}
+	if style != nil {
+		var s adventure.Style
+		if json.Unmarshal(style, &s) == nil {
+			l.brand.Style = &s
+		}
 	}
 	if lat.Valid && lng.Valid {
 		l.start = &PlayStart{Lat: lat.Float64, Lng: lng.Float64, Label: label.String, RadiusM: radius.Float64}

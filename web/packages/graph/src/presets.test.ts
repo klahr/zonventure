@@ -74,6 +74,16 @@ test("search ranks label prefixes first and requires every word", () => {
   assert.equal(scorePreset(PRESETS[0]!, "   "), 1, "an empty query matches everything");
 });
 
+test("search also matches the preset in the author's language, letters like å ä ö included", () => {
+  const sv: Record<string, string> = { "Change the theme": "Byt tema", "theme style colour color mood skin": "tema stil färg utseende stämning" };
+  const tr = (s: string) => sv[s] ?? s;
+  const theme = PRESETS.find((p) => p.id === "effect-theme")!;
+  assert.equal(scorePreset(theme, "tema"), 0, "without a translation, Swedish words do not match");
+  assert.ok(scorePreset(theme, "tema", tr) >= 80, "a word of the translated label");
+  assert.ok(scorePreset(theme, "färg", tr) > 0, "a translated keyword with ä");
+  assert.ok(scorePreset(theme, "theme", tr) > 0, "English still matches");
+});
+
 test("existing targets exclude the start and the source itself", () => {
   const g = emptyGraph();
   const from = { side: "output" as const, node: g.nodes[0]!, port: "out" };

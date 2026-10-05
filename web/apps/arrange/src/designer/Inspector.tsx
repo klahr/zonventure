@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 import type {
   Branch,
   EffectConfig,
@@ -35,6 +35,7 @@ import { Dialog } from "../ui/dialogs.tsx";
 import { EmailPreview } from "../ui/emailPreview.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
+import { OpenThemes } from "./ThemesModal.tsx";
 import { BlocksEditor } from "./BlocksEditor.tsx";
 import { Field, ZoneSelect, type ZoneHere } from "./fields.tsx";
 import { AlertTriangle, ChevronLeft, ChevronRight, Eye, Plus, Trash2, X } from "lucide-react";
@@ -1484,6 +1485,8 @@ function nextBranchPort(taken: string[]): string {
 
 function EffectForm({ cfg, graph, onChange }: { cfg: EffectConfig; graph: Graph; onChange: (c: EffectConfig) => void }) {
   const t = useT();
+  const openThemes = useContext(OpenThemes);
+  const saved = graph.themes ?? [];
   return (
     <>
       <Field label={t.t("Does")}>
@@ -1534,12 +1537,26 @@ function EffectForm({ cfg, graph, onChange }: { cfg: EffectConfig; graph: Graph;
           <select className="field__input" value={cfg.theme ?? ""} onChange={(e) => onChange(withOptional({ ...cfg }, "theme", e.target.value || undefined))}>
             <option value="" disabled>{t.t("— pick one —")}</option>
             <option value="default">{t.t("The adventure's own look")}</option>
-            {Object.keys(THEMES).map((k) => (
-              <option key={k} value={k}>{({ dark: t.t("Dark"), night: t.t("Night"), alarm: t.t("Alarm"), parchment: t.t("Parchment") } as Record<string, string>)[k] ?? k}</option>
-            ))}
-            {cfg.theme && !THEMES[cfg.theme] && <option value={cfg.theme}>{cfg.theme}</option>}
+            {saved.length > 0 && (
+              <optgroup label={t.t("Your themes")}>
+                {saved.map((th) => (
+                  <option key={th.slug} value={th.slug}>{th.name || th.slug}</option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label={t.t("Built in")}>
+              {Object.keys(THEMES).map((k) => (
+                <option key={k} value={k}>{({ dark: t.t("Dark"), night: t.t("Night"), alarm: t.t("Alarm"), parchment: t.t("Parchment") } as Record<string, string>)[k] ?? k}</option>
+              ))}
+            </optgroup>
+            {cfg.theme && cfg.theme !== "default" && !THEMES[cfg.theme] && !saved.some((th) => th.slug === cfg.theme) && <option value={cfg.theme}>{cfg.theme}</option>}
           </select>
         </Field>
+      )}
+      {cfg.kind === "theme" && openThemes && (
+        <button type="button" className="btn btn--ghost btn--sm" onClick={() => openThemes(saved.some((th) => th.slug === cfg.theme) ? cfg.theme : undefined)}>
+          {saved.some((th) => th.slug === cfg.theme) ? t.t("Edit this theme…") : t.t("Make or edit themes…")}
+        </button>
       )}
     </>
   );

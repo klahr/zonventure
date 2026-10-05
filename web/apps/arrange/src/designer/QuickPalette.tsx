@@ -146,7 +146,7 @@ export function QuickPalette({ graph, from, choosePort = false, at, bounds, onPi
     }
 
     const scored = presets
-      .map((p) => ({ row: presetRow(p, "all"), s: scorePreset(p, q) }))
+      .map((p) => ({ row: presetRow(p, "all"), s: scorePreset(p, q, (s) => t.t(s)) }))
       .filter((x) => x.s > 0)
       .sort((a, b) => b.s - a.s)
       .map((x) => x.row);
