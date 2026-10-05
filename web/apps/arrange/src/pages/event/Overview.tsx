@@ -270,7 +270,8 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
       </Field>
       <Row>
         <Button variant="primary" size="sm" loading={busy} onClick={() => void save()}>{t.t("Save")}</Button>
-        <a href="/store" target="_blank" rel="noopener">{t.t("Open store ↗")}</a>
+        {/* Its own page in the organisation's store; the short link leads there. */}
+        <a href={`/store/event/${event.id}`} target="_blank" rel="noopener">{t.t("Open store ↗")}</a>
       </Row>
     </Card>
   );

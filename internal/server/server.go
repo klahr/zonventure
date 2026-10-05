@@ -42,7 +42,7 @@ import (
 	"github.com/klahr/zonventure/internal/ws"
 )
 
-//go:embed web/play-sw.js web/play.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/og-image.png web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/redeem.html web/org-landing.html web/topbar.css web/topbar.js web/page-tokens.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/leaflet/leaflet.js web/assets/leaflet/leaflet.css web/assets/leaflet/images/*.png
+//go:embed web/play-sw.js web/play.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/og-image.png web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/redeem.html web/topbar.css web/topbar.js web/page-tokens.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/leaflet/leaflet.js web/assets/leaflet/leaflet.css web/assets/leaflet/images/*.png
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -61,6 +61,10 @@ type Config struct {
 	// works for dev but not when running behind a proxy that doesn't
 	// forward Host correctly.
 	PublicURL string
+	// HomeOrg is the slug of the organisation the site is: /store sends
+	// visitors to its page, and the landing page shows its adventures.
+	// Empty, /store is not found and the landing page lists none.
+	HomeOrg string
 	// Legal is the operator-supplied content for /privacy and /terms.
 	// Unset fields render "[set ZV_*]" so missing config is obvious
 	// to an operator visiting the page in dev.

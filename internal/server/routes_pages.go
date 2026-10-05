@@ -119,7 +119,7 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 			http.Redirect(w, req, "/arrange", http.StatusFound)
 			return
 		}
-		renderLandingPage(w, req, cfg.PublicURL, cfg.Legal.CompanyName)
+		renderLandingPage(w, req, cfg.PublicURL, cfg.Legal.CompanyName, cfg.HomeOrg)
 	})
 
 	// Extra pages from ZV_WEB_OVERRIDE_DIR (/create → create.html),

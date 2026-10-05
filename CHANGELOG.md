@@ -11,6 +11,20 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — one page per organisation, no shared store
+
+- `/o/{slug}` is an organisation's one page: who it is and every
+  adventure it sells, where the old landing page only linked onward.
+  `/o/{slug}/store` redirects to it, keeping the query (a buyer back
+  from checkout); checkout now returns buyers there directly. Event
+  pages stay at `/o/{slug}/store/event/{id}`, and their breadcrumb leads
+  to the organisation's page (`{{ORG_PATH}}`).
+- There is no store of every organisation's adventures any more: the
+  new setting `ZV_HOME_ORG` names the site's own organisation, which
+  `/store` redirects to and the landing page lists (`{{HOME_STORE_API}}`).
+  Unset, `/store` is not found. `GET /api/store/items` and the
+  `org-landing.html` template are gone; the sitemap lists `/o/{slug}`.
+
 ## [0.16.0] - 2026-10-05
 
 ### Added — the adventure's icon in the store

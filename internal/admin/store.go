@@ -290,7 +290,7 @@ func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
 	}
 
 	productName := storeProductName(eventName, advTitle, advSlug, teamSize)
-	storeBase := "/o/" + slug + "/store"
+	storeBase := "/o/" + slug
 	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, productName, currency, priceCents.Int64, email, connectedAccountID, applicationFee, storeBase)
 	if err != nil {
 		_, _ = h.DB.ExecContext(r.Context(),

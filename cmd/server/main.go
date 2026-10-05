@@ -278,6 +278,7 @@ func main() {
 		SecureCookie: *secureCookie,
 		Mailer:       mail,
 		PublicURL:    *publicURL,
+		HomeOrg:      strings.TrimSpace(os.Getenv("ZV_HOME_ORG")),
 		Components:   describeComponents(mail, os.Getenv("ZV_STRIPE_SECRET_KEY"), os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"), os.Getenv("ZV_METRICS_ADDR"), os.Getenv("ZV_PAYMENTS_PROVIDER"), totpKey != nil),
 		TOTPKey:      totpKey,
 		Legal: server.LegalConfig{

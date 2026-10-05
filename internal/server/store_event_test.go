@@ -249,7 +249,9 @@ func TestStoreShowsAdventureIcon(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	(&public.Handlers{DB: db, Lib: adventure.New(db)}).StoreList(rec, httptest.NewRequest("GET", "/api/store/items", nil))
+	lr := chi.NewRouter()
+	lr.Get("/api/o/{slug}/store/items", (&public.Handlers{DB: db, Lib: adventure.New(db)}).StoreListByOrg)
+	lr.ServeHTTP(rec, httptest.NewRequest("GET", "/api/o/acme/store/items", nil))
 	var list struct {
 		Items []public.StoreItemDTO `json:"items"`
 	}

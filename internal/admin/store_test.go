@@ -56,10 +56,10 @@ func TestStoreList_Filtering(t *testing.T) {
 
 	publicH := &public.Handlers{DB: db, Lib: adventure.New(db)}
 	r := chi.NewRouter()
-	r.Get("/api/store/items", publicH.StoreList)
+	r.Get("/api/o/{slug}/store/items", publicH.StoreListByOrg)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/api/store/items", nil)
+	req := httptest.NewRequest("GET", "/api/o/acme/store/items", nil)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())

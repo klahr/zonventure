@@ -203,6 +203,8 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{HAS_ICON}}", boolAttr(hasIcon)},
 		[2]string{"{{OG_IMAGE_URL}}", html.EscapeString(ogImage)},
 		[2]string{"{{EVENT_ID}}", strconv.FormatInt(id, 10)},
+		// The organisation's page: where the breadcrumb leads back to.
+		[2]string{"{{ORG_PATH}}", "/o/" + url.PathEscape(orgSlug)},
 		[2]string{"{{ADVENTURE_SLUG}}", html.EscapeString(advSlug)},
 		[2]string{"{{CANONICAL_URL}}", html.EscapeString(buildAbsoluteURL(publicURL, canonicalPath))},
 		[2]string{"{{STORE_API_BASE}}", apiBase},

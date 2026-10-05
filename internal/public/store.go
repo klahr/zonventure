@@ -122,23 +122,6 @@ func (h *Handlers) TicketTeamToken(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, resp)
 }
 
-// StoreList serves GET /api/store/items: the JSON catalogue of
-// public-for-sale events. Only events in 'running' or 'paused'
-// state with a non-NULL ticket_price_cents are returned. Results
-// are ordered by org name then event name so a multi-tenant
-// instance lists predictably.
-func (h *Handlers) StoreList(w http.ResponseWriter, r *http.Request) {
-	items, err := h.loadStoreItems(r.Context())
-	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "store list failed", err)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	httpx.JSON(w, http.StatusOK, struct {
-		Items []StoreItemDTO `json:"items"`
-	}{items})
-}
-
 // StoreEvent serves GET /api/store/items/{event_id}: a single store
 // listing fetched by event id, used by the buy page when the buyer
 // lands on a deep link. Returns 404 when the event is not currently
@@ -283,32 +266,13 @@ func (h *Handlers) storeItemRowFilter() string {
 	return storeItemRowFilterBase
 }
 
-func (h *Handlers) loadStoreItems(ctx context.Context) ([]StoreItemDTO, error) {
-	rows, err := h.DB.QueryContext(ctx,
-		storeItemSelect+h.storeItemRowFilter()+`
-		ORDER BY o.name, e.name, e.id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []StoreItemDTO
-	for rows.Next() {
-		item, err := scanStoreItem(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, item)
-	}
-	return out, rows.Err()
-}
-
 func (h *Handlers) loadStoreItem(ctx context.Context, eventID int64) (StoreItemDTO, error) {
 	row := h.DB.QueryRowContext(ctx,
 		storeItemSelect+h.storeItemRowFilter()+` AND e.id = $1`, eventID)
 	return scanStoreItem(row)
 }
 
-// loadStoreItemsByOrg is loadStoreItems scoped to a single org. The
+// loadStoreItemsByOrg lists one organisation's store items. The
 // extra `e.org_id = $1` predicate piggybacks on storeItemRowFilter so
 // the platform-fee + Stripe-Connect gates still apply (a self-host
 // org without Connect onboarding would still surface here because

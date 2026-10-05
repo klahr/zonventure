@@ -6,6 +6,7 @@ package server
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -64,7 +65,16 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		// Checkout session and lives on adminH because that's where
 		// the Stripe credentials are wired (mirrors the StripeWebhook
 		// admin/public split below).
-		r.Get("/store", renderStoreListingPage)
+		// /store is the site's own shop: its home organisation's page,
+		// or not found on a server that has none. There is no store of
+		// every organisation's adventures.
+		r.Get("/store", func(w http.ResponseWriter, req *http.Request) {
+			if cfg.HomeOrg == "" {
+				servePublicPage("web/404.html", http.StatusNotFound)(w, req)
+				return
+			}
+			redirectKeepingQuery(w, req, "/o/"+url.PathEscape(cfg.HomeOrg))
+		})
 		// Per-event detail page. Server-rendered (rather than SPA
 		// in JS) so social-media previewers, search crawlers, and
 		// AI agents see real OpenGraph metadata + the description
@@ -79,7 +89,6 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
 			redirectLegacyStoreEvent(w, req, cfg.DB)
 		})
-		r.Get("/api/store/items", publicH.StoreList)
 		r.Get("/api/store/items/{event_id}", publicH.StoreEvent)
 		r.Post("/api/store/buy", adminH.BuyTicket)
 		// Post-purchase handoff: the /store?paid=N&session_id=...
@@ -90,15 +99,16 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		// check; mismatch returns 404.
 		r.Get("/api/store/ticket/{purchase_id}/team-token", publicH.TicketTeamToken)
 
-		// Per-org public surfaces. /o/{slug}/store + /o/{slug}/store/event/{id}
-		// are the canonical buyer-facing URLs; the bare /store stays
-		// as a global discovery page. The matching API endpoints
-		// scope every query to the slug's org_id, refusing
-		// cross-org event ids with a 404.
-		r.Get("/o/{slug}", func(w http.ResponseWriter, req *http.Request) {
-			renderOrgLandingPage(w, req, cfg.DB, cfg.PublicURL)
-		})
+		// Per-org public surfaces. /o/{slug} is the organisation's page —
+		// who it is and all its adventures for sale — and
+		// /o/{slug}/store/event/{id} each one's page. The matching API
+		// endpoints scope every query to the slug's org_id, refusing
+		// cross-org event ids with a 404. /o/{slug}/store, the shop's
+		// old address, leads to the organisation's page.
 		r.Get("/o/{slug}/store", func(w http.ResponseWriter, req *http.Request) {
+			redirectKeepingQuery(w, req, "/o/"+url.PathEscape(chi.URLParam(req, "slug")))
+		})
+		r.Get("/o/{slug}", func(w http.ResponseWriter, req *http.Request) {
 			slug := chi.URLParam(req, "slug")
 			// Confirm the org exists before painting the chrome —
 			// otherwise a typo'd link renders a fully-formed page
@@ -112,7 +122,7 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 				http.Error(w, "lookup failed", http.StatusInternalServerError)
 				return
 			}
-			renderStoreListingPageScoped(w, req, &org)
+			renderOrgPage(w, req, org)
 		})
 		r.Get("/o/{slug}/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
 			renderStoreEventPage(w, req, cfg.DB, cfg.PublicURL)
@@ -147,4 +157,13 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		r.Get("/api/o/{slug}/redeem/options", adminH.RedeemOptionsByOrg)
 		r.Post("/api/o/{slug}/redeem", adminH.RedeemByOrg)
 	})
+}
+
+// redirectKeepingQuery sends a permanent redirect to path, keeping the
+// query string: a buyer back from checkout (?paid=…) must not lose it.
+func redirectKeepingQuery(w http.ResponseWriter, r *http.Request, path string) {
+	if r.URL.RawQuery != "" {
+		path += "?" + r.URL.RawQuery
+	}
+	http.Redirect(w, r, path, http.StatusMovedPermanently)
 }

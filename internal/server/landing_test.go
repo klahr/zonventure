@@ -18,7 +18,7 @@ func TestRenderLandingPage_NoLeftoverPlaceholders(t *testing.T) {
 		t.Run(lang, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/?lang="+lang, nil)
 			rec := httptest.NewRecorder()
-			renderLandingPage(rec, req, "https://zv.example.com", "")
+			renderLandingPage(rec, req, "https://zv.example.com", "", "")
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200", rec.Code)
@@ -87,16 +87,16 @@ func TestRenderTopbarPage_NoLeftoverPlaceholders(t *testing.T) {
 	}
 }
 
-// TestRenderStoreListingPage_NoLeftoverPlaceholders covers the
-// /store template substitution path. Both topbar chrome and the
-// store-specific body copy are merged in renderStoreListingPage,
-// so any unmapped {{KEY}} surfaces as a test failure.
-func TestRenderStoreListingPage_NoLeftoverPlaceholders(t *testing.T) {
+// TestRenderOrgPage_NoLeftoverPlaceholders covers the /o/{slug}
+// template substitution path. Topbar chrome, the store copy and the
+// organisation's own fields are merged in renderOrgPage, so any
+// unmapped {{KEY}} surfaces as a test failure.
+func TestRenderOrgPage_NoLeftoverPlaceholders(t *testing.T) {
 	for _, lang := range []string{"en", "sv"} {
 		t.Run(lang, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/store?lang="+lang, nil)
+			req := httptest.NewRequest("GET", "/o/acme?lang="+lang, nil)
 			rec := httptest.NewRecorder()
-			renderStoreListingPage(rec, req)
+			renderOrgPage(rec, req, orgProfile{Slug: "acme", Name: "Acme"})
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
@@ -165,7 +165,7 @@ func TestRenderLandingPage_SchemaOrganization(t *testing.T) {
 		t.Run(tc.company, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/?lang=en", nil)
 			rec := httptest.NewRecorder()
-			renderLandingPage(rec, req, "https://zv.example.com", tc.company)
+			renderLandingPage(rec, req, "https://zv.example.com", tc.company, "")
 			body := rec.Body.String()
 			start := strings.Index(body, `<script type="application/ld+json">`)
 			if start < 0 {

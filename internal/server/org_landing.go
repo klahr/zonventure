@@ -9,117 +9,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 )
 
-// renderOrgLandingPage serves /o/{slug} — a small server-rendered
-// "this is mindrace" page that introduces the org and links onward
-// to /o/{slug}/store. Mounted as the canonical entry point a
-// company puts on flyers / business cards. Falls back to 404 when
-// the slug doesn't resolve.
-//
-// The body is intentionally light: name, logo (if any), one-line
-// blurb pulled from the org's signup metadata if available, and
-// two buttons (browse store, contact). Phase-2 polish (per-org
-// hero copy, theme colors, custom CSS) is out of scope and
-// deliberately not surfaced here so the page degrades cleanly
-// for orgs that haven't customised anything yet.
-func renderOrgLandingPage(w http.ResponseWriter, r *http.Request, db *sql.DB, publicURL string) {
-	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
-	// A slug carrying a NUL byte or invalid UTF-8 can never match a
-	// stored org, but handed to Postgres it errors the query ("invalid
-	// byte sequence for encoding UTF8") rather than returning no rows —
-	// which would surface below as a noisy unauthenticated 500. Fail
-	// closed to 404 here, matching orgSlugExists on the /store path.
-	if slug == "" || strings.IndexByte(slug, 0) >= 0 || !utf8.ValidString(slug) {
-		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
-		return
-	}
-	org, err := loadOrgProfile(r.Context(), db, slug)
-	if errors.Is(err, sql.ErrNoRows) {
-		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
-		return
-	}
-	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
-		return
-	}
-
-	body, err := readWebFile("web/org-landing.html")
-	if err != nil {
-		http.Error(w, "template missing", http.StatusInternalServerError)
-		return
-	}
-
-	lang := resolveLang(w, r)
-	s := landingLocales[lang]
-	subs := topbarSubs(s, lang)
-	subs = append(subs, storeSubs(s)...)
-
-	// Tagline fallback: when the org hasn't set one, fall back to
-	// a localised default so OG description + meta description
-	// stay non-empty (search engines and social previewers treat
-	// empty descriptions as a quality signal).
-	taglineDisplay := strings.TrimSpace(org.Tagline.String)
-	if taglineDisplay == "" {
-		taglineDisplay = s.LandingTaglineFallback
-		if taglineDisplay == "" {
-			taglineDisplay = org.Name + " — adventures to play whenever you like"
-		}
-	}
-
-	// Website + OG image rendered server-side rather than via JS so a
-	// no-JS reader (and the OpenGraph previewer) sees them.
-	websiteBlock := ""
-	if siteURL := strings.TrimSpace(org.Website.String); siteURL != "" {
-		websiteBlock = fmt.Sprintf(
-			`<a class="btn ghost" href="%s" target="_blank" rel="noopener noreferrer">%s</a>`,
-			html.EscapeString(siteURL),
-			html.EscapeString(s.LandingVisitWebsite),
-		)
-	}
-	ogCoverTag := ""
-	if org.HasCover {
-		ogCoverTag = fmt.Sprintf(
-			`<meta property="og:image" content="%s">`,
-			html.EscapeString(buildAbsoluteURL(publicURL, "/org-cover/"+strconv.FormatInt(org.ID, 10))),
-		)
-	}
-
-	storePath := "/o/" + slug + "/store"
-	apiBase := "/api/o/" + slug + "/store"
-	canonical := buildAbsoluteURL(publicURL, "/o/"+slug)
-	subs = append(subs,
-		[2]string{"{{ORG_NAME}}", html.EscapeString(org.Name)},
-		[2]string{"{{TAGLINE_OR_DEFAULT}}", html.EscapeString(taglineDisplay)},
-		[2]string{"{{CANONICAL_URL}}", html.EscapeString(canonical)},
-		[2]string{"{{STORE_PATH}}", storePath},
-		[2]string{"{{STORE_API_BASE}}", apiBase},
-		[2]string{"{{HERO_BG_STYLE}}", org.heroBgStyle()},
-		[2]string{"{{LOGO_BLOCK}}", org.logoBlock()},
-		[2]string{"{{WEBSITE_LINK_BLOCK}}", websiteBlock},
-		[2]string{"{{OG_COVER_TAG}}", ogCoverTag},
-		[2]string{"{{LANDING_BROWSE_CTA}}", html.EscapeString(s.LandingBrowseCTA)},
-		[2]string{"{{LANDING_FEATURED_HEADING}}", html.EscapeString(s.LandingFeaturedHeading)},
-		[2]string{"{{LANDING_FEATURED_EMPTY}}", html.EscapeString(s.LandingFeaturedEmpty)},
-		[2]string{"{{LANDING_SEE_ALL}}", html.EscapeString(s.LandingSeeAll)},
-		[2]string{"{{ORG_BRAND_OVERRIDES}}", org.brandStyle()},
-	)
-
-	out := string(body)
-	for _, sub := range subs {
-		out = strings.ReplaceAll(out, sub[0], sub[1])
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Vary", "Cookie, Accept-Language")
-	w.Header().Set("Cache-Control", "public, max-age=60")
-	_, _ = w.Write([]byte(out))
-}
-
 // orgProfile is the public face of an organisation: what /o/{slug}
-// and /o/{slug}/store show about it.
+// shows about it.
 type orgProfile struct {
 	ID       int64
 	Slug     string
@@ -258,7 +153,7 @@ func buildOrgSitemapURLs(ctx context.Context, db *sql.DB, host string) string {
 		b.WriteString(host)
 		b.WriteString("/o/")
 		b.WriteString(slug)
-		b.WriteString("/store</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>\n")
+		b.WriteString("</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

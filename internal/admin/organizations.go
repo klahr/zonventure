@@ -349,16 +349,17 @@ func (h *Handlers) SetMyOrgSlug(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// storeURLFromSlug returns the absolute store URL for a slug. Falls
-// back to a relative path when the operator hasn't set PublicURL —
-// the Copy button will still produce something usable, just origin-
-// relative rather than fully-qualified.
+// storeURLFromSlug returns the absolute URL of the organisation's page,
+// which lists its adventures for sale. Falls back to a relative path
+// when the operator hasn't set PublicURL — the Copy button will still
+// produce something usable, just origin-relative rather than
+// fully-qualified.
 func storeURLFromSlug(publicURL, slug string) string {
 	base := strings.TrimRight(publicURL, "/")
 	if base == "" {
-		return "/o/" + slug + "/store"
+		return "/o/" + slug
 	}
-	return base + "/o/" + slug + "/store"
+	return base + "/o/" + slug
 }
 
 // UpdateOrganization renames an organization. Admin-only.

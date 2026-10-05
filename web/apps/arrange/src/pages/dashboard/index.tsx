@@ -58,8 +58,6 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
       {...(orgName ? { subtitle: orgName } : {})}
       actions={
         <>
-          {/* Past events are one click away even while the next one is live. */}
-          <a className="btn ghost" href={href({ name: "events" })}>{t.t("All events")}<ArrowRight size={14} aria-hidden /></a>
           {canStart && <Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={() => setDialog({})}>{t.t("Start a new event")}</Button>}
         </>
       }

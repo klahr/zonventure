@@ -73,6 +73,7 @@ short tour:
 | `ZV_SEED_ADMIN` | First-run admin (`user:pass`); ignored once an admin exists | `admin:admin` |
 | `POSTGRES_PASSWORD` | Bundled Postgres password — **change before prod** | `zv` |
 | `ZV_PUBLIC_URL` | Origin used in outbound emails (set to your real https URL) | `http://localhost:8080` |
+| `ZV_HOME_ORG` | Slug of the organisation the site is: `/store` redirects to its page `/o/<slug>`, and the landing page lists its adventures | unset (`/store` not found) |
 | `ZV_SITE_NAME` | Name the instance shows players and arrangers (titles, player header, emails, authenticator entry). Set your own brand so players know who runs the service | `Zonventure` |
 | `ZV_BIND_ADDR` | Host interface to bind on; `0.0.0.0` to expose directly | `127.0.0.1` |
 | `ZV_PORT` | Host port for the app | `8080` |

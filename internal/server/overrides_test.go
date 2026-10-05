@@ -65,7 +65,7 @@ func TestLandingOverride(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/?lang=en", nil)
 	rec := httptest.NewRecorder()
-	renderLandingPage(rec, req, "https://zv.example.com", "")
+	renderLandingPage(rec, req, "https://zv.example.com", "", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
@@ -181,7 +181,7 @@ func TestStoreListingOrgPlaceholders(t *testing.T) {
 	org.Accent.String, org.Accent.Valid = "#123456", true
 
 	rec := httptest.NewRecorder()
-	renderStoreListingPageScoped(rec, httptest.NewRequest("GET", "/o/acme/store?lang=en", nil), org)
+	renderOrgPage(rec, httptest.NewRequest("GET", "/o/acme?lang=en", nil), *org)
 	body := rec.Body.String()
 	for _, want := range []string{
 		"SCOPE=org;",
@@ -196,11 +196,5 @@ func TestStoreListingOrgPlaceholders(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("org store body missing %q: %s", want, body)
 		}
-	}
-
-	rec = httptest.NewRecorder()
-	renderStoreListingPage(rec, httptest.NewRequest("GET", "/store?lang=en", nil))
-	if got, want := rec.Body.String(), "SCOPE=all;NAME=;TAG=;PATH=;LOGO=;BG=;BRAND=;API=/api/store"; got != want {
-		t.Errorf("global store body = %q, want %q", got, want)
 	}
 }

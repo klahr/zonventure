@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -563,25 +564,12 @@ func storeSubs(s landingStrings) [][2]string {
 	}
 }
 
-// renderStoreListingPage serves /store. Mirrors renderTopbarPage but
-// also splices in the storeSubs map so the page body's body copy
-// (hero, "how it works", empty / loading / error states, card
-// vocabulary) renders in the caller's locale. The card grid itself
-// hydrates from /api/store/items at runtime, but the surrounding
-// chrome and the JSON locale block emitted at the bottom of the
-// template stay server-rendered.
-func renderStoreListingPage(w http.ResponseWriter, r *http.Request) {
-	renderStoreListingPageScoped(w, r, nil)
-}
-
-// renderStoreListingPageScoped renders the store landing for either
-// the global /store (org == nil) or a per-org /o/{slug}/store. The
-// global page reads every org's listings via /api/store/items; the
-// per-org page narrows to one org via /api/o/{slug}/store/items and
-// fills the org placeholders (name, tagline, logo, cover, colours) so
-// the template can show the org's own hero. {{STORE_SCOPE}} is "org"
-// or "all" for templates that style the two differently.
-func renderStoreListingPageScoped(w http.ResponseWriter, r *http.Request, org *orgProfile) {
+// renderOrgPage renders /o/{slug}, an organisation's page: who it is —
+// name, tagline, logo, cover, colours — and every adventure it sells,
+// read from /api/o/{slug}/store/items. It is also where a buyer lands
+// back from checkout (?paid=…), which the page's script follows up.
+// {{STORE_SCOPE}} stays "org" for templates that still style by it.
+func renderOrgPage(w http.ResponseWriter, r *http.Request, org orgProfile) {
 	body, err := readWebFile("web/store.html")
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -596,27 +584,15 @@ func renderStoreListingPageScoped(w http.ResponseWriter, r *http.Request, org *o
 	for _, sub := range storeSubs(s) {
 		out = strings.ReplaceAll(out, sub[0], sub[1])
 	}
-	apiBase := "/api/store"
+	apiBase := "/api/o/" + org.Slug + "/store"
 	orgSubs := [][2]string{
-		{"{{STORE_SCOPE}}", "all"},
-		{"{{ORG_NAME}}", ""},
-		{"{{ORG_TAGLINE}}", ""},
-		{"{{ORG_PATH}}", ""},
-		{"{{LOGO_BLOCK}}", ""},
-		{"{{HERO_BG_STYLE}}", ""},
-		{"{{ORG_BRAND_OVERRIDES}}", ""},
-	}
-	if org != nil {
-		apiBase = "/api/o/" + org.Slug + "/store"
-		orgSubs = [][2]string{
-			{"{{STORE_SCOPE}}", "org"},
-			{"{{ORG_NAME}}", html.EscapeString(org.Name)},
-			{"{{ORG_TAGLINE}}", html.EscapeString(strings.TrimSpace(org.Tagline.String))},
-			{"{{ORG_PATH}}", "/o/" + org.Slug},
-			{"{{LOGO_BLOCK}}", org.logoBlock()},
-			{"{{HERO_BG_STYLE}}", org.heroBgStyle()},
-			{"{{ORG_BRAND_OVERRIDES}}", org.brandStyle()},
-		}
+		{"{{STORE_SCOPE}}", "org"},
+		{"{{ORG_NAME}}", html.EscapeString(org.Name)},
+		{"{{ORG_TAGLINE}}", html.EscapeString(strings.TrimSpace(org.Tagline.String))},
+		{"{{ORG_PATH}}", "/o/" + org.Slug},
+		{"{{LOGO_BLOCK}}", org.logoBlock()},
+		{"{{HERO_BG_STYLE}}", org.heroBgStyle()},
+		{"{{ORG_BRAND_OVERRIDES}}", org.brandStyle()},
 	}
 	for _, sub := range orgSubs {
 		out = strings.ReplaceAll(out, sub[0], sub[1])
@@ -807,7 +783,7 @@ func pricingSubs() [][2]string {
 // companyName (ZV_COMPANY_NAME) names the operator in the schema.org
 // Organization node; empty omits the node rather than claiming a
 // publisher the operator never configured.
-func renderLandingPage(w http.ResponseWriter, r *http.Request, publicURL, companyName string) {
+func renderLandingPage(w http.ResponseWriter, r *http.Request, publicURL, companyName, homeOrg string) {
 	lang := resolveLang(w, r)
 	// Absolute URL for og:url + og:image. Falls back to "/" when no
 	// PublicURL is configured (dev / unconfigured self-host) — that's
@@ -816,8 +792,8 @@ func renderLandingPage(w http.ResponseWriter, r *http.Request, publicURL, compan
 	if landingURL == "" {
 		landingURL = "/"
 	}
-	out := cachedRender(lang, "web/landing.html", landingURL+"\x00"+companyName, func() []byte {
-		return buildLandingBody(lang, landingURL, companyName)
+	out := cachedRender(lang, "web/landing.html", landingURL+"\x00"+companyName+"\x00"+homeOrg, func() []byte {
+		return buildLandingBody(lang, landingURL, companyName, homeOrg)
 	})
 	if out == nil {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -836,7 +812,7 @@ func renderLandingPage(w http.ResponseWriter, r *http.Request, publicURL, compan
 // from inside the cachedRender callback. Reads the embedded template
 // fresh every call so an override-dir hit picks up edits — the
 // cachedRender wrapper short-circuits in dev anyway.
-func buildLandingBody(lang, landingURL, companyName string) []byte {
+func buildLandingBody(lang, landingURL, companyName, homeOrg string) []byte {
 	body, err := readWebFile("web/landing.html")
 	if err != nil {
 		return nil
@@ -854,6 +830,9 @@ func buildLandingBody(lang, landingURL, companyName string) []byte {
 		[2]string{"{{SCHEMA_ORG_DESC}}", s.SchemaOrgDesc},
 		[2]string{"{{SCHEMA_APP_DESC}}", s.SchemaAppDesc},
 		[2]string{"{{LANDING_URL}}", landingURL},
+		// The home organisation's adventures, which the landing page
+		// lists; empty when the site has none, and the list stays empty.
+		[2]string{"{{HOME_STORE_API}}", homeStoreAPI(homeOrg)},
 
 		// Hero band.
 		[2]string{"{{HERO_TAG}}", s.HeroTag},
@@ -944,4 +923,13 @@ func schemaOrgNode(name, desc string) string {
 		return ""
 	}
 	return "\n    " + string(b) + ","
+}
+
+// homeStoreAPI is where the home organisation's store items are read,
+// or empty when the site has no home organisation.
+func homeStoreAPI(homeOrg string) string {
+	if homeOrg == "" {
+		return ""
+	}
+	return "/api/o/" + url.PathEscape(homeOrg) + "/store"
 }
