@@ -31,25 +31,23 @@ jobs:
     name: Go
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        # Gate the job on the database actually accepting connections;
-        # otherwise the first test races the container's startup.
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     env:
       ZV_TEST_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
 
     steps:
+      # Postgres runs as a plain container rather than a service so it
+      # can take server flags: data on tmpfs with fsync off. Nothing here
+      # needs durability, and every test clones a database, which is
+      # write-heavy. Started first so it boots while the toolchains and
+      # frontend install.
+      - name: start postgres
+        run: |
+          docker run -d --name postgres -p 5432:5432 \
+            -e POSTGRES_PASSWORD=postgres \
+            --tmpfs /var/lib/postgresql/data \
+            postgres:16-alpine \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
@@ -83,21 +81,23 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      # Gate on the database actually accepting connections; otherwise
+      # the first test races the container's startup.
+      - name: wait for postgres
+        run: timeout 60 sh -c 'until docker exec postgres pg_isready -U postgres; do sleep 1; done'
+
+      # One run, verbose, so the skip check below can read the same log
+      # instead of running the whole suite a second time.
+      #
+      # Belt and braces alongside the CI guard in dbtest: if any test
+      # reports a skip, the DB-bound surface is silently not running.
       - name: go test -race
         env:
           CGO_ENABLED: "1"
-        run: go test -race ./...
-
-      # Belt and braces alongside the CI guard in dbtest: if any *test*
-      # reports a skip, the DB-bound surface is silently not running.
-      # Packages without test files also emit a skip action, so filter
-      # on entries that name a Test.
-      - name: assert no tests skipped
         run: |
-          skipped=$(go test -json ./... 2>/dev/null \
-            | grep '"Action":"skip"' \
-            | grep -o '"Test":"[^"]*"' \
-            | sort -u)
+          set -o pipefail
+          go test -race -v ./... 2>&1 | tee /tmp/test.log
+          skipped=$(grep -E '^ *--- SKIP' /tmp/test.log || true)
           if [ -n "$skipped" ]; then
             echo "Tests skipped in CI — the DB-bound surface is not running:" >&2
             echo "$skipped" >&2
@@ -148,10 +148,23 @@ jobs:
           # degrade every image's stamped version to a bare SHA.
           fetch-depth: 0
 
+      - name: version
+        id: version
+        run: echo "version=$(git describe --tags --always 2>/dev/null || echo dev)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Layers cached in the GitHub Actions cache, so a change that
+      # touches only Go skips the npm install and frontend build stage,
+      # and vice versa for go mod download.
       - name: build image
-        run: |
-          VERSION=$(git describe --tags --always 2>/dev/null || echo dev)
-          docker build --build-arg "VERSION=$VERSION" -t zonventure:ci .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-args: VERSION=${{ steps.version.outputs.version }}
+          tags: zonventure:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # Release tags only, and only once every other job is green. Pushes
   # :X.Y.Z (what `make upgrade` pins) and :latest (what a bare

@@ -1,7 +1,11 @@
 // Package dbtest spins up isolated Postgres databases for tests. Each
-// call to Open creates a fresh database off the admin DSN, runs the
-// embedded migrations, and returns a *sql.DB plus a cleanup that drops
-// the database when the test ends.
+// call to Open clones a fresh database off a migrated template and
+// returns a *sql.DB plus a cleanup that drops the database when the
+// test ends.
+//
+// The template is built once per migration set (see template below).
+// Running all 100+ migrations for every test used to dominate the
+// suite's runtime; a template clone is a file copy.
 //
 // The admin DSN is read from $ZV_TEST_DSN (or a dev default). Tests
 // that touch the DB Skip when no DSN is reachable so a bare
@@ -24,6 +28,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/klahr/zonventure/internal/db"
@@ -71,8 +76,14 @@ func Open(t *testing.T) (*sql.DB, func()) {
 		unreachable(t, "ping", adminDSN, err)
 	}
 
+	tmpl, err := template(admin, adminDSN)
+	if err != nil {
+		admin.Close()
+		t.Fatalf("dbtest: template: %v", err)
+	}
+
 	name := "zv_test_" + randHex(8)
-	if _, err := admin.ExecContext(context.Background(), "CREATE DATABASE "+name); err != nil {
+	if _, err := admin.ExecContext(context.Background(), "CREATE DATABASE "+name+" TEMPLATE "+tmpl); err != nil {
 		admin.Close()
 		t.Fatalf("dbtest: create %s: %v", name, err)
 	}
@@ -89,6 +100,96 @@ func Open(t *testing.T) (*sql.DB, func()) {
 		_, _ = admin.ExecContext(context.Background(), "DROP DATABASE "+name)
 		admin.Close()
 	}
+}
+
+// templateLockKey serialises template builds across the test processes
+// `go test ./...` runs in parallel, one per package.
+const templateLockKey int64 = 0x7a76_746d_706c_6174 // "zvtmplat"
+
+var (
+	templateOnce sync.Once
+	templateName string
+	templateErr  error
+)
+
+// template returns the name of a fully migrated database to clone test
+// databases from, building it on first use. It is named after the
+// migrations fingerprint, so it survives across packages and runs and
+// is rebuilt only when a migration changes. Templates for other
+// fingerprints are dropped as stale on a rebuild.
+//
+// The build goes to a scratch name and is renamed into place, so a run
+// killed mid-migration never leaves a half-built template behind.
+func template(admin *sql.DB, adminDSN string) (string, error) {
+	templateOnce.Do(func() {
+		templateName, templateErr = buildTemplate(admin, adminDSN)
+	})
+	return templateName, templateErr
+}
+
+func buildTemplate(admin *sql.DB, adminDSN string) (string, error) {
+	fp, err := db.MigrationsFingerprint()
+	if err != nil {
+		return "", err
+	}
+	name := "zv_tmpl_" + fp
+
+	ctx := context.Background()
+	conn, err := admin.Conn(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, templateLockKey); err != nil {
+		return "", fmt.Errorf("lock: %w", err)
+	}
+	defer conn.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, templateLockKey)
+
+	var exists bool
+	if err := conn.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)`, name,
+	).Scan(&exists); err != nil {
+		return "", err
+	}
+	if exists {
+		return name, nil
+	}
+
+	// Stale templates and scratch builds from earlier runs. Best effort:
+	// one still in use by another checkout's run is left for next time.
+	rows, err := conn.QueryContext(ctx,
+		`SELECT datname FROM pg_database WHERE datname LIKE 'zv\_tmpl\_%'`)
+	if err != nil {
+		return "", err
+	}
+	var stale []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			rows.Close()
+			return "", err
+		}
+		stale = append(stale, s)
+	}
+	rows.Close()
+	for _, s := range stale {
+		_, _ = conn.ExecContext(ctx, "DROP DATABASE IF EXISTS "+s)
+	}
+
+	build := name + "_build"
+	if _, err := conn.ExecContext(ctx, "CREATE DATABASE "+build); err != nil {
+		return "", fmt.Errorf("create %s: %w", build, err)
+	}
+	built, err := db.Open(withDatabase(adminDSN, build))
+	if err != nil {
+		_, _ = conn.ExecContext(ctx, "DROP DATABASE "+build)
+		return "", fmt.Errorf("migrate %s: %w", build, err)
+	}
+	built.Close()
+	if _, err := conn.ExecContext(ctx, "ALTER DATABASE "+build+" RENAME TO "+name); err != nil {
+		return "", fmt.Errorf("rename %s: %w", build, err)
+	}
+	return name, nil
 }
 
 // withDatabase rewrites the database name path segment of a libpq URL.

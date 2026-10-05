@@ -2,8 +2,10 @@ package db
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -230,4 +232,25 @@ func loadAppliedMigrations(d *sql.DB) (map[string]bool, error) {
 		out[name] = true
 	}
 	return out, rows.Err()
+}
+
+// MigrationsFingerprint returns a short hash over the names and
+// contents of every embedded migration. dbtest keys its migrated
+// template database on it, so editing or adding a migration yields a
+// fresh template instead of cloning a stale schema.
+func MigrationsFingerprint() (string, error) {
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	for _, e := range entries {
+		content, err := migrationsFS.ReadFile("migrations/" + e.Name())
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(h, "%s\x00%d\x00", e.Name(), len(content))
+		h.Write(content)
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16], nil
 }
