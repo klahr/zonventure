@@ -61,6 +61,8 @@ import {
 } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { href } from "../router.ts";
+import { EditDetailsDialog } from "../pages/adventures/dialogs.tsx";
+import { firstPlaceOf } from "../pages/adventures/api.ts";
 import { useAdventureWatch } from "../ui/live.ts";
 import { PresenceBar, holderOf, peerColor, usePresence, type Peer } from "../ui/presence.tsx";
 import { Canvas, cardSizes, type LiveFx } from "./Canvas.tsx";
@@ -211,6 +213,7 @@ export function Designer({ slug }: { slug: string }) {
   const [celebrate, setCelebrate] = useState(false);
   const [diff, setDiff] = useState<{ loading: boolean; diff: GraphDiff | null } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [kebab, setKebab] = useState<{ x: number; y: number } | null>(null);
@@ -266,6 +269,26 @@ export function Designer({ slug }: { slug: string }) {
     setLoaded({ state: "ready" });
   }, []);
 
+  // The adventure's title, texts, language and palette; again after its
+  // details are edited, so the top bar and translations follow.
+  const loadLook = useCallback(
+    (signal?: AbortSignal) =>
+      adventures
+        .getLook(slug, signal)
+        .then(({ title, intro, outro, language, brand: b }) => {
+          if (signal?.aborted) return;
+          if (title) setAdventureTitle(title);
+          setAdventureLang(language);
+          setMeta({ title, intro, outro });
+          setBrandSaved(b);
+          setBrand(b);
+        })
+        .catch(() => {
+          // No palette is the default look.
+        }),
+    [slug],
+  );
+
   useEffect(() => {
     const ac = new AbortController();
     adventures
@@ -279,20 +302,9 @@ export function Designer({ slug }: { slug: string }) {
       .catch((e: unknown) => {
         if (!ac.signal.aborted) setLoaded(loadError(e));
       });
-    adventures
-      .getLook(slug, ac.signal)
-      .then(({ title, intro, outro, language, brand: b }) => {
-        if (title) setAdventureTitle(title);
-        setAdventureLang(language);
-        setMeta({ title, intro, outro });
-        setBrandSaved(b);
-        setBrand(b);
-      })
-      .catch(() => {
-        // No palette is the default look.
-      });
+    loadLook(ac.signal);
     return () => ac.abort();
-  }, [slug, adopt]);
+  }, [slug, adopt, loadLook]);
 
   // --- editing -------------------------------------------------------------------
 
@@ -945,6 +957,8 @@ export function Designer({ slug }: { slug: string }) {
       <IssueRow key={k} text={<IssueText graph={graph} issue={i} />} actions={i.node ? <Button variant="link" onClick={() => jumpTo(i)}>{t.t("Show")}</Button> : undefined} />
     ));
   const kebabItems: ContextMenuItem[] = [
+    // Saved first: renaming the adventure moves its draft along with it.
+    { label: t.t("Edit details"), onClick: () => void (async () => { if (unsaved && !(await saveNow())) return; setDetailsOpen(true); })() },
     { label: t.t("Adventure settings"), onClick: () => setSettingsOpen(true) },
     // A phone has no keyboard to take shortcuts from.
     ...(isTouch() ? [] : [{ label: t.t("Keyboard shortcuts"), shortcut: "?", onClick: () => setHelpOpen(true) }]),
@@ -1530,6 +1544,19 @@ export function Designer({ slug }: { slug: string }) {
             />
           </div>
         </PanelModal>
+      )}
+      {detailsOpen && (
+        <EditDetailsDialog
+          slug={slug}
+          firstPlace={firstPlaceOf(graph)}
+          onClose={() => setDetailsOpen(false)}
+          onCover={() => {}}
+          onSaved={(next) => {
+            setDetailsOpen(false);
+            if (next !== slug) location.hash = href({ name: "designer", slug: next });
+            else void loadLook();
+          }}
+        />
       )}
       {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
       {searchOpen && graph && (

@@ -11,7 +11,7 @@
   "Title, short name, description, intro, start and cover": "Titel, kortnamn, beskrivning, intro, start och omslag",
   "Edit details": "Redigera uppgifter",
   "Make an independent copy in your organization": "Gör en fristående kopia i din organisation",
-  "Colours, fonts and the adventure's language for players are set in the designer's Look.": "Färger, typsnitt och äventyrets språk för spelarna ställs in under Utseende i designern.",
+  "The language, translations, colours and fonts are under Adventure settings in the designer.": "Språk, översättningar, färger och typsnitt finns under Äventyrsinställningar i designern.",
   "Delete the adventure and all its puzzles. An adventure that has had events can’t be deleted.": "Radera äventyret och alla dess pussel. Ett äventyr som har haft event kan inte raderas.",
   "Show on map": "Visa på kartan",
   "Import an adventure exported as a .zip": "Importera ett äventyr som exporterats som .zip",
@@ -60,5 +60,10 @@
   "Cheat password": "Fusklösenord",
   "Optional, for testing. Leave empty for none. On the phone, tap the adventure's title 7 times and enter it: every answer then counts as right, for no points, and the team is left out of the rankings.": "Valfritt, för test. Lämna tomt för inget. Tryck 7 gånger på äventyrets titel i telefonen och ange det: alla svar räknas då som rätt, utan poäng, och laget räknas inte med i resultatlistan.",
   "Show password": "Visa lösenord",
-  "Hide password": "Dölj lösenord"
+  "Hide password": "Dölj lösenord",
+  "Send a ticket": "Skicka en biljett",
+  "Send ticket": "Skicka biljett",
+  "Email someone a free link to play": "Mejla någon en gratis länk för att spela",
+  "Ticket sent to {{email}}": "Biljett skickad till {{email}}",
+  "Emails a link to play, free. They get their own team and a code they can also type at /play.": "Mejlar en gratis länk för att spela. Mottagaren får ett eget lag och en kod som också kan skrivas in på /play."
 }
