@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -60,6 +61,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		teamSize   int
 		startLabel sql.NullString
 		hasCover   bool
+		hasIcon    bool
 	)
 	var (
 		brandAccent          sql.NullString
@@ -78,6 +80,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		       e.ticket_team_size,
 		       a.start_label,
 		       (e.cover_image_mime_type IS NOT NULL) AS has_cover,
+		       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,
 		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color
 		FROM events e
 		JOIN organizations o ON o.id = e.org_id
@@ -87,7 +90,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		  AND e.ticket_price_cents IS NOT NULL
 		  AND e.state IN ('running', 'paused')
 	`, id).Scan(&eventName, &advSlug, &advTitle, &orgName, &orgSlug, &blurb, &priceCents,
-		&currency, &teamSize, &startLabel, &hasCover,
+		&currency, &teamSize, &startLabel, &hasCover, &hasIcon,
 		&brandAccent, &brandAccentSecondary, &brandBackground, &brandText)
 	if errors.Is(err, sql.ErrNoRows) {
 		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
@@ -139,6 +142,16 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	if hasCover {
 		coverURL = "/store-cover/event/" + strconv.FormatInt(id, 10)
 	}
+	iconURL, ogImage := "", coverURL
+	if hasIcon {
+		iconURL = "/adventure-assets/avatar/" + url.PathEscape(advSlug)
+		if ogImage == "" {
+			ogImage = iconURL
+		}
+	}
+	if ogImage != "" {
+		ogImage = buildAbsoluteURL(publicURL, ogImage)
+	}
 
 	teamSizeStr := strconv.Itoa(teamSize)
 
@@ -184,6 +197,11 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		// nested-context decode chain.
 		[2]string{"{{COVER_URL}}", html.EscapeString(cssURLQuote(coverURL))},
 		[2]string{"{{HAS_COVER}}", boolAttr(hasCover)},
+		// The adventure's icon, beside the title; also what a link
+		// preview shows when the event has no cover of its own.
+		[2]string{"{{ICON_URL}}", html.EscapeString(iconURL)},
+		[2]string{"{{HAS_ICON}}", boolAttr(hasIcon)},
+		[2]string{"{{OG_IMAGE_URL}}", html.EscapeString(ogImage)},
 		[2]string{"{{EVENT_ID}}", strconv.FormatInt(id, 10)},
 		[2]string{"{{ADVENTURE_SLUG}}", html.EscapeString(advSlug)},
 		[2]string{"{{CANONICAL_URL}}", html.EscapeString(buildAbsoluteURL(publicURL, canonicalPath))},

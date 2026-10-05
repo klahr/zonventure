@@ -1,5 +1,5 @@
 .PHONY: help up down rebuild logs psql reset seed run \
-        test test-race vet tidy build tag upgrade \
+        test test-race vet tidy build major minor patch _bump latest upgrade \
         web web-dev web-clean
 
 # `make` alone prints the menu so a new contributor sees what's
@@ -53,8 +53,8 @@ help:
 	@echo ""
 	@echo "  Build & release"
 	@echo "    make build      Production binary (trimpath, stripped, static)"
-	@echo "    make tag BUMP=patch|minor|major"
-	@echo "                    Cut an annotated release tag"
+	@echo "    make patch|minor|major"
+	@echo "                    Release: promote CHANGELOG [Unreleased], commit, tag"
 	@echo "    make upgrade    Check out the latest tag and rebuild the stack"
 	@echo ""
 	@echo "  After 'make up': http://localhost:8080  (admin / admin)"
@@ -169,38 +169,67 @@ web-clean:
 
 # --- Release -----------------------------------------------------------------
 
-# Cut a new annotated tag. CHANGELOG.md is the human's job — move
-# [Unreleased] entries under a new [X.Y.Z] - YYYY-MM-DD heading and
-# commit BEFORE running this so the tag points at the commit where
-# main's CHANGELOG.md announces the version (the in-app update
-# checker fetches it from there).
+# major/minor/patch cut an annotated release tag, bumping from the latest
+# release tag (0.0.0 if none). CHANGELOG.md's [Unreleased] entries move
+# under a new [X.Y.Z] - date heading, an empty [Unreleased] is left
+# behind, and the change is committed so the tag points at the commit
+# where main's CHANGELOG.md announces the version (the in-app update
+# checker fetches it from there). An EMPTY [Unreleased] aborts: nobody
+# wrote down what ships.
 #
-#   make tag BUMP=major   0.1.0 -> 1.0.0
-#   make tag BUMP=minor   0.1.0 -> 0.2.0
-#   make tag BUMP=patch   0.1.0 -> 0.1.1
+#   make patch   0.1.0 -> 0.1.1
+#   make minor   0.1.0 -> 0.2.0
+#   make major   0.1.0 -> 1.0.0
 #
-# Tag is local-only; push with the command the target prints.
-BUMP ?=
-tag:
-	@if [ -z "$(BUMP)" ]; then \
-		echo "Usage: make tag BUMP=major|minor|patch"; \
-		echo "Current version: $$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)"; \
-		exit 1; \
-	fi
-	@VERSION=$$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0) && \
-	MAJOR=$$(echo "$$VERSION" | cut -d. -f1) && \
-	MINOR=$$(echo "$$VERSION" | cut -d. -f2) && \
-	PATCH=$$(echo "$$VERSION" | cut -d. -f3) && \
+# The tag is local; the recipe prints the push command.
+major:
+	@$(MAKE) --no-print-directory _bump BUMP=major
+minor:
+	@$(MAKE) --no-print-directory _bump BUMP=minor
+patch:
+	@$(MAKE) --no-print-directory _bump BUMP=patch
+
+# set -e: a failed `git commit` must not fall through to `git tag`, which
+# would tag the previous HEAD as the new release.
+_bump:
+	@set -e; \
+	CUR=$$($(LATEST_TAG)); CUR=$${CUR:-0.0.0}; \
+	MAJOR=$$(echo "$$CUR" | cut -d. -f1); \
+	MINOR=$$(echo "$$CUR" | cut -d. -f2); \
+	PATCH=$$(echo "$$CUR" | cut -d. -f3); \
 	case "$(BUMP)" in \
 		major) MAJOR=$$((MAJOR + 1)); MINOR=0; PATCH=0 ;; \
 		minor) MINOR=$$((MINOR + 1)); PATCH=0 ;; \
 		patch) PATCH=$$((PATCH + 1)) ;; \
-		*) echo "Error: BUMP must be major, minor, or patch"; exit 1 ;; \
-	esac && \
-	NEW="$$MAJOR.$$MINOR.$$PATCH" && \
-	git tag -a "$$NEW" -m "Release $$NEW" && \
-	echo "$$VERSION -> $$NEW" && \
+		*) echo "Use: make major|minor|patch"; exit 1 ;; \
+	esac; \
+	NEW="$$MAJOR.$$MINOR.$$PATCH"; \
+	if grep -q "^## \[$$NEW\]" CHANGELOG.md; then \
+		echo "CHANGELOG.md already has a [$$NEW] heading — leaving it alone"; \
+	else \
+		if [ "$$(awk '/^## \[Unreleased\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md | grep -c '[^[:space:]]')" -eq 0 ]; then \
+			echo "REFUSING: CHANGELOG.md [Unreleased] is empty — nothing to release."; \
+			echo "Write what ships under [Unreleased] first, or add a [$$NEW] heading by hand."; \
+			exit 1; \
+		fi; \
+		awk -v h="## [$$NEW] - $$(date +%F)" '{print} /^## \[Unreleased\]$$/ && !d {print ""; print h; d=1}' \
+			CHANGELOG.md > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md; \
+		echo "CHANGELOG.md: [Unreleased] promoted to [$$NEW]"; \
+	fi; \
+	git add CHANGELOG.md; \
+	git commit -q -m "Release $$NEW" -- CHANGELOG.md; \
+	git tag -a "$$NEW" -m "Release $$NEW"; \
+	echo "$$CUR -> $$NEW (committed CHANGELOG.md, tagged)"; \
 	echo "Push with: git push origin main $$NEW"
+
+# LATEST_TAG is the newest RELEASE tag: only X.Y.Z tags (a `latest` or
+# `nightly` tag would sort above every version), no pre-releases (version
+# sort puts 1.0.0-rc1 ahead of 1.0.0), ordered numerically (0.10.0 beats
+# 0.9.0). Expanded by the recipes, not $(shell), so plain `make` runs no git.
+LATEST_TAG = git tag -l '[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -Ex '[0-9]+\.[0-9]+\.[0-9]+' | head -1
+
+latest:
+	@$(LATEST_TAG)
 
 # Upgrade an existing Docker Compose deployment to the latest released
 # tag. Take a Postgres backup first — see SELFHOSTING.md.

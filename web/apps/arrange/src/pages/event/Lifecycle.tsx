@@ -170,7 +170,8 @@ export function LifecycleActions({ event, teams, adventure, user, reload }: { ev
   }
   if (cancellable) {
     if (more.length) more.push({ separator: true });
-    if (live) more.push({ label: t.t("End event"), icon: <Flag size={ICON.sm} aria-hidden />, danger: true, onClick: () => void end() });
+    // A self-guided adventure is paused or cancelled, never ended.
+    if (live && !quest) more.push({ label: t.t("End event"), icon: <Flag size={ICON.sm} aria-hidden />, danger: true, onClick: () => void end() });
     more.push({ label: t.t("Cancel event"), icon: <Trash2 size={ICON.sm} aria-hidden />, danger: true, onClick: () => void cancel() });
   }
 

@@ -929,6 +929,18 @@ func (h *Handlers) EndEvent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	var selfGuided bool
+	if err := h.DB.QueryRowContext(r.Context(), `SELECT public_for_sale FROM events WHERE id = $1`, eventID).Scan(&selfGuided); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if selfGuided {
+		httpx.JSON(w, http.StatusConflict, map[string]any{
+			"error":  "a self-guided adventure does not end: pause it to stop selling tickets, or cancel it to close it for good",
+			"reason": "self_guided",
+		})
+		return
+	}
 	if !h.requirePasswordConfirm(w, r) {
 		return
 	}

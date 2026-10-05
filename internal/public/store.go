@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -35,6 +36,9 @@ type StoreItemDTO struct {
 	// Empty means the store card renders text-only — the JS template
 	// already has a fallback layout.
 	CoverImageURL string `json:"cover_image_url,omitempty"`
+	// AdventureIconURL is set when the adventure has an icon — the one
+	// its players see in their top bar.
+	AdventureIconURL string `json:"adventure_icon_url,omitempty"`
 }
 
 // TicketTeamTokenDTO is the response shape for the post-purchase
@@ -246,7 +250,8 @@ const storeItemSelect = `
 	       e.ticket_currency,
 	       e.ticket_team_size,
 	       a.start_label, a.start_lat, a.start_lng,
-	       (e.cover_image_mime_type IS NOT NULL) AS has_cover
+	       (e.cover_image_mime_type IS NOT NULL) AS has_cover,
+	       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon
 	FROM events e
 	JOIN organizations o ON o.id = e.org_id
 	LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
@@ -354,16 +359,20 @@ func scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 		startLng   sql.NullFloat64
 		priceCents sql.NullInt64
 		hasCover   bool
+		hasIcon    bool
 	)
 	if err := s.Scan(
 		&item.EventID, &eventName, &item.AdventureSlug, &item.AdventureTitle,
 		&item.OrgName, &blurb, &priceCents, &item.Currency, &item.TeamSize,
-		&startLabel, &startLat, &startLng, &hasCover,
+		&startLabel, &startLat, &startLng, &hasCover, &hasIcon,
 	); err != nil {
 		return StoreItemDTO{}, err
 	}
 	if hasCover {
 		item.CoverImageURL = "/store-cover/event/" + strconv.FormatInt(item.EventID, 10)
+	}
+	if hasIcon {
+		item.AdventureIconURL = "/adventure-assets/avatar/" + url.PathEscape(item.AdventureSlug)
 	}
 	if eventName.Valid {
 		item.EventName = strings.TrimSpace(eventName.String)

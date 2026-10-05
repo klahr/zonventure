@@ -86,3 +86,26 @@ func TestMaybeCompleteEvent_ClosesPause(t *testing.T) {
 		t.Errorf("paused_seconds = %d, paused_at valid = %v; want ~90 and NULL", secs, pausedAt.Valid)
 	}
 }
+
+// A self-guided adventure sells tickets for as long as it is open: its
+// teams all finishing does not complete it, or it would leave the store.
+func TestMaybeCompleteEvent_SelfGuidedStaysOpen(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+	eventID := seedPausedEvent(t, db, "60 seconds")
+	if _, err := db.Exec(`UPDATE events SET state = 'running', paused_at = NULL, public_for_sale = TRUE, ticket_price_cents = 1000, ticket_currency = 'sek' WHERE id = $1`, eventID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO teams(event_id, name, token, completed_at) VALUES ($1, 'T', 'tok-sg', now_text())`, eventID); err != nil {
+		t.Fatal(err)
+	}
+	done, err := activity.MaybeCompleteEvent(context.Background(), db, eventID)
+	if err != nil || done {
+		t.Fatalf("MaybeCompleteEvent = %v, %v; want false", done, err)
+	}
+	var state string
+	_ = db.QueryRow(`SELECT state FROM events WHERE id = $1`, eventID).Scan(&state)
+	if state != "running" {
+		t.Errorf("state = %q, want running", state)
+	}
+}

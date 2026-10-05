@@ -66,6 +66,7 @@
     background-position: center;
     border-radius: 16px 16px 0 0;
   }
+  .card .adv-icon { width: 48px; height: 48px; margin-bottom: .5rem; border-radius: 12px; object-fit: cover; }
   .card .org { color: var(--muted); font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; }
   .card h2 { margin: .25rem 0 .5rem; font-size: 1.2rem; }
   .card .blurb { color: var(--ink-soft); margin: 0 0 1rem; flex: 1; }
@@ -356,6 +357,15 @@
       if (coverEl) {
         coverEl.style.backgroundImage = 'url("' + cssURLEncode(item.cover_image_url) + '")';
       }
+    }
+    // The adventure's icon, above its name.
+    if (item.adventure_icon_url) {
+      var icon = document.createElement('img');
+      icon.className = 'adv-icon';
+      icon.alt = '';
+      icon.loading = 'lazy';
+      icon.setAttribute('src', item.adventure_icon_url);
+      card.insertBefore(icon, card.querySelector('.org'));
     }
     return card;
   }

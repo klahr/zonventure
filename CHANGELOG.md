@@ -11,6 +11,35 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — the adventure's icon in the store
+
+- Store cards (the store, the landing page and organisation pages) show
+  the adventure's icon as a badge on the cover, and a store event page
+  shows it above the title. Without an event cover, the icon is the
+  page's link-preview image (`og:image`). `/api/store/items` carries
+  `adventure_icon_url`; the event page template gets `{{ICON_URL}}`,
+  `{{HAS_ICON}}` and `{{OG_IMAGE_URL}}`.
+- A store event page's cover is 16:9, the shape event covers are made
+  in and the store cards show, instead of being cropped to 4:3.
+
+### Fixed — self-guided adventures could be finished
+
+- When every team so far had finished, a self-guided adventure was
+  completed like an event: it left the store and its players were signed
+  out. It now stays open, and "End event" is refused for it (the web UI
+  hides it; the MCP's `end_event` says so): pause it to stop selling
+  tickets, or cancel it to close it for good.
+
+### Changed — releasing
+
+- `make patch|minor|major` replaces `make tag BUMP=…`: it moves
+  `[Unreleased]` under a dated version heading, commits CHANGELOG.md
+  and tags that commit, refusing when `[Unreleased]` is empty.
+  `make latest` prints the newest release tag. CHANGELOG.md now has a
+  heading for every release since 0.2.0.
+
+## [0.15.0] - 2026-10-05
+
 ### Added — hidden places
 
 - A zone can be **hidden from teams** (designer: Resources → zone →
@@ -24,6 +53,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 - When an adventure's time limit moved a team to its last step (such as
   the accusation), the back button still led home, where the team could
   play on with no clock. Out of time, there is no way back.
+
+## [0.14.0] - 2026-10-05
 
 ### Changed — the MCP covers an adventure from idea to running events
 
@@ -110,6 +141,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   migration `0106_org_themes`.
 - MCP: `list_org_themes`; the guide's look step offers them first.
 
+## [0.13.0] - 2026-10-05
+
 ### Changed — the MCP guides a new adventure step by step
 
 - The assistant leads the author through six named steps — the idea,
@@ -176,6 +209,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   must be the adventure's own audio, and duplicating copies them.
 - Several starter themes celebrate in their own way — Hacker answers
   ACCESS GRANTED, Unicorn rains 🦄🌈✨.
+
+## [0.12.0] - 2026-10-05
 
 ### Added — buttons, answer bar, text size and titles
 
@@ -321,6 +356,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   button that plays the saved draft from Start in the designer's
   simulator, in a floating window, without opening the designer.
 
+## [0.11.1] - 2026-10-05
+
+_No changes recorded._
+
+## [0.11.0] - 2026-10-05
+
 ### Added — free tickets for testers and guests
 
 - **Give someone a ticket without payment.** On an event's Teams tab,
@@ -330,6 +371,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   also show on the spot, to copy by hand. API:
   `POST /api/admin/events/{id}/free-ticket` with `{"email": …}`; MCP tool
   `give_free_ticket`.
+
+## [0.10.0] - 2026-10-05
 
 ### Added — teams must start at the starting point
 
@@ -350,6 +393,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   it.** `{"start_lat": null}` was indistinguishable from an absent field,
   so the update silently kept the old coordinates.
 
+## [0.9.3] - 2026-10-04
+
 ### Added — organisation identity on /o/{slug}/store
 
 - **The per-organisation store knows its organisation.** `store.html`
@@ -357,6 +402,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   `{{LOGO_BLOCK}}`, `{{HERO_BG_STYLE}}`, `{{ORG_BRAND_OVERRIDES}}` and
   `{{STORE_SCOPE}}` (`org` or `all`), the same data `/o/{slug}` gets.
   The global `/store` fills them with nothing.
+
+## [0.9.2] - 2026-10-04
 
 ### Fixed — Secure cookies behind a reverse proxy
 
@@ -367,12 +414,16 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   language cookies went out without `Secure` on every proxied
   deployment.
 
+## [0.9.1] - 2026-10-03
+
 ### Added — prebuilt images on ghcr.io
 
 - **Release tags publish the app image.** CI pushes
   `ghcr.io/klahr/zonventure:X.Y.Z` and `:latest` once every job is green.
   `compose.prod.yaml` runs that image, and `make upgrade` pulls it instead
   of building when the overlay is enabled. See SELFHOSTING.md → Upgrades.
+
+## [0.9.0] - 2026-10-03
 
 ### Added — extra pages from the override dir
 
@@ -389,6 +440,16 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   screen and `/pricing` is a 404. `ZV_LANDING_ENABLED` and the
   "Show public landing page" admin setting are gone, and the embedded
   landing and pricing pages are now reference templates only.
+
+## [0.8.2] - 2026-10-02
+
+_No changes recorded._
+
+## [0.8.1] - 2026-10-02
+
+_No changes recorded._
+
+## [0.8.0] - 2026-10-02
 
 ### Added — a picture for each role
 
@@ -524,6 +585,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   a player standing in that zone, in an adventure with strict assets:
   the media check never read where the team was. It does now.
 
+## [0.7.0] - 2026-10-01
+
+_No changes recorded._
+
+## [0.6.0] - 2026-10-01
+
 ### Added — teams choose their picture; names fixed once a team begins
 
 - **Players can set their team's picture** from the player app's
@@ -535,6 +602,24 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   refused (`409 team_started`) and the menu shows them read-only; the
   share page's picture upload follows the same rule. Organisers can
   still change all of it from the event page.
+
+## [0.5.4] - 2026-10-01
+
+_No changes recorded._
+
+## [0.5.3] - 2026-09-30
+
+_No changes recorded._
+
+## [0.5.2] - 2026-09-30
+
+_No changes recorded._
+
+## [0.5.1] - 2026-09-30
+
+_No changes recorded._
+
+## [0.5.0] - 2026-09-30
 
 ### Added — building an adventure with an assistant, on site
 
@@ -574,6 +659,22 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   it — and `{{team}}` — to make steps livelier.
 - `simulate_adventure` plays the draft with the real rules, and
   `upload_adventure_media` adds pictures and sounds to graph adventures.
+
+## [0.4.1] - 2026-09-30
+
+### Fixed
+
+- The menu button on a phone opens the side menu in the designer too.
+- **Blocks can be dragged by their handle again**, with a mouse or a
+  finger: the block follows the pointer, the others slide aside, and
+  it glides into place when let go. Steps in the list view move the
+  same way, and lean in when dropped into a branch.
+- On a phone, the side menu opens over an open step instead of behind
+  it.
+- A step dragged in the list view lands where it appears to be,
+  including just above the End.
+
+## [0.4.0] - 2026-09-30
 
 ### Added — making an adventure on a phone
 
@@ -631,18 +732,6 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   **+ New place on the map…** in its zone list adds a zone and opens
   its map in the block, with **Use my location**.
 
-### Fixed
-
-- The menu button on a phone opens the side menu in the designer too.
-- **Blocks can be dragged by their handle again**, with a mouse or a
-  finger: the block follows the pointer, the others slide aside, and
-  it glides into place when let go. Steps in the list view move the
-  same way, and lean in when dropped into a branch.
-- On a phone, the side menu opens over an open step instead of behind
-  it.
-- A step dragged in the list view lands where it appears to be,
-  including just above the End.
-
 ### Changed — new Zonventure logo
 
 - **The favicon and the play app's install icons use the new flat
@@ -653,6 +742,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   link previewers ignore. Drop an `og-image.png` into
   `ZV_WEB_OVERRIDE_DIR` to replace it.
 
+## [0.3.3] - 2026-09-30
+
 ### Added — a static site at /shop
 
 - **zv serves the `shop/` folder of `ZV_WEB_OVERRIDE_DIR` at `/shop/`**,
@@ -660,6 +751,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   Zonventure book shop) next to the landing page. `/shop/book` serves
   `shop/book.html`, and unknown paths get `shop/404.html`. Without a
   `shop/` folder, `/shop/` is a 404 as before.
+
+## [0.3.2] - 2026-09-30
 
 ### Added — item slots
 
@@ -698,6 +791,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   switch on each side (`admin.CatalogEnabled`, and `CATALOG_ENABLED`
   in the console's router) turns the catalog back on.
 
+## [0.3.1] - 2026-09-29
+
 ### Added — API tokens for the REST API
 
 - **The tokens under Settings → Account → API tokens now work on
@@ -711,6 +806,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   403 on token management, password and email changes, TOTP,
   sessions, account deletion, data export, the billing portal and
   admin password/TOTP resets.
+
+## [0.3.0] - 2026-09-29
 
 ### Added — redeem Live it and TrueStory gift boxes
 

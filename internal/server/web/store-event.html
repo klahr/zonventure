@@ -37,14 +37,14 @@
 <meta property="og:description" content="{{BLURB}}">
 <meta property="og:url" content="{{CANONICAL_URL}}">
 <meta property="og:site_name" content="{{SITE_NAME}}">
-<meta property="og:image" content="{{COVER_URL}}">
+<meta property="og:image" content="{{OG_IMAGE_URL}}">
 <meta property="og:locale" content="{{LANG_CODE}}">
 <meta property="product:price:amount" content="{{PRICE_MAJOR}}">
 <meta property="product:price:currency" content="{{CURRENCY}}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{TITLE}}">
 <meta name="twitter:description" content="{{BLURB}}">
-<meta name="twitter:image" content="{{COVER_URL}}">
+<meta name="twitter:image" content="{{OG_IMAGE_URL}}">
 
 <link rel="stylesheet" href="/assets/fontface.css">
 <link rel="stylesheet" href="/assets/page-tokens.css">
@@ -78,7 +78,7 @@
     .hero { grid-template-columns: 1.4fr 1fr; align-items: center; }
   }
   .hero-art {
-    aspect-ratio: 16 / 10;
+    aspect-ratio: 16 / 9;
     border-radius: 20px;
     background: linear-gradient(135deg, var(--accent-deep), var(--accent-2));
     background-size: cover;
@@ -86,6 +86,8 @@
     box-shadow: var(--shadow-lg);
   }
   .hero-art[data-cover="true"] { background-image: var(--cover-img); }
+  .adv-icon { display: block; width: 72px; height: 72px; margin-bottom: .75rem; border-radius: 18px; object-fit: cover; }
+  .adv-icon[data-has="false"] { display: none; }
   .org { color: var(--muted); font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; }
   h1 {
     font-family: 'Aclonica', Georgia, serif;
@@ -212,6 +214,7 @@
 
     <div class="hero">
       <div>
+        <img class="adv-icon" src="{{ICON_URL}}" alt="" width="72" height="72" data-has="{{HAS_ICON}}">
         <p class="org">{{ORG_NAME}}</p>
         <h1>{{TITLE}}</h1>
         <p class="subtitle">{{SUBTITLE}}</p>

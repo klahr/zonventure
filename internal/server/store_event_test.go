@@ -1,13 +1,16 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/dbtest"
+	"github.com/klahr/zonventure/internal/public"
 )
 
 // TestRenderStoreEventPage_HappyPath drives the per-event detail
@@ -196,4 +199,68 @@ func itoa64(n int64) string {
 		b[i] = '-'
 	}
 	return string(b[i:])
+}
+
+// An adventure's icon shows on its store card and beside the title on
+// its event page, and is the link preview when the event has no cover.
+func TestStoreShowsAdventureIcon(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+	var orgID int64
+	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).Scan(&orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO adventures(slug, title, org_id, avatar_mime_type, avatar_size_bytes, avatar_content)
+		VALUES ('iconic', 'Iconic', $1, 'image/png', 1, '\x89'::bytea), ('plain', 'Plain', $1, NULL, NULL, NULL)
+	`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]int64{}
+	for _, slug := range []string{"iconic", "plain"} {
+		var id int64
+		if err := db.QueryRow(`
+			INSERT INTO events(adventure_slug, org_id, state, live_token, public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size)
+			VALUES ($1, $2, 'running', 'lt-' || md5(random()::text), TRUE, 2500, 'eur', 4) RETURNING id
+		`, slug, orgID).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids[slug] = id
+	}
+
+	r := chi.NewRouter()
+	r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
+		renderStoreEventPage(w, req, db, "https://zv.example.com")
+	})
+	page := func(slug string) string {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest("GET", "/store/event/"+itoa64(ids[slug]), nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d", slug, rec.Code)
+		}
+		return rec.Body.String()
+	}
+	if body := page("iconic"); !strings.Contains(body, `src="/adventure-assets/avatar/iconic"`) || !strings.Contains(body, `data-has="true"`) ||
+		!strings.Contains(body, `content="https://zv.example.com/adventure-assets/avatar/iconic"`) {
+		t.Errorf("the icon is missing from the event page or its preview")
+	}
+	if body := page("plain"); !strings.Contains(body, `data-has="false"`) || strings.Contains(body, "/adventure-assets/avatar/") {
+		t.Errorf("an adventure without an icon shows none")
+	}
+
+	rec := httptest.NewRecorder()
+	(&public.Handlers{DB: db, Lib: adventure.New(db)}).StoreList(rec, httptest.NewRequest("GET", "/api/store/items", nil))
+	var list struct {
+		Items []public.StoreItemDTO `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	icons := map[string]string{}
+	for _, it := range list.Items {
+		icons[it.AdventureSlug] = it.AdventureIconURL
+	}
+	if icons["iconic"] != "/adventure-assets/avatar/iconic" || icons["plain"] != "" {
+		t.Errorf("store items' icons = %v", icons)
+	}
 }

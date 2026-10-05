@@ -147,7 +147,7 @@ func (s *Server) registerEventTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "end_event",
 		Scope:       scopeWrite,
-		Description: "End a running or paused event now, before every team has finished. Teams still playing keep the progress and points they have; the event becomes completed, so results and recaps open and players are signed out. Cannot be undone. Requires the caller's password — pass it as 'password' so the admin layer's confirm-gate can verify it.",
+		Description: "End a running or paused event now, before every team has finished. Teams still playing keep the progress and points they have; the event becomes completed, so results and recaps open and players are signed out. Cannot be undone. Refused for a self-guided adventure (public_for_sale), which never ends: pause it to stop selling tickets, or cancel it. Requires the caller's password — pass it as 'password' so the admin layer's confirm-gate can verify it.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id", "password"},

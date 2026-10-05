@@ -87,3 +87,25 @@ func TestEndEvent(t *testing.T) {
 		t.Fatalf("second end = %d, want 409", s)
 	}
 }
+
+// A self-guided adventure never ends: it is paused or cancelled.
+func TestEndEventRefusesSelfGuided(t *testing.T) {
+	ts, _, cleanup := newTestServer(t)
+	defer cleanup()
+	pub := newClient(t, ts)
+	if s := pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
+		t.Fatalf("login = %d", s)
+	}
+	var ev struct {
+		ID int64 `json:"id"`
+	}
+	if s := pub.do("POST", "/api/admin/events", map[string]any{"adventure_slug": "demo", "public_for_sale": true, "attest_no_minors": true}, &ev); s != 201 {
+		t.Fatalf("create self-guided = %d", s)
+	}
+	if s := pub.do("POST", "/api/admin/events/"+itoa(ev.ID)+"/start", nil, nil); s != 204 {
+		t.Fatalf("start = %d", s)
+	}
+	if s := pub.doWithConfirm("POST", "/api/admin/events/"+itoa(ev.ID)+"/end", "pubpw", nil, nil); s != 409 {
+		t.Errorf("end a self-guided adventure = %d, want 409", s)
+	}
+}
