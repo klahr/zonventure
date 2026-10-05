@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-10-05
+
 ### Changed — one page per organisation, no shared store
 
 - `/o/{slug}` is an organisation's one page: who it is and every
