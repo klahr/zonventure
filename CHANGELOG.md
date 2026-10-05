@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-05
+
 ### Added — parties
 
 - Orgs can offer adventures as **children's parties** (Settings →
