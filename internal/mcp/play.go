@@ -62,6 +62,8 @@ type playSession struct {
 	team    json.RawMessage
 	view    session.View
 	touched time.Time
+	// anywhere skips the adventure's required starting point (play_start).
+	anywhere bool
 	// shown is the node whose pictures were last sent; they are sent
 	// again only on a new step or a look.
 	shown string
@@ -137,6 +139,7 @@ func (s *Server) registerPlayTools() {
 				"slug":      map[string]any{"type": "string", "description": "Adventure slug."},
 				"team_size": map[string]any{"type": "integer", "minimum": 1, "maximum": 12, "description": "Players in the team; some steps read it. Default 3."},
 				"lang":      map[string]any{"type": "string", "description": "Language to play in, if the adventure is translated."},
+				"anywhere":  map[string]any{"type": "boolean", "description": "Begin wherever the team is, skipping the adventure's required starting point — for a playtest away from the site. Default false: the team must walk there (move to the starting point) first."},
 			},
 		},
 	}, playStart)
@@ -188,6 +191,7 @@ func playStart(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallRes
 		Slug     string `json:"slug"`
 		TeamSize int    `json:"team_size"`
 		Lang     string `json:"lang"`
+		Anywhere bool   `json:"anywhere"`
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return errorResult("bad arguments: " + err.Error()), nil
@@ -216,7 +220,7 @@ func playStart(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallRes
 	if err != nil {
 		return errorResult("encoding draft: " + err.Error()), nil
 	}
-	ps := &playSession{owner: me.ID, slug: a.Slug, env: env, g: g, touched: time.Now()}
+	ps := &playSession{owner: me.ID, slug: a.Slug, env: env, g: g, anywhere: a.Anywhere, touched: time.Now()}
 	out, bad := ps.step(ctx, s, map[string]any{"kind": "start"})
 	if bad != nil {
 		return *bad, nil
@@ -458,6 +462,9 @@ func (ps *playSession) step(ctx context.Context, s *Server, act map[string]any) 
 	body := map[string]any{"envelope": ps.env, "action": act}
 	if ps.team != nil {
 		body["team"] = ps.team
+	}
+	if ps.anywhere {
+		body["any_place"] = true
 	}
 	status, raw, err := callAdmin(ctx, s.Admin.SimulateAdventureGraph, "POST", "/api/admin/adventures/"+ps.slug+"/simulate",
 		map[string]string{"slug": ps.slug}, nil, body)

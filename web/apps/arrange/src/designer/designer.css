@@ -623,35 +623,6 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .dz .themes__item.is-on { border-color: var(--accent); background: var(--surface-2, var(--surface)); color: var(--ink); font-weight: 700; }
 .themes__swatch.look__thumb { flex: none; width: 2rem; height: 1.5rem; border: 1px solid var(--border-soft); }
 .themes--choosing { grid-template-columns: 12rem minmax(0, 1fr); }
-/* New theme: each starter on a small page, big enough to choose by eye. */
-.starters { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
-.starters__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
-.starters__head h4 { margin: 0; font-size: var(--text-xs); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
-.starters__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: var(--sp-3); }
-.dz .starters__pick { width: 100%; display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); color: var(--ink); text-align: left; cursor: pointer; }
-.dz .starters__pick:hover, .dz .starters__pick:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-/* A page in the starter's look: the player's own variables, painted here without the player. */
-.dz .starters__page.pv {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem;
-  min-height: 15rem; padding: 0.9rem; border-radius: calc(var(--radius, 12px) - 2px);
-  /* .pv's inline-size containment would size it as if empty inside a
-     button that fits its content: the page would shrink to its padding. */
-  container-type: normal;
-  /* A backdrop that stays still in the player would stay still in the
-     window here, while the gallery scrolls past it. */
-  background-attachment: scroll;
-  animation: none; pointer-events: none;
-}
-.starters__title { font-family: var(--font-brand, inherit); font-size: 1.35rem; font-weight: 700; line-height: 1.15; color: var(--pv-accent-2nd, var(--accent)); }
-.starters__card {
-  align-self: stretch; padding: 0.7rem 0.8rem; font-size: 0.9rem; line-height: 1.45;
-  background: var(--pv-card-bg, var(--surface)); -webkit-backdrop-filter: var(--pv-card-blur, none); backdrop-filter: var(--pv-card-blur, none);
-  border: 1px solid var(--pv-card-line, transparent); border-radius: var(--radius); box-shadow: var(--shadow-sm);
-}
-.starters__btn { margin-top: auto; padding: 0.5rem 1.1rem; border-radius: var(--radius-pill, 999px); background: var(--accent); color: var(--pv-on-accent); font-weight: 700; font-size: 0.9rem; }
-.starters__group { display: flex; flex-direction: column; gap: var(--sp-2); }
-.starters__group-title { margin: var(--sp-2) 0 0; font-size: var(--text-sm); font-weight: 700; color: var(--ink); }
-.starters__name { font-size: var(--text-sm); font-weight: 700; }
 .themes__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .themes__editor { gap: var(--sp-3); }
 .themes__editor > h4,
@@ -684,6 +655,9 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
   background-repeat: var(--pv-backdrop-repeat, repeat);
 }
 .look__thumb--add { display: grid; place-items: center; color: var(--muted); background: repeating-linear-gradient(45deg, var(--surface), var(--surface) 6px, color-mix(in srgb, var(--ink) 5%, var(--surface)) 6px 12px); }
+.devticket { display: flex; flex-direction: column; gap: var(--sp-3); }
+.devticket__qr { width: 14rem; height: 14rem; align-self: center; image-rendering: pixelated; background: #fff; padding: var(--sp-2); border-radius: var(--radius); }
+.look__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--sp-2); }
 .look__status { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 2rem; }
 .look__row--short { grid-template-columns: auto 1fr auto; }
 .look__slider input[type="range"] { width: 100%; accent-color: var(--accent); }

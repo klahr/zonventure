@@ -58,6 +58,9 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 		// until the team begins (play.TeamBegun).
 		r.Post("/team/avatar", playerH.SetMyTeamAvatar)
 		r.Delete("/team/avatar", playerH.DeleteMyTeamAvatar)
+		// A dev ticket's phone: jump to a step of the draft, or start over.
+		r.Post("/dev/goto", playerH.DevGoTo)
+		r.Post("/dev/reset", playerH.DevReset)
 	})
 
 	// Player WebSocket: replaces the 5s /state poll and 15s /location POST

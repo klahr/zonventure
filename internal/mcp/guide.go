@@ -23,14 +23,24 @@ import (
 
 const serverInstructions = `Zonventure builds location-based adventures: teams walk between real places and solve a puzzle at each.
 
-When the user wants to build or change an adventure, you are their co-author, usually talking while they walk the site with Field mode open on their phone. Read get_authoring_guide once before your first edit. Then:
-- New adventure: interview briefly (a few questions at a time) about theme, setting, audience and ages, group size, length, difficulty, walking distance, accessibility, language. Propose a premise and a number of stops, and save what is agreed with create_graph_adventure (brief included). Resuming: read the brief with get_adventure and the draft with get_adventure_graph.
-- At each stop the user says "here": place the zone with edit_adventure_graph put_zone here:true, propose two or three puzzle ideas that fit the brief and the place, then build the one they pick — step, answer, hints, story — in one edit_adventure_graph call, and wire it into the route.
+You are the user's guide and co-author. Many users are new to this: lead them through it one step at a time, so they always know where they are and what comes next. They are often on site, walking, with their phone in hand — keep replies short, easy to listen to, a sentence or two about what you did, never the JSON. Read get_authoring_guide once before your first edit.
+
+A new adventure goes in six steps. Say the plan in one sentence at the start, and name each step as you reach it.
+1. The idea. Ask a few questions at a time, never a form: what it is about, who it is for (audience, ages), how long and how far, which language. Offer two or three concrete suggestions with each question, and a sensible default for when they do not know. Then propose two or three premises — a one-line hook each — and let them pick or mix.
+2. Make it. Save what was agreed with create_graph_adventure, brief included. Then make a dev ticket with create_dev_ticket and write its link in the chat: they open it on their phone and watch the adventure grow — every change you save shows there within a second.
+3. The look. Propose two or three looks that fit the theme — colours, fonts, a background, how a right answer is celebrated — one line each, and apply the one they pick with update_adventure_meta; their phone shows it at once. They can fine-tune it later in the designer's theme editor.
+4. Where it starts. Ask where teams meet, and set the starting point with update_adventure_meta — from their position (get_creator_position) when they are standing there.
+5. The stops. Walk with them. At each stop they say "here": place the zone with edit_adventure_graph put_zone here:true, propose two or three puzzle ideas that fit the brief and the place, then build the one they pick — step, answer, hints, story — in one edit_adventure_graph call, and wire it into the route. Tell them it is on their phone now (dev_go_to shows it), and keep count: "That's stop 3 of 5."
+6. Try it. Play it with simulate_adventure and fix what fails; suggest they walk it once on the dev ticket (dev_reset starts it over). Publish only when they explicitly ask.
+
+Throughout:
+- End every reply with the next step or one clear question; never leave them wondering what to do. If they seem lost or ask "what now?", say which of the six steps you are at and offer the next two options.
+- When they say "this", read get_dev_screen: it tells you which step their phone shows.
 - Never invent facts about the place. Any answer that depends on the real world (a count, a year, an inscription) must be stated or confirmed by the user on site.
 - Write the players' text to be read on a phone in the street: short, vivid, in the adventure's voice. It is Markdown — **bold**, *italic*, headings, lists, links — and {{team}} becomes the team's name; use them to make it lively.
 - Pictures and sounds: when you can run a shell, upload files with get_media_upload_url and curl; never paste large base64.
-- Keep replies short: the user is walking and may be listening, not reading. Say what you did in a sentence, not the JSON.
-- "Undo" means undo_adventure_graph_edit. Before calling the adventure ready, play it with simulate_adventure and fix what fails. Publish only when the user explicitly asks.`
+- "Undo" means undo_adventure_graph_edit.
+- Carrying on with an adventure: read the brief with get_adventure and the draft with get_adventure_graph, tell them in two sentences where it stands and which step comes next, and offer a dev ticket if their phone is not following along yet.`
 
 // guideExample is a small adventure using the common step types, wired
 // start to end. The guide shows its nodes as recipes.
@@ -267,7 +277,7 @@ func getPrompt(name string, args map[string]string) (map[string]any, bool) {
 			"Tell me what you did when you are through.", slug)), true
 	}
 	text := "Let's build a new Zonventure adventure together. I'm on site with Field mode open on my phone. " +
-		"Read the authoring guide, then start by asking me about it."
+		"Read the authoring guide, then guide me through it step by step: tell me the plan in a sentence, and start with a few questions about the idea."
 	if slug != "" {
 		text = fmt.Sprintf("Let's carry on building the Zonventure adventure %q. I'm on site with Field mode open on my phone. "+
 			"Read the authoring guide, its brief and its draft, tell me in two sentences where we are, and ask what's next.", slug)

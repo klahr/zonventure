@@ -13,6 +13,8 @@ export function Dialog(props: {
   onClose: () => void;
   onSubmit?: () => void;
   wide?: boolean;
+  /** Wider still, for a guide with a preview beside it. */
+  huge?: boolean;
 }) {
   const id = useId();
   useEscapeToClose(props.onClose);
@@ -35,7 +37,7 @@ export function Dialog(props: {
         <Body
           ref={(el: HTMLElement | null) => { box.current = el; }}
           tabIndex={-1}
-          className={"modal cs-dialog" + (props.wide ? " cs-dialog--wide" : "")}
+          className={"modal cs-dialog" + (props.wide ? " cs-dialog--wide" : "") + (props.huge ? " cs-dialog--huge" : "")}
           role="dialog"
           aria-modal="true"
           aria-labelledby={id}

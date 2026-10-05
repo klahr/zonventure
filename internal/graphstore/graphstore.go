@@ -112,7 +112,7 @@ func saveVersion(ctx context.Context, q Querier, adventureID, userID int64, g *g
 func Latest(ctx context.Context, q Querier, adventureID int64) (Stored, error) {
 	return scan(q.QueryRowContext(ctx, `
 		SELECT id, adventure_id, version, label, graph, `+adventureLanguage+` FROM adventure_graphs
-		WHERE adventure_id = $1
+		WHERE adventure_id = $1 AND version > 0
 		ORDER BY version DESC
 		LIMIT 1
 	`, adventureID))

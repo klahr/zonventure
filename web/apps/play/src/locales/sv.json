@@ -436,5 +436,11 @@
   "Finding where you are… Hold the phone up for a moment, then try again.": "Letar efter din position … Håll upp telefonen en stund och försök igen.",
   "You and everyone else": "Du och alla andra",
   "You can only begin once you're there.": "Ni kan bara börja när ni är där.",
-  "Everyone else": "Alla andra"
+  "Everyone else": "Alla andra",
+  "Could not move.": "Kunde inte flytta.",
+  "Draft preview": "Förhandsvisning av utkast",
+  "This phone plays the draft: changes show as they are saved.": "Telefonen spelar utkastet: ändringar syns när de sparas.",
+  "Go to step": "Gå till steg",
+  "At the start": "Vid starten",
+  "Start over": "Börja om"
 }

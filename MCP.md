@@ -114,8 +114,8 @@ Two prompts build on them: `review_adventure` leaves a playtester's notes as thr
 | `get_creator_position`      | read  | The author's last reported position and its age.                      |
 | `get_media_upload_url`      | write | A 15-minute link for one adventure: `curl -F file=@photo.jpg <url>` uploads without the bytes passing through the model. |
 | `upload_adventure_media`    | write | Base64 image/audio/video — small files only, for clients without a shell. |
-| `simulate_adventure`        | read  | Play the saved draft through actions with the real rules.             |
-| `play_start` / `play_act` / `play_end` | read | Blind playtest: play the draft one action at a time from what the phone shows (text, pictures, hints, places), never the answers. |
+| `simulate_adventure`        | read  | Play the saved draft through actions with the real rules. `anywhere: true` skips a required starting point. |
+| `play_start` / `play_act` / `play_end` | read | Blind playtest: play the draft one action at a time from what the phone shows (text, pictures, hints, places), never the answers. `play_start` with `anywhere: true` begins away from a required starting point. |
 
 The author doesn't have to explain any of this. The server sends
 usage instructions in its `initialize` reply, which clients put in the

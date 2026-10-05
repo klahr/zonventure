@@ -78,6 +78,7 @@ import { Simulator, type SimMode } from "./Simulator.tsx";
 import { EventSim } from "./EventSim.tsx";
 import { FloatingWindow } from "./FloatingWindow.tsx";
 import { OpenThemes, ThemesModal } from "./ThemesModal.tsx";
+import { DevTicketModal } from "./DevTicket.tsx";
 import { useInspectorWidth } from "./InspectorResize.tsx";
 import { TopBarPortal, useTopBarTitle } from "../topbar.tsx";
 import { Look } from "./Look.tsx";
@@ -214,6 +215,7 @@ export function Designer({ slug }: { slug: string }) {
   const [celebrate, setCelebrate] = useState(false);
   const [diff, setDiff] = useState<{ loading: boolean; diff: GraphDiff | null } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [devOpen, setDevOpen] = useState(false);
   // The theme editor, open on a theme or on the first; null when closed.
   const [themesOpen, setThemesOpen] = useState<{ theme?: string } | null>(null);
   const openThemes = useCallback((theme?: string) => {
@@ -965,6 +967,7 @@ export function Designer({ slug }: { slug: string }) {
     { label: t.t("Edit details"), onClick: () => void (async () => { if (unsaved && !(await saveNow())) return; setDetailsOpen(true); })() },
     { label: t.t("Adventure settings"), onClick: () => setSettingsOpen(true) },
     { label: t.t("Themes"), onClick: () => openThemes() },
+    { label: t.t("Play the draft on my phone"), onClick: () => setDevOpen(true) },
     // A phone has no keyboard to take shortcuts from.
     ...(isTouch() ? [] : [{ label: t.t("Keyboard shortcuts"), shortcut: "?", onClick: () => setHelpOpen(true) }]),
   ];
@@ -1564,6 +1567,7 @@ export function Designer({ slug }: { slug: string }) {
           </div>
         </PanelModal>
       )}
+      {devOpen && <DevTicketModal slug={slug} onClose={() => setDevOpen(false)} />}
       {themesOpen && draft && simEnvelope && (
         <AdventureSlug.Provider value={slug}>
           <ThemesModal

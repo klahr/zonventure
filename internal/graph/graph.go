@@ -1392,19 +1392,11 @@ func (g *Graph) MediaIDs() []int64 {
 		}
 	}
 	for _, th := range g.Themes {
-		if id := th.PictureID(); id > 0 {
-			add([]Media{{ID: id, Kind: MediaImage}})
+		for _, id := range th.Look.MediaIDs() {
+			add([]Media{{ID: id}})
 		}
 	}
 	return out
-}
-
-// PictureID is the image of the theme's picture backdrop, or 0.
-func (th Theme) PictureID() int64 {
-	if b := th.Look.Backdrop; b != nil && b.Kind == "picture" {
-		return b.Media
-	}
-	return 0
 }
 
 // MediaLists returns the node's own media, then each hint's in order.

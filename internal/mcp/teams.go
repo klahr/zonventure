@@ -135,6 +135,19 @@ func (s *Server) registerTeamTools() {
 	}, unlockTeam)
 
 	s.tools.register(ToolDescriptor{
+		Name:        "let_team_start_anywhere",
+		Scope:       scopeWrite,
+		Description: "Let a team begin the adventure wherever it stands, without being at the adventure's required starting point — for a team whose phone's GPS will not settle, or when the meeting point moved on the day. Works before the team opens its link or while it waits at the start screen; refused once it has finished. Records an arranger-assist activity entry.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"team_id"},
+			"properties": map[string]any{
+				"team_id": map[string]any{"type": "integer", "description": "Team to let start."},
+			},
+		},
+	}, letTeamStartAnywhere)
+
+	s.tools.register(ToolDescriptor{
 		Name:        "add_slot",
 		Scope:       scopeWrite,
 		Description: "Add a player slot to an existing team. Mints a new magic-link token. Constrained by the assignment's max_players cap across the whole event.",
@@ -351,6 +364,15 @@ func unlockTeam(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallRe
 			return nil
 		}
 		return s.Admin.UnlockTeam
+	})
+}
+
+func letTeamStartAnywhere(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
+	return runTeamPost(ctx, s, raw, "start-anywhere", func() http.HandlerFunc {
+		if s.Admin == nil {
+			return nil
+		}
+		return s.Admin.LetTeamStartAnywhere
 	})
 }
 

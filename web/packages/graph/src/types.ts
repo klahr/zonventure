@@ -99,6 +99,13 @@ export interface ThemeLook {
     text_scale?: number;
     title_style?: "ribbon" | "underline" | "shadow";
     title_upper?: boolean;
+    celebrate?: "quiet" | "none";
+    confetti_colors?: string[];
+    confetti_emoji?: string;
+    cheer_text?: string;
+    miss_text?: string;
+    sound_right?: number;
+    sound_wrong?: number;
   };
 }
 

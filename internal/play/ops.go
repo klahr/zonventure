@@ -596,21 +596,26 @@ func (e *Engine) Media(ctx context.Context, teamID int64) ([]int64, error) {
 // setting, or with prefetch only those worth downloading ahead.
 func (e *Engine) media(ctx context.Context, teamID int64, prefetch bool) ([]int64, error) {
 	var (
-		strict  bool
-		picture int64
+		strict              bool
+		picture, right, bad int64
 	)
-	// The adventure's own look may be a picture: every team sees it, an
-	// adventure with a graph or without.
+	// The adventure's own look may have a picture and sounds: every team
+	// may fetch them, an adventure with a graph or without.
 	if err := e.DB.QueryRowContext(ctx, `
-		SELECT a.strict_assets, COALESCE(CASE WHEN a.backdrop->>'kind' = 'picture' THEN (a.backdrop->>'media')::bigint END, 0)
+		SELECT a.strict_assets,
+		       COALESCE(CASE WHEN a.backdrop->>'kind' = 'picture' THEN (a.backdrop->>'media')::bigint END, 0),
+		       COALESCE((a.look_style->>'sound_right')::bigint, 0),
+		       COALESCE((a.look_style->>'sound_wrong')::bigint, 0)
 		FROM teams t JOIN events ev ON ev.id = t.event_id JOIN adventures a ON a.slug = ev.adventure_slug
 		WHERE t.id = $1
-	`, teamID).Scan(&strict, &picture); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	`, teamID).Scan(&strict, &picture, &right, &bad); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	var ids []int64
-	if picture > 0 {
-		ids = append(ids, picture)
+	for _, id := range []int64{picture, right, bad} {
+		if id > 0 && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
 	}
 	s, err := e.loadCore(ctx, e.DB, teamID, false)
 	if errors.Is(err, ErrNoGraph) {
@@ -630,7 +635,7 @@ func (e *Engine) media(ctx context.Context, teamID int64, prefetch bool) ([]int6
 		seen = s.PrefetchMedia(strict)
 	}
 	for _, id := range seen {
-		if id != picture {
+		if !slices.Contains(ids, id) {
 			ids = append(ids, id)
 		}
 	}

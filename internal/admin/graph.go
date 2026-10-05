@@ -164,6 +164,9 @@ func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.publishGraphSaved(r, advID, d.UpdatedAt, before, &env.Graph)
+	if d.DevSynced {
+		h.pokeDevTeams(r.Context(), advID)
+	}
 	// Answer from what was just saved and checked, rather than reading
 	// the draft back and checking it again: the designer saves every
 	// time the author pauses.

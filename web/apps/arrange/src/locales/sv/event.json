@@ -108,5 +108,11 @@
   "End event": "Avsluta eventet",
   "End event?": "Avsluta eventet?",
   "The event ends now for every team. Teams still playing keep the points they have, the results and recaps open, and players are signed out. Enter your password to confirm.": "Eventet avslutas nu för alla lag. Lag som fortfarande spelar behåller sina poäng, resultaten och sammanfattningarna öppnas och spelarna loggas ut. Ange ditt lösenord för att bekräfta.",
-  "Keep playing": "Fortsätt spela"
+  "Keep playing": "Fortsätt spela",
+  "Let {{name}} start anywhere?": "Låta {{name}} börja var som helst?",
+  "The team can begin wherever it stands, without being at the starting point — for a phone whose location won't settle, or a meeting point that moved. They still press Begin themselves. The action is recorded in the event log.": "Laget kan börja där det står, utan att vara vid startplatsen – för en telefon vars position inte stabiliseras, eller en mötesplats som flyttats. De trycker fortfarande på Börja själva. Åtgärden sparas i eventloggen.",
+  "Let them start": "Låt dem börja",
+  "{{name}} can start anywhere": "{{name}} kan börja var som helst",
+  "Let start anywhere": "Låt börja var som helst",
+  " may start away from the starting point": " får börja utanför startplatsen"
 }

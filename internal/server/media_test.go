@@ -30,9 +30,39 @@ func tinyPNG(t *testing.T, shade uint8) []byte {
 
 func (c *client) upload(path string, content []byte) (int, map[string]any) {
 	c.t.Helper()
+	return c.uploadNamed(path, "x.png", content)
+}
+
+// tinyWAV is a tenth of a second of silence: 8 kHz, 8-bit, mono.
+func tinyWAV() []byte {
+	const n = 800
+	var b bytes.Buffer
+	le := func(v uint32, size int) {
+		for i := 0; i < size; i++ {
+			b.WriteByte(byte(v >> (8 * i)))
+		}
+	}
+	b.WriteString("RIFF")
+	le(36+n, 4)
+	b.WriteString("WAVEfmt ")
+	le(16, 4)
+	le(1, 2)    // PCM
+	le(1, 2)    // mono
+	le(8000, 4) // sample rate
+	le(8000, 4) // byte rate
+	le(1, 2)    // block align
+	le(8, 2)    // bits per sample
+	b.WriteString("data")
+	le(n, 4)
+	b.Write(bytes.Repeat([]byte{128}, n))
+	return b.Bytes()
+}
+
+func (c *client) uploadNamed(path, name string, content []byte) (int, map[string]any) {
+	c.t.Helper()
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
-	fw, _ := mw.CreateFormFile("file", "x.png")
+	fw, _ := mw.CreateFormFile("file", name)
 	_, _ = fw.Write(content)
 	_ = mw.Close()
 	req, _ := http.NewRequest("POST", c.ts.URL+path, &body)

@@ -96,7 +96,25 @@ export type AdventurePatch = Partial<Omit<AdventureEdit, "avatar_url" | "start_l
   start_lat?: number | null;
   start_lng?: number | null;
   start_radius_m?: number | null;
+  /** Replaces the whole brief: what the adventure is meant to be. */
+  brief?: Brief;
 };
+
+/** internal/admin: Brief — free text, as agreed with the author. */
+export interface Brief {
+  theme?: string;
+  setting?: string;
+  tone?: string;
+  audience?: string;
+  age_range?: string;
+  group_size?: string;
+  minutes?: number;
+  difficulty?: string;
+  distance_m?: number;
+  accessibility?: string;
+  premise?: string;
+  notes?: string;
+}
 
 export const listAdventures = (signal?: AbortSignal) =>
   get<{ adventures: AdventureRow[] }>("/api/admin/adventures", opt(signal)).then((r) => r.adventures ?? []);

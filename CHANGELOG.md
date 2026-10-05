@@ -11,6 +11,73 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — the MCP guides a new adventure step by step
+
+- The assistant leads the author through six named steps — the idea,
+  making it, the look, where it starts, the stops, trying it — offering
+  suggestions with every question, ending every reply with the next
+  step, and handing over a dev ticket's link right after the adventure
+  is made, so the author's phone follows along as it is built.
+
+### Added — dev tickets: the draft, live, on your phone
+
+- **Play the draft while it is edited.** A dev ticket plays an
+  adventure's saved draft instead of a published version: every save —
+  in the designer, or by an assistant through the MCP — shows on the
+  phone within a second. Nothing is published, no event restarted. For
+  walking the site while talking to Claude, who changes the adventure
+  as you look.
+- **Go anywhere in it.** The phone's DEV bar goes to any step — back to
+  one played, or on to one not reached, played afresh — or starts over.
+  A step taken out while the phone stands on it leaves it at the start.
+- From the designer's ⋯ menu (Play the draft on my phone: a QR code,
+  the link, and a field to email it to any address), or the MCP: `create_dev_ticket`, `get_dev_screen` (what the
+  phone shows, so "change this" works), `dev_go_to` and `dev_reset`.
+- Each author has one dev ticket per adventure, free, never listed among
+  the events, never billed or ranked. Its graph is the adventure's dev
+  row (version 0), which is never a release.
+
+### Changed — the adventure's picture in the player's bar
+
+- The picture beside the menu in the player is the adventure's own,
+  when it has one; the organisation's logo is the fallback.
+
+### Added — starting away from the starting point
+
+- **For a real team:** an arranger can let a team begin wherever it
+  stands — team ⋯ → Let start anywhere in the event console, or the MCP
+  tool `let_team_start_anywhere`, or `POST /api/admin/teams/{id}/start-anywhere`.
+  For a phone whose location won't settle, or a meeting point moved on
+  the day. The team still sees the start screen with its start open,
+  and presses Begin itself; the event log records it.
+- **For a playtest:** `play_start` and `simulate_adventure` take
+  `anywhere: true`, so an assistant can try a draft away from the site.
+
+### Added — a guided new adventure
+
+- **New adventure is a guide in four steps**, with the adventure's
+  first page on a phone beside it all the way: the basics (title, one
+  line about it, language, who it is for — the link name fills itself
+  in), the look (the starter themes, large, on the adventure's own
+  title; Try a right answer shows its celebration), where it starts
+  (on a map, or skipped), and a last look before it is made.
+- It opens in the designer with the chosen look as the main look and
+  the first saved theme, and a start, a welcome step with its title and
+  line, and an end — playable at once.
+
+### Added — celebrations and sounds per theme
+
+- **How a right answer is celebrated:** confetti, just the tick, or only
+  the words; the confetti in the look's own colours, or emoji raining
+  instead (🦄🌈, 🐘🍌…).
+- **The look's own words** in place of "Correct!" and "Not quite".
+- **Sounds of the adventure's own** on a right and a wrong answer,
+  uploaded in the theme editor; Try a right / wrong answer acts one out
+  in the preview. Teams may always fetch a look's sounds; a main look's
+  must be the adventure's own audio, and duplicating copies them.
+- Several starter themes celebrate in their own way — Hacker answers
+  ACCESS GRANTED, Unicorn rains 🦄🌈✨.
+
 ### Added — buttons, answer bar, text size and titles
 
 - **Buttons:** shape (pill, rounded, square), fill (classic, gradient,

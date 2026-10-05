@@ -1,4 +1,4 @@
-import { FastForward, LogOut, Mail, Pencil, Trash2, Undo2 } from "lucide-react";
+import { FastForward, LogOut, Mail, MapPinOff, Pencil, Trash2, Undo2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { Button, Dialog, ErrorBox, ICON, Loading, Pill, useLoad } from "../../ui/index.ts";
 import * as api from "./api.ts";
@@ -36,6 +36,10 @@ export function TeamDetailDialog(props: {
   const where = finished ? t.t("Finished") : t.t("{{n}} points", { n: fmtPoints(team.score) });
   const more: MenuItem[] = [];
   if (team.email?.trim()) more.push({ label: t.t("Email invitation"), icon: <Mail size={ICON.sm} aria-hidden />, onClick: () => void actions.invite(team) });
+  // A team not begun yet may be held at a starting point it cannot reach.
+  if (!finished && !team.node && canDo(event, "unlock_team")) {
+    more.push({ label: t.t("Let start anywhere"), icon: <MapPinOff size={ICON.sm} aria-hidden />, onClick: () => void actions.startAnywhere(team) });
+  }
   if (canWithdraw && !isTerminal(event)) {
     more.push(team.withdrawn_at
       ? { label: t.t("Mark returned"), icon: <Undo2 size={ICON.sm} aria-hidden />, onClick: () => void actions.unwithdraw(team) }

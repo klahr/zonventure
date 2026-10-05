@@ -12,7 +12,7 @@ import { VISIBLE } from "./dz/types.tsx";
 import { locationError, zoneName } from "./zones.ts";
 import { Clapperboard, LocateFixed } from "lucide-react";
 import { ICON } from "./dz/ui.tsx";
-import { REPLAY_EVENT } from "./blocks/Animation.tsx";
+import { DEMO_ANSWER_EVENT, REPLAY_EVENT } from "./blocks/Animation.tsx";
 
 /** internal/graph/session.StartPlaceSlug: the start screen's zone for a required starting point. */
 const START_PLACE = "_start";
@@ -244,6 +244,20 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     window.addEventListener(REPLAY_EVENT, again);
     return () => window.removeEventListener(REPLAY_EVENT, again);
   }, []);
+  // Try it (the look's celebration controls): a right or a wrong answer,
+  // acted out with the player's own words, nothing sent to the server.
+  useEffect(() => {
+    const act = (e: Event) => {
+      const right = (e as CustomEvent<boolean>).detail;
+      setFeedback(
+        right
+          ? { tone: "good", text: tr("Correct!"), burst: { kind: "celebrate", head: tr("Correct!") } }
+          : { tone: "bad", text: tr("Not quite — try again."), burst: { kind: "rebuff", head: tr("Not quite") } },
+      );
+    };
+    window.addEventListener(DEMO_ANSWER_EVENT, act);
+    return () => window.removeEventListener(DEMO_ANSWER_EVENT, act);
+  }, [tr]);
 
   // Clear the canvas marker when the simulator goes away.
   useEffect(() => () => onPosition(null), [onPosition]);

@@ -216,6 +216,8 @@ export const importTeams = (eventId: number, file: File) => {
 };
 export const patchTeam = (id: number, body: { name?: string; email?: string }) => patch<void>(T(id), body);
 export const deleteTeam = (id: number, password: string) => request<void>(T(id), { method: "DELETE", ...pw(password) });
+/** Let a team begin away from the adventure's required starting point. */
+export const letTeamStartAnywhere = (id: number) => post<{ start_anywhere: boolean }>(T(id) + "/start-anywhere");
 export const unlockTeam = (id: number, node?: string) => post<{ completed?: boolean }>(T(id) + "/unlock", node ? { node } : undefined);
 export const withdrawTeam = (id: number) => post<unknown>(T(id) + "/withdraw");
 export const unwithdrawTeam = (id: number) => post<unknown>(T(id) + "/unwithdraw");

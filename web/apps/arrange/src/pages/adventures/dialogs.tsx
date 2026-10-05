@@ -2,15 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
-import { useSession } from "../../session.tsx";
 import { href } from "../../router.ts";
 import { Button, Dialog, Field, HelpPopover, ICON, ImageDrop, MarkdownArea, Row, fmtDateTime, useDialogs, useLoad, useToast } from "../../ui/index.ts";
-import { createAdventure, downscaleImage, firstPlaceOf, getEdit, getGraphState, importAdventure, orgName, removeCover, updateAdventure, uploadCover, type AdventurePatch, type AdventureEdit, type Assignment } from "./api.ts";
+import { downscaleImage, firstPlaceOf, getEdit, getGraphState, importAdventure, removeCover, updateAdventure, uploadCover, type AdventurePatch, type AdventureEdit, type Assignment } from "./api.ts";
 import { PointMap } from "../../designer/PointMap.tsx";
 
 const SLUG = /^[a-z0-9-]+$/;
 
-const slugFrom = (s: string) =>
+export const slugFrom = (s: string) =>
   s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 
 /**
@@ -18,7 +17,7 @@ const slugFrom = (s: string) =>
  * on the backdrop or Escape would otherwise lose it. The confirm's own
  * Escape reaches this handler too, so a close is ignored while asking.
  */
-function useGuardedClose(dirty: boolean, question: string, onClose: () => void) {
+export function useGuardedClose(dirty: boolean, question: string, onClose: () => void) {
   const t = useT();
   const dialogs = useDialogs();
   const asking = useRef(false);
@@ -32,88 +31,6 @@ function useGuardedClose(dirty: boolean, question: string, onClose: () => void) 
   };
 }
 
-/** New adventure: title first, the slug follows it until edited. Straight on to the designer. */
-export function CreateAdventureDialog({ onClose }: { onClose: () => void }) {
-  const t = useT();
-  const toast = useToast();
-  const { state } = useSession();
-  const org = orgName(state.status === "authenticated" ? state.user : null);
-  const [title, setTitle] = useState("");
-  const [slug, setSlug] = useState("");
-  const [slugEdited, setSlugEdited] = useState(false);
-  const [description, setDescription] = useState("");
-  const [author, setAuthor] = useState(org);
-  const [busy, setBusy] = useState(false);
-  // The short name and author fill themselves in; they open when they need a hand.
-  const [more, setMore] = useState(false);
-  const badSlug = slug !== "" && !SLUG.test(slug);
-  const moreOpen = more || badSlug || (title.trim() !== "" && slug === "");
-  const close = useGuardedClose(!!(title || slug || description || author !== org), t.t("Discard this adventure?"), onClose);
-
-  const submit = async () => {
-    if (!title.trim() || !slug.trim() || badSlug) return;
-    setBusy(true);
-    try {
-      const r = await createAdventure({ slug: slug.trim(), title: title.trim(), description, author: author.trim() });
-      location.hash = href({ name: "designer", slug: r.slug });
-      onClose();
-    } catch (e) {
-      toast.err(e);
-      // A taken short name is the usual reason; show the field.
-      setMore(true);
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Dialog
-      title={t.t("New adventure")}
-      onClose={close}
-      onSubmit={submit}
-      footer={
-        <>
-          <Button onClick={close}>{t.t("Cancel")}</Button>
-          <Button type="submit" variant="primary" filled loading={busy} disabled={!title.trim() || !slug.trim() || badSlug}>{t.t("Create and design")}</Button>
-        </>
-      }
-    >
-      <Field label={t.t("Title")}>
-        <input
-          autoFocus
-          required
-          value={title}
-          placeholder={t.t("e.g. “The Lost Vault”")}
-          onChange={(e) => {
-            setTitle(e.target.value);
-            if (!slugEdited) setSlug(slugFrom(e.target.value));
-          }}
-        />
-      </Field>
-      <Field label={t.t("Description (optional)")}>
-        <textarea rows={2} value={description} placeholder={t.t("A short pitch — what players encounter and roughly how long it takes.")} onChange={(e) => setDescription(e.target.value)} />
-      </Field>
-      <details className="adv-more" open={moreOpen} onToggle={(e) => setMore((e.target as HTMLDetailsElement).open)}>
-        <summary>{t.t("Link name and author")}</summary>
-      <Field label={t.t("Short name")} error={badSlug ? t.t("Lowercase a–z, digits, and hyphens only.") : undefined} hint={t.t("Used in links. Lowercase a–z, digits and hyphens.")}>
-        <input
-          required
-          value={slug}
-          placeholder="the-lost-vault"
-          aria-invalid={badSlug || undefined}
-          onChange={(e) => {
-            setSlug(e.target.value);
-            setSlugEdited(e.target.value !== "");
-          }}
-        />
-      </Field>
-      <Field label={t.t("Author")}>
-        <input value={author} onChange={(e) => setAuthor(e.target.value)} />
-      </Field>
-      </details>
-      <p className="cs-field__hint">{t.t("Next you design its steps. Colours, pictures and the rest can be set any time.")}</p>
-    </Dialog>
-  );
-}
 
 /**
  * Import a .zvadv.zip. A taken slug (409) — the usual case when

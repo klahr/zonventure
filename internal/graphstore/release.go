@@ -16,6 +16,9 @@ import (
 type Draft struct {
 	Graph     *graph.Graph
 	UpdatedAt time.Time
+	// DevSynced says the adventure's dev row took the draft too, so its
+	// dev teams should look again (see EnsureDev).
+	DevSynced bool
 }
 
 // SaveDraft stores g as the adventure's draft, whatever its errors — the
@@ -62,7 +65,40 @@ func SaveDraftIf(ctx context.Context, q Querier, adventureID, userID int64, g *g
 	if errors.Is(err, sql.ErrNoRows) {
 		return d, report, ErrDraftChanged
 	}
-	return d, report, err
+	if err != nil {
+		return d, report, err
+	}
+	// A dev ticket plays the draft as it is edited: its row follows.
+	res, err := q.ExecContext(ctx, `UPDATE adventure_graphs SET graph = $2 WHERE adventure_id = $1 AND version = 0`, adventureID, doc)
+	if err != nil {
+		return d, report, fmt.Errorf("syncing the dev graph: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		d.DevSynced = true
+	}
+	return d, report, nil
+}
+
+// EnsureDev returns the adventure's dev row — version 0 in
+// adventure_graphs, which a dev event plays and every draft save
+// rewrites — making it from g when there is none. Never a release: it
+// is not counted among the versions, and never published.
+func EnsureDev(ctx context.Context, q Querier, adventureID int64, g *graph.Graph) (int64, error) {
+	if err := stampLanguage(ctx, q, adventureID, g); err != nil {
+		return 0, err
+	}
+	doc, err := json.Marshal(g)
+	if err != nil {
+		return 0, fmt.Errorf("encoding graph: %w", err)
+	}
+	var id int64
+	err = q.QueryRowContext(ctx, `
+		INSERT INTO adventure_graphs (adventure_id, version, graph, label)
+		VALUES ($1, 0, $2, 'dev')
+		ON CONFLICT (adventure_id, version) DO UPDATE SET graph = EXCLUDED.graph
+		RETURNING id
+	`, adventureID, doc).Scan(&id)
+	return id, err
 }
 
 // LoadDraft returns the draft, or ErrNotFound.
@@ -139,14 +175,14 @@ func Published(ctx context.Context, q Querier, adventureID int64) (Stored, error
 func ByVersion(ctx context.Context, q Querier, adventureID int64, version int) (Stored, error) {
 	return scan(q.QueryRowContext(ctx, `
 		SELECT id, adventure_id, version, label, graph, `+adventureLanguage+` FROM adventure_graphs
-		WHERE adventure_id = $1 AND version = $2
+		WHERE adventure_id = $1 AND version = $2 AND version > 0
 	`, adventureID, version))
 }
 
 // SetLabel names a version.
 func SetLabel(ctx context.Context, q Querier, adventureID int64, version int, label string) error {
 	res, err := q.ExecContext(ctx, `
-		UPDATE adventure_graphs SET label = $1 WHERE adventure_id = $2 AND version = $3
+		UPDATE adventure_graphs SET label = $1 WHERE adventure_id = $2 AND version = $3 AND version > 0
 	`, label, adventureID, version)
 	if err != nil {
 		return err
@@ -179,7 +215,7 @@ func Versions(ctx context.Context, q Lister, adventureID int64) ([]Version, erro
 		FROM adventure_graphs g
 		JOIN adventures a ON a.id = g.adventure_id
 		LEFT JOIN users u ON u.id = g.created_by_user_id
-		WHERE g.adventure_id = $1
+		WHERE g.adventure_id = $1 AND g.version > 0
 		ORDER BY g.version DESC
 	`, adventureID)
 	if err != nil {

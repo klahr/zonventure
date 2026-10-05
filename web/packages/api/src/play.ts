@@ -465,6 +465,17 @@ export interface LookStyle {
   /** Step titles: absent is plain. */
   title_style?: "ribbon" | "underline" | "shadow";
   title_upper?: boolean;
+  /** How a right answer is marked: absent is confetti; quiet keeps only the mark; none only the words. */
+  celebrate?: "quiet" | "none";
+  /** The confetti's colours (up to 8), or emoji that rain instead. */
+  confetti_colors?: string[];
+  confetti_emoji?: string;
+  /** Replace "Correct!" and "Not quite", up to 40 characters each. */
+  cheer_text?: string;
+  miss_text?: string;
+  /** Sounds (adventure media ids) for a right and a wrong answer. */
+  sound_right?: number;
+  sound_wrong?: number;
 }
 
 /** internal/adventure: BackdropKinds. */
@@ -527,6 +538,8 @@ export interface PlayState {
     adventure_title?: string;
     org_name?: string;
     org_logo_url?: string;
+    /** The adventure's own picture, when it has one; shown in place of the organisation's logo. */
+    adventure_icon_url?: string;
     /** The author's welcome and farewell, Markdown. */
     intro_text?: string;
     outro_text?: string;
@@ -544,6 +557,8 @@ export interface PlayState {
   prefetch?: number[];
   /** What the organisers have told this team, newest first. Beside the game, not in it. */
   messages: EventMessage[];
+  /** Set for a dev ticket, playing the draft as it is edited: the draft's steps to jump to. */
+  dev?: { steps: { slug: string; title?: string; type: string }[] };
 }
 
 /** player.PlayFinish — what the end screen tells a finished team. */
@@ -739,6 +754,9 @@ export const receiveItem = (code: string) => post<{ item: string; name?: string;
 
 /** Rename the team; any member may. 409 when another team in the event has the name. */
 export const renameTeam = (name: string) => post<{ name: string }>("/api/player/team/name", { name });
+/** A dev ticket's phone: jump to a step of the draft, played afresh, or start over. */
+export const devGoTo = (node: string) => post<void>("/api/player/dev/goto", { node });
+export const devReset = () => post<void>("/api/player/dev/reset");
 
 /** Sign this phone out. The link still works to sign in again. */
 export const logout = () => post<void>("/api/player/logout", {});

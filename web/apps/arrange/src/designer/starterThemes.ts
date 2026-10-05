@@ -25,7 +25,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       background: "#f1f6e9", text: "#1b2e12", accent: "#2e7d32", accent_secondary: "#bf360c", submit_bg: "#dcedc8",
       font: "baloo-2", heading_font: "chewy",
       backdrop: { kind: "spots", opacity: 0.4, scale: 110, points: [{ x: 8, y: 4, color: "#aed581" }, { x: 92, y: 30, color: "#ffe082" }, { x: 18, y: 88, color: "#81c784" }] },
-      style: { card_opacity: 0.85, card_blur: true, button_fill: "gradient" },
+      style: { card_opacity: 0.85, card_blur: true, button_fill: "gradient", confetti_emoji: "🐘🍌🌴" },
     },
   },
   {
@@ -37,7 +37,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       background: "#0b0d26", text: "#eceeff", accent: "#7c4dff", accent_secondary: "#4fc3f7", submit_bg: "#171a3f",
       font: "fredoka", heading_font: "luckiest-guy",
       backdrop: { kind: "spots", opacity: 0.55, scale: 110, points: [{ x: 12, y: 18, color: "#4527a0" }, { x: 88, y: 55, color: "#1565c0" }, { x: 35, y: 96, color: "#6a1b9a" }] },
-      style: { card_opacity: 0.75, card_blur: true, transition: "zoom", button_fill: "gradient" },
+      style: { card_opacity: 0.75, card_blur: true, transition: "zoom", button_fill: "gradient", confetti_emoji: "⭐🚀" },
     },
   },
   {
@@ -76,7 +76,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       font: "fredoka", heading_font: "chewy",
       cards: "flat",
       backdrop: { kind: "stripes", color: "#f06292", opacity: 0.08, scale: 40, angle: 135 },
-      style: { dock: "floating", title_style: "ribbon", button_fill: "gradient" },
+      style: { dock: "floating", title_style: "ribbon", button_fill: "gradient", confetti_emoji: "🍬🍭" },
     },
   },
   {
@@ -88,7 +88,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       background: "#e8f6fb", text: "#0b2f40", accent: "#0277bd", accent_secondary: "#00695c", submit_bg: "#cdeef8",
       font: "baloo-2", heading_font: "baloo-2",
       backdrop: { kind: "spots", opacity: 0.4, scale: 110, points: [{ x: 14, y: 8, color: "#81d4fa" }, { x: 86, y: 48, color: "#80cbc4" }, { x: 28, y: 92, color: "#4fc3f7" }] },
-      style: { card_opacity: 0.85, card_blur: true, button_fill: "gradient" },
+      style: { card_opacity: 0.85, card_blur: true, button_fill: "gradient", confetti_emoji: "🐠🐚" },
     },
   },
   {
@@ -102,7 +102,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       backdrop: { kind: "spots", opacity: 0.55, scale: 100, points: [
         { x: 10, y: 5, color: "#f9a8d4" }, { x: 90, y: 22, color: "#c4b5fd" }, { x: 14, y: 55, color: "#99f6e4" }, { x: 86, y: 76, color: "#fde68a" }, { x: 40, y: 98, color: "#a5d8ff" },
       ] },
-      style: { card_opacity: 0.85, card_blur: true, transition: "pop", dock: "floating", button_fill: "soft" },
+      style: { card_opacity: 0.85, card_blur: true, transition: "pop", dock: "floating", button_fill: "soft", confetti_emoji: "🦄🌈✨" },
     },
   },
   {
@@ -114,7 +114,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       background: "#ffffff", text: "#1f2937", accent: "#2563eb", accent_secondary: "#86198f", submit_bg: "#eef2ff",
       font: "baloo-2", heading_font: "luckiest-guy",
       backdrop: { kind: "stripes", opacity: 0.3, scale: 70, angle: 135, fade: true, colors: ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93"] },
-      style: { button_fill: "gradient" },
+      style: { button_fill: "gradient", confetti_colors: ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93"] },
     },
   },
   {
@@ -126,7 +126,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       background: "#fffaf0", text: "#2d1b4e", accent: "#db2777", accent_secondary: "#6d28d9", submit_bg: "#ffe4f1",
       font: "fredoka", heading_font: "luckiest-guy",
       backdrop: { kind: "confetti", opacity: 0.5, scale: 26, motion: true, colors: ["#ff3d7f", "#ffb703", "#2ec4b6", "#8338ec", "#3a86ff"] },
-      style: { transition: "pop", button_size: "large", title_style: "ribbon", button_fill: "gradient" },
+      style: { transition: "pop", button_size: "large", title_style: "ribbon", button_fill: "gradient", confetti_colors: ["#ff3d7f", "#ffb703", "#2ec4b6", "#8338ec", "#3a86ff"] },
     },
   },
   {
@@ -150,7 +150,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       background: "#fff6f9", text: "#47202f", accent: "#be185d", accent_secondary: "#0f766e", submit_bg: "#d9f5f0",
       font: "fredoka", heading_font: "chewy",
       backdrop: { kind: "dots", color: "#f472b6", opacity: 0.18, scale: 30 },
-      style: { button_size: "large", button_fill: "gradient" },
+      style: { button_size: "large", button_fill: "gradient", confetti_emoji: "🍦🍓" },
     },
   },
   {
@@ -163,7 +163,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       font: "inconsolata", heading_font: "vt323",
       corners: "sharp", cards: "flat", card_outline: true,
       backdrop: { kind: "stripes", color: "#39ff14", opacity: 0.05, scale: 8, angle: 0 },
-      style: { transition: "fade", button_shape: "square", button_fill: "outline" },
+      style: { transition: "fade", button_shape: "square", button_fill: "outline", celebrate: "quiet", cheer_text: "ACCESS GRANTED", miss_text: "ACCESS DENIED" },
     },
   },
   {
@@ -175,7 +175,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       background: "#f5f7fa", text: "#1f2a37", accent: "#1d4ed8", accent_secondary: "#1e3a8a", submit_bg: "#e8edf4",
       font: "inter", heading_font: "inter",
       corners: "soft",
-      style: { button_shape: "rounded", button_fill: "flat" },
+      style: { button_shape: "rounded", button_fill: "flat", celebrate: "quiet" },
     },
   },
   {
@@ -188,7 +188,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       font: "merriweather", heading_font: "creepster",
       corners: "sharp",
       backdrop: { kind: "spots", opacity: 0.7, scale: 110, points: [{ x: 18, y: 10, color: "#5c0a0a" }, { x: 86, y: 58, color: "#3b0d2e" }, { x: 30, y: 96, color: "#4a0505" }] },
-      style: { card_opacity: 0.75, card_blur: true, transition: "fade", button_fill: "gradient" },
+      style: { card_opacity: 0.75, card_blur: true, transition: "fade", button_fill: "gradient", confetti_emoji: "🦇👻" },
     },
   },
   {
@@ -200,7 +200,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       background: "#e9edf2", text: "#26323f", accent: "#44617b", accent_secondary: "#3b4f63", submit_bg: "#d6dde6",
       font: "nunito", heading_font: "patrick-hand",
       backdrop: { kind: "stripes", color: "#6b7f95", opacity: 0.06, scale: 12, angle: 75, fade: true },
-      style: { button_fill: "gradient" },
+      style: { button_fill: "gradient", celebrate: "quiet" },
     },
   },
   {
@@ -212,7 +212,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       background: "#fff1f3", text: "#4c0519", accent: "#be123c", accent_secondary: "#be123c", submit_bg: "#ffe0e6",
       font: "nunito", heading_font: "pacifico",
       backdrop: { kind: "spots", opacity: 0.5, scale: 110, points: [{ x: 15, y: 10, color: "#fda4af" }, { x: 85, y: 45, color: "#f9a8d4" }, { x: 30, y: 92, color: "#fecdd3" }] },
-      style: { card_opacity: 0.85, card_blur: true, button_fill: "gradient" },
+      style: { card_opacity: 0.85, card_blur: true, button_fill: "gradient", confetti_emoji: "💖💌" },
     },
   },
   {
@@ -225,7 +225,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       font: "inter", heading_font: "orbitron",
       corners: "sharp", cards: "flat", card_outline: true,
       backdrop: { kind: "grid", color: "#05d9e8", opacity: 0.16, scale: 28 },
-      style: { card_opacity: 0.8, card_blur: true, transition: "slide", button_shape: "square", button_fill: "outline", title_upper: true },
+      style: { card_opacity: 0.8, card_blur: true, transition: "slide", button_shape: "square", button_fill: "outline", title_upper: true, confetti_colors: ["#ff2a6d", "#05d9e8", "#d1f7ff"] },
     },
   },
   {
@@ -238,7 +238,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       font: "nunito", heading_font: "press-start-2p",
       corners: "sharp",
       backdrop: { kind: "horizon", opacity: 1, scale: 40, color: "#2de2e6", color2: "#ffd319", fixed: true, colors: ["#1c0e31", "#2e1f56", "#59255b", "#d74789"] },
-      style: { card_opacity: 0.7, card_blur: true, transition: "slide", button_shape: "square", title_style: "shadow", dock: "floating", button_fill: "gradient" },
+      style: { card_opacity: 0.7, card_blur: true, transition: "slide", button_shape: "square", title_style: "shadow", dock: "floating", button_fill: "gradient", confetti_colors: ["#ff4fa3", "#ffd319", "#2de2e6"] },
     },
   },
   {
@@ -251,7 +251,7 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       font: "patrick-hand", heading_font: "patrick-hand",
       corners: "soft",
       backdrop: { kind: "lined", color: "#5b8fd4", color2: "#e57373", opacity: 0.22, scale: 30 },
-      style: { card_opacity: 0.6, transition: "flip", title_style: "underline", button_fill: "flat" },
+      style: { card_opacity: 0.6, transition: "flip", title_style: "underline", button_fill: "flat", confetti_emoji: "✏️⭐" },
     },
   },
 ];

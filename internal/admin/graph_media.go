@@ -74,8 +74,17 @@ func remapGraphMedia(g *graph.Graph, ids map[int64]int64) {
 		one(g.Roles[i].Image)
 	}
 	for i := range g.Themes {
-		if b := g.Themes[i].Look.Backdrop; b != nil && b.Media != 0 {
+		lk := &g.Themes[i].Look
+		if b := lk.Backdrop; b != nil && b.Media != 0 {
 			b.Media = id(b.Media)
+		}
+		if s := lk.Style; s != nil {
+			if s.SoundRight != 0 {
+				s.SoundRight = id(s.SoundRight)
+			}
+			if s.SoundWrong != 0 {
+				s.SoundWrong = id(s.SoundWrong)
+			}
 		}
 	}
 }

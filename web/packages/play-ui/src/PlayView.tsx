@@ -109,7 +109,8 @@ export function PlayView(props: PlayViewProps) {
   const t = props.t ?? english;
   const live = props.live ?? true;
   const now = useEngineClock(view.now, live);
-  const burst = useBurst(props.feedback ?? null);
+  const burst = useBurst(props.feedback ?? null, brand?.style);
+  useAnswerSound(props.feedback ?? null, brand?.style);
   const [hintsOpen, setHintsOpen] = useState(false);
 
   // Paired exits: with a step transition, the step that was here leaves
@@ -289,7 +290,7 @@ export function PlayView(props: PlayViewProps) {
           <JournalNotes journal={view.journal ?? []} storageKey={storageKey} t={t} />
         </Sheet>
       )}
-      {burst && <BurstOverlay burst={burst} />}
+      {burst && <BurstOverlay burst={burst} style={brand?.style} />}
     </div>
   );
 }
@@ -310,12 +311,14 @@ type Burst = NonNullable<Feedback["burst"]> & { id: number };
 const BURST_MS = { celebrate: 1500, rebuff: 900 } as const;
 
 /** Plays each new feedback's burst once, unless motion is reduced. */
-function useBurst(feedback: Feedback | null): Burst | null {
+function useBurst(feedback: Feedback | null, style?: play.LookStyle): Burst | null {
   const [burst, setBurst] = useState<Burst | null>(null);
   const seq = useRef(0);
   useEffect(() => {
-    if (!feedback?.burst || prefersReducedMotion()) return;
-    const b = { ...feedback.burst, id: ++seq.current };
+    if (!feedback?.burst || prefersReducedMotion() || style?.celebrate === "none") return;
+    // The look's own words, in place of the player's.
+    const own = feedback.burst.kind === "celebrate" ? style?.cheer_text : style?.miss_text;
+    const b = { ...feedback.burst, ...(own?.trim() ? { head: own.trim() } : {}), id: ++seq.current };
     setBurst(b);
     const id = setTimeout(() => setBurst((cur) => (cur?.id === b.id ? null : cur)), BURST_MS[b.kind]);
     return () => clearTimeout(id);
@@ -366,26 +369,58 @@ function prefersReducedMotion(): boolean {
 
 const CONFETTI = ["#e24080", "#ad1357", "#ffc93c", "#4cc38a", "#3b82f6", "#ff8a3d"];
 
-function BurstOverlay({ burst }: { burst: Burst }) {
+/**
+ * A look's own sound on a right or a wrong answer — the moments a burst
+ * marks. Played on the team's own action, which lets a phone play it;
+ * a sound the phone refuses is skipped. Reduced motion stills the burst,
+ * not the sound.
+ */
+function useAnswerSound(feedback: Feedback | null, style?: play.LookStyle) {
+  useEffect(() => {
+    const kind = feedback?.burst?.kind;
+    const id = kind === "celebrate" ? style?.sound_right : kind === "rebuff" ? style?.sound_wrong : undefined;
+    if (!id || !(id > 0) || typeof Audio === "undefined") return;
+    const sound = new Audio(playApi.mediaURL(Math.trunc(id)));
+    void sound.play().catch(() => {});
+    return () => sound.pause();
+    // Keyed on the feedback alone: each answer plays its sound once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedback]);
+}
+
+/** A run of emoji split into what a reader sees as single characters. */
+function graphemes(s: string): string[] {
+  const seg = typeof Intl !== "undefined" && "Segmenter" in Intl ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
+  return seg ? Array.from(seg.segment(s), (x) => x.segment).filter((g) => g.trim()) : Array.from(s).filter((g) => g.trim());
+}
+
+function BurstOverlay({ burst, style }: { burst: Burst; style?: play.LookStyle | undefined }) {
+  const colours = style?.confetti_colors?.filter(isHex).slice(0, 8);
+  const palette = colours?.length ? colours : CONFETTI;
+  const emoji = style?.confetti_emoji ? graphemes(style.confetti_emoji).slice(0, 8) : [];
   // Pieces are fixed per burst, so a re-render does not reshuffle them.
   const pieces = useMemo(
     () =>
-      burst.kind !== "celebrate"
+      burst.kind !== "celebrate" || style?.celebrate === "quiet"
         ? []
-        : Array.from({ length: 36 }, (_, i) => ({
+        : Array.from({ length: emoji.length ? 24 : 36 }, (_, i) => ({
+            emoji: emoji.length ? emoji[i % emoji.length] : undefined,
             left: `${Math.random() * 100}%`,
-            "--c": CONFETTI[i % CONFETTI.length],
+            "--c": palette[i % palette.length],
             "--d": `${Math.round(Math.random() * 350)}ms`,
             "--dx": `${Math.round((Math.random() - 0.5) * 220)}px`,
             "--rot": `${Math.round((Math.random() - 0.5) * 1080)}deg`,
           })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [burst.id, burst.kind],
   );
   if (burst.kind === "celebrate") {
     return (
       <div className="pv-burst pv-burst--celebrate" aria-hidden>
-        {pieces.map((p, i) => (
-          <i key={i} className="pv-confetti" style={p as CSSProperties} />
+        {pieces.map(({ emoji: e, ...p }, i) => (
+          <i key={i} className={"pv-confetti" + (e ? " pv-confetti--emoji" : "")} style={p as CSSProperties}>
+            {e}
+          </i>
         ))}
         <div className="pv-burst__disc">
           <svg viewBox="0 0 52 52" className="pv-burst__mark">

@@ -206,27 +206,44 @@ func (h *Handlers) cloneAdventure(ctx context.Context, sourceSlug, newSlug strin
 	return tx.Commit()
 }
 
-// clonePicture copies the image of the source's own look, when that is
-// a picture, and points the copy's backdrop at its own copy of it: the
+// clonePicture copies the media of the source's own look — its picture
+// and its sounds — and points the copy's look at its own copies: the
 // graph's media are copied with the graph, but the look is not in it.
 func clonePicture(ctx context.Context, tx *sql.Tx, sourceAdvID, newAdvID, byUserID int64) error {
-	var id int64
+	var picture, right, wrong int64
 	err := tx.QueryRowContext(ctx, `
-		SELECT COALESCE((backdrop->>'media')::bigint, 0) FROM adventures
-		WHERE id = $1 AND backdrop->>'kind' = 'picture'
-	`, sourceAdvID).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && id == 0 {
+		SELECT COALESCE(CASE WHEN backdrop->>'kind' = 'picture' THEN (backdrop->>'media')::bigint END, 0),
+		       COALESCE((look_style->>'sound_right')::bigint, 0),
+		       COALESCE((look_style->>'sound_wrong')::bigint, 0)
+		FROM adventures WHERE id = $1
+	`, sourceAdvID).Scan(&picture, &right, &wrong)
+	if err != nil {
+		return fmt.Errorf("load look media: %w", err)
+	}
+	var ids []int64
+	for _, id := range []int64{picture, right, wrong} {
+		if id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
 		return nil
 	}
-	if err != nil {
-		return fmt.Errorf("load picture: %w", err)
-	}
-	idMap, err := copyGraphMedia(ctx, tx, sourceAdvID, newAdvID, byUserID, []int64{id})
+	idMap, err := copyGraphMedia(ctx, tx, sourceAdvID, newAdvID, byUserID, ids)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE adventures SET backdrop = jsonb_set(backdrop, '{media}', to_jsonb($1::bigint)) WHERE id = $2`, idMap[id], newAdvID); err != nil {
-		return fmt.Errorf("point picture: %w", err)
+	for _, u := range []struct {
+		old         int64
+		column, key string
+	}{{picture, "backdrop", "media"}, {right, "look_style", "sound_right"}, {wrong, "look_style", "sound_wrong"}} {
+		if u.old == 0 {
+			continue
+		}
+		q := fmt.Sprintf(`UPDATE adventures SET %[1]s = jsonb_set(%[1]s, '{%[2]s}', to_jsonb($1::bigint)) WHERE id = $2`, u.column, u.key)
+		if _, err := tx.ExecContext(ctx, q, idMap[u.old], newAdvID); err != nil {
+			return fmt.Errorf("point look media: %w", err)
+		}
 	}
 	return nil
 }

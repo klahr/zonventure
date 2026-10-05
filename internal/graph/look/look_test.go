@@ -1,6 +1,9 @@
 package look
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestBackdropValidate(t *testing.T) {
 	for _, ok := range []Backdrop{
@@ -54,12 +57,20 @@ func TestStyleValidate(t *testing.T) {
 	if err := (Style{Transition: "slide"}).Validate(); err != nil {
 		t.Errorf("slide: %v", err)
 	}
+	party := Style{Celebrate: "quiet", ConfettiColors: []string{"#ff0000"}, ConfettiEmoji: "🐘🎉", CheerText: "Snyggt!", MissText: "Nästan!", SoundRight: 3, SoundWrong: 4}
+	if err := party.Validate(); err != nil {
+		t.Errorf("%+v: %v", party, err)
+	}
+	if got := (Look{Backdrop: &Backdrop{Kind: "picture", Media: 2, Opacity: 1, Scale: 100}, Style: &party}).MediaIDs(); len(got) != 3 {
+		t.Errorf("look media = %v, want picture and two sounds", got)
+	}
 	full := Style{ButtonShape: "square", ButtonFill: "outline", ButtonSize: "large", Dock: "floating", TextScale: 1.2, TitleStyle: "ribbon", TitleUpper: true}
 	if err := full.Validate(); err != nil {
 		t.Errorf("%+v: %v", full, err)
 	}
 	for _, bad := range []Style{{CardOpacity: 0.1}, {CardOpacity: 1.5}, {CardOpacity: -1}, {Transition: "spin"},
-		{ButtonShape: "blob"}, {ButtonFill: "glitter"}, {ButtonSize: "huge"}, {Dock: "top"}, {TitleStyle: "neon"}, {TextScale: 3}, {TextScale: 0.5}} {
+		{ButtonShape: "blob"}, {ButtonFill: "glitter"}, {Celebrate: "fireworks"}, {ConfettiColors: []string{"red"}},
+		{ConfettiEmoji: "🐘🐘🐘🐘🐘🐘🐘🐘🐘"}, {CheerText: "a\nb"}, {MissText: strings.Repeat("x", 41)}, {SoundRight: -1}, {ButtonSize: "huge"}, {Dock: "top"}, {TitleStyle: "neon"}, {TextScale: 3}, {TextScale: 0.5}} {
 		if bad.Validate() == nil {
 			t.Errorf("accepted %+v", bad)
 		}

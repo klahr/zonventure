@@ -117,6 +117,9 @@ type Team struct {
 	// screen until then. Loaded per request from the adventure's starting
 	// point and start radius; not part of the persisted team state.
 	StartPlace *graph.Zone `json:"-"`
+	// StartAnywhere is an arranger's word that the team may begin away
+	// from StartPlace: it still sees the start screen, its start open.
+	StartAnywhere bool `json:"-"`
 
 	Current       string        `json:"current,omitempty"`
 	NodeEnteredAt time.Time     `json:"node_entered_at"`
@@ -536,9 +539,10 @@ func (t *Team) HoldsAtStart() bool {
 }
 
 // AtStartPlace reports whether one of the team's players is at the
-// adventure's starting point. Always true when it requires none.
+// adventure's starting point. Always true when it requires none, or an
+// arranger has let the team start anywhere.
 func (t *Team) AtStartPlace() bool {
-	if t.StartPlace == nil {
+	if t.StartPlace == nil || t.StartAnywhere {
 		return true
 	}
 	for _, p := range t.players() {

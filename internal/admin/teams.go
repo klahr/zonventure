@@ -351,6 +351,40 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 	h.rescueGraphTeam(w, r, eventID, teamID)
 }
 
+// LetTeamStartAnywhere serves POST /api/admin/teams/{teamID}/start-anywhere:
+// the team may begin wherever it stands, the adventure's required
+// starting point not asked of it — for a phone whose GPS will not settle,
+// or a meeting point moved on the day. Before the team opens its link or
+// while it waits at the start screen; a finished team is refused.
+func (h *Handlers) LetTeamStartAnywhere(w http.ResponseWriter, r *http.Request) {
+	teamID, eventID, ok := h.teamFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if !h.requireEventOp(w, r.Context(), eventID, OpUnlockTeam) {
+		return
+	}
+	var completed sql.NullTime
+	err := h.DB.QueryRowContext(r.Context(), `SELECT completed_at FROM team_graph_state WHERE team_id = $1`, teamID).Scan(&completed)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+		return
+	}
+	if completed.Valid {
+		httpx.Error(w, http.StatusConflict, "team already finished")
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(), `UPDATE teams SET start_anywhere = TRUE WHERE id = $1`, teamID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamStartAnywhere, map[string]any{"by_arranger": true})
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
+	h.Hub.Publish(ws.TeamTopic(teamID), "changed", nil)
+	httpx.JSON(w, http.StatusOK, map[string]any{"start_anywhere": true})
+}
+
 // rescueGraphTeam moves a graph team past the puzzle it is on: its skip
 // route if it has one, else its answer route, with no points. The body
 // may name the node the arranger saw, so a team that moved meanwhile

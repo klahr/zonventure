@@ -639,7 +639,8 @@ func (h *Handlers) writeOrgEvents(w http.ResponseWriter, r *http.Request, orgID 
 		LEFT JOIN adventures adv ON adv.slug = ar.adventure_slug
 	`
 	args := []any{orgID}
-	wheres := []string{"ar.org_id = $1"}
+	// A dev event (an author trying the draft on site) is not an event to list.
+	wheres := []string{"ar.org_id = $1", "NOT ar.dev"}
 	if v := strings.TrimSpace(r.URL.Query().Get("public_for_sale")); v != "" {
 		want, err := strconv.ParseBool(v)
 		if err != nil {

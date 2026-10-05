@@ -34,6 +34,11 @@ export default defineConfig({
     proxy: {
       "/api": "http://localhost:8080",
       "/ws": { target: "ws://localhost:8080", ws: true },
+      // Pictures, sounds and QR codes the server serves beside the API.
+      "/media": "http://localhost:8080",
+      "/qr": "http://localhost:8080",
+      "/adventure-assets": "http://localhost:8080",
+      "/org-logo": "http://localhost:8080",
     },
   },
 });

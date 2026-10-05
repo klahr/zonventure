@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -78,6 +79,9 @@ type PlayEvent struct {
 	AdventureTitle string `json:"adventure_title,omitempty"`
 	OrgName        string `json:"org_name,omitempty"`
 	OrgLogoURL     string `json:"org_logo_url,omitempty"`
+	// AdventureIconURL is the adventure's own picture, when it has one:
+	// the phone shows it beside the menu, the organisation's logo failing it.
+	AdventureIconURL string `json:"adventure_icon_url,omitempty"`
 	// IntroText and OutroText are the author's welcome and farewell,
 	// Markdown. The client renders them with the same safe renderer as
 	// puzzle text.
@@ -141,6 +145,8 @@ type PlayState struct {
 	// Messages are what the organisers have told this team, newest
 	// first: information beside the game, shown in the app's inbox.
 	Messages []eventmsg.Message `json:"messages"`
+	// Dev is set for a dev ticket, playing the draft as it is edited.
+	Dev *PlayDev `json:"dev,omitempty"`
 }
 
 // GetPlay returns the team's current state.
@@ -185,6 +191,9 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	if tc.OrgHasLogo {
 		out.Event.OrgLogoURL = fmt.Sprintf("/org-logo/%d", tc.OrgID)
 	}
+	if look.icon {
+		out.Event.AdventureIconURL = "/adventure-assets/avatar/" + url.PathEscape(tc.AdventureSlug)
+	}
 	if ob, err := orgBrand(ctx, h.DB, tc.OrgID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading organisation failed", err)
 		return
@@ -193,6 +202,10 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	}
 	if out.Messages, err = eventmsg.ForTeam(ctx, h.DB, tc.EventID, tc.TeamID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading messages failed", err)
+		return
+	}
+	if out.Dev, err = devInfo(ctx, h.DB, tc.EventID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading the dev steps failed", err)
 		return
 	}
 	if out.Team.Locked, err = play.TeamBegun(ctx, h.DB, tc.TeamID); err != nil {
@@ -289,6 +302,7 @@ type look struct {
 	brand               adventure.Colors
 	start               *PlayStart
 	cheat               bool
+	icon                bool
 }
 
 func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
@@ -303,10 +317,10 @@ func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
 		SELECT title, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font,
 		       heading_font, corners, cards, card_outline, backdrop, look_style,
-		       start_lat, start_lng, start_label, start_radius_m, (cheat_password IS NOT NULL)
+		       start_lat, start_lng, start_label, start_radius_m, (cheat_password IS NOT NULL), (avatar_mime_type IS NOT NULL)
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&l.title, &l.intro, &l.outro, &accent, &second, &bg, &ink, &dock, &l.brand.Font,
-		&l.brand.HeadingFont, &l.brand.Corners, &l.brand.Cards, &l.brand.CardOutline, &backdrop, &style, &lat, &lng, &label, &radius, &l.cheat)
+		&l.brand.HeadingFont, &l.brand.Corners, &l.brand.Cards, &l.brand.CardOutline, &backdrop, &style, &lat, &lng, &label, &radius, &l.cheat, &l.icon)
 	if errors.Is(err, sql.ErrNoRows) {
 		return look{}, nil
 	}

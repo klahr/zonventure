@@ -44,7 +44,10 @@ const (
 	TeamWithdrawn  = "team.withdrawn"
 	TeamReturned   = "team.returned"
 	TeamUnlocked   = "team.unlocked"
-	GateReached    = "gate.reached"
+	// TeamStartAnywhere is an arranger letting a team begin away from
+	// the adventure's required starting point.
+	TeamStartAnywhere = "team.start_anywhere"
+	GateReached       = "gate.reached"
 	// PhotoTaken is a team's picture for a photo block, and
 	// PhotoReviewed an organiser's verdict on one.
 	PhotoTaken    = "photo.taken"

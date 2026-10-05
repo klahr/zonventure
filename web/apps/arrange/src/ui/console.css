@@ -104,6 +104,8 @@
 
 .dz .cs-dialog { max-width: 32rem; width: calc(100vw - 2rem); }
 .dz .cs-dialog--wide { max-width: 44rem; }
+.dz .cs-dialog--huge { max-width: 72rem; }
+.dz .cs-dialog--huge .modal-body { max-height: min(80vh, 52rem); }
 .dz .cs-dialog .modal-body { display: flex; flex-direction: column; gap: var(--dz-space-3); max-height: 70vh; overflow-y: auto; }
 
 /* Toasts (ui/toast.tsx): cards on the surface, the tone in the icon and

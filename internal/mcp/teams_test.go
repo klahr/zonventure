@@ -27,6 +27,7 @@ func TestTeamTools_NilAdminGuard(t *testing.T) {
 		{"withdraw_team", withdrawTeam, `{"team_id":1}`},
 		{"unwithdraw_team", unwithdrawTeam, `{"team_id":1}`},
 		{"unlock_team", unlockTeam, `{"team_id":1}`},
+		{"let_team_start_anywhere", letTeamStartAnywhere, `{"team_id":1}`},
 		{"add_slot", addSlot, `{"team_id":1,"name":"Alice"}`},
 		{"remove_slot", removeSlot, `{"team_id":1,"slot_id":2}`},
 		{"rotate_slot_token", rotateSlotToken, `{"team_id":1,"slot_id":2}`},
@@ -91,16 +92,17 @@ func TestTeamTools_AreRegisteredWithCorrectScope(t *testing.T) {
 	s.registerTeamTools()
 
 	want := map[string]string{
-		"create_team":       scopeWrite,
-		"bulk_create_teams": scopeWrite,
-		"update_team":       scopeWrite,
-		"delete_team":       scopeWrite,
-		"withdraw_team":     scopeWrite,
-		"unwithdraw_team":   scopeWrite,
-		"unlock_team":       scopeWrite,
-		"add_slot":          scopeWrite,
-		"remove_slot":       scopeWrite,
-		"rotate_slot_token": scopeWrite,
+		"create_team":             scopeWrite,
+		"bulk_create_teams":       scopeWrite,
+		"update_team":             scopeWrite,
+		"delete_team":             scopeWrite,
+		"withdraw_team":           scopeWrite,
+		"unwithdraw_team":         scopeWrite,
+		"unlock_team":             scopeWrite,
+		"let_team_start_anywhere": scopeWrite,
+		"add_slot":                scopeWrite,
+		"remove_slot":             scopeWrite,
+		"rotate_slot_token":       scopeWrite,
 	}
 	for name, w := range want {
 		got, ok := s.tools.scopes[name]

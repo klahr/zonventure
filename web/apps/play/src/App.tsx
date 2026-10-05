@@ -4,6 +4,7 @@ import { play, siteName } from "@zonventure/api";
 import { useT } from "./i18n.tsx";
 import { useGame } from "./useGame.ts";
 import { Inbox } from "./Inbox.tsx";
+import { DevBar } from "./DevBar.tsx";
 import { Menu } from "./Menu.tsx";
 import { CheatSheet, useSevenTaps } from "./Cheat.tsx";
 import { useGeo, useLiveRefresh } from "./live.ts";
@@ -170,7 +171,12 @@ export function App() {
           onRenamed={game.refresh}
           leave={game.leave}
         />
-        {s.event.org_logo_url && <img className="app-bar__logo" src={s.event.org_logo_url} alt={s.event.org_name ?? ""} />}
+        {/* The adventure's own picture, else the organisation's logo. */}
+        {s.event.adventure_icon_url ? (
+          <img className="app-bar__logo" src={s.event.adventure_icon_url} alt={s.event.adventure_title ?? ""} />
+        ) : (
+          s.event.org_logo_url && <img className="app-bar__logo" src={s.event.org_logo_url} alt={s.event.org_name ?? ""} />
+        )}
         <div className="app-bar__who">
           <div className="app-bar__title" onClick={tapTitle}>{s.event.adventure_title || siteName()}</div>
           <div className="app-bar__team">
@@ -187,6 +193,7 @@ export function App() {
         <Inbox messages={s.messages ?? []} teamID={s.team.id} t={t} locale={i18n.current()} />
       </header>
 
+      {s.dev && <DevBar dev={s.dev} node={s.view?.node} t={t} onMoved={game.refresh} />}
       <main className="app-main" ref={mainRef} tabIndex={-1}>
         {s.event.state === "paused" && <p className="app-banner">{t("The game is paused. Hold on.")}</p>}
         {game.status === "ended" && <p className="app-banner">{t("This event has ended. Thanks for playing!")}</p>}

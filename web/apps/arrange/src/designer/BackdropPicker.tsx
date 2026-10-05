@@ -253,7 +253,7 @@ function SpotCanvas({ brand, bd, onPoints }: { brand: play.Brand; bd: play.Backd
  * Colours in turn — rainbow stripes, party confetti. Empty, the pattern
  * uses its one or two colours instead.
  */
-function ColourList({ label, empty, colours, onColours }: { label: string; empty: string; colours: string[]; onColours: (c: string[]) => void }) {
+export function ColourList({ label, empty, colours, onColours }: { label: string; empty: string; colours: string[]; onColours: (c: string[]) => void }) {
   const t = useT();
   const RAINBOW = ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93"];
   return (

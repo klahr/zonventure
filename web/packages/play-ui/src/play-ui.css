@@ -1335,6 +1335,15 @@
   background: var(--c, #e24080);
   animation: pv-confetti 2.2s cubic-bezier(0.25, 0.75, 0.45, 1) var(--d, 0ms) forwards;
 }
+/* Emoji confetti (a look's confetti_emoji): the character is the piece. */
+.pv-confetti--emoji {
+  width: auto;
+  height: auto;
+  background: none;
+  font-size: 1.6rem;
+  font-style: normal;
+  line-height: 1;
+}
 @keyframes pv-confetti {
   0% {
     opacity: 0;

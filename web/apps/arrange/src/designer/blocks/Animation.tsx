@@ -9,6 +9,10 @@ import type { T } from "./types.ts";
 export const REPLAY_EVENT = "zv:replay-animations";
 export const replayAnimations = () => window.dispatchEvent(new Event(REPLAY_EVENT));
 
+/** Asks the preview to act out a right or a wrong answer, with the look's celebration and sound. */
+export const DEMO_ANSWER_EVENT = "zv:demo-answer";
+export const demoAnswer = (right: boolean) => window.dispatchEvent(new CustomEvent(DEMO_ANSWER_EVENT, { detail: right }));
+
 /**
  * The animation on a sample card, right beside its controls: it plays on
  * every change, without waiting for the preview to place the team again.

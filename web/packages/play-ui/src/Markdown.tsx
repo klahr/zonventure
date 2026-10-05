@@ -2,8 +2,9 @@ import { Fragment, useMemo, type ReactNode } from "react";
 import { parseInline, parseMarkdown, type Inline } from "./markdown.ts";
 
 /** Render author text. See markdown.ts for why this never touches HTML. */
-export function Markdown({ text, className }: { text: string; className?: string }) {
-  const blocks = useMemo(() => parseMarkdown(text), [text]);
+export function Markdown({ text, className }: { text: string | undefined; className?: string }) {
+  // An empty field is left out of what the server sends: nothing to show.
+  const blocks = useMemo(() => parseMarkdown(text ?? ""), [text]);
   return (
     <div className={className}>
       {blocks.map((b, i) => {
@@ -33,8 +34,8 @@ export function Markdown({ text, className }: { text: string; className?: string
 }
 
 /** Render author text as one run of inline markup, for a preview inside a button or a line. */
-export function MarkdownInline({ text, className }: { text: string; className?: string }) {
-  const nodes = useMemo(() => parseInline(text.replace(/\s*\n\s*/g, " ")), [text]);
+export function MarkdownInline({ text, className }: { text: string | undefined; className?: string }) {
+  const nodes = useMemo(() => parseInline((text ?? "").replace(/\s*\n\s*/g, " ")), [text]);
   return <span className={className}>{inlines(nodes)}</span>;
 }
 

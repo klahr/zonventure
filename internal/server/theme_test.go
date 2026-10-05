@@ -114,6 +114,22 @@ func TestThemePresetsAndOrgBrandReachThePlayer(t *testing.T) {
 		t.Errorf("the look's picture = %d for a team, want 200", s)
 	}
 
+	// A sound must be the adventure's own audio; once set, every team may fetch it.
+	if s := pub.doAny("PATCH", "/api/admin/adventures/demo", map[string]any{"style": map[string]any{"sound_right": pic}}, nil); s != 400 {
+		t.Errorf("a picture as a sound = %d, want 400", s)
+	}
+	up, snd := pub.uploadNamed("/api/admin/adventures/demo/media", "ding.wav", tinyWAV())
+	if up != 200 && up != 201 {
+		t.Fatalf("sound upload = %d", up)
+	}
+	ding := int64(snd["id"].(float64))
+	if s := pub.doAny("PATCH", "/api/admin/adventures/demo", map[string]any{"style": map[string]any{"sound_right": ding, "confetti_emoji": "🐘", "cheer_text": "Snyggt!"}}, nil); s != 200 && s != 204 {
+		t.Fatalf("set sound = %d", s)
+	}
+	if s := p.status("/media/" + itoa(ding)); s != 200 {
+		t.Errorf("the look's sound = %d for a team, want 200", s)
+	}
+
 	// An empty kind takes the pattern away again.
 	if s := pub.doAny("PATCH", "/api/admin/adventures/demo", map[string]any{"backdrop": map[string]any{"kind": ""}}, nil); s != 200 && s != 204 {
 		t.Fatalf("clear backdrop = %d", s)

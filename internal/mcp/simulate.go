@@ -33,7 +33,8 @@ func (s *Server) registerSimulateTools() {
 			"type":     "object",
 			"required": []string{"slug", "actions"},
 			"properties": map[string]any{
-				"slug": map[string]any{"type": "string", "description": "Adventure slug."},
+				"slug":     map[string]any{"type": "string", "description": "Adventure slug."},
+				"anywhere": map[string]any{"type": "boolean", "description": "Begin wherever the team is, skipping the adventure's required starting point. Default false."},
 				"actions": map[string]any{
 					"type":     "array",
 					"minItems": 1,
@@ -79,8 +80,9 @@ type simStep struct {
 
 func simulateAdventure(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
 	var a struct {
-		Slug    string            `json:"slug"`
-		Actions []json.RawMessage `json:"actions"`
+		Slug     string            `json:"slug"`
+		Actions  []json.RawMessage `json:"actions"`
+		Anywhere bool              `json:"anywhere"`
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return errorResult("bad arguments: " + err.Error()), nil
@@ -107,7 +109,7 @@ func simulateAdventure(ctx context.Context, s *Server, raw json.RawMessage) (Too
 	steps := []simStep{}
 	for _, act := range a.Actions {
 		status, body, err := callAdmin(ctx, s.Admin.SimulateAdventureGraph, "POST", "/api/admin/adventures/"+a.Slug+"/simulate",
-			map[string]string{"slug": a.Slug}, nil, map[string]json.RawMessage{"envelope": env, "team": team, "action": act})
+			map[string]string{"slug": a.Slug}, nil, map[string]any{"envelope": json.RawMessage(env), "team": team, "action": act, "any_place": a.Anywhere})
 		if err != nil {
 			return errorResult("call: " + err.Error()), nil
 		}

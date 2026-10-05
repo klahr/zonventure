@@ -3,7 +3,11 @@ import type { Theme } from "@zonventure/graph";
 import { FONTS, isHex, lookContrast, type ContrastIssue } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
 import { X } from "lucide-react";
-import { BackdropPicker, Check, Slider } from "./BackdropPicker.tsx";
+import { BackdropPicker, Check, ColourList, Slider } from "./BackdropPicker.tsx";
+import { demoAnswer } from "./blocks/Animation.tsx";
+import { AdventureSlug } from "./MediaEditor.tsx";
+import { adventures, play as playApi } from "@zonventure/api";
+import { useContext, useRef, useState } from "react";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { ICON } from "./dz/ui.tsx";
 
@@ -141,7 +145,7 @@ export function LookControls({ brand, onChange }: { brand: play.Brand; onChange:
   };
 
   // The finer choices: a field set to undefined goes back to its default.
-  const setStyle = (patch: Partial<Record<keyof play.LookStyle, number | boolean | string | undefined>>) => {
+  const setStyle = (patch: Partial<Record<keyof play.LookStyle, number | boolean | string | string[] | undefined>>) => {
     const style: Record<string, unknown> = { ...brand.style, ...patch };
     for (const k of Object.keys(style)) if (style[k] === undefined) delete style[k];
     const next = { ...brand };
@@ -297,8 +301,109 @@ export function LookControls({ brand, onChange }: { brand: play.Brand; onChange:
         onPick={(v) => setStyle({ title_style: v || undefined })}
       />
       <Check label={t.t("Titles in capitals")} checked={!!brand.style?.title_upper} onCheck={(v) => setStyle({ title_upper: v || undefined })} />
+      <Celebration brand={brand} setStyle={setStyle} />
       <BackdropPicker brand={brand} onChange={onChange} />
     </>
+  );
+}
+
+/**
+ * How a right answer is celebrated, and how both answers sound: confetti
+ * or not, its colours or emoji, the words, and sounds of the adventure's
+ * own. Try it acts an answer out in the preview.
+ */
+function Celebration({ brand, setStyle }: { brand: play.Brand; setStyle: (patch: Partial<Record<keyof play.LookStyle, number | boolean | string | string[] | undefined>>) => void }) {
+  const t = useT();
+  const st = brand.style ?? {};
+  return (
+    <>
+      <h4>{t.t("Celebration")}</h4>
+      <Choice
+        label={t.t("A right answer")}
+        options={[{ value: "", label: t.t("Confetti") }, { value: "quiet", label: t.t("Just the tick") }, { value: "none", label: t.t("Only the words") }]}
+        value={st.celebrate ?? ""}
+        onPick={(v) => setStyle({ celebrate: v || undefined })}
+      />
+      {!st.celebrate && (
+        <>
+          <ColourList
+            label={t.t("Confetti colours")}
+            empty={t.t("None: the player's own bright mix.")}
+            colours={st.confetti_colors ?? []}
+            onColours={(c) => setStyle({ confetti_colors: c.length ? c : undefined })}
+          />
+          <label className="field">
+            <span className="field__label">{t.t("Or emoji instead")}</span>
+            <input className="field__input" value={st.confetti_emoji ?? ""} maxLength={32} placeholder="🐘 🎉 ⭐" onChange={(e) => setStyle({ confetti_emoji: e.target.value.replace(/\s+/g, "") || undefined })} />
+          </label>
+        </>
+      )}
+      <div className="look__pair">
+        <label className="field">
+          <span className="field__label">{t.t("Right answer says")}</span>
+          <input className="field__input" value={st.cheer_text ?? ""} maxLength={40} placeholder={t.t("Correct!")} onChange={(e) => setStyle({ cheer_text: e.target.value || undefined })} />
+        </label>
+        <label className="field">
+          <span className="field__label">{t.t("Wrong answer says")}</span>
+          <input className="field__input" value={st.miss_text ?? ""} maxLength={40} placeholder={t.t("Not quite")} onChange={(e) => setStyle({ miss_text: e.target.value || undefined })} />
+        </label>
+      </div>
+      <SoundPick label={t.t("Sound on a right answer")} id={st.sound_right} onPick={(id) => setStyle({ sound_right: id })} />
+      <SoundPick label={t.t("Sound on a wrong answer")} id={st.sound_wrong} onPick={(id) => setStyle({ sound_wrong: id })} />
+      <div className="look__actions">
+        <button type="button" className="btn btn--ghost btn--sm" onClick={() => demoAnswer(true)}>{t.t("Try a right answer")}</button>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={() => demoAnswer(false)}>{t.t("Try a wrong answer")}</button>
+      </div>
+      <p className="field__hint">{t.t("The words are the same in every language the adventure is played in.")}</p>
+    </>
+  );
+}
+
+/** A sound of the adventure's own: upload one, listen to it, take it away. */
+function SoundPick({ label, id, onPick }: { label: string; id: number | undefined; onPick: (id: number | undefined) => void }) {
+  const t = useT();
+  const slug = useContext(AdventureSlug);
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="field">
+      <span className="field__label">{label}</span>
+      <div className="look__actions">
+        {id ? (
+          <>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => void new Audio(playApi.mediaURL(id)).play().catch(() => {})}>▶ {t.t("Listen")}</button>
+            <button type="button" className="btn btn--ghost btn--sm" disabled={busy || !slug} onClick={() => input.current?.click()}>{t.t("Replace")}</button>
+            <button type="button" className="icon-remove" aria-label={t.t("No sound")} onClick={() => onPick(undefined)}>
+              <X size={ICON.sm} />
+            </button>
+          </>
+        ) : (
+          <button type="button" className="btn btn--ghost btn--sm" disabled={busy || !slug} onClick={() => input.current?.click()}>
+            {busy ? t.t("Uploading…") : t.t("Choose a sound")}
+          </button>
+        )}
+      </div>
+      <input
+        ref={input}
+        type="file"
+        accept="audio/*"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (!f) return;
+          setBusy(true);
+          setError(null);
+          adventures
+            .uploadMedia(slug, f)
+            .then((r) => (r.kind === "audio" ? onPick(r.id) : setError(t.t("That file is not a sound."))))
+            .catch((err: unknown) => setError(err instanceof Error ? err.message : t.t("Could not upload the sound.")))
+            .finally(() => setBusy(false));
+        }}
+      />
+      {error && <span className="field__hint zone-here__warn">{error}</span>}
+    </div>
   );
 }
 

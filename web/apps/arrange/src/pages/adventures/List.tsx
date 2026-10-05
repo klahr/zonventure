@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import { CalendarPlus, Coins, Compass, MapPin, Plus, Upload, Workflow } from "lucide-react";
 import { canAuthor } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
@@ -8,10 +8,13 @@ import { Button, Empty, ErrorBox, HelpPopover, ICON, Loading, Page, PageHeader, 
 import { NewEventDialog } from "../events/NewEventDialog.tsx";
 import { NewQuestDialog } from "../events/NewQuestDialog.tsx";
 import { duplicateAdventure, isPublisher, listAdventures, listAssignments, type AdventureRow, type Assignment } from "./api.ts";
-import { CreateAdventureDialog, PickPassDialog, useImportAdventure } from "./dialogs.tsx";
+import { PickPassDialog, useImportAdventure } from "./dialogs.tsx";
 import { AdventureTabs, Cover, LanguagePill, puzzleCount } from "./parts.tsx";
 
 /** What the schedule dialog opens with. */
+// The guide brings the player along for its preview: loaded when opened.
+const NewAdventure = lazy(() => import("./NewAdventure.tsx"));
+
 export type Schedule = { slug?: string; assignmentId?: number; ownsIt?: boolean };
 
 /** One adventure in a grid: the title is the link, the actions sit on top of it. */
@@ -177,7 +180,11 @@ export function AdventuresPage() {
       {header}
       <AdventureTabs current="yours" />
       {body}
-      {creating && <CreateAdventureDialog onClose={() => setCreating(false)} />}
+      {creating && (
+        <Suspense fallback={null}>
+          <NewAdventure onClose={() => setCreating(false)} />
+        </Suspense>
+      )}
       {importer.dialog}
       {picking && (
         <PickPassDialog

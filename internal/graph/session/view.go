@@ -1090,9 +1090,11 @@ func (t *Team) VisibleMedia(strict bool) []int64 {
 	// A saved theme's picture is part of how the adventure looks, never a
 	// secret: a team may fetch it before any step switches to the theme.
 	for _, th := range t.G.Themes {
-		if id := th.PictureID(); id > 0 && !seen[id] {
-			seen[id] = true
-			out = append(out, id)
+		for _, id := range th.Look.MediaIDs() {
+			if !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
 		}
 	}
 	// A role's picture comes with the role: a secret one only to its player.

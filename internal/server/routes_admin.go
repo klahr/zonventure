@@ -259,6 +259,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Delete("/teams/{teamID}/slots/{slotID}", adminH.RemoveSlot)
 			r.Post("/teams/{teamID}/slots/{slotID}/rotate", adminH.RotateSlotToken)
 			r.Post("/teams/{teamID}/unlock", adminH.UnlockTeam)
+			r.Post("/teams/{teamID}/start-anywhere", adminH.LetTeamStartAnywhere)
 			// Withdraw / unwithdraw soft-flag a team that gave up mid-event
 			// without deleting them — they stay in the recap as
 			// "withdrew at puzzle 4" instead of vanishing from history.
@@ -304,6 +305,11 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// Play the unsaved draft with the live rules: the designer's
 			// preview and simulator. Stateless — the client carries the team.
 			r.Post("/adventures/{slug}/simulate", adminH.SimulateAdventureGraph)
+			r.Post("/adventures/{slug}/dev-ticket", adminH.CreateDevTicket)
+			r.Post("/adventures/{slug}/dev-ticket/send", adminH.SendDevTicket)
+			r.Get("/adventures/{slug}/dev-screen", adminH.DevScreen)
+			r.Post("/adventures/{slug}/dev-goto", adminH.DevGoTo)
+			r.Post("/adventures/{slug}/dev-reset", adminH.DevReset)
 			r.Post("/adventures/{slug}/simulate-event", adminH.SimulateEvent)
 			r.Post("/adventures/{slug}/media", adminH.UploadAdventureMedia)
 			r.Post("/adventures", adminH.CreateAdventure)

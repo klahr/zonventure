@@ -60,6 +60,10 @@ type simulateRequest struct {
 	Envelope json.RawMessage `json:"envelope"`
 	Team     *session.Team   `json:"team,omitempty"`
 	Action   simulateAction  `json:"action"`
+	// AnyPlace lets the team begin wherever it stands, as when a draft is
+	// tried away from the site: the adventure's starting point, if it
+	// requires one, is not asked for.
+	AnyPlace bool `json:"any_place,omitempty"`
 }
 
 type simulateRefusal struct {
@@ -104,6 +108,9 @@ func (h *Handlers) SimulateAdventureGraph(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading the starting point failed", err)
 		return
+	}
+	if req.AnyPlace {
+		place = nil
 	}
 	resp, status, msg := simulate(&env.Graph, place, req.Team, req.Action, time.Now().UTC())
 	if status != http.StatusOK {

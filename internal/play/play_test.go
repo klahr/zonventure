@@ -975,6 +975,35 @@ func TestTeamChoosesItsStart(t *testing.T) {
 	}
 }
 
+// An arranger may let a team begin wherever it stands: once teams.start_anywhere
+// is set, the team held at the start screen begins with no position at all.
+func TestStartAnywhereLetsHeldTeamBegin(t *testing.T) {
+	f := setupWith(t, linear("x"), 1, func(db *sql.DB, advID int64) {
+		if _, err := db.Exec(`UPDATE adventures SET start_lat = 59.3293, start_lng = 18.0686, start_radius_m = 30, start_label = 'The fountain' WHERE id = $1`, advID); err != nil {
+			t.Fatal(err)
+		}
+	})
+	team := f.teams[0]
+	ctx := context.Background()
+	v := f.view(team)
+	if v.Node != "" || len(v.Starts) != 1 {
+		t.Fatalf("held at the start screen: %+v", v)
+	}
+	if _, err := f.eng.ChooseStart(ctx, team, v.Starts[0].Node, ""); !errors.Is(err, ErrNotHere) {
+		t.Fatalf("before the arranger's word: got %v, want ErrNotHere", err)
+	}
+	if _, err := f.db.Exec(`UPDATE teams SET start_anywhere = TRUE WHERE id = $1`, team); err != nil {
+		t.Fatal(err)
+	}
+	v = f.view(team)
+	if len(v.Starts) != 1 || !v.Starts[0].Here {
+		t.Fatalf("let start anywhere: the start should be open: %+v", v.Starts)
+	}
+	if r, err := f.eng.ChooseStart(ctx, team, v.Starts[0].Node, ""); err != nil || r.View.Node == "" {
+		t.Fatalf("beginning away from the starting point: %+v %v", r.View, err)
+	}
+}
+
 // An adventure that requires its starting point holds its team at the
 // start screen when the event starts, and lets it begin only once a phone
 // reports a position there; the clock starts then, not with the event.

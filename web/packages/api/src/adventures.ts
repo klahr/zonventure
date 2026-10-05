@@ -301,3 +301,23 @@ export const getSeen = <G>(slug: string, signal?: AbortSignal) =>
 
 /** The caller has now seen the draft as it is stored. */
 export const markSeen = (slug: string, keepalive = false) => request<void>(`${adventure(slug)}/seen`, { method: "POST", keepalive });
+
+// --- dev tickets -------------------------------------------------------------
+
+/** internal/admin: devTicket — the author's phone link that plays the draft live. */
+export interface DevTicket {
+  event_id: number;
+  team_id: number;
+  team_url: string;
+  play_url?: string;
+  voucher_code?: string;
+}
+
+/** The caller's dev ticket for the adventure: made the first time, the same one after. */
+export const createDevTicket = (slug: string) => post<DevTicket>(`${adventure(slug)}/dev-ticket`);
+
+/** Send the caller's dev ticket to any address, to open on a phone. */
+export const sendDevTicket = (slug: string, email: string) => post<void>(`${adventure(slug)}/dev-ticket/send`, { email });
+
+/** Start the caller's dev phone over from the beginning of the draft. */
+export const devReset = (slug: string) => post<void>(`${adventure(slug)}/dev-reset`);

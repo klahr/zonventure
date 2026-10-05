@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Look is an adventure's look — its brand palette, typefaces, shapes
@@ -75,6 +78,55 @@ type Style struct {
 	// TitleUpper sets them in capitals.
 	TitleStyle string `json:"title_style,omitempty"`
 	TitleUpper bool   `json:"title_upper,omitempty"`
+
+	// Celebrate is how a right answer is marked: one of Celebrations;
+	// empty is the confetti.
+	Celebrate string `json:"celebrate,omitempty"`
+	// ConfettiColors paint the confetti (up to MaxBackdropColors, #rrggbb);
+	// ConfettiEmoji, a short run of emoji, rains instead of paper.
+	ConfettiColors []string `json:"confetti_colors,omitempty"`
+	ConfettiEmoji  string   `json:"confetti_emoji,omitempty"`
+	// CheerText and MissText replace "Correct!" and "Not quite" — in the
+	// adventure's own words, up to MaxCheerLen characters.
+	CheerText string `json:"cheer_text,omitempty"`
+	MissText  string `json:"miss_text,omitempty"`
+	// SoundRight and SoundWrong are adventure_media ids of sounds played
+	// on a right and a wrong answer.
+	SoundRight int64 `json:"sound_right,omitempty"`
+	SoundWrong int64 `json:"sound_wrong,omitempty"`
+}
+
+// Celebrations: "quiet" keeps the mark without confetti, "none" leaves
+// only the words under the answer.
+var Celebrations = []string{"quiet", "none"}
+
+// The bounds of a celebration's own words.
+const (
+	MaxCheerLen = 40
+	MaxEmojiLen = 8
+)
+
+// Sounds are the style's sound ids, the unset ones left out.
+func (s Style) Sounds() []int64 {
+	var out []int64
+	for _, id := range []int64{s.SoundRight, s.SoundWrong} {
+		if id > 0 {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// MediaIDs are the look's own media: its picture and its sounds.
+func (c Look) MediaIDs() []int64 {
+	var out []int64
+	if b := c.Backdrop; b != nil && b.Kind == "picture" && b.Media > 0 {
+		out = append(out, b.Media)
+	}
+	if c.Style != nil {
+		out = append(out, c.Style.Sounds()...)
+	}
+	return out
 }
 
 // The finer choices' lists and bounds.
@@ -122,6 +174,28 @@ func (s Style) Validate() error {
 	}
 	if s.TextScale != 0 && (s.TextScale < MinTextScale || s.TextScale > MaxTextScale) {
 		return fmt.Errorf("text_scale must be %g–%g", MinTextScale, MaxTextScale)
+	}
+	if s.Celebrate != "" && !slices.Contains(Celebrations, s.Celebrate) {
+		return fmt.Errorf("celebrate must be empty or one of %v", Celebrations)
+	}
+	if len(s.ConfettiColors) > MaxBackdropColors {
+		return fmt.Errorf("at most %d confetti colours", MaxBackdropColors)
+	}
+	for _, c := range s.ConfettiColors {
+		if c == "" || !hexOrEmpty(c) {
+			return errors.New(`each confetti colour must be "#rrggbb"`)
+		}
+	}
+	for _, t := range []struct {
+		name, v string
+		max     int
+	}{{"confetti_emoji", s.ConfettiEmoji, MaxEmojiLen}, {"cheer_text", s.CheerText, MaxCheerLen}, {"miss_text", s.MissText, MaxCheerLen}} {
+		if utf8.RuneCountInString(t.v) > t.max || strings.ContainsFunc(t.v, unicode.IsControl) {
+			return fmt.Errorf("%s must be at most %d characters on one line", t.name, t.max)
+		}
+	}
+	if s.SoundRight < 0 || s.SoundWrong < 0 {
+		return errors.New("a sound must be a media id")
 	}
 	return nil
 }

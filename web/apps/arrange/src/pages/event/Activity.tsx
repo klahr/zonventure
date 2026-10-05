@@ -77,6 +77,11 @@ function ActivityLine({ e, event, graph }: { e: Activity; event: Info; graph: Ev
       msg = <>{team}{p.node ? t.t(" was moved past {{step}}", { step }) : t.t(" skipped past puzzle {{n}}", { n: num(p.from_page_index) + 1 })}</>;
       if (p.by_arranger && !e.actor) meta = t.t("by arranger");
       break;
+    case "team.start_anywhere":
+      badge = "brand"; symbol = "⌖";
+      msg = <>{team}{t.t(" may start away from the starting point")}</>;
+      if (!e.actor) meta = t.t("by arranger");
+      break;
     case "gate.reached": badge = "brand"; symbol = "⛳"; msg = <>{team}{t.t(" reached the puzzle location")}</>; break;
     case "photo.taken":
       badge = "brand"; symbol = "📷"; msg = <>{team}{t.t(" sent a photo on “{{step}}”", { step })}</>; meta = t.t("waiting for review"); break;

@@ -556,10 +556,22 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 		if err := req.Style.Validate(); err != nil {
 			return badRequestf("style %s", err.Error())
 		}
-		if *req.Style == (adventure.Style{}) {
+		// A sound must be one of this adventure's own.
+		for _, id := range req.Style.Sounds() {
+			var ok bool
+			if err := db.QueryRowContext(ctx, `
+				SELECT EXISTS (SELECT 1 FROM adventure_media m JOIN adventures a ON a.id = m.adventure_id
+				               WHERE m.id = $1 AND a.slug = $2 AND m.kind = 'audio')
+			`, id, slug).Scan(&ok); err != nil {
+				return err
+			}
+			if !ok {
+				return badRequestf("style sound is not one of this adventure's sounds")
+			}
+		}
+		if b, _ := json.Marshal(req.Style); string(b) == "{}" {
 			add("look_style", nil)
 		} else {
-			b, _ := json.Marshal(req.Style)
 			add("look_style", string(b))
 		}
 	}

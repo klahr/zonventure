@@ -98,6 +98,22 @@ export function useTeamActions(reload: () => void) {
     }
   };
 
+  const startAnywhere = async (team: Team) => {
+    const ok = await dialogs.confirm({
+      title: t.t("Let {{name}} start anywhere?", { name: team.name }),
+      message: t.t("The team can begin wherever it stands, without being at the starting point — for a phone whose location won't settle, or a meeting point that moved. They still press Begin themselves. The action is recorded in the event log."),
+      confirmLabel: t.t("Let them start"),
+    });
+    if (!ok) return;
+    try {
+      await api.letTeamStartAnywhere(team.id);
+      toast.ok(t.t("{{name}} can start anywhere", { name: team.name }));
+      reload();
+    } catch (e) {
+      toast.err(e);
+    }
+  };
+
   const withdraw = async (team: Team) => {
     const ok = await dialogs.confirm({
       title: t.t("Mark “{{name}}” as withdrawn?", { name: team.name }),
@@ -124,5 +140,5 @@ export function useTeamActions(reload: () => void) {
     }
   };
 
-  return { remove, invite, unlock, withdraw, unwithdraw };
+  return { remove, invite, unlock, startAnywhere, withdraw, unwithdraw };
 }

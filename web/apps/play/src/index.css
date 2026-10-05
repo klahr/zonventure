@@ -163,6 +163,24 @@ body {
   color: var(--accent);
 }
 
+/* A dev ticket's bar (DevBar): the draft, live, and a way about it. */
+.app-dev {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: repeating-linear-gradient(135deg, #1f2937, #1f2937 12px, #111827 12px 24px);
+  color: #fff;
+  font-size: var(--text-sm);
+}
+.app-dev__tag { padding: 0.1em 0.5em; border-radius: 4px; background: #facc15; color: #111827; font-weight: 800; letter-spacing: 0.08em; }
+.app-dev__steps { flex: 1; min-width: 0; padding: var(--sp-1) var(--sp-2); border-radius: var(--radius); border: 0; font: inherit; }
+.app-dev__reset { padding: var(--sp-1) var(--sp-3); border: 1px solid rgba(255, 255, 255, 0.5); border-radius: var(--radius); background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.app-dev__error { flex-basis: 100%; color: #fca5a5; }
 .app-banner {
   margin: var(--sp-3) var(--sp-4) 0;
   padding: var(--sp-3) var(--sp-4);

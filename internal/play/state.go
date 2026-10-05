@@ -375,14 +375,16 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 		startLng  sql.NullFloat64
 		startRad  sql.NullFloat64
 		startName string
+		anywhere  bool
 	)
 	query := `
 		SELECT tgs.event_id, tgs.graph_id, tgs.current_node, tgs.node_entered_at, tgs.started_at,
 		       tgs.completed_at, tgs.outcome, tgs.score, tgs.penalty_score, tgs.penalty_seconds,
 		       tgs.theme, tgs.last_answer, tgs.timed_out, tgs.lang, tgs.cheated,
 		       COALESCE(adv.start_code, ''), tgs.start_paused, tgs.node_paused, ev.paused_seconds, ev.paused_at,
-		       adv.start_lat, adv.start_lng, adv.start_radius_m, adv.start_label
+		       adv.start_lat, adv.start_lng, adv.start_radius_m, adv.start_label, tm.start_anywhere
 		FROM team_graph_state tgs
+		JOIN teams tm ON tm.id = tgs.team_id
 		JOIN adventure_graphs g ON g.id = tgs.graph_id
 		JOIN adventures adv ON adv.id = g.adventure_id
 		JOIN events ev ON ev.id = tgs.event_id
@@ -393,7 +395,7 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	err := q.QueryRowContext(ctx, query, teamID).Scan(&s.eventID, &s.graphID, &current, &entered, &s.StartedAt,
 		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme, &s.LatestAnswer, &s.TimedOut, &s.Lang, &s.Cheated,
 		&s.StartCode, &s.StartPaused, &s.NodePaused, &s.Paused, &pausedAt,
-		&startLat, &startLng, &startRad, &startName)
+		&startLat, &startLng, &startRad, &startName, &anywhere)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoGraph
 	}
@@ -408,9 +410,20 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	s.Ending = graph.Outcome(outcome.String)
 	s.Paused = pauseClock(s.Paused, pausedAt, s.Now)
 	s.StartPlace = session.NewStartPlace(nullFloat(startLat), nullFloat(startLng), nullFloat(startRad), startName)
+	// An arranger may let the team begin wherever it stands: it still sees
+	// the start screen, but its start is open.
+	s.StartAnywhere = anywhere
 
 	if s.G, err = e.graph(ctx, q, s.graphID); err != nil {
 		return nil, err
+	}
+	// Only a dev team's graph changes under it: a step taken out while
+	// the team stands on it leaves the team at the start screen, to begin
+	// the edited adventure again.
+	if s.Current != "" {
+		if _, ok := s.G.Node(s.Current); !ok {
+			s.Current = ""
+		}
 	}
 	return s, s.loadRest(ctx, q)
 }
