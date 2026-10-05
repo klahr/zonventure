@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-05
+
 ### Added — the adventure's icon in the store
 
 - Store cards (the store, the landing page and organisation pages) show
