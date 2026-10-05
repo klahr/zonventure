@@ -64,6 +64,7 @@ func splitParts(parts []string, i, n int) []string {
 // role, their part of a split secret, a vote's tally and their own vote,
 // and the team's latest photo for a photo block.
 func decorateView(ctx context.Context, db *sql.DB, teamID, slotID int64, v *play.View) error {
+	v.HidePlaces()
 	if err := decorateRoles(ctx, db, teamID, slotID, v); err != nil {
 		return err
 	}

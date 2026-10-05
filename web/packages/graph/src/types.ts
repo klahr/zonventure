@@ -544,6 +544,8 @@ export interface Zone {
   polygon?: [number, number][];
   /** Zones that belong together, such as the cells of a grid. */
   group?: string;
+  /** Keep the place from the teams: no name, map or distance on their phones, for a step where finding it is the puzzle. */
+  hidden?: boolean;
 }
 
 /** internal/graph: StartConfig — where a start is, if anywhere. */

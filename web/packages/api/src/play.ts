@@ -18,6 +18,8 @@ export interface PlayZone {
   lng: number;
   radius_m: number;
   polygon?: [number, number][];
+  /** A place to find: sent without its name or position, which the phone must not show. */
+  hidden?: boolean;
 }
 
 /** session.StartOption — a start the team may begin at. */

@@ -1034,6 +1034,10 @@ type Zone struct {
 	// Group ties zones that belong together — the cells of a grid laid
 	// over a park — so a search can say which of them the team is in.
 	Group string `json:"group,omitempty"`
+	// Hidden keeps the place from the teams: their phones show neither
+	// its name nor a map nor how far it is, for a step where finding the
+	// place is the puzzle. Arrival is still checked on the server.
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 // IsPolygon reports whether the zone's shape is its polygon.

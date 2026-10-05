@@ -978,5 +978,7 @@
   "Saved to the organisation's themes, without its picture and sounds: those belong to this adventure.": "Sparat bland organisationens teman, utan bild och ljud: de hör till det här äventyret.",
   "Saved to the organisation's themes. Its other adventures can start a theme from it.": "Sparat bland organisationens teman. Organisationens andra äventyr kan utgå från det.",
   "Replace the organisation's “{{name}}”?": "Ersätta organisationens ”{{name}}”?",
-  "The organisation already has a theme of that name. Adventures that use it keep their copy.": "Organisationen har redan ett tema med det namnet. Äventyr som använder det behåller sin kopia."
+  "The organisation already has a theme of that name. Adventures that use it keep their copy.": "Organisationen har redan ett tema med det namnet. Äventyr som använder det behåller sin kopia.",
+  "Hide the place from teams": "Dölj platsen för lagen",
+  "Teams see neither its name, a map nor how far it is — for a step where finding the place is the puzzle.": "Lagen ser varken namn, karta eller hur långt det är — för ett steg där själva gåtan är att hitta platsen."
 }

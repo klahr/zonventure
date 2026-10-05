@@ -414,6 +414,14 @@ func TestAdventureTimeLimit(t *testing.T) {
 	if tm.TimeUpDue() {
 		t.Error("it fires once")
 	}
+	// The accusation is one of home's branches, but out of time the team
+	// stays on it: back home it would play on with no clock.
+	if v.BackTo != "" {
+		t.Errorf("no way back home after time is up, got %q", v.BackTo)
+	}
+	if _, _, err := tm.Back("accuse"); err != ErrNotAllowed {
+		t.Errorf("going back after time is up is refused, got %v", err)
+	}
 	res, st, err = tm.Answer("accuse", "erika")
 	act(t, tm, "accuse", res, st, err)
 	if !tm.Completed {
@@ -624,5 +632,21 @@ func TestSearchFallbackComesLast(t *testing.T) {
 		if res, _, err := tm.Answer("scan", ""); err != nil || res.Port != c.port {
 			t.Errorf("at %v: want %s, got %+v %v", c.at, c.port, res, err)
 		}
+	}
+}
+
+// A hidden place reaches the phone as only that there is one: no name,
+// no position to show on a map or to measure the way by.
+func TestHidePlaces(t *testing.T) {
+	v := View{
+		Zone:   &graph.Zone{Slug: "pier", Name: "The pier", Lat: 59.3, Lng: 18.1, RadiusM: 30, Hidden: true},
+		Starts: []StartOption{{Node: "a", Zone: &graph.Zone{Slug: "square", Name: "The square", Lat: 59.2, Lng: 18.0, RadiusM: 40}}},
+	}
+	v.HidePlaces()
+	if z := v.Zone; z == nil || !z.Hidden || z.Slug != "pier" || z.Name != "" || z.Lat != 0 || z.RadiusM != 0 {
+		t.Errorf("hidden zone = %+v", z)
+	}
+	if z := v.Starts[0].Zone; z.Name != "The square" || z.Lat != 59.2 {
+		t.Errorf("a zone not hidden stays whole: %+v", z)
 	}
 }

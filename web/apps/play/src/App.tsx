@@ -156,7 +156,7 @@ export function App() {
       ? t("About {{m}} m away", { m: Math.max(5, Math.round(m / 5) * 5) })
       : t("About {{km}} km away", { km: (m < 10_000 ? Math.round(m / 100) / 10 : Math.round(m / 1000)).toLocaleString(i18n.current()) });
   };
-  const zoneNote = view?.zone && !view.here ? placeNote(view.zone) : undefined;
+  const zoneNote = view?.zone && !view.here && !view.zone.hidden ? placeNote(view.zone) : undefined;
 
   return (
     <div className="app" style={brandVars(chrome)}>

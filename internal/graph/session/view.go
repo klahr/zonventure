@@ -509,6 +509,25 @@ func legacyMedia(bs []graph.Block) []graph.Media {
 	return out
 }
 
+// HidePlaces takes the hidden zones out of a view bound for a team's
+// phone, keeping only that there is a place to find: the engine's own
+// view keeps them whole, for the simulator and the designer.
+func (v *View) HidePlaces() {
+	hide := func(z *graph.Zone) *graph.Zone {
+		if z == nil || !z.Hidden {
+			return z
+		}
+		return &graph.Zone{Slug: z.Slug, Hidden: true}
+	}
+	v.Zone = hide(v.Zone)
+	for i := range v.Starts {
+		v.Starts[i].Zone = hide(v.Starts[i].Zone)
+	}
+	for i := range v.Blocks {
+		v.Blocks[i].Place = hide(v.Blocks[i].Place)
+	}
+}
+
 func (t *Team) zoneBySlug(slug string) *graph.Zone {
 	for _, z := range t.G.Zones {
 		if z.Slug == slug {

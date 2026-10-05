@@ -469,7 +469,8 @@ const mapURL = (z: play.PlayZone) => `https://www.openstreetmap.org/?mlat=${z.la
 function ZoneCard({ view, t, note }: { view: play.View; t: Translate; note?: ReactNode }) {
   const z = view.zone;
   if (!z) return null;
-  const name = z.name || t("the marked place");
+  // A hidden place: finding it is the puzzle, so no name, map or distance.
+  const name = z.hidden ? t("the place") : z.name || t("the marked place");
   // One teammate at the place opens it for all; only they are there.
   const me = view.here_me ?? view.here;
   const others = view.here && !me;
@@ -487,13 +488,17 @@ function ZoneCard({ view, t, note }: { view: play.View; t: Translate; note?: Rea
               ? count > 1
                 ? t("{{n}} of your team are at {{place}}.", { n: count, place: name })
                 : t("A teammate is at {{place}}.", { place: name })
-              : t("Go to {{place}}.", { place: name })}
+              : z.hidden
+                ? t("Find the place.")
+                : t("Go to {{place}}.", { place: name })}
         </strong>
-        {!me && note && <span className="pv-zone__note">{note}</span>}
+        {!me && note && !z.hidden && <span className="pv-zone__note">{note}</span>}
       </div>
-      <a href={mapURL(z)} target="_blank" rel="noopener noreferrer">
-        {t("Map")}
-      </a>
+      {!z.hidden && (
+        <a href={mapURL(z)} target="_blank" rel="noopener noreferrer">
+          {t("Map")}
+        </a>
+      )}
     </div>
   );
 }
@@ -1086,10 +1091,10 @@ function StartChoice({ view, t, busy, onAction, placeNote }: StepProps) {
                 </span>
                 <div className="pv-zone__body">
                   <strong>{name}</strong>
-                  {z && !o.here && placeNote && <span className="pv-zone__note">{placeNote(z)}</span>}
+                  {z && !z.hidden && !o.here && placeNote && <span className="pv-zone__note">{placeNote(z)}</span>}
                   {z && o.here && <span className="pv-zone__note">{t("You are here.")}</span>}
                 </div>
-                {z && (
+                {z && !z.hidden && (
                   <a href={mapURL(z)} target="_blank" rel="noopener noreferrer">
                     {t("Map")}
                   </a>

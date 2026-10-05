@@ -11,6 +11,20 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — hidden places
+
+- A zone can be **hidden from teams** (designer: Resources → zone →
+  "Hide the place from teams"; graph `zones[].hidden`). Phones show
+  "Find the place." with no name, map link or distance — for steps where
+  finding the place is the puzzle. Arrival is still checked on the
+  server; the simulator and designer see the zone whole.
+
+### Fixed — going back after time is up
+
+- When an adventure's time limit moved a team to its last step (such as
+  the accusation), the back button still led home, where the team could
+  play on with no clock. Out of time, there is no way back.
+
 ### Changed — the MCP covers an adventure from idea to running events
 
 - **Pictures from a phone:** `get_upload_link` (was `get_media_upload_url`)

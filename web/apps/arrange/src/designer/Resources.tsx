@@ -91,6 +91,11 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
                 <Trash2 size={ICON.sm} />
               </button>
             </div>
+            <label className="check" title={t.t("Teams see neither its name, a map nor how far it is — for a step where finding the place is the puzzle.")}>
+              <input type="checkbox" checked={!!z.hidden}
+                onChange={(e) => setZones(zones.map((x, j) => (j === i ? (e.target.checked ? { ...z, hidden: true } : withoutKey(z, "hidden")) : x)))} />
+              {t.t("Hide the place from teams")}
+            </label>
             {open === z.slug ? (
               <ZoneMap zone={z} onChange={(nz) => setZones(zones.map((x, j) => (j === i ? nz : x)))} />
             ) : (

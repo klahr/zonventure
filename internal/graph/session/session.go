@@ -971,8 +971,10 @@ func (t *Team) Back(node string) (Result, *walk.Step, error) {
 }
 
 // backTo is the home hub the team can go back to from where it stands.
+// None once the time limit has moved it: where the limit sends a team is
+// where it stays, or it would play on with no clock.
 func (t *Team) backTo() (string, bool) {
-	if t.Current == "" {
+	if t.Current == "" || t.TimedOut {
 		return "", false
 	}
 	hub, ok := t.G.OwnerHub(t.Current)
