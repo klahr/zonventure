@@ -64,13 +64,13 @@ func TestStyleValidate(t *testing.T) {
 	if got := (Look{Backdrop: &Backdrop{Kind: "picture", Media: 2, Opacity: 1, Scale: 100}, Style: &party}).MediaIDs(); len(got) != 3 {
 		t.Errorf("look media = %v, want picture and two sounds", got)
 	}
-	full := Style{ButtonShape: "square", ButtonFill: "outline", ButtonSize: "large", Dock: "floating", TextScale: 1.2, TitleStyle: "ribbon", TitleUpper: true}
+	full := Style{ButtonShape: "square", ButtonFill: "outline", ButtonSize: "large", Dock: "floating", TextScale: 1.2, TitleStyle: "ribbon", TitleUpper: true, AnswerButton: "#6a1b9a", AnswerButtonText: "#ffffff"}
 	if err := full.Validate(); err != nil {
 		t.Errorf("%+v: %v", full, err)
 	}
 	for _, bad := range []Style{{CardOpacity: 0.1}, {CardOpacity: 1.5}, {CardOpacity: -1}, {Transition: "spin"},
 		{ButtonShape: "blob"}, {ButtonFill: "glitter"}, {Celebrate: "fireworks"}, {ConfettiColors: []string{"red"}},
-		{ConfettiEmoji: "🐘🐘🐘🐘🐘🐘🐘🐘🐘"}, {CheerText: "a\nb"}, {MissText: strings.Repeat("x", 41)}, {SoundRight: -1}, {ButtonSize: "huge"}, {Dock: "top"}, {TitleStyle: "neon"}, {TextScale: 3}, {TextScale: 0.5}} {
+		{ConfettiEmoji: "🐘🐘🐘🐘🐘🐘🐘🐘🐘"}, {CheerText: "a\nb"}, {MissText: strings.Repeat("x", 41)}, {SoundRight: -1}, {ButtonSize: "huge"}, {Dock: "top"}, {TitleStyle: "neon"}, {TextScale: 3}, {TextScale: 0.5}, {AnswerButton: "purple"}, {AnswerButtonText: "#fff"}} {
 		if bad.Validate() == nil {
 			t.Errorf("accepted %+v", bad)
 		}

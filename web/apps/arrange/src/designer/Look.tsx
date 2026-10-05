@@ -43,6 +43,11 @@ const FIELDS: { key: ColourKey; label: string; hint: string }[] = [
   { key: "submit_bg", label: "Answer bar", hint: "The bar at the bottom with the answer box." },
 ];
 
+const ANSWER_FIELDS: { key: "answer_button_color" | "answer_button_text_color"; label: string; hint: string }[] = [
+  { key: "answer_button_color", label: "Answer button", hint: "The button in the answer bar." },
+  { key: "answer_button_text_color", label: "Answer button text", hint: "Defaults to black or white, whichever reads best." },
+];
+
 /** The presets beside the colours: one pick each, never a raw value. */
 const CORNERS: { value: NonNullable<play.Brand["corners"]>; label: string }[] = [
   { value: "rounded", label: "Rounded" },
@@ -156,40 +161,9 @@ export function LookControls({ brand, onChange }: { brand: play.Brand; onChange:
 
   return (
     <>
-      {FIELDS.map((f) => {
-        const v = brand[f.key];
-        return (
-          <div key={f.key} className="look__row">
-            <input
-              type="color"
-              className="look__swatch"
-              aria-label={t.t(f.label)}
-              value={v ?? "#ffffff"}
-              onChange={(e) => set(f.key, e.target.value)}
-            />
-            <div className="look__text">
-              <span className="look__label">{t.t(f.label)}</span>
-              <span className="field__hint">{t.t(f.hint)}</span>
-            </div>
-            <input
-              className="field__input look__hex"
-              aria-label={t.t("{{name}} as hex", { name: t.t(f.label) })}
-              placeholder={t.t("default")}
-              defaultValue={v ?? ""}
-              key={v ?? "none"}
-              onBlur={(e) => {
-                const raw = e.target.value.trim();
-                set(f.key, raw === "" ? null : raw.startsWith("#") ? raw : "#" + raw);
-              }}
-            />
-            {v && (
-              <button type="button" className="icon-remove" onClick={() => set(f.key, null)} aria-label={t.t("Use the default")}>
-                <X size={ICON.sm} />
-              </button>
-            )}
-          </div>
-        );
-      })}
+      {FIELDS.map((f) => (
+        <ColourRow key={f.key} label={f.label} hint={f.hint} value={brand[f.key]} onSet={(v) => set(f.key, v)} />
+      ))}
       <ContrastNote issues={lookContrast(brand)} />
       <h4>{t.t("Style")}</h4>
       <label className="field">
@@ -273,6 +247,15 @@ export function LookControls({ brand, onChange }: { brand: play.Brand; onChange:
         value={brand.style?.button_fill ?? ""}
         onPick={(v) => setStyle({ button_fill: v || undefined })}
       />
+      {ANSWER_FIELDS.map((f) => (
+        <ColourRow
+          key={f.key}
+          label={f.label}
+          hint={f.hint}
+          value={brand.style?.[f.key]}
+          onSet={(v) => setStyle({ [f.key]: v && isHex(v) ? v.toLowerCase() : undefined })}
+        />
+      ))}
       <Choice
         label={t.t("Button size")}
         options={[{ value: "small", label: t.t("Small") }, { value: "", label: t.t("Normal") }, { value: "large", label: t.t("Large") }]}
@@ -312,6 +295,42 @@ export function LookControls({ brand, onChange }: { brand: play.Brand; onChange:
  * or not, its colours or emoji, the words, and sounds of the adventure's
  * own. Try it acts an answer out in the preview.
  */
+/** A colour: a swatch, its name and hint, its hex, and a way back to the default. */
+function ColourRow({ label, hint, value, onSet }: { label: string; hint: string; value: string | undefined; onSet: (v: string | null) => void }) {
+  const t = useT();
+  return (
+    <div className="look__row">
+      <input
+        type="color"
+        className="look__swatch"
+        aria-label={t.t(label)}
+        value={value ?? "#ffffff"}
+        onChange={(e) => onSet(e.target.value)}
+      />
+      <div className="look__text">
+        <span className="look__label">{t.t(label)}</span>
+        <span className="field__hint">{t.t(hint)}</span>
+      </div>
+      <input
+        className="field__input look__hex"
+        aria-label={t.t("{{name}} as hex", { name: t.t(label) })}
+        placeholder={t.t("default")}
+        defaultValue={value ?? ""}
+        key={value ?? "none"}
+        onBlur={(e) => {
+          const raw = e.target.value.trim();
+          onSet(raw === "" ? null : raw.startsWith("#") ? raw : "#" + raw);
+        }}
+      />
+      {value && (
+        <button type="button" className="icon-remove" onClick={() => onSet(null)} aria-label={t.t("Use the default")}>
+          <X size={ICON.sm} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Celebration({ brand, setStyle }: { brand: play.Brand; setStyle: (patch: Partial<Record<keyof play.LookStyle, number | boolean | string | string[] | undefined>>) => void }) {
   const t = useT();
   const st = brand.style ?? {};

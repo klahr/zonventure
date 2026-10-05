@@ -93,6 +93,13 @@
   color: var(--accent-deep, var(--accent));
   box-shadow: none;
 }
+/* The answer bar's button in its own colours, over any fill or bar. */
+.pv[data-answer-bg] .pv-dock .pv-btn--primary {
+  border-color: transparent;
+  background: var(--pv-answer-bg);
+  box-shadow: none;
+}
+.pv[data-answer-fg] .pv-dock .pv-btn--primary { color: var(--pv-answer-fg); }
 /* Buttons: their size. Never under a finger's width. */
 .pv[data-btn-size="small"] .pv-btn { min-height: var(--pv-tap); padding: var(--sp-2) var(--sp-4); font-size: var(--text-sm); }
 .pv[data-btn-size="large"] .pv-btn { min-height: 3.5rem; padding: var(--sp-4) var(--sp-6); font-size: var(--text-lg); }

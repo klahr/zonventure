@@ -68,6 +68,11 @@ type Style struct {
 	ButtonShape string `json:"button_shape,omitempty"`
 	ButtonFill  string `json:"button_fill,omitempty"`
 	ButtonSize  string `json:"button_size,omitempty"`
+	// AnswerButton and AnswerButtonText colour the answer bar's button
+	// (#rrggbb), over the fill and the bar; empty AnswerButtonText is
+	// black or white, whichever reads on AnswerButton.
+	AnswerButton     string `json:"answer_button_color,omitempty"`
+	AnswerButtonText string `json:"answer_button_text_color,omitempty"`
 	// Dock is the answer bar's style: one of Docks; empty is the bar
 	// across the bottom.
 	Dock string `json:"dock,omitempty"`
@@ -171,6 +176,9 @@ func (s Style) Validate() error {
 		if c.v != "" && !slices.Contains(c.list, c.v) {
 			return fmt.Errorf("%s must be empty or one of %v", c.name, c.list)
 		}
+	}
+	if !hexOrEmpty(s.AnswerButton) || !hexOrEmpty(s.AnswerButtonText) {
+		return errors.New(`answer_button_color and answer_button_text_color must be empty or "#rrggbb"`)
 	}
 	if s.TextScale != 0 && (s.TextScale < MinTextScale || s.TextScale > MaxTextScale) {
 		return fmt.Errorf("text_scale must be %g–%g", MinTextScale, MaxTextScale)

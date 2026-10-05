@@ -95,6 +95,8 @@ export interface ThemeLook {
     button_shape?: "rounded" | "square";
     button_fill?: "gradient" | "flat" | "outline" | "soft";
     button_size?: "small" | "large";
+    answer_button_color?: string;
+    answer_button_text_color?: string;
     dock?: "floating";
     text_scale?: number;
     title_style?: "ribbon" | "underline" | "shadow";

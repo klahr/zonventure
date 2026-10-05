@@ -31,6 +31,14 @@ test("a palette maps onto the tokens the play surface reads", () => {
   assert.equal(v["--pv-dock-fg"], "#000000");
 });
 
+test("the answer button takes its own colours, its text readable by default", () => {
+  const v = brandVars({ submit_bg: "#fbfbfd", style: { answer_button_color: "#6a1b9a" } });
+  assert.equal(v["--pv-answer-bg"], "#6a1b9a");
+  assert.equal(v["--pv-answer-fg"], "#ffffff");
+  assert.equal(brandVars({ style: { answer_button_color: "#6a1b9a", answer_button_text_color: "#ffd400" } })["--pv-answer-fg"], "#ffd400");
+  assert.deepEqual(brandVars({ style: { answer_button_color: "red", answer_button_text_color: "url(x)" } }), {});
+});
+
 test("anything that is not a hex triplet never reaches a style", () => {
   for (const bad of ["red", "#fff", "url(x)", "#12345g", "#123456; background:url(x)"]) {
     assert.equal(isHex(bad), false, bad);

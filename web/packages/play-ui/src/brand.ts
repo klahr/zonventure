@@ -242,6 +242,12 @@ export function brandVars(b: play.Brand | null | undefined): Record<string, stri
     out["--pv-dock-bg"] = b.submit_bg;
     out["--pv-dock-fg"] = readableOn(b.submit_bg);
   }
+  // The answer button's own colours, over the fill and the bar.
+  const answer = b.style?.answer_button_color;
+  const answerText = b.style?.answer_button_text_color;
+  if (isHex(answer)) out["--pv-answer-bg"] = answer;
+  if (isHex(answerText)) out["--pv-answer-fg"] = answerText;
+  else if (isHex(answer)) out["--pv-answer-fg"] = readableOn(answer);
   Object.assign(out, backdropVars(b.backdrop, b));
   return out;
 }

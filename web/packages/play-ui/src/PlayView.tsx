@@ -342,6 +342,8 @@ function styleAttrs(st: play.LookStyle | undefined): Record<string, string> {
   pick("data-dock", st.dock, ["floating"]);
   pick("data-titles", st.title_style, ["ribbon", "underline", "shadow"]);
   if (st.title_upper) out["data-titles-upper"] = "";
+  if (isHex(st.answer_button_color)) out["data-answer-bg"] = "";
+  if (isHex(st.answer_button_color) || isHex(st.answer_button_text_color)) out["data-answer-fg"] = "";
   return out;
 }
 

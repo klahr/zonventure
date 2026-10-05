@@ -460,6 +460,9 @@ export interface LookStyle {
   button_shape?: "rounded" | "square";
   button_fill?: "gradient" | "flat" | "outline" | "soft";
   button_size?: "small" | "large";
+  /** The answer bar's button and its text (#rrggbb), over the fill; absent text is black or white to suit. */
+  answer_button_color?: string;
+  answer_button_text_color?: string;
   /** The answer bar: absent is across the bottom. */
   dock?: "floating";
   /** 0.85–1.4: text and titles together; absent is 1. */
