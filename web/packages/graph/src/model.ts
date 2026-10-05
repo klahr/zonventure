@@ -533,6 +533,7 @@ export function cleanGraph(g: Graph): Graph {
   if (g.journal?.length) out.journal = g.journal;
   if (g.roles?.length) out.roles = g.roles;
   if (g.themes?.length) out.themes = g.themes;
+  if (g.host_values?.length) out.host_values = g.host_values;
   if (g.journal_by_unlock) out.journal_by_unlock = true;
   if (g.hide_score) out.hide_score = true;
   if (g.time_limit) out.time_limit = g.time_limit;

@@ -131,6 +131,32 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		r.Get("/api/o/{slug}/store/items/{event_id}", publicH.StoreEventByOrg)
 		r.Post("/api/o/{slug}/store/buy", adminH.BuyTicketByOrg)
 
+		// Parties: an org's party offers, booked with no account, and
+		// the host page the booker runs the party from. The host link's
+		// secret is the auth, like a team link's; the pages are the
+		// party app's, at the short URLs a mail or a QR code carries.
+		r.Get("/api/o/{slug}/parties", adminH.ListPartiesByOrg)
+		r.Get("/api/o/{slug}/parties/{offerID}", adminH.GetPartyByOrg)
+		r.Post("/api/o/{slug}/parties/{offerID}/book", adminH.BookParty)
+		r.Get("/o/{slug}/party/{offerID}", func(w http.ResponseWriter, req *http.Request) {
+			redirectKeepingQuery(w, req, "/app/party/book/"+url.PathEscape(chi.URLParam(req, "slug"))+"/"+url.PathEscape(chi.URLParam(req, "offerID")))
+		})
+		r.Get("/party/{token}", func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+			w.Header().Set("Referrer-Policy", "no-referrer")
+			http.Redirect(w, req, "/app/party/host/"+url.PathEscape(chi.URLParam(req, "token")), http.StatusFound)
+		})
+		r.Post("/api/party/resend", adminH.ResendPartyLinks)
+		r.Get("/api/party/{token}", adminH.GetHostParty)
+		r.Post("/api/party/{token}/teams", adminH.AddHostTeam)
+		r.Delete("/api/party/{token}/teams/{teamID}", adminH.DeleteHostTeam)
+		r.Get("/api/party/{token}/qr", adminH.HostPartyQR)
+		r.Put("/api/party/{token}/personalise", adminH.PutHostPersonalise)
+		r.Put("/api/party/{token}/mode", adminH.PutHostMode)
+		r.Put("/api/party/{token}/places/{slug}", adminH.PutHostPlace)
+		r.Post("/api/party/{token}/places/shift", adminH.PostHostShift)
+		r.Post("/api/party/{token}/{action}", adminH.HostPartyAction)
+
 		// Gift box redemption (Live it, TrueStory). The bare /redeem
 		// offers every organisation's products; /o/{slug}/redeem only
 		// that organisation's. A redemption waits for an organiser to

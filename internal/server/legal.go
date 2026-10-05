@@ -23,6 +23,7 @@ type LegalConfig struct {
 	Jurisdiction          string
 	LocationRetentionDays string // strings so the env passes through unchanged
 	AuditRetentionDays    string
+	PartyRetentionDays    string
 	LastUpdated           string // YYYY-MM-DD; defaults to today on first render
 	HostingProvider       string // sub-processor name shown in privacy policy
 	EmailProvider         string // sub-processor name shown in privacy policy
@@ -101,6 +102,9 @@ func (c LegalConfig) defaulted() LegalConfig {
 	}
 	if d.AuditRetentionDays == "" {
 		d.AuditRetentionDays = "90"
+	}
+	if d.PartyRetentionDays == "" {
+		d.PartyRetentionDays = "14"
 	}
 	if d.LastUpdated == "" {
 		d.LastUpdated = time.Now().UTC().Format("2006-01-02")
@@ -291,6 +295,7 @@ func renderLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
 		{"{{JURISDICTION}}", d.Jurisdiction},
 		{"{{LOCATION_RETENTION_DAYS}}", d.LocationRetentionDays},
 		{"{{AUDIT_RETENTION_DAYS}}", d.AuditRetentionDays},
+		{"{{PARTY_RETENTION_DAYS}}", d.PartyRetentionDays},
 		{"{{LAST_UPDATED}}", d.LastUpdated},
 		{"{{HOSTING_PROVIDER}}", d.HostingProvider},
 		{"{{EMAIL_PROVIDER}}", d.EmailProvider},

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/zonventure/internal/activity"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
@@ -598,7 +599,7 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event payments.Even
 		 WHERE state = 'paid'
 		   AND (stripe_charge_id = $1
 		        OR (stripe_charge_id IS NULL AND $2 <> '' AND stripe_session_id = $2))
-		 RETURNING id, COALESCE(team_id, 0)
+		 RETURNING id, COALESCE(team_id, 0), kind, COALESCE(event_id, 0)
 	`, chargeID, sessionID)
 	if err != nil {
 		return err
@@ -606,11 +607,13 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event payments.Even
 	type refundedTicket struct {
 		purchaseID int64
 		teamID     int64
+		kind       string
+		eventID    int64
 	}
 	var tickets []refundedTicket
 	for ticketRows.Next() {
 		var rr refundedTicket
-		if err := ticketRows.Scan(&rr.purchaseID, &rr.teamID); err != nil {
+		if err := ticketRows.Scan(&rr.purchaseID, &rr.teamID, &rr.kind, &rr.eventID); err != nil {
 			ticketRows.Close()
 			return err
 		}
@@ -621,6 +624,18 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event payments.Even
 		return err
 	}
 	for _, rr := range tickets {
+		if rr.kind == "party" && rr.eventID != 0 {
+			// A refunded party is called off: the whole event, which the
+			// sweeper then deletes once its days are up.
+			if _, cerr := h.DB.ExecContext(ctx, `
+				UPDATE events SET state = 'cancelled', cancelled_at = now_text(), `+activity.ClosePause+`
+				 WHERE id = $1 AND state IN ('scheduled', 'running', 'paused')
+			`, rr.eventID); cerr != nil {
+				logx.Warn("payments.party.refund.cancel", "purchase_id", rr.purchaseID, "event_id", rr.eventID, "err", cerr.Error())
+			}
+			_ = activity.ExpireEventSlotSessions(ctx, h.DB, rr.eventID)
+			continue
+		}
 		if rr.teamID == 0 {
 			continue
 		}

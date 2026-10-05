@@ -351,6 +351,9 @@ type eventDTO struct {
 	TicketCurrency   string `json:"ticket_currency,omitempty"`
 	TicketTeamSize   int    `json:"ticket_team_size,omitempty"`
 	PublicBlurb      string `json:"public_blurb,omitempty"`
+	// Party marks a party a parent booked (see party.go): its host runs
+	// it, so the console shows it to support rather than to run.
+	Party bool `json:"party,omitempty"`
 	// HasCoverImage tells the arrange UI whether to render the
 	// upload-or-replace affordance. The bytes themselves are served
 	// out-of-band at /store-cover/event/{id}.
@@ -633,7 +636,8 @@ func (h *Handlers) writeOrgEvents(w http.ResponseWriter, r *http.Request, orgID 
 		       COALESCE(ar.ticket_price_cents, 0),
 		       COALESCE(ar.ticket_currency, ''),
 		       COALESCE(ar.ticket_team_size, 0),
-		       COALESCE(ar.cover_image_mime_type, '') <> '' AS has_cover_image
+		       COALESCE(ar.cover_image_mime_type, '') <> '' AS has_cover_image,
+		       ar.party
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		LEFT JOIN adventures adv ON adv.slug = ar.adventure_slug
@@ -669,7 +673,7 @@ func (h *Handlers) writeOrgEvents(w http.ResponseWriter, r *http.Request, orgID 
 			&d.CompletedAt, &d.CancelledAt,
 			&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
 			&d.LiveToken, &showMap, &hasAvatar, &d.TeamsCount, &d.PlayerSlotsCount,
-			&d.PublicForSale, &d.TicketPriceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.HasCoverImage); err != nil {
+			&d.PublicForSale, &d.TicketPriceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.HasCoverImage, &d.Party); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}

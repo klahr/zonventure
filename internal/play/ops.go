@@ -36,15 +36,17 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 	defer func() { _ = tx.Rollback() }()
 
 	var (
-		slug     string
-		pinned   sql.NullInt64
-		graphID  int64
-		paused   int
-		pausedAt sql.NullString
+		slug      string
+		pinned    sql.NullInt64
+		graphID   int64
+		paused    int
+		pausedAt  sql.NullString
+		party     bool
+		partyMode string
 	)
 	if err := tx.QueryRowContext(ctx,
-		`SELECT adventure_slug, graph_id, paused_seconds, paused_at FROM events WHERE id = $1 FOR UPDATE`, eventID,
-	).Scan(&slug, &pinned, &paused, &pausedAt); err != nil {
+		`SELECT adventure_slug, graph_id, paused_seconds, paused_at, party, party_mode FROM events WHERE id = $1 FOR UPDATE`, eventID,
+	).Scan(&slug, &pinned, &paused, &pausedAt, &party, &partyMode); err != nil {
 		return fmt.Errorf("loading event %d: %w", eventID, err)
 	}
 
@@ -65,10 +67,16 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 		if r := valid.Check(stored.Graph); r.HasErrors() {
 			return &graphstore.InvalidError{Report: r}
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE events SET graph_id = $1 WHERE id = $2`, stored.ID, eventID); err != nil {
+		graphID = stored.ID
+		if party {
+			// A party plays its own copy, adapted to where it is held.
+			if graphID, err = pinParty(ctx, tx, adventureID, eventID, partyMode, stored.Graph); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE events SET graph_id = $1 WHERE id = $2`, graphID, eventID); err != nil {
 			return err
 		}
-		graphID = stored.ID
 	}
 
 	rows, err := tx.QueryContext(ctx, `

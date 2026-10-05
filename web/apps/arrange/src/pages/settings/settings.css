@@ -4,3 +4,41 @@
   .dz .st-tabs .cs-tab { margin: 0; padding: var(--dz-space-1) var(--dz-space-3); border: 0; border-radius: var(--dz-r-pill); }
   .dz .st-tabs .cs-tab.is-on { background: color-mix(in srgb, var(--dz-accent) 12%, transparent); }
 }
+
+/* Parties: one form per adventure the org may offer. */
+.pt-offers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.pt-offer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--border-soft);
+}
+.pt-offer:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.pt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: var(--sp-3);
+}
+.pt-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 600;
+}
+.pt-muted {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.pt-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}

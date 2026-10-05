@@ -297,6 +297,8 @@ export interface View {
   recheck_at?: string;
   /** A hidden block waits for the team to reach a zone: report position often. */
   watch_position?: boolean;
+  /** The zones are cards to scan, not places to reach (a party's QR mode): offer a scanner, never ask where the phone is. */
+  stations?: boolean;
   /** blocks' pictures and sounds flattened, for older bundles. */
   media?: PlayMedia[];
   input?: PlayInput;
@@ -389,6 +391,8 @@ export type PlayAction =
   | { kind: "leave"; node: string }
   /** This player's key in a two-key launch. */
   | { kind: "turn"; node: string }
+  /** A party's station card, scanned or typed: the team is at its zone now. `guess` is the code, or the card's URL. */
+  | { kind: "station"; node: string; guess: string }
   | { kind: "timeout"; node: string }
   | { kind: "hint"; node: string; index: number }
   /**

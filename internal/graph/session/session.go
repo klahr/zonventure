@@ -177,6 +177,10 @@ type Team struct {
 
 	Now      time.Time `json:"now"`
 	Position *Position `json:"position,omitempty"`
+	// Station is the zone whose card the team scanned last, in a graph
+	// played as stations (graph.Graph.Stations): there it is where the
+	// team is, and Position is not read.
+	Station string `json:"station,omitempty"`
 	// Phones are where each of the team's phones that reported lately
 	// is, for conditions that ask where the players are rather than the
 	// team. Like Occ it is read fresh for every action, never stored.
@@ -431,8 +435,15 @@ func (t *Team) TeamSize() int { return t.Size }
 // the others are.
 func (t *Team) InZone(slug string) bool { return t.PlayersInZone(slug) > 0 }
 
-// PlayersInZone counts the team's players inside the zone.
+// PlayersInZone counts the team's players inside the zone. At a station
+// the team stands together: one card puts all of it there.
 func (t *Team) PlayersInZone(slug string) int {
+	if t.G != nil && t.G.Stations {
+		if t.Station != "" && t.Station == slug {
+			return max(t.Size, 1)
+		}
+		return 0
+	}
 	z := t.zoneBySlug(slug)
 	if z == nil {
 		return 0
@@ -453,6 +464,10 @@ func (t *Team) PlayersInZone(slug string) int {
 // are the lists (see matching).
 func (t *Team) ZonesHeld(slugs []string) bool {
 	slugs = slices.Compact(slices.Sorted(slices.Values(slugs)))
+	if t.G != nil && t.G.Stations {
+		// One card at a time: the team holds a single station.
+		return len(slugs) == 1 && t.InZone(slugs[0])
+	}
 	players := t.players()
 	if len(slugs) > len(players) {
 		return false
@@ -485,7 +500,7 @@ type Viewer struct {
 
 // Here reports whether the player the view is for is inside the zone.
 func (t *Team) Here(slug string) bool {
-	if t.Viewer == nil {
+	if t.Viewer == nil || t.G != nil && t.G.Stations {
 		return t.InZone(slug)
 	}
 	z := t.zoneBySlug(slug)
@@ -542,7 +557,7 @@ func (t *Team) HoldsAtStart() bool {
 // adventure's starting point. Always true when it requires none, or an
 // arranger has let the team start anywhere.
 func (t *Team) AtStartPlace() bool {
-	if t.StartPlace == nil || t.StartAnywhere {
+	if t.StartPlace == nil || t.StartAnywhere || t.G != nil && t.G.Stations {
 		return true
 	}
 	for _, p := range t.players() {

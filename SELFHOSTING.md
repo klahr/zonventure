@@ -91,6 +91,7 @@ short tour:
 | `ZV_OIDC_ISSUER` / `ZV_OIDC_CLIENT_ID` / `ZV_OIDC_CLIENT_SECRET` / `ZV_OIDC_HOSTED_DOMAIN` / `ZV_OIDC_REDIRECT_URL` | OIDC client config; required when SSO is enabled | unset |
 | `ZV_OIDC_ORG_NAME` | Organisation that JIT-provisioned SSO users join. Defaults to `ZV_OIDC_HOSTED_DOMAIN` | unset |
 | `ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` | Privacy sweepers; `0` to disable | `30` / `90` |
+| `ZV_PARTY_RETENTION_DAYS` | Days a children's party is kept after it ends before the sweeper deletes it whole; `0` to disable | `14` |
 | `ZV_DB_MAX_OPEN_CONNS` / `ZV_DB_MAX_IDLE_CONNS` | Postgres pool sizing; bump for managed clusters with high `max_connections` | `25` / `5` |
 | `ZV_WEB_OVERRIDE_DIR` | Path to a directory of HTML / JSON files that shadow the embedded pages; its `landing.html` and `pricing.html` turn on the public `/` and `/pricing` — see [Custom landing page](#custom-landing-page) | unset (use embedded) |
 | `ZV_MCP_ENABLED` | `1` mounts the `POST /mcp` endpoint so users can connect Claude / other MCP clients to author adventures — see [MCP.md](MCP.md) | unset (off) |

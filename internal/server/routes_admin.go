@@ -197,6 +197,12 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// Pure function; no DB access, no org scoping needed.
 			r.Post("/markdown/preview", adminH.PreviewMarkdown)
 
+			// Parties: which adventures the org sells for children's
+			// parties, at what price. Setting one is the org admin's
+			// (checked in the handler).
+			r.Get("/party-offers", adminH.ListPartyOffers)
+			r.Put("/party-offers/{slug}", adminH.PutPartyOffer)
+
 			r.Get("/events", adminH.ListEvents)
 			r.Post("/events", adminH.CreateEvent)
 			r.Get("/events/{eventID}", adminH.EventDetail)

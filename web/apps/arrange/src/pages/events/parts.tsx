@@ -71,7 +71,7 @@ export function EventsTable({ rows, empty }: { rows: EventRow[]; empty?: ReactNo
         <span className="evs-namecell">
           {r.adventure_avatar_url && <AdventureCover title={r.adventure_title || r.adventure_slug} src={r.adventure_avatar_url} />}
           <span className="evs-stack">
-            <strong>{eventLabel(r)}</strong>
+            <strong>{eventLabel(r)} {r.party && <Pill tone="accent">{t.t("Party")}</Pill>}</strong>
             <span className="evs-sub">
               <span>{r.adventure_title || r.adventure_slug}</span>
               {when && <><span aria-hidden>·</span>{when}</>}

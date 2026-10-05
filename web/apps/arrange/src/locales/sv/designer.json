@@ -984,5 +984,17 @@
   "Replace the organisation's “{{name}}”?": "Ersätta organisationens ”{{name}}”?",
   "The organisation already has a theme of that name. Adventures that use it keep their copy.": "Organisationen har redan ett tema med det namnet. Äventyr som använder det behåller sin kopia.",
   "Hide the place from teams": "Dölj platsen för lagen",
-  "Teams see neither its name, a map nor how far it is — for a step where finding the place is the puzzle.": "Lagen ser varken namn, karta eller hur långt det är — för ett steg där själva gåtan är att hitta platsen."
+  "Teams see neither its name, a map nor how far it is — for a step where finding the place is the puzzle.": "Lagen ser varken namn, karta eller hur långt det är — för ett steg där själva gåtan är att hitta platsen.",
+  "A party host may move it": "En kalasvärd får flytta den",
+  "A party host may rewrite it": "En kalasvärd får skriva om den",
+  "A party host may set the answer": "En kalasvärd får bestämma svaret",
+  "A party's host can put this place in their own park. Leave it off for a place the adventure relies on, like a building a puzzle is about.": "En kalasvärd kan lägga den här platsen i sin egen park. Låt bli för en plats som äventyret bygger på, som en byggnad en gåta handlar om.",
+  "Add party word": "Lägg till kalasord",
+  "At a children's party, the host can ask their own question here — about the birthday child, say. Everyone else gets yours.": "På ett barnkalas kan värden ställa en egen fråga här – om födelsedagsbarnet, till exempel. Alla andra får din.",
+  "At a children's party, the host can put their own words here. Everyone else reads yours.": "På ett barnkalas kan värden skriva egna ord här. Alla andra läser dina.",
+  "At a children's party, the host can set what this step accepts — the birthday child's favourite animal, say. Mark the question's text as theirs to rewrite too.": "På ett barnkalas kan värden bestämma vad det här steget godtar – födelsedagsbarnets favoritdjur, till exempel. Markera även frågans text som deras att skriva om.",
+  "Party words": "Kalasord",
+  "Shown when there is no host": "Visas när det inte finns någon värd",
+  "What the host is asked": "Vad värden får frågan om",
+  "Words a party's host fills in, such as the birthday child's name. Write {{host:slug}} in a text to use one.": "Ord som en kalasvärd fyller i, som födelsedagsbarnets namn. Skriv {{host:slug}} i en text för att använda ett."
 }

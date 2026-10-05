@@ -119,6 +119,7 @@ func Check(g *graph.Graph) Report {
 	checkMedia(r, g)
 	checkTimeLimit(r, g)
 	checkTranslations(r, g)
+	checkHostEdits(r, g)
 
 	sort.SliceStable(r.issues, func(i, j int) bool {
 		if r.issues[i].Severity != r.issues[j].Severity {
@@ -1565,4 +1566,35 @@ func unMorse(s string) string {
 		}
 	}
 	return ""
+}
+
+var hostSlug = regexp.MustCompile(`^[\w-]+$`)
+
+// checkHostEdits covers what a party's host may change: host values
+// need a slug a text can name, once each, and a question to ask; a
+// HostEdit only means something on a text or a quiz question, and a
+// HostAnswer on a puzzle whose typed answer the host can set.
+func checkHostEdits(r *reporter, g *graph.Graph) {
+	seen := map[string]bool{}
+	for _, v := range g.HostValues {
+		switch {
+		case !hostSlug.MatchString(v.Slug):
+			r.err("host_value.slug", "", "", "a host value's slug %q may hold only letters, digits, - and _", v.Slug)
+		case seen[v.Slug]:
+			r.err("host_value.duplicate", "", "", "two host values share the slug %q", v.Slug)
+		case strings.TrimSpace(v.Label) == "":
+			r.err("host_value.label", "", "", "the host value %q has no question for the host", v.Slug)
+		}
+		seen[v.Slug] = true
+	}
+	for _, n := range g.Nodes {
+		for _, b := range n.AllBlocks() {
+			if b.HostEdit && b.Kind != graph.BlockText && b.Kind != graph.BlockQuiz {
+				r.warn("block.host_edit.kind", n.Slug, "", "a host can only rewrite a text or a quiz question; %q is a %s", b.ID, b.Kind)
+			}
+		}
+		if p := n.PuzzleCfg; p != nil && p.HostAnswer && !p.UsesMatchers() {
+			r.warn("puzzle.host_answer.kind", n.Slug, "", "a host can only set a typed answer, and this step is answered another way")
+		}
+	}
 }

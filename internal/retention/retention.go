@@ -29,6 +29,10 @@ type Config struct {
 	// AuditDays is how long auth_events rows stick around from their
 	// timestamp. Default 90.
 	AuditDays int
+	// PartyDays is how long a party (events.party) is kept after it
+	// ends, for its results page, before the whole event goes. A party
+	// never started goes once its valid_until has passed. Default 14.
+	PartyDays int
 	// Interval between sweeps. The work is cheap and incremental;
 	// once an hour is plenty.
 	Interval time.Duration
@@ -61,6 +65,9 @@ func sweep(ctx context.Context, db *sql.DB, cfg Config) {
 	}
 	if cfg.AuditDays > 0 {
 		pruneAuthEvents(ctx, db, cfg.AuditDays)
+	}
+	if cfg.PartyDays > 0 {
+		prunePartyEvents(ctx, db, cfg.PartyDays)
 	}
 	// User-deletion grace period is fixed (7 days, set in admin.me),
 	// not operator-tunable, so it has no Days field on Config — the

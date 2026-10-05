@@ -444,5 +444,14 @@
   "At the start": "Vid starten",
   "Start over": "Börja om",
   "the place": "platsen",
-  "Find the place.": "Hitta platsen."
+  "Find the place.": "Hitta platsen.",
+  "You found the card!": "Ni hittade kortet!",
+  "That's not one of this game's cards. Check the code and try again.": "Det är inte ett av spelets kort. Kolla koden och försök igen.",
+  "You found {{place}}.": "Ni hittade {{place}}.",
+  "You found the card.": "Ni hittade kortet.",
+  "Find the card: {{place}}.": "Hitta kortet: {{place}}.",
+  "Find the next card.": "Hitta nästa kort.",
+  "Scan it, or type the code printed on it.": "Skanna det, eller skriv in koden som står på det.",
+  "Code on the card": "Koden på kortet",
+  "Go": "Kör"
 }

@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -141,9 +142,14 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 		if playerH.VoucherLink(w, req) {
 			return
 		}
-		// Already signed in as a player? Straight into the app.
+		// Already signed in as a player? Straight into the app — at the
+		// party card the phone's camera just scanned, if it did.
 		if _, ok := auth.SlotFromContext(req.Context()); ok {
-			http.Redirect(w, req, "/app/play/", http.StatusFound)
+			target := "/app/play/"
+			if code := req.URL.Query().Get("station"); code != "" {
+				target += "?station=" + url.QueryEscape(code)
+			}
+			http.Redirect(w, req, target, http.StatusFound)
 			return
 		}
 		// Otherwise the branded front door: a visitor who lands here by

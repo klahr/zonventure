@@ -62,6 +62,8 @@ export function feedbackForResult(kind: play.PlayAction["kind"], r: play.Result,
         tone: "info",
         text: t("Your key is turned: {{done}} of {{of}}. The others must turn theirs at the same moment.", { done: r.waiting?.done ?? 1, of: r.waiting?.of ?? 2 }),
       };
+    case "station":
+      return { tone: "good", text: t("You found the card!") };
     case "skip":
       return { tone: "info", text: t("Skipped.") };
     case "leave":
@@ -104,6 +106,8 @@ export function feedbackForRefusal(code: string | undefined, t: Translate): Feed
       return { tone: "bad", text: t("That's too long. Shorten it and try again.") };
     case "bad_password":
       return { tone: "bad", text: t("Wrong password.") };
+    case "unknown_station":
+      return { tone: "bad", text: t("That's not one of this game's cards. Check the code and try again.") };
     case "bad_start_code":
       return { tone: "bad", text: t("That's not the right code. Check it and try again.") };
     case "no_game":

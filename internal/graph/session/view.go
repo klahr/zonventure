@@ -57,6 +57,10 @@ type View struct {
 	// often.
 	RecheckAt     *time.Time `json:"recheck_at,omitempty"`
 	WatchPosition bool       `json:"watch_position,omitempty"`
+	// Stations says the zones are cards to scan, not places to reach:
+	// the phone offers a scanner where it would show the way, and never
+	// asks where it is. See graph.Graph.Stations.
+	Stations bool `json:"stations,omitempty"`
 	// Media, with Text, is Blocks for a player still running the bundle
 	// from before blocks: its pictures and sounds, and Text its texts.
 	Media []graph.Media `json:"media,omitempty"`
@@ -514,10 +518,17 @@ func legacyMedia(bs []graph.Block) []graph.Media {
 // view keeps them whole, for the simulator and the designer.
 func (v *View) HidePlaces() {
 	hide := func(z *graph.Zone) *graph.Zone {
-		if z == nil || !z.Hidden {
-			return z
+		switch {
+		case z == nil:
+			return nil
+		case z.Hidden:
+			return &graph.Zone{Slug: z.Slug, Hidden: true}
+		case v.Stations:
+			// A station is a card, named on it: where the author drew the
+			// zone is no help, and not the team's to know.
+			return &graph.Zone{Slug: z.Slug, Name: z.Name}
 		}
-		return &graph.Zone{Slug: z.Slug, Hidden: true}
+		return z
 	}
 	v.Zone = hide(v.Zone)
 	for i := range v.Starts {
@@ -553,7 +564,7 @@ func (t *Team) blockShown(node string, b graph.Block) bool {
 // it moves (WatchPosition).
 func (t *Team) watch(v *View, p cond.Predicate) {
 	at, zone := t.wakeup(p)
-	if zone {
+	if zone && !t.G.Stations {
 		v.WatchPosition = true
 	}
 	if at != nil && at.After(t.Now) && (v.RecheckAt == nil || at.Before(*v.RecheckAt)) {
@@ -608,9 +619,10 @@ func waitsForZone(p cond.Predicate) string {
 }
 
 // tokens are the team's state an author may write into a text:
-// {{score}}, {{counter:<slug>}}, {{item:<slug>}}. {{team}} is left for
-// the phone, which knows the team's name.
-var tokens = regexp.MustCompile(`\{\{\s*(score|counter:[\w-]+|item:[\w-]+)\s*\}\}`)
+// {{score}}, {{counter:<slug>}}, {{item:<slug>}}, and a party host's
+// words, {{host:<slug>}} (graph.HostValues). {{team}} is left for the
+// phone, which knows the team's name.
+var tokens = regexp.MustCompile(`\{\{\s*(score|counter:[\w-]+|item:[\w-]+|host:[\w-]+)\s*\}\}`)
 
 func (t *Team) fill(s string) string {
 	if !strings.Contains(s, "{{") {
@@ -623,6 +635,9 @@ func (t *Team) fill(s string) string {
 			return number(t.Score())
 		case strings.HasPrefix(name, "counter:"):
 			return number(t.CounterValue(strings.TrimPrefix(name, "counter:")))
+		case strings.HasPrefix(name, "host:"):
+			v, _ := t.G.HostValue(strings.TrimPrefix(name, "host:"))
+			return v
 		default:
 			return strconv.Itoa(t.ItemQty(strings.TrimPrefix(name, "item:")))
 		}
@@ -634,6 +649,7 @@ func number(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 // View renders the team's state for the player.
 func (t *Team) View() View {
 	v := t.view()
+	v.Stations = t.G.Stations
 	for _, r := range t.G.Roles {
 		if r.Secret && !t.HasRole(r.Slug) {
 			continue

@@ -92,7 +92,19 @@ export function App() {
   useLiveRefresh(game.status === "ready", game.refresh);
   // Location only when the adventure has places (or the organiser asked
   // for positions): a quiz-only game shouldn't prompt for it or run GPS.
-  const usesLocation = !!(s?.event.start || view?.zone || view?.starts?.some((o) => o.zone) || view?.watch_position);
+  // A party's places are cards to scan, never somewhere to reach.
+  const usesLocation = !view?.stations && !!(s?.event.start || view?.zone || view?.starts?.some((o) => o.zone) || view?.watch_position);
+
+  // A party's card scanned with the phone's own camera opens
+  // /play?station=CODE: take the team there once the game is up.
+  const pendingStation = useRef(new URLSearchParams(location.search).get("station"));
+  useEffect(() => {
+    const code = pendingStation.current;
+    if (!code || game.status !== "ready" || !running || !view) return;
+    pendingStation.current = null;
+    history.replaceState(null, "", location.pathname + location.hash);
+    game.act({ kind: "station", node: view.node ?? "", guess: code });
+  }, [game, running, view]);
   // The player can pause sharing from the menu; remembered on this phone.
   const [shareLocation, setShareLocationState] = useState(() => !readFlag(SHARE_OFF_KEY));
   const setShareLocation = (on: boolean) => {

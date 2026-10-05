@@ -83,6 +83,17 @@ type Graph struct {
 	// TimeLimit ends the free play of an adventure: see TimeLimit.
 	TimeLimit *TimeLimit `json:"time_limit,omitempty"`
 
+	// HostValues are words a party's host fills in — the birthday child's
+	// name, their age — that texts use as {{host:<slug>}}. An ordinary
+	// event, and a host who leaves one blank, shows its Default.
+	HostValues []HostValue `json:"host_values,omitempty"`
+
+	// Stations plays the zones as cards a party host hides: a team is at
+	// a zone once it has scanned that zone's card, not when it stands in
+	// it. Never authored — only a party's own copy of a graph (AsStations)
+	// sets it.
+	Stations bool `json:"stations,omitempty"`
+
 	// Frames are titled boxes the designer draws behind steps to group
 	// them — one per suspect, say. Cosmetic, like positions: evaluation
 	// never reads them.
@@ -453,6 +464,11 @@ type PuzzleConfig struct {
 	// Bar sets the words, keyboard and QR button of the answer bar, for a
 	// typed answer or a scan. Nil is the standard bar.
 	Bar *AnswerBar `json:"bar,omitempty"`
+
+	// HostAnswer lets a party's host set what a typed answer accepts —
+	// the birthday child's favourite animal — for the first answer
+	// output, alongside rewriting the question (Block.HostEdit).
+	HostAnswer bool `json:"host_answer,omitempty"`
 }
 
 // AnswerBar is how the answer bar at the bottom of a typed puzzle looks.
@@ -1038,6 +1054,11 @@ type Zone struct {
 	// its name nor a map nor how far it is, for a step where finding the
 	// place is the puzzle. Arrival is still checked on the server.
 	Hidden bool `json:"hidden,omitempty"`
+	// Movable lets a party's host put the zone where their party is — a
+	// tree in their own park — rather than where the author drew it. A
+	// place the adventure relies on (the church whose windows a puzzle
+	// counts) is not movable.
+	Movable bool `json:"movable,omitempty"`
 }
 
 // IsPolygon reports whether the zone's shape is its polygon.

@@ -1,0 +1,431 @@
+/* The party app: a booking form and a host page, on the shared tokens. */
+@import "@zonventure/ui/tokens.css";
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-text-size-adjust: 100%;
+}
+
+.party {
+  min-height: 100dvh;
+}
+
+.party-top {
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface);
+}
+.party-brand {
+  font-family: var(--font-brand);
+  font-size: var(--text-lg);
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.party-main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: var(--sp-4) var(--sp-4) var(--sp-7);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.party-screen {
+  display: contents;
+}
+
+.party-card {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--sp-5);
+}
+.party-card h1 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--text-xl);
+  line-height: 1.2;
+}
+.party-card h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-2);
+  font-size: var(--text-lg);
+}
+.party-card p {
+  margin: 0 0 var(--sp-3);
+}
+
+.party-eyebrow {
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.party-lead {
+  font-size: var(--text-lg);
+}
+.party-muted {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.party-note {
+  padding: var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.party-error {
+  padding: var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  color: var(--danger);
+  margin: 0;
+}
+.party-points {
+  margin: 0 0 var(--sp-4);
+  padding-left: 1.2em;
+  color: var(--ink-soft);
+}
+.party-points li + li {
+  margin-top: var(--sp-1);
+}
+
+.party-step {
+  display: inline-grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: var(--text-sm);
+}
+
+.party-pill {
+  display: inline-block;
+  padding: 0.1em 0.6em;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+}
+.party-pill--running {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.party-pill--paused {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.party-pill--cancelled {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* Forms */
+.party-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.party-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  flex: 1;
+  min-width: 0;
+}
+.party-field > span {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+.party-field--narrow {
+  flex: 0 0 6rem;
+}
+.party-field input,
+.party-stepper output {
+  box-sizing: border-box;
+  min-height: 2.75rem;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+.party-field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.party-stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.party-stepper output {
+  display: grid;
+  place-items: center;
+  min-width: 4rem;
+  font-size: var(--text-lg);
+  font-weight: 700;
+}
+.party-stepper button {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+.party-check {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: flex-start;
+  font-size: var(--text-sm);
+}
+.party-check input {
+  margin-top: 0.2em;
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+}
+.party-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-soft);
+  color: var(--ink-soft);
+}
+.party-total strong {
+  font-size: var(--text-xl);
+  color: var(--ink);
+}
+.party-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: flex-end;
+  margin: var(--sp-3) 0;
+}
+
+/* Buttons */
+.party-btn {
+  min-height: 2.75rem;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.party-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.party-btn--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.party-btn--wide {
+  width: 100%;
+}
+.party-btn--quiet {
+  border-color: transparent;
+  background: transparent;
+  font-size: var(--text-lg);
+}
+.party-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+
+/* Teams and cards */
+.party-teams,
+.party-cards {
+  list-style: none;
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.party-team {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+.party-team img {
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+.party-team > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.party-cards {
+  counter-reset: card;
+}
+.party-cards li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px dashed var(--border-soft);
+}
+.party-cards code,
+.party-print code {
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em;
+}
+
+/* The printed sheet: off screen, and all there is on paper. */
+.party-print {
+  display: none;
+}
+@media print {
+  .party-top,
+  .party-screen {
+    display: none;
+  }
+  .party-main {
+    max-width: none;
+    padding: 0;
+  }
+  .party-print {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8mm;
+  }
+  .party-print__card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3mm;
+    padding: 8mm 4mm;
+    border: 1px dashed #999;
+    border-radius: 4mm;
+    break-inside: avoid;
+    color: #000;
+    text-align: center;
+  }
+  .party-print__card strong {
+    font-size: 16pt;
+  }
+  .party-print__card code {
+    font-size: 18pt;
+  }
+  .party-print__no {
+    position: absolute;
+    top: 3mm;
+    left: 4mm;
+    font-weight: 700;
+  }
+}
+
+/* Where the party is played: two cards to pick from. */
+.party-choices {
+  display: grid;
+  gap: var(--sp-2);
+}
+.party-choice {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-start;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.party-choice.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+.party-choice span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.party-choice small {
+  color: var(--muted);
+}
+
+/* A quiz question the host rewrites. */
+.party-quiz {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+.party-quiz legend {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+.party-quiz input:not([type="radio"]),
+.party-field textarea {
+  box-sizing: border-box;
+  min-height: 2.5rem;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  width: 100%;
+}
+.party-quiz__opt {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.party-quiz__mark {
+  width: 1.5rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Places in a park. */
+.party-places {
+  list-style: none;
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+}
+.party-places li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px dashed var(--border-soft);
+}
+.party-places li > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}

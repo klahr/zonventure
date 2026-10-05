@@ -101,6 +101,29 @@ func EnsureDev(ctx context.Context, q Querier, adventureID int64, g *graph.Graph
 	return id, err
 }
 
+// SaveParty stores the graph a party event plays — its adventure's
+// published version as the party adapted it — and returns its id. The
+// row is the event's own: version -eventID, so it is never counted among
+// the versions, never published, and goes when the event is purged. An
+// invalid graph is refused with InvalidError, like any release.
+func SaveParty(ctx context.Context, q Querier, adventureID, eventID int64, g *graph.Graph) (int64, error) {
+	if r := valid.Check(g); r.HasErrors() {
+		return 0, &InvalidError{Report: r}
+	}
+	doc, err := json.Marshal(g)
+	if err != nil {
+		return 0, fmt.Errorf("encoding graph: %w", err)
+	}
+	var id int64
+	err = q.QueryRowContext(ctx, `
+		INSERT INTO adventure_graphs (adventure_id, version, graph, label)
+		VALUES ($1, $2, $3, 'party')
+		ON CONFLICT (adventure_id, version) DO UPDATE SET graph = EXCLUDED.graph
+		RETURNING id
+	`, adventureID, -eventID, doc).Scan(&id)
+	return id, err
+}
+
 // LoadDraft returns the draft, or ErrNotFound.
 func LoadDraft(ctx context.Context, q Querier, adventureID int64) (Draft, error) {
 	var (

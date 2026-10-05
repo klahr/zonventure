@@ -210,6 +210,13 @@ location/answer data, 90 days for audit events. Tune via
 `ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` (or the
 matching `-retention-*` flags). Set to `0` to disable.
 
+Parties (children's parties booked without an account) are deleted
+whole — event, teams, players, answers, photos and the party's own
+graph copy — `ZV_PARTY_RETENTION_DAYS` days (default 14) after they
+end, when a booked party passes its 60-day validity unstarted, or that
+many days after a party was started and never ended. The ticket
+purchase stays, its email blanked.
+
 ## Platform admin vs organisations
 
 The global admin is the operator: organisations, admins, settings,

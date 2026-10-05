@@ -1,4 +1,4 @@
-import type { Counter, Graph, Item, JournalEntry, Role, Zone } from "@zonventure/graph";
+import type { Counter, Graph, HostValue, Item, JournalEntry, Role, Zone } from "@zonventure/graph";
 import { gridZones } from "@zonventure/graph";
 import { StaticMap } from "@zonventure/play-ui";
 import { useState } from "react";
@@ -52,6 +52,8 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
   const setCounters = (c: Counter[]) => onChange({ ...graph, counters: c });
   const setJournal = (j: JournalEntry[]) => onChange({ ...graph, journal: j });
   const setRoles = (r: Role[]) => (r.length ? onChange({ ...graph, roles: r }) : onChange(withoutKey(graph, "roles")));
+  const hostValues = graph.host_values ?? [];
+  const setHostValues = (v: HostValue[]) => (v.length ? onChange({ ...graph, host_values: v }) : onChange(withoutKey(graph, "host_values")));
 
   return (
     <div className="res">
@@ -95,6 +97,11 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
               <input type="checkbox" checked={!!z.hidden}
                 onChange={(e) => setZones(zones.map((x, j) => (j === i ? (e.target.checked ? { ...z, hidden: true } : withoutKey(z, "hidden")) : x)))} />
               {t.t("Hide the place from teams")}
+            </label>
+            <label className="check" title={t.t("A party's host can put this place in their own park. Leave it off for a place the adventure relies on, like a building a puzzle is about.")}>
+              <input type="checkbox" checked={!!z.movable}
+                onChange={(e) => setZones(zones.map((x, j) => (j === i ? (e.target.checked ? { ...z, movable: true } : withoutKey(z, "movable")) : x)))} />
+              {t.t("A party host may move it")}
             </label>
             {open === z.slug ? (
               <ZoneMap zone={z} onChange={(nz) => setZones(zones.map((x, j) => (j === i ? nz : x)))} />
@@ -159,6 +166,32 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
           }}>
           <Plus size={ICON.sm} aria-hidden="true" />
           {t.t("Add zone")}
+        </button>
+      </section>
+
+      <section className="insp__section">
+        <h3>
+          <ConceptIcon {...RESOURCE.party} />
+          {t.t("Party words")}
+        </h3>
+        <p className="field__hint">{t.t("Words a party's host fills in, such as the birthday child's name. Write {{host:slug}} in a text to use one.")}</p>
+        {hostValues.map((v, i) => (
+          <div key={v.slug} className="box">
+            <div className="box__row">
+              <code>{`{{host:${v.slug}}}`}</code>
+              <button type="button" className="icon-remove" onClick={() => setHostValues(hostValues.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
+                <Trash2 size={ICON.sm} />
+              </button>
+            </div>
+            <input className="field__input" value={v.label} placeholder={t.t("What the host is asked")} aria-label={t.t("What the host is asked")}
+              onChange={(e) => setHostValues(hostValues.map((x, j) => (j === i ? { ...v, label: e.target.value } : x)))} />
+            <input className="field__input" value={v.default ?? ""} placeholder={t.t("Shown when there is no host")} aria-label={t.t("Shown when there is no host")}
+              onChange={(e) => setHostValues(hostValues.map((x, j) => (j === i ? (e.target.value ? { ...v, default: e.target.value } : withoutKey(v, "default")) : x)))} />
+          </div>
+        ))}
+        <button type="button" className="add-btn" onClick={() => setHostValues([...hostValues, { slug: slugFor("word", hostValues), label: "" }])}>
+          <Plus size={ICON.sm} aria-hidden="true" />
+          {t.t("Add party word")}
         </button>
       </section>
 

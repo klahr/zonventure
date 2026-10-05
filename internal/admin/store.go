@@ -430,11 +430,14 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 		buyerEmail string
 		teamSize   int
 		state      string
+		kind       string
+		offerID    sql.NullInt64
+		partyName  string
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT COALESCE(event_id, 0), buyer_email, team_size, state
+		SELECT COALESCE(event_id, 0), buyer_email, team_size, state, kind, party_offer_id, party_name
 		FROM ticket_purchases WHERE id = $1 FOR UPDATE
-	`, purchaseID).Scan(&eventID, &buyerEmail, &teamSize, &state); err != nil {
+	`, purchaseID).Scan(&eventID, &buyerEmail, &teamSize, &state, &kind, &offerID, &partyName); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -447,6 +450,9 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 	}
 	if state != "pending" {
 		return nil
+	}
+	if kind == "party" {
+		return h.fulfilPartyCheckout(ctx, tx, event, purchaseID, offerID, partyName, buyerEmail, teamSize)
 	}
 	if eventID == 0 {
 		// Event deleted while the payment was in flight; the row is

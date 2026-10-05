@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -397,9 +398,9 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 		writeCached(w, cached)
 		return
 	}
-	// A cheat checks a password, so it shares the answers' budget: that
-	// is what stops guessing it.
-	if action == "answer" || action == "cheat" {
+	// A cheat checks a password, and a station a card's code, so they
+	// share the answers' budget: that is what stops guessing them.
+	if action == "answer" || action == "cheat" || action == "station" {
 		if ok, retry := h.rateLimiter().AllowAnswer(slot.ID); !ok {
 			writeRateLimited(w, retry)
 			return
@@ -464,6 +465,16 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 		res, err = e.RevealHint(ctx, tc.TeamID, req.Node, req.Index)
 	case "pick":
 		res, err = e.Pick(ctx, tc.TeamID, req.Node, req.Block, req.Choice)
+	case "station":
+		// A party's station card, scanned or typed: the team is there now.
+		res, err = e.Station(ctx, tc.TeamID, stationCode(req.Guess))
+		if errors.Is(err, play.ErrUnknownStation) {
+			if res.View, err = e.Snapshot(ctx, tc.TeamID); err == nil {
+				_ = decorateView(ctx, h.DB, tc.TeamID, slot.ID, &res.View)
+				httpx.JSON(w, http.StatusNotFound, playRefusal{Error: "that is not one of this party's cards", Code: "unknown_station", Result: &res})
+				return
+			}
+		}
 	case "vote":
 		// A vote is the player's, not the team's, so the engine has no
 		// part in it; the reply carries the team's view like any action's.
@@ -639,4 +650,19 @@ func longHex(c string) string {
 		return "#" + string([]byte{c[1], c[1], c[2], c[2], c[3], c[3]})
 	}
 	return c
+}
+
+// stationCode is the code a station card's scan or typing gives: the
+// card's QR holds the play page's URL with ?station=CODE, so a phone's
+// own camera opens the game at the card; the game's scanner hands the
+// URL over whole.
+func stationCode(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.Index(s, "station="); i >= 0 {
+		s = s[i+len("station="):]
+		if j := strings.IndexAny(s, "&#"); j >= 0 {
+			s = s[:j]
+		}
+	}
+	return s
 }

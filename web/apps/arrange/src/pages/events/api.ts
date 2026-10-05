@@ -19,6 +19,8 @@ export interface EventRow {
   public_for_sale: boolean;
   ticket_price_cents?: number;
   ticket_currency?: string;
+  /** A party a parent booked and runs from their host page. */
+  party?: boolean;
 }
 
 /** internal/admin/handlers.go: adventureDTO. */

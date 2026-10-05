@@ -468,9 +468,10 @@ function Title({ view }: { view: play.View }) {
 
 const mapURL = (z: play.PlayZone) => `https://www.openstreetmap.org/?mlat=${z.lat}&mlon=${z.lng}#map=18/${z.lat}/${z.lng}`;
 
-function ZoneCard({ view, t, note }: { view: play.View; t: Translate; note?: ReactNode }) {
+function ZoneCard({ view, t, note, onStation, busy }: { view: play.View; t: Translate; note?: ReactNode; onStation?: (code: string) => void; busy?: boolean }) {
   const z = view.zone;
   if (!z) return null;
+  if (view.stations) return <StationCard view={view} zone={z} t={t} {...(onStation ? { onStation } : {})} busy={!!busy} />;
   // A hidden place: finding it is the puzzle, so no name, map or distance.
   const name = z.hidden ? t("the place") : z.name || t("the marked place");
   // One teammate at the place opens it for all; only they are there.
@@ -500,6 +501,69 @@ function ZoneCard({ view, t, note }: { view: play.View; t: Translate; note?: Rea
         <a href={mapURL(z)} target="_blank" rel="noopener noreferrer">
           {t("Map")}
         </a>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A party's zone, played as a card the host hid: the team gets there by
+ * scanning it, or typing the code printed on it. Where the zone was drawn
+ * on a map means nothing in someone's garden, so no map and no distance.
+ */
+function StationCard({ view, zone, t, onStation, busy }: { view: play.View; zone: play.PlayZone; t: Translate; onStation?: (code: string) => void; busy: boolean }) {
+  const [code, setCode] = useState("");
+  const name = zone.hidden || !zone.name ? null : zone.name;
+  if (view.here) {
+    return (
+      <div className="pv-zone is-here">
+        <span className="pv-zone__pin" aria-hidden>
+          ✓
+        </span>
+        <div className="pv-zone__body">
+          <strong>{name ? t("You found {{place}}.", { place: name }) : t("You found the card.")}</strong>
+        </div>
+      </div>
+    );
+  }
+  const send = (c: string) => {
+    if (c.trim() && onStation) onStation(c.trim());
+  };
+  return (
+    <div className="pv-zone pv-station">
+      <div className="pv-station__head">
+        <span className="pv-zone__pin" aria-hidden>
+          ▦
+        </span>
+        <div className="pv-zone__body">
+          <strong>{name ? t("Find the card: {{place}}.", { place: name }) : t("Find the next card.")}</strong>
+          <span className="pv-zone__note">{t("Scan it, or type the code printed on it.")}</span>
+        </div>
+      </div>
+      {onStation && (
+        <form
+          className="pv-station__entry"
+          onSubmit={(e) => {
+            e.preventDefault();
+            send(code);
+            setCode("");
+          }}
+        >
+          <QrButton t={t} disabled={busy} onScan={send} />
+          <input
+            className="pv-input"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder={t("Code on the card")}
+            aria-label={t("Code on the card")}
+            autoCapitalize="characters"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button type="submit" className="pv-btn pv-btn--primary" disabled={busy || !code.trim()}>
+            {t("Go")}
+          </button>
+        </form>
       )}
     </div>
   );
@@ -576,7 +640,7 @@ function PuzzleStep(props: StepProps) {
   return (
     <>
       <Title view={view} />
-      <ZoneCard view={view} t={t} note={props.zoneNote} />
+      <ZoneCard view={view} t={t} note={props.zoneNote} busy={!!busy} onStation={(code) => onAction({ kind: "station", node, guess: code })} />
       <Blocks blocks={view.blocks} {...blockContext(props)} />
 
       {view.deadline && (
@@ -952,7 +1016,7 @@ function StoryStep(props: StepProps) {
   return (
     <>
       <Title view={view} />
-      <ZoneCard view={view} t={t} note={zoneNote} />
+      <ZoneCard view={view} t={t} note={zoneNote} busy={!!busy} onStation={(code) => onAction({ kind: "station", node, guess: code })} />
       <Blocks blocks={view.blocks} {...blockContext(props)} />
       <div className="pv-dock">
         <FeedbackLine feedback={feedback} />

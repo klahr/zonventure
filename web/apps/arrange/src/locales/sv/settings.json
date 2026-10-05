@@ -43,5 +43,21 @@
   "Connect a Stripe account to start selling tickets to your self-guided adventures in your store. Stripe-hosted verification takes a few minutes; afterwards you follow your balance and payouts in the Stripe dashboard.": "Anslut ett Stripe-konto för att börja sälja biljetter till dina självguidade äventyr i din butik. Stripes verifiering tar några minuter; sedan följer du ditt saldo och dina utbetalningar i Stripe-dashboarden.",
   "Open Stripe dashboard": "Öppna Stripe-dashboarden",
   "Stripe didn't return a dashboard link": "Stripe returnerade ingen länk till dashboarden",
-  "Payouts enabled — your balance is paid out to your bank once a month, on the 1st.": "Utbetalningar aktiverade — ditt saldo betalas ut till din bank en gång i månaden, den 1:a."
+  "Payouts enabled — your balance is paid out to your bank once a month, on the 1st.": "Utbetalningar aktiverade — ditt saldo betalas ut till din bank en gång i månaden, den 1:a.",
+  "A parent books a party on your page and pays, with no account. They get a host page to set up teams, print cards and start the game; everything about the players is deleted a while after the party.": "En förälder bokar och betalar ett kalas på er sida, utan konto. De får en värdsida där de delar in lag, skriver ut kort och startar spelet; allt om spelarna raderas en tid efter kalaset.",
+  "About parties": "Om kalas",
+  "Base price": "Grundpris",
+  "Bookable": "Bokningsbart",
+  "Can't be offered as a party: {{reason}}": "Kan inte erbjudas som kalas: {{reason}}",
+  "Create an adventure, or have one shared with you, to offer it as a party.": "Skapa ett äventyr, eller få ett delat med er, för att erbjuda det som kalas.",
+  "Description on the booking page": "Beskrivning på bokningssidan",
+  "Let parents book your adventures for children's parties.": "Låt föräldrar boka era äventyr till barnkalas.",
+  "Most children": "Högst antal barn",
+  "No adventures yet": "Inga äventyr än",
+  "Not offered": "Erbjuds inte",
+  "Offer as a party": "Erbjud som kalas",
+  "Open the booking page": "Öppna bokningssidan",
+  "Parties": "Kalas",
+  "Per child": "Per barn",
+  "{{n}} cards to hide": "{{n}} kort att gömma"
 }

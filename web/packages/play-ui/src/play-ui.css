@@ -345,6 +345,31 @@
   font-weight: 700;
 }
 
+/* A party's card to find: what to look for, then a scanner and a code box. */
+.pv-station {
+  flex-direction: column;
+  align-items: stretch;
+}
+.pv-station__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.pv-station__entry {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.pv-station__entry .pv-input {
+  box-sizing: border-box;
+  height: var(--pv-tap);
+  padding-block: 0;
+  flex: 1;
+  min-width: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 /* A start to choose: the zone card, with its own button beneath. */
 .pv-begin {
   flex-direction: column;

@@ -376,13 +376,15 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 		startRad  sql.NullFloat64
 		startName string
 		anywhere  bool
+		station   sql.NullString
 	)
 	query := `
 		SELECT tgs.event_id, tgs.graph_id, tgs.current_node, tgs.node_entered_at, tgs.started_at,
 		       tgs.completed_at, tgs.outcome, tgs.score, tgs.penalty_score, tgs.penalty_seconds,
 		       tgs.theme, tgs.last_answer, tgs.timed_out, tgs.lang, tgs.cheated,
 		       COALESCE(adv.start_code, ''), tgs.start_paused, tgs.node_paused, ev.paused_seconds, ev.paused_at,
-		       adv.start_lat, adv.start_lng, adv.start_radius_m, adv.start_label, tm.start_anywhere
+		       adv.start_lat, adv.start_lng, adv.start_radius_m, adv.start_label, tm.start_anywhere,
+		       tm.station_zone
 		FROM team_graph_state tgs
 		JOIN teams tm ON tm.id = tgs.team_id
 		JOIN adventure_graphs g ON g.id = tgs.graph_id
@@ -395,7 +397,7 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	err := q.QueryRowContext(ctx, query, teamID).Scan(&s.eventID, &s.graphID, &current, &entered, &s.StartedAt,
 		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme, &s.LatestAnswer, &s.TimedOut, &s.Lang, &s.Cheated,
 		&s.StartCode, &s.StartPaused, &s.NodePaused, &s.Paused, &pausedAt,
-		&startLat, &startLng, &startRad, &startName, &anywhere)
+		&startLat, &startLng, &startRad, &startName, &anywhere, &station)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoGraph
 	}
@@ -413,6 +415,7 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	// An arranger may let the team begin wherever it stands: it still sees
 	// the start screen, but its start is open.
 	s.StartAnywhere = anywhere
+	s.Station = station.String
 
 	if s.G, err = e.graph(ctx, q, s.graphID); err != nil {
 		return nil, err

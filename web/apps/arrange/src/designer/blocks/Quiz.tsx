@@ -30,6 +30,10 @@ export const QuizEditor: Editor<"quiz"> = ({ block, set, t }) => (
       <input className="field__input" type="number" min={1} value={block.worth || 1} onChange={(e) => set(withField(block, "worth", Math.max(1, Number(e.target.value) || 1) === 1 ? undefined : Math.max(1, Number(e.target.value))))} />
     </label>
     <p className="field__hint">{t.t("Tick the right answer. Teams see whether they were right, and get the points, when they finish.")}</p>
+    <label className="check" title={t.t("At a children's party, the host can ask their own question here — about the birthday child, say. Everyone else gets yours.")}>
+      <input type="checkbox" checked={!!block.host_edit} onChange={(e) => set(withField(block, "host_edit", e.target.checked || undefined))} />
+      {t.t("A party host may rewrite it")}
+    </label>
   </>
 );
 

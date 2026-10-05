@@ -11,6 +11,43 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — parties
+
+- Orgs can offer adventures as **children's parties** (Settings →
+  Parties): a base price plus a price per child, and a maximum number
+  of children. A parent books on `/o/{slug}/party/{id}` and pays with
+  no account; the payment goes through Stripe Connect like a ticket.
+- The booker gets a **host page** link by email (`/party/{token}`). From
+  it they add teams within the children booked, print the cards, and
+  start, pause and end the game. "Send the link again" mails a fresh
+  link and retires the old one.
+- Parties play in **QR mode**: the adventure's zones become cards the
+  host prints and hides, each with a code of its own per party. A team
+  reaches a zone by scanning its card in the game, or with the phone's
+  camera (the card holds `/play?station=CODE`), or by typing the code.
+  The phone never asks for location. Adventures that ask where each
+  player stands (search answers, keys at posts, `players_in_zone`,
+  `zones_held`, `walked`) cannot be offered.
+- A party plays its own copy of the published graph (a negative
+  version in `adventure_graphs`, never listed among versions).
+- A refunded party is cancelled. Parties are deleted whole
+  `ZV_PARTY_RETENTION_DAYS` days (default 14) after they end; see
+  OPERATIONS.md.
+- New player action `station`, new refusal code `unknown_station`.
+- **Personalisation.** Authors mark what a party's host may change
+  (designer): a text or quiz question ("A party host may rewrite it"), a
+  typed answer ("A party host may set the answer"), and **party words**
+  that texts use as `{{host:<slug>}}`, such as the birthday child's name
+  (`host_values`; ordinary events show the default). The host fills them
+  in on the host page before the party starts.
+- **Park mode.** Zones marked "A party host may move it" (`movable`) can
+  be put in the host's own park: the host walks to each spot and taps
+  "Put it here", or moves them all at once around where they stand.
+  Moved zones are at least 25 m across. A party chooses cards or park
+  before it starts; an adventure that cards can't play is offered only
+  in park mode, and only when every zone is movable. Starting refuses
+  until every place is put.
+
 ### Changed — Stripe Connect uses Express accounts
 
 - Orgs selling tickets now onboard as Stripe Connect **Express**

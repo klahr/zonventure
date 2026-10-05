@@ -551,6 +551,19 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
           <>
             {toRoutes}
             <BarForm cfg={cfg} onChange={onChange} />
+            <label className="check" title={t.t("At a children's party, the host can set what this step accepts — the birthday child's favourite animal, say. Mark the question's text as theirs to rewrite too.")}>
+              <input
+                type="checkbox"
+                checked={!!cfg.host_answer}
+                onChange={(e) => {
+                  const next = { ...cfg };
+                  if (e.target.checked) next.host_answer = true;
+                  else delete next.host_answer;
+                  onChange(next);
+                }}
+              />
+              {t.t("A party host may set the answer")}
+            </label>
           </>
         ),
       };

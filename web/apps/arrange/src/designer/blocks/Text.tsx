@@ -1,15 +1,22 @@
 import type { Editor } from "./types.ts";
+import { withField } from "./types.ts";
 import { MarkdownArea } from "../MarkdownArea.tsx";
 
 export const TextEditor: Editor<"text"> = ({ block, set, t, textLabel }) => (
-  <MarkdownArea
-    className="field__input"
-    rows={4}
-    value={block.text}
-    placeholder={t.t("What the team reads. **Bold** and *italic* work.")}
-    aria-label={textLabel}
-    onChange={(e) => set({ ...block, text: e.target.value })}
-  />
+  <>
+    <MarkdownArea
+      className="field__input"
+      rows={4}
+      value={block.text}
+      placeholder={t.t("What the team reads. **Bold** and *italic* work.")}
+      aria-label={textLabel}
+      onChange={(e) => set({ ...block, text: e.target.value })}
+    />
+    <label className="check" title={t.t("At a children's party, the host can put their own words here. Everyone else reads yours.")}>
+      <input type="checkbox" checked={!!block.host_edit} onChange={(e) => set(withField(block, "host_edit", e.target.checked || undefined))} />
+      {t.t("A party host may rewrite it")}
+    </label>
+  </>
 );
 
 /** Where the title goes; the title itself is edited at the top of the inspector. */

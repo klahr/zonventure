@@ -42,7 +42,7 @@ var spaFS embed.FS
 // deliberately untouched: old and new frontends coexist in the same
 // binary for the whole migration, and a surface is switched over by
 // changing one route registration, never by a big-bang cutover.
-var spaApps = []string{"arrange", "play"}
+var spaApps = []string{"arrange", "play", "party"}
 
 // registerSPARoutes registers /app/<name>/ for each built app.
 //

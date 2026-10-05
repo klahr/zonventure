@@ -37,10 +37,21 @@ export interface Graph {
   frames?: Frame[];
   /** Looks of the adventure's own: a theme effect switches to one by slug. */
   themes?: Theme[];
+  /** Words a party's host fills in, written into texts as {{host:<slug>}}. */
+  host_values?: HostValue[];
   /** The BCP 47 tag the graph's own text is in. */
   language?: string;
   /** Other languages: language → field key → text. See i18n.ts. */
   translations?: Record<string, Record<string, string>>;
+}
+
+/** graph.HostValue — a word a party's host fills in: the birthday child's name. */
+export interface HostValue {
+  slug: string;
+  /** What the host page asks. */
+  label: string;
+  /** What everyone else, and a host who leaves it blank, sees. */
+  default?: string;
 }
 
 /**
@@ -225,7 +236,8 @@ export interface Show {
 
 /** One block's own fields, by kind. See internal/graph/blocks.go for each. */
 export type BlockBody =
-  | { kind: "text"; text: string }
+  /** host_edit lets a party's host rewrite the text for their party. */
+  | { kind: "text"; text: string; host_edit?: boolean }
   | { kind: "image" | "video"; media: number; alt?: string }
   /** reverse lets the team play it backwards; spectrogram draws its spectrum as it plays. */
   | { kind: "audio"; media: number; alt?: string; reverse?: boolean; spectrogram?: boolean }
@@ -254,7 +266,8 @@ export type BlockBody =
   | { kind: "title" }
   | { kind: "points" }
   /** A quiz-walk question: three options for 1, X and 2, and the right one. Worth 0 is one point. */
-  | { kind: "quiz"; text: string; options: [string, string, string]; answer?: QuizChoice; worth?: number }
+  /** host_edit lets a party's host rewrite the question, its options and its answer. */
+  | { kind: "quiz"; text: string; options: [string, string, string]; answer?: QuizChoice; worth?: number; host_edit?: boolean }
   /** A number question: among teams on the same score, the closest guess ranks first. */
   | { kind: "tiebreak"; text: string; target?: number }
   /** A secret in parts, one to each player's phone. */
@@ -335,6 +348,8 @@ export interface Hint {
 
 export interface PuzzleConfig {
   blocks?: Block[];
+  /** A party's host may set what the typed answer accepts. */
+  host_answer?: boolean;
   /** Given its title and points once (graph.PuzzleConfig.Fixed); one removed since stays gone. */
   fixed?: boolean;
   zone?: string;
@@ -548,6 +563,8 @@ export interface Zone {
   group?: string;
   /** Keep the place from the teams: no name, map or distance on their phones, for a step where finding it is the puzzle. */
   hidden?: boolean;
+  /** A party's host may put the place in their own park. */
+  movable?: boolean;
 }
 
 /** internal/graph: StartConfig — where a start is, if anywhere. */

@@ -173,6 +173,11 @@ type Block struct {
 	Reverse     bool `json:"reverse,omitempty"`
 	Spectrogram bool `json:"spectrogram,omitempty"`
 
+	// HostEdit lets a party's host rewrite the block for their party: a
+	// text's words, or a quiz question with its options and answer. The
+	// author's version is what everyone else plays.
+	HostEdit bool `json:"host_edit,omitempty"`
+
 	// Zone is the slug of the zone a compass points at, a map shows or a
 	// radar senses.
 	Zone string `json:"zone,omitempty"`

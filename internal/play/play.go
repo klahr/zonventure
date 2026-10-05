@@ -151,9 +151,10 @@ func (e *Engine) graph(ctx context.Context, q Querier, id int64) (*graph.Graph, 
 		}
 		return nil, err
 	}
-	// A release never changes, so it is kept; a dev row (version 0)
-	// follows the draft, so it is read afresh every time.
-	if s.Version > 0 {
+	// A release never changes, nor does a party's own copy (a negative
+	// version), so both are kept; a dev row (version 0) follows the
+	// draft, so it is read afresh every time.
+	if s.Version != 0 {
 		e.graphs.Store(id, s.Graph)
 	}
 	return s.Graph, nil

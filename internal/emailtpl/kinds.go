@@ -122,6 +122,20 @@ func TeamLink(lang, teamURL, playURL, voucher, org string) (string, Content) {
 	}
 }
 
+// PartyHost is a party booker's host link: the page they set the party
+// up and run it from. The link is their only key, so the mail says so.
+func PartyHost(lang, hostURL, party, org string) (string, Content) {
+	return T(lang, "Your %s party — host link inside", sitename.Name()), Content{
+		Lang:      lang,
+		Preheader: T(lang, "Set up the party, print the cards and start when everyone is there."),
+		Heading:   T(lang, "%s is booked", party),
+		Body: T(lang, "Open the host page to split the children into teams, print and hide the cards, and start the game when everyone is there.") +
+			"\n\n" + T(lang, "Anyone with this link can run the party, so keep it to yourself."),
+		Buttons: []Button{{T(lang, "Open the host page"), hostURL}},
+		Footer:  T(lang, "Everything about the players is deleted a while after the party.") + " " + playerFooter(lang, "", org),
+	}
+}
+
 // BoxConfirmed is a box buyer's team link, once their code checks out.
 func BoxConfirmed(lang, partner, teamURL, playURL, voucher, org string) (string, Content) {
 	_, c := TeamLink(lang, teamURL, playURL, voucher, org)
