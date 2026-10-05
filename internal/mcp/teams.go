@@ -150,7 +150,7 @@ func (s *Server) registerTeamTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "add_slot",
 		Scope:       scopeWrite,
-		Description: "Add a player slot to an existing team. Mints a new magic-link token. Constrained by the assignment's max_players cap across the whole event.",
+		Description: "Add a player to a team: a new personal link (magic-link token) for them to play on their own phone. The event's player cap counts every team's players.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"team_id", "name"},
@@ -164,7 +164,7 @@ func (s *Server) registerTeamTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "remove_slot",
 		Scope:       scopeWrite,
-		Description: "Delete a player slot from a team. The slot's magic-link stops working immediately. Idempotent only at the level of 'gone is gone' — calling on a non-existent slot returns a 404 envelope.",
+		Description: "Remove a player (slot_id, from get_event) from a team; their link stops working at once. Not while the event runs.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"team_id", "slot_id"},
@@ -178,7 +178,7 @@ func (s *Server) registerTeamTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "rotate_slot_token",
 		Scope:       scopeWrite,
-		Description: "Mint a fresh magic-link token for a slot, invalidating the old one and ending any active player session on it. Use when a link has leaked or a player swapped phones. The expires_at is reset to the run-anchored default.",
+		Description: "Give a player (slot_id, from get_event) a new personal link, the old one stopping at once — when a link leaked or a player changed phones.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"team_id", "slot_id"},

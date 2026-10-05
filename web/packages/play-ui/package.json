@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": { "@zonventure/api": "*" },
-  "peerDependencies": { "react": "^19.2.0" },
+  "peerDependencies": { "react": "^19.2.0", "react-dom": "^19.2.0" },
   "devDependencies": {
     "@types/node": "^26.6.2",
     "@types/react": "^19.2.0",

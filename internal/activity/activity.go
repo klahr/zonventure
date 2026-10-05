@@ -118,6 +118,11 @@ const ClosePause = `paused_seconds = paused_seconds + COALESCE(
 //     instant) the UPDATE's state predicate ensures exactly one
 //     transition fires; the loser returns (false, nil).
 func MaybeCompleteEvent(ctx context.Context, db Execer, eventID int64) (bool, error) {
+	// A dev event is an author's to play again: its team finishing ends nothing.
+	var dev bool
+	if err := db.QueryRowContext(ctx, `SELECT dev FROM events WHERE id = $1`, eventID).Scan(&dev); err != nil || dev {
+		return false, err
+	}
 	var total, done int
 	// Withdrawn teams count as "done" for the purpose of auto-completing
 	// an event. Otherwise an event with one finished team and one

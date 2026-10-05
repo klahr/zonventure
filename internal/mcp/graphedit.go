@@ -34,6 +34,9 @@ func (s *Server) registerGraphEditTools() {
 			"(lat/lng are taken from there, radius_m defaults from the fix's accuracy; refused if the fix is older than two minutes); delete_zone {slug}; " +
 			"connect {from, from_port, to} points an output port at a node, replacing where it pointed before; disconnect {from, from_port}; " +
 			"put_theme {theme} adds or replaces a saved theme {slug, name, look} (look has the update_adventure_meta look fields without the _color suffix: accent, accent_secondary, background, text, submit_bg, font, heading_font, corners, cards, card_outline, backdrop); delete_theme {slug}, refused while a theme effect names it. " +
+			"set_text {slug?, find, replace, all?} changes a text of one step by quoting it exactly — the fastest way to change words; it fails, listing the step's texts, if find is not there, and asks for more of the text if it appears more than once (or all: true to change every one); " +
+			"patch_node {slug?, patch} merges a JSON merge patch into one step (null removes a field; lists of items with ids — blocks, matchers — merge by id, and outputs by port: a known one is patched, a new one added, {id or port, _delete: true} removed; other lists, like hints, are replaced whole) — e.g. add an accepted answer with {\"puzzle\":{\"outputs\":[{\"port\":\"right\",\"matchers\":[{\"id\":\"seven\",\"kind\":\"exact\",\"value\":\"seven\"}]}]}}, without resending the step. " +
+			"Without slug, set_text and patch_node edit the step the author's dev phone shows; the phone shows the change within a second. " +
 			"An adventure without a graph starts from an empty one.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -48,11 +51,15 @@ func (s *Server) registerGraphEditTools() {
 						"type":     "object",
 						"required": []string{"op"},
 						"properties": map[string]any{
-							"op":        map[string]any{"type": "string", "enum": []string{"put_node", "delete_node", "put_zone", "delete_zone", "put_theme", "delete_theme", "connect", "disconnect"}},
+							"op":        map[string]any{"type": "string", "enum": []string{"put_node", "delete_node", "set_text", "patch_node", "put_zone", "delete_zone", "put_theme", "delete_theme", "connect", "disconnect"}},
 							"node":      map[string]any{"type": "object", "description": "put_node: the full node."},
 							"zone":      map[string]any{"type": "object", "description": "put_zone: {slug, name, lat, lng, radius_m, polygon?, group?}."},
 							"theme":     map[string]any{"type": "object", "description": "put_theme: {slug, name, look}."},
-							"slug":      map[string]any{"type": "string", "description": "delete_node / delete_zone / delete_theme: what to delete."},
+							"slug":      map[string]any{"type": "string", "description": "delete_node / delete_zone / delete_theme: what to delete; set_text / patch_node: the step (omit for the dev phone's)."},
+							"find":      map[string]any{"type": "string", "description": "set_text: the text to change, quoted exactly as it is."},
+							"replace":   map[string]any{"type": "string", "description": "set_text: what it becomes."},
+							"all":       map[string]any{"type": "boolean", "description": "set_text: change every occurrence in the step."},
+							"patch":     map[string]any{"type": "object", "description": "patch_node: the fields to change."},
 							"from":      map[string]any{"type": "string"},
 							"from_port": map[string]any{"type": "string"},
 							"to":        map[string]any{"type": "string"},
@@ -79,7 +86,7 @@ func (s *Server) registerGraphEditTools() {
 	}, undoAdventureGraphEdit)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "create_graph_adventure",
+		Name:  "create_adventure",
 		Scope: scopeWrite,
 		Description: "Create a new, empty adventure authored as a graph, with an optional brief. Its draft starts as a start node joined to an end node " +
 			"(slugs start and end, start's port out); build on it with edit_adventure_graph. Nothing is published.",
@@ -116,6 +123,10 @@ type graphOp struct {
 	FromPort string          `json:"from_port,omitempty"`
 	To       string          `json:"to,omitempty"`
 	Here     bool            `json:"here,omitempty"`
+	Patch    json.RawMessage `json:"patch,omitempty"`
+	Find     string          `json:"find,omitempty"`
+	Replace  string          `json:"replace,omitempty"`
+	All      bool            `json:"all,omitempty"`
 }
 
 type editArgs struct {
@@ -168,6 +179,20 @@ func editAdventureGraph(ctx context.Context, s *Server, raw json.RawMessage) (To
 			}
 			here = &p
 			break
+		}
+	}
+	// set_text and patch_node without a step edit the dev phone's.
+	dev := ""
+	for i, op := range a.Ops {
+		if (op.Op == "set_text" || op.Op == "patch_node") && op.Slug == "" {
+			if dev == "" {
+				n, bad := s.devNode(ctx, a.Slug)
+				if bad != nil {
+					return *bad, nil
+				}
+				dev = n
+			}
+			a.Ops[i].Slug = dev
 		}
 	}
 	for i, op := range a.Ops {
@@ -324,6 +349,10 @@ func applyGraphOp(g *graph.Graph, op graphOp, here *position) error {
 			n.X, n.Y = nextPosition(g)
 		}
 		g.Nodes = append(g.Nodes, n)
+	case "set_text":
+		return setText(g, op.Slug, op.Find, op.Replace, op.All)
+	case "patch_node":
+		return patchNode(g, op.Slug, op.Patch)
 	case "delete_node":
 		i := nodeIndex(g, op.Slug)
 		if i < 0 {

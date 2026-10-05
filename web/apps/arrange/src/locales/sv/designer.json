@@ -967,5 +967,16 @@
   "Sent to {{email}}": "Skickad till {{email}}",
   "Send to an email address": "Skicka till en e-postadress",
   "Sending…": "Skickar…",
-  "Send": "Skicka"
+  "Send": "Skicka",
+  "Your organisation": "Er organisation",
+  "Remove from the organisation's themes": "Ta bort från organisationens teman",
+  "Remove “{{name}}” from the organisation's themes?": "Ta bort ”{{name}}” från organisationens teman?",
+  "Adventures that use it keep their copy.": "Äventyr som använder det behåller sin kopia.",
+  "Remove": "Ta bort",
+  "Keep this theme for all the organisation's adventures": "Spara temat för alla organisationens äventyr",
+  "Save for the organisation": "Spara för organisationen",
+  "Saved to the organisation's themes, without its picture and sounds: those belong to this adventure.": "Sparat bland organisationens teman, utan bild och ljud: de hör till det här äventyret.",
+  "Saved to the organisation's themes. Its other adventures can start a theme from it.": "Sparat bland organisationens teman. Organisationens andra äventyr kan utgå från det.",
+  "Replace the organisation's “{{name}}”?": "Ersätta organisationens ”{{name}}”?",
+  "The organisation already has a theme of that name. Adventures that use it keep their copy.": "Organisationen har redan ett tema med det namnet. Äventyr som använder det behåller sin kopia."
 }

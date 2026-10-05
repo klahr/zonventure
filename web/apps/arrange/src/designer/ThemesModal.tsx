@@ -1,8 +1,10 @@
 import { createContext, useState, type CSSProperties } from "react";
+import { adventures, type play } from "@zonventure/api";
 import type { Envelope, Graph, Theme, ThemeLook } from "@zonventure/graph";
 import { brandVars } from "@zonventure/play-ui";
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { Building2, Copy, Plus, Trash2 } from "lucide-react";
 import { useT } from "../i18n.tsx";
+import { useSession } from "../session.tsx";
 import { LookControls } from "./Look.tsx";
 import { LookPreview } from "./LookPreview.tsx";
 import { StarterGallery } from "./StarterGallery.tsx";
@@ -49,6 +51,10 @@ export function ThemesModal({ slug, graph, envelope, title, selected, initial, o
   const [current, setCurrent] = useState<string | null>(initial ?? themes[0]?.slug ?? null);
   const [deleting, setDeleting] = useState<Theme | null>(null);
   const [choosing, setChoosing] = useState(false);
+  const [sharing, setSharing] = useState<{ theme: Theme; existing: adventures.OrgTheme } | null>(null);
+  const [shared, setShared] = useState<{ slug: string; text: string } | null>(null);
+  const { state } = useSession();
+  const orgAdmin = state.status === "authenticated" && state.user.role === "org_admin";
   const theme = themes.find((th) => th.slug === current) ?? null;
 
   const save = (next: Theme[]) => {
@@ -71,6 +77,30 @@ export function ThemesModal({ slug, graph, envelope, title, selected, initial, o
   };
   const uses = theme ? themeUses(graph, theme.slug) : 0;
 
+  // To the organisation's themes, for its other adventures: under the
+  // theme's name, replacing a library theme of that name when agreed.
+  const share = async (th: Theme, replace?: adventures.OrgTheme) => {
+    const name = th.name.trim() || t.t("Untitled theme");
+    const look = th.look as play.Brand;
+    try {
+      let dropped: boolean;
+      if (replace) dropped = (await adventures.updateOrgTheme(replace.id, name, look)).dropped_media;
+      else {
+        const existing = (await adventures.listOrgThemes()).find((o) => o.name.toLowerCase() === name.toLowerCase());
+        if (existing) return setSharing({ theme: th, existing });
+        dropped = (await adventures.createOrgTheme(name, look)).dropped_media;
+      }
+      setShared({
+        slug: th.slug,
+        text: dropped
+          ? t.t("Saved to the organisation's themes, without its picture and sounds: those belong to this adventure.")
+          : t.t("Saved to the organisation's themes. Its other adventures can start a theme from it."),
+      });
+    } catch (e) {
+      setShared({ slug: th.slug, text: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
   return (
     <PanelModal title={t.t("Themes")} wide onClose={onClose}>
       <div className={"themes" + (choosing ? " themes--choosing" : theme ? "" : " themes--empty")}>
@@ -91,6 +121,7 @@ export function ThemesModal({ slug, graph, envelope, title, selected, initial, o
           <StarterGallery
             onPick={(name, look) => add(name || t.t("Theme {{n}}", { n: themes.length + 1 }), look)}
             onCancel={() => setChoosing(false)}
+            manage
           />
         ) : theme ? (
           <>
@@ -104,6 +135,12 @@ export function ThemesModal({ slug, graph, envelope, title, selected, initial, o
                   <Copy size={ICON.sm} aria-hidden />
                   {t.t("Duplicate")}
                 </button>
+                {orgAdmin && (
+                  <button type="button" className="btn btn--ghost btn--sm" title={t.t("Keep this theme for all the organisation's adventures")} onClick={() => void share(theme)}>
+                    <Building2 size={ICON.sm} aria-hidden />
+                    {t.t("Save for the organisation")}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn btn--ghost btn--sm"
@@ -115,6 +152,11 @@ export function ThemesModal({ slug, graph, envelope, title, selected, initial, o
                   {t.t("Delete")}
                 </button>
               </div>
+              {shared?.slug === theme.slug && (
+                <p className="field__hint" role="status">
+                  {shared.text}
+                </p>
+              )}
               <p className="field__hint">
                 {uses > 0
                   ? t.plural(uses, { one: t.t("{{n}} step switches to this theme."), other: t.t("{{n}} steps switch to this theme.") })
@@ -142,6 +184,19 @@ export function ThemesModal({ slug, graph, envelope, title, selected, initial, o
             setDeleting(null);
           }}
           onCancel={() => setDeleting(null)}
+        />
+      )}
+      {sharing && (
+        <ConfirmModal
+          title={t.t("Replace the organisation's “{{name}}”?", { name: sharing.existing.name })}
+          message={t.t("The organisation already has a theme of that name. Adventures that use it keep their copy.")}
+          confirmLabel={t.t("Replace")}
+          onConfirm={() => {
+            const { theme: th, existing } = sharing;
+            setSharing(null);
+            void share(th, existing);
+          }}
+          onCancel={() => setSharing(null)}
         />
       )}
     </PanelModal>

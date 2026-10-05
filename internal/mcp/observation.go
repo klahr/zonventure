@@ -56,7 +56,7 @@ func (s *Server) registerObservationTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "get_event_state_summary",
 		Scope:       scopeRead,
-		Description: "Compact poll-friendly summary of one event's progress. Returns: state, allowed_ops (legal next transitions), teams_count, completed_count, withdrawn_count, leaderboard (top 5 teams by current page index, with completion / withdrawal flags). Use as the heartbeat in a 'wait for this event to finish' loop — much smaller payload than get_event.",
+		Description: "Compact poll-friendly summary of one event's progress. Returns: state, allowed_ops (legal next transitions), teams_count, completed_count, withdrawn_count, leaderboard (top 5 teams by rank, with score, current step and completion / withdrawal flags). Use as the heartbeat in a 'wait for this event to finish' loop — much smaller payload than get_event.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},
@@ -139,33 +139,39 @@ func listTracks(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallRe
 	return adminCallResult(status, body), nil
 }
 
-// eventDetailForSummary mirrors the subset of admin.eventDTO +
-// teamOut fields the summary cares about. Decoding the full
-// EventDetail payload through this struct lets unrelated fields
-// drift in the admin layer without breaking the summary tool.
+// eventDetailForSummary is the subset of admin's event detail —
+// {event, teams} — the summary reads. Decoding through it lets
+// unrelated fields drift in the admin layer without breaking the tool.
 type eventDetailForSummary struct {
-	State       string   `json:"state"`
-	ScheduledAt string   `json:"scheduled_at"`
-	StartedAt   string   `json:"started_at"`
-	CompletedAt string   `json:"completed_at"`
-	CancelledAt string   `json:"cancelled_at"`
-	AllowedOps  []string `json:"allowed_ops"`
-	TeamsCount  int      `json:"teams_count"`
-	Teams       []struct {
-		ID          int64  `json:"id"`
-		Name        string `json:"name"`
-		PageIndex   int    `json:"page_index"`
-		CompletedAt string `json:"completed_at,omitempty"`
-		WithdrawnAt string `json:"withdrawn_at,omitempty"`
-	} `json:"teams"`
+	Event struct {
+		State       string   `json:"state"`
+		ScheduledAt string   `json:"scheduled_at"`
+		StartedAt   string   `json:"started_at"`
+		CompletedAt string   `json:"completed_at"`
+		CancelledAt string   `json:"cancelled_at"`
+		AllowedOps  []string `json:"allowed_ops"`
+	} `json:"event"`
+	Teams []summaryTeam `json:"teams"`
+}
+
+type summaryTeam struct {
+	ID          int64    `json:"id"`
+	Name        string   `json:"name"`
+	Node        string   `json:"node,omitempty"`
+	Score       *float64 `json:"score,omitempty"`
+	Rank        int      `json:"rank,omitempty"`
+	CompletedAt string   `json:"completed_at,omitempty"`
+	WithdrawnAt string   `json:"withdrawn_at,omitempty"`
 }
 
 type leaderboardEntry struct {
-	TeamID    int64  `json:"team_id"`
-	Name      string `json:"name"`
-	PageIndex int    `json:"page_index"`
-	Completed bool   `json:"completed"`
-	Withdrawn bool   `json:"withdrawn"`
+	TeamID    int64    `json:"team_id"`
+	Name      string   `json:"name"`
+	Rank      int      `json:"rank,omitempty"`
+	Score     *float64 `json:"score,omitempty"`
+	Step      string   `json:"step,omitempty"`
+	Completed bool     `json:"completed"`
+	Withdrawn bool     `json:"withdrawn"`
 }
 
 type eventStateSummary struct {
@@ -224,13 +230,13 @@ func getEventStateSummary(ctx context.Context, s *Server, raw json.RawMessage) (
 // without standing up an admin handler.
 func summariseDetail(d eventDetailForSummary) eventStateSummary {
 	out := eventStateSummary{
-		State:       d.State,
-		ScheduledAt: d.ScheduledAt,
-		StartedAt:   d.StartedAt,
-		CompletedAt: d.CompletedAt,
-		CancelledAt: d.CancelledAt,
-		AllowedOps:  d.AllowedOps,
-		TeamsCount:  d.TeamsCount,
+		State:       d.Event.State,
+		ScheduledAt: d.Event.ScheduledAt,
+		StartedAt:   d.Event.StartedAt,
+		CompletedAt: d.Event.CompletedAt,
+		CancelledAt: d.Event.CancelledAt,
+		AllowedOps:  d.Event.AllowedOps,
+		TeamsCount:  len(d.Teams),
 	}
 	if out.AllowedOps == nil {
 		out.AllowedOps = []string{}
@@ -240,7 +246,9 @@ func summariseDetail(d eventDetailForSummary) eventStateSummary {
 		entry := leaderboardEntry{
 			TeamID:    t.ID,
 			Name:      t.Name,
-			PageIndex: t.PageIndex,
+			Rank:      t.Rank,
+			Score:     t.Score,
+			Step:      t.Node,
 			Completed: t.CompletedAt != "",
 			Withdrawn: t.WithdrawnAt != "",
 		}
@@ -252,21 +260,21 @@ func summariseDetail(d eventDetailForSummary) eventStateSummary {
 		}
 		leaderboard = append(leaderboard, entry)
 	}
-	// Sort: completed teams first (rank by completion order would
-	// be nicer but completed_at strings sort ISO-correctly so we use
-	// that as a tiebreak via page_index for non-completed teams).
-	// Withdrawn sink to the bottom regardless. Stable sort so the
-	// ordering between equal-progress teams stays consistent across
-	// polls — handy for the model when it diffs successive summaries.
+	// Ranked teams in rank order, then the rest, completed first;
+	// withdrawn teams last. Stable, so equal teams keep their order
+	// across polls — handy for the model when it diffs summaries.
 	sort.SliceStable(leaderboard, func(i, j int) bool {
 		a, b := leaderboard[i], leaderboard[j]
 		if a.Withdrawn != b.Withdrawn {
 			return !a.Withdrawn
 		}
-		if a.Completed != b.Completed {
-			return a.Completed
+		if (a.Rank > 0) != (b.Rank > 0) {
+			return a.Rank > 0
 		}
-		return a.PageIndex > b.PageIndex
+		if a.Rank != b.Rank {
+			return a.Rank < b.Rank
+		}
+		return a.Completed && !b.Completed
 	})
 	if len(leaderboard) > summaryLeaderboardSize {
 		leaderboard = leaderboard[:summaryLeaderboardSize]

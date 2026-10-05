@@ -1,9 +1,9 @@
 // Package valid checks an authored graph before it is saved.
 //
-// This is new capability, not a port. Today's validate_adventure runs
-// the real importer inside a transaction and rolls it back, so it
-// answers exactly one question — "would this import?" — and checks no
-// structure at all. It does not even re-verify that an accept pattern
+// This is new capability, not a port. The classic importer's dry run ran
+// the real importer inside a transaction and rolled it back, so it
+// answered exactly one question — "would this import?" — and checked no
+// structure at all. It did not even re-verify that an accept pattern
 // compiles, so a broken regex imports cleanly and then silently rejects
 // every answer a player types.
 //

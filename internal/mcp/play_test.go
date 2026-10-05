@@ -14,7 +14,7 @@ import (
 func TestPlayTools_AreRegisteredRead(t *testing.T) {
 	s := &Server{tools: newRegistry()}
 	s.registerPlayTools()
-	for _, name := range []string{"play_start", "play_act", "play_end"} {
+	for _, name := range []string{"playtest_start", "playtest_act", "playtest_end"} {
 		if got := s.tools.scopes[name]; got != scopeRead {
 			t.Errorf("%s scope = %q, want read", name, got)
 		}

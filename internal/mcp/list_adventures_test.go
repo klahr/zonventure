@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/dbtest"
 )
@@ -18,14 +19,14 @@ func TestListAdventures_EmptyIsArray(t *testing.T) {
 	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Empty') RETURNING id`).Scan(&orgID); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{DB: db, tools: newRegistry()}
+	s := &Server{DB: db, Admin: &admin.Handlers{DB: db}, tools: newRegistry()}
 	ctx := auth.WithUser(context.Background(), auth.User{ID: 1, Username: "boss", Role: auth.RoleOrgAdmin, OrgID: &orgID})
 
 	res, _ := listAdventures(ctx, s, json.RawMessage(`{}`))
 	if res.IsError {
 		t.Fatalf("list_adventures: %s", textOf(res))
 	}
-	var list []adventureSummary
+	var list []map[string]any
 	if err := json.Unmarshal([]byte(textOf(res)), &list); err != nil || list == nil {
 		t.Fatalf("list_adventures = %q, want a JSON array", textOf(res))
 	}

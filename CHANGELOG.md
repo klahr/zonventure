@@ -11,6 +11,91 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — the MCP covers an adventure from idea to running events
+
+- **Pictures from a phone:** `get_upload_link` (was `get_media_upload_url`)
+  returns a link that opens a page to pick the file on, so a photo gets
+  in from the Claude app without curl or base64. A link adds a step's
+  picture, sound or video, sets the adventure's icon (`for: icon`) or an
+  event's cover (`for: event_cover`); `list_adventure_media` lists the
+  uploads, newest first. Migration `0107_upload_link_purpose`.
+- **Self-guided adventures:** `update_event` sets the ticket price,
+  currency, players per ticket, store blurb and secret roles.
+- **Scheduled events:** `create_event` explains it needs an event pass
+  and links to where it is bought, instead of an opaque error.
+- **One way to do each thing:** the old-format `create_adventure` and
+  `validate_adventure` are gone; `create_graph_adventure` is now
+  `create_adventure`. `get_adventure` returns the settings an assistant
+  works from — brief, look, starting point, `icon_url` — instead of the
+  old export (which had no brief). `list_adventures` says which can be
+  edited and which are playable.
+- **Renamed:** `attach_image` → `set_adventure_icon`, `detach_avatar` →
+  `remove_adventure_icon`, `play_start`/`play_act`/`play_end` →
+  `playtest_start`/`playtest_act`/`playtest_end`. The player tools
+  (`add_slot`, …) keep their names, which are the event's `allowed_ops`.
+- The instructions cover pictures and events; `describe_event_lifecycle`
+  indexes every tool (a test keeps it so), and `MCP.md` is current.
+
+### Fixed — MCP
+
+- `get_event_state_summary` always reported an empty state and no
+  teams: it read the event detail flat, but the event is nested.
+- `create_purchase` refused on servers running simulated payments, as
+  if Stripe were configured.
+- A change to an adventure's look or texts (designer or MCP) now shows
+  on dev phones at once.
+
+### Added — MCP edits the step on the dev phone
+
+- `edit_adventure_graph` gains `set_text {find, replace, all?}`, which
+  changes words by quoting them (it lists the step's texts when the quote
+  is not there, and asks for more when it is ambiguous), and
+  `patch_node {patch}`, a JSON merge patch whose lists of items with ids,
+  such as blocks and matchers, merge by id, and a puzzle's outputs by
+  port — a new accepted answer is one matcher sent, the other outputs kept. Without a slug both edit the step the
+  author's dev phone shows, so "change this text" takes one call.
+- MCP `get_step`: one step's JSON and where its ports lead, by default
+  the dev phone's step, instead of reading the whole graph.
+
+### Changed — a terser MCP
+
+- The assistant's instructions ask for short, focused replies: one
+  sentence on what changed, one question at a time, a single default
+  instead of a menu, and no plan or step names unless the user is lost.
+
+### Changed — the dev bar on top
+
+- A dev ticket's DEV bar sits at the very top of the phone, above the
+  adventure's bar, and both stay on screen while scrolling.
+
+### Fixed — a finished dev ticket could not be played again
+
+- A dev team reaching the end completed its dev event, which signed the
+  phone out and expired its link, so it showed "Event completed" for
+  good. Dev events no longer complete; starting over or stepping back
+  clears the team's finish and reopens a dev event closed before this
+  fix (open the dev ticket's link again once).
+
+### Fixed — QR scanner off centre
+
+- The camera for a QR answer covered the whole page instead of the
+  screen (`.pv`'s container containment held the fixed overlay), so the
+  viewfinder sat low. It now opens on the body, centred on the screen.
+
+### Added — the organisation's own themes
+
+- An org admin keeps a theme for all the organisation's adventures with
+  **Save for the organisation** in the designer's theme editor (a theme
+  of the same name is replaced after asking). Pictures and sounds stay
+  behind: they belong to one adventure.
+- The organisation's themes come first, after the default, wherever a
+  theme starts — the theme editor's New theme and the New adventure
+  wizard. An org admin removes one from the theme editor's gallery;
+  adventures that took it keep their copy.
+- `GET/POST /api/admin/org-themes`, `PUT/DELETE /api/admin/org-themes/{id}`,
+  migration `0106_org_themes`.
+- MCP: `list_org_themes`; the guide's look step offers them first.
+
 ### Changed — the MCP guides a new adventure step by step
 
 - The assistant leads the author through six named steps — the idea,

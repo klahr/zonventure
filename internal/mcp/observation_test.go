@@ -95,28 +95,20 @@ func TestObservationTools_AreRegisteredWithCorrectScope(t *testing.T) {
 
 // TestSummariseDetail_LeaderboardOrdering exercises the projection
 // that's specific to get_event_state_summary — the leaderboard
-// sort: completed first, then by page_index desc, then withdrawn
-// sunk to the bottom regardless. Stable order between equal
-// entries matters because the LLM diffs successive polls.
+// sort: ranked teams by rank, then the unranked, withdrawn sunk to
+// the bottom regardless. Stable order between equal entries matters
+// because the LLM diffs successive polls.
 func TestSummariseDetail_LeaderboardOrdering(t *testing.T) {
-	d := eventDetailForSummary{
-		State:      "running",
-		AllowedOps: []string{"pause", "cancel"},
-		TeamsCount: 6,
-		Teams: []struct {
-			ID          int64  `json:"id"`
-			Name        string `json:"name"`
-			PageIndex   int    `json:"page_index"`
-			CompletedAt string `json:"completed_at,omitempty"`
-			WithdrawnAt string `json:"withdrawn_at,omitempty"`
-		}{
-			{ID: 1, Name: "Slow", PageIndex: 1},
-			{ID: 2, Name: "Mid", PageIndex: 5},
-			{ID: 3, Name: "Done", PageIndex: 8, CompletedAt: "2026-05-06 10:00:00"},
-			{ID: 4, Name: "Quit", PageIndex: 3, WithdrawnAt: "2026-05-06 09:30:00"},
-			{ID: 5, Name: "Lead", PageIndex: 7},
-			{ID: 6, Name: "Tail", PageIndex: 2},
-		},
+	var d eventDetailForSummary
+	d.Event.State = "running"
+	d.Event.AllowedOps = []string{"pause", "cancel"}
+	d.Teams = []summaryTeam{
+		{ID: 1, Name: "Slow"},
+		{ID: 2, Name: "Mid", Rank: 3},
+		{ID: 3, Name: "Done", Rank: 1, CompletedAt: "2026-05-06 10:00:00"},
+		{ID: 4, Name: "Quit", Rank: 2, WithdrawnAt: "2026-05-06 09:30:00"},
+		{ID: 5, Name: "Lead", Rank: 2},
+		{ID: 6, Name: "Tail", Rank: 4},
 	}
 	s := summariseDetail(d)
 	if s.CompletedCount != 1 {
@@ -128,8 +120,8 @@ func TestSummariseDetail_LeaderboardOrdering(t *testing.T) {
 	if len(s.Leaderboard) != 5 {
 		t.Fatalf("leaderboard size=%d, want 5", len(s.Leaderboard))
 	}
-	// Expected order: Done (completed) → Lead (page 7) → Mid (5) →
-	// Tail (2) → Slow (1). Quit is withdrawn so it's beyond top-5.
+	// Expected order: Done (1) → Lead (2) → Mid (3) → Tail (4) → Slow
+	// (unranked). Quit is withdrawn so it's beyond top-5.
 	wantOrder := []string{"Done", "Lead", "Mid", "Tail", "Slow"}
 	for i, want := range wantOrder {
 		if got := s.Leaderboard[i].Name; got != want {

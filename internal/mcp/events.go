@@ -1,11 +1,13 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
 // Phase 1: event lifecycle. Each tool is a thin shim over an admin
@@ -48,9 +50,12 @@ func (s *Server) registerEventTools() {
 	}, getEvent)
 
 	s.tools.register(ToolDescriptor{
-		Name:        "create_event",
-		Scope:       scopeWrite,
-		Description: "Create a new event in the caller's organization. Requires either assignment_id (the usual path: an unused player-slot assignment from /api/admin/purchases binds the adventure + cap) OR adventure_slug (only valid when an admin has commissioned the adventure for this org via a share). Caller's email must already be verified. attest_no_minors must be true to acknowledge the under-13 rule. Set public_for_sale=true to create a Quest — an always-on event listed at /store where members of the public buy tickets and play whenever they want; quests bypass the empty-team guard at start_event since teams are minted from ticket purchases AFTER the event is running. The flag is immutable after creation (update_event refuses to flip it), so pick a value carefully. Returns the new event's full DTO including id and live_token.",
+		Name:  "create_event",
+		Scope: scopeWrite,
+		Description: "Create an event for an adventure, which must be published first (publish_adventure_graph). Two kinds: " +
+			"a self-guided adventure (public_for_sale: true, adventure_slug of one of the organisation's own adventures) is sold in the store and played whenever buyers like — set its price with update_event, then start_event to open it, empty of teams; " +
+			"a scheduled event (public_for_sale false) for invited teams needs an event pass: an unused assignment_id from list_purchases (on a shared adventure, adventure_slug instead). Without a pass the reply links to where the user buys one. " +
+			"attest_no_minors must be true: no players under 13, or with parental consent. public_for_sale cannot change later. Returns the event with its id.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"attest_no_minors"},
@@ -68,15 +73,20 @@ func (s *Server) registerEventTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "update_event",
 		Scope:       scopeWrite,
-		Description: "Patch an event's mutable settings: name, scheduled_at, show_map. Only present keys are applied; omitted keys are untouched. scheduled_at is editable only while the event is still in 'scheduled' state.",
+		Description: "Change an event's settings: name, scheduled_at (only while scheduled), show_map, secret_roles, and for a self-guided event (public_for_sale) its store listing — ticket_price_cents, ticket_currency, ticket_team_size, public_blurb. A self-guided event is sold in the store once it is running and has a price. Only the keys you pass change.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},
 			"properties": map[string]any{
-				"event_id":     map[string]any{"type": "integer", "description": "Event to update."},
-				"name":         map[string]any{"type": "string", "description": "New event name. Empty string clears it."},
-				"scheduled_at": map[string]any{"type": "string", "description": "New ISO 8601 start time, or empty string to clear the schedule."},
-				"show_map":     map[string]any{"type": "boolean", "description": "Whether the audience /live/{token} page renders team positions."},
+				"event_id":           map[string]any{"type": "integer", "description": "Event to update."},
+				"name":               map[string]any{"type": "string", "description": "New event name. Empty string clears it."},
+				"scheduled_at":       map[string]any{"type": "string", "description": "New ISO 8601 start time, or empty string to clear the schedule."},
+				"show_map":           map[string]any{"type": "boolean", "description": "Whether the audience /live/{token} page renders team positions."},
+				"secret_roles":       map[string]any{"type": "boolean", "description": "Deal the adventure's secret saboteur role in this event."},
+				"ticket_price_cents": map[string]any{"type": "integer", "description": "Self-guided: price per ticket in cents, e.g. 19900 for 199.00."},
+				"ticket_currency":    map[string]any{"type": "string", "description": "Self-guided: ISO 4217 currency, e.g. SEK or EUR."},
+				"ticket_team_size":   map[string]any{"type": "integer", "description": "Self-guided: players per ticket."},
+				"public_blurb":       map[string]any{"type": "string", "description": "Self-guided: the line shown in the store."},
 			},
 		},
 	}, updateEvent)
@@ -281,14 +291,26 @@ func createEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallR
 	if err != nil {
 		return errorResult("call: " + err.Error()), nil
 	}
+	if bytes.Contains(respBody, []byte(`"assignment_required"`)) {
+		msg := "A scheduled event on this adventure needs an event pass, which is bought on the website"
+		if base := strings.TrimRight(s.Admin.PublicURL, "/"); base != "" && a.AdventureSlug != "" {
+			msg += ": " + base + "/app/arrange/adventures#/adventures/" + a.AdventureSlug + " (Schedule event)"
+		}
+		return errorResult(msg + ". Then list_purchases shows its assignment_id; call create_event with it. A self-guided adventure (public_for_sale: true) needs no pass."), nil
+	}
 	return adminCallResult(status, respBody), nil
 }
 
 type updateEventArgs struct {
-	EventID     int64   `json:"event_id"`
-	Name        *string `json:"name,omitempty"`
-	ScheduledAt *string `json:"scheduled_at,omitempty"`
-	ShowMap     *bool   `json:"show_map,omitempty"`
+	EventID          int64   `json:"event_id"`
+	Name             *string `json:"name,omitempty"`
+	ScheduledAt      *string `json:"scheduled_at,omitempty"`
+	ShowMap          *bool   `json:"show_map,omitempty"`
+	SecretRoles      *bool   `json:"secret_roles,omitempty"`
+	TicketPriceCents *int    `json:"ticket_price_cents,omitempty"`
+	TicketCurrency   *string `json:"ticket_currency,omitempty"`
+	TicketTeamSize   *int    `json:"ticket_team_size,omitempty"`
+	PublicBlurb      *string `json:"public_blurb,omitempty"`
 }
 
 func updateEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
@@ -299,26 +321,19 @@ func updateEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallR
 	if a.EventID <= 0 {
 		return errorResult("event_id required and must be positive"), nil
 	}
-	if a.Name == nil && a.ScheduledAt == nil && a.ShowMap == nil {
-		return errorResult("nothing to update — pass at least one of name, scheduled_at, show_map"), nil
+	// The admin request has the same keys, each left out when absent.
+	patch := a
+	patch.EventID = 0
+	if b, _ := json.Marshal(patch); string(b) == `{"event_id":0}` {
+		return errorResult("nothing to update: pass at least one setting"), nil
 	}
 	if r := adminConfigured(s); r != nil {
 		return *r, nil
 	}
-	patch := map[string]any{}
-	if a.Name != nil {
-		patch["name"] = *a.Name
-	}
-	if a.ScheduledAt != nil {
-		patch["scheduled_at"] = *a.ScheduledAt
-	}
-	if a.ShowMap != nil {
-		patch["show_map"] = *a.ShowMap
-	}
 	id := strconv.FormatInt(a.EventID, 10)
 	status, respBody, err := callAdmin(ctx, s.Admin.UpdateEvent,
 		"PATCH", "/api/admin/events/"+id,
-		map[string]string{"eventID": id}, nil, patch)
+		map[string]string{"eventID": id}, nil, updateEventBody(patch))
 	if err != nil {
 		return errorResult("call: " + err.Error()), nil
 	}
@@ -438,4 +453,13 @@ func endEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResu
 		return errorResult("call: " + err.Error()), nil
 	}
 	return adminCallResult(status, body), nil
+}
+
+// updateEventBody is the admin request: the args without the event id.
+func updateEventBody(a updateEventArgs) map[string]any {
+	b, _ := json.Marshal(a)
+	var m map[string]any
+	_ = json.Unmarshal(b, &m)
+	delete(m, "event_id")
+	return m
 }

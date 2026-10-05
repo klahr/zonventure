@@ -510,7 +510,7 @@
   left: 50%;
   bottom: calc(env(safe-area-inset-bottom) + var(--sp-5));
   transform: translateX(-50%);
-  min-height: var(--pv-tap);
+  min-height: var(--pv-tap, 2.75rem);
   padding: var(--sp-3) var(--sp-5);
   border: 0;
   border-radius: var(--radius-pill);

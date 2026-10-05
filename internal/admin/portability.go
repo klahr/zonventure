@@ -368,21 +368,6 @@ func ImportEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, ov
 	return importEnvelopeJSON(ctx, db, manifestJSON, overrideSlug, user, nil, false)
 }
 
-// ValidateEnvelopeJSON runs the full import pipeline against a
-// throwaway transaction and rolls back instead of committing. Used
-// by the MCP validate_adventure tool so the LLM can catch slug
-// collisions, language-tag typos, lane-mode invalid values, and
-// every other constraint the importer enforces — without leaving
-// a half-baked adventure behind on each retry.
-//
-// Returns the same error shape ImportEnvelopeJSON does (an
-// *importError with the corresponding HTTP status, or a wrapped
-// DB error). nil means "this manifest would import cleanly".
-func ValidateEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, overrideSlug string, user auth.User) error {
-	_, _, _, err := importEnvelopeJSON(ctx, db, manifestJSON, overrideSlug, user, nil, true)
-	return err
-}
-
 // ExportAdventureEnvelopeJSON returns the manifest JSON for the
 // named adventure — same shape as adventure.json inside a
 // .zvadv.zip export, ready to be fed back into ImportEnvelopeJSON.

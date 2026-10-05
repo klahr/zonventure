@@ -30,3 +30,7 @@
 .starters__group-title { margin: var(--sp-2) 0 0; font-size: var(--text-sm); font-weight: 700; color: var(--ink); }
 .starters__name { font-size: var(--text-sm); font-weight: 700; }
 .starters .starters__pick.is-on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+/* The organisation's own themes: removed from a corner, beside the pick. */
+.starters .starters__cell { position: relative; }
+.starters .starters__remove { position: absolute; top: calc(var(--sp-2) + 0.4rem); right: calc(var(--sp-2) + 0.4rem); background: var(--surface); opacity: 0; }
+.starters .starters__cell:hover .starters__remove, .starters .starters__remove:focus-visible { opacity: 1; }

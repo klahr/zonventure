@@ -337,6 +337,10 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// /o/{slug}/store. Pinned to the caller's active org and
 			// gated to RoleOrgAdmin inside the handler so an org_member
 			// can't rename the URL out from under their team.
+			r.Get("/org-themes", adminH.ListOrgThemes)
+			r.Post("/org-themes", adminH.CreateOrgTheme)
+			r.Put("/org-themes/{id}", adminH.UpdateOrgTheme)
+			r.Delete("/org-themes/{id}", adminH.DeleteOrgTheme)
 			r.Get("/orgs/me/slug", adminH.GetMyOrgSlug)
 			r.Put("/orgs/me/slug", adminH.SetMyOrgSlug)
 			// Public-profile read/write (tagline, website, cover image)

@@ -148,7 +148,7 @@ func stripeConfigured(s *Server) bool {
 	if s.Admin == nil {
 		return false
 	}
-	return s.Admin.Provider != nil
+	return s.Admin.Provider != nil && s.Admin.Provider.Name() != "simulated"
 }
 
 func createPurchase(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {

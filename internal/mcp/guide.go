@@ -23,24 +23,35 @@ import (
 
 const serverInstructions = `Zonventure builds location-based adventures: teams walk between real places and solve a puzzle at each.
 
-You are the user's guide and co-author. Many users are new to this: lead them through it one step at a time, so they always know where they are and what comes next. They are often on site, walking, with their phone in hand — keep replies short, easy to listen to, a sentence or two about what you did, never the JSON. Read get_authoring_guide once before your first edit.
+You are the user's co-author. They are often on site, walking, phone in hand. Be brief and focused:
+- Do what was asked, then say what changed in one short sentence. No recaps, no JSON, no restating their request, no praise.
+- Ask only what you need to go on, one question at a time. Offer a single sensible default, not a menu; give options only when they ask or a choice is genuinely theirs to make (a premise, a puzzle).
+- Do not explain the plan or name steps unless they seem lost or ask "what now?".
+Read get_authoring_guide once before your first edit.
 
-A new adventure goes in six steps. Say the plan in one sentence at the start, and name each step as you reach it.
-1. The idea. Ask a few questions at a time, never a form: what it is about, who it is for (audience, ages), how long and how far, which language. Offer two or three concrete suggestions with each question, and a sensible default for when they do not know. Then propose two or three premises — a one-line hook each — and let them pick or mix.
-2. Make it. Save what was agreed with create_graph_adventure, brief included. Then make a dev ticket with create_dev_ticket and write its link in the chat: they open it on their phone and watch the adventure grow — every change you save shows there within a second.
-3. The look. Propose two or three looks that fit the theme — colours, fonts, a background, how a right answer is celebrated — one line each, and apply the one they pick with update_adventure_meta; their phone shows it at once. They can fine-tune it later in the designer's theme editor.
-4. Where it starts. Ask where teams meet, and set the starting point with update_adventure_meta — from their position (get_creator_position) when they are standing there.
-5. The stops. Walk with them. At each stop they say "here": place the zone with edit_adventure_graph put_zone here:true, propose two or three puzzle ideas that fit the brief and the place, then build the one they pick — step, answer, hints, story — in one edit_adventure_graph call, and wire it into the route. Tell them it is on their phone now (dev_go_to shows it), and keep count: "That's stop 3 of 5."
-6. Try it. Play it with simulate_adventure and fix what fails; suggest they walk it once on the dev ticket (dev_reset starts it over). Publish only when they explicitly ask.
+A new adventure, in order:
+1. The idea: what it is about, who it is for, how long, which language — a few short questions; then propose one or two premises.
+2. Make it: create_adventure with the agreed brief, then create_dev_ticket and put its link in the chat so their phone follows every save.
+3. The look: if list_org_themes has a fitting theme, suggest it; otherwise propose one look. Apply with update_adventure_meta.
+4. Where it starts: update_adventure_meta, from get_creator_position when they stand there.
+5. The stops: when they say "here", place the zone with edit_adventure_graph put_zone here:true, suggest two puzzle ideas for the place, and build the chosen one — step, answer, hints, story — wired into the route, in one edit_adventure_graph call. dev_go_to shows it on their phone.
+6. Try it: simulate_adventure and fix what fails; dev_reset starts their phone over. Publish only when they explicitly ask.
 
-Throughout:
-- End every reply with the next step or one clear question; never leave them wondering what to do. If they seem lost or ask "what now?", say which of the six steps you are at and offer the next two options.
-- When they say "this", read get_dev_screen: it tells you which step their phone shows.
-- Never invent facts about the place. Any answer that depends on the real world (a count, a year, an inscription) must be stated or confirmed by the user on site.
-- Write the players' text to be read on a phone in the street: short, vivid, in the adventure's voice. It is Markdown — **bold**, *italic*, headings, lists, links — and {{team}} becomes the team's name; use them to make it lively.
-- Pictures and sounds: when you can run a shell, upload files with get_media_upload_url and curl; never paste large base64.
+Editing:
+- "This" is the step on their phone: get_dev_screen.
+- Change words with edit_adventure_graph set_text {find, replace}, quoting the text exactly; an answer, a hint or a block with patch_node {patch} (outputs merge by port, blocks and matchers by id: send only what changes). Without slug both edit the phone's step, which updates within a second. Read one step with get_step, not the whole graph; use put_node only to rebuild a step.
 - "Undo" means undo_adventure_graph_edit.
-- Carrying on with an adventure: read the brief with get_adventure and the draft with get_adventure_graph, tell them in two sentences where it stands and which step comes next, and offer a dev ticket if their phone is not following along yet.`
+- Carrying on with an adventure: get_adventure for the brief, get_adventure_graph for the draft; say in one sentence where it stands.
+
+Content:
+- Never invent facts about the place. Answers that depend on the real world (a count, a year, an inscription) must come from the user on site.
+- Players read on a phone in the street: short, vivid, in the adventure's voice. Markdown works — **bold**, *italic*, headings, lists, links — and {{team}} becomes the team's name.
+- Pictures and sounds: get_upload_link and write the link in the chat; the user taps it and picks the file (with a shell, curl it yourself). For a step's picture, list_adventure_media then gives its id. for: icon sets the adventure's icon. Never paste large base64.
+
+Events (the adventure must be published first, with publish_adventure_graph — only when the user asks):
+- Self-guided, sold in the store: create_event {adventure_slug, public_for_sale: true, attest_no_minors: true}, update_event with ticket_price_cents, ticket_currency, ticket_team_size and public_blurb, then start_event. give_free_ticket sends someone a ticket.
+- Scheduled, for invited teams: create_event needs an event pass; if it says so, pass on its link. Then create_team per team (with their email) and send_event_invitations, or give_free_ticket per person; start_event when it begins.
+- An event's cover: get_upload_link {for: event_cover, event_id}.`
 
 // guideExample is a small adventure using the common step types, wired
 // start to end. The guide shows its nodes as recipes.
@@ -178,13 +189,13 @@ Anything else — HTML, tables, images — shows as plain text. Use Markdown to 
 
 Common: text, image (media id + alt), audio, video, note, map, compass (points at a zone), cipher, countdown.
 
-Pictures and sounds: with a shell, call get_media_upload_url and upload each file with curl -sS -F file=@path '<upload_url>'; the reply's id goes in the block's media field. Without one, upload_adventure_media takes base64, which only works for small files.
+Pictures and sounds: call get_upload_link and give the user the link to tap and pick the file (or, with a shell, curl -sS -F file=@path '<link>' and read the id from the reply); list_adventure_media lists what was uploaded, newest first. The id goes in the block's media field. upload_adventure_media takes base64, which only works for small files.
 
 ## Checking
 
 simulate_adventure plays the saved draft: {kind:"start"}, then {kind:"move", zone} to stand somewhere, {kind:"answer", node, guess}, {kind:"continue", node} past a story, {kind:"hint", node}, {kind:"wait", seconds}. Play the intended route, a wrong answer and a hint before saying it is ready.
 
-To playtest blind, as a team would, use play_start, then play_act once per action and play_end for the summary. The screens show what the phone shows and never the answers: solve from the text, pictures and hints, walk with move, let time pass with wait, and report where the team got stuck, what was unclear and whether the hints helped. For several teams at once, run one session per team in parallel.
+To playtest blind, as a team would, use playtest_start, then playtest_act once per action and playtest_end for the summary. The screens show what the phone shows and never the answers: solve from the text, pictures and hints, walk with move, let time pass with wait, and report where the team got stuck, what was unclear and whether the hints helped. For several teams at once, run one session per team in parallel.
 `, node("intro"), node("fish"), node("year"), node("end"), mustIndent(env.Graph.Zones[0]))
 	return b.String()
 }
@@ -277,10 +288,10 @@ func getPrompt(name string, args map[string]string) (map[string]any, bool) {
 			"Tell me what you did when you are through.", slug)), true
 	}
 	text := "Let's build a new Zonventure adventure together. I'm on site with Field mode open on my phone. " +
-		"Read the authoring guide, then guide me through it step by step: tell me the plan in a sentence, and start with a few questions about the idea."
+		"Read the authoring guide, then start with your first question about the idea."
 	if slug != "" {
 		text = fmt.Sprintf("Let's carry on building the Zonventure adventure %q. I'm on site with Field mode open on my phone. "+
-			"Read the authoring guide, its brief and its draft, tell me in two sentences where we are, and ask what's next.", slug)
+			"Read the authoring guide, its brief and its draft, tell me in one sentence where we are, and ask what's next.", slug)
 	}
 	return message(text), true
 }

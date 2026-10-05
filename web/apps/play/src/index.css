@@ -24,10 +24,12 @@ body {
   flex-direction: column;
 }
 
-.app-bar {
+.app-top {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
+}
+.app-bar {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
@@ -165,9 +167,6 @@ body {
 
 /* A dev ticket's bar (DevBar): the draft, live, and a way about it. */
 .app-dev {
-  position: sticky;
-  top: 0;
-  z-index: var(--z-sticky);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -177,6 +176,9 @@ body {
   color: #fff;
   font-size: var(--text-sm);
 }
+/* At the very top, the dev bar keeps clear of the notch in the bar's place. */
+.app-dev { padding-top: calc(var(--sp-2) + env(safe-area-inset-top)); }
+.app-dev + .app-bar { padding-top: var(--sp-2); }
 .app-dev__tag { padding: 0.1em 0.5em; border-radius: 4px; background: #facc15; color: #111827; font-weight: 800; letter-spacing: 0.08em; }
 .app-dev__steps { flex: 1; min-width: 0; padding: var(--sp-1) var(--sp-2); border-radius: var(--radius); border: 0; font: inherit; }
 .app-dev__reset { padding: var(--sp-1) var(--sp-3); border: 1px solid rgba(255, 255, 255, 0.5); border-radius: var(--radius); background: transparent; color: inherit; font: inherit; cursor: pointer; }

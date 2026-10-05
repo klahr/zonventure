@@ -160,40 +160,42 @@ export function App() {
 
   return (
     <div className="app" style={brandVars(chrome)}>
-      <header className="app-bar">
-        <Menu
-          state={s}
-          t={t}
-          i18n={i18n}
-          usesLocation={usesLocation}
-          shareLocation={shareLocation}
-          onShareLocation={setShareLocation}
-          onRenamed={game.refresh}
-          leave={game.leave}
-        />
-        {/* The adventure's own picture, else the organisation's logo. */}
-        {s.event.adventure_icon_url ? (
-          <img className="app-bar__logo" src={s.event.adventure_icon_url} alt={s.event.adventure_title ?? ""} />
-        ) : (
-          s.event.org_logo_url && <img className="app-bar__logo" src={s.event.org_logo_url} alt={s.event.org_name ?? ""} />
-        )}
-        <div className="app-bar__who">
-          <div className="app-bar__title" onClick={tapTitle}>{s.event.adventure_title || siteName()}</div>
-          <div className="app-bar__team">
-            {s.team.name}
-            {myRoles.length > 0 && <span className="app-bar__role"> · {myRoles.join(", ")}</span>}
+      {/* The dev bar first, at the very top; it and the bar stay on screen together. */}
+      <div className="app-top">
+        {s.dev && <DevBar dev={s.dev} node={s.view?.node} t={t} onMoved={game.refresh} />}
+        <header className="app-bar">
+          <Menu
+            state={s}
+            t={t}
+            i18n={i18n}
+            usesLocation={usesLocation}
+            shareLocation={shareLocation}
+            onShareLocation={setShareLocation}
+            onRenamed={game.refresh}
+            leave={game.leave}
+          />
+          {/* The adventure's own picture, else the organisation's logo. */}
+          {s.event.adventure_icon_url ? (
+            <img className="app-bar__logo" src={s.event.adventure_icon_url} alt={s.event.adventure_title ?? ""} />
+          ) : (
+            s.event.org_logo_url && <img className="app-bar__logo" src={s.event.org_logo_url} alt={s.event.org_name ?? ""} />
+          )}
+          <div className="app-bar__who">
+            <div className="app-bar__title" onClick={tapTitle}>{s.event.adventure_title || siteName()}</div>
+            <div className="app-bar__team">
+              {s.team.name}
+              {myRoles.length > 0 && <span className="app-bar__role"> · {myRoles.join(", ")}</span>}
+            </div>
           </div>
-        </div>
-        {cheatPassword && <span className="app-status">{t("Cheating")}</span>}
-        {(!game.online || game.queued > 0) && (
-          <span className="app-status" role="status">
-            {game.queued > 0 ? t("{{n}} waiting to send", { n: game.queued }) : t("Offline")}
-          </span>
-        )}
-        <Inbox messages={s.messages ?? []} teamID={s.team.id} t={t} locale={i18n.current()} />
-      </header>
-
-      {s.dev && <DevBar dev={s.dev} node={s.view?.node} t={t} onMoved={game.refresh} />}
+          {cheatPassword && <span className="app-status">{t("Cheating")}</span>}
+          {(!game.online || game.queued > 0) && (
+            <span className="app-status" role="status">
+              {game.queued > 0 ? t("{{n}} waiting to send", { n: game.queued }) : t("Offline")}
+            </span>
+          )}
+          <Inbox messages={s.messages ?? []} teamID={s.team.id} t={t} locale={i18n.current()} />
+        </header>
+      </div>
       <main className="app-main" ref={mainRef} tabIndex={-1}>
         {s.event.state === "paused" && <p className="app-banner">{t("The game is paused. Hold on.")}</p>}
         {game.status === "ended" && <p className="app-banner">{t("This event has ended. Thanks for playing!")}</p>}

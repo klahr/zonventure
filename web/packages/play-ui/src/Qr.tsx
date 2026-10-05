@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Translate } from "./feedback.ts";
 
 /**
@@ -148,7 +149,9 @@ function Scanner({ t, onClose, onScan }: { t: Translate; onClose: () => void; on
     };
   }, []);
 
-  return (
+  // On the body: .pv's container containment would hold a fixed overlay
+  // to the whole page, not the screen, and put the camera off centre.
+  return createPortal(
     <div className="pv-qr" role="dialog" aria-modal="true" aria-label={t("Scan a QR code")}>
       <video ref={video} playsInline muted />
       <canvas ref={canvas} hidden />
@@ -159,6 +162,7 @@ function Scanner({ t, onClose, onScan }: { t: Translate; onClose: () => void; on
       <button type="button" className="pv-qr__cancel" onClick={onClose}>
         {t("Cancel")}
       </button>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -41,7 +41,7 @@ var maxImageBytes int64 = func() int64 {
 }()
 
 // MaxImageBytes exposes the per-image upload cap to other packages
-// (currently the MCP attach_image tool, which validates the decoded
+// (currently the MCP set_adventure_icon tool, which validates the decoded
 // payload against the same ceiling the multipart UI enforces). Cheap
 // accessor over the package-private var so callers don't have to
 // re-parse ZV_MAX_IMAGE_BYTES.
@@ -415,6 +415,8 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
+	var advID int64
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT id FROM adventures WHERE slug = $1`, slug).Scan(&advID)
 	if err := applyAdventureMetaUpdate(r.Context(), h.DB, slug, req); err != nil {
 		var ie *importError
 		if errors.As(err, &ie) {
@@ -424,6 +426,8 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
 		return
 	}
+	// Dev phones show the adventure's look and texts as they change.
+	h.pokeDevTeams(r.Context(), advID)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 

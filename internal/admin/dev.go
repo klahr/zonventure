@@ -240,6 +240,9 @@ func (h *Handlers) devMove(w http.ResponseWriter, ctx context.Context, eventID i
 // pokeDevTeams tells the adventure's dev phones to look again, after its
 // draft — which they play — was saved.
 func (h *Handlers) pokeDevTeams(ctx context.Context, advID int64) {
+	if h.Hub == nil {
+		return
+	}
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT ev.id FROM events ev JOIN adventures a ON a.slug = ev.adventure_slug
 		WHERE ev.dev AND a.id = $1
@@ -254,4 +257,10 @@ func (h *Handlers) pokeDevTeams(ctx context.Context, advID int64) {
 			h.Hub.Publish(ws.EventTopic(id), "changed", nil)
 		}
 	}
+}
+
+// AdventureChanged tells the adventure's dev phones to look again, after
+// a change made outside these handlers — by the MCP.
+func (h *Handlers) AdventureChanged(ctx context.Context, advID int64) {
+	h.pokeDevTeams(ctx, advID)
 }

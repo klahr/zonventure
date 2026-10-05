@@ -75,47 +75,44 @@ the secret.
 
 ### Tool surface
 
-| Tool                    | Kind  | Args                              | Notes                                                     |
-|-------------------------|-------|-----------------------------------|-----------------------------------------------------------|
-| `list_adventures`       | read  | —                                 | Slugs, titles, lane / puzzle counts visible to caller.    |
-| `get_adventure`         | read  | `slug`                            | Full envelope, no asset bytes.                            |
-| `validate_adventure`    | dry   | `envelope, slug?`                 | Run the import pipeline against a rolled-back tx.         |
-| `create_adventure`      | write | `envelope, slug?`                 | Same JSON the `.zvadv.zip` import accepts.                |
-| `add_puzzle`            | write | `slug, page`                      | Append one page; lane by `lane_idx`.                      |
-| `update_adventure_meta` | write | `slug, patch`                     | Partial patch — title, colors, intro/outro, language, …   |
-| `set_lane_mode`         | write | `slug, lane_idx, mode`            | `"linear"` ↔ `"shuffled"`.                                |
-| `delete_adventure`      | write | `slug, confirm?`                  | Two-phase: dry-run summary first, then `confirm:true`.    |
+Everything an author does on the website can be done from a chat — on
+a phone too: make an adventure, build and change its steps, give it a
+look, an icon and pictures, publish it, and create, fill and run its
+events. `describe_event_lifecycle` returns the full tool index by
+phase; `TestLifecycleIndexesEveryTool` keeps it in step with the registered tools.
 
-Schema for `envelope` and `page` matches the export/import format
-in `internal/admin/portability.go` (`exportAdventureDTO`,
-`exportPage`). Binary assets — page images, hint audio, the
-adventure avatar — cannot travel through MCP; the model writes
-text content + `image_alt` placeholders, and the user attaches
-files later in `/arrange`.
+| Phase | Tools |
+|-------|-------|
+| Adventures | `list_adventures` (can_edit, playable) · `get_adventure` (settings, brief, look, icon) · `create_adventure` (a start → end draft and an optional brief) · `update_adventure_meta` · `set_adventure_icon` / `remove_adventure_icon` · `list_org_themes` · `delete_adventure` |
+| Steps | `get_authoring_guide` · `get_adventure_graph` · `get_step` · `edit_adventure_graph` · `undo_adventure_graph_edit` · `save_adventure_graph` · `validate_adventure_graph` · `publish_adventure_graph` · `get_creator_position` |
+| Files | `get_upload_link` · `list_adventure_media` · `upload_adventure_media` |
+| Trying it | `create_dev_ticket` · `get_dev_screen` · `dev_go_to` · `dev_reset` · `simulate_adventure` · `playtest_start` / `playtest_act` / `playtest_end` |
+| Co-authors | `list_adventure_threads` · `comment_on_adventure` · `suggest_step_change` · `resolve_adventure_thread` · `set_step_status` |
+| Events | `create_event` · `update_event` · `start_event` · `pause_event` · `resume_event` · `end_event` · `cancel_event` · teams, players, invitations, messages, watching and results |
 
-### Building an adventure on site
+`edit_adventure_graph` takes a batch of ops, all-or-nothing:
+`put_node` / `delete_node`, `set_text` (change words by quoting them)
+and `patch_node` (a merge patch; blocks and matchers merge by id,
+outputs by port), `put_zone` (`here: true` centres it on the author) /
+`delete_zone`, `connect` / `disconnect`, `put_theme` / `delete_theme`.
+Without a step, `set_text` and `patch_node` edit the one the author's
+dev phone shows.
 
-Graph tools for an assistant building an adventure in conversation,
-one step at a time, while the author walks the area:
+**Pictures from a phone.** The model can neither send a photo's bytes
+nor run curl there, so `get_upload_link` returns a link for the chat:
+the user taps it and picks the file on the page it opens. A link adds
+a step's picture, sound or video (`list_adventure_media` then gives
+its id), sets the adventure's icon (`for: icon`), or an event's cover
+(`for: event_cover`). With a shell, `curl -F file=@photo.jpg <link>`
+does the same.
 
-| Tool                        | Kind  | Notes                                                                 |
-|-----------------------------|-------|-----------------------------------------------------------------------|
-| `create_graph_adventure`    | write | New adventure with a start → end draft and an optional brief.         |
-| `update_adventure_meta`     | write | `brief`: theme, audience, length… what every step is designed against. |
-| `edit_adventure_graph`      | write | Batch of `put_node` / `delete_node` / `put_zone` / `delete_zone` / `connect` / `disconnect`, all-or-nothing. `put_zone` with `here: true` centres the zone on the author. An optional `note` is shown live to people watching in the designer. |
-| `undo_adventure_graph_edit` | write | Restore the draft from before the last `edit_adventure_graph`.         |
-| `list_adventure_threads`    | read  | The authors' threads on steps, step statuses and owners. `tasks_only` lists what they asked the assistant (`@assistant`). |
-| `comment_on_adventure`      | write | Start a thread on a step, a block or the whole adventure, or reply on one. `@name` mentions an author. |
-| `suggest_step_change`       | write | Propose a change to a step as a suggestion thread; the authors accept or reject it. |
-| `resolve_adventure_thread`  | write | Resolve a thread once its ask is done, or open it again.              |
-| `set_step_status`           | write | A step's status (idea, draft, review, ready) and owner.               |
+**Events.** A self-guided adventure (`public_for_sale: true`) on the
+organisation's own adventure is created, priced with `update_event`
+and started. A scheduled event needs an event pass; `create_event`
+says where to buy one on the website, unless the server runs
+simulated payments, where `create_purchase` + `confirm_purchase` buy it.
 
 Two prompts build on them: `review_adventure` leaves a playtester's notes as threads, and `pick_up_tasks` works through what the authors asked the assistant for.
-| `get_creator_position`      | read  | The author's last reported position and its age.                      |
-| `get_media_upload_url`      | write | A 15-minute link for one adventure: `curl -F file=@photo.jpg <url>` uploads without the bytes passing through the model. |
-| `upload_adventure_media`    | write | Base64 image/audio/video — small files only, for clients without a shell. |
-| `simulate_adventure`        | read  | Play the saved draft through actions with the real rules. `anywhere: true` skips a required starting point. |
-| `play_start` / `play_act` / `play_end` | read | Blind playtest: play the draft one action at a time from what the phone shows (text, pictures, hints, places), never the answers. `play_start` with `anywhere: true` begins away from a required starting point. |
 
 The author doesn't have to explain any of this. The server sends
 usage instructions in its `initialize` reply, which clients put in the
@@ -232,10 +229,10 @@ single short-lived request.
   password UX would be impossible to drive from inside an LLM
   conversation. Re-evaluate if you suspect token theft is more
   likely than session theft for your deployment.
-- **No asset writes** — `create_adventure` / `add_puzzle` reject
-  any manifest that references image / audio bytes. An LLM cannot
-  upload binary content via MCP; closes the easy "what if it
-  generates 200 MB of nonsense PNG and fills the disk?" path.
+- **Files go through upload links** — a link works for one
+  adventure (or event), as the user who asked for it, for 30 minutes
+  and 20 files, under the server's per-file caps. Base64 through
+  `upload_adventure_media` / `set_adventure_icon` is for small files.
 - **Rate-limited at the proxy layer** — zv itself doesn't apply a
   per-token rate limit (yet). If you expose the endpoint to a
   large pool of users, front it with a proxy that does.
@@ -248,9 +245,8 @@ single short-lived request.
 | `401` on every call                                  | Token revoked, or pasted with stray whitespace / missing `Bearer ` prefix in the header.      |
 | `forbidden: you cannot edit this adventure`          | Caller is `org_member` (race director). Authoring requires `org_admin` of the owning org.     |
 | `forbidden_audience: tool … is not available …`      | The token belongs to the global admin, who can't author or run events. Mint one as an org user. |
-| `unknown export format: …`                           | The model produced an envelope with a typo'd `format` tag. The wrapper accepts a bare adventure object — drop the wrapper or set `format` to `"zonventure-adventure-v1"`. |
-| `image asset "p0_img0.jpg" missing from archive`     | Manifest references binary assets that MCP can't carry. Strip the `images` / `audio` arrays and attach the files in `/arrange` instead. |
-| `slug may only contain a-z 0-9 and hyphens`          | The model picked a slug with whitespace, capitals, or punctuation. Patch the manifest's `slug`. |
+| `slug may only contain a-z 0-9 and hyphens`          | The model picked a slug with whitespace, capitals, or punctuation. |
+| `This upload link is unknown, used up or expired`    | Upload links last 30 minutes and 20 files; ask for a new one. |
 
 Server logs everything as structured `mcp.*` events (`mcp.auth.lookup`,
 `mcp.encode_response`, …) so a tail with `grep mcp\\.` is the
@@ -260,9 +256,7 @@ fastest place to look.
 
 - `internal/mcp/` — protocol layer (`mcp.go`), HTTP dispatch +
   bearer auth (`server.go`), tool registry + handlers (`tools.go`).
-- `internal/admin/portability.go` — shared `ImportEnvelopeJSON`
-  used by both the multipart `.zvadv.zip` import and
-  `create_adventure` / `validate_adventure`.
+- `internal/admin/upload_links.go` — upload links and their page.
 - `internal/admin/mcp_tokens.go` — token CRUD handlers + the
   `LookupMCPToken` resolver the MCP server calls.
 - `internal/db/migrations/0045_mcp_tokens.sql` — the table.

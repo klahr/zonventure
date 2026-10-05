@@ -9,9 +9,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http/httptest"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -21,28 +23,36 @@ import (
 
 func (s *Server) registerMediaTools() {
 	s.tools.register(ToolDescriptor{
-		Name:  "get_media_upload_url",
+		Name:  "get_upload_link",
 		Scope: scopeWrite,
-		Description: "Get a short-lived link to upload pictures, sounds and videos to a graph adventure without sending their bytes through this conversation. " +
-			"Prefer it over upload_adventure_media whenever you can run a shell: upload each file with " +
-			"curl -sS -F file=@/path/to/photo.jpg '<upload_url>' — the reply is the media {id, kind, mime_type, size_bytes}. " +
-			"Then reference the id with edit_adventure_graph as upload_adventure_media describes. The link works for one adventure, " +
-			"for a limited number of files, and expires; ask for another when it does.",
+		Description: "Get a link for adding a file without sending its bytes through this chat — the way to add pictures from a phone. " +
+			"for: picture (default) adds a step's picture, sound or video to the adventure's media; icon sets the adventure's icon; event_cover sets an event's cover (event_id). " +
+			"Write the link in the chat: the user taps it, picks the file and comes back. Then, for a picture, list_adventure_media gives its id to use in a block. " +
+			"With a shell you can also send the file yourself: curl -sS -F file=@/path/to/photo.jpg '<link>'. The link expires after 30 minutes.",
 		InputSchema: map[string]any{
-			"type":     "object",
-			"required": []string{"slug"},
+			"type": "object",
 			"properties": map[string]any{
-				"slug": map[string]any{"type": "string", "description": "Adventure slug."},
+				"slug":     map[string]any{"type": "string", "description": "Adventure slug; for picture and icon."},
+				"for":      map[string]any{"type": "string", "enum": []string{"picture", "icon", "event_cover"}, "description": "What the file is for; picture when left out."},
+				"event_id": map[string]any{"type": "integer", "description": "The event, for event_cover."},
 			},
 		},
-	}, getMediaUploadURL)
+	}, getUploadLink)
+
+	s.tools.register(ToolDescriptor{
+		Name:  "list_adventure_media",
+		Scope: scopeRead,
+		Description: "The adventure's uploaded pictures, sounds and videos, newest first: {id, kind, mime_type, size_bytes, uploaded_at}. " +
+			"Use it to find the id of a file the user just uploaded through get_upload_link.",
+		InputSchema: slugOnly,
+	}, listAdventureMedia)
 
 	s.tools.register(ToolDescriptor{
 		Name:  "upload_adventure_media",
 		Scope: scopeWrite,
 		Description: "Upload an image, audio or video file to a graph adventure and get back its media {id, kind, mime_type, size_bytes}. " +
 			`Reference it with edit_adventure_graph: a block takes the id ({"id":"b2","kind":"image","media":<id>,"alt":"…"}); a hint's media and an answer's image take {"id":<id>,"kind":"image"}. ` +
-			"Bytes travel base64-encoded in the call, which is only reliable for small files: with a shell, use get_media_upload_url instead. " +
+			"Bytes travel base64-encoded in the call, which is only reliable for small files: prefer get_upload_link. " +
 			"Images are re-encoded and shrunk; audio and video types are sniffed from the bytes. " +
 			"Size caps are the server's ZV_MAX_IMAGE_BYTES / ZV_MAX_AUDIO_BYTES / ZV_MAX_VIDEO_BYTES.",
 		InputSchema: map[string]any{
@@ -105,11 +115,22 @@ func uploadAdventureMedia(ctx context.Context, s *Server, raw json.RawMessage) (
 	return adminCallResult(rec.Code, rec.Body.Bytes()), nil
 }
 
-func getMediaUploadURL(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
+func getUploadLink(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
 	var a struct {
-		Slug string `json:"slug"`
+		Slug    string `json:"slug"`
+		For     string `json:"for"`
+		EventID int64  `json:"event_id"`
 	}
-	if err := json.Unmarshal(raw, &a); err != nil || a.Slug == "" {
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	purpose := map[string]string{"": admin.UploadMedia, "picture": admin.UploadMedia, "icon": admin.UploadIcon, "event_cover": admin.UploadEventCover}[a.For]
+	switch {
+	case purpose == "":
+		return errorResult("for is picture, icon or event_cover"), nil
+	case purpose == admin.UploadEventCover && a.EventID <= 0:
+		return errorResult("event_id is required for an event cover"), nil
+	case purpose != admin.UploadEventCover && a.Slug == "":
 		return errorResult("slug is required"), nil
 	}
 	if r := adminConfigured(s); r != nil {
@@ -123,14 +144,49 @@ func getMediaUploadURL(ctx context.Context, s *Server, raw json.RawMessage) (Too
 	if !ok {
 		return errorResult("no authenticated caller"), nil
 	}
-	secret, ttl, err := admin.CreateUploadTicket(ctx, s.DB, a.Slug, me)
+	secret, _, err := admin.CreateUploadLink(ctx, s.DB, me, purpose, a.Slug, a.EventID)
 	if err != nil {
-		return errorResult("cannot upload to " + a.Slug + ": " + err.Error()), nil
+		return errorResult("cannot make an upload link: " + err.Error()), nil
 	}
-	out, _ := json.Marshal(map[string]any{
-		"upload_url":         base + "/api/media-upload/" + secret,
-		"expires_in_seconds": int(ttl.Seconds()),
-		"usage":              "curl -sS -F file=@/path/to/file.jpg '" + base + "/api/media-upload/" + secret + "'",
-	})
-	return textResult(string(out)), nil
+	link := base + "/api/media-upload/" + secret
+	what := map[string]string{admin.UploadMedia: "a picture, sound or video", admin.UploadIcon: "the adventure's icon", admin.UploadEventCover: "the event's cover"}[purpose]
+	return textResult(fmt.Sprintf("Upload link for %s (30 minutes): %s\nWrite it in the chat for the user to tap; or, with a shell: curl -sS -F file=@/path/to/file '%s'", what, link, link)), nil
+}
+
+func listAdventureMedia(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
+	var a struct {
+		Slug string `json:"slug"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil || a.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	advID, _, bad := authoriseEdit(ctx, s, a.Slug)
+	if bad != nil {
+		return *bad, nil
+	}
+	rows, err := s.DB.QueryContext(ctx, `
+		SELECT id, kind, mime_type, size_bytes, created_at FROM adventure_media
+		WHERE adventure_id = $1 ORDER BY created_at DESC, id DESC LIMIT 50
+	`, advID)
+	if err != nil {
+		return errorResult("listing media: " + err.Error()), nil
+	}
+	defer rows.Close()
+	type item struct {
+		ID         int64     `json:"id"`
+		Kind       string    `json:"kind"`
+		MimeType   string    `json:"mime_type"`
+		SizeBytes  int64     `json:"size_bytes"`
+		UploadedAt time.Time `json:"uploaded_at"`
+	}
+	out := []item{}
+	for rows.Next() {
+		var it item
+		if err := rows.Scan(&it.ID, &it.Kind, &it.MimeType, &it.SizeBytes, &it.UploadedAt); err != nil {
+			return errorResult("listing media: " + err.Error()), nil
+		}
+		out = append(out, it)
+	}
+	b, _ := json.Marshal(map[string]any{"media": out})
+	return textResult(string(b)), nil
 }

@@ -42,7 +42,11 @@ func (e *Engine) DevMoveTo(ctx context.Context, teamID int64, node string) error
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := devEvent(ctx, tx, teamID); err != nil {
+	eventID, err := devEvent(ctx, tx, teamID)
+	if err != nil {
+		return err
+	}
+	if err := reopenDev(ctx, tx, teamID, eventID); err != nil {
 		return err
 	}
 	s, err := e.loadCore(ctx, tx, teamID, true)
@@ -92,10 +96,30 @@ func (e *Engine) DevReset(ctx context.Context, teamID int64) error {
 			return fmt.Errorf("clearing %s: %w", table, err)
 		}
 	}
+	if err := reopenDev(ctx, tx, teamID, eventID); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	return e.StartEvent(ctx, eventID)
+}
+
+// reopenDev makes a finished dev team playable again: no longer
+// finished, and its event running — as one completed before dev events
+// stopped completing was, its links then expired, which work again.
+func reopenDev(ctx context.Context, q Querier, teamID, eventID int64) error {
+	if _, err := q.ExecContext(ctx, `UPDATE teams SET completed_at = NULL WHERE id = $1`, teamID); err != nil {
+		return err
+	}
+	res, err := q.ExecContext(ctx, `UPDATE events SET state = 'running', completed_at = NULL WHERE id = $1 AND state = 'completed'`, eventID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		_, err = q.ExecContext(ctx, `UPDATE player_slots SET expires_at = NULL WHERE team_id IN (SELECT id FROM teams WHERE event_id = $1)`, eventID)
+	}
+	return err
 }
 
 // Visible reports whether teams see a step of this type: the ones a dev

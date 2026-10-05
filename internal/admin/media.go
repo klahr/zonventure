@@ -34,7 +34,6 @@ import (
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/play"
-	"github.com/klahr/zonventure/internal/tokenx"
 )
 
 // maxAudioBytes is the per-upload size cap for audio. Defaults to 15
@@ -229,74 +228,4 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	// and which Safari needs before it plays one at all.
 	httpx.ExtendDeadlines(w, 10*time.Minute)
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(content))
-}
-
-// Upload links: an assistant asks for one (the MCP tool
-// get_media_upload_url) and uploads through it with curl, so a picture
-// goes from the author's disk to the server without passing through the
-// model as base64.
-//
-//	POST /api/media-upload/{ticket}   multipart "file", as UploadAdventureMedia
-const (
-	uploadTicketTTL  = 15 * time.Minute
-	uploadTicketUses = 20
-)
-
-// CreateUploadTicket mints an upload link to the adventure for the
-// caller, who must be able to edit it. It returns the link's secret.
-func CreateUploadTicket(ctx context.Context, db *sql.DB, slug string, me auth.User) (string, time.Duration, error) {
-	advID, _, err := AuthorizeAdventureEdit(ctx, db, slug, me)
-	if err != nil {
-		return "", 0, err
-	}
-	secret, err := tokenx.New(32)
-	if err != nil {
-		return "", 0, err
-	}
-	sum := sha256.Sum256([]byte(secret))
-	if _, err := db.ExecContext(ctx, `
-		DELETE FROM media_upload_tickets WHERE expires_at < now()
-	`); err != nil {
-		return "", 0, err
-	}
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO media_upload_tickets (token_hash, adventure_id, user_id, org_id, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`, sum[:], advID, me.ID, me.OrgID, time.Now().Add(uploadTicketTTL))
-	return secret, uploadTicketTTL, err
-}
-
-// UploadMediaByTicket stores a file sent to an upload link, as its user
-// through the same checks as UploadAdventureMedia — which also re-checks
-// that they may still edit the adventure.
-func (h *Handlers) UploadMediaByTicket(w http.ResponseWriter, r *http.Request) {
-	sum := sha256.Sum256([]byte(chi.URLParam(r, "ticket")))
-	var (
-		userID int64
-		orgID  sql.NullInt64
-		slug   string
-	)
-	err := h.DB.QueryRowContext(r.Context(), `
-		UPDATE media_upload_tickets t SET uses = uses + 1
-		FROM adventures a
-		WHERE t.token_hash = $1 AND a.id = t.adventure_id AND t.expires_at > now() AND t.uses < $2
-		RETURNING t.user_id, t.org_id, a.slug
-	`, sum[:], uploadTicketUses).Scan(&userID, &orgID, &slug)
-	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusNotFound, "this upload link is unknown, used up or expired; ask for a new one")
-		return
-	}
-	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "upload link lookup failed", err)
-		return
-	}
-	u, err := tokenUser(r.Context(), h.DB, userID, orgID)
-	if err != nil {
-		httpx.Error(w, http.StatusForbidden, "the user of this upload link can no longer upload")
-		return
-	}
-	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("slug", slug)
-	ctx := context.WithValue(auth.WithAPIToken(auth.WithUser(r.Context(), u)), chi.RouteCtxKey, rctx)
-	h.UploadAdventureMedia(w, r.WithContext(ctx))
 }

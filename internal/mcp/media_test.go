@@ -8,6 +8,7 @@ import (
 	imgpng "image/png"
 	"mime/multipart"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -40,20 +41,28 @@ func TestMediaUploadURL(t *testing.T) {
 	s := &Server{DB: db, Admin: h, tools: newRegistry()}
 	ctx := auth.WithUser(context.Background(), auth.User{ID: userID, Username: "boss", Role: auth.RoleOrgAdmin, OrgID: &orgID})
 
-	res, _ := getMediaUploadURL(ctx, s, json.RawMessage(`{"slug":"pics"}`))
+	res, _ := getUploadLink(ctx, s, json.RawMessage(`{"slug":"pics"}`))
 	if res.IsError {
-		t.Fatalf("get url: %s", textOf(res))
+		t.Fatalf("get link: %s", textOf(res))
 	}
-	var out struct {
-		URL string `json:"upload_url"`
+	m := regexp.MustCompile(`https://zv\.example/api/media-upload/([A-Za-z0-9_-]+)`).FindStringSubmatch(textOf(res))
+	if m == nil || len(m[1]) < 32 {
+		t.Fatalf("no link in %q", textOf(res))
 	}
-	_ = json.Unmarshal([]byte(textOf(res)), &out)
-	ticket, ok := strings.CutPrefix(out.URL, "https://zv.example/api/media-upload/")
-	if !ok || len(ticket) < 32 {
-		t.Fatalf("upload_url = %q", out.URL)
+	ticket := m[1]
+
+	// The link opens a page to pick the file on, for a phone.
+	page := httptest.NewRequest("GET", "/api/media-upload/"+ticket, nil)
+	prctx := chi.NewRouteContext()
+	prctx.URLParams.Add("ticket", ticket)
+	page = page.WithContext(context.WithValue(page.Context(), chi.RouteCtxKey, prctx))
+	prec := httptest.NewRecorder()
+	h.UploadPage(prec, page)
+	if prec.Code != 200 || !strings.Contains(prec.Body.String(), `<input type="file" name="file"`) {
+		t.Fatalf("upload page: %d %s", prec.Code, prec.Body.String())
 	}
 
-	upload := func(ticket string) (int, string) {
+	upload := func(ticket string, browser bool) (int, string) {
 		var png, body bytes.Buffer
 		_ = imgpng.Encode(&png, image.NewRGBA(image.Rect(0, 0, 4, 4)))
 		mw := multipart.NewWriter(&body)
@@ -62,6 +71,9 @@ func TestMediaUploadURL(t *testing.T) {
 		_ = mw.Close()
 		req := httptest.NewRequest("POST", "/api/media-upload/"+ticket, &body)
 		req.Header.Set("Content-Type", mw.FormDataContentType())
+		if browser {
+			req.Header.Set("Accept", "text/html,*/*")
+		}
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("ticket", ticket)
 		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
@@ -69,22 +81,29 @@ func TestMediaUploadURL(t *testing.T) {
 		h.UploadMediaByTicket(rec, req)
 		return rec.Code, rec.Body.String()
 	}
-	if code, body := upload(ticket); code >= 300 || !strings.Contains(body, `"kind":"image"`) {
+	if code, body := upload(ticket, false); code >= 300 || !strings.Contains(body, `"kind":"image"`) {
 		t.Fatalf("upload: %d %s", code, body)
 	}
-	if code, _ := upload("not-a-ticket"); code != 404 {
+	if code, body := upload(ticket, true); code != 200 || !strings.Contains(body, "Uploaded.") {
+		t.Fatalf("upload from the page: %d %s", code, body)
+	}
+	res, _ = listAdventureMedia(ctx, s, json.RawMessage(`{"slug":"pics"}`))
+	if res.IsError || !strings.Contains(textOf(res), `"kind":"image"`) {
+		t.Errorf("list_adventure_media: %s", textOf(res))
+	}
+	if code, _ := upload("not-a-ticket", false); code != 404 {
 		t.Errorf("an unknown link should be 404, got %d", code)
 	}
 	if _, err := db.Exec(`UPDATE media_upload_tickets SET expires_at = now() - interval '1 second'`); err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := upload(ticket); code != 404 {
+	if code, _ := upload(ticket, false); code != 404 {
 		t.Errorf("an expired link should be 404, got %d", code)
 	}
 
 	// Someone who cannot edit the adventure gets no link.
 	other := auth.WithUser(context.Background(), auth.User{ID: userID, Username: "boss", Role: auth.RoleOrgAdmin, OrgID: new(int64)})
-	if res, _ := getMediaUploadURL(other, s, json.RawMessage(`{"slug":"pics"}`)); !res.IsError {
+	if res, _ := getUploadLink(other, s, json.RawMessage(`{"slug":"pics"}`)); !res.IsError {
 		t.Error("a user outside the org should be refused a link")
 	}
 }

@@ -1,6 +1,6 @@
 package mcp
 
-// play_start / play_act / play_end: an assistant plays the adventure's
+// playtest_start / playtest_act / playtest_end: an assistant plays the adventure's
 // saved draft as a team would, one action at a time, from what the
 // phone shows — the prompt, the blocks, the pictures, the answer box,
 // the hints as they open — and never the answers. It is a blind
@@ -62,7 +62,7 @@ type playSession struct {
 	team    json.RawMessage
 	view    session.View
 	touched time.Time
-	// anywhere skips the adventure's required starting point (play_start).
+	// anywhere skips the adventure's required starting point (playtest_start).
 	anywhere bool
 	// shown is the node whose pictures were last sent; they are sent
 	// again only on a new step or a look.
@@ -127,11 +127,11 @@ func (p *playStore) sweep() {
 
 func (s *Server) registerPlayTools() {
 	s.tools.register(ToolDescriptor{
-		Name:  "play_start",
+		Name:  "playtest_start",
 		Scope: scopeRead,
 		Description: "Start a blind playtest of the adventure's saved draft: you play as a team, from what the phone shows, with the real rules. " +
 			"Returns a session id and the first screen. You never see the answers — solve each step from its text, pictures and hints, as a team would. " +
-			"Then call play_act once per action and play_end for a summary. Nothing is stored; the session lapses after two hours.",
+			"Then call playtest_act once per action and playtest_end for a summary. Nothing is stored; the session lapses after two hours.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"slug"},
@@ -145,9 +145,9 @@ func (s *Server) registerPlayTools() {
 	}, playStart)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "play_act",
+		Name:  "playtest_act",
 		Scope: scopeRead,
-		Description: "Do one thing in a playtest started with play_start, and see the screen after it. Actions (kind): " +
+		Description: "Do one thing in a playtest started with playtest_start, and see the screen after it. Actions (kind): " +
 			"begin {start} picks where to begin; answer {guess} tries an answer; continue moves on from a story step; " +
 			"choose {port} takes a branch at a choice (port \"done\" moves on when allowed); back returns to the hub above; " +
 			"hint opens the next hint once it is available; skip and timeout take those routes when offered; leave goes to find missing items; " +
@@ -175,7 +175,7 @@ func (s *Server) registerPlayTools() {
 	}, playAct)
 
 	s.tools.register(ToolDescriptor{
-		Name:        "play_end",
+		Name:        "playtest_end",
 		Scope:       scopeRead,
 		Description: "End a playtest and get its summary: time played, steps passed, wrong answers, hints, skips, distance walked and refused actions.",
 		InputSchema: map[string]any{
@@ -244,7 +244,7 @@ func playStart(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallRes
 	}
 	id, ok := s.plays.put(ps)
 	if !ok {
-		return errorResult("too many playtests running; end one with play_end"), nil
+		return errorResult("too many playtests running; end one with playtest_end"), nil
 	}
 	intro := fmt.Sprintf("Playtest of %q started. Session: %s\nYou are a team of %d. Play from what the screen shows; the answers are not shown to you.\n", a.Slug, id, a.TeamSize)
 	return ps.screen(ctx, s, intro, true), nil
@@ -272,7 +272,7 @@ func playAct(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResul
 	}
 	ps, ok := s.plays.get(a.Session, me.ID)
 	if !ok {
-		return errorResult("no such playtest; it may have lapsed — start another with play_start"), nil
+		return errorResult("no such playtest; it may have lapsed — start another with playtest_start"), nil
 	}
 	ps.mu.Lock()
 	defer ps.mu.Unlock()

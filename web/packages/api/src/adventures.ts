@@ -321,3 +321,28 @@ export const sendDevTicket = (slug: string, email: string) => post<void>(`${adve
 
 /** Start the caller's dev phone over from the beginning of the draft. */
 export const devReset = (slug: string) => post<void>(`${adventure(slug)}/dev-reset`);
+
+// --- the organisation's theme library ---------------------------------------
+
+/** internal/admin: orgThemeDTO — a look kept for all the organisation's adventures. */
+export interface OrgTheme {
+  id: number;
+  name: string;
+  look: Brand;
+  updated_at: string;
+}
+
+/** The caller's organisation's themes, by name. */
+export const listOrgThemes = (signal?: AbortSignal) =>
+  get<{ themes: OrgTheme[] }>("/api/admin/org-themes", signal ? { signal } : {}).then((r) => r.themes);
+
+/** Add a theme to the library; a picture backdrop and sounds are left out (`dropped_media`). */
+export const createOrgTheme = (name: string, look: Brand) =>
+  post<{ theme: OrgTheme; dropped_media: boolean }>("/api/admin/org-themes", { name, look });
+
+/** Rename a library theme, and replace its look when one is given. */
+export const updateOrgTheme = (id: number, name: string, look?: Brand) =>
+  put<{ dropped_media: boolean }>(`/api/admin/org-themes/${id}`, { name, ...(look ? { look } : {}) });
+
+/** Remove a theme from the library; adventures that took it keep their copy. */
+export const deleteOrgTheme = (id: number) => request<void>(`/api/admin/org-themes/${id}`, { method: "DELETE" });

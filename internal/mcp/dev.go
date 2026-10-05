@@ -15,12 +15,14 @@ import (
 // once, nothing published, no event restarted. The assistant can see
 // what the phone shows, move it to a step, and start it over.
 
+// slugOnly is the input of a tool that takes only an adventure.
+var slugOnly = map[string]any{
+	"type":       "object",
+	"required":   []string{"slug"},
+	"properties": map[string]any{"slug": map[string]any{"type": "string", "description": "Adventure slug."}},
+}
+
 func (s *Server) registerDevTools() {
-	slugOnly := map[string]any{
-		"type":       "object",
-		"required":   []string{"slug"},
-		"properties": map[string]any{"slug": map[string]any{"type": "string", "description": "Adventure slug."}},
-	}
 	s.tools.register(ToolDescriptor{
 		Name:  "create_dev_ticket",
 		Scope: scopeWrite,
@@ -33,7 +35,7 @@ func (s *Server) registerDevTools() {
 		Name:  "get_dev_screen",
 		Scope: scopeRead,
 		Description: "What the author's dev phone shows right now: the step (its slug) and its screen — text, pictures, the answer box. " +
-			"Use it to know what \"this\" means when the author, standing there, says \"change this text\".",
+			"Use it to know what \"this\" means when the author, standing there, says \"change this text\" — then change it with edit_adventure_graph set_text, which edits this step when no slug is given.",
 		InputSchema: slugOnly,
 	}, getDevScreen)
 	s.tools.register(ToolDescriptor{

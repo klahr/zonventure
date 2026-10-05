@@ -2,11 +2,11 @@ package mcp
 
 import (
 	"context"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/klahr/zonventure/internal/admin"
@@ -136,6 +136,8 @@ func (s *Server) registerTools() {
 	s.registerSimulateTools()
 	s.registerPlayTools()
 	s.registerDevTools()
+	s.registerStepTools()
+	s.registerOrgThemeTools()
 	s.registerMediaTools()
 	s.registerGuideTool()
 	// Phase 4 — invitations + ICS export. invitations.go.
@@ -148,7 +150,7 @@ func (s *Server) registerTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "list_adventures",
 		Scope:       scopeRead,
-		Description: "List adventures visible to the caller. Returns slug, title, language and puzzle count. Use this before generating new content to avoid slug collisions and to reference an existing adventure as a template.",
+		Description: "The adventures the caller's organisation can use: slug, title, language, can_edit (its own, to author) and playable (published, so events can run it). Check it before choosing a new adventure's slug.",
 		InputSchema: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{},
@@ -158,58 +160,15 @@ func (s *Server) registerTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "get_adventure",
 		Scope:       scopeRead,
-		Description: "Read one adventure as the same JSON envelope create_adventure accepts. Use as a template for variants, or to inspect what's already there before edits. Binary assets (image / audio bytes) are NOT included — only the metadata that references them.",
+		Description: "An adventure's settings: title, description, language, the brief agreed with the author, its look (colours, fonts, backdrop, style), starting point, icon_url and how many events run it. The steps are in get_adventure_graph; a single step in get_step.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"slug"},
 			"properties": map[string]any{
-				"slug": map[string]any{
-					"type":        "string",
-					"description": "Slug of the adventure to fetch. Use list_adventures to discover available slugs.",
-				},
+				"slug": map[string]any{"type": "string", "description": "Adventure slug (list_adventures)."},
 			},
 		},
 	}, getAdventure)
-
-	s.tools.register(ToolDescriptor{
-		Name:        "validate_adventure",
-		Scope:       scopeRead,
-		Description: "Dry-run an envelope through the importer and report any validation errors WITHOUT writing anything. Run this first when generating a new adventure so you can self-correct (bad slug, missing language, slug collision) before committing with create_adventure.",
-		InputSchema: map[string]any{
-			"type":     "object",
-			"required": []string{"envelope"},
-			"properties": map[string]any{
-				"slug": map[string]any{
-					"type":        "string",
-					"description": "Override the envelope's slug for the dry-run. Optional.",
-				},
-				"envelope": map[string]any{
-					"type":        "object",
-					"description": "Adventure envelope to validate. Same shape create_adventure accepts.",
-				},
-			},
-		},
-	}, validateAdventure)
-
-	s.tools.register(ToolDescriptor{
-		Name:        "create_adventure",
-		Scope:       scopeWrite,
-		Description: "Create a new adventure from a structured envelope (matching the export/import JSON shape). Run validate_adventure first to surface errors. Assets (images, audio) cannot be uploaded via MCP — leave them out and have the user attach files in the arranger UI.",
-		InputSchema: map[string]any{
-			"type":     "object",
-			"required": []string{"envelope"},
-			"properties": map[string]any{
-				"slug": map[string]any{
-					"type":        "string",
-					"description": "Override the envelope's slug (e.g. for collision avoidance). Optional.",
-				},
-				"envelope": map[string]any{
-					"type":        "object",
-					"description": "Adventure envelope. See exportAdventureDTO in internal/admin/portability.go for the field shape.",
-				},
-			},
-		},
-	}, createAdventure)
 
 	s.tools.register(ToolDescriptor{
 		Name:        "update_adventure_meta",
@@ -229,46 +188,32 @@ func (s *Server) registerTools() {
 	}, updateAdventureMeta)
 
 	s.tools.register(ToolDescriptor{
-		Name:        "attach_image",
+		Name:        "set_adventure_icon",
 		Scope:       scopeWrite,
-		Description: "Set the adventure's cover/icon (target=\"avatar\"). Pictures for steps are graph media: use upload_adventure_media. The image bytes travel base64-encoded inside this call — there is no URL fetch path. Re-calling replaces the cover. Server normalises (shrinks to 512 px max dim, re-encodes JPEG/PNG) before storing, mirroring the multipart UI flow. Per-image cap is ZV_MAX_IMAGE_BYTES (default 5 MiB on the decoded bytes).",
+		Description: "Set the adventure's icon (shown in lists, the store and the player's top bar) from image bytes sent base64 in this call. From a phone, or for anything but a small image, use get_upload_link with for: icon instead — the user taps the link and picks the picture. Replaces any icon; shrunk to 512 px.",
 		InputSchema: map[string]any{
 			"type":     "object",
-			"required": []string{"slug", "target", "data_b64", "mime_type"},
+			"required": []string{"slug", "data_b64", "mime_type"},
 			"properties": map[string]any{
-				"slug": map[string]any{
-					"type":        "string",
-					"description": "Adventure to attach the image to.",
-				},
-				"target": map[string]any{
-					"description": `"avatar", the adventure cover icon.`,
-					"type":        "string",
-					"enum":        []string{"avatar"},
-				},
-				"data_b64": map[string]any{
-					"type":        "string",
-					"description": "Base64 (standard alphabet, with or without padding) of the raw image bytes: JPEG, PNG, WebP or SVG.",
-				},
-				"mime_type": map[string]any{
-					"type":        "string",
-					"description": `Declared content type, e.g. "image/jpeg", "image/png", "image/webp", "image/svg+xml". Must start with "image/".`,
-				},
+				"slug":      map[string]any{"type": "string", "description": "Adventure slug."},
+				"data_b64":  map[string]any{"type": "string", "description": "Base64 of the image bytes: JPEG, PNG, WebP or SVG."},
+				"mime_type": map[string]any{"type": "string", "description": `e.g. "image/png".`},
 			},
 		},
-	}, attachImage)
+	}, setAdventureIcon)
 
 	s.tools.register(ToolDescriptor{
-		Name:        "detach_avatar",
+		Name:        "remove_adventure_icon",
 		Scope:       scopeWrite,
-		Description: "Clear the adventure's avatar / cover icon. Idempotent — calling on an avatar-less adventure is a no-op.",
+		Description: "Remove the adventure's icon; the organisation's logo shows instead.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"slug"},
 			"properties": map[string]any{
-				"slug": map[string]any{"type": "string", "description": "Adventure to clear the avatar on."},
+				"slug": map[string]any{"type": "string", "description": "Adventure slug."},
 			},
 		},
-	}, detachAvatar)
+	}, removeAdventureIcon)
 
 	s.tools.register(ToolDescriptor{
 		Name:        "delete_adventure",
@@ -287,185 +232,45 @@ func (s *Server) registerTools() {
 
 /* ---------------- Handlers ---------------- */
 
-type adventureSummary struct {
-	Slug         string `json:"slug"`
-	Title        string `json:"title"`
-	Language     string `json:"language,omitempty"`
-	PuzzleCount  int    `json:"puzzle_count"`
-	OwnedByOrgID *int64 `json:"owned_by_org_id,omitempty"`
-}
-
-// listAdventures is the read-side proof of life. The visibility
-// rules mirror admin.ListAdventures: the caller's org's own rows, the
-// published catalog, and anything assigned or shared to the org.
-// Refactoring admin.ListAdventures to share a listing helper would be
-// cleaner — for the scaffold we duplicate the query and call out the
-// seam.
-//
-// TODO(refactor): extract a shared lister into internal/adventure
-// and have both admin.ListAdventures and this tool call it.
+// listAdventures is admin.ListAdventures — the caller's org's own rows,
+// the published catalog, and anything assigned or shared to the org —
+// trimmed to what an assistant picks an adventure by.
 func listAdventures(ctx context.Context, s *Server, _ json.RawMessage) (ToolCallResult, error) {
-	me, ok := auth.FromContext(ctx)
-	if !ok {
-		return errorResult("no authenticated caller"), nil
+	if r := adminConfigured(s); r != nil {
+		return *r, nil
 	}
-	if me.OrgID == nil {
-		return errorResult("no active organization"), nil
-	}
-	q := `
-		SELECT a.slug, a.title, COALESCE(a.language,''), a.org_id,
-		       ` + admin.PuzzleCountSQL() + ` AS puzzles
-		FROM adventures a
-		WHERE a.org_id = $1
-		   OR ` + admin.CatalogFilter() + `
-		   OR EXISTS (SELECT 1 FROM adventure_assignments aa WHERE aa.adventure_slug = a.slug AND aa.org_id = $1)
-		   OR EXISTS (SELECT 1 FROM adventure_shares s WHERE s.adventure_slug = a.slug AND s.org_id = $1)
-		ORDER BY a.title
-	`
-	rows, err := s.DB.QueryContext(ctx, q, *me.OrgID)
+	status, body, err := callAdmin(ctx, s.Admin.ListAdventures, "GET", "/api/admin/adventures", nil, nil, nil)
 	if err != nil {
-		return errorResult("query failed: " + err.Error()), nil
+		return errorResult("call: " + err.Error()), nil
 	}
-	defer rows.Close()
-	out := []adventureSummary{} // "[]", not "null", when nothing is visible
-	for rows.Next() {
-		var a adventureSummary
-		var orgID sql.NullInt64
-		if err := rows.Scan(&a.Slug, &a.Title, &a.Language, &orgID, &a.PuzzleCount); err != nil {
-			return errorResult("scan failed: " + err.Error()), nil
-		}
-		if orgID.Valid {
-			a.OwnedByOrgID = &orgID.Int64
-		}
-		out = append(out, a)
+	if status != http.StatusOK {
+		return adminCallResult(status, body), nil
 	}
-	if err := rows.Err(); err != nil {
-		return errorResult("rows: " + err.Error()), nil
+	var resp struct {
+		Adventures []struct {
+			Slug       string `json:"slug"`
+			Title      string `json:"title"`
+			Language   string `json:"language"`
+			MineToEdit bool   `json:"mine_to_edit"`
+			Playable   bool   `json:"playable"`
+		} `json:"adventures"`
 	}
-	body, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return errorResult("encode: " + err.Error()), nil
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return errorResult("decoding adventures: " + err.Error()), nil
 	}
-	return textResult(string(body)), nil
-}
-
-// createAdventure writes the manifest as a new adventure owned by
-// the caller's org. Wraps admin.ImportEnvelopeJSON, which is the
-// same code path the multipart upload handler uses — we just
-// hand it the JSON directly and pass no asset bytes.
-//
-// The manifest the LLM produces is wrapped in an envelope with the
-// expected `format` tag if the model omitted it; that single field
-// is the only thing we want to be lenient about, since every other
-// validation (slug shape, language tag) is information
-// the model needs to learn from. Wrap-once-then-let-it-fail beats
-// "model writes minimal JSON and we silently fill defaults".
-func createAdventure(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
-	var p struct {
-		Slug     string          `json:"slug,omitempty"`
-		Envelope json.RawMessage `json:"envelope"`
+	type row struct {
+		Slug     string `json:"slug"`
+		Title    string `json:"title"`
+		Language string `json:"language,omitempty"`
+		CanEdit  bool   `json:"can_edit"`
+		Playable bool   `json:"playable"`
 	}
-	if err := json.Unmarshal(args, &p); err != nil {
-		return errorResult("bad arguments: " + err.Error()), nil
+	out := []row{}
+	for _, a := range resp.Adventures {
+		out = append(out, row{a.Slug, a.Title, a.Language, a.MineToEdit, a.Playable})
 	}
-	if len(p.Envelope) == 0 {
-		return errorResult("envelope is required"), nil
-	}
-	me, ok := auth.FromContext(ctx)
-	if !ok {
-		return errorResult("no authenticated caller"), nil
-	}
-	manifest, err := wrapEnvelope(p.Envelope)
-	if err != nil {
-		return errorResult("envelope: " + err.Error()), nil
-	}
-	advID, slug, title, err := admin.ImportEnvelopeJSON(ctx, s.DB, manifest, p.Slug, me)
-	if err != nil {
-		return errorResult(err.Error()), nil
-	}
-	body, _ := json.MarshalIndent(map[string]any{
-		"id":    advID,
-		"slug":  slug,
-		"title": title,
-	}, "", "  ")
-	return textResult(string(body)), nil
-}
-
-// getAdventure returns one adventure's full envelope (metadata and
-// graph) as JSON the model can read or copy
-// into a follow-up create_adventure call. Visibility follows the
-// same staff-side rules ListAdventures applies.
-func getAdventure(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
-	var p struct {
-		Slug string `json:"slug"`
-	}
-	if err := json.Unmarshal(args, &p); err != nil {
-		return errorResult("bad arguments: " + err.Error()), nil
-	}
-	if p.Slug == "" {
-		return errorResult("slug is required"), nil
-	}
-	me, ok := auth.FromContext(ctx)
-	if !ok {
-		return errorResult("no authenticated caller"), nil
-	}
-	// Edit authorization, not read: the exported envelope carries the
-	// full answer key and hint bodies. The HTTP graph export is
-	// edit-gated for the same reason, and AdventureDetail strips answers
-	// for non-editors — a read-scoped token or a foreign-org viewer must
-	// not be able to dump the solutions here.
-	advID, _, err := admin.AuthorizeAdventureEdit(ctx, s.DB, p.Slug, me)
-	if err != nil {
-		if errors.Is(err, admin.ErrForbidden) {
-			return errorResult("forbidden: you cannot read this adventure"), nil
-		}
-		return errorResult("lookup: " + err.Error()), nil
-	}
-	body, err := admin.ExportAdventureEnvelopeJSON(ctx, s.DB, advID)
-	if err != nil {
-		return errorResult("export: " + err.Error()), nil
-	}
-	// Two blocks: a markdown view first (renders nicely in the tool
-	// panel — puzzle prompts are themselves markdown so they pick
-	// up real headings / emphasis instead of showing as JSON-escaped
-	// strings), and the JSON envelope second so the model can feed
-	// it back into create_adventure / update_adventure_meta. The
-	// horizontal rule + fenced code block is the seam so the two
-	// blocks don't visually run into each other when a client
-	// concatenates content blocks for display.
-	return multiTextResult(
-		renderEnvelopeMarkdown(body),
-		"\n\n---\n\n```json\n"+string(body)+"\n```",
-	), nil
-}
-
-// validateAdventure runs the manifest through the importer's full
-// validation pipeline against a transaction that's rolled back at
-// the end. The model uses this to catch slug collisions, language-
-// tag typos before committing.
-func validateAdventure(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
-	var p struct {
-		Slug     string          `json:"slug,omitempty"`
-		Envelope json.RawMessage `json:"envelope"`
-	}
-	if err := json.Unmarshal(args, &p); err != nil {
-		return errorResult("bad arguments: " + err.Error()), nil
-	}
-	if len(p.Envelope) == 0 {
-		return errorResult("envelope is required"), nil
-	}
-	me, ok := auth.FromContext(ctx)
-	if !ok {
-		return errorResult("no authenticated caller"), nil
-	}
-	manifest, err := wrapEnvelope(p.Envelope)
-	if err != nil {
-		return errorResult("envelope: " + err.Error()), nil
-	}
-	if err := admin.ValidateEnvelopeJSON(ctx, s.DB, manifest, p.Slug, me); err != nil {
-		return errorResult("validation failed: " + err.Error()), nil
-	}
-	return textResult(`{"ok":true}`), nil
+	b, _ := json.Marshal(out)
+	return textResult(string(b)), nil
 }
 
 // updateAdventureMeta forwards a partial patch to the admin layer's
@@ -489,7 +294,8 @@ func updateAdventureMeta(ctx context.Context, s *Server, args json.RawMessage) (
 	if !ok {
 		return errorResult("no authenticated caller"), nil
 	}
-	if _, _, err := admin.AuthorizeAdventureEdit(ctx, s.DB, p.Slug, me); err != nil {
+	advID, _, err := admin.AuthorizeAdventureEdit(ctx, s.DB, p.Slug, me)
+	if err != nil {
 		if errors.Is(err, admin.ErrForbidden) {
 			return errorResult("forbidden: you cannot edit this adventure"), nil
 		}
@@ -497,6 +303,9 @@ func updateAdventureMeta(ctx context.Context, s *Server, args json.RawMessage) (
 	}
 	if err := admin.UpdateAdventureMetaJSON(ctx, s.DB, p.Slug, p.Patch); err != nil {
 		return errorResult(err.Error()), nil
+	}
+	if s.Admin != nil {
+		s.Admin.AdventureChanged(ctx, advID)
 	}
 	return textResult(`{"ok":true}`), nil
 }
@@ -550,7 +359,7 @@ func deleteAdventure(ctx context.Context, s *Server, args json.RawMessage) (Tool
 	return textResult(`{"ok":true,"deleted":"` + p.Slug + `"}`), nil
 }
 
-// attachImage stores a base64-encoded image as either the
+// setAdventureIcon stores a base64-encoded image as either the
 // adventure's avatar or a single puzzle image. Re-calling on the
 // same (slug, target) replaces — for avatars that's a single
 // UPSERT-shaped overwrite via storage.PutAdventureAvatar; for
@@ -559,21 +368,17 @@ func deleteAdventure(ctx context.Context, s *Server, args json.RawMessage) (Tool
 // imageutil pipeline the multipart UI uses (shrink to 512 px, force
 // JPEG/PNG re-encode for raster) so storage stays consistent
 // regardless of which surface produced it.
-func attachImage(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+func setAdventureIcon(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
 	var p struct {
-		Slug     string          `json:"slug"`
-		Target   json.RawMessage `json:"target"`
-		DataB64  string          `json:"data_b64"`
-		MimeType string          `json:"mime_type"`
+		Slug     string `json:"slug"`
+		DataB64  string `json:"data_b64"`
+		MimeType string `json:"mime_type"`
 	}
 	if err := json.Unmarshal(args, &p); err != nil {
 		return errorResult("bad arguments: " + err.Error()), nil
 	}
 	if p.Slug == "" {
 		return errorResult("slug is required"), nil
-	}
-	if len(p.Target) == 0 {
-		return errorResult(`target is required ("avatar" or a non-negative page idx)`), nil
 	}
 	if p.DataB64 == "" {
 		return errorResult("data_b64 is required"), nil
@@ -603,13 +408,10 @@ func attachImage(ctx context.Context, s *Server, args json.RawMessage) (ToolCall
 		}
 		return errorResult("lookup: " + err.Error()), nil
 	}
-	if strings.TrimSpace(string(p.Target)) != `"avatar"` {
-		return errorResult(`target must be "avatar"; a step's pictures are graph media (upload_adventure_media)`), nil
-	}
 	{
 		normalized, mime, nerr := imageutil.NormalizeUpload(data, p.MimeType, imageutil.DefaultMaxDim)
 		if errors.Is(nerr, imageutil.ErrUnsupportedMIME) {
-			return errorResult("avatars accept PNG, JPEG, WebP, or SVG"), nil
+			return errorResult("an icon is PNG, JPEG, WebP or SVG"), nil
 		}
 		if nerr != nil {
 			return errorResult("unreadable image: " + nerr.Error()), nil
@@ -622,7 +424,6 @@ func attachImage(ctx context.Context, s *Server, args json.RawMessage) (ToolCall
 		}
 		body, _ := json.MarshalIndent(map[string]any{
 			"slug":      p.Slug,
-			"target":    "avatar",
 			"mime_type": mime,
 			"size":      len(normalized),
 		}, "", "  ")
@@ -631,9 +432,9 @@ func attachImage(ctx context.Context, s *Server, args json.RawMessage) (ToolCall
 
 }
 
-// detachAvatar clears the adventure's cover icon via the same
+// removeAdventureIcon clears the adventure's cover icon via the same
 // storage seam the multipart DELETE handler uses. Idempotent.
-func detachAvatar(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+func removeAdventureIcon(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
 	var p struct {
 		Slug string `json:"slug"`
 	}
@@ -652,7 +453,7 @@ func detachAvatar(ctx context.Context, s *Server, args json.RawMessage) (ToolCal
 	if err := s.Storage.DeleteAdventureAvatar(ctx, p.Slug); err != nil {
 		return errorResult("clear failed: " + err.Error()), nil
 	}
-	return textResult(fmt.Sprintf(`{"slug":%q,"avatar_cleared":true}`, p.Slug)), nil
+	return textResult(fmt.Sprintf(`{"slug":%q,"icon_removed":true}`, p.Slug)), nil
 }
 
 // authoriseEdit consolidates the auth + edit-permission boilerplate
@@ -679,32 +480,44 @@ func authoriseEdit(ctx context.Context, s *Server, slug string) (int64, auth.Use
 	return advID, me, nil
 }
 
-// wrapEnvelope normalises whatever shape the LLM produced into the
-// {format, exported_at, adventure} envelope the importer expects.
-//
-// Three accepted inputs, in priority order:
-//  1. A full envelope with a "format" key — passed through as-is.
-//  2. An object with an "adventure" key but no format — we add
-//     the format tag so the importer doesn't reject it.
-//  3. A bare adventure object (with "title" at the top level) — we wrap it in {format, adventure: <obj>}.
-//
-// Anything else falls through and the importer's manifest-parse
-// error surfaces verbatim — that's the signal the model needs.
-func wrapEnvelope(raw json.RawMessage) ([]byte, error) {
-	var probe map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &probe); err != nil {
-		return nil, fmt.Errorf("not a JSON object: %w", err)
+// getAdventure is the adventure's settings as the designer loads them,
+// trimmed to what an assistant works from.
+func getAdventure(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug string `json:"slug"`
 	}
-	if _, hasFormat := probe["format"]; hasFormat {
-		return raw, nil
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
 	}
-	if _, hasAdventure := probe["adventure"]; hasAdventure {
-		probe["format"] = json.RawMessage(`"zonventure-adventure-v1"`)
-		return json.Marshal(probe)
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
 	}
-	wrapped := map[string]json.RawMessage{
-		"format":    json.RawMessage(`"zonventure-adventure-v1"`),
-		"adventure": raw,
+	if r := adminConfigured(s); r != nil {
+		return *r, nil
 	}
-	return json.Marshal(wrapped)
+	status, body, err := callAdmin(ctx, s.Admin.LoadAdventureForEdit, "GET", "/api/admin/adventures/"+p.Slug+"/edit", map[string]string{"slug": p.Slug}, nil, nil)
+	if err != nil {
+		return errorResult("call: " + err.Error()), nil
+	}
+	if status != http.StatusOK {
+		return adminCallResult(status, body), nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return errorResult("decoding the adventure: " + err.Error()), nil
+	}
+	// The rendered intro and outro repeat their text; shares and the
+	// catalog listing are the platform's, not the author's.
+	for _, k := range []string{"intro_html", "outro_html", "shares", "published"} {
+		delete(m, k)
+	}
+	if v, ok := m["avatar_url"]; ok {
+		if u, _ := v.(string); u != "" && strings.HasPrefix(u, "/") {
+			v = strings.TrimRight(s.Admin.PublicURL, "/") + u
+		}
+		m["icon_url"] = v
+		delete(m, "avatar_url")
+	}
+	out, _ := json.Marshal(m)
+	return textResult(string(out)), nil
 }

@@ -47,7 +47,7 @@ type Server struct {
 // falls back to "dev", matching buildVersion's posture.
 //
 // blobs is the same storage.Blobs the admin handlers use; the
-// attach_image tool calls PutAdventureAvatar through it so an S3
+// set_adventure_icon tool calls PutAdventureAvatar through it so an S3
 // (or future localfs) backend gets the bytes through the same seam
 // as the multipart UI flow.
 //
@@ -105,7 +105,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 
 	var req Request
 	// 16 MiB request cap. The default 1 MiB was too tight once
-	// attach_image came online: a 5 MiB image (the default per-image
+	// set_adventure_icon came online: a 5 MiB image (the default per-image
 	// upload cap) base64-encodes to ~6.7 MiB, so we need headroom for
 	// the encoded payload + JSON envelope. Operators who raised
 	// ZV_MAX_IMAGE_BYTES well past the default may need to bump this

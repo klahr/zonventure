@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -35,14 +36,31 @@ func TestGuideExampleIsValid(t *testing.T) {
 func TestGuideNamesRealTools(t *testing.T) {
 	s := New(nil, "", nil, nil)
 	text := serverInstructions + authoringGuide()
-	for _, name := range []string{"get_authoring_guide", "create_graph_adventure", "get_adventure", "get_adventure_graph",
-		"edit_adventure_graph", "undo_adventure_graph_edit", "simulate_adventure", "upload_adventure_media", "get_media_upload_url", "update_adventure_meta",
-		"create_dev_ticket", "get_dev_screen", "dev_go_to", "dev_reset", "get_creator_position"} {
+	for _, name := range []string{"get_authoring_guide", "create_adventure", "get_adventure", "get_adventure_graph",
+		"edit_adventure_graph", "undo_adventure_graph_edit", "simulate_adventure", "upload_adventure_media", "get_upload_link", "update_adventure_meta",
+		"create_dev_ticket", "get_dev_screen", "dev_go_to", "dev_reset", "get_creator_position", "list_org_themes", "get_step", "list_adventure_media", "publish_adventure_graph",
+		"create_event", "update_event", "start_event", "create_team", "send_event_invitations", "give_free_ticket"} {
 		if !strings.Contains(text, name) {
 			t.Errorf("%s is not mentioned", name)
 		}
 		if _, ok := s.tools.handlers[name]; !ok {
 			t.Errorf("%s is mentioned but not registered", name)
+		}
+	}
+}
+
+// The lifecycle reference indexes every tool, and only tools that exist.
+func TestLifecycleIndexesEveryTool(t *testing.T) {
+	s := New(nil, "", nil, nil)
+	index := eventLifecycleDoc[strings.Index(eventLifecycleDoc, "## Full tool index"):strings.Index(eventLifecycleDoc, "## Security boundaries")]
+	for _, d := range s.tools.descriptors {
+		if !strings.Contains(index, d.Name) {
+			t.Errorf("%s is missing from the lifecycle tool index", d.Name)
+		}
+	}
+	for _, name := range regexp.MustCompile(`\b[a-z]+(?:_[a-z]+)+\b`).FindAllString(index, -1) {
+		if _, ok := s.tools.handlers[name]; !ok {
+			t.Errorf("the lifecycle tool index names %s, which is no tool", name)
 		}
 	}
 }

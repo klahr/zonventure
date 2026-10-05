@@ -122,6 +122,29 @@ func TestDevTicketPlaysTheDraftLive(t *testing.T) {
 		t.Errorf("after starting over: %+v", st.View)
 	}
 
+	// Finished, the dev event is not: the phone starts over and plays on.
+	if s := phone.doAny("POST", "/api/player/play/continue", map[string]string{"node": "intro"}, nil); s != 200 {
+		t.Fatalf("continue to the end = %d", s)
+	}
+	if s := pub.doAny("GET", "/api/admin/adventures/demo/dev-screen", nil, nil); s != 200 {
+		t.Errorf("dev screen after finishing = %d", s)
+	}
+	if s := phone.doAny("POST", "/api/player/dev/goto", map[string]string{"node": "intro"}, nil); s != 204 {
+		t.Fatalf("phone back after finishing = %d", s)
+	}
+	if st := state(); st.View.Node != "intro" {
+		t.Errorf("after stepping back from the end: %+v", st.View)
+	}
+	if s := phone.doAny("POST", "/api/player/play/continue", map[string]string{"node": "intro"}, nil); s != 200 {
+		t.Fatalf("continue to the end again = %d", s)
+	}
+	if s := pub.doAny("POST", "/api/admin/adventures/demo/dev-reset", nil, nil); s != 204 {
+		t.Fatalf("dev reset after finishing = %d", s)
+	}
+	if st := state(); st.View.Node != "intro" {
+		t.Errorf("after starting over from the end: %+v", st.View)
+	}
+
 	// The dev row is no version of the adventure.
 	var versions struct {
 		Versions []struct {
