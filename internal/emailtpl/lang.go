@@ -93,8 +93,10 @@ var catalog = map[string]map[string]string{
 		"Open the host page to split the children into teams, print and hide the cards, and start the game when everyone is there.": "Öppna värdsidan för att dela in barnen i lag, skriva ut och gömma korten och starta spelet när alla är där.",
 		"Anyone with this link can run the party, so keep it to yourself.":                                                          "Den som har länken kan styra kalaset, så behåll den för dig själv.",
 		"Open the host page": "Öppna värdsidan",
-		"Everything about the players is deleted a while after the party.":                                                            "Allt om spelarna raderas en tid efter kalaset.",
-		"Thanks — your adventure is ready":                                                                                            "Tack – ert äventyr är redo",
+
+		"Everything about the players is deleted a while after the party.": "Allt om spelarna raderas en tid efter kalaset.",
+		"Thanks — your adventure is ready":                                 "Tack – ert äventyr är redo",
+
 		"Open your team page to claim your own place, share the others with your teammates, and start playing whenever you're ready.": "Öppna lagsidan för att ta din plats, dela de andra med dina lagkamrater och börja spela när ni är redo.",
 		"Prefer to type it in? Go to %[1]s and enter your voucher code: **%[2]s**":                                                    "Vill du hellre skriva in den? Gå till %[1]s och ange din vouchers-kod: **%[2]s**",
 		"Open the team page": "Öppna lagsidan",
