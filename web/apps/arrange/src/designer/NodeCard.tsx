@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { play } from "@zonventure/api";
-import { StaticMap } from "@zonventure/play-ui";
+import { MarkdownInline, StaticMap } from "@zonventure/play-ui";
 import { STEP } from "./dz/types.tsx";
 import { TRIGGER } from "./dz/concepts.tsx";
 import { Bot, CircleCheck, CircleDashed, CircleDot, GitPullRequestArrow, Lightbulb, MessageSquare } from "lucide-react";
@@ -167,7 +167,11 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
         {data.talk?.status && <StatusIcon status={data.talk.status} label={t.t(statusLabel(data.talk.status))} />}
       </div>
       <div className="card__title">{n.title || n.slug}</div>
-      {n.type !== "start" && <div className="card__summary">{summary(n, data.sourceTitle)}</div>}
+      {n.type !== "start" && (
+        <div className="card__summary">
+          {n.type === "puzzle" || n.type === "story" ? <MarkdownInline text={summary(n)} /> : summary(n, data.sourceTitle)}
+        </div>
+      )}
       <Thumb node={n} className="card__thumb" />
       {data.zone && <StaticMap zone={data.zone} width={216} height={112} className="card__map" />}
 

@@ -124,6 +124,9 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.card__summary a {
+  pointer-events: none;
+}
 .card__badge {
   min-width: 1.3rem;
   height: 1.3rem;
