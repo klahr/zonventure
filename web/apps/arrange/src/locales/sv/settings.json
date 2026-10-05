@@ -38,5 +38,10 @@
   "A clean card on a soft background, the logo on top and a coloured edge.": "Ett rent kort på en mjuk bakgrund, med logotypen överst och en färgad kant.",
   "Parchment and a serif heading, like a page from the game's own journal.": "Pergament och en rubrik med serifer, som en sida ur spelets egen dagbok.",
   "A full-width band in your colour with the logo, and a large heading.": "Ett band i din färg över hela bredden med logotypen, och en stor rubrik.",
-  "Plain text on white with a small logo: reads like a personal note.": "Ren text på vitt med en liten logotyp: läses som en personlig hälsning."
+  "Plain text on white with a small logo: reads like a personal note.": "Ren text på vitt med en liten logotyp: läses som en personlig hälsning.",
+  "Stripe Connect pays out your org's ticket sales. Buyers pay the platform, which keeps a per-charge fee and transfers the rest to your Stripe account; Stripe then pays it out to your bank.": "Stripe Connect betalar ut din organisations biljettförsäljning. Köparna betalar plattformen, som behåller en avgift per köp och för över resten till ditt Stripe-konto; Stripe betalar sedan ut det till din bank.",
+  "Connect a Stripe account to start selling tickets to your self-guided adventures in your store. Stripe-hosted verification takes a few minutes; afterwards you follow your balance and payouts in the Stripe dashboard.": "Anslut ett Stripe-konto för att börja sälja biljetter till dina självguidade äventyr i din butik. Stripes verifiering tar några minuter; sedan följer du ditt saldo och dina utbetalningar i Stripe-dashboarden.",
+  "Open Stripe dashboard": "Öppna Stripe-dashboarden",
+  "Stripe didn't return a dashboard link": "Stripe returnerade ingen länk till dashboarden",
+  "Payouts enabled — your balance is paid out to your bank once a month, on the 1st.": "Utbetalningar aktiverade — ditt saldo betalas ut till din bank en gång i månaden, den 1:a."
 }

@@ -6,30 +6,34 @@ import (
 )
 
 // PlatformFee captures the per-charge platform fee rule for
-// marketplace flows. Today it's "max of percent-of-price or floor",
-// which covers both extremes: a flat per-ticket fee gets crushing
-// against very cheap tickets (a €5 flat fee on a €8 family ticket
-// is 62%), and a flat percentage scales away from sensible numbers
-// at the top end. Adopting `max(percent, floor)` matches the
-// industry shape (Eventbrite, Tito, etc.) without hardcoding a
+// marketplace flows: "percent-of-price plus a fixed amount, but at
+// least the floor". The percentage scales with the ticket; the
+// fixed part covers the per-ticket costs the platform carries on a
+// destination charge (Stripe's fixed card fee, plus the Connect
+// per-account and per-payout fees spread over the tickets); the
+// floor keeps very cheap tickets from running at a loss. Matches
+// the industry shape (Eventbrite, Tito, etc.) without hardcoding a
 // specific formula in handlers.
 //
-// Both knobs are env-configured (ZV_PLATFORM_FEE_PERCENT_BPS,
-// ZV_PLATFORM_FEE_MIN_CENTS) so the same binary serves a hosted
-// instance (with a non-zero fee) and a self-host deployment (zero
-// across the board, no marketplace flow).
+// All three knobs are env-configured (ZV_PLATFORM_FEE_PERCENT_BPS,
+// ZV_PLATFORM_FEE_FIXED_CENTS, ZV_PLATFORM_FEE_MIN_CENTS) so the
+// same binary serves a hosted instance (with a non-zero fee) and a
+// self-host deployment (zero across the board, no marketplace flow).
 type PlatformFee struct {
 	// PercentBPS is the percentage component in basis points
 	// (100 BPS = 1%). 0 means "no percentage".
 	PercentBPS int64
+	// FixedCents is added to every charge on top of the percentage.
+	// 0 means "no fixed part".
+	FixedCents int64
 	// MinCents is the per-charge floor in cents. 0 means "no
 	// floor". Used to keep small-value tickets from generating
 	// fees Stripe wouldn't bother to settle.
 	MinCents int64
 }
 
-// PlatformFeeFromEnv reads the two ZV_PLATFORM_FEE_* env vars and
-// returns the configured fee. Both default to 0 (no marketplace
+// PlatformFeeFromEnv reads the three ZV_PLATFORM_FEE_* env vars and
+// returns the configured fee. All default to 0 (no marketplace
 // flow) which is the right posture for self-host: an operator who
 // doesn't want to take a cut leaves the vars unset and the rest
 // of the marketplace code path stays inert.
@@ -37,6 +41,9 @@ func PlatformFeeFromEnv() PlatformFee {
 	var f PlatformFee
 	if v, _ := strconv.ParseInt(os.Getenv("ZV_PLATFORM_FEE_PERCENT_BPS"), 10, 64); v > 0 {
 		f.PercentBPS = v
+	}
+	if v, _ := strconv.ParseInt(os.Getenv("ZV_PLATFORM_FEE_FIXED_CENTS"), 10, 64); v > 0 {
+		f.FixedCents = v
 	}
 	if v, _ := strconv.ParseInt(os.Getenv("ZV_PLATFORM_FEE_MIN_CENTS"), 10, 64); v > 0 {
 		f.MinCents = v
@@ -49,12 +56,12 @@ func PlatformFeeFromEnv() PlatformFee {
 // entirely and the org-Connect-onboarded gate doesn't apply —
 // matches the "no platform, just sell" self-host posture.
 func (f PlatformFee) Enabled() bool {
-	return f.PercentBPS > 0 || f.MinCents > 0
+	return f.PercentBPS > 0 || f.FixedCents > 0 || f.MinCents > 0
 }
 
 // Compute returns the fee in cents for a charge of priceCents.
-// max(percent-of-price, floor), clamped strictly below priceCents
-// so Stripe (which rejects ApplicationFee >= total) never sees an
+// max(percent-of-price + fixed, floor), clamped strictly below
+// priceCents so Stripe (which rejects ApplicationFee >= total) never sees an
 // over-floor fee on a tiny ticket. Negative or zero prices return
 // 0 rather than something weird; the caller should already have
 // rejected free / negative tickets upstream but defensiveness is
@@ -68,8 +75,7 @@ func (f PlatformFee) Compute(priceCents int64) int64 {
 	// small charges. The 64-bit product caps out at ~9 billion
 	// ticket-cents × 10000 BPS, far above any plausible single
 	// purchase.
-	percent := priceCents * f.PercentBPS / 10000
-	fee := percent
+	fee := priceCents*f.PercentBPS/10000 + f.FixedCents
 	if f.MinCents > fee {
 		fee = f.MinCents
 	}

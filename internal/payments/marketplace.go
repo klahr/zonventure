@@ -30,8 +30,9 @@ type MarketplaceProvider interface {
 	// CreateConnectedAccount creates a fresh connected account
 	// suitable for receiving destination-charged transfers.
 	// Standard / Express / Custom is up to the impl; today the
-	// Stripe impl creates Standard accounts (the cheapest tier
-	// and the one that doesn't burden the platform with KYC).
+	// Stripe impl creates Express accounts: Stripe-hosted KYC,
+	// with the platform owning the customer relationship and the
+	// seller seeing payouts through the Express dashboard.
 	// Returns the provider-specific account id (Stripe: acct_xxx).
 	CreateConnectedAccount(ctx context.Context, p ConnectedAccountParams) (string, error)
 
@@ -48,6 +49,11 @@ type MarketplaceProvider interface {
 	// the account.updated webhook handler and from the manual
 	// "refresh" affordance on the Connect settings page.
 	GetConnectedAccount(ctx context.Context, accountID string) (ConnectedAccount, error)
+
+	// CreateLoginLink mints a single-use URL into the connected
+	// account's provider-hosted dashboard (Stripe: the Express
+	// dashboard), where the seller sees balance and payouts.
+	CreateLoginLink(ctx context.Context, accountID string) (string, error)
 }
 
 // ConnectedAccountParams describes a fresh connected account.

@@ -116,9 +116,11 @@ services:
       # and the free band size per event. Empty → 500 / 15.
       ZV_PRICE_PER_PLAYER_CENTS:  ${ZV_PRICE_PER_PLAYER_CENTS:-}
       ZV_FREE_PLAYERS_PER_EVENT:  ${ZV_FREE_PLAYERS_PER_EVENT:-}
-      # Marketplace fee on /store ticket sales (hosted posture). Both
-      # empty → no fee; sales land in the platform Stripe account.
+      # Marketplace fee on /store ticket sales (hosted posture):
+      # max(percent + fixed, min). All empty → no fee; sales land in
+      # the platform Stripe account.
       ZV_PLATFORM_FEE_PERCENT_BPS: ${ZV_PLATFORM_FEE_PERCENT_BPS:-}
+      ZV_PLATFORM_FEE_FIXED_CENTS: ${ZV_PLATFORM_FEE_FIXED_CENTS:-}
       ZV_PLATFORM_FEE_MIN_CENTS:   ${ZV_PLATFORM_FEE_MIN_CENTS:-}
       # Postgres pool sizing; empty → server defaults (25 open / 5 idle).
       ZV_DB_MAX_OPEN_CONNS:       ${ZV_DB_MAX_OPEN_CONNS:-}

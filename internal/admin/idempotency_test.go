@@ -51,6 +51,10 @@ func (p *recordingProvider) CreateAccountLink(ctx context.Context, params paymen
 	return "https://x/link", nil
 }
 
+func (recordingProvider) CreateLoginLink(ctx context.Context, accountID string) (string, error) {
+	return "https://x/express", nil
+}
+
 func (recordingProvider) GetConnectedAccount(ctx context.Context, accountID string) (payments.ConnectedAccount, error) {
 	return payments.ConnectedAccount{ID: accountID, ChargesEnabled: true, PayoutsEnabled: true}, nil
 }

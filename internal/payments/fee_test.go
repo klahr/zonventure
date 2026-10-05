@@ -32,6 +32,11 @@ func TestPlatformFee_Compute(t *testing.T) {
 		// downstream Stripe call doesn't 400 opaquely. The audit's
 		// MEDIUM note recommends the listing page filter such
 		// tickets out — the clamp is the safety net.
+		{"fixed only", PlatformFee{FixedCents: 300}, 20000, 300},
+		{"percent plus fixed", PlatformFee{PercentBPS: 800, FixedCents: 300}, 20000, 1900}, // 8% of 200 kr = 16 kr, + 3 kr
+		{"percent plus fixed — floor wins on cheap", PlatformFee{PercentBPS: 800, FixedCents: 300, MinCents: 500}, 1000, 500},
+		{"percent plus fixed — beats floor", PlatformFee{PercentBPS: 800, FixedCents: 300, MinCents: 500}, 5000, 700},
+		{"fixed exceeds price clamps to price-1", PlatformFee{FixedCents: 300}, 200, 199},
 		{"floor exceeds price clamps to price-1", PlatformFee{MinCents: 100}, 50, 49},
 		{"floor equals price clamps to price-1", PlatformFee{MinCents: 100}, 100, 99},
 		{"floor 1 below price stays untouched", PlatformFee{MinCents: 100}, 101, 100},
@@ -55,6 +60,7 @@ func TestPlatformFee_Enabled(t *testing.T) {
 	}{
 		{PlatformFee{}, false},
 		{PlatformFee{PercentBPS: 1}, true},
+		{PlatformFee{FixedCents: 1}, true},
 		{PlatformFee{MinCents: 1}, true},
 		{PlatformFee{PercentBPS: 800, MinCents: 100}, true},
 	}
@@ -71,15 +77,17 @@ func TestPlatformFee_Enabled(t *testing.T) {
 // at startup so a typo doesn't take a self-host instance down.
 func TestPlatformFeeFromEnv(t *testing.T) {
 	t.Setenv("ZV_PLATFORM_FEE_PERCENT_BPS", "")
+	t.Setenv("ZV_PLATFORM_FEE_FIXED_CENTS", "")
 	t.Setenv("ZV_PLATFORM_FEE_MIN_CENTS", "")
 	if got := PlatformFeeFromEnv(); got.Enabled() {
 		t.Errorf("empty env: Enabled()=true, want false")
 	}
 
 	t.Setenv("ZV_PLATFORM_FEE_PERCENT_BPS", "800")
+	t.Setenv("ZV_PLATFORM_FEE_FIXED_CENTS", "300")
 	t.Setenv("ZV_PLATFORM_FEE_MIN_CENTS", "100")
 	got := PlatformFeeFromEnv()
-	if got.PercentBPS != 800 || got.MinCents != 100 {
+	if got.PercentBPS != 800 || got.FixedCents != 300 || got.MinCents != 100 {
 		t.Errorf("set env: %+v", got)
 	}
 
@@ -97,5 +105,6 @@ func TestPlatformFeeFromEnv(t *testing.T) {
 	// already restores after the test, but unsetting belt-and-
 	// braces protects against a future test that misuses os.Getenv.
 	os.Unsetenv("ZV_PLATFORM_FEE_PERCENT_BPS")
+	os.Unsetenv("ZV_PLATFORM_FEE_FIXED_CENTS")
 	os.Unsetenv("ZV_PLATFORM_FEE_MIN_CENTS")
 }

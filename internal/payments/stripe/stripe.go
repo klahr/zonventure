@@ -26,6 +26,7 @@ import (
 	"github.com/stripe/stripe-go/v82/accountlink"
 	portalsession "github.com/stripe/stripe-go/v82/billingportal/session"
 	checkoutsession "github.com/stripe/stripe-go/v82/checkout/session"
+	"github.com/stripe/stripe-go/v82/loginlink"
 	"github.com/stripe/stripe-go/v82/refund"
 	"github.com/stripe/stripe-go/v82/webhook"
 )
@@ -138,7 +139,7 @@ func (p *Provider) CreateCheckout(ctx context.Context, params payments.CheckoutP
 	}
 
 	// Marketplace path: the charge is destination-charged into a
-	// connected Standard account, with the platform's application
+	// connected Express account, with the platform's application
 	// fee captured off the top. Both fields must be set together —
 	// a non-empty ConnectedAccountID with no fee would produce a
 	// "free passthrough" charge that benefits nobody, and a fee
@@ -260,7 +261,7 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 		out.Charge = &detail
 
 	case "account.updated":
-		// Connect Standard accounts emit account.updated through
+		// Connected accounts emit account.updated through
 		// the platform webhook endpoint when their verification or
 		// capability state changes. The event body is the account
 		// itself; the load-bearing fields are charges_enabled and
@@ -366,11 +367,21 @@ func (p *Provider) Refund(ctx context.Context, params payments.RefundParams) (pa
 
 /* ---------------- MarketplaceProvider ---------------- */
 
-// CreateConnectedAccount creates a Standard Connect account. The
-// arranger keeps full control of the resulting Stripe account —
-// they accept Stripe's TOS during onboarding, see Stripe's brand
-// in their dashboard, and pay normal Stripe processing fees on
-// their side. The platform pays nothing extra per account.
+// CreateConnectedAccount creates an Express Connect account. Stripe
+// runs the KYC during hosted onboarding; the platform owns the
+// customer relationship: charges are destination-charged on the
+// platform account (which carries refunds and disputes), and the
+// seller sees only the Express dashboard (balance, payouts) via
+// CreateLoginLink. Stripe bills the platform per active account
+// and per payout.
+//
+// card_payments + transfers are both requested: transfers is what
+// destination charges need, card_payments lets Stripe settle card
+// charges on the account's behalf should on_behalf_of come later.
+//
+// Payouts run monthly, on the 1st: the platform pays Stripe per
+// payout, so one payout a month per org keeps that cost down.
+// Express sellers can't change the schedule themselves.
 //
 // Country is ISO 3166-1 alpha-2; an empty value means "let Stripe
 // infer from the platform's default", which works for most
@@ -379,7 +390,19 @@ func (p *Provider) CreateConnectedAccount(ctx context.Context, params payments.C
 	stripego.Key = p.SecretKey
 
 	ap := &stripego.AccountParams{
-		Type: stripego.String(string(stripego.AccountTypeStandard)),
+		Type: stripego.String(string(stripego.AccountTypeExpress)),
+		Capabilities: &stripego.AccountCapabilitiesParams{
+			CardPayments: &stripego.AccountCapabilitiesCardPaymentsParams{Requested: stripego.Bool(true)},
+			Transfers:    &stripego.AccountCapabilitiesTransfersParams{Requested: stripego.Bool(true)},
+		},
+		Settings: &stripego.AccountSettingsParams{
+			Payouts: &stripego.AccountSettingsPayoutsParams{
+				Schedule: &stripego.AccountSettingsPayoutsScheduleParams{
+					Interval:      stripego.String(string(stripego.AccountSettingsPayoutsScheduleIntervalMonthly)),
+					MonthlyAnchor: stripego.Int64(1),
+				},
+			},
+		},
 	}
 	ap.Context = ctx
 	if params.Email != "" {
@@ -424,6 +447,28 @@ func (p *Provider) CreateAccountLink(ctx context.Context, params payments.Accoun
 	}
 	alParams.Context = ctx
 	link, err := accountlink.New(alParams)
+	if err != nil {
+		return "", err
+	}
+	return link.URL, nil
+}
+
+// CreateLoginLink mints a single-use URL into the connected
+// account's Express dashboard, where the seller sees their balance
+// and payouts. Stripe refuses it for accounts without the Express
+// dashboard (orgs onboarded as Standard before the switch); those
+// sellers sign in at dashboard.stripe.com instead.
+func (p *Provider) CreateLoginLink(ctx context.Context, accountID string) (string, error) {
+	if accountID == "" {
+		return "", errors.New("stripe: missing account id")
+	}
+	stripego.Key = p.SecretKey
+
+	llParams := &stripego.LoginLinkParams{
+		Account: stripego.String(accountID),
+	}
+	llParams.Context = ctx
+	link, err := loginlink.New(llParams)
 	if err != nil {
 		return "", err
 	}

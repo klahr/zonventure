@@ -16,14 +16,20 @@ import (
 
 // Stripe Connect onboarding for the /store marketplace flow.
 //
-// Each org that wants to sell quest tickets onboards a Standard
-// connected account via Stripe-hosted KYC. The arranger keeps full
-// control of the resulting Stripe account (sees Stripe's brand,
-// pays Stripe's standard processing fees on their side) and the
-// platform takes a per-charge application fee off the top —
-// configured via ZV_PLATFORM_FEE_PERCENT_BPS / _MIN_CENTS.
+// Each org that wants to sell quest tickets onboards an Express
+// connected account via Stripe-hosted KYC. Every ticket is charged
+// on the platform account (which carries refunds and disputes) and
+// destination-transferred to the org, minus a per-charge
+// application fee configured via ZV_PLATFORM_FEE_PERCENT_BPS /
+// _FIXED_CENTS / _MIN_CENTS. Payouts to the org run monthly. The org sees its balance and payouts in Stripe's
+// Express dashboard, reached through the dashboard endpoint below.
+// Orgs onboarded as Standard accounts before the switch keep
+// selling; they use their own Stripe dashboard instead.
 //
 // Endpoint surface:
+//
+//	POST /api/admin/orgs/{orgID}/stripe-connect/dashboard
+//	     Returns a single-use login link into the Express dashboard.
 //
 //	POST /api/admin/orgs/{orgID}/stripe-connect/start
 //	     Idempotent. Creates the connected account on first call,
@@ -87,7 +93,7 @@ func (h *Handlers) StartStripeConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	if !h.PlatformFee.Enabled() {
 		httpx.Error(w, http.StatusServiceUnavailable,
-			"marketplace fee is not configured on this server (set ZV_PLATFORM_FEE_PERCENT_BPS / ZV_PLATFORM_FEE_MIN_CENTS)")
+			"marketplace fee is not configured on this server (set ZV_PLATFORM_FEE_PERCENT_BPS / ZV_PLATFORM_FEE_FIXED_CENTS / ZV_PLATFORM_FEE_MIN_CENTS)")
 		return
 	}
 	mp, ok := h.Provider.(payments.MarketplaceProvider)
@@ -241,6 +247,55 @@ func (h *Handlers) RefreshStripeConnectStatus(w http.ResponseWriter, r *http.Req
 		return
 	}
 	httpx.JSON(w, http.StatusOK, out)
+}
+
+type stripeConnectDashboardResp struct {
+	// URL is a single-use link into the Express dashboard; the
+	// frontend opens it straight away.
+	URL string `json:"url"`
+}
+
+// OpenStripeConnectDashboard mints a login link into the org's
+// Express dashboard (balance, payouts, bank details).
+//
+// POST /api/admin/orgs/{orgID}/stripe-connect/dashboard
+func (h *Handlers) OpenStripeConnectDashboard(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := orgIDFromURL(r)
+	if !ok {
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	if !canManageOrgConnect(me, orgID) {
+		httpx.Error(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	mp, ok := h.Provider.(payments.MarketplaceProvider)
+	if !ok {
+		httpx.Error(w, http.StatusServiceUnavailable,
+			"payment provider does not support marketplace flows")
+		return
+	}
+	var accountID sql.NullString
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT stripe_connect_account_id FROM organizations WHERE id = $1`,
+		orgID).Scan(&accountID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "org lookup failed")
+		return
+	}
+	if !accountID.Valid || accountID.String == "" {
+		httpx.Error(w, http.StatusConflict, "no Stripe account yet — start onboarding first")
+		return
+	}
+	link, err := mp.CreateLoginLink(r.Context(), accountID.String)
+	if err != nil {
+		// Typically a Standard account from before the switch to
+		// Express: it has no Express dashboard to log into.
+		logx.Warn("admin.stripe_connect.dashboard", "org", orgID, "err", err.Error())
+		httpx.ServerErr(w, http.StatusBadGateway, "stripe dashboard link failed", err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	httpx.JSON(w, http.StatusOK, stripeConnectDashboardResp{URL: link})
 }
 
 /* ---------------- helpers ---------------- */

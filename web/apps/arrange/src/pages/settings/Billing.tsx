@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Compass, RefreshCw } from "lucide-react";
+import { Compass, ExternalLink, RefreshCw } from "lucide-react";
 import { get, post } from "@zonventure/api";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
@@ -35,6 +35,7 @@ export function BillingTab() {
   const [flag] = useState(takeReturnFlag);
   const sync = useRef(flag === "return");
   const [starting, setStarting] = useState(false);
+  const [opening, setOpening] = useState(false);
   const load = useLoad(
     (signal) => {
       // Fresh from Stripe: have the server re-read the account before
@@ -69,10 +70,28 @@ export function BillingTab() {
     }
   };
 
+  // Login links are single-use and short-lived, so mint one per click.
+  // The tab is opened before the request so popup blockers allow it.
+  const openDashboard = async () => {
+    setOpening(true);
+    const tab = window.open("", "_blank");
+    try {
+      const r = await post<{ url?: string }>(`/api/admin/organizations/${orgID}/stripe-connect/dashboard`);
+      if (!r?.url) throw new Error(t.t("Stripe didn't return a dashboard link"));
+      if (tab) tab.location.href = r.url;
+      else location.href = r.url;
+    } catch (e) {
+      tab?.close();
+      toast.err(e);
+    } finally {
+      setOpening(false);
+    }
+  };
+
   const about = (
     <HelpPopover
       label={t.t("About Stripe Connect")}
-      body={t.t("Stripe Connect lets your org receive payouts from ticket sales in your store. The platform takes a per-charge fee; the rest lands in your Stripe account.")}
+      body={t.t("Stripe Connect pays out your org's ticket sales. Buyers pay the platform, which keeps a per-charge fee and transfers the rest to your Stripe account; Stripe then pays it out to your bank.")}
     />
   );
   const card = (subtitle: ReactNode, body: ReactNode, badge?: ReactNode) => (
@@ -83,6 +102,7 @@ export function BillingTab() {
   if (!load.data) return card(null, <Loading label={t.t("Loading…")} />);
   const s = load.data;
   const loc = t.current();
+  const dashboardBtn = <Button icon={<ExternalLink size={ICON.md} aria-hidden />} loading={opening} onClick={() => void openDashboard()}>{t.t("Open Stripe dashboard")}</Button>;
   const refreshBtn = <Button icon={<RefreshCw size={ICON.md} aria-hidden />} loading={load.loading} onClick={load.reload}>{t.t("Refresh status")}</Button>;
   const muted = { margin: 0, color: "var(--dz-muted)", fontSize: "var(--dz-text-sm)" };
   const account = (id: string) => (
@@ -100,7 +120,7 @@ export function BillingTab() {
   }
   if (!s.account_id) {
     return card(
-      t.t("Connect a Stripe account to start selling tickets to your self-guided adventures in your store. Stripe-hosted KYC takes a few minutes; you keep full control of your account afterwards."),
+      t.t("Connect a Stripe account to start selling tickets to your self-guided adventures in your store. Stripe-hosted verification takes a few minutes; afterwards you follow your balance and payouts in the Stripe dashboard."),
       <Row>
         <Button variant="primary" icon={<Compass size={ICON.md} aria-hidden />} loading={starting} onClick={() => void start()}>{t.t("Connect Stripe")}</Button>
       </Row>,
@@ -123,11 +143,11 @@ export function BillingTab() {
     account(s.account_id),
     <>
       {s.payouts_enabled ? (
-        <p style={muted}>{t.t("Payouts enabled — money flows to your bank on Stripe's standard schedule.")}</p>
+        <p style={muted}>{t.t("Payouts enabled — your balance is paid out to your bank once a month, on the 1st.")}</p>
       ) : (
         <Callout variant="warning">{t.t("Charges accepted but payouts are paused — usually means a missing bank account. Visit your Stripe dashboard to fix.")}</Callout>
       )}
-      <Row>{refreshBtn}</Row>
+      <Row>{dashboardBtn}{refreshBtn}</Row>
     </>,
     <Pill tone="good">{t.t("Connected — accepting charges")}</Pill>,
   );

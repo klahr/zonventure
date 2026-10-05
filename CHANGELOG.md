@@ -11,6 +11,33 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — Stripe Connect uses Express accounts
+
+- Orgs selling tickets now onboard as Stripe Connect **Express**
+  accounts instead of Standard ones. Tickets are still destination
+  charges on the platform account, which carries refunds and disputes
+  and keeps the platform fee; the org receives the rest. Stripe bills
+  the platform per active Express account and per payout, and the
+  platform's Stripe account must have Express enabled in its Connect
+  settings.
+- New Express accounts are paid out **monthly**, on the 1st, so the
+  platform pays Stripe's per-payout fee once a month per org rather
+  than daily.
+- Settings → Billing has an **Open Stripe dashboard** button, backed by
+  `POST /api/admin/organizations/{orgID}/stripe-connect/dashboard`,
+  which opens the org's Express dashboard (balance, payouts, bank
+  details).
+- Orgs already onboarded as Standard accounts keep selling unchanged.
+  Their dashboard button fails, since Stripe has no Express dashboard
+  for them, so they keep using dashboard.stripe.com.
+
+### Added — fixed part of the platform fee
+
+- `ZV_PLATFORM_FEE_FIXED_CENTS` adds a fixed amount to every ticket's
+  platform fee, so the fee is now `max(percent + fixed, min)`. Use it to
+  cover the per-ticket costs the platform carries: Stripe's fixed card
+  fee and the Connect account and payout fees.
+
 ## [0.16.1] - 2026-10-05
 
 ### Changed — one page per organisation, no shared store
