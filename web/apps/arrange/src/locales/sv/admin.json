@@ -22,5 +22,9 @@
   "{{n}} in use — edit them from their events above": "{{n}} används — redigera dem från sina evenemang ovan",
   "{{n}} of {{total}} listed": "{{n}} av {{total}} listade",
   "{{n}} organization": "{{n}} organisation",
-  "{{n}} organizations": "{{n}} organisationer"
+  "{{n}} organizations": "{{n}} organisationer",
+  "Party adventures": "Partyäventyr",
+  "Party adventures enabled": "Partyäventyr påslagna",
+  "Party adventures disabled": "Partyäventyr avslagna",
+  "Opens the public creator, where anyone makes a party adventure without an account: /app/party/trail/start/{{slug}}.": "Öppnar den publika skaparen, där vem som helst gör ett partyäventyr utan konto: /app/party/trail/start/{{slug}}."
 }

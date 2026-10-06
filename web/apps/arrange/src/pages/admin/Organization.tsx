@@ -9,7 +9,7 @@ import {
 } from "../../ui/index.ts";
 import {
   cancelOrgEvent, connectStatus, deleteLogo, deleteOrganization, getOrganization, getPurchase, grantShare, listCatalog, listOrganizations,
-  listOrgEvents, listPurchases, refreshConnect, refundPurchase, removeMember, revokeShare, setBilled, setPublished, setPublisher, setTrusted,
+  listOrgEvents, listPurchases, refreshConnect, refundPurchase, removeMember, revokeShare, setBilled, setPartyAdventures, setPublished, setPublisher, setTrusted,
   uploadLogo, verifyEmail, voidPurchase,
   type Assignment, type CatalogAdventure, type ConnectStatus, type OrgEvent, type OrgMember, type Organization, type Purchase,
 } from "./api.ts";
@@ -231,6 +231,7 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           <>
             {org.events_running > 0 && <Pill tone="good">{t.t("{{n}} running", { n: org.events_running })}</Pill>}
             {org.trusted && <Pill tone="good">{t.t("Invoice billing")}</Pill>}
+            {org.party_adventures && <Pill tone="good">{t.t("Party adventures")}</Pill>}
             {org.is_publisher && <Pill tone="accent">{t.t("Catalog publisher")}</Pill>}
           </>
         }
@@ -246,7 +247,7 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
         actions={<MoreMenu label={t.t("More")} items={more} />}
       />
 
-      <SetupCard org={org} connect={data.connect} onTrusted={() => act(() => setTrusted(org.id, !org.trusted), org.trusted ? t.t("Invoice billing disabled") : t.t("Invoice billing enabled"))} onPublisher={togglePublisher} reload={reload} />
+      <SetupCard org={org} connect={data.connect} onTrusted={() => act(() => setTrusted(org.id, !org.trusted), org.trusted ? t.t("Invoice billing disabled") : t.t("Invoice billing enabled"))} onParty={() => act(() => setPartyAdventures(org.id, !org.party_adventures), org.party_adventures ? t.t("Party adventures disabled") : t.t("Party adventures enabled"))} onPublisher={togglePublisher} reload={reload} />
 
       <Card
         title={t.t("Users")}
@@ -463,7 +464,7 @@ function eventColumns(t: T, on: EventActions): Column<OrgEvent>[] {
   ];
 }
 
-function SetupCard({ org, connect, onTrusted, onPublisher, reload }: { org: Organization; connect: ConnectStatus | null; onTrusted: () => unknown; onPublisher: () => unknown; reload: () => void }) {
+function SetupCard({ org, connect, onTrusted, onParty, onPublisher, reload }: { org: Organization; connect: ConnectStatus | null; onTrusted: () => unknown; onParty: () => unknown; onPublisher: () => unknown; reload: () => void }) {
   const t = useT();
   const toast = useToast();
   const dialogs = useDialogs();
@@ -513,6 +514,7 @@ function SetupCard({ org, connect, onTrusted, onPublisher, reload }: { org: Orga
         </div>
       </div>
       <Toggle checked={org.trusted} onChange={onTrusted} label={t.t("Invoice billing")} hint={t.t("Lets the org pay for event passes by invoice instead of via Stripe.")} />
+      <Toggle checked={org.party_adventures} onChange={onParty} label={t.t("Party adventures")} hint={t.t("Opens the public creator, where anyone makes a party adventure without an account: /app/party/trail/start/{{slug}}.", { slug: org.slug ?? "" })} />
       <Toggle checked={org.is_publisher} onChange={onPublisher} label={t.t("Catalog publisher")} hint={t.t("The catalog publisher authors the adventures you list in the catalog and commission to other organizations.")} />
       {connect?.platform_fee_enabled && <ConnectRow org={org} status={connect} reload={reload} />}
     </Card>

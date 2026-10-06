@@ -141,6 +141,42 @@ func TestPlatformAdmin(t *testing.T) {
 
 	// The operator lists an org's events without the live token, and
 	// cancels one only through its own org's path.
+	// Party adventures are opened per org by the platform admin only; the
+	// org's public start page follows the flag.
+	t.Run("party adventures toggle", func(t *testing.T) {
+		root := root.in(t)
+		orgID := orgIDByName(t, root, "TestOrg")
+		var org struct {
+			Slug            string `json:"slug"`
+			PartyAdventures bool   `json:"party_adventures"`
+		}
+		if s := root.do("GET", "/api/admin/organizations/"+itoa(orgID), nil, &org); s != 200 || org.PartyAdventures {
+			t.Fatalf("org = %d %+v", s, org)
+		}
+		path := "/api/admin/organizations/" + itoa(orgID) + "/party-adventures"
+		if s := boss.do("POST", path, map[string]any{"enabled": true}, nil); s != 403 {
+			t.Errorf("org user toggles = %d, want 403", s)
+		}
+		if s := root.do("POST", path, map[string]any{"enabled": true}, nil); s != 200 {
+			t.Fatalf("toggle = %d", s)
+		}
+		var start struct {
+			Enabled bool `json:"enabled"`
+		}
+		if s := root.do("GET", "/api/o/"+org.Slug+"/trail", nil, &start); s != 200 || !start.Enabled {
+			t.Errorf("start page after enabling = %d %+v", s, start)
+		}
+		if s := root.do("GET", "/api/admin/organizations/"+itoa(orgID), nil, &org); s != 200 || !org.PartyAdventures {
+			t.Errorf("org after enabling = %d %+v", s, org)
+		}
+		if s := root.do("POST", path, map[string]any{"enabled": false}, nil); s != 200 {
+			t.Fatalf("toggle off = %d", s)
+		}
+		if s := root.do("POST", "/api/admin/organizations/999999/party-adventures", map[string]any{"enabled": true}, nil); s != 404 {
+			t.Errorf("no such org = %d, want 404", s)
+		}
+	})
+
 	t.Run("org events", func(t *testing.T) {
 		boss, root := boss.in(t), root.in(t)
 		orgID := orgIDByName(t, root, "TestOrg")

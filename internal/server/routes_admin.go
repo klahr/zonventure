@@ -423,6 +423,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Post("/organizations", adminH.CreateOrganization)
 			r.Patch("/organizations/{orgID}", adminH.UpdateOrganization)
 			r.Post("/organizations/{orgID}/trusted", adminH.SetOrgTrusted)
+			r.Post("/organizations/{orgID}/party-adventures", adminH.SetOrgPartyAdventures)
 			r.Delete("/organizations/{orgID}", adminH.DeleteOrganization)
 			// Brand logo upload — surfaced on the recap PDF cover and
 			// (later) on the play / arrange chrome. PNG/JPEG/WebP only,

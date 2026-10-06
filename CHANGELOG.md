@@ -11,6 +11,14 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — switch party adventures on per organisation
+
+- **Site admin → organisation → Settings → Party adventures** opens or
+  closes that org's public creator (`organizations.quiz_trail_enabled`,
+  `POST /api/admin/organizations/{id}/party-adventures`). Enabled orgs
+  show a "Party adventures" badge in the organisation list and on the
+  org's page. No more SQL to turn it on.
+
 ## [0.19.0] - 2026-10-06
 
 ### Changed — party adventures are free for small parties

@@ -63,6 +63,9 @@ type organizationDTO struct {
 	Trusted bool `json:"trusted"`
 	// IsPublisher marks the org that authors the platform catalog.
 	IsPublisher bool `json:"is_publisher"`
+	// PartyAdventures = the org's public party adventure creator is
+	// open (quiz_trail_enabled). Toggled by global admins only.
+	PartyAdventures bool `json:"party_adventures"`
 }
 
 /* ---------------- Admin-only: organizations CRUD ---------------- */
@@ -80,7 +83,7 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
 		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo,
 		       (o.trusted <> 0) AS trusted,
-		       o.is_publisher
+		       o.is_publisher, o.quiz_trail_enabled
 		FROM organizations o
 		ORDER BY LOWER(o.name)
 	`)
@@ -92,7 +95,7 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	out := []organizationDTO{}
 	for rows.Next() {
 		o := organizationDTO{Members: []orgMemberDTO{}, Assignments: []assignmentDTO{}}
-		if err := rows.Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted, &o.IsPublisher); err != nil {
+		if err := rows.Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted, &o.IsPublisher, &o.PartyAdventures); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -138,9 +141,9 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
 		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo,
 		       (o.trusted <> 0) AS trusted,
-		       o.is_publisher
+		       o.is_publisher, o.quiz_trail_enabled
 		FROM organizations o WHERE o.id = $1
-	`, id).Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted, &o.IsPublisher)
+	`, id).Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted, &o.IsPublisher, &o.PartyAdventures)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "organization not found")
 		return
@@ -418,6 +421,32 @@ func (h *Handlers) SetOrgTrusted(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"trusted": req.Trusted})
+}
+
+// SetOrgPartyAdventures opens or closes the org's public party adventure
+// creator (/app/party/trail/start/{slug}). Admin-only.
+func (h *Handlers) SetOrgPartyAdventures(w http.ResponseWriter, r *http.Request) {
+	id, ok := orgIDFromURL(r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	res, err := h.DB.ExecContext(r.Context(),
+		`UPDATE organizations SET quiz_trail_enabled = $1 WHERE id = $2`, req.Enabled, id)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		httpx.Error(w, http.StatusNotFound, "organization not found")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"enabled": req.Enabled})
 }
 
 // DeleteOrganization deletes an organization (and everything it cascades to:

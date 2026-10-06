@@ -33,6 +33,7 @@ export interface Organization {
   has_logo: boolean;
   trusted: boolean;
   is_publisher: boolean;
+  party_adventures: boolean;
 }
 
 /** internal/admin/handlers.go eventDTO, the fields the operator view reads. */
@@ -119,6 +120,7 @@ export const refreshConnect = (id: number) => post<ConnectStatus>(`${org(id)}/st
 export const createOrganization = (name: string) => post<Organization>("/api/admin/organizations", { name });
 export const renameOrganization = (id: number, name: string) => patch<void>(org(id), { name });
 export const setTrusted = (id: number, trusted: boolean) => post<unknown>(`${org(id)}/trusted`, { trusted });
+export const setPartyAdventures = (id: number, enabled: boolean) => post<unknown>(`${org(id)}/party-adventures`, { enabled });
 export const setPublisher = (id: number, isPublisher: boolean, password?: string) =>
   put<void>(`${org(id)}/publisher`, { is_publisher: isPublisher }, password ? pw(password) : {});
 export const deleteOrganization = (id: number, password: string) => request<void>(org(id), { method: "DELETE", ...pw(password) });

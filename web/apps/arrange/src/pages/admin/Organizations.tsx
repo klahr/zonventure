@@ -76,10 +76,11 @@ function OrgTile({ org }: { org: Organization }) {
         </>
       }
     >
-      {(org.events_running > 0 || org.trusted || org.is_publisher) && (
+      {(org.events_running > 0 || org.trusted || org.party_adventures || org.is_publisher) && (
         <span className="ad-inline">
           {org.events_running > 0 && <Pill tone="good">{t.t("{{n}} running", { n: org.events_running })}</Pill>}
           {org.trusted && <Pill tone="good">{t.t("Invoice billing")}</Pill>}
+          {org.party_adventures && <Pill tone="good">{t.t("Party adventures")}</Pill>}
           {org.is_publisher && <Pill tone="accent">{t.t("Catalog publisher")}</Pill>}
         </span>
       )}
