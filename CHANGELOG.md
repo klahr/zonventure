@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-06
+
 ### Added — cover pictures for party adventure looks
 
 - **Every party adventure look has a cover picture** (all 14, made with
