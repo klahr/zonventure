@@ -15,87 +15,6 @@ export interface Offer {
   payments_open: boolean;
 }
 
-/** A station card: a zone of the adventure, as a card the host hides. */
-export interface Station {
-  zone: string;
-  name: string;
-  code: string;
-  url: string;
-}
-
-export interface Team {
-  id: number;
-  name: string;
-  size: number;
-  joined: number;
-  token: string;
-  join_url: string;
-  voucher: string;
-  finished: boolean;
-  score: number;
-}
-
-/** The host page's party: internal/admin/party.go hostPartyDTO. */
-export interface Party {
-  name: string;
-  adventure_title: string;
-  org_name: string;
-  state: "scheduled" | "running" | "paused" | "completed" | "cancelled";
-  kids: number;
-  valid_until: string;
-  expired: boolean;
-  stations: Station[];
-  teams: Team[];
-  live_url: string;
-  play_url: string;
-  mode: "qr" | "park";
-  cards_ok: boolean;
-  park_ok: boolean;
-  values: HostValue[];
-  editables: Editable[];
-  places: Place[];
-}
-
-/** A word the host fills in: internal/admin/party_adapt.go hostValueDTO. */
-export interface HostValue {
-  slug: string;
-  label: string;
-  default: string;
-  value: string;
-}
-
-/** A host's version of a text or quiz question. */
-export interface BlockOverride {
-  text?: string;
-  options?: string[];
-  answer?: string;
-}
-
-/** Something the host may rewrite: a text, a quiz question, or a typed answer (no kind). */
-export interface Editable {
-  key: string;
-  node: string;
-  step: string;
-  kind?: "text" | "quiz";
-  text?: string;
-  options?: string[];
-  answer?: string;
-  accepts?: string[];
-  mine?: BlockOverride;
-  my_accepts?: string[];
-}
-
-/** One of the adventure's places, for a party in a park. */
-export interface Place {
-  slug: string;
-  name: string;
-  movable: boolean;
-  lat: number;
-  lng: number;
-  radius_m: number;
-  placed: boolean;
-}
-
 const enc = encodeURIComponent;
 
 export const getOffer = (slug: string, id: string) => request<Offer>(`/api/o/${enc(slug)}/parties/${enc(id)}`);
@@ -105,28 +24,18 @@ export const book = (slug: string, id: string, body: { email: string; kids: numb
 
 export const resend = (email: string) => request<void>("/api/party/resend", { method: "POST", body: { email } });
 
-export const getParty = (token: string) => request<Party>(`/api/party/${enc(token)}`);
+/** The join page's view of a hosted event: internal/admin/hosted.go joinInfoDTO. */
+export interface JoinInfo {
+  name: string;
+  adventure_title: string;
+  org_name: string;
+  status: "open" | "full" | "not_ready" | "ended";
+}
 
-export const addTeam = (token: string, name: string, size: number) =>
-  request<{ id: number }>(`/api/party/${enc(token)}/teams`, { method: "POST", body: { name, size } });
+export const getJoin = (token: string) => request<JoinInfo>(`/api/join/${enc(token)}`);
 
-export const removeTeam = (token: string, id: number) => request<void>(`/api/party/${enc(token)}/teams/${id}`, { method: "DELETE" });
-
-export const partyAction = (token: string, action: "start" | "pause" | "resume" | "end") =>
-  request<void>(`/api/party/${enc(token)}/${action}`, { method: "POST" });
-
-export const personalise = (token: string, body: { values: Record<string, string>; blocks: Record<string, BlockOverride>; answers: Record<string, string[]> }) =>
-  request<void>(`/api/party/${enc(token)}/personalise`, { method: "PUT", body });
-
-export const setMode = (token: string, mode: "qr" | "park") => request<void>(`/api/party/${enc(token)}/mode`, { method: "PUT", body: { mode } });
-
-export const placeAt = (token: string, slug: string, lat: number, lng: number) =>
-  request<void>(`/api/party/${enc(token)}/places/${enc(slug)}`, { method: "PUT", body: { lat, lng } });
-
-export const shiftTo = (token: string, lat: number, lng: number) => request<void>(`/api/party/${enc(token)}/places/shift`, { method: "POST", body: { lat, lng } });
-
-export const stationQR = (token: string, zone: string) => `/api/party/${enc(token)}/qr?station=${enc(zone)}`;
-export const teamQR = (token: string, id: number) => `/api/party/${enc(token)}/qr?team=${id}`;
+export const join = (token: string, team: string, headcount: number) =>
+  request<{ play_url: string }>(`/api/join/${enc(token)}`, { method: "POST", body: { team, headcount } });
 
 /** A price in minor units, in the reader's locale. */
 export function money(cents: number, currency: string, locale: string): string {

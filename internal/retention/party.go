@@ -13,10 +13,10 @@ import (
 const partyBatchSize = 50
 
 // prunePartyEvents deletes parties whose time is up, whole: the event and
-// everything about its players, and the party's own graph. A party is
-// kept days after it ended, for its results page; one never started goes
-// when its valid_until passes; one started but never ended goes days
-// after it started. The ticket purchase stays for bookkeeping, its email
+// everything about its players, and the graphs its games played. A party
+// is kept days after it ended, for its results page; one never started
+// goes when its valid_until passes; one still running days after its
+// valid_until (which the hosted sweeper normally ends) goes then. The ticket purchase stays for bookkeeping, its email
 // blanked by the ticket_purchases_anonymise trigger.
 func prunePartyEvents(ctx context.Context, db *sql.DB, days int) {
 	stmt := `
@@ -28,8 +28,7 @@ func prunePartyEvents(ctx context.Context, db *sql.DB, days int) {
 		      (state IN ('completed','cancelled')
 		        AND COALESCE(completed_at, cancelled_at)::timestamp AT TIME ZONE 'UTC' < now() - make_interval(days => $1))
 		      OR (state = 'scheduled' AND valid_until < now())
-		      OR (state IN ('running','paused')
-		        AND started_at::timestamp AT TIME ZONE 'UTC' < now() - make_interval(days => $1))
+		      OR (state IN ('running','paused') AND valid_until < now() - make_interval(days => $1))
 		    )
 		    LIMIT ` + strconv.Itoa(partyBatchSize) + `
 		  )

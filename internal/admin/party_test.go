@@ -75,6 +75,8 @@ func newPartyFixture(t *testing.T) (*partyFixture, func()) {
 	console.Use(injectUser(user))
 	console.Get("/api/admin/party-offers", f.h.ListPartyOffers)
 	console.Put("/api/admin/party-offers/{slug}", f.h.PutPartyOffer)
+	console.Get("/api/admin/events/{eventID}/hosted", f.h.GetHostParty)
+	console.Post("/api/admin/events/{eventID}/hosted/finish-game", f.h.FinishHostedGame)
 	f.console = console
 
 	public := chi.NewRouter()
@@ -82,8 +84,11 @@ func newPartyFixture(t *testing.T) (*partyFixture, func()) {
 	public.Post("/api/o/{slug}/parties/{offerID}/book", f.h.BookParty)
 	public.Post("/api/party/resend", f.h.ResendPartyLinks)
 	public.Get("/api/party/{token}", f.h.GetHostParty)
-	public.Post("/api/party/{token}/teams", f.h.AddHostTeam)
-	public.Delete("/api/party/{token}/teams/{teamID}", f.h.DeleteHostTeam)
+	public.Delete("/api/party/{token}/teams/{teamID}", f.h.RemoveHostTeam)
+	public.Post("/api/party/{token}/finish-game", f.h.FinishHostedGame)
+	public.Post("/api/party/{token}/send-player-link", f.h.SendHostedPlayerLink)
+	public.Get("/api/join/{token}", f.h.GetJoin)
+	public.Post("/api/join/{token}", f.h.Join)
 	public.Put("/api/party/{token}/personalise", f.h.PutHostPersonalise)
 	public.Put("/api/party/{token}/mode", f.h.PutHostMode)
 	public.Put("/api/party/{token}/places/{slug}", f.h.PutHostPlace)
@@ -151,16 +156,35 @@ func (f *partyFixture) book(t *testing.T, kids int) (int64, string) {
 }
 
 type hostView struct {
-	Name     string `json:"name"`
-	State    string `json:"state"`
-	Kids     int    `json:"kids"`
-	Stations []struct {
+	Name      string `json:"name"`
+	State     string `json:"state"`
+	Kids      int    `json:"kids"`
+	PlayerURL string `json:"player_url"`
+	Round     int    `json:"round"`
+	RoundOpen bool   `json:"round_open"`
+	Stations  []struct {
 		Zone, Name, Code, URL string
 	} `json:"stations"`
 	Teams []struct {
-		ID   int64 `json:"id"`
-		Size int   `json:"size"`
+		ID        int64 `json:"id"`
+		Headcount int   `json:"headcount"`
 	} `json:"teams"`
+	Rounds []struct {
+		Round   int `json:"round"`
+		Teams   int `json:"teams"`
+		Players int `json:"players"`
+	} `json:"rounds"`
+}
+
+// playerToken is the player link's secret, from the host page.
+func (v hostView) playerToken() string {
+	return v.PlayerURL[strings.LastIndex(v.PlayerURL, "/")+1:]
+}
+
+// join makes a team from the player link, returning the response.
+func (f *partyFixture) join(t *testing.T, player, team string, headcount int) *httptest.ResponseRecorder {
+	t.Helper()
+	return call(t, f.public, "POST", "/api/join/"+player, map[string]any{"team": team, "headcount": headcount})
 }
 
 func (f *partyFixture) host(t *testing.T, token string) hostView {
@@ -212,28 +236,27 @@ func TestParty_BookHostAndPlay(t *testing.T) {
 		t.Errorf("buyer_email = %q", email)
 	}
 
-	// Starting with no team is refused; so is a team past the booking.
-	if w := call(t, f.public, "POST", "/api/party/"+token+"/start", nil); w.Code != http.StatusConflict {
-		t.Errorf("start with no team: %d, want 409", w.Code)
+	// The first team to join opens the first game and starts the party.
+	player := v.playerToken()
+	if !strings.Contains(v.PlayerURL, "/j/") || player == "" {
+		t.Fatalf("player link = %q", v.PlayerURL)
 	}
-	if w := call(t, f.public, "POST", "/api/party/"+token+"/teams", map[string]any{"name": "Owls", "size": 3}); w.Code != http.StatusCreated {
-		t.Fatalf("add team: %d %s", w.Code, w.Body)
+	w = f.join(t, player, "Owls", 3)
+	if w.Code != http.StatusCreated || !strings.Contains(w.Body.String(), "/play?t=") {
+		t.Fatalf("join: %d %s", w.Code, w.Body)
 	}
-	if w := call(t, f.public, "POST", "/api/party/"+token+"/teams", map[string]any{"name": "Foxes", "size": 3}); w.Code != http.StatusConflict {
-		t.Errorf("team past the booking: %d %s, want 409", w.Code, w.Body)
+	if w := f.join(t, player, "owls", 2); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "name_taken") {
+		t.Errorf("same name again: %d %s", w.Code, w.Body)
 	}
-	if w := call(t, f.public, "POST", "/api/party/"+token+"/teams", map[string]any{"name": "Foxes", "size": 2}); w.Code != http.StatusCreated {
+	if w := f.join(t, player, "Foxes", 2); w.Code != http.StatusCreated {
 		t.Fatalf("second team: %d %s", w.Code, w.Body)
 	}
-	if w := call(t, f.public, "POST", "/api/party/"+token+"/start", nil); w.Code != http.StatusNoContent {
-		t.Fatalf("start: %d %s", w.Code, w.Body)
-	}
 	v = f.host(t, token)
-	if v.State != "running" || len(v.Teams) != 2 {
-		t.Fatalf("after start: %+v", v)
+	if v.State != "running" || v.Round != 1 || !v.RoundOpen || len(v.Teams) != 2 || v.Teams[0].Headcount != 3 {
+		t.Fatalf("after joining: %+v", v)
 	}
 
-	// The party plays its own copy of the graph: stations, without the
+	// The game plays its own copy of the graph: stations, without the
 	// map block, never among the adventure's versions.
 	var version int
 	var doc string
@@ -276,14 +299,107 @@ func TestParty_BookHostAndPlay(t *testing.T) {
 	if res, err := e.Answer(context.Background(), team, "q", "acorns"); err != nil || !res.Accepted {
 		t.Fatalf("answer at the card: %+v %v", res, err)
 	}
-
-	// Ending the party keeps it for its results page; the sweeper's
-	// test below covers its deletion.
-	if w := call(t, f.public, "POST", "/api/party/"+token+"/end", nil); w.Code != http.StatusNoContent {
-		t.Fatalf("end: %d %s", w.Code, w.Body)
+	// Every team finishing does not end a hosted party: it plays on.
+	if v := f.host(t, token); v.State != "running" {
+		t.Errorf("after a team finished: state %q", v.State)
 	}
-	if w := call(t, f.public, "POST", "/api/party/"+token+"/teams", map[string]any{"name": "Late", "size": 1}); w.Code != http.StatusConflict {
-		t.Errorf("team after the end: %d, want 409", w.Code)
+
+	// Finishing the game mails the host its summary; the next team to
+	// join opens game 2, playing a copy of its own.
+	mails := len(f.mail.messages)
+	if w := call(t, f.public, "POST", "/api/party/"+token+"/finish-game", nil); w.Code != http.StatusNoContent {
+		t.Fatalf("finish game: %d %s", w.Code, w.Body)
+	}
+	if len(f.mail.messages) != mails+1 || !strings.Contains(f.mail.messages[mails].Text, "Owls") ||
+		!strings.Contains(f.mail.messages[mails].Text, "2 teams, 5 players") {
+		t.Fatalf("summary mail: %+v", f.mail.messages[mails:])
+	}
+	if w := call(t, f.public, "POST", "/api/party/"+token+"/finish-game", nil); w.Code != http.StatusConflict {
+		t.Errorf("finish with no game: %d", w.Code)
+	}
+	if w := f.join(t, player, "Owls", 4); w.Code != http.StatusCreated {
+		t.Fatalf("join game 2: %d %s", w.Code, w.Body)
+	}
+	v = f.host(t, token)
+	if v.Round != 2 || len(v.Teams) != 1 || len(v.Rounds) != 2 || v.Rounds[1].Teams != 2 || v.Rounds[1].Players != 5 {
+		t.Fatalf("game 2: %+v", v)
+	}
+	var graphs int
+	_ = f.h.DB.QueryRow(`SELECT COUNT(DISTINCT s.graph_id) FROM team_graph_state s JOIN teams t ON t.id = s.team_id JOIN events e ON e.id = t.event_id WHERE e.party`).Scan(&graphs)
+	if graphs != 2 {
+		t.Errorf("games played %d graphs, want one each", graphs)
+	}
+
+	// Once its days are up the sweeper ends it, and nobody joins.
+	if _, err := f.h.DB.Exec(`UPDATE events SET valid_until = now() - interval '1 minute' WHERE party`); err != nil {
+		t.Fatal(err)
+	}
+	f.h.SweepHosted(context.Background())
+	if v := f.host(t, token); v.State != "completed" || v.RoundOpen {
+		t.Errorf("after its days: %+v", v)
+	}
+	if w := f.join(t, player, "Late", 1); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "ended") {
+		t.Errorf("join after the end: %d %s", w.Code, w.Body)
+	}
+}
+
+// TestParty_Console: the org's arrangers see a hosted event's host page
+// in the console, and finish its game; another org's do not.
+func TestParty_Console(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newPartyFixture(t)
+	defer cleanup()
+	_, token := f.book(t, 5)
+	var eventID int64
+	if err := f.h.DB.QueryRow(`SELECT id FROM events WHERE party`).Scan(&eventID); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/admin/events/" + strconv.FormatInt(eventID, 10) + "/hosted"
+	w := call(t, f.console, "GET", path, nil)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "/j/") {
+		t.Fatalf("console host page: %d %s", w.Code, w.Body)
+	}
+	if w := f.join(t, f.host(t, token).playerToken(), "Owls", 2); w.Code != http.StatusCreated {
+		t.Fatalf("join: %d %s", w.Code, w.Body)
+	}
+	if w := call(t, f.console, "POST", path+"/finish-game", nil); w.Code != http.StatusNoContent {
+		t.Fatalf("console finish: %d %s", w.Code, w.Body)
+	}
+
+	var otherOrg int64
+	if err := f.h.DB.QueryRow(`INSERT INTO organizations(name, slug) VALUES ('Other', 'other') RETURNING id`).Scan(&otherOrg); err != nil {
+		t.Fatal(err)
+	}
+	other := chi.NewRouter()
+	other.Use(injectUser(auth.User{ID: 999, Role: auth.RoleOrgAdmin, OrgID: &otherOrg}))
+	other.Get("/api/admin/events/{eventID}/hosted", f.h.GetHostParty)
+	if w := call(t, other, "GET", path, nil); w.Code != http.StatusForbidden {
+		t.Errorf("another org's console: %d, want 403", w.Code)
+	}
+}
+
+// TestParty_GameIsFull: a game takes 15 teams per block bought.
+func TestParty_GameIsFull(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newPartyFixture(t)
+	defer cleanup()
+	_, token := f.book(t, 5)
+	player := f.host(t, token).playerToken()
+	for i := range admin.TeamsPerBlock {
+		if w := f.join(t, player, "Team "+strconv.Itoa(i), 1); w.Code != http.StatusCreated {
+			t.Fatalf("team %d: %d %s", i, w.Code, w.Body)
+		}
+	}
+	if w := f.join(t, player, "One too many", 1); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "full") {
+		t.Fatalf("team past the limit: %d %s", w.Code, w.Body)
+	}
+	// A removed team frees its place.
+	v := f.host(t, token)
+	if w := call(t, f.public, "DELETE", "/api/party/"+token+"/teams/"+strconv.FormatInt(v.Teams[0].ID, 10), nil); w.Code != http.StatusNoContent {
+		t.Fatalf("remove: %d %s", w.Code, w.Body)
+	}
+	if w := f.join(t, player, "One too many", 1); w.Code != http.StatusCreated {
+		t.Fatalf("after a removal: %d %s", w.Code, w.Body)
 	}
 }
 
@@ -436,22 +552,21 @@ func TestParty_PersonaliseAndPark(t *testing.T) {
 	if w := call(t, f.public, "PUT", "/api/party/"+token+"/mode", map[string]any{"mode": "park"}); w.Code != http.StatusNoContent {
 		t.Fatalf("park mode: %d %s", w.Code, w.Body)
 	}
-	if w := call(t, f.public, "POST", "/api/party/"+token+"/teams", map[string]any{"name": "Owls", "size": 4}); w.Code != http.StatusCreated {
-		t.Fatalf("team: %d", w.Code)
-	}
-	if w := call(t, f.public, "POST", "/api/party/"+token+"/start", nil); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "places_missing") {
-		t.Fatalf("start before placing: %d %s", w.Code, w.Body)
+	player := f.host(t, token).playerToken()
+	if w := f.join(t, player, "Owls", 4); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "not_ready") {
+		t.Fatalf("join before placing: %d %s", w.Code, w.Body)
 	}
 	// The host's park, far from where the author drew the oak.
 	if w := call(t, f.public, "PUT", "/api/party/"+token+"/places/oak", map[string]any{"lat": 57.70, "lng": 11.97}); w.Code != http.StatusNoContent {
 		t.Fatalf("place: %d %s", w.Code, w.Body)
 	}
-	if w := call(t, f.public, "POST", "/api/party/"+token+"/start", nil); w.Code != http.StatusNoContent {
-		t.Fatalf("start: %d %s", w.Code, w.Body)
+	if w := f.join(t, player, "Owls", 4); w.Code != http.StatusCreated {
+		t.Fatalf("join: %d %s", w.Code, w.Body)
 	}
-	// Changing anything now is refused: the party plays as it was set up.
+	// Changing anything during a game is refused: it plays as it was set
+	// up. Between games it is allowed again.
 	if w := call(t, f.public, "PUT", "/api/party/"+token+"/mode", map[string]any{"mode": "qr"}); w.Code != http.StatusConflict {
-		t.Errorf("mode after start: %d", w.Code)
+		t.Errorf("mode during a game: %d", w.Code)
 	}
 
 	host := f.host(t, token)
@@ -479,5 +594,13 @@ func TestParty_PersonaliseAndPark(t *testing.T) {
 	away.Locator = fixedLocator{59.33, 18.06}
 	if v, _ := away.Snapshot(context.Background(), host.Teams[0].ID); v.Here {
 		t.Error("the author's oak still counts")
+	}
+	if w := call(t, f.public, "POST", "/api/party/"+token+"/finish-game", nil); w.Code != http.StatusNoContent {
+		t.Fatalf("finish game: %d %s", w.Code, w.Body)
+	}
+	if w := call(t, f.public, "PUT", "/api/party/"+token+"/personalise", map[string]any{
+		"values": map[string]string{"name": "Alva"}, "answers": map[string][]string{"q": {"horse"}},
+	}); w.Code != http.StatusNoContent {
+		t.Errorf("personalise between games: %d %s", w.Code, w.Body)
 	}
 }

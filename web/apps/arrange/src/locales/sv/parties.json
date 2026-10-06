@@ -1,6 +1,6 @@
 {
   "+ {{price}} per child": "+ {{price}} per barn",
-  "A parent books a party on your page and pays, with no account. They get a host page to set up teams, print cards and start the game; everything about the players is deleted a while after the party.": "En förälder bokar och betalar ett party på er sida, utan konto. De får en värdsida där de delar in lag, skriver ut kort och startar spelet; allt om spelarna raderas en tid efter partyt.",
+  "A parent books a party on your page and pays, with no account. They get a host page to print the cards and share the player link; teams join and play game after game for 14 days, then everything about the players is deleted.": "En förälder bokar och betalar ett party på er sida, utan konto. De får en värdsida där de skriver ut korten och delar spelarlänken; lagen ansluter och spelar omgång efter omgång i 14 dagar, sedan raderas allt om spelarna.",
   "A party of {{n}} children costs {{price}}.": "Ett party med {{n}} barn kostar {{price}}.",
   "A party plays without asking where each player stands. See below what stops each adventure.": "Ett party spelas utan att fråga var varje spelare befinner sig. Se nedan vad som hindrar varje äventyr.",
   "About parties": "Om party",
@@ -21,7 +21,7 @@
   "No party offers yet.": "Inga partyerbjudanden än.",
   "None of your adventures can be a party yet.": "Inget av era äventyr kan bli ett party än.",
   "Open the booking page": "Öppna bokningssidan",
-  "Parties": "Party",
+  "Hosted": "Värdlett",
   "Party offer": "Partyerbjudande",
   "Party offer created": "Partyerbjudandet skapat",
   "Party offers": "Partyerbjudanden",
@@ -30,5 +30,17 @@
   "Set a price before the party can be booked": "Sätt ett pris innan partyt kan bokas",
   "What the children will do, how long it takes, what to bring.": "Vad barnen ska göra, hur lång tid det tar, vad de ska ta med.",
   "{{n}} adventures can't be offered as a party": "{{n}} äventyr kan inte erbjudas som party",
-  "{{n}} cards to hide": "{{n}} kort att gömma"
+  "{{n}} cards to hide": "{{n}} kort att gömma",
+  "Games": "Omgångar",
+  "Hosted events": "Värdledda event",
+  "Its host runs it from the host page, game after game.": "Värden styr det från värdsidan, omgång efter omgång.",
+  "No hosted events yet. They appear here when someone books one of your offers.": "Inga värdledda event än. De dyker upp här när någon bokar ett av era erbjudanden.",
+  "Offers": "Erbjudanden",
+  "Places": "Platser",
+  "Player link": "Spelarlänk",
+  "Private events their hosts run themselves, game after game, with no account.": "Privata event som värdarna själva styr, omgång efter omgång, utan konto.",
+  "Teams join from it and name themselves.": "Lagen ansluter via den och namnger sig själva.",
+  "The host's words": "Värdens ord",
+  "What the adventure lets the host make their own. It applies from the next game.": "Det äventyret låter värden göra till sitt eget. Det gäller från nästa omgång.",
+  "Where it is played": "Var det spelas"
 }

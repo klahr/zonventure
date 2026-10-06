@@ -16,7 +16,8 @@
     "react-dom": "^19.2.0",
     "@zonventure/api": "*",
     "@zonventure/ui": "*",
-    "@zonventure/i18n": "*"
+    "@zonventure/i18n": "*",
+    "@zonventure/hosted": "*"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

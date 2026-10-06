@@ -42,6 +42,8 @@ func TestPrunePartyEvents(t *testing.T) {
 	recent := event("recent", "completed", "completed_at = to_char(now() - interval '2 days', 'YYYY-MM-DD HH24:MI:SS')", true)
 	lapsed := event("lapsed", "scheduled", "valid_until = now() - interval '1 day'", true)
 	waiting := event("waiting", "scheduled", "", true)
+	playing := event("playing", "running", "", true)
+	stuck := event("stuck", "running", "valid_until = now() - interval '20 days'", true)
 	ordinary := event("ordinary", "completed", "completed_at = to_char(now() - interval '20 days', 'YYYY-MM-DD HH24:MI:SS')", false)
 
 	// The old party played its own graph, and a team played it.
@@ -59,6 +61,12 @@ func TestPrunePartyEvents(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO team_graph_state(team_id, event_id, graph_id) VALUES ($1, $2, $3)`, teamID, old, graphID); err != nil {
 		t.Fatal(err)
 	}
+	// And a later game of it played a copy of its own.
+	var roundGraphID int64
+	if err := db.QueryRow(`INSERT INTO adventure_graphs(adventure_id, version, graph, label, event_id) VALUES ($1, -nextval('round_graph_version_seq'), '{"nodes":[],"edges":[]}', 'party', $2) RETURNING id`,
+		advID, old).Scan(&roundGraphID); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.QueryRow(`
 		INSERT INTO ticket_purchases(kind, event_id, buyer_email, team_size, amount_cents, currency, state)
 		VALUES ('party', $1, 'parent@example.com', 5, 34400, 'sek', 'paid') RETURNING id
@@ -68,7 +76,7 @@ func TestPrunePartyEvents(t *testing.T) {
 
 	prunePartyEvents(ctx, db, 14)
 
-	for id, want := range map[int64]bool{old: false, recent: true, lapsed: false, waiting: true, ordinary: true} {
+	for id, want := range map[int64]bool{old: false, recent: true, lapsed: false, waiting: true, ordinary: true, playing: true, stuck: false} {
 		var n int
 		_ = db.QueryRow(`SELECT COUNT(*) FROM events WHERE id = $1`, id).Scan(&n)
 		if (n == 1) != want {
@@ -76,7 +84,7 @@ func TestPrunePartyEvents(t *testing.T) {
 		}
 	}
 	var graphs int
-	_ = db.QueryRow(`SELECT COUNT(*) FROM adventure_graphs WHERE id = $1`, graphID).Scan(&graphs)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM adventure_graphs WHERE id IN ($1, $2)`, graphID, roundGraphID).Scan(&graphs)
 	if graphs != 0 {
 		t.Error("the party's graph outlived it")
 	}

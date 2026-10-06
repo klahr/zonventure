@@ -1,0 +1,222 @@
+/* The hosted views, shared by the host page and the console, on the
+   shared tokens (@zonventure/ui/tokens.css), which both apps load. */
+
+.hosted-muted {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.hosted-note {
+  padding: var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.hosted-sub {
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-size: var(--text-base);
+}
+.hosted-pill {
+  display: inline-block;
+  margin-left: var(--sp-2);
+  padding: 0.1em 0.6em;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+}
+.hosted-pill--paused {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+/* Forms */
+.hosted-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.hosted-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  flex: 1;
+  min-width: 0;
+}
+.hosted-field > span {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+.hosted-field input,
+.hosted-field textarea,
+.hosted-quiz input:not([type="radio"]) {
+  box-sizing: border-box;
+  min-height: 2.75rem;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  width: 100%;
+}
+.hosted-field input:focus-visible,
+.hosted-field textarea:focus-visible,
+.hosted-quiz input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.hosted-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: flex-end;
+  margin: var(--sp-3) 0;
+}
+
+/* Buttons */
+.hosted-btn {
+  min-height: 2.75rem;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hosted-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.hosted-btn--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.hosted-btn--quiet {
+  border-color: transparent;
+  background: transparent;
+  font-size: var(--text-lg);
+}
+.hosted-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin: var(--sp-3) 0;
+}
+
+/* The player link */
+.hosted-link {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  align-items: flex-start;
+}
+.hosted-link__qr {
+  flex: none;
+  width: 200px;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  background: #fff;
+}
+.hosted-link__body {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+.hosted-link__url {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.hosted-link__url code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+/* Games */
+.hosted-game__status {
+  margin: 0 0 var(--sp-2);
+}
+.hosted-teams,
+.hosted-rounds,
+.hosted-places {
+  list-style: none;
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+}
+.hosted-teams li,
+.hosted-places li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px dashed var(--border-soft);
+}
+.hosted-teams li > div,
+.hosted-places li > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hosted-rounds li {
+  padding: var(--sp-1) 0;
+}
+
+/* Where the event is played: two cards to pick from. */
+.hosted-choices {
+  display: grid;
+  gap: var(--sp-2);
+}
+.hosted-choice {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-start;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.hosted-choice.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+.hosted-choice span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hosted-choice small {
+  color: var(--muted);
+}
+
+/* A quiz question the host rewrites. */
+.hosted-quiz {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+.hosted-quiz legend {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+.hosted-quiz__opt {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.hosted-quiz__mark {
+  width: 1.5rem;
+  font-weight: 700;
+  text-align: center;
+}

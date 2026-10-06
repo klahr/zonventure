@@ -27,6 +27,7 @@ import (
 	"github.com/klahr/zonventure/internal/payments"
 	simulatedprovider "github.com/klahr/zonventure/internal/payments/simulated"
 	stripeprovider "github.com/klahr/zonventure/internal/payments/stripe"
+	"github.com/klahr/zonventure/internal/periodic"
 	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/player"
 	"github.com/klahr/zonventure/internal/public"
@@ -366,6 +367,9 @@ func New(cfg Config) http.Handler {
 		Updates:        updateSvc,
 		ConfirmLimiter: newSweptLimiter(bgCtx),
 	}
+	// Hosted events: finish idle games, end lapsed events, retry game
+	// summaries. See admin/hosted.go.
+	periodic.Start(bgCtx, time.Minute, adminH.SweepHosted)
 	publicH := &public.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL, Engine: playerH.Engine,
 		// Same PlatformFee as adminH so the /store listing filter

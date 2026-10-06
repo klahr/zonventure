@@ -101,12 +101,12 @@ func EnsureDev(ctx context.Context, q Querier, adventureID int64, g *graph.Graph
 	return id, err
 }
 
-// SaveParty stores the graph a party event plays — its adventure's
-// published version as the party adapted it — and returns its id. The
-// row is the event's own: version -eventID, so it is never counted among
-// the versions, never published, and goes when the event is purged. An
-// invalid graph is refused with InvalidError, like any release.
-func SaveParty(ctx context.Context, q Querier, adventureID, eventID int64, g *graph.Graph) (int64, error) {
+// SaveRound stores the graph one game (round) of a hosted event plays
+// and returns its id. Each round gets a row of its own, so a team keeps
+// the graph it started with while the next game plays the host's latest
+// changes. The row has a negative version, so it is never counted among
+// the versions or published, and goes when its event is purged.
+func SaveRound(ctx context.Context, q Querier, adventureID, eventID int64, g *graph.Graph) (int64, error) {
 	if r := valid.Check(g); r.HasErrors() {
 		return 0, &InvalidError{Report: r}
 	}
@@ -116,11 +116,10 @@ func SaveParty(ctx context.Context, q Querier, adventureID, eventID int64, g *gr
 	}
 	var id int64
 	err = q.QueryRowContext(ctx, `
-		INSERT INTO adventure_graphs (adventure_id, version, graph, label)
-		VALUES ($1, $2, $3, 'party')
-		ON CONFLICT (adventure_id, version) DO UPDATE SET graph = EXCLUDED.graph
+		INSERT INTO adventure_graphs (adventure_id, version, graph, label, event_id)
+		VALUES ($1, -nextval('round_graph_version_seq'), $2, 'party', $3)
 		RETURNING id
-	`, adventureID, -eventID, doc).Scan(&id)
+	`, adventureID, doc, eventID).Scan(&id)
 	return id, err
 }
 

@@ -202,6 +202,17 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// (checked in the handler).
 			r.Get("/party-offers", adminH.ListPartyOffers)
 			r.Put("/party-offers/{slug}", adminH.PutPartyOffer)
+			// A hosted event's host page, in the console: the same
+			// handlers as /api/party/{token}/…, the event authorised by
+			// org instead of by host link.
+			r.Get("/events/{eventID}/hosted", adminH.GetHostParty)
+			r.Get("/events/{eventID}/hosted/qr", adminH.HostPartyQR)
+			r.Post("/events/{eventID}/hosted/finish-game", adminH.FinishHostedGame)
+			r.Post("/events/{eventID}/hosted/send-player-link", adminH.SendHostedPlayerLink)
+			r.Put("/events/{eventID}/hosted/personalise", adminH.PutHostPersonalise)
+			r.Put("/events/{eventID}/hosted/mode", adminH.PutHostMode)
+			r.Put("/events/{eventID}/hosted/places/{slug}", adminH.PutHostPlace)
+			r.Post("/events/{eventID}/hosted/places/shift", adminH.PostHostShift)
 
 			r.Get("/events", adminH.ListEvents)
 			r.Post("/events", adminH.CreateEvent)

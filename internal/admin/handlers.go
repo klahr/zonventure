@@ -351,8 +351,8 @@ type eventDTO struct {
 	TicketCurrency   string `json:"ticket_currency,omitempty"`
 	TicketTeamSize   int    `json:"ticket_team_size,omitempty"`
 	PublicBlurb      string `json:"public_blurb,omitempty"`
-	// Party marks a party a parent booked (see party.go): its host runs
-	// it, so the console shows it to support rather than to run.
+	// Party marks a hosted event (see party.go, hosted.go): its host runs
+	// it from the host page, of which the console shows the same views.
 	Party bool `json:"party,omitempty"`
 	// HasCoverImage tells the arrange UI whether to render the
 	// upload-or-replace affordance. The bytes themselves are served
@@ -593,7 +593,8 @@ func newLiveToken() (string, error) { return tokenx.New(16) }
 // Optional `?public_for_sale=true|false` partitions Quests (the
 // public-store-listed subset) from regular events. The Events page
 // passes `false` so quests don't clutter it; the Quests page passes
-// `true` to render only quests. Omitted = both.
+// `true` to render only quests. Omitted = both. `?party=true|false`
+// does the same for hosted events, which the Hosted page lists.
 func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	if me.OrgID == nil {
@@ -618,7 +619,7 @@ func (h *Handlers) ListOrgEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeOrgEvents lists orgID's events, optionally filtered by
-// ?public_for_sale=. operator drops the live token.
+// ?public_for_sale= and ?party=. operator drops the live token.
 func (h *Handlers) writeOrgEvents(w http.ResponseWriter, r *http.Request, orgID int64, operator bool) {
 	query := `
 		SELECT ar.id, ar.name, ar.adventure_slug, COALESCE(adv.title, ''), ar.state,
@@ -645,14 +646,18 @@ func (h *Handlers) writeOrgEvents(w http.ResponseWriter, r *http.Request, orgID 
 	args := []any{orgID}
 	// A dev event (an author trying the draft on site) is not an event to list.
 	wheres := []string{"ar.org_id = $1", "NOT ar.dev"}
-	if v := strings.TrimSpace(r.URL.Query().Get("public_for_sale")); v != "" {
+	for _, col := range []string{"public_for_sale", "party"} {
+		v := strings.TrimSpace(r.URL.Query().Get(col))
+		if v == "" {
+			continue
+		}
 		want, err := strconv.ParseBool(v)
 		if err != nil {
-			httpx.Error(w, http.StatusBadRequest, "public_for_sale must be true or false")
+			httpx.Error(w, http.StatusBadRequest, col+" must be true or false")
 			return
 		}
 		args = append(args, want)
-		wheres = append(wheres, fmt.Sprintf("ar.public_for_sale = $%d", len(args)))
+		wheres = append(wheres, fmt.Sprintf("ar.%s = $%d", col, len(args)))
 	}
 	query += " WHERE " + strings.Join(wheres, " AND ")
 	query += ` ORDER BY ar.created_at DESC`

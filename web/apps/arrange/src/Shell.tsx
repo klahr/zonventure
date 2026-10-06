@@ -109,8 +109,7 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
     item("Adventures", MapIcon, { name: "adventures" }, "adventures"),
     item("Events", CalendarDays, { name: "events" }, "events"),
     item("Self-guided", Compass, { name: "quests" }, "quests"),
-    // Party offers set prices, which only an org admin may do.
-    ...(user.role === "org_admin" ? [item("Parties", PartyPopper, { name: "parties" }, "parties")] : []),
+    item("Hosted", PartyPopper, { name: "parties" }, "parties"),
     item("Box redemptions", Gift, { name: "redemptions" }, "redemptions"),
   ];
 }
@@ -132,7 +131,7 @@ function sectionOf(r: Route): { section: Section; label: string } {
     case "quests":
       return { section: "quests", label: "Self-guided" };
     case "parties":
-      return { section: "parties", label: "Parties" };
+      return { section: "parties", label: "Hosted" };
     case "redemptions":
       return { section: "redemptions", label: "Box redemptions" };
     case "organizations":

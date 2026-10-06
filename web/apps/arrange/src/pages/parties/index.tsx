@@ -2,10 +2,11 @@ import { useState } from "react";
 import { Copy, ExternalLink, Plus } from "lucide-react";
 import { ApiError, request } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
+import { useSession } from "../../session.tsx";
 import { href, navigate } from "../../router.ts";
 import { Button, Callout, Card, Dialog, Empty, ErrorBox, Field, HelpPopover, ICON, Loading, Page, PageHeader, Pill, Table, fmtMoney, useLoad, useToast, type Column } from "../../ui/index.ts";
-import { listAdventures } from "../events/api.ts";
-import { AdventureCover } from "../events/parts.tsx";
+import { listAdventures, listEvents } from "../events/api.ts";
+import { AdventureCover, EventsTable } from "../events/parts.tsx";
 import "../events/events.css";
 import "./parties.css";
 
@@ -31,13 +32,40 @@ type Row = PartyOffer & { cover?: string | undefined };
 const CURRENCIES = ["sek", "eur", "nok", "dkk", "gbp", "usd"];
 
 /**
- * Parties: the org's adventures a parent can book for a children's
- * party, and at what price. The list holds the offers made; a new one
- * picks from the adventures a party can play — as cards the host prints
- * and hides, or in the host's park — and the rest are only named, with
- * the reason, at the foot. "#/parties/<slug>" opens an offer to edit.
+ * Hosted: the org's hosted events — private events their hosts run
+ * from a host page, game after game — and, for org admins, the offers
+ * they are booked from.
  */
 export function PartiesPage({ slug }: { slug?: string | undefined }) {
+  const t = useT();
+  const { state } = useSession();
+  const admin = state.status === "authenticated" && state.user.role === "org_admin";
+  const hosted = useLoad((signal) => listEvents(undefined, signal, true), []);
+  return (
+    <Page>
+      <PageHeader title={t.t("Hosted")} subtitle={t.t("Private events their hosts run themselves, game after game, with no account.")} />
+      <Card title={t.t("Hosted events")} flush>
+        {hosted.error && !hosted.data ? (
+          <ErrorBox message={hosted.error} retry={hosted.reload} retryLabel={t.t("Retry")} />
+        ) : !hosted.data ? (
+          <Loading label={t.t("Loading…")} />
+        ) : (
+          <EventsTable rows={hosted.data} empty={t.t("No hosted events yet. They appear here when someone books one of your offers.")} />
+        )}
+      </Card>
+      {admin && <Offers slug={slug} />}
+    </Page>
+  );
+}
+
+/**
+ * The org's adventures a parent can book as a hosted event, and at what
+ * price. The list holds the offers made; a new one picks from the
+ * adventures a hosted event can play — as cards the host prints and
+ * hides, or in the host's park — and the rest are only named, with the
+ * reason, at the foot. "#/parties/<slug>" opens an offer to edit.
+ */
+function Offers({ slug }: { slug?: string | undefined }) {
   const t = useT();
   const loc = t.current();
   const toast = useToast();
@@ -76,7 +104,7 @@ export function PartiesPage({ slug }: { slug?: string | undefined }) {
     <HelpPopover
       label={t.t("About parties")}
       body={t.t(
-        "A parent books a party on your page and pays, with no account. They get a host page to set up teams, print cards and start the game; everything about the players is deleted a while after the party.",
+        "A parent books a party on your page and pays, with no account. They get a host page to print the cards and share the player link; teams join and play game after game for 14 days, then everything about the players is deleted.",
       )}
     />
   );
@@ -120,21 +148,18 @@ export function PartiesPage({ slug }: { slug?: string | undefined }) {
         {t.t("A party plays without asking where each player stands. See below what stops each adventure.")}
       </Empty>
     );
-  else
-    body = (
-      <Card flush>
-        <Table columns={columns} rows={offered} rowKey={(o) => o.adventure_slug} rowHref={(o) => href({ name: "parties", slug: o.adventure_slug })} caption={t.t("Party offers")} />
-      </Card>
-    );
+  else body = <Table columns={columns} rows={offered} rowKey={(o) => o.adventure_slug} rowHref={(o) => href({ name: "parties", slug: o.adventure_slug })} caption={t.t("Party offers")} />;
 
   return (
-    <Page>
-      <PageHeader
-        title={t.t("Parties")}
+    <>
+      <Card
+        title={t.t("Offers")}
         subtitle={t.t("Children's parties parents book and pay for on your booking page.")}
         actions={<>{about}{offered.length > 0 && newBtn}</>}
-      />
-      {body}
+        flush={offered.length > 0}
+      >
+        {body}
+      </Card>
       {unavailable.length > 0 && (
         <details className="pt-unavailable">
           <summary>{t.t("{{n}} adventures can't be offered as a party", { n: unavailable.length })}</summary>
@@ -150,7 +175,7 @@ export function PartiesPage({ slug }: { slug?: string | undefined }) {
       )}
       {creating && <OfferDialog choices={available} onClose={() => setCreating(false)} onSaved={load.reload} />}
       {editing && <OfferDialog key={editing.adventure_slug} offer={editing} onClose={closeEdit} onSaved={load.reload} />}
-    </Page>
+    </>
   );
 }
 

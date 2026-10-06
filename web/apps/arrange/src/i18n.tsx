@@ -5,6 +5,7 @@ import {
   type ReactNode,
 } from "react";
 import { I18n } from "@zonventure/i18n";
+import { hostedSv } from "@zonventure/hosted";
 import classic from "../../../../internal/server/web/locales/web/sv.json";
 import sv from "./locales/sv.json";
 
@@ -20,10 +21,10 @@ import sv from "./locales/sv.json";
  * catalog (same English keys, so a ported screen keeps its
  * translations), one file per ported area under locales/sv/ (so areas
  * are translated without touching each other's files), and this app's
- * own sv.json.
+ * own sv.json. The hosted views' strings (@zonventure/hosted) come first.
  */
 const areas = import.meta.glob<Record<string, string>>("./locales/sv/*.json", { eager: true, import: "default" });
-const catalogs = { en: {}, sv: { ...(classic as Record<string, string>), ...Object.assign({}, ...Object.values(areas)), ...sv } };
+const catalogs = { en: {}, sv: { ...hostedSv, ...(classic as Record<string, string>), ...Object.assign({}, ...Object.values(areas)), ...sv } };
 
 const instance = new I18n(catalogs);
 const I18nContext = createContext(instance);

@@ -2,6 +2,7 @@
  * hard-code a colour — if a value is missing, add a token rather than
  * a literal, or the theme stops being a single source of truth. */
 @import "@zonventure/ui/tokens.css";
+@import "@zonventure/hosted/hosted.css";
 
 /* --- Shared primitives --------------------------------------------- */
 

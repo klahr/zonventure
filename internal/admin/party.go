@@ -38,7 +38,7 @@ import (
 // (party_stations). The retention sweeper deletes the event a while after
 // the party, keeping only the purchase. See migration 0108.
 
-// PartyValidity is how long a booked party may wait to be started.
+// PartyValidity is how long a booked party may wait for its first game.
 const PartyValidity = 60 * 24 * time.Hour
 
 // maxPartyNameLen caps the party's name ("Elsa turns 8").
@@ -506,6 +506,10 @@ func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, par
 	if err != nil {
 		return 0, "", err
 	}
+	playerToken, err := newPlayerToken()
+	if err != nil {
+		return 0, "", err
+	}
 	// Cards where the adventure allows them, which is anywhere; a park
 	// otherwise. The host may change it until the party starts.
 	mode := "qr"
@@ -518,11 +522,11 @@ func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, par
 	}
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO events (adventure_slug, org_id, state, live_token, name, attested_no_minors_at,
-		                    party, host_token_hash, party_name, party_kids, party_mode, valid_until)
-		VALUES ($1, $2, 'scheduled', $3, $4, now_text(), TRUE, $5, $4, $6, $7, $8)
+		                    party, host_token_hash, party_name, party_kids, party_mode, valid_until, player_token)
+		VALUES ($1, $2, 'scheduled', $3, $4, now_text(), TRUE, $5, $4, $6, $7, $8, $9)
 		RETURNING id
 	`, advSlug, orgID, liveToken, partyName, hashHostToken(hostToken), kids, mode,
-		time.Now().Add(PartyValidity)).Scan(&eventID); err != nil {
+		time.Now().Add(PartyValidity), playerToken).Scan(&eventID); err != nil {
 		return 0, "", fmt.Errorf("party event: %w", err)
 	}
 	// Cards for the zones the adventure has now, so the host can print
@@ -575,31 +579,46 @@ func (h *Handlers) sendPartyHostLink(ctx context.Context, eventID int64, to, hos
 
 // hostParty is a party as its host link opens it.
 type hostParty struct {
-	EventID    int64
-	OrgID      int64
-	AdvSlug    string
-	State      string
-	Kids       int
-	ValidUntil time.Time
-	GraphID    sql.NullInt64
-	Mode       string
-	Overrides  graph.PartyOverrides
+	EventID     int64
+	OrgID       int64
+	AdvSlug     string
+	State       string
+	Kids        int
+	ValidUntil  time.Time
+	GraphID     sql.NullInt64
+	Mode        string
+	Overrides   graph.PartyOverrides
+	PlayerToken string
+	Blocks      int
+	Round       int
+	// RoundOpen is whether game Round is being played.
+	RoundOpen bool
 }
 
-// partyByHostToken resolves the host link in the URL, writing a 404 when
-// it opens nothing: a wrong, rotated or purged link looks the same.
-func (h *Handlers) partyByHostToken(w http.ResponseWriter, r *http.Request) (hostParty, bool) {
-	var p hostParty
+// hostedParty resolves the hosted event a request is about, writing a
+// 404 when there is none. On the host page that is the host link in the
+// URL — a wrong, rotated or purged link looks the same. In the console
+// it is the event in the URL, which the arranger's org must own: the
+// same handlers serve both, each on its own list of routes.
+func (h *Handlers) hostedParty(w http.ResponseWriter, r *http.Request) (hostParty, bool) {
+	if eventID, ok := eventIDFrom(r); ok {
+		if _, ok := h.authorizeEvent(w, r, eventID); !ok {
+			return hostParty{}, false
+		}
+		return h.partyWhere(w, r.Context(), "e.id = $1", eventID)
+	}
 	token := chi.URLParam(r, "token")
 	if token == "" || len(token) > 128 {
 		httpx.Error(w, http.StatusNotFound, "no such party")
-		return p, false
+		return hostParty{}, false
 	}
-	var overrides []byte
-	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT id, org_id, adventure_slug, state, party_kids, valid_until, graph_id, party_mode, party_overrides
-		FROM events WHERE party AND host_token_hash = $1
-	`, hashHostToken(token)).Scan(&p.EventID, &p.OrgID, &p.AdvSlug, &p.State, &p.Kids, &p.ValidUntil, &p.GraphID, &p.Mode, &overrides)
+	return h.partyWhere(w, r.Context(), "host_token_hash = $1", hashHostToken(token))
+}
+
+// partyWhere loads the party event cond picks, writing a 404 when there
+// is none. It gives the event a player link the first time it is asked.
+func (h *Handlers) partyWhere(w http.ResponseWriter, ctx context.Context, cond string, arg any) (hostParty, bool) {
+	p, err := h.loadParty(ctx, h.DB, cond, arg)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "no such party")
 		return p, false
@@ -608,11 +627,34 @@ func (h *Handlers) partyByHostToken(w http.ResponseWriter, r *http.Request) (hos
 		httpx.ServerErr(w, http.StatusInternalServerError, "party lookup failed", err)
 		return p, false
 	}
-	if err := json.Unmarshal(overrides, &p.Overrides); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "party lookup failed", err)
-		return p, false
-	}
 	return p, true
+}
+
+func (h *Handlers) loadParty(ctx context.Context, q graphstore.Querier, cond string, arg any) (hostParty, error) {
+	var (
+		p         hostParty
+		overrides []byte
+		player    sql.NullString
+	)
+	err := q.QueryRowContext(ctx, `
+		SELECT e.id, e.org_id, e.adventure_slug, e.state, e.party_kids, e.valid_until, e.graph_id, e.party_mode,
+		       e.party_overrides, e.player_token, e.hosted_blocks, e.current_round,
+		       EXISTS (SELECT 1 FROM event_rounds r WHERE r.event_id = e.id AND r.round = e.current_round AND r.finished_at IS NULL)
+		FROM events e WHERE e.party AND `+cond, arg).Scan(&p.EventID, &p.OrgID, &p.AdvSlug, &p.State, &p.Kids, &p.ValidUntil,
+		&p.GraphID, &p.Mode, &overrides, &player, &p.Blocks, &p.Round, &p.RoundOpen)
+	if err != nil {
+		return p, err
+	}
+	if err := json.Unmarshal(overrides, &p.Overrides); err != nil {
+		return p, err
+	}
+	p.PlayerToken = player.String
+	if p.PlayerToken == "" {
+		if p.PlayerToken, err = ensurePlayerToken(ctx, q, p.EventID); err != nil {
+			return p, err
+		}
+	}
+	return p, nil
 }
 
 type hostStationDTO struct {
@@ -625,15 +667,20 @@ type hostStationDTO struct {
 }
 
 type hostTeamDTO struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	Size     int    `json:"size"`
-	Joined   int    `json:"joined"`
-	Token    string `json:"token"`
-	JoinURL  string `json:"join_url"`
-	Voucher  string `json:"voucher"`
-	Finished bool   `json:"finished"`
-	Score    int    `json:"score"`
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Headcount int    `json:"headcount"`
+	Finished  bool   `json:"finished"`
+	Score     int    `json:"score"`
+}
+
+// hostRoundDTO is one game the party has played or is playing.
+type hostRoundDTO struct {
+	Round      int        `json:"round"`
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	Teams      int        `json:"teams"`
+	Players    int        `json:"players"`
 }
 
 type hostPartyDTO struct {
@@ -645,9 +692,18 @@ type hostPartyDTO struct {
 	ValidUntil     time.Time        `json:"valid_until"`
 	Expired        bool             `json:"expired"`
 	Stations       []hostStationDTO `json:"stations"`
-	Teams          []hostTeamDTO    `json:"teams"`
 	LiveURL        string           `json:"live_url"`
 	PlayURL        string           `json:"play_url"`
+
+	// The player link teams join from, and the games played so far.
+	// Teams are those of the game being played, or of the last one.
+	PlayerURL   string         `json:"player_url"`
+	Round       int            `json:"round"`
+	RoundOpen   bool           `json:"round_open"`
+	TeamsLimit  int            `json:"teams_limit"`
+	FirstGameAt *time.Time     `json:"first_game_at,omitempty"`
+	Teams       []hostTeamDTO  `json:"teams"`
+	Rounds      []hostRoundDTO `json:"rounds"`
 
 	// How the adventure is adapted to the party: see party_adapt.go.
 	Mode      string            `json:"mode"`
@@ -662,27 +718,29 @@ type hostPartyDTO struct {
 //
 // GET /api/party/{token}
 func (h *Handlers) GetHostParty(w http.ResponseWriter, r *http.Request) {
-	p, ok := h.partyByHostToken(w, r)
+	p, ok := h.hostedParty(w, r)
 	if !ok {
 		return
 	}
 	ctx := r.Context()
 	base := strings.TrimRight(h.PublicURL, "/")
 	out := hostPartyDTO{State: p.State, Kids: p.Kids, ValidUntil: p.ValidUntil,
-		Expired: p.State == "scheduled" && time.Now().After(p.ValidUntil), PlayURL: base + "/play"}
+		Expired: partyLapsed(p), PlayURL: base + "/play",
+		PlayerURL: base + "/j/" + p.PlayerToken, Round: p.Round, RoundOpen: p.RoundOpen,
+		TeamsLimit: p.Blocks * TeamsPerBlock}
 	var liveToken string
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT e.party_name, COALESCE(NULLIF(a.title, ''), a.slug), o.name, e.live_token
+		SELECT e.party_name, COALESCE(NULLIF(a.title, ''), a.slug), o.name, e.live_token, e.first_game_at
 		FROM events e JOIN adventures a ON a.slug = e.adventure_slug JOIN organizations o ON o.id = e.org_id
 		WHERE e.id = $1
-	`, p.EventID).Scan(&out.Name, &out.AdventureTitle, &out.OrgName, &liveToken); err != nil {
+	`, p.EventID).Scan(&out.Name, &out.AdventureTitle, &out.OrgName, &liveToken, &out.FirstGameAt); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "party lookup failed", err)
 		return
 	}
 	out.LiveURL = base + "/live/" + liveToken
 
-	// The cards follow the zones of the graph the party plays: pinned
-	// once it has started, the adventure's published one until then.
+	// The cards follow the zones of the graph the party plays: the
+	// game's while one is being played, the adventure's between games.
 	g, err := h.hostGraph(ctx, p)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "graph lookup failed", err)
@@ -696,7 +754,7 @@ func (h *Handlers) GetHostParty(w http.ResponseWriter, r *http.Request) {
 	if p.Mode != "qr" {
 		zones = nil // in a park the places are the stations: no cards
 	}
-	if p.State == "scheduled" {
+	if !p.RoundOpen {
 		if err := play.EnsureStations(ctx, h.DB, p.EventID, zones); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "stations failed", err)
 			return
@@ -732,40 +790,80 @@ func (h *Handlers) GetHostParty(w http.ResponseWriter, r *http.Request) {
 			URL: base + "/play?station=" + code})
 	}
 
-	trows, err := h.DB.QueryContext(ctx, `
-		SELECT t.id, t.name, t.token, COALESCE(t.voucher_code, ''),
-		       (SELECT COUNT(*) FROM player_slots s WHERE s.team_id = t.id),
-		       (SELECT COUNT(*) FROM player_slots s WHERE s.team_id = t.id AND s.claimed_at IS NOT NULL),
-		       COALESCE(g.completed_at IS NOT NULL, FALSE), COALESCE(g.score, 0)::int
-		FROM teams t LEFT JOIN team_graph_state g ON g.team_id = t.id
-		WHERE t.event_id = $1 ORDER BY t.id
-	`, p.EventID)
-	if err != nil {
+	if out.Teams, err = h.roundTeams(ctx, p.EventID, p.Round); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "teams lookup failed", err)
 		return
 	}
-	defer trows.Close()
-	out.Teams = []hostTeamDTO{}
-	for trows.Next() {
-		var t hostTeamDTO
-		if err := trows.Scan(&t.ID, &t.Name, &t.Token, &t.Voucher, &t.Size, &t.Joined, &t.Finished, &t.Score); err != nil {
-			httpx.ServerErr(w, http.StatusInternalServerError, "teams lookup failed", err)
-			return
-		}
-		t.JoinURL = base + "/team/" + t.Token
-		t.Voucher = auth.FormatVoucherCode(t.Voucher)
-		out.Teams = append(out.Teams, t)
+	if out.Rounds, err = h.partyRounds(ctx, p.EventID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "games lookup failed", err)
+		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, out)
 }
 
+// roundTeams are the teams of one game, withdrawn ones left out.
+func (h *Handlers) roundTeams(ctx context.Context, eventID int64, round int) ([]hostTeamDTO, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT t.id, t.name, COALESCE(t.headcount, 1),
+		       COALESCE(g.completed_at IS NOT NULL, FALSE), COALESCE(g.score - g.penalty_score, 0)::int
+		FROM teams t LEFT JOIN team_graph_state g ON g.team_id = t.id
+		WHERE t.event_id = $1 AND t.round = $2 AND t.withdrawn_at IS NULL ORDER BY t.id
+	`, eventID, round)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []hostTeamDTO{}
+	for rows.Next() {
+		var t hostTeamDTO
+		if err := rows.Scan(&t.ID, &t.Name, &t.Headcount, &t.Finished, &t.Score); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// partyRounds lists the party's games, latest first.
+func (h *Handlers) partyRounds(ctx context.Context, eventID int64) ([]hostRoundDTO, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT r.round, r.started_at, r.finished_at,
+		       COUNT(t.id), COALESCE(SUM(COALESCE(t.headcount, 1)), 0)
+		FROM event_rounds r
+		LEFT JOIN teams t ON t.event_id = r.event_id AND t.round = r.round AND t.withdrawn_at IS NULL
+		WHERE r.event_id = $1
+		GROUP BY r.round, r.started_at, r.finished_at
+		ORDER BY r.round DESC
+	`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []hostRoundDTO{}
+	for rows.Next() {
+		var (
+			d        hostRoundDTO
+			finished sql.NullTime
+		)
+		if err := rows.Scan(&d.Round, &d.StartedAt, &finished, &d.Teams, &d.Players); err != nil {
+			return nil, err
+		}
+		if finished.Valid {
+			d.FinishedAt = &finished.Time
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // partyZones are the zones of the graph the party plays, in the
 // author's order.
-// hostGraph is the graph the party plays: its own once it has started,
-// the adventure's published one until then; nil when there is none.
+// hostGraph is the graph the party plays: the game's own while one is
+// being played, the adventure's published one between games; nil when
+// there is none.
 func (h *Handlers) hostGraph(ctx context.Context, p hostParty) (*graph.Graph, error) {
-	if p.GraphID.Valid {
+	if p.RoundOpen && p.GraphID.Valid {
 		s, err := graphstore.ByID(ctx, h.DB, p.GraphID.Int64)
 		if err != nil {
 			return nil, err
@@ -783,136 +881,48 @@ func (h *Handlers) hostGraph(ctx context.Context, p hostParty) (*graph.Graph, er
 	return g, err
 }
 
-type hostTeamRequest struct {
-	Name string `json:"name"`
-	Size int    `json:"size"`
-}
-
-// AddHostTeam adds a team of Size players to the party, within the number
-// of children booked. Allowed until the party ends: a late guest joins a
-// team of their own.
-//
-// POST /api/party/{token}/teams
-func (h *Handlers) AddHostTeam(w http.ResponseWriter, r *http.Request) {
-	p, ok := h.partyByHostToken(w, r)
-	if !ok {
-		return
-	}
-	var req hostTeamRequest
-	if !httpx.DecodeJSON(w, r, &req) {
-		return
-	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" || utf8.RuneCountInString(name) > 64 {
-		httpx.Error(w, http.StatusBadRequest, "give the team a name of up to 64 characters")
-		return
-	}
-	if req.Size < 1 {
-		httpx.Error(w, http.StatusBadRequest, "a team has at least one player")
-		return
-	}
-	if !h.partyOpen(w, p) {
-		return
-	}
-	ctx := r.Context()
-	tx, err := h.DB.BeginTx(ctx, nil)
-	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "team create failed", err)
-		return
-	}
-	defer tx.Rollback() //nolint:errcheck
-	// Serialise team adds per party so two taps can't both fit.
-	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM events WHERE id = $1 FOR UPDATE`, p.EventID); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "team create failed", err)
-		return
-	}
-	var used int
-	if err := tx.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM player_slots s JOIN teams t ON t.id = s.team_id WHERE t.event_id = $1
-	`, p.EventID).Scan(&used); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "team create failed", err)
-		return
-	}
-	if used+req.Size > p.Kids {
-		httpx.JSON(w, http.StatusConflict, map[string]any{
-			"error": fmt.Sprintf("the party is booked for %d children and %d are in teams already", p.Kids, used),
-			"code":  "too_many_kids",
-			"left":  max(p.Kids-used, 0),
-		})
-		return
-	}
-	var taken bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM teams WHERE event_id = $1 AND name = $2)`,
-		p.EventID, name).Scan(&taken); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "team create failed", err)
-		return
-	}
-	if taken {
-		httpx.Error(w, http.StatusConflict, "there is a team with that name already")
-		return
-	}
-	teamID, err := createPartyTeam(ctx, tx, p.EventID, name, req.Size)
-	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "team create failed", err)
-		return
-	}
-	if err := tx.Commit(); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "team create failed", err)
-		return
-	}
-	// A team added after the start is placed when its players first open
-	// the game; placing it now spares them the wait.
-	if p.State == "running" || p.State == "paused" {
-		if err := play.Start(ctx, h.DB, p.EventID); err != nil {
-			logx.Warn("admin.party.team.place", "event_id", p.EventID, "err", err.Error())
-		}
-	}
-	h.Hub.Publish(ws.EventTopic(p.EventID), "changed", nil)
-	httpx.JSON(w, http.StatusCreated, map[string]int64{"id": teamID})
-}
-
-// createPartyTeam inserts a team and its player slots, named "Player 1"
-// on: the children pick their own names when they join.
-func createPartyTeam(ctx context.Context, tx *sql.Tx, eventID int64, name string, size int) (int64, error) {
+// createPartyTeam inserts a team of the game round with one player
+// slot, for the phone that joined, and returns the team and the slot's
+// magic-link token.
+func createPartyTeam(ctx context.Context, tx *sql.Tx, eventID int64, round int, name string, headcount int) (int64, string, error) {
 	teamTok, err := auth.NewSlotToken()
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	recapTok, err := auth.NewSlotToken()
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	voucher, err := uniqueVoucherCode(ctx, tx)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	var teamID int64
 	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO teams (event_id, name, token, recap_token, email, voucher_code)
-		VALUES ($1, $2, $3, $4, '', $5) RETURNING id
-	`, eventID, name, teamTok, recapTok, voucher).Scan(&teamID); err != nil {
-		return 0, fmt.Errorf("teams insert: %w", err)
+		INSERT INTO teams (event_id, name, token, recap_token, email, voucher_code, round, headcount)
+		VALUES ($1, $2, $3, $4, '', $5, $6, $7) RETURNING id
+	`, eventID, name, teamTok, recapTok, voucher, round, headcount).Scan(&teamID); err != nil {
+		return 0, "", fmt.Errorf("teams insert: %w", err)
 	}
-	expiresAt := auth.DefaultSlotExpiresAt(ctx, tx, eventID)
-	for i := 1; i <= size; i++ {
-		tok, err := auth.NewSlotToken()
-		if err != nil {
-			return 0, err
-		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO player_slots (team_id, name, token, expires_at) VALUES ($1, $2, $3, $4)`,
-			teamID, fmt.Sprintf("Player %d", i), tok, expiresAt); err != nil {
-			return 0, fmt.Errorf("player_slots insert: %w", err)
-		}
+	slotTok, err := auth.NewSlotToken()
+	if err != nil {
+		return 0, "", err
 	}
-	return teamID, nil
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO player_slots (team_id, name, token, expires_at) VALUES ($1, $2, $3, $4)`,
+		teamID, name, slotTok, auth.DefaultSlotExpiresAt(ctx, tx, eventID)); err != nil {
+		return 0, "", fmt.Errorf("player_slots insert: %w", err)
+	}
+	return teamID, slotTok, nil
 }
 
-// DeleteHostTeam removes a team before the party starts.
+// RemoveHostTeam takes a team out of the game being played: it stops
+// counting towards the limit and leaves the ranking. Its phone is signed
+// out.
 //
 // DELETE /api/party/{token}/teams/{teamID}
-func (h *Handlers) DeleteHostTeam(w http.ResponseWriter, r *http.Request) {
-	p, ok := h.partyByHostToken(w, r)
+func (h *Handlers) RemoveHostTeam(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.hostedParty(w, r)
 	if !ok {
 		return
 	}
@@ -921,19 +931,23 @@ func (h *Handlers) DeleteHostTeam(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusNotFound, "no such team")
 		return
 	}
-	if p.State != "scheduled" {
-		httpx.Error(w, http.StatusConflict, "teams can only be removed before the party starts")
-		return
-	}
-	res, err := h.DB.ExecContext(r.Context(), `DELETE FROM teams WHERE id = $1 AND event_id = $2`, teamID, p.EventID)
+	ctx := r.Context()
+	res, err := h.DB.ExecContext(ctx, `
+		UPDATE teams SET withdrawn_at = now_text()
+		WHERE id = $1 AND event_id = $2 AND round = $3 AND withdrawn_at IS NULL
+	`, teamID, p.EventID, p.Round)
 	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "team delete failed", err)
+		httpx.ServerErr(w, http.StatusInternalServerError, "team remove failed", err)
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		httpx.Error(w, http.StatusNotFound, "no such team")
 		return
 	}
+	if err := endTeamSessions(ctx, h.DB, "t.id = $1", teamID); err != nil {
+		logx.Warn("admin.party.team.signout", "team_id", teamID, "err", err.Error())
+	}
+	activity.Record(ctx, h.DB, p.EventID, &teamID, activity.Actor{}, activity.TeamWithdrawn, map[string]any{"by_host": true})
 	h.Hub.Publish(ws.EventTopic(p.EventID), "changed", nil)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -944,18 +958,25 @@ func (h *Handlers) partyOpen(w http.ResponseWriter, p hostParty) bool {
 	case p.State == "completed" || p.State == "cancelled":
 		httpx.Error(w, http.StatusConflict, "the party is over")
 		return false
-	case p.State == "scheduled" && time.Now().After(p.ValidUntil):
-		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "this party was not started in time", "code": "expired"})
+	case partyLapsed(p):
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "this party's time is up", "code": "expired"})
 		return false
 	}
 	return true
 }
 
-// HostPartyAction starts, pauses, resumes or ends the party.
+// partyLapsed is whether the party's time is up: its first game was not
+// started in time, or its days of play are over.
+func partyLapsed(p hostParty) bool {
+	return p.State != "completed" && p.State != "cancelled" && time.Now().After(p.ValidUntil)
+}
+
+// HostPartyAction pauses or resumes the game being played. Games start
+// when the first team joins and end with "Finish game" (FinishHostedGame).
 //
 // POST /api/party/{token}/{action}
 func (h *Handlers) HostPartyAction(w http.ResponseWriter, r *http.Request) {
-	p, ok := h.partyByHostToken(w, r)
+	p, ok := h.hostedParty(w, r)
 	if !ok {
 		return
 	}
@@ -964,24 +985,8 @@ func (h *Handlers) HostPartyAction(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	action := chi.URLParam(r, "action")
-	if action == "end" {
-		done, err := activity.CompleteEvent(ctx, h.DB, p.EventID, activity.Actor{}, map[string]any{"by_host": true})
-		if err != nil {
-			httpx.ServerErr(w, http.StatusInternalServerError, "end failed", err)
-			return
-		}
-		if !done {
-			httpx.Error(w, http.StatusConflict, "only a party that has started can end")
-			return
-		}
-		h.Hub.Publish(ws.EventTopic(p.EventID), "changed", nil)
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
 	var want, update, kind string
 	switch action {
-	case "start":
-		want, update, kind = "scheduled", `UPDATE events SET state='running', started_at=now_text() WHERE id=$1 AND state=$2`, activity.EventStarted
 	case "pause":
 		want, update, kind = "running", `UPDATE events SET state='paused', paused_at=now_text() WHERE id=$1 AND state=$2`, activity.EventPaused
 	case "resume":
@@ -990,28 +995,9 @@ func (h *Handlers) HostPartyAction(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusNotFound, "unknown action")
 		return
 	}
-	if p.State != want {
-		httpx.Error(w, http.StatusConflict, "cannot "+action+" a party that is "+p.State)
+	if p.State != want || !p.RoundOpen {
+		httpx.Error(w, http.StatusConflict, "no game is being played")
 		return
-	}
-	if action == "start" {
-		var teams int
-		if err := h.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM teams WHERE event_id = $1`, p.EventID).Scan(&teams); err != nil {
-			httpx.ServerErr(w, http.StatusInternalServerError, "start failed", err)
-			return
-		}
-		if teams == 0 {
-			httpx.Error(w, http.StatusConflict, "add a team before starting the party")
-			return
-		}
-		if err := h.checkReadyToStart(ctx, p); err != nil {
-			if errors.Is(err, errPlacesMissing) {
-				httpx.JSON(w, http.StatusConflict, map[string]string{"error": err.Error(), "code": "places_missing"})
-				return
-			}
-			httpx.ServerErr(w, http.StatusInternalServerError, "start failed", err)
-			return
-		}
 	}
 	res, err := h.DB.ExecContext(ctx, update, p.EventID, want)
 	if err != nil {
@@ -1021,16 +1007,6 @@ func (h *Handlers) HostPartyAction(w http.ResponseWriter, r *http.Request) {
 	if n, _ := res.RowsAffected(); n == 0 {
 		httpx.Error(w, http.StatusConflict, "the party changed meanwhile; reload the page")
 		return
-	}
-	if action == "start" {
-		if err := play.Start(ctx, h.DB, p.EventID); err != nil {
-			// The party is running but nobody can play: put it back, so
-			// the host sees the failure and the seller can fix it.
-			_, _ = h.DB.ExecContext(ctx, `UPDATE events SET state='scheduled', started_at=NULL WHERE id=$1`, p.EventID)
-			activity.Record(ctx, h.DB, p.EventID, nil, activity.Actor{}, "graph.start.failed", map[string]any{"error": err.Error()})
-			httpx.ServerErr(w, http.StatusConflict, "the adventure could not start; contact the organiser", err)
-			return
-		}
 	}
 	activity.Record(ctx, h.DB, p.EventID, nil, activity.Actor{}, kind, map[string]any{"by_host": true})
 	h.Hub.Publish(ws.EventTopic(p.EventID), "changed", nil)
@@ -1125,12 +1101,12 @@ func (h *Handlers) fulfilPartyCheckout(ctx context.Context, tx *sql.Tx, event pa
 }
 
 // HostPartyQR draws a QR code for the host page: a station card's
-// (?station=zone) or a team's join link (?team=id). Only the party's
+// (?station=zone) or, without one, the player link. Only the party's
 // own, so the endpoint is no QR maker for anything else.
 //
 // GET /api/party/{token}/qr
 func (h *Handlers) HostPartyQR(w http.ResponseWriter, r *http.Request) {
-	p, ok := h.partyByHostToken(w, r)
+	p, ok := h.hostedParty(w, r)
 	if !ok {
 		return
 	}
@@ -1149,13 +1125,10 @@ func (h *Handlers) HostPartyQR(w http.ResponseWriter, r *http.Request) {
 			`SELECT code FROM party_stations WHERE event_id = $1 AND zone_slug = $2`, p.EventID, zone).Scan(&code)
 		target = base + "/play?station=" + code
 	} else {
-		var token string
-		err = h.DB.QueryRowContext(r.Context(),
-			`SELECT token FROM teams WHERE event_id = $1 AND id = $2`, p.EventID, r.URL.Query().Get("team")).Scan(&token)
-		target = base + "/team/" + token
+		target = base + "/j/" + p.PlayerToken
 	}
 	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusNotFound, "no such card or team")
+		httpx.Error(w, http.StatusNotFound, "no such card")
 		return
 	}
 	if err != nil {

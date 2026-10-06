@@ -1,5 +1,6 @@
 /* The party app: a booking form and a host page, on the shared tokens. */
 @import "@zonventure/ui/tokens.css";
+@import "@zonventure/hosted/hosted.css";
 
 html,
 body {
@@ -147,9 +148,6 @@ body {
   font-weight: 600;
   font-size: var(--text-sm);
 }
-.party-field--narrow {
-  flex: 0 0 6rem;
-}
 .party-field input,
 .party-stepper output {
   box-sizing: border-box;
@@ -243,20 +241,8 @@ body {
 .party-btn--wide {
   width: 100%;
 }
-.party-btn--quiet {
-  border-color: transparent;
-  background: transparent;
-  font-size: var(--text-lg);
-}
-.party-actions {
-  display: flex;
-  gap: var(--sp-2);
-  flex-wrap: wrap;
-  margin-bottom: var(--sp-3);
-}
 
-/* Teams and cards */
-.party-teams,
+/* Cards */
 .party-cards {
   list-style: none;
   margin: 0 0 var(--sp-3);
@@ -264,26 +250,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
-}
-.party-team {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-2);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-}
-.party-team img {
-  flex: none;
-  border-radius: var(--radius-sm);
-  background: #fff;
-}
-.party-team > div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
 }
 .party-cards {
   counter-reset: card;
@@ -344,88 +310,4 @@ body {
     left: 4mm;
     font-weight: 700;
   }
-}
-
-/* Where the party is played: two cards to pick from. */
-.party-choices {
-  display: grid;
-  gap: var(--sp-2);
-}
-.party-choice {
-  display: flex;
-  gap: var(--sp-3);
-  align-items: flex-start;
-  padding: var(--sp-3);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-.party-choice.is-on {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
-}
-.party-choice span {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.party-choice small {
-  color: var(--muted);
-}
-
-/* A quiz question the host rewrites. */
-.party-quiz {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  margin: 0;
-  padding: var(--sp-3);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-}
-.party-quiz legend {
-  font-weight: 600;
-  font-size: var(--text-sm);
-}
-.party-quiz input:not([type="radio"]),
-.party-field textarea {
-  box-sizing: border-box;
-  min-height: 2.5rem;
-  padding: var(--sp-2) var(--sp-3);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-  width: 100%;
-}
-.party-quiz__opt {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-.party-quiz__mark {
-  width: 1.5rem;
-  font-weight: 700;
-  text-align: center;
-}
-
-/* Places in a park. */
-.party-places {
-  list-style: none;
-  margin: 0 0 var(--sp-3);
-  padding: 0;
-}
-.party-places li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  padding: var(--sp-2) 0;
-  border-bottom: 1px dashed var(--border-soft);
-}
-.party-places li > div {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
 }

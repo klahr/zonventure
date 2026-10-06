@@ -19,7 +19,7 @@ export interface EventRow {
   public_for_sale: boolean;
   ticket_price_cents?: number;
   ticket_currency?: string;
-  /** A party a parent booked and runs from their host page. */
+  /** A hosted event, run by its host from the host page. */
   party?: boolean;
 }
 
@@ -68,12 +68,16 @@ export interface Purchase {
 
 const opts = (signal?: AbortSignal) => (signal ? { signal } : {});
 
-/** publicForSale: false = events, true = self-guided, undefined = both. */
-export const listEvents = (publicForSale?: boolean, signal?: AbortSignal) =>
-  get<{ events: EventRow[] }>(
-    "/api/admin/events" + (publicForSale === undefined ? "" : `?public_for_sale=${publicForSale}`),
-    opts(signal),
-  ).then((r) => r.events ?? []);
+/**
+ * publicForSale: false = events, true = self-guided, undefined = both;
+ * party the same for hosted events.
+ */
+export const listEvents = (publicForSale?: boolean, signal?: AbortSignal, party?: boolean) => {
+  const q = new URLSearchParams();
+  if (publicForSale !== undefined) q.set("public_for_sale", String(publicForSale));
+  if (party !== undefined) q.set("party", String(party));
+  return get<{ events: EventRow[] }>("/api/admin/events" + (q.size ? `?${q}` : ""), opts(signal)).then((r) => r.events ?? []);
+};
 
 export const listAdventures = (signal?: AbortSignal) =>
   get<{ adventures: AdventureRow[] }>("/api/admin/adventures", opts(signal)).then((r) => r.adventures ?? []);

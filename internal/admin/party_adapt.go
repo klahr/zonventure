@@ -98,18 +98,19 @@ func (h *Handlers) describeAdaptation(out *hostPartyDTO, p hostParty, g *graph.G
 }
 
 // hostAdaptable is the start of every change to how the party is
-// adapted: the party, and the graph a change is checked against. Once
-// the party has started its graph is set, so nothing changes any more.
+// adapted: the party, and the graph a change is checked against. A game
+// plays the graph pinned when it opened, so changes wait until no game
+// is being played and apply from the next.
 func (h *Handlers) hostAdaptable(w http.ResponseWriter, r *http.Request) (hostParty, *graph.Graph, bool) {
-	p, ok := h.partyByHostToken(w, r)
+	p, ok := h.hostedParty(w, r)
 	if !ok {
 		return p, nil, false
 	}
 	if !h.partyOpen(w, p) {
 		return p, nil, false
 	}
-	if p.State != "scheduled" {
-		httpx.Error(w, http.StatusConflict, "the party has started: it plays as it was set up")
+	if p.RoundOpen {
+		httpx.Error(w, http.StatusConflict, "a game is being played: finish it to change the party")
 		return p, nil, false
 	}
 	g, err := h.hostGraph(r.Context(), p)

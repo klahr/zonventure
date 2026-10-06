@@ -30,6 +30,8 @@ export interface EventInfo {
   ticket_team_size?: number;
   public_blurb?: string;
   has_cover_image?: boolean;
+  /** A hosted event: run from its host page, whose views the event page shows too. */
+  party?: boolean;
 }
 
 /** internal/admin/ws.go: eventDetailMemberDTO. */

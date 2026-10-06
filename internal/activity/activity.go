@@ -118,11 +118,11 @@ const ClosePause = `paused_seconds = paused_seconds + COALESCE(
 //     instant) the UPDATE's state predicate ensures exactly one
 //     transition fires; the loser returns (false, nil).
 func MaybeCompleteEvent(ctx context.Context, db Execer, eventID int64) (bool, error) {
-	// A dev event is an author's to play again, and a self-guided one
-	// sells tickets for as long as it is open: their teams finishing
-	// ends neither.
+	// A dev event is an author's to play again, a self-guided one
+	// sells tickets for as long as it is open, and a hosted one plays
+	// game after game until it lapses: their teams finishing ends none.
 	var openEnded bool
-	if err := db.QueryRowContext(ctx, `SELECT dev OR public_for_sale FROM events WHERE id = $1`, eventID).Scan(&openEnded); err != nil || openEnded {
+	if err := db.QueryRowContext(ctx, `SELECT dev OR public_for_sale OR party FROM events WHERE id = $1`, eventID).Scan(&openEnded); err != nil || openEnded {
 		return false, err
 	}
 	var total, done int

@@ -148,14 +148,25 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		})
 		r.Post("/api/party/resend", adminH.ResendPartyLinks)
 		r.Get("/api/party/{token}", adminH.GetHostParty)
-		r.Post("/api/party/{token}/teams", adminH.AddHostTeam)
-		r.Delete("/api/party/{token}/teams/{teamID}", adminH.DeleteHostTeam)
+		r.Delete("/api/party/{token}/teams/{teamID}", adminH.RemoveHostTeam)
+		r.Post("/api/party/{token}/finish-game", adminH.FinishHostedGame)
+		r.Post("/api/party/{token}/send-player-link", adminH.SendHostedPlayerLink)
 		r.Get("/api/party/{token}/qr", adminH.HostPartyQR)
 		r.Put("/api/party/{token}/personalise", adminH.PutHostPersonalise)
 		r.Put("/api/party/{token}/mode", adminH.PutHostMode)
 		r.Put("/api/party/{token}/places/{slug}", adminH.PutHostPlace)
 		r.Post("/api/party/{token}/places/shift", adminH.PostHostShift)
 		r.Post("/api/party/{token}/{action}", adminH.HostPartyAction)
+
+		// The player link of a hosted event: teams join from it, naming
+		// themselves. Its secret is printed as a QR code on the cards.
+		r.Get("/j/{token}", func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+			w.Header().Set("Referrer-Policy", "no-referrer")
+			http.Redirect(w, req, "/app/party/join/"+url.PathEscape(chi.URLParam(req, "token")), http.StatusFound)
+		})
+		r.Get("/api/join/{token}", adminH.GetJoin)
+		r.Post("/api/join/{token}", adminH.Join)
 
 		// Gift box redemption (Live it, TrueStory). The bare /redeem
 		// offers every organisation's products; /o/{slug}/redeem only

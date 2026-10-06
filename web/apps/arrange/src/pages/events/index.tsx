@@ -49,7 +49,7 @@ export function NoEvents({ onSchedule }: { onSchedule?: (() => void) | undefined
  */
 export function EventsPage() {
   const t = useT();
-  const events = useLoad((signal) => listEvents(false, signal), []);
+  const events = useLoad((signal) => listEvents(false, signal, false), []);
   const ready = useLoad(async (signal) => {
     const [advs, assigns] = await Promise.all([listAdventures(signal), listAssignments(signal)]);
     return canStartEvent(advs, assigns);

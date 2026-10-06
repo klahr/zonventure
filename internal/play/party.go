@@ -16,9 +16,9 @@ import (
 // station cards. Map to 404.
 var ErrUnknownStation = errors.New("no such station")
 
-// pinParty stores the graph a party event plays, made from its
-// adventure's published version g, and returns its id: g with what the
-// host changed (graph.PartyOverrides). In QR mode the zones become
+// pinParty stores the graph a game of a party event plays, made from
+// its adventure's published version g, and returns its id: g with what
+// the host changed (graph.PartyOverrides). In QR mode the zones become
 // stations, cards the host hides, so it refuses a graph that asks where
 // each player stands (graph.StationsProblems); in park mode the zones
 // are where the host put them.
@@ -50,7 +50,38 @@ func pinParty(ctx context.Context, tx *sql.Tx, adventureID, eventID int64, mode 
 			return 0, err
 		}
 	}
-	return graphstore.SaveParty(ctx, tx, adventureID, eventID, g)
+	return graphstore.SaveRound(ctx, tx, adventureID, eventID, g)
+}
+
+// PinRound pins the graph the event's next game plays — its adventure's
+// published version as the host has adapted it — and makes it the
+// event's, so teams placed from now on play it. Teams of earlier games
+// keep theirs. Call it in the transaction that opens the round.
+func PinRound(ctx context.Context, tx *sql.Tx, eventID int64) (int64, error) {
+	var (
+		adventureID int64
+		mode        string
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT a.id, e.party_mode FROM events e JOIN adventures a ON a.slug = e.adventure_slug WHERE e.id = $1
+	`, eventID).Scan(&adventureID, &mode); err != nil {
+		return 0, fmt.Errorf("loading event %d: %w", eventID, err)
+	}
+	stored, err := graphstore.Published(ctx, tx, adventureID)
+	if errors.Is(err, graphstore.ErrNotFound) {
+		return 0, ErrNoGraph
+	}
+	if err != nil {
+		return 0, err
+	}
+	graphID, err := pinParty(ctx, tx, adventureID, eventID, mode, stored.Graph)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE events SET graph_id = $1 WHERE id = $2`, graphID, eventID); err != nil {
+		return 0, err
+	}
+	return graphID, nil
 }
 
 // Station records that the team scanned a station card, or typed its

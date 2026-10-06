@@ -1,6 +1,7 @@
 package emailtpl
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/klahr/zonventure/internal/sitename"
@@ -122,18 +123,98 @@ func TeamLink(lang, teamURL, playURL, voucher, org string) (string, Content) {
 	}
 }
 
-// PartyHost is a party booker's host link: the page they set the party
-// up and run it from. The link is their only key, so the mail says so.
+// PartyHost is a hosted event's host link: the page the buyer sets the
+// event up and runs it from. The link is their only key, so the mail
+// says so.
 func PartyHost(lang, hostURL, party, org string) (string, Content) {
 	return T(lang, "Your %s party — host link inside", sitename.Name()), Content{
 		Lang:      lang,
-		Preheader: T(lang, "Set up the party, print the cards and start when everyone is there."),
+		Preheader: T(lang, "Set up the party, print the cards and show the players their link."),
 		Heading:   T(lang, "%s is booked", party),
-		Body: T(lang, "Open the host page to split the children into teams, print and hide the cards, and start the game when everyone is there.") +
+		Body: T(lang, "Open the host page to print and hide the cards and show the players their link. The first team to join starts the game; play as many games as you like for 14 days from then.") +
 			"\n\n" + T(lang, "Anyone with this link can run the party, so keep it to yourself."),
 		Buttons: []Button{{T(lang, "Open the host page"), hostURL}},
 		Footer:  T(lang, "Everything about the players is deleted a while after the party.") + " " + playerFooter(lang, "", org),
 	}
+}
+
+// HostedPlayerLink is the player link a host sends someone from the host page:
+// it opens the game, where the team names itself.
+func HostedPlayerLink(lang, playerURL, party, org string) (string, Content) {
+	return T(lang, "Join %s", party), Content{
+		Lang:      lang,
+		Preheader: T(lang, "Open the link, name your team and play."),
+		Heading:   T(lang, "Join %s", party),
+		Body:      T(lang, "Open the link on the phone your team plays on, give the team a name and start."),
+		Buttons:   []Button{{T(lang, "Join the game"), playerURL}},
+		Footer:    playerFooter(lang, "", org),
+	}
+}
+
+// RoundTeam is one team's line in a game summary.
+type RoundTeam struct {
+	Name     string
+	Players  int
+	Score    float64
+	Finished bool
+	Minutes  int
+}
+
+// RoundCard is one question's line in a game summary: how many of the
+// teams that reached it got it right.
+type RoundCard struct {
+	Title   string
+	Reached int
+	Right   int
+}
+
+// RoundSummary is a hosted event's summary of one finished game, mailed
+// to the host: who played, the ranking, and how each question went.
+func RoundSummary(lang, hostURL, party, org string, round int, teams []RoundTeam, cards []RoundCard) (string, Content) {
+	players := 0
+	for _, t := range teams {
+		players += t.Players
+	}
+	var b strings.Builder
+	b.WriteString(T(lang, "%[1]d teams, %[2]d players.", len(teams), players))
+	if len(teams) > 0 {
+		b.WriteString("\n\n**" + T(lang, "Ranking") + "**\n\n")
+		for i, t := range teams {
+			line := T(lang, "%[1]d. %[2]s — %[3]s points", i+1, mdEscape(t.Name), formatPoints(t.Score))
+			if t.Finished {
+				line += ", " + T(lang, "%d min", t.Minutes)
+			} else {
+				line += ", " + T(lang, "did not finish")
+			}
+			b.WriteString(line + "\n")
+		}
+	}
+	if len(cards) > 0 {
+		b.WriteString("\n**" + T(lang, "Questions") + "**\n\n")
+		for _, c := range cards {
+			pct := 0
+			if c.Reached > 0 {
+				pct = c.Right * 100 / c.Reached
+			}
+			b.WriteString(T(lang, "- %[1]s: %[2]d%% right (%[3]d of %[4]d teams)", mdEscape(c.Title), pct, c.Right, c.Reached) + "\n")
+		}
+	}
+	return T(lang, "%[1]s — results of game %[2]d", party, round), Content{
+		Lang:      lang,
+		Preheader: T(lang, "Who won, and how the questions went."),
+		Heading:   T(lang, "Game %d is over", round),
+		Body:      b.String(),
+		Buttons:   []Button{{T(lang, "Open the host page"), hostURL}},
+		Footer:    T(lang, "You get this because you host %s.", party) + " " + playerFooter(lang, "", org),
+	}
+}
+
+// formatPoints shows a score without a needless fraction.
+func formatPoints(f float64) string {
+	if f == float64(int64(f)) {
+		return strconv.FormatInt(int64(f), 10)
+	}
+	return strconv.FormatFloat(f, 'f', 1, 64)
 }
 
 // BoxConfirmed is a box buyer's team link, once their code checks out.

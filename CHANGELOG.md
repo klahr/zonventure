@@ -11,6 +11,37 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — hosted events
+
+- **A party is a hosted event that plays game after game.** Its first
+  game must start within 60 days of purchase; from then it plays for 14
+  days. Teams join from one **player link** (`/j/{token}`, shown as a QR
+  code on the host page and on the printed cards), name themselves and
+  say how many they are; the first team to join starts a game. The host
+  no longer makes teams or hands out join codes, and there is no Start
+  or End button.
+- **Finish game** on the host page closes the game, signs its phones out
+  and mails the host a summary: teams, players, ranking, and how many
+  teams got each question right. A game nobody has played for 3 hours
+  finishes by itself; an event whose days are over ends, finishing its
+  game first. Each game plays the graph as it was when it opened, so
+  what the host changes (personalisation, mode, places) between games
+  applies from the next one; changes are refused during a game.
+- A game takes up to 15 teams; a team name is unique within its game.
+  The host can take a team out of the game. "Send by email" mails the
+  player link to one address (50 a day per event).
+- **The console's Parties entry is now Hosted**, for every org member:
+  the org's hosted events, and (org admins) the offers they are booked
+  from. Hosted events no longer appear under Events. A hosted event's
+  page in the console shows the host page's views — games, player link,
+  where it is played, places, the host's words — through the same
+  handlers (`/api/admin/events/{id}/hosted/…`).
+- The hosted views live in a shared package, `@zonventure/hosted`.
+- Migration `0109_hosted`: `events.player_token`, `hosted_blocks`,
+  `first_game_at`, `current_round`; `event_rounds`; `teams.round`,
+  `teams.headcount` (team names unique per game); a round's own graph
+  copy (`adventure_graphs.event_id`).
+
 ## [0.18.0] - 2026-10-06
 
 ### Changed

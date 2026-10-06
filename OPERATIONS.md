@@ -210,12 +210,16 @@ location/answer data, 90 days for audit events. Tune via
 `ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` (or the
 matching `-retention-*` flags). Set to `0` to disable.
 
-Parties (children's parties booked without an account) are deleted
-whole — event, teams, players, answers, photos and the party's own
-graph copy — `ZV_PARTY_RETENTION_DAYS` days (default 14) after they
-end, when a booked party passes its 60-day validity unstarted, or that
-many days after a party was started and never ended. The ticket
-purchase stays, its email blanked.
+Hosted events (parties booked without an account) play game after game
+for 14 days from their first game, which must start within 60 days of
+purchase. A sweeper in the server, every minute, finishes a game nobody
+has played for 3 hours, ends an event whose days are over, and mails
+each finished game's summary to the host (retrying for a day). They are
+deleted whole — event, teams, players, answers, photos and the graph
+copies its games played — `ZV_PARTY_RETENTION_DAYS` days (default 14)
+after they end, when a booked one passes its 60-day validity unstarted,
+or that many days after its days of play if it was somehow never ended.
+The ticket purchase stays, its email blanked.
 
 ## Platform admin vs organisations
 

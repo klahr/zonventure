@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Compass, Pencil } from "lucide-react";
+import { Compass, PartyPopper, Pencil } from "lucide-react";
 import { siteName } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
@@ -17,6 +17,7 @@ import { TeamDetailDialog } from "./TeamDetail.tsx";
 import { TeamEditDialog } from "./TeamEdit.tsx";
 import { TeamsCard } from "./Teams.tsx";
 import { EmailsCard } from "./Emails.tsx";
+import { HostedCards } from "./Hosted.tsx";
 import { StatisticsCard } from "./Statistics.tsx";
 import { isQuest, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
 import "./event.css";
@@ -115,7 +116,13 @@ export function EventPage({ id }: { id: number }) {
       </TopBarPortal>
       <div className="ev-head">
         <PageHeader
-          back={quest ? { href: href({ name: "quests" }), label: t.t("Self-guided adventures") } : { href: href({ name: "events" }), label: t.t("Events") }}
+          back={
+            quest
+              ? { href: href({ name: "quests" }), label: t.t("Self-guided adventures") }
+              : event.party
+                ? { href: href({ name: "parties" }), label: t.t("Hosted") }
+                : { href: href({ name: "events" }), label: t.t("Events") }
+          }
           title={
             <>
               {name}
@@ -125,6 +132,7 @@ export function EventPage({ id }: { id: number }) {
           badges={
             <>
               {quest && <Pill tone="accent" title={t.t("Listed in your store; tickets sold to the public.")}><Compass size={ICON.xs} aria-hidden />{t.t("Self-guided adventure")}</Pill>}
+              {event.party && <Pill tone="accent" title={t.t("Its host runs it from the host page, game after game.")}><PartyPopper size={ICON.xs} aria-hidden />{t.t("Hosted")}</Pill>}
               <Pill tone={stateTone(event.state)}>{stateText(t, label)}</Pill>
             </>
           }
@@ -142,6 +150,7 @@ export function EventPage({ id }: { id: number }) {
       {watchLost && <Callout variant="danger">{t.t("Live updates stopped — you no longer have access to this event.")}</Callout>}
 
       <QuickStats event={event} teams={teams} now={now} />
+      {event.party && <HostedCards eventId={event.id} refresh={activityKey} />}
       {quest && <ConnectBanner event={event} status={connect.data ?? null} user={user} />}
       {quest && <StoreCard key={event.id} event={event} onSaved={detail.reload} />}
       {event.has_secret_roles && <SecretRolesCard key={`secret-${event.id}`} event={event} onSaved={detail.reload} />}
