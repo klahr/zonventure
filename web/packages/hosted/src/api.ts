@@ -85,7 +85,7 @@ export interface HostedEvent {
   /** The most teams a game can be bought up to. */
   max_teams: number;
   /** What one more block of teams costs (block_cents 0: free). */
-  price: { block_cents: number; currency: string; teams_per_block: number };
+  price: { block_cents: number; currency: string; teams_per_block: number; free_teams: number };
   /** A quiz trail: its cards print as a PDF; reprint when they changed since. */
   trail: boolean;
   reprint: boolean;

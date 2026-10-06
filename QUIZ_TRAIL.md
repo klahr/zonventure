@@ -12,9 +12,13 @@ spec also consolidates for parties and private hosting.
 
 ## Names
 
+Renamed 2026-10-06 from "Quiz trail / Tipspromenad": it is sold as a
+casual little adventure for a party, not as a quiz walk. Code ids
+(`trail`, `/trail/…`, `trails`) keep the old word.
+
 | Where | English | Swedish |
 |---|---|---|
-| Public product | Quiz trail | Tipspromenad |
+| Public product | Party adventure | Partyäventyr |
 | Console sidebar (Events / Self-guided / …) | Hosted | Värdlett |
 
 The console's "Parties" entry becomes "Hosted" (UI copy only; code ids
@@ -39,9 +43,22 @@ Three ways in:
 | Party offer | The org's adventure | Parent, no account | The org's price | Pass price, as application fee |
 | Host it | Any adventure the account's org owns or was shared | Account user | Pass price | Pass price |
 
-**Pass price:** 149 kr per started block of 15 teams, counted per game
-(teams playing in one round, below). Hosted events only; Events and
-Self-guided keep their current pricing.
+**Pass price:** free for up to 3 teams per game (`FreeTeams`; a hosted
+event of no blocks), else 149 kr per started block of 15 teams, counted
+per game (teams playing in one round, below). Paying replaces the free
+allowance: one block holds 15 teams, not 18. Teams, not people, because
+a team is a phone the join check counts; a headcount is only what the
+team says. Hosted events only; Events and Self-guided keep their
+current pricing.
+
+- Free is the default at checkout and in Host it: the event is made at
+  once, no payment. Upgrading later is the host page's "Up to 15 teams
+  for 149 kr" (the Add flow). It is also how a creator tries the game
+  before paying.
+- A free public checkout proves nothing about the email: the link is
+  only mailed, and the address only confirmed, when the browser's
+  trail session is signed in with it. The answer opens the admin page
+  either way; "My trails" sign-in finds it again.
 
 - Price per block is one setting (`ZV_HOSTED_BLOCK_CENTS`, default
   14900 where a platform fee is set, free otherwise; `ZV_HOSTED_CURRENCY`,
@@ -277,7 +294,7 @@ designer.
 
 ### 1. Start (`/o/{slug}/trail`)
 - Heading "Make your own quiz trail", one line on how it works, and
-  **"Free to make · 149 kr to play for 14 days"**.
+  **"Free for up to 3 teams · 149 kr for up to 15"**.
 - Template cards (4–5): Birthday party, Kids' trail, Office/team,
   Family, Blank. Each sets theme, `kids`, title placeholder and 3–5
   example cards that show how to write them.
@@ -320,7 +337,7 @@ confirmed nothing is attached.
 ### 4. Checkout
 Summary (title, N cards, price, "Play as many games as you like for 14
 days from the first game; start within 60 days"), team blocks stepper
-(hidden behind "More than 15 teams in one game?"), guardian checkbox
+starting at free (hidden behind "More than 3 teams in one game?"), guardian checkbox
 when `kids`, terms. → Stripe Checkout, which collects the email.
 Webhook: create the hosted event (state scheduled, `valid_until` =
 now + 60 d, tokens), set the trail's `email` (confirmed by payment)

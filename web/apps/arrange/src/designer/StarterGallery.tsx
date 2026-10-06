@@ -6,7 +6,7 @@ import { Trash2 } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { useSession } from "../session.tsx";
 import { ConfirmModal, ICON } from "./dz/ui.tsx";
-import { STARTER_GROUPS, STARTER_THEMES } from "./starterThemes.ts";
+import { STARTER_GROUPS, STARTER_THEMES } from "@zonventure/play-ui";
 import "./starters.css";
 
 /**

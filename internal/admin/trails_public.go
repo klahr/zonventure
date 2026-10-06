@@ -254,7 +254,7 @@ func (h *Handlers) CreateTrailDraft(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	orgID, _, enabled, err := h.trailOrg(ctx, chi.URLParam(r, "slug"))
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && !enabled) {
-		httpx.JSON(w, http.StatusNotFound, map[string]string{"error": "quiz trails are not available here", "code": "not_available"})
+		httpx.JSON(w, http.StatusNotFound, map[string]string{"error": "party adventures are not available here", "code": "not_available"})
 		return
 	}
 	if err != nil {
@@ -283,7 +283,7 @@ func (h *Handlers) newDraft(w http.ResponseWriter, r *http.Request, orgID int64,
 		return
 	}
 	if started >= maxTrailDraftsPerIP {
-		httpx.Error(w, http.StatusTooManyRequests, "too many new quiz trails today; try again tomorrow")
+		httpx.Error(w, http.StatusTooManyRequests, "too many new party adventures today; try again tomorrow")
 		return
 	}
 	secret, err := tokenx.New(32)
@@ -350,13 +350,13 @@ func (p publicTrail) opens(secret, sessionEmail string) bool {
 func (h *Handlers) draftFor(w http.ResponseWriter, r *http.Request) (publicTrail, bool) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || id <= 0 {
-		httpx.Error(w, http.StatusNotFound, "no such quiz trail")
+		httpx.Error(w, http.StatusNotFound, "no such party adventure")
 		return publicTrail{}, false
 	}
 	ctx := r.Context()
 	p, err := scanPublicTrail(h.DB.QueryRowContext(ctx, publicTrailSQL+` WHERE t.id = $1`, id))
 	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusNotFound, "no such quiz trail")
+		httpx.Error(w, http.StatusNotFound, "no such party adventure")
 		return p, false
 	}
 	if err != nil {
@@ -369,7 +369,7 @@ func (h *Handlers) draftFor(w http.ResponseWriter, r *http.Request) (publicTrail
 		return p, false
 	}
 	if !p.opens(r.Header.Get("X-Trail-Secret"), email) {
-		httpx.Error(w, http.StatusNotFound, "no such quiz trail")
+		httpx.Error(w, http.StatusNotFound, "no such party adventure")
 		return p, false
 	}
 	return p, true
@@ -422,7 +422,7 @@ func (h *Handlers) PutTrailDraft(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) savePublicTrail(w http.ResponseWriter, r *http.Request, p publicTrail, req putTrailRequest) {
 	if p.State() == "ended" {
-		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "this quiz trail has ended", "code": "ended"})
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "this party adventure has ended", "code": "ended"})
 		return
 	}
 	if !allowTrailSave(p.ID) {
@@ -449,7 +449,7 @@ func (h *Handlers) DeleteTrailDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.PaidAt.Valid {
-		httpx.Error(w, http.StatusConflict, "a paid quiz trail can't be deleted")
+		httpx.Error(w, http.StatusConflict, "a paid party adventure can't be deleted")
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM adventures WHERE id = $1 AND trail_hidden`, p.AdvID); err != nil {
@@ -495,8 +495,9 @@ type trailCheckoutRequest struct {
 }
 
 // CheckoutTrailDraft buys a draft its hosted event: the pass for Blocks
-// blocks of teams, charged on the platform's own account. Where hosting
-// is free the event is made at once, and the answer holds its host link.
+// blocks of teams, charged on the platform's own account. With no blocks
+// (FreeTeams teams a game), or where hosting is free, the event is made
+// at once, and the answer holds its host link.
 //
 // POST /api/trail/drafts/{id}/checkout
 func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
@@ -509,7 +510,7 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.PaidAt.Valid {
-		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "this quiz trail is paid for already", "code": "paid"})
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "this party adventure is paid for already", "code": "paid"})
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
@@ -517,8 +518,8 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "enter a valid email address")
 		return
 	}
-	if req.Blocks < 1 || req.Blocks > maxBlocks {
-		httpx.Error(w, http.StatusBadRequest, fmt.Sprintf("blocks must be 1–%d", maxBlocks))
+	if req.Blocks < 0 || req.Blocks > maxBlocks {
+		httpx.Error(w, http.StatusBadRequest, fmt.Sprintf("blocks must be 0–%d", maxBlocks))
 		return
 	}
 	ctx := r.Context()
@@ -535,7 +536,8 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "confirm that you have the children's guardians' consent", "code": "consent"})
 		return
 	}
-	if !h.trailPaymentsOpen() {
+	free := h.Hosted.Free() || req.Blocks == 0
+	if !free && !h.trailPaymentsOpen() {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "booking isn't open right now", "code": "payments_closed"})
 		return
 	}
@@ -544,19 +546,25 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.Hosted.Free() {
+	if free {
+		// Nothing paid confirms the address: it counts as confirmed, and
+		// gets the link mailed, only when this browser signed in with it,
+		// lest anyone could have us mail strangers. The answer opens the
+		// admin page either way.
+		session, _ := h.trailSession(ctx, r)
+		vouched := h.Hosted.Free() || strings.EqualFold(session, email)
 		tx, err := h.DB.BeginTx(ctx, nil)
 		if err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 			return
 		}
 		defer tx.Rollback() //nolint:errcheck
-		eventID, hostToken, err := createHostedEvent(ctx, tx, p.OrgID, p.Slug, t.dto.Title, 0, req.Blocks)
+		eventID, hostToken, err := createHostedEvent(ctx, tx, p.OrgID, p.Slug, t.dto.Title, 0, req.Blocks, "")
 		if err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 			return
 		}
-		if _, err := attachTrailEvent(ctx, tx, p.Slug, eventID, email); err != nil {
+		if _, err := attachTrailEvent(ctx, tx, p.Slug, eventID, email, vouched); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 			return
 		}
@@ -564,8 +572,10 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 			httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 			return
 		}
-		if err := h.sendPartyHostLink(ctx, eventID, email, hostToken); err != nil {
-			logx.Warn("admin.trail.paid_mail", "event_id", eventID, "err", err.Error())
+		if vouched {
+			if err := h.sendPartyHostLink(ctx, eventID, email, hostToken); err != nil {
+				logx.Warn("admin.trail.paid_mail", "event_id", eventID, "err", err.Error())
+			}
 		}
 		httpx.JSON(w, http.StatusCreated, map[string]any{
 			"event_id": eventID,
@@ -573,28 +583,38 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// The admin page's secret is minted now, for this browser to open it
+	// when it is back from paying; the webhook makes the event with it.
+	hostToken, err := tokenx.New(24)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
+		return
+	}
 	amount := h.Hosted.Price(req.Blocks)
 	var purchaseID int64
 	if err := h.DB.QueryRowContext(ctx, `
 		INSERT INTO ticket_purchases (kind, buyer_org_id, adventure_slug, party_name, buyer_email,
-		                              team_size, amount_cents, currency, blocks)
-		VALUES ('hosted', $1, $2, $3, $4, 0, $5, $6, $7) RETURNING id
-	`, p.OrgID, p.Slug, t.dto.Title, email, amount, h.Hosted.Currency, req.Blocks).Scan(&purchaseID); err != nil {
+		                              team_size, amount_cents, currency, blocks, host_token)
+		VALUES ('hosted', $1, $2, $3, $4, 0, $5, $6, $7, $8) RETURNING id
+	`, p.OrgID, p.Slug, t.dto.Title, email, amount, h.Hosted.Currency, req.Blocks, hostToken).Scan(&purchaseID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 		return
 	}
-	product := fmt.Sprintf("%s — quiz trail, %d teams per game", t.dto.Title, req.Blocks*TeamsPerBlock)
-	h.startHostedCheckout(w, r, purchaseID, product, amount, email, "/app/party/trail/paid")
+	product := fmt.Sprintf("%s — party adventure, %d teams per game", t.dto.Title, req.Blocks*TeamsPerBlock)
+	h.startHostedCheckout(w, r, purchaseID, product, amount, email, "/app/party/trail/paid",
+		strings.TrimRight(h.PublicURL, "/")+"/party/"+hostToken)
 }
 
 // attachTrailEvent records, in tx, that the public trail of adventure
-// slug was paid for and plays as eventID, saved to email (confirmed by
-// the payment). It reports whether slug is a public trail.
-func attachTrailEvent(ctx context.Context, tx *sql.Tx, slug string, eventID int64, email string) (bool, error) {
+// slug was paid for (or taken free) and plays as eventID, saved to
+// email — confirmed when a payment or a signed-in session vouches for
+// it. It reports whether slug is a public trail.
+func attachTrailEvent(ctx context.Context, tx *sql.Tx, slug string, eventID int64, email string, confirmed bool) (bool, error) {
 	res, err := tx.ExecContext(ctx, `
-		UPDATE trails SET event_id = $2, paid_at = now(), email = $3, email_confirmed_at = now(), updated_at = now()
+		UPDATE trails SET event_id = $2, paid_at = now(), email = $3,
+		       email_confirmed_at = CASE WHEN $4 THEN now() ELSE email_confirmed_at END, updated_at = now()
 		WHERE adventure_id = (SELECT id FROM adventures WHERE slug = $1) AND paid_at IS NULL
-	`, slug, eventID, strings.ToLower(email))
+	`, slug, eventID, strings.ToLower(email), confirmed)
 	if err != nil {
 		return false, err
 	}
@@ -666,7 +686,7 @@ func (h *Handlers) SendTrailHostLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !p.EventID.Valid || p.State() == "ended" || !p.Email.Valid {
-		httpx.Error(w, http.StatusConflict, "this quiz trail has no admin page")
+		httpx.Error(w, http.StatusConflict, "this party adventure has no admin page")
 		return
 	}
 	ctx := r.Context()
@@ -805,7 +825,7 @@ func (h *Handlers) SaveTrailsToEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(held) == 0 {
-		httpx.Error(w, http.StatusBadRequest, "there is no quiz trail to save")
+		httpx.Error(w, http.StatusBadRequest, "there is no party adventure to save")
 		return
 	}
 	ids := make([]int64, 0, len(held))
@@ -1035,7 +1055,7 @@ func (h *Handlers) hostTrail(w http.ResponseWriter, r *http.Request) (publicTrai
 		return p, false
 	}
 	if !ok {
-		httpx.Error(w, http.StatusNotFound, "this is not a quiz trail")
+		httpx.Error(w, http.StatusNotFound, "this is not a party adventure")
 		return p, false
 	}
 	return p, true
@@ -1081,7 +1101,7 @@ func (h *Handlers) HostTrailKeep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.State() != "playing" || time.Now().Before(keepFrom(p.FirstGameAt.Time)) {
-		httpx.Error(w, http.StatusConflict, "this quiz trail can be kept from a week into play")
+		httpx.Error(w, http.StatusConflict, "this party adventure can be kept from a week into play")
 		return
 	}
 	url, err := h.keepLink(r.Context(), p)

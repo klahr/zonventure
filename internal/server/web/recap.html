@@ -279,10 +279,10 @@ async function load() {
   try {
     const r = await fetch('/api/public/recap/' + encodeURIComponent(tok), { credentials: 'omit' });
     if (r.status === 404) {
-      // Same shape whether the token is unknown or the event isn't
+      // Same shape whether the token is unknown or the team isn't
       // finished yet — server hides the distinction on purpose.
       root.replaceChildren(el('p', { class: 'empty' },
-        t('This recap isn\'t available. Check the link — recaps appear once the event finishes.')));
+        t('This recap isn\'t available. Check the link — a recap appears once your team has finished.')));
       return;
     }
     if (!r.ok) {

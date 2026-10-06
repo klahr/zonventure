@@ -28,7 +28,7 @@ var templates = map[string]map[string]struct {
 }{
 	"en": {
 		"birthday": {"Elsa turns 8", true, []example{
-			{kind: Info, text: "Welcome to the birthday trail! Find the cards in order and answer on your phone."},
+			{kind: Info, text: "Welcome to the birthday adventure! Find the cards in order and answer on your phone."},
 			{kind: Quiz, text: "How old is Elsa today?", options: []string{"7", "8", "9"}, correct: "X"},
 			{kind: Quiz, text: "What is Elsa's favourite animal?", options: []string{"Horse", "Cat", "Dog"}, correct: "1"},
 			{kind: Answer, text: "What is the name of Elsa's best friend?", answers: []string{"Alva"}},
@@ -38,23 +38,23 @@ var templates = map[string]map[string]struct {
 			{kind: Quiz, text: "Which planet is closest to the sun?", options: []string{"Mercury", "Venus", "Mars"}, correct: "1"},
 			{kind: Answer, text: "What colour do you get if you mix blue and yellow?", answers: []string{"Green"}},
 		}},
-		"office": {"Office quiz trail", false, []example{
+		"office": {"Office party adventure", false, []example{
 			{kind: Quiz, text: "What year was the company founded?", options: []string{"1998", "2004", "2012"}, correct: "X"},
 			{kind: Quiz, text: "How many offices do we have?", options: []string{"2", "3", "5"}, correct: "2"},
 			{kind: Answer, text: "What is the name of the meeting room on the top floor?", answers: []string{""}},
 		}},
-		"family": {"Family quiz trail", false, []example{
+		"family": {"Family party adventure", false, []example{
 			{kind: Quiz, text: "Where did we go on holiday last summer?", options: []string{"The mountains", "The sea", "The city"}, correct: "X"},
 			{kind: Answer, text: "What is grandma's favourite cake?", answers: []string{""}},
 			{kind: Info, text: "Well done! The last card is by the front door."},
 		}},
-		"blank": {"My quiz trail", false, []example{
+		"blank": {"My party adventure", false, []example{
 			{kind: Quiz, options: []string{"", "", ""}},
 		}},
 	},
 	"sv": {
 		"birthday": {"Elsa fyller 8", true, []example{
-			{kind: Info, text: "Välkomna till födelsedagspromenaden! Leta upp korten i ordning och svara i mobilen."},
+			{kind: Info, text: "Välkomna till födelsedagsäventyret! Leta upp korten i ordning och svara i mobilen."},
 			{kind: Quiz, text: "Hur gammal är Elsa i dag?", options: []string{"7", "8", "9"}, correct: "X"},
 			{kind: Quiz, text: "Vilket är Elsas favoritdjur?", options: []string{"Häst", "Katt", "Hund"}, correct: "1"},
 			{kind: Answer, text: "Vad heter Elsas bästa kompis?", answers: []string{"Alva"}},
@@ -64,17 +64,17 @@ var templates = map[string]map[string]struct {
 			{kind: Quiz, text: "Vilken planet ligger närmast solen?", options: []string{"Merkurius", "Venus", "Mars"}, correct: "1"},
 			{kind: Answer, text: "Vilken färg får du om du blandar blått och gult?", answers: []string{"Grön"}},
 		}},
-		"office": {"Tipspromenad på kontoret", false, []example{
+		"office": {"Kontorets partyäventyr", false, []example{
 			{kind: Quiz, text: "Vilket år grundades företaget?", options: []string{"1998", "2004", "2012"}, correct: "X"},
 			{kind: Quiz, text: "Hur många kontor har vi?", options: []string{"2", "3", "5"}, correct: "2"},
 			{kind: Answer, text: "Vad heter mötesrummet högst upp?", answers: []string{""}},
 		}},
-		"family": {"Familjens tipspromenad", false, []example{
+		"family": {"Familjens partyäventyr", false, []example{
 			{kind: Quiz, text: "Vart åkte vi på semester i somras?", options: []string{"Fjällen", "Havet", "Stan"}, correct: "X"},
 			{kind: Answer, text: "Vilken är mormors favoritkaka?", answers: []string{""}},
 			{kind: Info, text: "Bra jobbat! Sista kortet finns vid ytterdörren."},
 		}},
-		"blank": {"Min tipspromenad", false, []example{
+		"blank": {"Mitt partyäventyr", false, []example{
 			{kind: Quiz, options: []string{"", "", ""}},
 		}},
 	},

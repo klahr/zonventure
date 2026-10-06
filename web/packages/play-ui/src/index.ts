@@ -15,3 +15,4 @@ export type { BlockContext, Motion } from "./blocks/context.ts";
 export { StaticMap, project, unproject, TILE_URL, type MapPin, type MapPoint, type MapZone } from "./StaticMap.tsx";
 export { bearing, metresBetween } from "./geo.ts";
 export { fractionAt } from "./pictures.ts";
+export { STARTER_GROUPS, STARTER_THEMES } from "./starterThemes.ts";

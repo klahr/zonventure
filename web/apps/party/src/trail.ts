@@ -13,7 +13,7 @@ export interface TrailStart {
   org_slug: string;
   enabled: boolean;
   payments_open: boolean;
-  price: { block_cents: number; currency: string; teams_per_block: number };
+  price: { block_cents: number; currency: string; teams_per_block: number; free_teams: number };
   play_days: number;
   start_days: number;
   templates: TemplateInfo[];
@@ -25,7 +25,7 @@ export interface PublicTrail extends TrailDoc {
   state: "draft" | "paid" | "playing" | "ended";
   email?: string;
   payments_open: boolean;
-  price: { block_cents: number; currency: string; teams_per_block: number };
+  price: { block_cents: number; currency: string; teams_per_block: number; free_teams: number };
   valid_until?: string;
   first_game_at?: string;
   round_open: boolean;
@@ -83,6 +83,15 @@ export function forgetTrails(ids: number[]) {
   write(KEYS, heldTrails().filter((k) => !ids.includes(k.id)));
 }
 
+const PAID_HOST = "zv.trail-paid-host";
+
+/**
+ * The admin page a checkout opens once paid, kept while this browser is
+ * away paying, so the thank-you page can go straight there.
+ */
+export const paidHost = (): { url: string; at: number } | null => read(PAID_HOST, null);
+export const setPaidHost = (url: string | null) => write(PAID_HOST, url ? { url, at: Date.now() } : null);
+
 /** The email session, from a confirm or sign-in link. */
 export const trailSession = (): { session: string; email: string } | null => read(SESSION, null);
 export const setTrailSession = (s: { session: string; email: string } | null) => write(SESSION, s);
@@ -138,4 +147,10 @@ export const listMine = () =>
 export const getHostTrail = (token: string) => request<PublicTrail>(`/api/party/${enc(token)}/cards`);
 export const saveHostTrail = (token: string, body: { title: string; cards: Card[]; revision: number }) =>
   request<PublicTrail>(`/api/party/${enc(token)}/cards`, { method: "PUT", body });
+/** Sets a trail's look: a draft's by its secret, or by the host link. */
+export const setTrailTheme = (which: { id: number } | { token: string }, theme: { id: string; look: unknown }) =>
+  "token" in which
+    ? request<void>(`/api/party/${enc(which.token)}/cards/theme`, { method: "PUT", body: theme })
+    : request<void>(`${draft(which.id)}/theme`, { method: "PUT", body: theme, headers: trailHeaders(which.id) });
+
 export const keepLink = (token: string) => request<{ url: string }>(`/api/party/${enc(token)}/keep`, { method: "POST" });

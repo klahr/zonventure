@@ -2,6 +2,7 @@ package admin_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/payments"
 	"github.com/klahr/zonventure/internal/trail"
@@ -206,6 +208,20 @@ func TestPublicTrail_PayHostKeep(t *testing.T) {
 		t.Errorf("paid mail: %s", mail)
 	}
 	host := regexp.MustCompile(`/party/([A-Za-z0-9_-]+)`).FindStringSubmatch(mail)[1]
+	// The browser that paid was given the same admin page at checkout,
+	// so it can go there without waiting for the mail.
+	var co struct {
+		HostURL string `json:"host_url"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &co)
+	if !strings.HasSuffix(co.HostURL, "/party/"+host) {
+		t.Errorf("checkout's admin page %q, mailed %q", co.HostURL, host)
+	}
+	var kept sql.NullString
+	_ = f.h.DB.QueryRow(`SELECT host_token FROM ticket_purchases WHERE kind = 'hosted'`).Scan(&kept)
+	if kept.Valid {
+		t.Error("the purchase kept the host link's secret after the payment")
+	}
 
 	var v publicTrailView
 	w = callH(t, f.public, "GET", path, nil, secretOf(d))
@@ -379,5 +395,45 @@ func TestPublicTrail_Sweep(t *testing.T) {
 	f.mail.mu.Unlock()
 	if len(sent) != 2 || !strings.Contains(strings.Join(sent, "|"), "e@example.com") || !strings.Contains(strings.Join(sent, "|"), "c@example.com: Vill du behålla") {
 		t.Errorf("mails: %v", sent)
+	}
+}
+
+// TestPublicTrail_Free: with no blocks a draft is hosted at once, free,
+// for FreeTeams teams a game. Nothing paid vouches for the email, so the
+// link isn't mailed and the address isn't confirmed; the answer opens
+// the admin page.
+func TestPublicTrail_Free(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newPartyFixture(t)
+	defer cleanup()
+	f.publicTrailRoutes()
+	f.h.Hosted = payments.HostedPass{BlockCents: 14900, Currency: "sek"}
+	d := f.newDraft(t, "birthday")
+	mailed := len(f.mail.messages)
+
+	w := callH(t, f.public, "POST", draftPath(d)+"/checkout", map[string]any{"email": "someone@example.com", "blocks": 0, "consent": true}, secretOf(d))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("free: %d %s", w.Code, w.Body)
+	}
+	var co struct {
+		HostURL string `json:"host_url"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &co)
+	m := regexp.MustCompile(`/party/([A-Za-z0-9_-]+)$`).FindStringSubmatch(co.HostURL)
+	if m == nil {
+		t.Fatalf("no admin page: %s", w.Body)
+	}
+	if got := f.teamsLimit(t, m[1]); got != admin.FreeTeams {
+		t.Errorf("teams limit = %d, want %d", got, admin.FreeTeams)
+	}
+	if len(f.mail.messages) != mailed {
+		t.Error("mailed an address nothing vouches for")
+	}
+	var confirmed bool
+	var purchases int
+	_ = f.h.DB.QueryRow(`SELECT email_confirmed_at IS NOT NULL FROM trails WHERE id = $1`, d.ID).Scan(&confirmed)
+	_ = f.h.DB.QueryRow(`SELECT COUNT(*) FROM ticket_purchases`).Scan(&purchases)
+	if confirmed || purchases != 0 {
+		t.Errorf("confirmed %v, purchases %d", confirmed, purchases)
 	}
 }

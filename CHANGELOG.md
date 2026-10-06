@@ -11,6 +11,41 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — party adventures are free for small parties
+
+- **Free for up to 3 teams per game.** Hosting with no blocks — now the
+  default at the public checkout and in Host it — makes the event at
+  once, with nothing to pay. More teams cost as before: 149 kr per 15,
+  bought at checkout or later from the admin page ("Up to 15 teams for
+  149 kr"). Migration `0115` lets an event hold no blocks.
+- A free public checkout mails the admin link, and counts the email as
+  confirmed, only when the browser is signed in with that address; the
+  page opens the admin page straight away either way.
+
+### Added — looks for party adventures
+
+- **A party adventure has a look**: one of 14 starter themes (Party,
+  Sunshine, Candy, Jungle, Pirate, Space…), picked from "Look" in the
+  creator. The card in the creator wears it at once — colours and title
+  font — and it is saved as the adventure's own look, so the teams'
+  phones get it too (`PUT …/cards/theme`, validated as any look).
+  Each template starts in a look of its own.
+- **The start page tries the looks on**: a sample card cycles through
+  them until the visitor touches the page; the one on show, or the one
+  they tap, is the new adventure's.
+- The starter themes moved to `@zonventure/play-ui`. Migration
+  `0114_trail_theme`.
+
+### Changed
+
+- **Quiz trails are now "party adventures" (partyäventyr)**, sold as a
+  casual little adventure for a party rather than a quiz walk: the
+  landing page section (`/#party-adventure`), the creator, the console,
+  the emails and the templates' names. Code ids keep `trail`.
+- A team's **recap opens once the team is done** — it finished, or its
+  hosted game was finished — instead of only when the whole event ends,
+  which for a self-guided or hosted event meant months or days.
+
 ### Added — the public quiz trail
 
 - **`/o/{slug}/trail`**: anyone makes a quiz trail on a phone with no

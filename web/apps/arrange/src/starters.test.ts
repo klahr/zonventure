@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { STARTER_THEMES } from "./designer/starterThemes.ts";
+import { STARTER_THEMES } from "../../../packages/play-ui/src/starterThemes.ts";
 import { lookContrast } from "../../../packages/play-ui/src/contrast.ts";
 import { FONTS } from "../../../packages/play-ui/src/brand.ts";
 

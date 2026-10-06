@@ -224,6 +224,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Put("/adventures/{slug}/cards", adminH.PutTrail)
 			r.Post("/adventures/{slug}/cards/publish", adminH.PublishTrail)
 			r.Post("/adventures/{slug}/cards/designer", adminH.OpenTrailInDesigner)
+			r.Put("/adventures/{slug}/cards/theme", adminH.PutTrailTheme)
 			r.Get("/adventures/{slug}/cards.pdf", adminH.TrailPDF)
 			r.Get("/events/{eventID}/hosted/cards.pdf", adminH.HostedTrailPDF)
 			r.Put("/events/{eventID}/hosted/personalise", adminH.PutHostPersonalise)

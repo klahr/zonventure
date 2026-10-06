@@ -154,24 +154,24 @@ func HostedPlayerLink(lang, playerURL, party, org string) (string, Content) {
 // TrailConfirm saves the trails a browser holds to an email address:
 // the link confirms the address is the reader's.
 func TrailConfirm(lang, link string) (string, Content) {
-	return T(lang, "Save your quiz trails"), Content{
+	return T(lang, "Save your party adventures"), Content{
 		Lang:      lang,
-		Preheader: T(lang, "Confirm your email address to keep your quiz trails."),
-		Heading:   T(lang, "Save your quiz trails"),
-		Body:      T(lang, "Open the link to save your quiz trails to this address. Then you can open them from any phone or computer. The link works for an hour."),
-		Buttons:   []Button{{T(lang, "Save my quiz trails"), link}},
+		Preheader: T(lang, "Confirm your email address to keep your party adventures."),
+		Heading:   T(lang, "Save your party adventures"),
+		Body:      T(lang, "Open the link to save your party adventures to this address. Then you can open them from any phone or computer. The link works for an hour."),
+		Buttons:   []Button{{T(lang, "Save my party adventures"), link}},
 		Footer:    T(lang, "Didn't ask for this? Ignore this email and nothing is saved."),
 	}
 }
 
 // TrailSignin opens the quiz trails saved to an email address.
 func TrailSignin(lang, link string) (string, Content) {
-	return T(lang, "Your quiz trails"), Content{
+	return T(lang, "Your party adventures"), Content{
 		Lang:      lang,
-		Preheader: T(lang, "Open your quiz trails."),
-		Heading:   T(lang, "Your quiz trails"),
-		Body:      T(lang, "Open the link to see every quiz trail saved to this address. The link works for an hour."),
-		Buttons:   []Button{{T(lang, "Open my quiz trails"), link}},
+		Preheader: T(lang, "Open your party adventures."),
+		Heading:   T(lang, "Your party adventures"),
+		Body:      T(lang, "Open the link to see every party adventure saved to this address. The link works for an hour."),
+		Buttons:   []Button{{T(lang, "Open my party adventures"), link}},
 		Footer:    T(lang, "Didn't ask for this? Ignore this email."),
 	}
 }
@@ -186,9 +186,9 @@ func TrailPaid(lang, hostURL, playerURL, title, startBy, org string) (string, Co
 		Heading:   T(lang, "%s is ready to play", title),
 		Body: T(lang, "Open the admin page to print the cards and the answer key, and to show the players their link. Start the first game by %s; from then you can play as many games as you like for 14 days.", startBy) +
 			"\n\n" + T(lang, "Players join here: %s", playerURL) +
-			"\n\n" + T(lang, "Anyone with the admin link can run and change your quiz trail, so keep it to yourself. Your receipt comes in a separate email."),
+			"\n\n" + T(lang, "Anyone with the admin link can run and change your party adventure, so keep it to yourself. Your receipt comes in a separate email."),
 		Buttons: []Button{{T(lang, "Open the admin page"), hostURL}},
-		Footer:  T(lang, "The quiz trail and everything about the players is deleted 14 days after the first game.") + " " + playerFooter(lang, "", org),
+		Footer:  T(lang, "The party adventure and everything about the players is deleted 14 days after the first game.") + " " + playerFooter(lang, "", org),
 	}
 }
 
@@ -197,11 +197,11 @@ func TrailPaid(lang, hostURL, playerURL, title, startBy, org string) (string, Co
 func TrailKeep(lang, keepURL, title, until string) (string, Content) {
 	return T(lang, "Keep %s?", title), Content{
 		Lang:      lang,
-		Preheader: T(lang, "Create a free account and the quiz trail is yours to keep."),
+		Preheader: T(lang, "Create a free account and the party adventure is yours to keep."),
 		Heading:   T(lang, "Keep %s?", title),
-		Body: T(lang, "Your quiz trail is deleted on %s. Create a free account and it moves there instead, cards and all, to play again whenever you like.", until) +
+		Body: T(lang, "Your party adventure is deleted on %s. Create a free account and it moves there instead, cards and all, to play again whenever you like.", until) +
 			"\n\n" + T(lang, "Moving it ends the games you have now; their summaries were already mailed to you."),
-		Buttons: []Button{{T(lang, "Keep my quiz trail"), keepURL}},
+		Buttons: []Button{{T(lang, "Keep my party adventure"), keepURL}},
 		Footer:  T(lang, "Not interested? Do nothing and it is deleted as planned."),
 	}
 }
@@ -213,14 +213,14 @@ func TrailEnded(lang, title string, kept bool, org string) (string, Content) {
 		return T(lang, "%s is in your account", title), Content{
 			Lang:    lang,
 			Heading: T(lang, "%s is in your account", title),
-			Body:    T(lang, "Your quiz trail is now an adventure in your account. Edit it, print it and host it from there. The summaries of the games you played were mailed to you before."),
+			Body:    T(lang, "Your party adventure is now an adventure in your account. Edit it, print it and host it from there. The summaries of the games you played were mailed to you before."),
 			Footer:  playerFooter(lang, "", org),
 		}
 	}
 	return T(lang, "%s has ended", title), Content{
 		Lang:    lang,
 		Heading: T(lang, "%s has ended", title),
-		Body:    T(lang, "Your quiz trail's days are over, so it and everything about its players has been deleted. The summaries of the games you played were mailed to you before.") + "\n\n" + T(lang, "Thank you for playing!"),
+		Body:    T(lang, "Your party adventure's days are over, so it and everything about its players has been deleted. The summaries of the games you played were mailed to you before.") + "\n\n" + T(lang, "Thank you for playing!"),
 		Footer:  playerFooter(lang, "", org),
 	}
 }

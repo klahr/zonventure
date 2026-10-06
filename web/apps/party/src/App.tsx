@@ -5,6 +5,7 @@ import { Join } from "./Join.tsx";
 import { TrailEdit } from "./TrailEdit.tsx";
 import { TrailMine, TrailPaid, TrailStart, TrailVerify } from "./TrailPages.tsx";
 import { useT } from "./i18n.tsx";
+import { embedded } from "./embed.ts";
 
 /**
  * The pages, by path: /app/party/book/{org}/{offer}, /app/party/host/{token},
@@ -37,12 +38,14 @@ export function App() {
   const t = useT().t;
   const r = route(location.pathname);
   return (
-    <div className={"party" + (r.page === "trail-edit" || r.page === "trail-host" ? " party--wide" : "")}>
-      <header className="party-top">
-        <a href="/" className="party-brand">
-          {siteName()}
-        </a>
-      </header>
+    <div className={"party" + (r.page === "trail-edit" || r.page === "trail-host" ? " party--wide" : "") + (embedded ? " party--embed" : "")}>
+      {!embedded && (
+        <header className="party-top">
+          <a href="/" className="party-brand">
+            {siteName()}
+          </a>
+        </header>
+      )}
       <main className="party-main">
         {r.page === "book" ? (
           <Book org={r.org} offer={r.offer} />

@@ -24,6 +24,7 @@ type trailView struct {
 	Unpublished bool            `json:"unpublished"`
 	Printed     bool            `json:"printed"`
 	Reprint     bool            `json:"reprint"`
+	Theme       string          `json:"theme"`
 }
 
 func (f *partyFixture) trailRoutes() {
@@ -34,6 +35,40 @@ func (f *partyFixture) trailRoutes() {
 	f.consoleRoute("POST", "/api/admin/adventures/{slug}/cards/designer", f.h.OpenTrailInDesigner)
 	f.consoleRoute("GET", "/api/admin/adventures/{slug}/cards.pdf", f.h.TrailPDF)
 	f.consoleRoute("POST", "/api/admin/adventures/{slug}/host", f.h.HostAdventure)
+	f.consoleRoute("PUT", "/api/admin/adventures/{slug}/cards/theme", f.h.PutTrailTheme)
+}
+
+// TestTrail_Theme: a starter theme's look becomes the adventure's own,
+// validated as any look is; its id is kept to show it chosen.
+func TestTrail_Theme(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newPartyFixture(t)
+	defer cleanup()
+	f.trailRoutes()
+	slug := f.newTrail(t, "birthday")
+	path := "/api/admin/adventures/" + slug + "/cards/theme"
+	look := map[string]any{"accent": "#e91e63", "accent_secondary": "#ff9800", "background": "#fff8f0", "text": "#3b1d2a",
+		"heading_font": "chewy", "backdrop": map[string]any{"kind": "confetti", "opacity": 0.5, "scale": 100}}
+	if w := call(t, f.console, "PUT", path, map[string]any{"id": "party", "look": look}); w.Code != http.StatusNoContent {
+		t.Fatalf("theme: %d %s", w.Code, w.Body)
+	}
+	var accent, font string
+	_ = f.h.DB.QueryRow(`SELECT accent_color, COALESCE(heading_font, '') FROM adventures WHERE slug = $1`, slug).Scan(&accent, &font)
+	if accent != "#e91e63" || font != "chewy" {
+		t.Errorf("look saved: accent %q heading font %q", accent, font)
+	}
+	if v := f.trail(t, slug); v.Theme != "party" {
+		t.Errorf("theme = %q", v.Theme)
+	}
+	for name, body := range map[string]map[string]any{
+		"bad id":     {"id": "Party!", "look": look},
+		"bad colour": {"id": "x", "look": map[string]any{"accent": "red"}},
+		"picture":    {"id": "x", "look": map[string]any{"backdrop": map[string]any{"kind": "picture", "media": 1, "opacity": 1, "scale": 100}}},
+	} {
+		if w := call(t, f.console, "PUT", path, body); w.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d %s", name, w.Code, w.Body)
+		}
+	}
 }
 
 func (f *partyFixture) newTrail(t *testing.T, template string) string {

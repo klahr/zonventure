@@ -103,6 +103,57 @@ func TestRecap(t *testing.T) {
 		}
 	})
 
+	// A team that finished sees its recap while the event runs on: a
+	// self-guided event may run for months, a hosted one for days.
+	t.Run("finished team while the event runs", func(t *testing.T) {
+		teamID := seedRecapEvent(t, db, orgID, "running", "rt-finished")
+		var eventID int64
+		_ = db.QueryRow(`SELECT event_id FROM teams WHERE id = $1`, teamID).Scan(&eventID)
+		var graphID int64
+		if err := db.QueryRow(`INSERT INTO adventure_graphs(adventure_id, version, graph, label)
+			SELECT id, 900, '{"nodes":[],"edges":[]}', '' FROM adventures WHERE slug = 'demo' RETURNING id`).Scan(&graphID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO team_graph_state(team_id, event_id, graph_id) VALUES ($1, $2, $3)`, teamID, eventID, graphID); err != nil {
+			t.Fatal(err)
+		}
+		if status, _ := readRecap(t, ts.URL, "rt-finished"); status != http.StatusNotFound {
+			t.Fatalf("still playing = %d, want 404", status)
+		}
+		if _, err := db.Exec(`UPDATE team_graph_state SET completed_at = now() WHERE team_id = $1`, teamID); err != nil {
+			t.Fatal(err)
+		}
+		if status, body := readRecap(t, ts.URL, "rt-finished"); status != http.StatusOK {
+			t.Fatalf("finished team = %d %s, want 200", status, body)
+		}
+	})
+
+	// A hosted event's team whose game was finished sees its recap,
+	// finished or not.
+	t.Run("hosted game finished", func(t *testing.T) {
+		teamID := seedRecapEvent(t, db, orgID, "running", "rt-round")
+		var eventID int64
+		_ = db.QueryRow(`SELECT event_id FROM teams WHERE id = $1`, teamID).Scan(&eventID)
+		if _, err := db.Exec(`UPDATE events SET party = TRUE, current_round = 1 WHERE id = $1`, eventID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`UPDATE teams SET round = 1 WHERE id = $1`, teamID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO event_rounds(event_id, round) VALUES ($1, 1)`, eventID); err != nil {
+			t.Fatal(err)
+		}
+		if status, _ := readRecap(t, ts.URL, "rt-round"); status != http.StatusNotFound {
+			t.Fatalf("game on = %d, want 404", status)
+		}
+		if _, err := db.Exec(`UPDATE event_rounds SET finished_at = now() WHERE event_id = $1`, eventID); err != nil {
+			t.Fatal(err)
+		}
+		if status, body := readRecap(t, ts.URL, "rt-round"); status != http.StatusOK {
+			t.Fatalf("game finished = %d %s, want 200", status, body)
+		}
+	})
+
 	// The same 404 shape for a token that doesn't exist at all — the
 	// response should not let a client distinguish "doesn't exist" from
 	// "exists but not yet visible".

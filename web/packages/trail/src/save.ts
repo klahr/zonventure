@@ -16,6 +16,8 @@ export interface TrailDoc {
   unpublished: boolean;
   printed: boolean;
   reprint: boolean;
+  /** The look's TRAIL_THEMES id; empty, the default look. */
+  theme: string;
 }
 
 /** Saving a trail: the console's, or (later) a public draft's. */

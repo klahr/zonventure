@@ -527,7 +527,7 @@ func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, par
 	if strings.TrimSpace(partyName) == "" {
 		partyName = title
 	}
-	eventID, hostToken, err = createHostedEvent(ctx, tx, orgID, advSlug, partyName, kids, 1)
+	eventID, hostToken, err = createHostedEvent(ctx, tx, orgID, advSlug, partyName, kids, 1, "")
 	if err != nil {
 		return 0, "", err
 	}
@@ -540,15 +540,18 @@ func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, par
 // createHostedEvent makes a hosted event of orgID's, unstarted, playing
 // advSlug: with a station card for every zone, a host link and a player
 // link, blocks blocks of teams per game, and 60 days to start its first
-// game. It returns the event and the host link's secret.
-func createHostedEvent(ctx context.Context, tx *sql.Tx, orgID int64, advSlug, name string, kids, blocks int) (eventID int64, hostToken string, err error) {
+// game. hostToken is the host link's secret when one was minted already
+// (at checkout); empty, a new one is. It returns the event and the
+// secret.
+func createHostedEvent(ctx context.Context, tx *sql.Tx, orgID int64, advSlug, name string, kids, blocks int, hostToken string) (eventID int64, _ string, err error) {
 	var advID int64
 	if err := tx.QueryRowContext(ctx, `SELECT id FROM adventures WHERE slug = $1`, advSlug).Scan(&advID); err != nil {
 		return 0, "", fmt.Errorf("adventure %q: %w", advSlug, err)
 	}
-	hostToken, err = tokenx.New(24)
-	if err != nil {
-		return 0, "", err
+	if hostToken == "" {
+		if hostToken, err = tokenx.New(24); err != nil {
+			return 0, "", err
+		}
 	}
 	liveToken, err := newLiveToken()
 	if err != nil {
@@ -792,7 +795,7 @@ func (h *Handlers) GetHostParty(w http.ResponseWriter, r *http.Request) {
 	out := hostPartyDTO{State: p.State, Kids: p.Kids, ValidUntil: p.ValidUntil,
 		Expired: partyLapsed(p), PlayURL: base + "/play",
 		PlayerURL: base + "/j/" + p.PlayerToken, Round: p.Round, RoundOpen: p.RoundOpen,
-		TeamsLimit: p.Blocks * TeamsPerBlock, MaxTeams: maxBlocks * TeamsPerBlock, Price: h.hostedPrice()}
+		TeamsLimit: teamsLimit(p.Blocks), MaxTeams: maxBlocks * TeamsPerBlock, Price: h.hostedPrice()}
 	var liveToken string
 	if err := h.DB.QueryRowContext(ctx, `
 		SELECT e.party_name, COALESCE(NULLIF(a.title, ''), a.slug), o.name, e.live_token, e.first_game_at

@@ -61,5 +61,6 @@
   "{{n}} players": "{{n}} spelare",
   "{{placed}} of {{total}} places put.": "{{placed}} av {{total}} platser utlagda.",
   "{{score}} points so far": "{{score}} poäng hittills",
-  "{{teams}} teams, {{players}} players": "{{teams}} lag, {{players}} spelare"
+  "{{teams}} teams, {{players}} players": "{{teams}} lag, {{players}} spelare",
+  "Up to {{n}} teams for {{price}}": "Upp till {{n}} lag för {{price}}"
 }

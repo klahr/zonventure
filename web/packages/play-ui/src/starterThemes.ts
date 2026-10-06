@@ -1,4 +1,7 @@
-import type { ThemeLook } from "@zonventure/graph";
+import type { play } from "@zonventure/api";
+
+/** A whole look: the same shape as @zonventure/graph's ThemeLook. */
+type ThemeLook = play.Brand;
 
 /**
  * Whole looks to start a theme from, for authors who would rather adjust

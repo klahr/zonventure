@@ -137,15 +137,22 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 		completedAt   sql.NullString
 		teamCompleted sql.NullString
 		state         string
+		teamDone      bool
 	)
+	// A team is done when it finished the adventure, or when its game of
+	// a hosted event was finished: its recap opens then, without waiting
+	// for an event that may run for days (hosted) or months (self-guided).
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT ar.id, t.id, t.name, ar.adventure_slug, ar.started_at,
-		       ar.completed_at, t.completed_at, ar.state
+		       ar.completed_at, t.completed_at, ar.state,
+		       COALESCE((SELECT s.completed_at IS NOT NULL FROM team_graph_state s WHERE s.team_id = t.id), FALSE)
+		       OR EXISTS (SELECT 1 FROM event_rounds er
+		                  WHERE er.event_id = t.event_id AND er.round = t.round AND er.finished_at IS NOT NULL)
 		FROM teams t
 		JOIN events ar ON ar.id = t.event_id
 		WHERE t.recap_token = $1
 	`, token).Scan(&eventID, &teamID, &teamName, &adventureSlug, &startedAt,
-		&completedAt, &teamCompleted, &state)
+		&completedAt, &teamCompleted, &state, &teamDone)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Same shape as "not yet visible" below — never leak that
 		// the token exists during the live phase, only that the
@@ -157,7 +164,7 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "lookup failed", http.StatusInternalServerError)
 		return
 	}
-	if state != "completed" && state != "cancelled" {
+	if state != "completed" && state != "cancelled" && !teamDone {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -522,7 +529,11 @@ func (h *Handlers) RecapPhoto(w http.ResponseWriter, r *http.Request) {
 		JOIN teams t ON t.id = p.team_id
 		JOIN events ar ON ar.id = t.event_id
 		WHERE t.recap_token = $1 AND p.id = $2 AND p.status = 'approved'
-		  AND ar.state IN ('completed', 'cancelled')`, chi.URLParam(r, "token"), id).Scan(&content, &mime)
+		  AND (ar.state IN ('completed', 'cancelled')
+		       OR EXISTS (SELECT 1 FROM team_graph_state s WHERE s.team_id = t.id AND s.completed_at IS NOT NULL)
+		       OR EXISTS (SELECT 1 FROM event_rounds er
+		                  WHERE er.event_id = t.event_id AND er.round = t.round AND er.finished_at IS NOT NULL))`,
+		chi.URLParam(r, "token"), id).Scan(&content, &mime)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return

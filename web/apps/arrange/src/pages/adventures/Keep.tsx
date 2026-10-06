@@ -24,9 +24,9 @@ export function KeepPage({ token }: { token: string }) {
   if (load.error && !load.data) {
     return (
       <Page>
-        <PageHeader title={t.t("Keep a quiz trail")} />
+        <PageHeader title={t.t("Keep a party adventure")} />
         <Card>
-          <p>{t.t("This link has expired or was used already. A quiz trail can be kept until its days of play are over.")}</p>
+          <p>{t.t("This link has expired or was used already. A party adventure can be kept until its days of play are over.")}</p>
         </Card>
       </Page>
     );
@@ -53,7 +53,7 @@ export function KeepPage({ token }: { token: string }) {
     <Page>
       <PageHeader title={t.t("Keep {{title}}", { title: load.data.title })} />
       <Card>
-        <p>{t.t("The quiz trail and its {{n}} cards become an adventure of your organisation, to edit, print and host whenever you like.", { n: load.data.cards })}</p>
+        <p>{t.t("The party adventure and its {{n}} cards become an adventure of your organisation, to edit, print and host whenever you like.", { n: load.data.cards })}</p>
         <p>{t.t("Its admin page and the games played so far end now. Their summaries were mailed to {{email}}.", { email: load.data.email })}</p>
         {error && <ErrorBox message={error} />}
         <button type="button" className="btn primary" disabled={busy} onClick={() => void keep()}>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { ApiError } from "@zonventure/api";
+import { ApiError, request } from "@zonventure/api";
 import { money } from "@zonventure/hosted";
-import { TemplatePicker } from "@zonventure/trail";
+import { TRAIL_THEMES, TemplatePicker, ThemeShowcase, themeById } from "@zonventure/trail";
 import { useT } from "./i18n.tsx";
 import {
   createDraft,
@@ -13,7 +13,10 @@ import {
   heldTrails,
   holdTrail,
   listMine,
+  paidHost,
+  setTrailTheme,
   sendHostLink,
+  setPaidHost,
   setTrailSession,
   signIn,
   trailSession,
@@ -21,15 +24,19 @@ import {
   type TrailStart as Start,
   type TrailSummary,
 } from "./trail.ts";
+import { embedded, outside } from "./embed.ts";
 
 const MINE = "/app/party/trail/mine";
 
 function MyTrailsLink() {
   const t = useT().t;
-  if (heldTrails().length === 0 && !trailSession()) return null;
+  // On the landing page, the page around the frame has the link.
+  if (embedded || (heldTrails().length === 0 && !trailSession())) return null;
   return (
     <p className="party-right">
-      <a href={MINE}>{t("My trails")}</a>
+      <a href={MINE} target={outside}>
+        {t("My trails")}
+      </a>
     </p>
   );
 }
@@ -43,6 +50,7 @@ export function TrailStart({ org }: { org: string }) {
   const [missing, setMissing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [theme, setTheme] = useState(TRAIL_THEMES[0]!.id);
 
   useEffect(() => {
     getStart(org, lang).then(setStart, () => setMissing(true));
@@ -52,7 +60,7 @@ export function TrailStart({ org }: { org: string }) {
     return (
       <section className="party-card">
         <h1>{t("Not available")}</h1>
-        <p>{t("Quiz trails can't be made here.")}</p>
+        <p>{t("Party adventures can't be made here.")}</p>
       </section>
     );
   }
@@ -64,6 +72,9 @@ export function TrailStart({ org }: { org: string }) {
     try {
       const d = await createDraft(org, template, lang);
       holdTrail({ id: d.id, secret: d.secret });
+      // The look on show when they picked is the one they get.
+      const th = themeById(theme);
+      if (th) await setTrailTheme({ id: d.id }, { id: th.id, look: th.look }).catch(() => {});
       location.href = editURL(d.id);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : t("Something went wrong. Try again."));
@@ -71,21 +82,36 @@ export function TrailStart({ org }: { org: string }) {
     }
   };
   const price = start.price.block_cents > 0 ? money(start.price.block_cents, start.price.currency, i18n.current()) : null;
+  const priceLine = (
+    <p className="party-price">
+      {price
+        ? t("Free for up to {{free}} teams · {{price}} for up to {{n}}", { free: start.price.free_teams, price, n: start.price.teams_per_block })
+        : t("Free to make and to play for {{days}} days", { days: start.play_days })}
+    </p>
+  );
 
   return (
     <>
       <MyTrailsLink />
+      {/* On the landing page, the page around the frame says what it is. */}
+      {!embedded && (
+        <section className="party-card">
+          <h1>{t("Make your own party adventure")}</h1>
+          <p className="party-lead">{t("A little adventure for your party: write the questions, hide the printed cards around the house, the garden or the park, and let the teams set off with their phones. Who wins?")}</p>
+          {priceLine}
+        </section>
+      )}
       <section className="party-card">
-        <h1>{t("Make your own quiz trail")}</h1>
-        <p className="party-lead">{t("Write the questions on your phone, print the cards and hide them along the way. The teams answer on their phones and see who won at the end.")}</p>
-        <p className="party-price">
-          {price
-            ? t("Free to make · {{price}} to play for {{days}} days", { price, days: start.play_days })
-            : t("Free to make and to play for {{days}} days", { days: start.play_days })}
-        </p>
+        <ThemeShowcase
+          i18n={i18n}
+          value={theme}
+          onChange={setTheme}
+          sample={{ text: t("How many legs does a spider have?"), options: ["6", "8", "10"], correct: "X" }}
+        />
       </section>
       <section className="party-card">
         <h2>{t("Start from")}</h2>
+        {embedded && priceLine}
         {error && (
           <p className="party-error" role="alert">
             {error}
@@ -172,7 +198,7 @@ export function TrailMine() {
         {!list ? (
           <p className="party-muted">{t("Loading…")}</p>
         ) : list.length === 0 ? (
-          <p className="party-muted">{t("No quiz trails here yet.")}</p>
+          <p className="party-muted">{t("No party adventures here yet.")}</p>
         ) : (
           <ul className="party-trails">
             {list.map((x) => (
@@ -212,7 +238,7 @@ export function TrailMine() {
                       type="button"
                       className="party-btn party-btn--danger"
                       onClick={() => {
-                        if (confirm(t("Delete this quiz trail? This can't be undone."))) void act(() => deleteDraft(x.id).then(() => forgetTrails([x.id])));
+                        if (confirm(t("Delete this party adventure? This can't be undone."))) void act(() => deleteDraft(x.id).then(() => forgetTrails([x.id])));
                       }}
                     >
                       {t("Delete")}
@@ -238,9 +264,9 @@ function SignIn() {
   const [error, setError] = useState<string | null>(null);
   return (
     <section className="party-card">
-      <h2>{t("Made a quiz trail somewhere else?")}</h2>
+      <h2>{t("Made a party adventure somewhere else?")}</h2>
       {sent ? (
-        <p>{t("Check your inbox. If quiz trails are saved to {{email}}, the link to them is on its way.", { email })}</p>
+        <p>{t("Check your inbox. If party adventures are saved to {{email}}, the link to them is on its way.", { email })}</p>
       ) : (
         <form
           className="party-inline"
@@ -303,13 +329,68 @@ export function TrailVerify() {
   );
 }
 
-/** Back from paying for a quiz trail: the admin link is in the mail. */
+/** How long the thank-you page waits for the payment to land. */
+const PAID_WAIT_MS = 60_000;
+
+/**
+ * Back from paying for a quiz trail. The browser that paid holds the
+ * admin page's link (from checkout): once the payment has landed the
+ * page opens, so the buyer goes straight there. The link is in the mail
+ * too, for any other device.
+ */
 export function TrailPaid() {
   const t = useT().t;
+  const [held] = useState(() => {
+    const p = paidHost();
+    return p && Date.now() - p.at < 24 * 3600_000 ? p.url : null;
+  });
+  const [ready, setReady] = useState(false);
+  const [late, setLate] = useState(false);
+
+  useEffect(() => {
+    if (!held) return;
+    const token = decodeURIComponent(held.slice(held.lastIndexOf("/") + 1));
+    const started = Date.now();
+    let stop = false;
+    const look = async () => {
+      if (stop) return;
+      try {
+        await request(`/api/party/${encodeURIComponent(token)}`);
+        setPaidHost(null);
+        setReady(true);
+        location.replace(held);
+        return;
+      } catch {
+        // Not paid yet: the payment's webhook has not landed.
+      }
+      if (Date.now() - started > PAID_WAIT_MS) setLate(true);
+      setTimeout(() => void look(), 2000);
+    };
+    void look();
+    return () => {
+      stop = true;
+    };
+  }, [held]);
+
   return (
     <section className="party-card">
-      <h1>{t("Thank you — your quiz trail is ready to play")}</h1>
-      <p className="party-lead">{t("We're emailing you the link to the admin page. There you print the cards and the answer key, and show the teams how to join.")}</p>
+      <h1>{t("Thank you — your party adventure is ready to play")}</h1>
+      {held && !late ? (
+        <p className="party-lead" role="status">
+          {ready ? t("Opening your admin page…") : t("Getting your admin page ready…")}
+        </p>
+      ) : (
+        <>
+          {held && (
+            <p>
+              <a className="party-btn party-btn--primary" href={held}>
+                {t("Open the admin page")}
+              </a>
+            </p>
+          )}
+          <p className="party-lead">{t("We're emailing you the link to the admin page. There you print the cards and the answer key, and show the teams how to join.")}</p>
+        </>
+      )}
       <p className="party-muted">{t("It can take a minute or two. Check your spam folder if it doesn't arrive.")}</p>
       <a className="party-btn" href={MINE}>
         {t("My trails")}

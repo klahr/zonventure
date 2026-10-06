@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ApiError, request } from "@zonventure/api";
-import { Editor, problems, useTrailSave, type TrailApi, type TrailDoc } from "@zonventure/trail";
+import { Editor, problems, useTrailSave, type TrailApi, type TrailDoc, type TrailTheme } from "@zonventure/trail";
 import { useT } from "../../i18n.tsx";
 import { href, navigate } from "../../router.ts";
 import { useTopBarTitle } from "../../topbar.tsx";
@@ -42,6 +42,17 @@ function TrailEditor({ slug, doc, reload }: { slug: string; doc: TrailDoc; reloa
   const s = useTrailSave(api, doc);
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null);
   const [tried, setTried] = useState(false);
+  const [theme, setTheme] = useState(doc.theme);
+  const pickTheme = async (th: TrailTheme) => {
+    const was = theme;
+    setTheme(th.id);
+    try {
+      await request(`${base(slug)}/theme`, { method: "PUT", body: { id: th.id, look: th.look } });
+    } catch (e) {
+      setTheme(was);
+      toast.err(e instanceof ApiError ? e.message : e);
+    }
+  };
   const [busy, setBusy] = useState(false);
 
   const done = async () => {
@@ -76,6 +87,8 @@ function TrailEditor({ slug, doc, reload }: { slug: string; doc: TrailDoc; reloa
         onChange={s.change}
         focus={focus}
         showProblems={tried}
+        theme={theme}
+        onTheme={(th) => void pickTheme(th)}
         actions={
           <>
             {s.state === "conflict" && (

@@ -433,3 +433,23 @@ a.party-btn {
   flex-direction: column;
   gap: var(--sp-1);
 }
+
+/* Embedded in the site's landing page: no header, the page's own
+   background shows through, and the frame's height is the editor's. */
+.party--embed {
+  min-height: 100dvh;
+  background: transparent;
+}
+html:has(.party--embed),
+html:has(.party--embed) body {
+  background: transparent;
+}
+.party--embed .party-main {
+  padding: var(--sp-3) var(--sp-3) var(--sp-5);
+}
+.party--embed .party-card {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: var(--sp-3);
+}

@@ -143,7 +143,7 @@ export function Host({ token }: { token: string }) {
             {party.public_trail && !party.expired && (party.state === "scheduled" || party.state === "running" || party.state === "paused") && (
               <p>
                 <a className="party-btn" href={hostEditURL(token)}>
-                  {t("Edit the quiz trail")}
+                  {t("Edit the party adventure")}
                 </a>
               </p>
             )}
@@ -203,12 +203,12 @@ export function Host({ token }: { token: string }) {
           <section className="party-card">
             <h2>{t("Keep it")}</h2>
             <p className="party-muted">
-              {t("Your quiz trail is deleted on {{date}}. Create a free account and it moves there instead, to play again whenever you like. Moving it ends the games you have now.", {
+              {t("Your party adventure is deleted on {{date}}. Create a free account and it moves there instead, to play again whenever you like. Moving it ends the games you have now.", {
                 date: date(party.valid_until),
               })}
             </p>
             <button type="button" className="party-btn party-btn--primary" disabled={busy} onClick={() => void run(async () => (location.href = (await keepLink(token)).url))}>
-              {t("Create a free account to keep this quiz trail")}
+              {t("Create a free account to keep this party adventure")}
             </button>
           </section>
         )}

@@ -553,12 +553,24 @@ func firstForwardedAddr(r *http.Request) string {
 	return ""
 }
 
+// embeddablePrefix is where pages may be framed by the site's own
+// pages: the quiz trail creator, which the landing page shows in a
+// section of its own. Same origin only, so the clickjacking surface
+// frame-ancestors 'none' closes stays closed to every other site.
+const embeddablePrefix = "/app/party/trail/"
+
 func securityHeaders(csp string) func(http.Handler) http.Handler {
+	framed := strings.Replace(csp, "frame-ancestors 'none'", "frame-ancestors 'self'", 1)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := w.Header()
-			h.Set("Content-Security-Policy", csp)
-			h.Set("X-Frame-Options", "DENY")
+			if strings.HasPrefix(r.URL.Path, embeddablePrefix) {
+				h.Set("Content-Security-Policy", framed)
+				h.Set("X-Frame-Options", "SAMEORIGIN")
+			} else {
+				h.Set("Content-Security-Policy", csp)
+				h.Set("X-Frame-Options", "DENY")
+			}
 			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 			// nosniff applies to every response. We already set it
 			// individually on a few specific endpoints (/adventure-

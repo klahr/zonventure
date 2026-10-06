@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ApiError, request } from "@zonventure/api";
-import { TemplatePicker, type TemplateInfo } from "@zonventure/trail";
+import { TEMPLATE_THEMES, TemplatePicker, themeById, type TemplateInfo } from "@zonventure/trail";
 import { useT } from "../../i18n.tsx";
 import { navigate } from "../../router.ts";
 import { Dialog, ErrorBox, Field, Loading, useLoad } from "../../ui/index.ts";
@@ -26,6 +26,9 @@ export function NewKindDialog({ onDesigner, onClose }: { onDesigner: () => void;
     setError(null);
     try {
       const r = await request<{ slug: string }>("/api/admin/trails", { method: "POST", body: { template, language: lang } });
+      // Each template starts in a look of its own; changed in the editor.
+      const th = themeById(TEMPLATE_THEMES[template]);
+      if (th) await request(`/api/admin/adventures/${encodeURIComponent(r.slug)}/cards/theme`, { method: "PUT", body: { id: th.id, look: th.look } }).catch(() => {});
       onClose();
       navigate({ name: "trail", slug: r.slug });
     } catch (e) {
@@ -40,8 +43,8 @@ export function NewKindDialog({ onDesigner, onClose }: { onDesigner: () => void;
         <ul className="trail-templates">
           <li>
             <button type="button" onClick={() => setKind("trail")}>
-              <strong>{t.t("Quiz trail (simple)")}</strong>
-              <span>{t.t("Questions on cards you print and hide; teams answer on their phones. Made in minutes, on a phone too.")}</span>
+              <strong>{t.t("Party adventure (simple)")}</strong>
+              <span>{t.t("A little adventure for a party: questions on cards you print and hide, and teams racing with their phones. Made in minutes, on a phone too.")}</span>
             </button>
           </li>
           <li>

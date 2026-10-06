@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "@zonventure/api";
 import { money } from "@zonventure/hosted";
-import { Editor, problems, useTrailSave, type TrailApi } from "@zonventure/trail";
+import {
+  Editor,
+  problems,
+  useTrailSave,
+  type TrailApi,
+  type TrailTheme,
+} from "@zonventure/trail";
 import { useT } from "./i18n.tsx";
 import {
   checkout,
+  setPaidHost,
+  setTrailTheme,
   deleteDraft,
   getDraft,
   getHostTrail,
@@ -17,6 +25,7 @@ import {
   trailSession,
   type PublicTrail,
 } from "./trail.ts";
+import { leave, outside } from "./embed.ts";
 
 const MINE = "/app/party/trail/mine";
 
@@ -53,7 +62,8 @@ export function TrailEdit({ host }: { host: boolean }) {
       setMissing(true);
       return;
     }
-    const load = "token" in which ? getHostTrail(which.token) : getDraft(which.id);
+    const load =
+      "token" in which ? getHostTrail(which.token) : getDraft(which.id);
     load.then(setDoc, (e) => {
       if (e instanceof ApiError && e.status === 404) setMissing(true);
       else setMissing(true);
@@ -63,35 +73,77 @@ export function TrailEdit({ host }: { host: boolean }) {
   if (missing || !which) {
     return (
       <section className="party-card">
-        <h1>{t("This quiz trail can't be found")}</h1>
-        <p>{t("It may have been deleted, or it was made in another browser. Open it from the link in your email, or from My trails.")}</p>
-        <a className="party-btn" href={MINE}>
+        <h1>{t("This party adventure can't be found")}</h1>
+        <p>
+          {t(
+            "It may have been deleted, or it was made in another browser. Open it from the link in your email, or from My trails.",
+          )}
+        </p>
+        <a className="party-btn" href={MINE} target={outside}>
           {t("My trails")}
         </a>
       </section>
     );
   }
   if (!doc) return <p className="party-muted">{t("Loading…")}</p>;
-  return <Creator key={doc.revision + ":" + nonce} doc={doc} which={which} reload={() => setNonce((n) => n + 1)} />;
+  return (
+    <Creator
+      key={doc.revision + ":" + nonce}
+      doc={doc}
+      which={which}
+      reload={() => setNonce((n) => n + 1)}
+    />
+  );
 }
 
-function Creator({ doc, which, reload }: { doc: PublicTrail; which: { id: number } | { token: string }; reload: () => void }) {
+function Creator({
+  doc,
+  which,
+  reload,
+}: {
+  doc: PublicTrail;
+  which: { id: number } | { token: string };
+  reload: () => void;
+}) {
   const i18n = useT();
   const t = i18n.t;
   const byHost = "token" in which;
   const api = useMemo<TrailApi>(
-    () => ({ save: (body) => ("token" in which ? saveHostTrail(which.token, body) : saveDraft(which.id, body)) }),
+    () => ({
+      save: (body) =>
+        "token" in which
+          ? saveHostTrail(which.token, body)
+          : saveDraft(which.id, body),
+    }),
     [which],
   );
   const s = useTrailSave(api, doc);
   const live = s.doc as PublicTrail;
-  const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null);
+  const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(
+    null,
+  );
   const [tried, setTried] = useState(false);
   const [paying, setPaying] = useState(false);
   const [panel, setPanel] = useState<"email" | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const key = "id" in which ? heldTrails().find((k) => k.id === which.id) : undefined;
+  const [theme, setTheme] = useState(doc.theme);
+  const pickTheme = async (th: TrailTheme) => {
+    const was = theme;
+    setTheme(th.id);
+    try {
+      await setTrailTheme(which, { id: th.id, look: th.look });
+    } catch (e) {
+      setTheme(was);
+      setNote(
+        e instanceof ApiError
+          ? e.message
+          : t("Something went wrong. Try again."),
+      );
+    }
+  };
+  const key =
+    "id" in which ? heldTrails().find((k) => k.id === which.id) : undefined;
   const ended = live.state === "ended";
 
   const done = async () => {
@@ -99,18 +151,22 @@ function Creator({ doc, which, reload }: { doc: PublicTrail; which: { id: number
     try {
       if (!(await s.flush())) return;
       if (byHost) {
-        location.href = `/app/party/host/${encodeURIComponent(which.token)}`;
+        leave(`/app/party/host/${encodeURIComponent(which.token)}`);
         return;
       }
       if (live.state !== "draft") {
-        location.href = MINE;
+        leave(MINE);
         return;
       }
       const first = problems(s.cards)[0];
       setTried(true);
       if (first) {
         if (first.card) setFocus({ id: first.card, nonce: Date.now() });
-        setNote(first.card ? t("Finish the marked cards first.") : t("Add at least one question first."));
+        setNote(
+          first.card
+            ? t("Finish the marked cards first.")
+            : t("Add at least one question first."),
+        );
         return;
       }
       setPaying(true);
@@ -120,12 +176,20 @@ function Creator({ doc, which, reload }: { doc: PublicTrail; which: { id: number
   };
 
   const remove = async () => {
-    if (!("id" in which) || !confirm(t("Delete this quiz trail? This can't be undone."))) return;
+    if (
+      !("id" in which) ||
+      !confirm(t("Delete this party adventure? This can't be undone."))
+    )
+      return;
     try {
       await deleteDraft(which.id);
-      location.href = MINE;
+      leave(MINE);
     } catch (e) {
-      setNote(e instanceof ApiError ? e.message : t("Something went wrong. Try again."));
+      setNote(
+        e instanceof ApiError
+          ? e.message
+          : t("Something went wrong. Try again."),
+      );
     }
   };
 
@@ -133,22 +197,44 @@ function Creator({ doc, which, reload }: { doc: PublicTrail; which: { id: number
     if (!key) return;
     try {
       await navigator.clipboard.writeText(shareURL(key));
-      setNote(t("Link copied. Anyone with it can edit this quiz trail."));
+      setNote(t("Link copied. Anyone with it can edit this party adventure."));
     } catch {
       prompt(t("Copy this link:"), shareURL(key));
     }
   };
 
-  if (paying && "id" in which) return <Checkout doc={live} id={which.id} cards={s.cards.length} back={() => setPaying(false)} />;
+  if (paying && "id" in which)
+    return (
+      <Checkout
+        doc={live}
+        id={which.id}
+        cards={s.cards.length}
+        back={() => setPaying(false)}
+      />
+    );
 
-  const saved = live.email ? t("Saved to {{email}}", { email: live.email }) : byHost ? undefined : t("Saved on this phone");
+  const saved = live.email
+    ? t("Saved to {{email}}", { email: live.email })
+    : byHost
+      ? undefined
+      : t("Saved on this phone");
   return (
     <div className="party-trail">
-      {live.round_open && <p className="party-note">{t("A game is being played. Changes apply from the next game.")}</p>}
-      {live.reprint && live.state !== "draft" && (
-        <p className="party-note">{t("The cards changed since you printed them. Print them again from the admin page before the next game.")}</p>
+      {live.round_open && (
+        <p className="party-note">
+          {t("A game is being played. Changes apply from the next game.")}
+        </p>
       )}
-      {ended && <p className="party-note">{t("This quiz trail has ended.")}</p>}
+      {live.reprint && live.state !== "draft" && (
+        <p className="party-note">
+          {t(
+            "The cards changed since you printed them. Print them again from the admin page before the next game.",
+          )}
+        </p>
+      )}
+      {ended && (
+        <p className="party-note">{t("This party adventure has ended.")}</p>
+      )}
       {note && (
         <p className="party-note" role="status">
           {note}
@@ -165,6 +251,8 @@ function Creator({ doc, which, reload }: { doc: PublicTrail; which: { id: number
         focus={focus}
         showProblems={tried}
         savedText={saved}
+        theme={theme}
+        onTheme={ended ? undefined : (th) => void pickTheme(th)}
         actions={
           <>
             {s.state === "conflict" && (
@@ -183,12 +271,18 @@ function Creator({ doc, which, reload }: { doc: PublicTrail; which: { id: number
                   )}
                   {key && (
                     <button type="button" onClick={() => void copy()}>
-                      {t("Copy link to this quiz trail")}
+                      {t("Copy link to this party adventure")}
                     </button>
                   )}
-                  <a href={MINE}>{t("My trails")}</a>
+                  <a href={MINE} target={outside}>
+                    {t("My trails")}
+                  </a>
                   {live.state === "draft" && (
-                    <button type="button" className="is-danger" onClick={() => void remove()}>
+                    <button
+                      type="button"
+                      className="is-danger"
+                      onClick={() => void remove()}
+                    >
                       {t("Delete")}
                     </button>
                   )}
@@ -196,7 +290,12 @@ function Creator({ doc, which, reload }: { doc: PublicTrail; which: { id: number
               </details>
             )}
             {!ended && (
-              <button type="button" className="trail-btn trail-btn--primary" disabled={busy} onClick={() => void done()}>
+              <button
+                type="button"
+                className="trail-btn trail-btn--primary"
+                disabled={busy}
+                onClick={() => void done()}
+              >
                 {t("Done")}
               </button>
             )}
@@ -219,7 +318,12 @@ function SaveToEmail({ close }: { close: () => void }) {
       <h2>{t("Save to email")}</h2>
       {sent ? (
         <>
-          <p>{t("We've sent you a link. Open it to save your quiz trails to {{email}}.", { email })}</p>
+          <p>
+            {t(
+              "We've sent you a link. Open it to save your party adventures to {{email}}.",
+              { email },
+            )}
+          </p>
           <button type="button" className="party-btn" onClick={close}>
             {t("Close")}
           </button>
@@ -235,16 +339,30 @@ function SaveToEmail({ close }: { close: () => void }) {
               await saveToEmail(email.trim());
               setSent(true);
             } catch (err) {
-              setError(err instanceof ApiError ? err.message : t("Something went wrong. Try again."));
+              setError(
+                err instanceof ApiError
+                  ? err.message
+                  : t("Something went wrong. Try again."),
+              );
             } finally {
               setBusy(false);
             }
           }}
         >
-          <p className="party-muted">{t("Then you can open your quiz trails from any phone or computer. No password.")}</p>
+          <p className="party-muted">
+            {t(
+              "Then you can open your party adventures from any phone or computer. No password.",
+            )}
+          </p>
           <label className="party-field">
             <span>{t("Your email")}</span>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+            />
           </label>
           {error && (
             <p className="party-error" role="alert">
@@ -266,19 +384,30 @@ function SaveToEmail({ close }: { close: () => void }) {
 }
 
 /** Checkout: what the pass buys, how many teams, the email for the admin link, then pay. */
-function Checkout({ doc, id, cards, back }: { doc: PublicTrail; id: number; cards: number; back: () => void }) {
+function Checkout({
+  doc,
+  id,
+  cards,
+  back,
+}: {
+  doc: PublicTrail;
+  id: number;
+  cards: number;
+  back: () => void;
+}) {
   const i18n = useT();
   const t = i18n.t;
   const loc = i18n.current();
-  const [blocks, setBlocks] = useState(1);
-  const [more, setMore] = useState(false);
+  // No blocks: free, for up to free_teams teams a game.
+  const [blocks, setBlocks] = useState(0);
   const [email, setEmail] = useState(trailSession()?.email ?? "");
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const per = doc.price.teams_per_block;
-  const free = doc.price.block_cents <= 0;
+  const limit = (b: number) => (b === 0 ? doc.price.free_teams : b * per);
   const total = doc.price.block_cents * blocks;
+  const free = total <= 0;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -286,45 +415,81 @@ function Checkout({ doc, id, cards, back }: { doc: PublicTrail; id: number; card
     setError(null);
     try {
       const r = await checkout(id, { email: email.trim(), blocks, consent });
-      if (r.checkout_url) location.href = r.checkout_url;
-      else if (r.host_url) location.href = r.host_url;
+      if (r.checkout_url) {
+        setPaidHost(r.host_url ?? null);
+        leave(r.checkout_url);
+      } else if (r.host_url) leave(r.host_url);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t("Something went wrong. Try again."));
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : t("Something went wrong. Try again."),
+      );
       setBusy(false);
     }
   };
 
   return (
     <section className="party-card">
-      <p className="party-eyebrow">{t("Quiz trail")}</p>
+      <p className="party-eyebrow">{t("Party adventure")}</p>
       <h1>{doc.title}</h1>
       <ul className="party-points">
         <li>{t("{{n}} cards", { n: cards })}</li>
-        <li>{t("Play as many games as you like for 14 days from the first game. Start within 60 days.")}</li>
-        <li>{t("Up to {{n}} teams in one game, each on a phone. No app and no accounts.", { n: blocks * per })}</li>
+        <li>
+          {t(
+            "Play as many games as you like for 14 days from the first game. Start within 60 days.",
+          )}
+        </li>
+        <li>
+          {t(
+            "Up to {{n}} teams in one game, each on a phone. No app and no accounts.",
+            { n: limit(blocks) },
+          )}
+        </li>
       </ul>
       {!doc.payments_open ? (
         <>
-          <p className="party-note">{t("Booking isn't open right now. Your quiz trail is saved; check back soon.")}</p>
+          <p className="party-note">
+            {t(
+              "Booking isn't open right now. Your party adventure is saved; check back soon.",
+            )}
+          </p>
           <button type="button" className="party-btn" onClick={back}>
             {t("Back to the cards")}
           </button>
         </>
       ) : (
         <form className="party-form" onSubmit={submit}>
-          {!more ? (
-            <button type="button" className="party-link" onClick={() => setMore(true)}>
-              {t("More than {{n}} teams in one game?", { n: per })}
+          {blocks === 0 ? (
+            <button
+              type="button"
+              className="party-link"
+              onClick={() => setBlocks(1)}
+            >
+              {t("More than {{n}} teams in one game?", {
+                n: doc.price.free_teams,
+              })}
             </button>
           ) : (
             <label className="party-field">
               <span>{t("Teams in one game")}</span>
               <div className="party-stepper">
-                <button type="button" onClick={() => setBlocks((b) => Math.max(1, b - 1))} disabled={blocks <= 1} aria-label={t("Fewer")}>
+                <button
+                  type="button"
+                  onClick={() => setBlocks((b) => Math.max(0, b - 1))}
+                  aria-label={t("Fewer")}
+                >
                   −
                 </button>
-                <output aria-live="polite">{t("up to {{n}}", { n: blocks * per })}</output>
-                <button type="button" onClick={() => setBlocks((b) => Math.min(10, b + 1))} disabled={blocks >= 10} aria-label={t("More")}>
+                <output aria-live="polite">
+                  {t("up to {{n}}", { n: limit(blocks) })}
+                </output>
+                <button
+                  type="button"
+                  onClick={() => setBlocks((b) => Math.min(10, b + 1))}
+                  disabled={blocks >= 10}
+                  aria-label={t("More")}
+                >
                   +
                 </button>
               </div>
@@ -332,18 +497,55 @@ function Checkout({ doc, id, cards, back }: { doc: PublicTrail; id: number; card
           )}
           <label className="party-field">
             <span>{t("Your email")}</span>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
-            <small className="party-muted">{t("We send the link you run the quiz trail from here.")}</small>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+            />
+            <small className="party-muted">
+              {free
+                ? t(
+                    "You go straight to the page you run it from. Sign in with this email to find it again.",
+                  )
+                : t("We send the link you run the party adventure from here.")}
+            </small>
           </label>
           {doc.kids && (
             <label className="party-check">
-              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} required />
-              <span>{t("I am the guardian of the children who will play, or I have their guardians' consent.")}</span>
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                required
+              />
+              <span>
+                {t(
+                  "I am the guardian of the children who will play, or I have their guardians' consent.",
+                )}
+              </span>
             </label>
           )}
-          {!free && (
+          {free ? (
             <div className="party-total">
-              <span>{blocks > 1 ? t("{{price}} per {{n}} teams", { price: money(doc.price.block_cents, doc.price.currency, loc), n: per }) : t("Total")}</span>
+              <span>{t("Total")}</span>
+              <strong>{t("Free")}</strong>
+            </div>
+          ) : (
+            <div className="party-total">
+              <span>
+                {blocks > 1
+                  ? t("{{price}} per {{n}} teams", {
+                      price: money(
+                        doc.price.block_cents,
+                        doc.price.currency,
+                        loc,
+                      ),
+                      n: per,
+                    })
+                  : t("Total")}
+              </span>
               <strong>{money(total, doc.price.currency, loc)}</strong>
             </div>
           )}
@@ -353,8 +555,17 @@ function Checkout({ doc, id, cards, back }: { doc: PublicTrail; id: number; card
             </p>
           )}
           <div className="party-actions">
-            <button className="party-btn party-btn--primary" disabled={busy || !email || (doc.kids && !consent)}>
-              {busy ? t("Opening checkout…") : free ? t("Get it ready to play") : t("Pay {{total}}", { total: money(total, doc.price.currency, loc) })}
+            <button
+              className="party-btn party-btn--primary"
+              disabled={busy || !email || (doc.kids && !consent)}
+            >
+              {busy
+                ? t("Opening checkout…")
+                : free
+                  ? t("Get it ready to play")
+                  : t("Pay {{total}}", {
+                      total: money(total, doc.price.currency, loc),
+                    })}
             </button>
             <button type="button" className="party-btn" onClick={back}>
               {t("Back to the cards")}

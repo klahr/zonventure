@@ -186,7 +186,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
     <>
       {a.mine_to_edit &&
         (a.trail ? (
-          <a className="btn adv-btn primary" href={href({ name: "trail", slug: a.slug })} title={t.t("Edit the quiz trail's cards")}>
+          <a className="btn adv-btn primary" href={href({ name: "trail", slug: a.slug })} title={t.t("Edit the party adventure's cards")}>
             <ListOrdered size={ICON.md} aria-hidden />
             {t.t("Edit cards")}
           </a>

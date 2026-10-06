@@ -186,7 +186,10 @@ func trailGraph(cards []trail.Card, language string) *graph.Graph {
 
 // trailDTO is the creator's view of a trail.
 type trailDTO struct {
-	Slug     string          `json:"slug"`
+	Slug string `json:"slug"`
+	// Theme is the starter theme the look was taken from; empty, the
+	// default look (trail_theme.go).
+	Theme    string          `json:"theme"`
 	Title    string          `json:"title"`
 	Language string          `json:"language"`
 	Template string          `json:"template"`
@@ -215,7 +218,7 @@ type loadedTrail struct {
 	hasCards bool
 }
 
-var errNotTrail = errors.New("this adventure is not a quiz trail")
+var errNotTrail = errors.New("this adventure is not a party adventure")
 
 func loadTrail(ctx context.Context, q graphstore.Querier, slug string, forUpdate bool) (loadedTrail, error) {
 	var (
@@ -227,9 +230,9 @@ func loadTrail(ctx context.Context, q graphstore.Querier, slug string, forUpdate
 		lock = " FOR UPDATE"
 	}
 	err := q.QueryRowContext(ctx, `
-		SELECT id, slug, title, language, trail_template, trail_kids, trail_cards, trail_revision, trail_graph, trail_printed
+		SELECT id, slug, title, language, trail_template, trail_kids, trail_cards, trail_revision, trail_graph, trail_printed, trail_theme
 		FROM adventures WHERE slug = $1`+lock, slug).Scan(&t.ID, &t.dto.Slug, &t.dto.Title, &t.dto.Language,
-		&t.dto.Template, &t.dto.Kids, &raw, &t.dto.Revision, &t.graphFP, &t.printed)
+		&t.dto.Template, &t.dto.Kids, &raw, &t.dto.Revision, &t.graphFP, &t.printed, &t.dto.Theme)
 	if err != nil {
 		return t, err
 	}

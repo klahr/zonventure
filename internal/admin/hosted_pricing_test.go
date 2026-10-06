@@ -51,8 +51,8 @@ func TestHosted_HostIt(t *testing.T) {
 	if w := call(t, f.console, "POST", "/api/admin/adventures/nope/host", map[string]any{"blocks": 1}); w.Code != http.StatusNotFound {
 		t.Errorf("someone else's adventure: %d", w.Code)
 	}
-	if w := call(t, f.console, "POST", "/api/admin/adventures/treasure/host", map[string]any{"blocks": 0}); w.Code != http.StatusBadRequest {
-		t.Errorf("no blocks: %d", w.Code)
+	if w := call(t, f.console, "POST", "/api/admin/adventures/treasure/host", map[string]any{"blocks": -1}); w.Code != http.StatusBadRequest {
+		t.Errorf("negative blocks: %d", w.Code)
 	}
 	w := call(t, f.console, "POST", "/api/admin/adventures/treasure/host", map[string]any{"name": "Office quiz", "blocks": 2})
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "checkout_url") {
@@ -81,6 +81,26 @@ func TestHosted_HostIt(t *testing.T) {
 	}
 	if got := f.teamsLimit(t, m[1]); got != 30 {
 		t.Errorf("teams limit = %d, want 30", got)
+	}
+
+	// No blocks: free for FreeTeams teams a game, made at once, unpaid.
+	w = call(t, f.console, "POST", "/api/admin/adventures/treasure/host", map[string]any{"name": "Small party", "blocks": 0})
+	if w.Code != http.StatusCreated || strings.Contains(w.Body.String(), "checkout_url") {
+		t.Fatalf("free: %d %s", w.Code, w.Body)
+	}
+	var purchases int
+	if err := f.h.DB.QueryRow(`SELECT COUNT(*) FROM ticket_purchases WHERE kind = 'hosted'`).Scan(&purchases); err != nil {
+		t.Fatal(err)
+	}
+	if purchases != 1 {
+		t.Errorf("free hosting made a purchase: %d", purchases)
+	}
+	m = regexp.MustCompile(`/party/([A-Za-z0-9_-]+)`).FindStringSubmatch(f.mail.messages[len(f.mail.messages)-1].Text)
+	if m == nil {
+		t.Fatal("no host link mailed for the free event")
+	}
+	if got := f.teamsLimit(t, m[1]); got != admin.FreeTeams {
+		t.Errorf("free teams limit = %d, want %d", got, admin.FreeTeams)
 	}
 }
 

@@ -628,7 +628,7 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event payments.Even
 			// Refunded teams: the event holds that many fewer per game, from
 			// the next team to join.
 			if _, berr := h.DB.ExecContext(ctx, `
-				UPDATE events SET hosted_blocks = GREATEST(1, hosted_blocks - (SELECT blocks FROM ticket_purchases WHERE id = $2))
+				UPDATE events SET hosted_blocks = GREATEST(0, hosted_blocks - (SELECT blocks FROM ticket_purchases WHERE id = $2))
 				 WHERE id = $1
 			`, rr.eventID, rr.purchaseID); berr != nil {
 				logx.Warn("payments.hosted_blocks.refund", "purchase_id", rr.purchaseID, "event_id", rr.eventID, "err", berr.Error())

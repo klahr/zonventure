@@ -17,8 +17,9 @@ import (
 	"github.com/klahr/zonventure/internal/ws"
 )
 
-// Paying for hosted events: a pass of h.Hosted's price per started
-// block of TeamsPerBlock teams a game may hold. "Host it" buys an
+// Paying for hosted events: free for up to FreeTeams teams a game (no
+// blocks), else a pass of h.Hosted's price per started block of
+// TeamsPerBlock teams a game may hold. "Host it" buys an
 // arranger a hosted event of their own adventure; "Add teams" buys an
 // event more blocks. Both are charged on the platform's own account
 // (no connected account: the platform is the seller), as ticket
@@ -36,10 +37,11 @@ type hostedPriceDTO struct {
 	BlockCents int64  `json:"block_cents"`
 	Currency   string `json:"currency"`
 	TeamsPer   int    `json:"teams_per_block"`
+	FreeTeams  int    `json:"free_teams"`
 }
 
 func (h *Handlers) hostedPrice() hostedPriceDTO {
-	return hostedPriceDTO{BlockCents: h.Hosted.BlockCents, Currency: h.Hosted.Currency, TeamsPer: TeamsPerBlock}
+	return hostedPriceDTO{BlockCents: h.Hosted.BlockCents, Currency: h.Hosted.Currency, TeamsPer: TeamsPerBlock, FreeTeams: FreeTeams}
 }
 
 // GetHostedPrice is the pass price, for the console's Host it dialog.
@@ -59,6 +61,9 @@ type hostAdventureRequest struct {
 type hostedCheckout struct {
 	CheckoutURL string `json:"checkout_url,omitempty"`
 	EventID     int64  `json:"event_id,omitempty"`
+	// HostURL is the admin page the purchase opens, once paid: given to
+	// the browser that pays, so it can go there without the mail.
+	HostURL string `json:"host_url,omitempty"`
 }
 
 // HostAdventure buys the caller's org a hosted event of one of its
@@ -77,8 +82,8 @@ func (h *Handlers) HostAdventure(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if req.Blocks < 1 || req.Blocks > maxBlocks {
-		httpx.Error(w, http.StatusBadRequest, fmt.Sprintf("blocks must be 1–%d", maxBlocks))
+	if req.Blocks < 0 || req.Blocks > maxBlocks {
+		httpx.Error(w, http.StatusBadRequest, fmt.Sprintf("blocks must be 0–%d", maxBlocks))
 		return
 	}
 	name := strings.TrimSpace(req.Name)
@@ -134,7 +139,7 @@ func (h *Handlers) HostAdventure(w http.ResponseWriter, r *http.Request) {
 		name = title
 	}
 
-	if h.Hosted.Free() {
+	if h.Hosted.Free() || req.Blocks == 0 {
 		eventID, err := h.hostFree(ctx, *me.OrgID, slug, name, req.Blocks, me.Email)
 		if err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "host failed", err)
@@ -158,7 +163,7 @@ func (h *Handlers) HostAdventure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	product := fmt.Sprintf("%s — hosted, %d teams per game", title, req.Blocks*TeamsPerBlock)
-	h.startHostedCheckout(w, r, purchaseID, product, amount, me.Email, "/app/arrange/")
+	h.startHostedCheckout(w, r, purchaseID, product, amount, me.Email, "/app/arrange/", "")
 }
 
 // hostFree makes a hosted event where hosting costs nothing, and mails
@@ -169,7 +174,7 @@ func (h *Handlers) hostFree(ctx context.Context, orgID int64, slug, name string,
 		return 0, err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	eventID, hostToken, err := createHostedEvent(ctx, tx, orgID, slug, name, 0, blocks)
+	eventID, hostToken, err := createHostedEvent(ctx, tx, orgID, slug, name, 0, blocks, "")
 	if err != nil {
 		return 0, err
 	}
@@ -184,8 +189,9 @@ func (h *Handlers) hostFree(ctx context.Context, orgID int64, slug, name string,
 
 // startHostedCheckout opens the checkout for a hosted purchase, charged
 // on the platform's own account, and answers with its URL. back is
-// where the buyer lands afterwards.
-func (h *Handlers) startHostedCheckout(w http.ResponseWriter, r *http.Request, purchaseID int64, product string, amount int64, email, back string) {
+// where the buyer lands afterwards; hostURL, when set, the admin page
+// the purchase opens once paid.
+func (h *Handlers) startHostedCheckout(w http.ResponseWriter, r *http.Request, purchaseID int64, product string, amount int64, email, back, hostURL string) {
 	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, product, h.Hosted.Currency, amount,
 		email, "", 0, back)
 	if err != nil {
@@ -199,7 +205,7 @@ func (h *Handlers) startHostedCheckout(w http.ResponseWriter, r *http.Request, p
 		logx.Warn("admin.hosted.session_id_persist", "purchase_id", purchaseID, "err", err.Error())
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	httpx.JSON(w, http.StatusOK, hostedCheckout{CheckoutURL: url})
+	httpx.JSON(w, http.StatusOK, hostedCheckout{CheckoutURL: url, HostURL: hostURL})
 }
 
 // AddHostedBlocks buys a hosted event more teams per game: Blocks more
@@ -263,7 +269,7 @@ func (h *Handlers) AddHostedBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	product := fmt.Sprintf("%d more teams per game", req.Blocks*TeamsPerBlock)
-	h.startHostedCheckout(w, r, purchaseID, product, amount, email, back)
+	h.startHostedCheckout(w, r, purchaseID, product, amount, email, back, "")
 }
 
 // fulfilHostedCheckout fulfils a paid 'hosted' or 'hosted_blocks'
@@ -277,11 +283,12 @@ func (h *Handlers) fulfilHostedCheckout(ctx context.Context, tx *sql.Tx, event p
 		blocks    int
 		eventID   int64
 		hostToken string
+		minted    sql.NullString
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT buyer_org_id, adventure_slug, party_name, buyer_email, blocks, COALESCE(event_id, 0)
+		SELECT buyer_org_id, adventure_slug, party_name, buyer_email, blocks, COALESCE(event_id, 0), host_token
 		FROM ticket_purchases WHERE id = $1
-	`, purchaseID).Scan(&orgID, &slug, &name, &email, &blocks, &eventID); err != nil {
+	`, purchaseID).Scan(&orgID, &slug, &name, &email, &blocks, &eventID, &minted); err != nil {
 		return err
 	}
 	switch kind {
@@ -293,11 +300,11 @@ func (h *Handlers) fulfilHostedCheckout(ctx context.Context, tx *sql.Tx, event p
 			return nil
 		}
 		var err error
-		if eventID, hostToken, err = createHostedEvent(ctx, tx, orgID.Int64, slug, name, 0, blocks); err != nil {
+		if eventID, hostToken, err = createHostedEvent(ctx, tx, orgID.Int64, slug, name, 0, blocks, minted.String); err != nil {
 			return fmt.Errorf("hosted create: %w", err)
 		}
 		// A public quiz trail's: it is paid for now.
-		if _, err := attachTrailEvent(ctx, tx, slug, eventID, email); err != nil {
+		if _, err := attachTrailEvent(ctx, tx, slug, eventID, email, true); err != nil {
 			return fmt.Errorf("trail attach: %w", err)
 		}
 	case "hosted_blocks":
@@ -311,7 +318,8 @@ func (h *Handlers) fulfilHostedCheckout(ctx context.Context, tx *sql.Tx, event p
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE ticket_purchases
-		   SET state = 'paid', paid_at = now_text(), event_id = $1, stripe_session_id = COALESCE(stripe_session_id, $2)
+		   SET state = 'paid', paid_at = now_text(), event_id = $1, stripe_session_id = COALESCE(stripe_session_id, $2),
+		       host_token = NULL
 		 WHERE id = $3
 	`, eventID, event.Checkout.SessionID, purchaseID); err != nil {
 		return fmt.Errorf("purchase update: %w", err)

@@ -17,6 +17,7 @@ import sv from "./locales/sv.json";
 const catalogs = { en: {}, sv: { ...hostedSv, ...trailSv, ...sv } };
 
 const instance = new I18n(catalogs);
+export const i18n = instance;
 const I18nContext = createContext(instance);
 
 export function I18nProvider({ children }: { children: ReactNode }) {

@@ -53,5 +53,6 @@
   "Up to {{n}} teams": "Upp till {{n}} lag",
   "{{price}} for up to {{n}} teams per game.": "{{price}} för upp till {{n}} lag per omgång.",
   "Starts when the first team joins": "Startar när det första laget ansluter",
-  "starts when the first team joins": "startar när det första laget ansluter"
+  "starts when the first team joins": "startar när det första laget ansluter",
+  "Free for up to {{n}} teams per game.": "Gratis för upp till {{n}} lag per omgång."
 }

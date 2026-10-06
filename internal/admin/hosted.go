@@ -34,6 +34,18 @@ import (
 // in one game.
 const TeamsPerBlock = 15
 
+// FreeTeams is how many teams a hosted event of no blocks lets play in
+// one game: free, for a small party. Paying for blocks replaces it.
+const FreeTeams = 3
+
+// teamsLimit is how many teams blocks let play in one game.
+func teamsLimit(blocks int) int {
+	if blocks == 0 {
+		return FreeTeams
+	}
+	return blocks * TeamsPerBlock
+}
+
 // HostedPlayPeriod is how long a hosted event plays from its first game.
 const HostedPlayPeriod = 14 * 24 * time.Hour
 
@@ -142,7 +154,7 @@ func (h *Handlers) joinStatus(ctx context.Context, q play.Querier, p hostParty) 
 	`, p.EventID, p.Round).Scan(&teams); err != nil {
 		return "", err
 	}
-	if teams >= p.Blocks*TeamsPerBlock {
+	if teams >= teamsLimit(p.Blocks) {
 		return "full", nil
 	}
 	return "open", nil

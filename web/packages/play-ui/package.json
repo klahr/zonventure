@@ -7,7 +7,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./play-ui.css": "./src/play-ui.css"
+    "./play-ui.css": "./src/play-ui.css",
+    "./adventure-fonts.css": "./src/fonts/adventure-fonts.css"
   },
   "scripts": {
     "test": "node --test --experimental-strip-types src/*.test.ts",

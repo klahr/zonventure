@@ -3,6 +3,9 @@ import { useSyncExternalStore } from "react";
 import type { I18n } from "@zonventure/i18n";
 import { CHOICES, MAX_ANSWERS, MAX_CARDS, MAX_OPTION, MAX_TEXT, asKind, blank, move, numbers, problems, type Card, type Kind, type Problem } from "./cards.ts";
 import type { SaveState } from "./save.ts";
+import { Icon } from "./Icons.tsx";
+import { ThemePicker } from "./Themes.tsx";
+import { themeById, themeStyle, type TrailTheme } from "./themes.ts";
 
 type T = I18n["t"];
 
@@ -29,6 +32,9 @@ export interface EditorProps {
   showProblems?: boolean;
   /** What "Saved" says, e.g. where: "Saved on this phone". */
   savedText?: string | undefined;
+  /** The look the card wears (TRAIL_THEMES id), and how to change it. */
+  theme?: string | undefined;
+  onTheme?: ((t: TrailTheme) => void) | undefined;
 }
 
 /**
@@ -43,6 +49,8 @@ export function Editor(props: EditorProps) {
   const t = i18n.t;
   const [selected, setSelected] = useState(() => cards[0]?.id ?? "");
   const [undo, setUndo] = useState<{ cards: Card[]; selected: string; label: string } | null>(null);
+  const [looks, setLooks] = useState(false);
+  const theme = themeById(props.theme);
   const index = Math.max(0, cards.findIndex((c) => c.id === selected));
   const card = cards[index];
   const nums = numbers(cards);
@@ -83,34 +91,64 @@ export function Editor(props: EditorProps) {
   };
 
   return (
-    <div className="trail">
+    <div className="trail" style={themeStyle(theme?.look)}>
       <header className="trail-bar">
-        <input
-          className="trail-bar__title"
-          value={props.title}
-          maxLength={120}
-          disabled={readOnly}
-          aria-label={t("Name of the quiz trail")}
-          onChange={(e) => onChange({ title: e.target.value })}
-        />
+        <label className="trail-bar__name">
+          <input
+            className="trail-bar__title"
+            value={props.title}
+            maxLength={120}
+            disabled={readOnly}
+            aria-label={t("Name of the party adventure")}
+            onChange={(e) => onChange({ title: e.target.value })}
+          />
+          {!readOnly && <Icon name="pencil" size={16} />}
+        </label>
         <SaveNote t={t} state={props.state} savedText={props.savedText} />
+        {props.onTheme && !readOnly && (
+          <button type="button" className={"trail-look-btn" + (looks ? " is-on" : "")} aria-expanded={looks} onClick={() => setLooks((v) => !v)}>
+            <span className="trail-look-btn__swatch" aria-hidden="true" />
+            <Icon name="palette" size={16} />
+            {t("Look")}
+          </button>
+        )}
         {props.actions && <div className="trail-bar__actions">{props.actions}</div>}
       </header>
+
+      {looks && props.onTheme && (
+        <div className="trail-looks">
+          <div className="trail-looks__head">
+            <strong>{t("Pick a look")}</strong>
+            <span className="trail-muted">{t("The teams' phones get it too.")}</span>
+            <button type="button" className="trail-icon-btn" aria-label={t("Close")} onClick={() => setLooks(false)}>
+              <Icon name="close" size={18} />
+            </button>
+          </div>
+          <ThemePicker i18n={i18n} selected={props.theme ?? ""} onPick={props.onTheme} />
+        </div>
+      )}
 
       <div className="trail-main">
         {!card ? (
           <div className="trail-empty">
+            <span className="trail-empty__art" aria-hidden="true">
+              <Icon name="sparkle" size={34} />
+            </span>
             <p>{t("No cards yet.")}</p>
             {!readOnly && (
               <button type="button" className="trail-btn trail-btn--primary" onClick={add}>
+                <Icon name="plus" size={16} />
                 {t("Add a card")}
               </button>
             )}
           </div>
         ) : (
           <CardEditor
+            key={card.id}
             t={t}
             card={card}
+            position={index + 1}
+            count={cards.length}
             number={nums[index]!}
             problems={props.showProblems ? cardProblems : []}
             readOnly={readOnly}
@@ -154,22 +192,35 @@ function SaveNote({ t, state, savedText }: { t: T; state: SaveState; savedText?:
     conflict: t("Changed elsewhere — reload to see it"),
     designer: t("Changed in the designer — read only"),
   };
+  // "Saved" and "Saving…" share one slot as wide as the wider, so the
+  // bar doesn't move with every save.
+  const steady = state === "saved" || state === "saving" || state === "unsaved";
   return (
     <span className={"trail-save trail-save--" + state} role="status">
-      {text[state]}
+      <span className="trail-save__dot" aria-hidden="true" />
+      {steady ? (
+        <span className="trail-save__slot">
+          <span aria-hidden={state !== "saved"}>{text.saved}</span>
+          <span aria-hidden={state === "saved"}>{text.saving}</span>
+        </span>
+      ) : (
+        text[state]
+      )}
     </span>
   );
 }
 
-const KINDS: { kind: Kind; label: string }[] = [
-  { kind: "quiz", label: "Question with options" },
-  { kind: "answer", label: "Question with answer" },
-  { kind: "info", label: "Information" },
+const KINDS: { kind: Kind; label: string; icon: string }[] = [
+  { kind: "quiz", label: "Question with options", icon: "quiz" },
+  { kind: "answer", label: "Question with answer", icon: "answer" },
+  { kind: "info", label: "Information", icon: "info" },
 ];
 
 function CardEditor(props: {
   t: T;
   card: Card;
+  position: number;
+  count: number;
   number: number;
   problems: Problem[];
   readOnly: boolean;
@@ -190,28 +241,40 @@ function CardEditor(props: {
   };
   return (
     <section className="trail-card" aria-label={props.number ? t("Card {{n}}", { n: props.number }) : t("Information card")}>
-      <div className="trail-kinds" role="radiogroup" aria-label={t("Kind of card")}>
-        {KINDS.map((k) => (
-          <button
-            key={k.kind}
-            type="button"
-            role="radio"
-            aria-checked={card.kind === k.kind}
-            className={"trail-kind" + (card.kind === k.kind ? " is-on" : "")}
-            disabled={readOnly}
-            onClick={() => onChange(asKind(card, k.kind))}
-          >
-            {t(k.label)}
-          </button>
-        ))}
+      <div className="trail-card__top">
+        <span className="trail-card__pos">{t("{{n}} of {{count}}", { n: props.position, count: props.count })}</span>
+        <div className="trail-kinds" role="radiogroup" aria-label={t("Kind of card")}>
+          {KINDS.map((k) => (
+            <button
+              key={k.kind}
+              type="button"
+              role="radio"
+              aria-checked={card.kind === k.kind}
+              className={"trail-kind" + (card.kind === k.kind ? " is-on" : "")}
+              disabled={readOnly}
+              onClick={() => onChange(asKind(card, k.kind))}
+            >
+              <Icon name={k.icon} size={16} />
+              <span>{t(k.label)}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="trail-paper">
-        <span className="trail-paper__no">{props.number ? t("Card {{n}}", { n: props.number }) : t("Information")}</span>
+      <div className={"trail-paper trail-paper--" + card.kind}>
+        <div className="trail-paper__head">
+          <span className="trail-paper__badge" aria-hidden="true">
+            {props.number ? props.number : <Icon name="info" size={22} />}
+          </span>
+          <span className="trail-paper__no">
+            {props.number > 0 && <small>{t("Card {{n}}", { n: props.number })}</small>}
+            {t(KINDS.find((k) => k.kind === card.kind)!.label)}
+          </span>
+        </div>
         <textarea
           className="trail-paper__text"
           value={card.text}
-          rows={3}
+          rows={2}
           maxLength={MAX_TEXT}
           disabled={readOnly}
           placeholder={card.kind === "info" ? t("Write what the teams read here…") : t("Write the question…")}
@@ -224,16 +287,17 @@ function CardEditor(props: {
             {CHOICES.map((mark, i) => {
               const right = card.correct === mark;
               return (
-                <div className="trail-option" key={mark}>
+                <div className={"trail-option" + (right ? " is-right" : "")} key={mark}>
                   <button
                     type="button"
                     className={"trail-mark" + (right ? " is-right" : "")}
                     aria-pressed={right}
                     aria-label={t("Mark {{c}} as the right option", { c: mark })}
+                    title={t("Mark {{c}} as the right option", { c: mark })}
                     disabled={readOnly}
                     onClick={() => onChange({ ...card, correct: mark })}
                   >
-                    {mark}
+                    {right ? <Icon name="check" size={18} /> : mark}
                   </button>
                   <input
                     value={card.options?.[i] ?? ""}
@@ -247,13 +311,17 @@ function CardEditor(props: {
                 </div>
               );
             })}
+            <p className="trail-muted">{t("Tap 1, X or 2 to mark the right option.")}</p>
           </div>
         )}
 
         {card.kind === "answer" && (
           <div className="trail-answers">
             {(card.answers ?? [""]).map((a, i) => (
-              <div className="trail-option" key={i}>
+              <div className={"trail-option" + (i === 0 ? " is-right" : "")} key={i}>
+                <span className="trail-mark trail-mark--static" aria-hidden="true">
+                  <Icon name={i === 0 ? "check" : "answer"} size={16} />
+                </span>
                 <input
                   value={a}
                   maxLength={MAX_OPTION}
@@ -263,8 +331,8 @@ function CardEditor(props: {
                   onChange={(e) => onChange({ ...card, answers: (card.answers ?? [""]).map((x, j) => (j === i ? e.target.value : x)) })}
                 />
                 {i > 0 && !readOnly && (
-                  <button type="button" className="trail-btn trail-btn--quiet" aria-label={t("Remove this spelling")} onClick={() => onChange({ ...card, answers: (card.answers ?? []).filter((_, j) => j !== i) })}>
-                    ×
+                  <button type="button" className="trail-icon-btn" aria-label={t("Remove this spelling")} title={t("Remove this spelling")} onClick={() => onChange({ ...card, answers: (card.answers ?? []).filter((_, j) => j !== i) })}>
+                    <Icon name="trash" size={16} />
                   </button>
                 )}
               </div>
@@ -280,23 +348,29 @@ function CardEditor(props: {
       </div>
 
       {props.problems.length > 0 && (
-        <ul className="trail-needs">
-          {(["text", "options", "correct", "answers"] as const).filter(has).map((code) => (
-            <li key={code}>{need[code]}</li>
-          ))}
-        </ul>
+        <div className="trail-needs" role="status">
+          <Icon name="alert" size={18} />
+          <ul>
+            {(["text", "options", "correct", "answers"] as const).filter(has).map((code) => (
+              <li key={code}>{need[code]}</li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {!readOnly && (
         <div className="trail-card__actions">
-          <button type="button" className="trail-btn" disabled={!props.canEarlier} onClick={props.onEarlier}>
-            {t("Move earlier")}
+          <button type="button" className="trail-tool" disabled={!props.canEarlier} onClick={props.onEarlier} title={t("Move earlier")}>
+            <Icon name="left" size={18} />
+            <span>{t("Move earlier")}</span>
           </button>
-          <button type="button" className="trail-btn" disabled={!props.canLater} onClick={props.onLater}>
-            {t("Move later")}
+          <button type="button" className="trail-tool" disabled={!props.canLater} onClick={props.onLater} title={t("Move later")}>
+            <span>{t("Move later")}</span>
+            <Icon name="right" size={18} />
           </button>
-          <button type="button" className="trail-btn trail-btn--danger" onClick={props.onDelete}>
-            {t("Delete card")}
+          <button type="button" className="trail-tool trail-tool--danger" onClick={props.onDelete} title={t("Delete card")}>
+            <Icon name="trash" size={18} />
+            <span>{t("Delete card")}</span>
           </button>
         </div>
       )}
@@ -412,7 +486,10 @@ function Timeline(props: {
               }}
             >
               <button type="button" aria-current={on ? "true" : undefined} onClick={() => !drag && props.onSelect(c.id)}>
-                <span className="trail-chip__no">{props.nums[i] || "i"}</span>
+                <span className="trail-chip__head">
+                  <span className="trail-chip__no">{props.nums[i] || <Icon name="info" size={14} />}</span>
+                  <Icon name={c.kind} size={14} />
+                </span>
                 <span className="trail-chip__text">{c.text.trim() || t("Empty")}</span>
                 {flagged.has(c.id) && <span className="trail-chip__flag" aria-label={t("Not finished")} />}
               </button>
@@ -421,8 +498,8 @@ function Timeline(props: {
         })}
         {!props.readOnly && cards.length < MAX_CARDS && (
           <li className="trail-chip trail-chip--add">
-            <button type="button" aria-label={t("Add a card")} onClick={props.onAdd}>
-              +
+            <button type="button" aria-label={t("Add a card")} title={t("Add a card")} onClick={props.onAdd}>
+              <Icon name="plus" size={22} />
             </button>
           </li>
         )}
