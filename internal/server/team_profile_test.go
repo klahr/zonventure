@@ -129,6 +129,10 @@ func TestTeamProfileFixedOnceTeamBegins(t *testing.T) {
 	}
 
 	editable("before the start")
+	// A name another team in the event holds is refused.
+	if s := p.do("POST", "/api/player/team/name", map[string]string{"name": "Team 2"}, nil); s != 409 {
+		t.Errorf("rename team to a taken name = %d, want 409", s)
+	}
 	if s := arr.do("POST", "/api/admin/events/"+itoa(ev.ID)+"/start", nil, nil); s != 204 {
 		t.Fatalf("start = %d", s)
 	}

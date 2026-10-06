@@ -14,11 +14,11 @@ import (
 // --clean DROPs at its head may not commit on their own.
 func TestRunRestore_FailedDumpRollsBack(t *testing.T) {
 	if _, err := exec.LookPath("psql"); err != nil {
-		t.Skip("psql not on PATH")
+		skipUnlessCI(t, "psql not on PATH")
 	}
 	admin := os.Getenv("ZV_TEST_DSN")
 	if admin == "" {
-		t.Skip("ZV_TEST_DSN not set")
+		skipUnlessCI(t, "ZV_TEST_DSN not set")
 	}
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
@@ -43,4 +43,15 @@ func TestRunRestore_FailedDumpRollsBack(t *testing.T) {
 	if err := db.QueryRow(`SELECT count(*) FROM restore_probe`).Scan(&n); err != nil {
 		t.Fatalf("restore_probe gone after a failed restore: %v", err)
 	}
+}
+
+// skipUnlessCI mirrors dbtest's policy: a missing prerequisite is a
+// skip on a workstation but fatal under $CI, where a green run that
+// silently skipped would look like coverage it does not have.
+func skipUnlessCI(t *testing.T, why string) {
+	t.Helper()
+	if os.Getenv("CI") != "" {
+		t.Fatalf("%s (skipping is disabled under CI)", why)
+	}
+	t.Skip(why)
 }

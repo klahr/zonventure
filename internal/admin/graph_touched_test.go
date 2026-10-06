@@ -8,6 +8,7 @@ import (
 )
 
 func TestTouchedSteps(t *testing.T) {
+	t.Parallel()
 	before := &graph.Graph{
 		Nodes: []graph.Node{{Slug: "start", Type: graph.Start}, {Slug: "a", Type: graph.Story, Title: "A"}, {Slug: "end", Type: graph.End}},
 		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "a"}, {From: "a", FromPort: "out", To: "end"}},

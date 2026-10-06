@@ -66,20 +66,11 @@ jobs:
       # shipping an index.html whose chunks were never embedded — a
       # failure that is otherwise silent until a blank page in
       # production.
+      #
+      # build:assets is the bundle alone. The JS job already typechecks,
+      # and repeating tsc here put ~40s on this job's critical path.
       - name: build frontend
-        run: cd web && npm ci && npm run build --workspaces --if-present
-
-      - name: gofmt
-        run: |
-          unformatted=$(gofmt -l .)
-          if [ -n "$unformatted" ]; then
-            echo "These files need gofmt:" >&2
-            echo "$unformatted" >&2
-            exit 1
-          fi
-
-      - name: go vet
-        run: go vet ./...
+        run: cd web && npm ci && npm run build:assets --workspaces --if-present
 
       # Gate on the database actually accepting connections; otherwise
       # the first test races the container's startup.
@@ -103,6 +94,33 @@ jobs:
             echo "$skipped" >&2
             exit 1
           fi
+
+  # Split from the test job so vet and the release build run alongside
+  # the race suite rather than ahead of and after it. The build embeds
+  # the committed placeholder frontend; the Docker job covers the real
+  # embedded build.
+  lint:
+    name: Go lint and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
 
       # CGO off so the binary is fully static, matching what the
       # distroless runtime image in the Dockerfile requires.
@@ -172,7 +190,7 @@ jobs:
   publish:
     name: Publish image
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [go, js, docker]
+    needs: [go, lint, js, docker]
     runs-on: ubuntu-latest
     permissions:
       contents: read

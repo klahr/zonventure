@@ -84,6 +84,7 @@ func TestCanonicaliseRecoveryCode(t *testing.T) {
 // TestGenerateRecoveryCodes_ShapeAndUniqueness sanity-checks the
 // XXXX-XXXX format and that hashes round-trip via bcrypt.
 func TestGenerateRecoveryCodes_ShapeAndUniqueness(t *testing.T) {
+	t.Parallel()
 	codes, hashes, err := generateRecoveryCodes()
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -111,6 +112,7 @@ func TestGenerateRecoveryCodes_ShapeAndUniqueness(t *testing.T) {
 // TestTOTP_EndToEnd exercises EnrolStart → EnrolConfirm → ConsumeChallenge
 // against a live Postgres. Skipped when no Postgres is available.
 func TestTOTP_EndToEnd(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -171,6 +173,7 @@ func TestTOTP_EndToEnd(t *testing.T) {
 // TestTOTP_RecoveryCodeSingleUse confirms a recovery code redeems
 // exactly once.
 func TestTOTP_RecoveryCodeSingleUse(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -210,6 +213,7 @@ func TestTOTP_RecoveryCodeSingleUse(t *testing.T) {
 // TestTOTP_ChallengeExpiry confirms an expired challenge is rejected
 // and cleaned up.
 func TestTOTP_ChallengeExpiry(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -241,6 +245,7 @@ func TestTOTP_ChallengeExpiry(t *testing.T) {
 // TestTOTP_EnrolStart_Idempotent ensures a re-call before confirm
 // replaces the pending secret rather than erroring.
 func TestTOTP_EnrolStart_Idempotent(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -272,6 +277,7 @@ func TestTOTP_EnrolStart_Idempotent(t *testing.T) {
 // TestTOTP_EnrolStart_RefusesAfterEnabled confirms that re-enrolment
 // requires Disable first.
 func TestTOTP_EnrolStart_RefusesAfterEnabled(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	ctx := context.Background()

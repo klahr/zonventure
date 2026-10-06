@@ -14,6 +14,7 @@ import (
 // commits before its UPDATE lands (activity.MaybeCompleteEvent racing
 // the arranger).
 func TestPauseEvent_DoesNotOverwriteCompletion(t *testing.T) {
+	t.Parallel()
 	db, _, assID, r := questFixture(t)
 
 	body, _ := json.Marshal(map[string]any{
@@ -32,11 +33,15 @@ func TestPauseEvent_DoesNotOverwriteCompletion(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
+	// Starting a public_for_sale quest with no teams is the canonical
+	// quest flow: the empty-team guard must yield since teams come
+	// from /store ticket purchases AFTER the quest is running.
 	base := "/api/admin/events/" + strconv.FormatInt(created.ID, 10)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("POST", base+"/start", nil))
 	if w.Code != http.StatusNoContent {
-		t.Fatalf("start: status=%d body=%s", w.Code, w.Body.String())
+		t.Fatalf("start: status=%d body=%s, want 204 (empty-team guard should be skipped for quests)",
+			w.Code, w.Body.String())
 	}
 
 	tx, err := db.Begin()

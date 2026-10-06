@@ -65,6 +65,7 @@ func (recordingProvider) GetConnectedAccount(ctx context.Context, accountID stri
 // of the contract: changing it across deploys would defeat dedup
 // for an in-flight retry.
 func TestPurchaseCheckout_IdempotencyKey(t *testing.T) {
+	t.Parallel()
 	p := &recordingProvider{}
 	h := &admin.Handlers{Provider: p, PublicURL: "https://zv.example.com"}
 

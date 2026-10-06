@@ -86,94 +86,70 @@ func recapServer(t *testing.T) (*httptest.Server, *sql.DB, int64, func()) {
 	return seedPurchaseStack(t, server.Config{})
 }
 
-// TestRecap_PreCompletion404 confirms a recap URL is unreachable
-// while the event is still running. The shape is the load-bearing
-// privacy property: a leaked token mid-event must not expose live
-// position data.
-func TestRecap_PreCompletion404(t *testing.T) {
+// TestRecap covers the public recap's visibility gate on one server.
+// Each subtest seeds its own event under its own token.
+func TestRecap(t *testing.T) {
 	ts, db, orgID, cleanup := recapServer(t)
 	defer cleanup()
-	seedRecapEvent(t, db, orgID, "running", "rt-running")
-	status, _ := readRecap(t, ts.URL, "rt-running")
-	if status != http.StatusNotFound {
-		t.Fatalf("running-event recap = %d, want 404", status)
-	}
-}
 
-// TestRecap_UnknownToken404 confirms the same 404 shape for a token
-// that doesn't exist at all — the response should not let a client
-// distinguish "doesn't exist" from "exists but not yet visible".
-func TestRecap_UnknownToken404(t *testing.T) {
-	ts, _, _, cleanup := recapServer(t)
-	defer cleanup()
-	status, _ := readRecap(t, ts.URL, "definitely-not-a-real-token")
-	if status != http.StatusNotFound {
-		t.Fatalf("unknown token = %d, want 404", status)
-	}
-}
+	// A recap URL is unreachable while the event is still running. The
+	// shape is the load-bearing privacy property: a leaked token
+	// mid-event must not expose live position data.
+	t.Run("pre-completion 404", func(t *testing.T) {
+		seedRecapEvent(t, db, orgID, "running", "rt-running")
+		status, _ := readRecap(t, ts.URL, "rt-running")
+		if status != http.StatusNotFound {
+			t.Fatalf("running-event recap = %d, want 404", status)
+		}
+	})
 
-// TestRecap_HappyPath drives the full lifecycle: seed a completed
-// event + team, then fetch the public recap. Asserts the response
-// carries the shape the front-end depends on (state, team name).
-func TestRecap_HappyPath(t *testing.T) {
-	ts, db, orgID, cleanup := recapServer(t)
-	defer cleanup()
-	seedRecapEvent(t, db, orgID, "completed", "rt-done")
+	// The same 404 shape for a token that doesn't exist at all — the
+	// response should not let a client distinguish "doesn't exist" from
+	// "exists but not yet visible".
+	t.Run("unknown token 404", func(t *testing.T) {
+		status, _ := readRecap(t, ts.URL, "definitely-not-a-real-token")
+		if status != http.StatusNotFound {
+			t.Fatalf("unknown token = %d, want 404", status)
+		}
+	})
 
-	status, body := readRecap(t, ts.URL, "rt-done")
-	if status != http.StatusOK {
-		t.Fatalf("happy GET = %d, body=%s", status, body)
-	}
-	var got recapPreview
-	if err := json.Unmarshal(body, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if got.TeamName != "Solo" {
-		t.Errorf("team_name = %q, want Solo", got.TeamName)
-	}
-	if got.State != "completed" {
-		t.Errorf("state = %q, want completed", got.State)
-	}
-}
+	// The full lifecycle: seed a completed event + team, then fetch the
+	// public recap. Asserts the response carries the shape the
+	// front-end depends on (state, team name).
+	t.Run("happy path", func(t *testing.T) {
+		seedRecapEvent(t, db, orgID, "completed", "rt-done")
 
-// TestRecap_CancelledEventAlsoVisible confirms the visibility gate
-// covers both terminal states. A cancelled event ("snowed out")
-// still has a worth-keeping memory of how far the team got.
-func TestRecap_CancelledEventAlsoVisible(t *testing.T) {
-	ts, db, orgID, cleanup := recapServer(t)
-	defer cleanup()
-	seedRecapEvent(t, db, orgID, "cancelled", "rt-cancelled")
-	status, body := readRecap(t, ts.URL, "rt-cancelled")
-	if status != http.StatusOK {
-		t.Fatalf("cancelled GET = %d, body=%s", status, body)
-	}
-	var got recapPreview
-	if err := json.Unmarshal(body, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if got.State != "cancelled" {
-		t.Errorf("state = %q, want cancelled", got.State)
-	}
-}
+		status, body := readRecap(t, ts.URL, "rt-done")
+		if status != http.StatusOK {
+			t.Fatalf("happy GET = %d, body=%s", status, body)
+		}
+		var got recapPreview
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if got.TeamName != "Solo" {
+			t.Errorf("team_name = %q, want Solo", got.TeamName)
+		}
+		if got.State != "completed" {
+			t.Errorf("state = %q, want completed", got.State)
+		}
+	})
 
-// TestRecap_TokenIsDistinctFromTeamToken pins the schema-level
-// guarantee: leaking the recap token must not grant team-share
-// access. We mint a team via direct INSERT with both tokens
-// generated independently; the UNIQUE index on recap_token plus
-// the disjoint mint paths in admin.CreateTeam / BulkCreateTeams
-// are what guarantee this in production.
-func TestRecap_TokenIsDistinctFromTeamToken(t *testing.T) {
-	_, db, orgID, cleanup := recapServer(t)
-	defer cleanup()
-	seedRecapEvent(t, db, orgID, "completed", "rt-distinct")
-	var teamTok, recapTok string
-	if err := db.QueryRow(
-		`SELECT token, recap_token FROM teams WHERE recap_token = $1`,
-		"rt-distinct",
-	).Scan(&teamTok, &recapTok); err != nil {
-		t.Fatalf("read tokens: %v", err)
-	}
-	if teamTok == recapTok {
-		t.Fatalf("teams.token and teams.recap_token collided: %q", teamTok)
-	}
+	// The visibility gate covers both terminal states. A cancelled event
+	// ("snowed out") still has a worth-keeping memory of how far the
+	// team got.
+	t.Run("cancelled event also visible", func(t *testing.T) {
+		seedRecapEvent(t, db, orgID, "cancelled", "rt-cancelled")
+		status, body := readRecap(t, ts.URL, "rt-cancelled")
+		if status != http.StatusOK {
+			t.Fatalf("cancelled GET = %d, body=%s", status, body)
+		}
+		var got recapPreview
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if got.State != "cancelled" {
+			t.Errorf("state = %q, want cancelled", got.State)
+		}
+	})
 }

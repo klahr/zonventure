@@ -12,6 +12,7 @@ import (
 // 'misconfigured' error rather than nil-derefing inside the
 // adapter.
 func TestTeamTools_NilAdminGuard(t *testing.T) {
+	t.Parallel()
 	s := &Server{Admin: nil}
 	ctx := withScopes(context.Background(), []string{"read", "write"})
 
@@ -52,6 +53,7 @@ func TestTeamTools_NilAdminGuard(t *testing.T) {
 // strings so the model can self-correct on bad shapes without
 // needing to read source.
 func TestTeamTools_ArgValidation(t *testing.T) {
+	t.Parallel()
 	s := &Server{Admin: nil}
 	ctx := withScopes(context.Background(), []string{"read", "write"})
 
@@ -88,6 +90,7 @@ func TestTeamTools_ArgValidation(t *testing.T) {
 }
 
 func TestTeamTools_AreRegisteredWithCorrectScope(t *testing.T) {
+	t.Parallel()
 	s := &Server{tools: newRegistry()}
 	s.registerTeamTools()
 

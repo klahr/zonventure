@@ -6,6 +6,7 @@ import (
 )
 
 func TestCheckPartnerCode(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		kind, box, code string
 		wantBox, want   string
@@ -34,6 +35,7 @@ func TestCheckPartnerCode(t *testing.T) {
 }
 
 func TestRedeemLimiter(t *testing.T) {
+	t.Parallel()
 	l := redeemLimiter{perIP: map[string][]time.Time{}}
 	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 	for i := 0; i < redeemPerIPMax; i++ {

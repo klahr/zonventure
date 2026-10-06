@@ -57,6 +57,7 @@ func (s *stubProvider) CustomerPortal(ctx context.Context, customerID, returnURL
 // purchase rows (one legacy, one fresh), drives both through the
 // handler, and asserts the provider sees only the fresh one.
 func TestRefundPurchase_PreMigrationGate(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	t.Cleanup(cleanup)
 
@@ -163,6 +164,7 @@ func TestRefundPurchase_PreMigrationGate(t *testing.T) {
 // endpoint exposes the flag so the frontend can render the legacy
 // notice in place of the Refund button.
 func TestListPurchases_SurfacesPreMigration(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	t.Cleanup(cleanup)
 

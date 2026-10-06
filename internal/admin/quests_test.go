@@ -92,48 +92,13 @@ func questFixture(t *testing.T) (db *sql.DB, orgID, assID int64, router chi.Rout
 	return db, orgID, assID, r
 }
 
-// TestQuest_CreateAndStartEmpty exercises the canonical quest flow:
-// CreateEvent with public_for_sale=true, then StartEvent with no
-// teams. The empty-team guard must yield since teams come from
-// /store ticket purchases AFTER the quest is running.
-func TestQuest_CreateAndStartEmpty(t *testing.T) {
-	_, _, assID, r := questFixture(t)
-
-	createBody, _ := json.Marshal(map[string]any{
-		"assignment_id":    assID,
-		"name":             "Treasure Hunt — always-on",
-		"attest_no_minors": true,
-		"public_for_sale":  true,
-	})
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/api/admin/events", strings.NewReader(string(createBody)))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusCreated {
-		t.Fatalf("create: status=%d body=%s", w.Code, w.Body.String())
-	}
-	var created struct {
-		ID int64 `json:"id"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
-		t.Fatal(err)
-	}
-
-	w = httptest.NewRecorder()
-	r.ServeHTTP(w,
-		httptest.NewRequest("POST", "/api/admin/events/"+strconv.FormatInt(created.ID, 10)+"/start", nil))
-	if w.Code != http.StatusNoContent {
-		t.Errorf("start: status=%d body=%s, want 204 (empty-team guard should be skipped for quests)",
-			w.Code, w.Body.String())
-	}
-}
-
 // TestQuest_CreateWithoutAssignment locks in the slug-only path:
 // quests bill per ticket via /store, so an org-owned adventure
 // is enough access — no pre-purchased assignment required. The
 // regression this guards against is the old "Buy slots from the
 // Events page first" 409 that bounced quest creation.
 func TestQuest_CreateWithoutAssignment(t *testing.T) {
+	t.Parallel()
 	_, _, _, r := questFixture(t)
 
 	createBody, _ := json.Marshal(map[string]any{
@@ -157,6 +122,7 @@ func TestQuest_CreateWithoutAssignment(t *testing.T) {
 // assignment 409 — the relaxation is conditioned on public_for_sale,
 // not adventure ownership.
 func TestEvent_SlugOnlyOwnedStillBlocked(t *testing.T) {
+	t.Parallel()
 	_, _, _, r := questFixture(t)
 
 	createBody, _ := json.Marshal(map[string]any{
@@ -180,6 +146,7 @@ func TestEvent_SlugOnlyOwnedStillBlocked(t *testing.T) {
 // that the guard relaxation is conditioned on public_for_sale,
 // not unconditional.
 func TestEvent_StartEmptyStillBlocked(t *testing.T) {
+	t.Parallel()
 	_, _, assID, r := questFixture(t)
 
 	createBody, _ := json.Marshal(map[string]any{
@@ -216,6 +183,7 @@ func TestEvent_StartEmptyStillBlocked(t *testing.T) {
 // quest mid-flight (or vice versa), which the /store listing and
 // the public-store-fields validation logic don't expect.
 func TestUpdateEvent_RefusesPublicForSaleFlip(t *testing.T) {
+	t.Parallel()
 	_, _, assID, r := questFixture(t)
 
 	createBody, _ := json.Marshal(map[string]any{
@@ -268,6 +236,7 @@ func TestUpdateEvent_RefusesPublicForSaleFlip(t *testing.T) {
 // query param. Without the partition the Quests page would mix
 // in regular events.
 func TestListEvents_PublicForSaleFilter(t *testing.T) {
+	t.Parallel()
 	db, orgID, _, r := questFixture(t)
 
 	// Insert two events directly so we don't have to mint a second

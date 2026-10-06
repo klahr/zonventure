@@ -11,55 +11,53 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestHashSecret_RoundTrip(t *testing.T) {
-	h, err := hashSecret("correct horse battery staple")
+// TestHashSecret_RoundTripAndSalted covers the fresh-hash contract in
+// one go (each Argon2id hash is deliberately expensive): PHC format,
+// per-call random salt, the right password verifies without a rehash,
+// and a wrong password is a plain mismatch rather than an error.
+func TestHashSecret_RoundTripAndSalted(t *testing.T) {
+	t.Parallel()
+	const pw = "correct horse battery staple"
+	a, err := hashSecret(pw)
 	if err != nil {
 		t.Fatalf("hashSecret: %v", err)
 	}
-	if !strings.HasPrefix(h, "$argon2id$v=19$") {
-		t.Fatalf("hash does not look like argon2id PHC: %q", h)
+	if !strings.HasPrefix(a, "$argon2id$v=19$") {
+		t.Fatalf("hash does not look like argon2id PHC: %q", a)
 	}
-	ok, needsRehash, err := verifySecret(h, "correct horse battery staple")
-	if err != nil || !ok {
-		t.Fatalf("verifySecret on fresh hash: ok=%v err=%v", ok, err)
-	}
-	if needsRehash {
-		t.Errorf("fresh hash with current params should not need a rehash")
-	}
-}
-
-func TestVerifySecret_WrongPassword(t *testing.T) {
-	h, err := hashSecret("right")
-	if err != nil {
-		t.Fatalf("hashSecret: %v", err)
-	}
-	ok, _, err := verifySecret(h, "wrong")
-	if err != nil {
-		t.Fatalf("verifySecret returned error on plain mismatch: %v", err)
-	}
-	if ok {
-		t.Errorf("verifySecret accepted the wrong password")
-	}
-}
-
-func TestVerifySecret_Salted(t *testing.T) {
 	// Two hashes of the same plaintext must differ — confirms the
 	// salt is actually being randomised per call rather than baked
 	// into the format.
-	a, err := hashSecret("hunter2")
-	if err != nil {
-		t.Fatalf("hashSecret: %v", err)
-	}
-	b, err := hashSecret("hunter2")
+	b, err := hashSecret(pw)
 	if err != nil {
 		t.Fatalf("hashSecret: %v", err)
 	}
 	if a == b {
 		t.Fatalf("two hashes of the same plaintext are identical — salt is not random")
 	}
+
+	ok, needsRehash, err := verifySecret(a, pw)
+	if err != nil || !ok {
+		t.Fatalf("verifySecret on fresh hash: ok=%v err=%v", ok, err)
+	}
+	if needsRehash {
+		t.Errorf("fresh hash with current params should not need a rehash")
+	}
+
+	ok, needsRehash, err = verifySecret(a, "wrong")
+	if err != nil {
+		t.Fatalf("verifySecret returned error on plain mismatch: %v", err)
+	}
+	if ok {
+		t.Errorf("verifySecret accepted the wrong password")
+	}
+	if needsRehash {
+		t.Errorf("wrong password signalled rehash — no UPDATE on a bad credential, ever")
+	}
 }
 
 func TestVerifySecret_LegacyBcrypt(t *testing.T) {
+	t.Parallel()
 	// Existing rows in the wild use bcrypt — they must still verify,
 	// and the verifier must signal a rehash so the next login
 	// migrates them to Argon2id.

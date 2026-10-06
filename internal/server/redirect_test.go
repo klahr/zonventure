@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/klahr/zonventure/internal/settings"
@@ -39,7 +38,10 @@ func pinRedirectTarget(t *testing.T, target string) {
 // + query preserved, and the allowlist (/api/health, /api/version,
 // /api/webhooks/stripe, /api/admin/migrate/redirect-mode) does not
 // redirect. The Stripe webhook gets a special-cased 200 OK so the
-// upstream never replays into the new instance.
+// upstream never replays into the new instance. The target is loaded
+// with a nil *sql.DB, so the 301s also prove the redirect path makes no
+// DB calls: the self-host's DB can be on the way down during the
+// cutover and the redirect still fires.
 func TestRedirectMode_PathsAndAllowlist(t *testing.T) {
 	pinRedirectTarget(t, "https://hosted.example")
 
@@ -197,30 +199,5 @@ func TestRedirectMode_HotFlip(t *testing.T) {
 	if rec.Code != http.StatusOK || !inner.called {
 		t.Fatalf("expected pass-through after flip off, got status=%d inner=%v",
 			rec.Code, inner.called)
-	}
-}
-
-// TestRedirectMode_DBLessFastPath confirms the redirect path makes
-// no DB calls — the self-host's DB can be on the way down during the
-// cutover and the 301 still fires. We satisfy this by passing a nil
-// *sql.DB to LoadRedirectTarget while ZV_REDIRECT_TARGET pins the
-// value; the middleware then reads exclusively from the in-memory
-// atomic pointer. If anything in the redirect handler reached for
-// the DB, this test would panic on the nil deref.
-func TestRedirectMode_DBLessFastPath(t *testing.T) {
-	pinRedirectTarget(t, "https://hosted.example")
-
-	inner := &reachedHandler{}
-	handler := redirectMode(inner)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/team/abc?x=1", nil))
-	if rec.Code != http.StatusMovedPermanently {
-		t.Fatalf("status: got %d, want 301", rec.Code)
-	}
-	if got := rec.Header().Get("Location"); !strings.HasPrefix(got, "https://hosted.example/team/abc") {
-		t.Errorf("Location: got %q, want prefix https://hosted.example/team/abc", got)
-	}
-	if inner.called {
-		t.Error("inner handler reached on a redirected request")
 	}
 }

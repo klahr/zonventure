@@ -984,6 +984,7 @@ func nullFloatEqual(a, b sql.NullFloat64) bool {
 // round-trip cleanly. Also asserts the Bystander org is untouched
 // (no leakage, no side-effects).
 func TestOrgBundle_RichRoundTrip(t *testing.T) {
+	t.Parallel()
 	db, h, ids := richFixture(t)
 	ctx := context.Background()
 
@@ -995,6 +996,11 @@ func TestOrgBundle_RichRoundTrip(t *testing.T) {
 	env, files, err := h.ExportOrgEnvelope(ctx, ids.acme)
 	if err != nil {
 		t.Fatalf("export: %v", err)
+	}
+	// Lock the manifest format contract — bumping the format without
+	// bumping the constant would otherwise silently break imports.
+	if env.Format != "zonventure-org-v1" {
+		t.Errorf("manifest format: got %q, want zonventure-org-v1", env.Format)
 	}
 
 	// Cross-org leakage check at the bundle level: the manifest
@@ -1033,6 +1039,24 @@ func TestOrgBundle_RichRoundTrip(t *testing.T) {
 	summary, err := admin.ImportOrgBundle(ctx, db, zipBuf.Bytes())
 	if err != nil {
 		t.Fatalf("import: %v", err)
+	}
+	if summary.OrgID == ids.acme {
+		t.Errorf("imported org id collides with the wiped one (got %d) — id-rebase isn't doing its job", summary.OrgID)
+	}
+	// The importer's own summary must agree with what it wrote.
+	for _, c := range []struct {
+		name      string
+		got, want int
+	}{
+		{"adventures", summary.Adventures, 2},
+		{"events", summary.Events, 5},
+		{"teams", summary.Teams, 4},
+		{"slots", summary.Slots, 7},
+		{"purchases", summary.Purchases, 3},
+	} {
+		if c.got != c.want {
+			t.Errorf("import summary %s: got %d, want %d", c.name, c.got, c.want)
+		}
 	}
 
 	imported := snapshotOrg(t, db, summary.OrgID)

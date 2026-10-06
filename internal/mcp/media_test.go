@@ -22,6 +22,7 @@ import (
 // An assistant with a shell uploads through a link, never through the
 // conversation: the link works for its adventure and nothing else.
 func TestMediaUploadURL(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	var orgID, userID int64

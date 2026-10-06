@@ -18,6 +18,7 @@ import (
 // authenticated) and chi.URLParam resolves against the synthesised
 // route context.
 func TestCallAdmin_PropagatesContextAndParams(t *testing.T) {
+	t.Parallel()
 	type ctxKey struct{}
 	var seenParam, seenCtx string
 	h := func(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +53,7 @@ func TestCallAdmin_PropagatesContextAndParams(t *testing.T) {
 // body, a custom header (X-Confirm-Password), and a non-2xx status
 // flowing through to the caller untouched.
 func TestCallAdmin_HeadersAndBody(t *testing.T) {
+	t.Parallel()
 	var sawHeader, sawBody string
 	h := func(w http.ResponseWriter, r *http.Request) {
 		sawHeader = r.Header.Get("X-Confirm-Password")
@@ -86,6 +88,7 @@ func TestCallAdmin_HeadersAndBody(t *testing.T) {
 // non-2xx → error result wrapping {status, body} so the LLM sees
 // both the HTTP code and the admin handler's error message.
 func TestAdminCallResult_StatusMapping(t *testing.T) {
+	t.Parallel()
 	// 200 with body
 	r := adminCallResult(200, []byte(`{"events":[]}`))
 	if r.IsError {

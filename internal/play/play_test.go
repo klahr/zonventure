@@ -182,6 +182,7 @@ func linear(answers ...string) *graph.Graph {
 // --- tests -----------------------------------------------------------
 
 func TestLinearAdventureEndToEnd(t *testing.T) {
+	t.Parallel()
 	g := linear("red", "blue")
 	// Nodes are [start, end, p1, p2]; the ladder goes on p2, where the
 	// wrong guesses are made.
@@ -230,6 +231,7 @@ func TestLinearAdventureEndToEnd(t *testing.T) {
 // applied to whatever it is on now — that would answer a question the
 // player has never seen.
 func TestStaleActionIsRefused(t *testing.T) {
+	t.Parallel()
 	f := setup(t, linear("a", "b"), 1)
 	team := f.teams[0]
 	f.answer(team, "a") // now on p2
@@ -248,6 +250,7 @@ func TestStaleActionIsRefused(t *testing.T) {
 // the row lock and the cursor compare-and-swap, both would advance and
 // the team would skip a puzzle.
 func TestConcurrentTeammatesAdvanceOnce(t *testing.T) {
+	t.Parallel()
 	f := setup(t, linear("a", "b", "c"), 1)
 	team := f.teams[0]
 
@@ -286,6 +289,7 @@ func TestConcurrentTeammatesAdvanceOnce(t *testing.T) {
 // same moment must never over-fill a station. Six teams, three stations
 // of two: every station gets exactly two.
 func TestCapacityIsNeverExceededUnderConcurrency(t *testing.T) {
+	t.Parallel()
 	hub := graph.Node{Slug: "hub", Type: graph.Hub, HubCfg: &graph.HubConfig{
 		Policy: graph.PolicyCapacity, Required: 1,
 		Branches: []graph.Branch{{Port: "a", Capacity: 2}, {Port: "b", Capacity: 2}, {Port: "c", Capacity: 2}},
@@ -355,6 +359,7 @@ func TestCapacityIsNeverExceededUnderConcurrency(t *testing.T) {
 // Teams adding to one event-wide counter at the same moment must each
 // count: two teams adding 1 to 0 end at 2, not 1.
 func TestConcurrentCounterAddsAreNotLost(t *testing.T) {
+	t.Parallel()
 	g := &graph.Graph{
 		Counters: []graph.Counter{{Slug: "found"}},
 		Nodes: []graph.Node{
@@ -396,6 +401,7 @@ func TestConcurrentCounterAddsAreNotLost(t *testing.T) {
 // score nobody else sees stays the team's own; a counter or a finish
 // does not.
 func TestResultSharedOnlyForEventWideChanges(t *testing.T) {
+	t.Parallel()
 	f := setup(t, linear("a", "b"), 1)
 	team := f.teams[0]
 	if r := f.answer(team, "nope"); r.Shared || r.Scored {
@@ -432,6 +438,7 @@ func TestResultSharedOnlyForEventWideChanges(t *testing.T) {
 // on history with nothing granted, paths that diverge and reconverge,
 // and a revisit that goes the way the team left last time.
 func TestBranchingAdventureOnPostgres(t *testing.T) {
+	t.Parallel()
 	hub := graph.Node{Slug: "hub", Type: graph.Hub, HubCfg: &graph.HubConfig{
 		Policy: graph.PolicyChoice, Required: 1,
 		Branches: []graph.Branch{{Port: "church", Label: "Church"}, {Port: "market", Label: "Market"}},
@@ -512,6 +519,7 @@ func TestBranchingAdventureOnPostgres(t *testing.T) {
 }
 
 func TestZoneGate(t *testing.T) {
+	t.Parallel()
 	g := linear("x")
 	g.Zones = []graph.Zone{{Slug: "square", Lat: 59.3293, Lng: 18.0686, RadiusM: 30}}
 	g.Nodes[2].PuzzleCfg.Zone = "square"
@@ -537,6 +545,7 @@ func TestZoneGate(t *testing.T) {
 
 // "Correct only if you are NOT here": leave the courtyard, then answer.
 func TestInvertedZoneOutput(t *testing.T) {
+	t.Parallel()
 	g := linear("x")
 	g.Zones = []graph.Zone{{Slug: "courtyard", Lat: 59.0, Lng: 18.0, RadiusM: 50}}
 	g.Nodes[2].PuzzleCfg.Outputs[0].Zone = "courtyard"
@@ -555,6 +564,7 @@ func TestInvertedZoneOutput(t *testing.T) {
 }
 
 func TestPartialCreditIsScored(t *testing.T) {
+	t.Parallel()
 	g := linear("unused")
 	g.Nodes[2].PuzzleCfg.Outputs[0].Points = 100
 	g.Nodes[2].PuzzleCfg.Outputs[0].Matchers = []match.Matcher{{Kind: match.Near, Target: 1500, Tolerance: 300}}
@@ -567,6 +577,7 @@ func TestPartialCreditIsScored(t *testing.T) {
 }
 
 func TestLockoutAfterWrongAnswer(t *testing.T) {
+	t.Parallel()
 	g := linear("right")
 	g.Nodes[2].PuzzleCfg.LockoutSeconds = 30
 	f := setup(t, g, 1)
@@ -586,6 +597,7 @@ func TestLockoutAfterWrongAnswer(t *testing.T) {
 }
 
 func TestHintsRevealInOrderAfterTheirDelay(t *testing.T) {
+	t.Parallel()
 	g := linear("x")
 	g.Nodes[2].PuzzleCfg.Hints = []graph.Hint{
 		{Text: "first", DelaySeconds: 60, Cost: 5},
@@ -614,6 +626,7 @@ func TestHintsRevealInOrderAfterTheirDelay(t *testing.T) {
 
 // Skipping needs both thresholds. Spamming guesses alone must not work.
 func TestSkipNeedsBothThresholds(t *testing.T) {
+	t.Parallel()
 	g := linear("x")
 	cfg := g.Nodes[2].PuzzleCfg
 	cfg.SkipAfterGuesses, cfg.SkipAfterSeconds = 2, 300
@@ -636,6 +649,7 @@ func TestSkipNeedsBothThresholds(t *testing.T) {
 }
 
 func TestTimeoutPath(t *testing.T) {
+	t.Parallel()
 	g := linear("x")
 	cfg := g.Nodes[2].PuzzleCfg
 	cfg.TimeLimitSeconds = 60
@@ -663,6 +677,7 @@ func TestTimeoutPath(t *testing.T) {
 // Effects persist, and an effect is visible to a gate later in the same
 // step: +50 on a team at 10 must clear a 50-point gate.
 func TestEffectsPersistAndAreVisibleToGates(t *testing.T) {
+	t.Parallel()
 	lo, hi := 0.0, 3.0
 	g := &graph.Graph{
 		Items:    []graph.Item{{Slug: "crowbar", Name: "Crowbar"}},
@@ -722,6 +737,7 @@ func TestEffectsPersistAndAreVisibleToGates(t *testing.T) {
 }
 
 func TestStartEventIsIdempotentAndRequiresAGraph(t *testing.T) {
+	t.Parallel()
 	f := setup(t, linear("a"), 2)
 	ctx := context.Background()
 
@@ -752,6 +768,7 @@ func TestStartEventIsIdempotentAndRequiresAGraph(t *testing.T) {
 // An author editing mid-event must not move the ground under a team
 // already playing: the event keeps the version it started with.
 func TestEventKeepsItsPinnedGraph(t *testing.T) {
+	t.Parallel()
 	f := setup(t, linear("a", "b"), 1)
 	ctx := context.Background()
 
@@ -772,6 +789,7 @@ func TestEventKeepsItsPinnedGraph(t *testing.T) {
 // The anti-teleport rule: two pings more than 120 s apart mean the latest
 // is not trusted, even if it is inside the zone.
 func TestPingLocatorRejectsTeleports(t *testing.T) {
+	t.Parallel()
 	f := setup(t, linear("a"), 1)
 	team := f.teams[0]
 	ctx := context.Background()
@@ -810,6 +828,7 @@ func TestPingLocatorRejectsTeleports(t *testing.T) {
 // A fix wider than maxFixAccuracy is stored but not trusted for where
 // the team is; one without an accuracy is, as before.
 func TestPingLocatorIgnoresInaccurateFixes(t *testing.T) {
+	t.Parallel()
 	f := setup(t, linear("a"), 1)
 	team := f.teams[0]
 	ctx := context.Background()
@@ -848,6 +867,7 @@ func TestPingLocatorIgnoresInaccurateFixes(t *testing.T) {
 // both trusted, and one phone's gap does not untrust the other. Phones
 // counts only those heard from lately.
 func TestPingLocatorPerPhone(t *testing.T) {
+	t.Parallel()
 	f := setup(t, linear("a"), 1)
 	team := f.teams[0]
 	ctx := context.Background()
@@ -908,6 +928,7 @@ func TestPingLocatorPerPhone(t *testing.T) {
 // The answer survives the database between actions: a switch several
 // steps later still reads the first puzzle's answer after a reload.
 func TestSwitchReadsAnAnswerFromEarlier(t *testing.T) {
+	t.Parallel()
 	anything := []match.Matcher{{Kind: match.Anything}}
 	g := &graph.Graph{
 		Nodes: []graph.Node{
@@ -944,6 +965,7 @@ func TestSwitchReadsAnAnswerFromEarlier(t *testing.T) {
 // Choosing a start survives the database: the team waits unplaced after
 // the event starts, chooses, and its adventure clock starts then.
 func TestTeamChoosesItsStart(t *testing.T) {
+	t.Parallel()
 	g := &graph.Graph{
 		Nodes: []graph.Node{
 			{Slug: "s1", Type: graph.Start, Title: "East"},
@@ -975,45 +997,21 @@ func TestTeamChoosesItsStart(t *testing.T) {
 	}
 }
 
-// An arranger may let a team begin wherever it stands: once teams.start_anywhere
-// is set, the team held at the start screen begins with no position at all.
-func TestStartAnywhereLetsHeldTeamBegin(t *testing.T) {
-	f := setupWith(t, linear("x"), 1, func(db *sql.DB, advID int64) {
-		if _, err := db.Exec(`UPDATE adventures SET start_lat = 59.3293, start_lng = 18.0686, start_radius_m = 30, start_label = 'The fountain' WHERE id = $1`, advID); err != nil {
-			t.Fatal(err)
-		}
-	})
-	team := f.teams[0]
-	ctx := context.Background()
-	v := f.view(team)
-	if v.Node != "" || len(v.Starts) != 1 {
-		t.Fatalf("held at the start screen: %+v", v)
-	}
-	if _, err := f.eng.ChooseStart(ctx, team, v.Starts[0].Node, ""); !errors.Is(err, ErrNotHere) {
-		t.Fatalf("before the arranger's word: got %v, want ErrNotHere", err)
-	}
-	if _, err := f.db.Exec(`UPDATE teams SET start_anywhere = TRUE WHERE id = $1`, team); err != nil {
-		t.Fatal(err)
-	}
-	v = f.view(team)
-	if len(v.Starts) != 1 || !v.Starts[0].Here {
-		t.Fatalf("let start anywhere: the start should be open: %+v", v.Starts)
-	}
-	if r, err := f.eng.ChooseStart(ctx, team, v.Starts[0].Node, ""); err != nil || r.View.Node == "" {
-		t.Fatalf("beginning away from the starting point: %+v %v", r.View, err)
-	}
-}
-
 // An adventure that requires its starting point holds its team at the
 // start screen when the event starts, and lets it begin only once a phone
 // reports a position there; the clock starts then, not with the event.
+// An arranger may instead let a team begin wherever it stands: once
+// teams.start_anywhere is set, the held team begins with no position at
+// all. One event, two teams: the first walks to the start, the second is
+// let off.
 func TestStartPlaceHoldsTeamUntilThere(t *testing.T) {
-	f := setupWith(t, linear("x"), 1, func(db *sql.DB, advID int64) {
+	t.Parallel()
+	f := setupWith(t, linear("x"), 2, func(db *sql.DB, advID int64) {
 		if _, err := db.Exec(`UPDATE adventures SET start_lat = 59.3293, start_lng = 18.0686, start_radius_m = 30, start_label = 'The fountain' WHERE id = $1`, advID); err != nil {
 			t.Fatal(err)
 		}
 	})
-	team := f.teams[0]
+	team, anywhere := f.teams[0], f.teams[1]
 	ctx := context.Background()
 	v := f.view(team)
 	if v.Node != "" || len(v.Starts) != 1 || v.Starts[0].Here || v.Starts[0].Zone == nil || v.Starts[0].Zone.Name != "The fountain" {
@@ -1040,12 +1038,33 @@ func TestStartPlaceHoldsTeamUntilThere(t *testing.T) {
 	if !started.Equal(f.clock.Now()) {
 		t.Errorf("clock started %v, want %v (when the team began, not the event)", started, f.clock.Now())
 	}
+
+	// The second team never reports a position: held until the
+	// arranger's word, then free to begin where it stands.
+	v = f.view(anywhere)
+	if v.Node != "" || len(v.Starts) != 1 {
+		t.Fatalf("held at the start screen: %+v", v)
+	}
+	if _, err := f.eng.ChooseStart(ctx, anywhere, v.Starts[0].Node, ""); !errors.Is(err, ErrNotHere) {
+		t.Fatalf("before the arranger's word: got %v, want ErrNotHere", err)
+	}
+	if _, err := f.db.Exec(`UPDATE teams SET start_anywhere = TRUE WHERE id = $1`, anywhere); err != nil {
+		t.Fatal(err)
+	}
+	v = f.view(anywhere)
+	if len(v.Starts) != 1 || !v.Starts[0].Here {
+		t.Fatalf("let start anywhere: the start should be open: %+v", v.Starts)
+	}
+	if r, err := f.eng.ChooseStart(ctx, anywhere, v.Starts[0].Node, ""); err != nil || r.View.Node == "" {
+		t.Fatalf("beginning away from the starting point: %+v %v", r.View, err)
+	}
 }
 
 // A home screen, played live: a note unlocked on reaching a step, a
 // branch left with Back and marked visited, and a second visit — all of
 // it read back from the database, not from memory.
 func TestHomeScreenLive(t *testing.T) {
+	t.Parallel()
 	g := &graph.Graph{
 		Journal: []graph.JournalEntry{{Slug: "carl", Title: "Carl"}},
 		Nodes: []graph.Node{
@@ -1096,6 +1115,7 @@ func TestHomeScreenLive(t *testing.T) {
 // The time limit, live: past the deadline the team is moved once, and the
 // database remembers it — a second action after the move acts normally.
 func TestTimeLimitLive(t *testing.T) {
+	t.Parallel()
 	g := &graph.Graph{
 		TimeLimit: &graph.TimeLimit{Seconds: 600, To: "accuse", Text: "Time's up."},
 		Nodes: []graph.Node{
@@ -1145,6 +1165,7 @@ func (f *fixture) pause(d time.Duration) {
 // A pause freezes the adventure's time limit: twenty minutes paused do
 // not count against the team.
 func TestPauseFreezesTimeLimit(t *testing.T) {
+	t.Parallel()
 	g := &graph.Graph{
 		TimeLimit: &graph.TimeLimit{Seconds: 600, To: "accuse", Text: "Time's up."},
 		Nodes: []graph.Node{
@@ -1179,6 +1200,7 @@ func TestPauseFreezesTimeLimit(t *testing.T) {
 // A node's clock leaves out only the pauses since the team entered it:
 // one before the entry does not count, an open one does.
 func TestPauseFreezesNodeClocks(t *testing.T) {
+	t.Parallel()
 	g := linear("a", "b")
 	g.Nodes[3].PuzzleCfg.Hints = []graph.Hint{
 		{Text: "first", DelaySeconds: 60},
@@ -1223,6 +1245,7 @@ func TestPauseFreezesNodeClocks(t *testing.T) {
 // A team's language, live: chosen, remembered by the database, and used
 // for the view and the replies.
 func TestLanguageLive(t *testing.T) {
+	t.Parallel()
 	g := &graph.Graph{
 		Language: "sv",
 		Nodes: []graph.Node{
@@ -1265,6 +1288,7 @@ func TestLanguageLive(t *testing.T) {
 // rest each to whoever holds fewest; a player alone holds them all, and
 // a claim by someone no longer playing does not count.
 func TestDealRoles(t *testing.T) {
+	t.Parallel()
 	f := setup(t, linear("a"), 1)
 	team := f.teams[0]
 	ctx := context.Background()

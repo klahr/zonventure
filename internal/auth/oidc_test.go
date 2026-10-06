@@ -94,6 +94,7 @@ func TestOIDCMatchesHostedDomain(t *testing.T) {
 // ----- integration tests (DB + fake issuer) -------------------------
 
 func TestOIDCCallback_HappyPath(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -160,6 +161,7 @@ func TestOIDCCallback_HappyPath(t *testing.T) {
 }
 
 func TestOIDCCallback_WrongHostedDomain(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -193,6 +195,7 @@ func TestOIDCCallback_WrongHostedDomain(t *testing.T) {
 }
 
 func TestOIDCCallback_NonceMismatch(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -223,6 +226,7 @@ func TestOIDCCallback_NonceMismatch(t *testing.T) {
 }
 
 func TestOIDCCallback_StateMismatch(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -239,6 +243,7 @@ func TestOIDCCallback_StateMismatch(t *testing.T) {
 }
 
 func TestOIDCCallback_EmailUnverified(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -273,6 +278,7 @@ func TestOIDCCallback_EmailUnverified(t *testing.T) {
 // security gate landed the test should have flipped along with it
 // but didn't, so it's been silently failing under DB-backed runs.
 func TestOIDCCallback_RefusesLinkingExistingPasswordAccount(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -459,9 +465,10 @@ func randomToken(t *testing.T) string {
 // fakeIssuer is an in-process OpenID Connect provider just rich
 // enough to drive the auth.OIDCCallback handler. It serves discovery,
 // JWKS, and a /token endpoint that returns ID tokens we sign locally
-// with a freshly-generated RSA key. The /auth endpoint is intentionally
-// a no-op — tests bypass the IdP-side redirect and call /callback
-// directly with a code we've pre-queued via fi.queue().
+// with an RSA key generated once per test binary (fakeIssuerKey). The
+// /auth endpoint is intentionally a no-op — tests bypass the IdP-side
+// redirect and call /callback directly with a code we've pre-queued
+// via fi.queue().
 type fakeIssuer struct {
 	URL      string
 	clientID string
@@ -486,9 +493,17 @@ type idClaims struct {
 	Iat           int64
 }
 
+// fakeIssuerKey is generated once per test binary: RSA-2048 keygen
+// is the slowest part of newFakeIssuer (worse under -race), and no
+// test depends on issuers having distinct keys — each fakeIssuer has
+// its own server URL / issuer, which is what the verifier pins.
+var fakeIssuerKey = sync.OnceValues(func() (*rsa.PrivateKey, error) {
+	return rsa.GenerateKey(rand.Reader, 2048)
+})
+
 func newFakeIssuer(t *testing.T, clientID string) *fakeIssuer {
 	t.Helper()
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	priv, err := fakeIssuerKey()
 	if err != nil {
 		t.Fatalf("rsa gen: %v", err)
 	}

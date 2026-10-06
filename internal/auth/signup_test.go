@@ -14,6 +14,7 @@ import (
 // guard for the dropped users.role / users.org_id columns: the
 // previous reload SELECTed those columns and 500'd on every confirm.
 func TestEmailChange_RoundTrip(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -54,6 +55,7 @@ func TestEmailChange_RoundTrip(t *testing.T) {
 // TestEmailChange_KeepsChosenUsername: a username that isn't the email
 // ("boss") survives an email change, so the user can still log in with it.
 func TestEmailChange_KeepsChosenUsername(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	ctx := context.Background()
@@ -77,6 +79,7 @@ func TestEmailChange_KeepsChosenUsername(t *testing.T) {
 // TestEmailChange_UnknownToken returns the typed sentinel rather than
 // a SQL error.
 func TestEmailChange_UnknownToken(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	if _, err := ConsumeEmailChangeToken(context.Background(), db, "nope"); !errors.Is(err, ErrVerificationUnknown) {

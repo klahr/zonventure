@@ -1,7 +1,6 @@
 package admin_test
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -57,10 +56,31 @@ func brandingFixture(t *testing.T) (db *sql.DB, orgID int64, h *admin.Handlers, 
 // hex colors via the profile endpoint, GET them back, assert each
 // column survives intact. Locks the wire shape that the redesigned
 // Settings → General "Branding" card relies on.
+//
+// It also locks in that a colors save doesn't wipe the tagline or
+// website. The current handler resets every column to the request
+// payload, so omitting a field would clear it — the caller must echo
+// tagline + website to preserve them. The test pins the contract:
+// the GUI saves the whole form on every Save click, never just the
+// colors, so a future "patch" semantics change is a deliberate
+// decision rather than a silent regression.
 func TestBranding_ColorsRoundTrip(t *testing.T) {
-	_, _, _, r := brandingFixture(t)
+	t.Parallel()
+	db, orgID, _, r := brandingFixture(t)
+
+	// Pre-set tagline + website directly.
+	if _, err := db.Exec(`
+		UPDATE organizations
+		   SET tagline = 'A real-world adventure company',
+		       public_website = 'https://acme.example'
+		 WHERE id = $1
+	`, orgID); err != nil {
+		t.Fatal(err)
+	}
 
 	body := map[string]any{
+		"tagline":                "A real-world adventure company",
+		"public_website":         "https://acme.example",
 		"accent_color":           "#112233",
 		"accent_secondary_color": "#445566",
 		"background_color":       "#778899",
@@ -103,6 +123,20 @@ func TestBranding_ColorsRoundTrip(t *testing.T) {
 	if got.Accent != "#112233" {
 		t.Errorf("colors after GET: got %+v, want #112233/...", got)
 	}
+
+	// The unrelated fields survived alongside the colors.
+	var tagline, website sql.NullString
+	if err := db.QueryRow(`
+		SELECT tagline, public_website FROM organizations WHERE id = $1
+	`, orgID).Scan(&tagline, &website); err != nil {
+		t.Fatal(err)
+	}
+	if tagline.String != "A real-world adventure company" {
+		t.Errorf("tagline: got %q, want preserved", tagline.String)
+	}
+	if website.String != "https://acme.example" {
+		t.Errorf("website: got %q, want preserved", website.String)
+	}
 }
 
 // TestBranding_ColorsValidation locks down the hex-color validator:
@@ -110,6 +144,7 @@ func TestBranding_ColorsRoundTrip(t *testing.T) {
 // with the colour name in the body so the GUI can highlight the
 // offending field.
 func TestBranding_ColorsValidation(t *testing.T) {
+	t.Parallel()
 	_, _, _, r := brandingFixture(t)
 
 	cases := []struct {
@@ -170,6 +205,7 @@ func TestBranding_ColorsValidation(t *testing.T) {
 // The GUI relies on this — the user blanks a field, hits Save, and
 // the saved-state echoes back without the colour.
 func TestBranding_ColorsClearOnEmpty(t *testing.T) {
+	t.Parallel()
 	db, orgID, _, r := brandingFixture(t)
 
 	// Pre-set a colour directly.
@@ -200,25 +236,15 @@ func TestBranding_ColorsClearOnEmpty(t *testing.T) {
 
 // TestBranding_LogoAuthGate proves the org-admin self-logo upload +
 // delete are gated to RoleOrgAdmin: an org_member call returns 403
-// without touching the row.
+// without touching the row. The gate decides from the session
+// alone, so the handlers get no DB or storage: reaching either would
+// panic rather than pass.
 func TestBranding_LogoAuthGate(t *testing.T) {
-	db, orgID, h, _ := brandingFixture(t)
-
-	// Add a second user as org_member and exercise the same routes
-	// through them.
-	var memberID int64
-	if err := db.QueryRow(`
-		INSERT INTO users(username, email_verified) VALUES ('grunt', 1) RETURNING id
-	`).Scan(&memberID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(
-		`INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_member')`,
-		memberID, orgID); err != nil {
-		t.Fatal(err)
-	}
+	t.Parallel()
+	h := &admin.Handlers{}
+	orgID := int64(1)
 	memberUser := auth.User{
-		ID: memberID, Username: "grunt",
+		ID: 2, Username: "grunt",
 		Role: auth.RoleOrgMember, OrgID: &orgID,
 	}
 	r := chi.NewRouter()
@@ -251,62 +277,4 @@ func TestBranding_LogoAuthGate(t *testing.T) {
 	if w.Code != http.StatusForbidden {
 		t.Errorf("anon DELETE: status=%d, want 403", w.Code)
 	}
-}
-
-// TestBranding_ProfilePreservesUnrelatedFields locks in that PUT
-// /orgs/me/profile with only colors doesn't wipe the tagline or
-// website. The current handler resets every column to the request
-// payload, so omitting a field would clear it — the test makes the
-// trade-off explicit so a future "patch" semantics change is a
-// deliberate decision rather than a silent regression.
-func TestBranding_ProfilePreservesUnrelatedFields(t *testing.T) {
-	db, orgID, _, r := brandingFixture(t)
-
-	// Pre-set tagline + website directly.
-	if _, err := db.Exec(`
-		UPDATE organizations
-		   SET tagline = 'A real-world adventure company',
-		       public_website = 'https://acme.example'
-		 WHERE id = $1
-	`, orgID); err != nil {
-		t.Fatal(err)
-	}
-
-	// PUT with full payload — caller must echo tagline + website to
-	// preserve them. The test pins the contract: the GUI saves the
-	// whole form on every Save click, never just the colors.
-	body, _ := json.Marshal(map[string]any{
-		"tagline":        "A real-world adventure company",
-		"public_website": "https://acme.example",
-		"accent_color":   "#112233",
-	})
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("PUT", "/api/admin/orgs/me/profile", strings.NewReader(string(body)))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("PUT: status=%d body=%s", w.Code, w.Body.String())
-	}
-
-	// Verify all three survived.
-	var (
-		tagline sql.NullString
-		website sql.NullString
-		accent  sql.NullString
-	)
-	if err := db.QueryRow(`
-		SELECT tagline, public_website, accent_color FROM organizations WHERE id = $1
-	`, orgID).Scan(&tagline, &website, &accent); err != nil {
-		t.Fatal(err)
-	}
-	if tagline.String != "A real-world adventure company" {
-		t.Errorf("tagline: got %q, want preserved", tagline.String)
-	}
-	if website.String != "https://acme.example" {
-		t.Errorf("website: got %q, want preserved", website.String)
-	}
-	if accent.String != "#112233" {
-		t.Errorf("accent: got %q, want #112233", accent.String)
-	}
-	_ = context.Background() // keep context import warm for future additions
 }

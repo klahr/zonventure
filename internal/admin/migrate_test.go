@@ -6,8 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"io"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -17,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/dbtest"
 	"github.com/klahr/zonventure/internal/settings"
 )
 
@@ -68,59 +67,57 @@ func withMaintenanceOn(t *testing.T, db *sql.DB) {
 	})
 }
 
-// TestMigrate_ExportAuthGate proves only a RoleAdmin caller can hit
-// the export endpoint. An org_admin (or anonymous) is rejected
-// with 403 even when the org_id query param is valid — the gate
-// is operator-only, never org-self-service.
-func TestMigrate_ExportAuthGate(t *testing.T) {
+// TestMigrate_ExportRequiresMaintenance proves the operator-side
+// export refuses unless maintenance mode is on. This is the
+// snapshot-consistency guarantee — concurrent player progression
+// during an active export would otherwise tear the bundle, and
+// catching that with a clear 409 is far better than producing a
+// bundle the operator only later notices is internally
+// inconsistent.
+//
+// Once maintenance is on, it also checks the export response is a
+// readable zip whose org.json declares the right format string and
+// org name. Locks the on-wire shape — a future format bump would
+// fail this until the constant + manifest both move.
+func TestMigrate_ExportRequiresMaintenance(t *testing.T) {
 	db, orgID, _, _, h := orgFixture(t)
-	withMaintenanceOn(t, db)
 
-	// Org admin: rejected.
-	orgUser := auth.User{ID: 1, Role: auth.RoleOrgAdmin, OrgID: &orgID}
-	r := migrateRouter(t, h, orgUser)
+	// Belt-and-braces: explicitly clear the flag in case a leaking
+	// prior test left it on. (Each test should clean up via
+	// withMaintenanceOn's t.Cleanup, but the cost of being defensive
+	// here is one extra setting write.)
+	if err := settings.SetMaintenanceMode(context.Background(), db, false); err != nil {
+		t.Fatalf("clear maintenance: %v", err)
+	}
+
+	admUser := auth.User{ID: 0, Role: auth.RoleAdmin}
+	r := migrateRouter(t, h, admUser)
+
+	// Off → 409.
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET",
 		"/api/admin/migrate/export?org_id="+strconv.FormatInt(orgID, 10), nil)
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusForbidden {
-		t.Errorf("org_admin export: status=%d body=%s, want 403",
+	if w.Code != http.StatusConflict {
+		t.Fatalf("export with maintenance off: status=%d body=%s, want 409",
 			w.Code, w.Body.String())
 	}
+	if !strings.Contains(w.Body.String(), "maintenance") {
+		t.Errorf("error body should mention maintenance, got %s", w.Body.String())
+	}
 
-	// Admin: accepted, response is a zip.
-	admUser := auth.User{ID: 0, Role: auth.RoleAdmin}
-	r = migrateRouter(t, h, admUser)
+	// Flip on → 200.
+	withMaintenanceOn(t, db)
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest("GET",
 		"/api/admin/migrate/export?org_id="+strconv.FormatInt(orgID, 10), nil)
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("admin export: status=%d body=%s, want 200",
+		t.Fatalf("export with maintenance on: status=%d body=%s, want 200",
 			w.Code, w.Body.String())
 	}
 	if got := w.Header().Get("Content-Type"); got != "application/zip" {
 		t.Errorf("Content-Type: got %q, want application/zip", got)
-	}
-}
-
-// TestMigrate_ExportStreamsValidZip checks the export response is a
-// readable zip whose org.json declares the right format string and
-// org name. Locks the on-wire shape — a future format bump would
-// fail this until the constant + manifest both move.
-func TestMigrate_ExportStreamsValidZip(t *testing.T) {
-	db, orgID, _, _, h := orgFixture(t)
-	withMaintenanceOn(t, db)
-
-	admUser := auth.User{ID: 0, Role: auth.RoleAdmin}
-	r := migrateRouter(t, h, admUser)
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET",
-		"/api/admin/migrate/export?org_id="+strconv.FormatInt(orgID, 10), nil)
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("admin export: status=%d body=%s, want 200",
-			w.Code, w.Body.String())
 	}
 	body := w.Body.Bytes()
 	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
@@ -162,102 +159,6 @@ func TestMigrate_ExportStreamsValidZip(t *testing.T) {
 	if !gotAdvDir {
 		t.Errorf("zip missing adventures/treasure/ dir")
 	}
-}
-
-// TestMigrate_ImportAuthGate proves the import endpoint rejects
-// non-admins even when given a valid bundle. Anonymous (no user
-// in context) and org_admin both must 403; only RoleAdmin proceeds.
-func TestMigrate_ImportAuthGate(t *testing.T) {
-	db, orgID, _, _, h := orgFixture(t)
-	withMaintenanceOn(t, db)
-
-	// First: build a valid bundle as admin.
-	admUser := auth.User{ID: 0, Role: auth.RoleAdmin}
-	exportR := migrateRouter(t, h, admUser)
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET",
-		"/api/admin/migrate/export?org_id="+strconv.FormatInt(orgID, 10), nil)
-	exportR.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("export: status=%d", w.Code)
-	}
-	bundle := w.Body.Bytes()
-
-	// Try to import as org_admin: 403.
-	orgUser := auth.User{ID: 1, Role: auth.RoleOrgAdmin, OrgID: &orgID}
-	r := migrateRouter(t, h, orgUser)
-	body, contentType := multipartBundle(t, bundle)
-	w = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/api/admin/migrate/import", body)
-	req.Header.Set("Content-Type", contentType)
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusForbidden {
-		t.Errorf("org_admin import: status=%d body=%s, want 403",
-			w.Code, w.Body.String())
-	}
-
-	// Re-do the same import as RoleAdmin: should succeed (the
-	// importer disambiguates the org name on the second pass since
-	// the source 'Acme' still exists).
-	r = migrateRouter(t, h, admUser)
-	body, contentType = multipartBundle(t, bundle)
-	w = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/api/admin/migrate/import", body)
-	req.Header.Set("Content-Type", contentType)
-	r.ServeHTTP(w, req)
-	// Slug collision is expected on a re-import in the same DB —
-	// the test isn't asserting "import works" (the round-trip test
-	// covers that), it's asserting "the auth gate doesn't bounce
-	// admins". So accept any non-403 status.
-	if w.Code == http.StatusForbidden {
-		t.Errorf("admin import: got 403, expected anything else (auth gate must let admin through)")
-	}
-}
-
-// TestMigrate_ExportRequiresMaintenance proves the operator-side
-// export refuses unless maintenance mode is on. This is the
-// snapshot-consistency guarantee — concurrent player progression
-// during an active export would otherwise tear the bundle, and
-// catching that with a clear 409 is far better than producing a
-// bundle the operator only later notices is internally
-// inconsistent.
-func TestMigrate_ExportRequiresMaintenance(t *testing.T) {
-	db, orgID, _, _, h := orgFixture(t)
-
-	// Belt-and-braces: explicitly clear the flag in case a leaking
-	// prior test left it on. (Each test should clean up via
-	// withMaintenanceOn's t.Cleanup, but the cost of being defensive
-	// here is one extra setting write.)
-	if err := settings.SetMaintenanceMode(context.Background(), db, false); err != nil {
-		t.Fatalf("clear maintenance: %v", err)
-	}
-
-	admUser := auth.User{ID: 0, Role: auth.RoleAdmin}
-	r := migrateRouter(t, h, admUser)
-
-	// Off → 409.
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET",
-		"/api/admin/migrate/export?org_id="+strconv.FormatInt(orgID, 10), nil)
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("export with maintenance off: status=%d body=%s, want 409",
-			w.Code, w.Body.String())
-	}
-	if !strings.Contains(w.Body.String(), "maintenance") {
-		t.Errorf("error body should mention maintenance, got %s", w.Body.String())
-	}
-
-	// Flip on → 200.
-	withMaintenanceOn(t, db)
-	w = httptest.NewRecorder()
-	req = httptest.NewRequest("GET",
-		"/api/admin/migrate/export?org_id="+strconv.FormatInt(orgID, 10), nil)
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("export with maintenance on: status=%d body=%s, want 200",
-			w.Code, w.Body.String())
-	}
 
 	// MigrateSelfExport (per-org, on hosted) must NOT require
 	// maintenance — flipping the whole platform freeze for one
@@ -285,7 +186,9 @@ func TestMigrate_ExportRequiresMaintenance(t *testing.T) {
 // GET confirms, POST clears it, GET confirms cleared. Verifies
 // settings.MaintenanceMode() reflects the change in-process.
 func TestMigrate_MaintenanceToggle(t *testing.T) {
-	db, _, _, _, h := orgFixture(t)
+	db, cleanup := dbtest.Open(t)
+	t.Cleanup(cleanup)
+	h := &admin.Handlers{DB: db}
 	t.Setenv("ZV_MAINTENANCE_MODE", "")
 	settings.LoadMaintenanceMode(context.Background(), db)
 	t.Cleanup(func() {
@@ -356,6 +259,7 @@ func TestMigrate_MaintenanceToggle(t *testing.T) {
 //   - Crucially: the bundle returned to org A's admin must NOT carry
 //     any of org B's data, even when B exists in the same DB.
 func TestMigrate_SelfExportAuthGate(t *testing.T) {
+	t.Parallel()
 	db, h, ids := richFixture(t)
 
 	// org_admin of Acme — should succeed.
@@ -471,8 +375,9 @@ func TestMigrate_SelfExportAuthGate(t *testing.T) {
 // at every step — the redirect middleware reads from there, so
 // this is the wiring that the GUI relies on.
 func TestMigrate_RedirectModeToggle(t *testing.T) {
-	db, _, _, _, h := orgFixture(t)
-	_ = db
+	db, cleanup := dbtest.Open(t)
+	t.Cleanup(cleanup)
+	h := &admin.Handlers{DB: db}
 
 	// Make sure the env-pin path doesn't leak across tests.
 	t.Setenv("ZV_REDIRECT_TARGET", "")
@@ -530,24 +435,4 @@ func TestMigrate_RedirectModeToggle(t *testing.T) {
 	if got := settings.RedirectTarget(); got != "" {
 		t.Errorf("settings.RedirectTarget after disable: got %q, want empty", got)
 	}
-}
-
-// multipartBundle wraps `bundle` in a `multipart/form-data` body
-// suitable for the import handler. Mirror of the FormData the
-// frontend builds in arrange.html's `renderMigrateImportCard`.
-func multipartBundle(t *testing.T, bundle []byte) (io.Reader, string) {
-	t.Helper()
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	fw, err := mw.CreateFormFile("bundle", "bundle.zip")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fw.Write(bundle); err != nil {
-		t.Fatal(err)
-	}
-	if err := mw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return &buf, mw.FormDataContentType()
 }

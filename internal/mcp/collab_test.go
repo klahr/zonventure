@@ -15,6 +15,7 @@ import (
 // it, replies as the assistant, resolves it, and hands the step back
 // for review.
 func TestCollabTools_PickUpATask(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	var orgID, userID int64

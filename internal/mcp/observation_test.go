@@ -8,6 +8,7 @@ import (
 )
 
 func TestObservationTools_NilAdminGuard(t *testing.T) {
+	t.Parallel()
 	s := &Server{Admin: nil}
 	ctx := withScopes(context.Background(), []string{"read", "write"})
 
@@ -38,6 +39,7 @@ func TestObservationTools_NilAdminGuard(t *testing.T) {
 }
 
 func TestObservationTools_ArgValidation(t *testing.T) {
+	t.Parallel()
 	s := &Server{Admin: nil}
 	ctx := withScopes(context.Background(), []string{"read"})
 
@@ -69,6 +71,7 @@ func TestObservationTools_ArgValidation(t *testing.T) {
 }
 
 func TestObservationTools_AreRegisteredWithCorrectScope(t *testing.T) {
+	t.Parallel()
 	s := &Server{tools: newRegistry()}
 	s.registerObservationTools()
 
@@ -99,6 +102,7 @@ func TestObservationTools_AreRegisteredWithCorrectScope(t *testing.T) {
 // the bottom regardless. Stable order between equal entries matters
 // because the LLM diffs successive polls.
 func TestSummariseDetail_LeaderboardOrdering(t *testing.T) {
+	t.Parallel()
 	var d eventDetailForSummary
 	d.Event.State = "running"
 	d.Event.AllowedOps = []string{"pause", "cancel"}

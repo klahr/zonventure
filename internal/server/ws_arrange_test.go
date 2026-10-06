@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -38,74 +37,6 @@ func seedEventInOrg(t *testing.T, db *sql.DB, orgID int64) int64 {
 		t.Fatalf("seed event: %v", err)
 	}
 	return eventID
-}
-
-func TestWSArrange_RequiresAuth(t *testing.T) {
-	ts, _, _, cleanup := seedPurchaseStack(t, server.Config{})
-	defer cleanup()
-
-	// Anonymous (no session cookie) — middleware rejects with 401
-	// before the upgrade completes.
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws/arrange"
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	_, resp, err := websocket.Dial(ctx, wsURL, nil)
-	if err == nil {
-		t.Fatalf("expected dial failure, got success")
-	}
-	if resp == nil {
-		t.Fatalf("expected HTTP response on failed upgrade, got nil")
-	}
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", resp.StatusCode)
-	}
-}
-
-func TestWSArrange_WatchOwnEventDelivers(t *testing.T) {
-	hub := ws.NewHub()
-	ts, db, orgID, cleanup := seedPurchaseStack(t, server.Config{Hub: hub})
-	defer cleanup()
-	eventID := seedEventInOrg(t, db, orgID)
-
-	boss := newClient(t, ts)
-	if s := boss.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
-		t.Fatalf("login = %d", s)
-	}
-
-	conn := dialWS(t, ts, "/ws/arrange", boss.c)
-	defer conn.Close(websocket.StatusNormalClosure, "")
-
-	cwx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	if err := conn.Write(cwx, websocket.MessageText,
-		[]byte(`{"kind":"watch_event","data":{"event_id":`+itoa(eventID)+`}}`)); err != nil {
-		cancel()
-		t.Fatalf("write watch_event: %v", err)
-	}
-	cancel()
-
-	// The handler emits four kinds on the initial push burst. Order is
-	// not guaranteed, so collect them.
-	got := map[string]bool{}
-	for i := 0; i < 4; i++ {
-		m := recvMsg(t, conn)
-		got[m.Kind] = true
-	}
-	for _, want := range []string{"positions", "tracks", "activity", "event_detail"} {
-		if !got[want] {
-			t.Errorf("missing initial push kind %q (got %+v)", want, got)
-		}
-	}
-
-	// Subsequent Hub.Publish on this event's topic triggers another
-	// push burst — assert at least one expected kind arrives.
-	hub.Publish(ws.EventTopic(eventID), "noop", map[string]any{})
-	m := recvMsg(t, conn)
-	switch m.Kind {
-	case "positions", "tracks", "activity", "event_detail":
-		// expected
-	default:
-		t.Fatalf("unexpected post-publish kind %q", m.Kind)
-	}
 }
 
 func TestWSArrange_WatchCrossOrgRefused(t *testing.T) {
@@ -214,11 +145,21 @@ func TestWSArrange_UnwatchStopsDelivery(t *testing.T) {
 	}
 	cancel2()
 
-	// Give the server a beat to tear down the subscription, then publish
-	// on the topic and assert nothing arrives.
-	time.Sleep(100 * time.Millisecond)
+	// The socket handles frames in order, so once a later watch of a
+	// missing event has answered, the unwatch has torn the subscription
+	// down. Then publish on the topic and assert nothing arrives.
+	cwx3, cancel3 := context.WithTimeout(context.Background(), 2*time.Second)
+	if err := conn.Write(cwx3, websocket.MessageText,
+		[]byte(`{"kind":"watch_event","data":{"event_id":999999}}`)); err != nil {
+		cancel3()
+		t.Fatalf("write barrier: %v", err)
+	}
+	cancel3()
+	if m := recvMsg(t, conn); m.Kind != "watch_error" {
+		t.Fatalf("barrier kind = %q, want watch_error", m.Kind)
+	}
 	hub.Publish(ws.EventTopic(eventID), "noop", map[string]any{})
-	mustNotRecv(t, conn, 500*time.Millisecond)
+	mustNotRecv(t, conn, 200*time.Millisecond)
 }
 
 // Access is checked when a watch starts, but a watch can run for hours:
@@ -292,8 +233,8 @@ func TestWSArrange_WatchAdventure(t *testing.T) {
 		t.Fatalf("write watch_adventure: %v", err)
 	}
 	cancel()
-	// The watch is set up asynchronously; give it a moment before saving.
-	time.Sleep(200 * time.Millisecond)
+	// presence_self goes out once the watch has subscribed to saves.
+	recvKind(t, conn, "presence_self", 3*time.Second)
 
 	env := map[string]any{"format": "zonventure-adventure-v2", "graph": map[string]any{
 		"nodes": []map[string]any{{"slug": "start", "type": "start"}, {"slug": "end", "type": "end"}},

@@ -14,13 +14,10 @@ import (
 // it, and the end reveals it to all. In an event with secret roles off
 // no one is dealt it, and no one is asked.
 func TestSaboteurOverHTTP(t *testing.T) {
-	crew, view, act, has := saboteurEvent(t, true)
-	t.Run("caught", func(t *testing.T) { playSaboteur(t, crew, view, act, has) })
-}
+	event, view, act, has := saboteurServer(t)
 
-// With secret roles off: the same adventure, no saboteur, no accusation.
-func TestSaboteurOffOverHTTP(t *testing.T) {
-	calm, view, act, has := saboteurEvent(t, false)
+	// With secret roles off: the same adventure, no saboteur, no accusation.
+	calm := event(false)
 	if s := act(calm[0], "continue", map[string]string{"node": "intro"}); s != 200 {
 		t.Fatalf("first move = %d", s)
 	}
@@ -30,6 +27,9 @@ func TestSaboteurOffOverHTTP(t *testing.T) {
 			t.Errorf("secret roles off: player %d sees %v", i, v.Blocks)
 		}
 	}
+
+	crew := event(true)
+	t.Run("caught", func(t *testing.T) { playSaboteur(t, crew, view, act, has) })
 }
 
 type (
@@ -38,9 +38,10 @@ type (
 	hasFn  func(*session.View, string) bool
 )
 
-// saboteurEvent publishes the heist with a saboteur and starts an event
-// of one team of three, Ann, Bo and Cy, with secret roles on or off.
-func saboteurEvent(t *testing.T, secret bool) ([]*client, viewFn, actFn, hasFn) {
+// saboteurServer publishes the heist with a saboteur; its event func
+// starts an event of one team of three, Ann, Bo and Cy, with secret
+// roles on or off.
+func saboteurServer(t *testing.T) (func(secret bool) []*client, viewFn, actFn, hasFn) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	t.Cleanup(cleanup)
 
@@ -87,11 +88,18 @@ func saboteurEvent(t *testing.T, secret bool) ([]*client, viewFn, actFn, hasFn) 
 		resp.Body.Close()
 		return c
 	}
-	event := func(secret bool) (int64, []*client) {
+	// The seeded assignment backs the first event; later ones run on
+	// the org's share of the demo.
+	backing := map[string]any{"assignment_id": assignmentID}
+	event := func(secret bool) []*client {
 		var ev struct {
 			ID int64 `json:"id"`
 		}
-		arr.do("POST", "/api/admin/events", map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &ev)
+		backing["attest_no_minors"] = true
+		if s := arr.do("POST", "/api/admin/events", backing, &ev); s != 201 {
+			t.Fatalf("create event = %d", s)
+		}
+		backing = map[string]any{"adventure_slug": "demo"}
 		if !secret {
 			if s := arr.do("PATCH", "/api/admin/events/"+itoa(ev.ID), map[string]any{"secret_roles": false}, nil); s != 200 && s != 204 {
 				t.Fatalf("turning secret roles off = %d", s)
@@ -112,7 +120,7 @@ func saboteurEvent(t *testing.T, secret bool) ([]*client, viewFn, actFn, hasFn) 
 		if s := arr.do("POST", "/api/admin/events/"+itoa(ev.ID)+"/start", nil, nil); s != 204 {
 			t.Fatalf("start = %d", s)
 		}
-		return ev.ID, players
+		return players
 	}
 	view := func(c *client) *session.View {
 		t := t
@@ -135,8 +143,7 @@ func saboteurEvent(t *testing.T, secret bool) ([]*client, viewFn, actFn, hasFn) 
 		return false
 	}
 
-	_, crew := event(secret)
-	return crew, view, act, has
+	return event, view, act, has
 }
 
 func playSaboteur(t *testing.T, crew []*client, view viewFn, act actFn, has hasFn) {

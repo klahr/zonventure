@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/klahr/zonventure/internal/dbtest"
+	"github.com/go-chi/chi/v5"
 )
 
 // TestVersionEndpoint asserts that /api/version returns the configured
@@ -15,15 +15,19 @@ import (
 // are populated by debug.ReadBuildInfo, which only fills them when the
 // test binary itself was built inside a VCS checkout — so we don't
 // require them, only that the response shape is stable.
+//
+// The route is mounted on a bare router, as New mounts it, so the test
+// needs no database. MCP is pinned off: its routes, registered alongside,
+// would want the handlers New builds.
 func TestVersionEndpoint(t *testing.T) {
-	sqlDB, cleanup := dbtest.Open(t)
-	defer cleanup()
-
-	h := New(Config{DB: sqlDB, Version: "v9.9.9-test"})
+	t.Setenv("ZV_MCP_ENABLED", "")
+	r := chi.NewRouter()
+	cfg := Config{Version: "v9.9.9-test"}
+	registerMetaRoutes(r, &routesEnv{cfg: cfg, verResp: buildVersion(cfg.Version)})
 
 	req := httptest.NewRequest("GET", "/api/version", nil)
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	r.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)

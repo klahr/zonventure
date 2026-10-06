@@ -19,6 +19,7 @@ import (
 // This is the single test that prevents a future refactor from
 // quietly re-collapsing the org_admin/org_member distinction.
 func TestCanAuthor(t *testing.T) {
+	t.Parallel()
 	orgA := int64(1)
 	orgB := int64(2)
 	owned := func(id int64) sql.NullInt64 { return sql.NullInt64{Int64: id, Valid: true} }
@@ -99,6 +100,7 @@ func TestCanAuthor(t *testing.T) {
 // permissive "any org member can read/write" gate kept around for
 // non-authoring flows.
 func TestCanEditOwnedStillPermissive(t *testing.T) {
+	t.Parallel()
 	orgA := int64(1)
 	owned := sql.NullInt64{Int64: orgA, Valid: true}
 	memberInOrg := auth.User{Role: auth.RoleOrgMember, OrgID: &orgA}

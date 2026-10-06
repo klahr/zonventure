@@ -10,6 +10,7 @@ import (
 // TestScopesAllow exercises the membership predicate the registry
 // uses to gate dispatch. No DB / HTTP — just the pure function.
 func TestScopesAllow(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		have []string
 		need string
@@ -36,6 +37,7 @@ func TestScopesAllow(t *testing.T) {
 // requires, and produces an in-band tool error rather than a JSON-RPC
 // protocol error (so the model can see the message and self-correct).
 func TestRegistryCall_ScopeGate(t *testing.T) {
+	t.Parallel()
 	r := newRegistry()
 	called := 0
 	r.register(ToolDescriptor{
@@ -102,6 +104,7 @@ func TestRegistryCall_ScopeGate(t *testing.T) {
 // a panic in registerTools rather than silently shipping an
 // unscoped (and therefore ungated) tool.
 func TestRegistryRegister_PanicsOnMissingScope(t *testing.T) {
+	t.Parallel()
 	defer func() {
 		if r := recover(); r == nil {
 			t.Fatal("expected panic on empty scope, got none")

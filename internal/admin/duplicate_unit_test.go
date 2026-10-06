@@ -6,6 +6,7 @@ import (
 )
 
 func TestGenerateDuplicateSlug(t *testing.T) {
+	t.Parallel()
 	got, err := generateDuplicateSlug("office-tour")
 	if err != nil {
 		t.Fatalf("generate: %v", err)
@@ -33,6 +34,7 @@ func TestGenerateDuplicateSlug(t *testing.T) {
 }
 
 func TestIsUniqueViolation(t *testing.T) {
+	t.Parallel()
 	if isUniqueViolation(nil) {
 		t.Error("nil should not be a unique violation")
 	}
@@ -45,6 +47,7 @@ func TestIsUniqueViolation(t *testing.T) {
 }
 
 func TestDeref(t *testing.T) {
+	t.Parallel()
 	if got := deref(nil); got != "" {
 		t.Errorf("nil should produce empty string, got %q", got)
 	}

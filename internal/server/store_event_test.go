@@ -13,18 +13,14 @@ import (
 	"github.com/klahr/zonventure/internal/public"
 )
 
-// TestRenderStoreEventPage_HappyPath drives the per-event detail
-// renderer against a real DB row and asserts the embedded template
-// has no leftover placeholders. Mirrors landing_test's posture so a
-// missing substitution becomes a test failure rather than a silent
-// "{{TITLE}} on the live page" defect.
-func TestRenderStoreEventPage_HappyPath(t *testing.T) {
+// TestStorePages renders the store's event pages from one database
+// shared by the subtests: one org, "Acme", and its "demo" adventure;
+// each subtest adds its own events (and adventures).
+func TestStorePages(t *testing.T) {
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
-
 	var orgID int64
-	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).
-		Scan(&orgID); err != nil {
+	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).Scan(&orgID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`
@@ -32,103 +28,160 @@ func TestRenderStoreEventPage_HappyPath(t *testing.T) {
 	`, orgID); err != nil {
 		t.Fatal(err)
 	}
-	var eventID int64
-	if err := db.QueryRow(`
-		INSERT INTO events(adventure_slug, org_id, state, live_token, name,
-		                   public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size, public_blurb)
-		VALUES ('demo', $1, 'running', 'lt-' || md5(random()::text), 'Always-on demo',
-		        TRUE, 2500, 'eur', 5, 'A two-hour outdoor adventure.')
-		RETURNING id
-	`, orgID).Scan(&eventID); err != nil {
-		t.Fatal(err)
-	}
 
-	r := chi.NewRouter()
-	r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
-		renderStoreEventPage(w, req, db, "https://zv.example.com")
-	})
-
-	req := httptest.NewRequest("GET", "/store/event/"+itoa64(eventID), nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	if strings.Contains(body, "{{") {
-		idx := strings.Index(body, "{{")
-		end := idx + 50
-		if end > len(body) {
-			end = len(body)
+	// Drives the per-event detail renderer against a real DB row and
+	// asserts the embedded template has no leftover placeholders.
+	// Mirrors landing_test's posture so a missing substitution becomes a
+	// test failure rather than a silent "{{TITLE}} on the live page"
+	// defect.
+	t.Run("render event page", func(t *testing.T) {
+		var eventID int64
+		if err := db.QueryRow(`
+			INSERT INTO events(adventure_slug, org_id, state, live_token, name,
+			                   public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size, public_blurb)
+			VALUES ('demo', $1, 'running', 'lt-' || md5(random()::text), 'Always-on demo',
+			        TRUE, 2500, 'eur', 5, 'A two-hour outdoor adventure.')
+			RETURNING id
+		`, orgID).Scan(&eventID); err != nil {
+			t.Fatal(err)
 		}
-		t.Fatalf("leftover placeholder at %d: %q", idx, body[idx:end])
-	}
-	// The canonical URL moved under /o/{slug}/ when per-org store
-	// pages landed (migration 0051). The trigger auto-derives slug
-	// "acme" from the seeded org name, so the absolute URL is
-	// `https://zv.example.com/o/acme/store/event/{id}` rather than
-	// the legacy `/store/event/` path.
-	for _, want := range []string{
-		"Demo Adv",                      // adventure title
-		"Acme",                          // org name
-		"A two-hour outdoor adventure.", // blurb
-		"https://zv.example.com/o/acme/store/event/", // canonical URL
-		"€25", // formatted price
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("body missing %q", want)
+
+		r := chi.NewRouter()
+		r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
+			renderStoreEventPage(w, req, db, "https://zv.example.com")
+		})
+
+		req := httptest.NewRequest("GET", "/store/event/"+itoa64(eventID), nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
 		}
-	}
-	// Cache headers + content type are part of the contract.
-	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
-		t.Errorf("Content-Type = %q, want text/html…", got)
-	}
-}
-
-// TestRenderStoreEventPage_404OnUnlisted asserts that a 404 is
-// returned for events that exist but aren't currently for sale —
-// stale link from a previously-listed event must not leak the
-// row's data.
-func TestRenderStoreEventPage_404OnUnlisted(t *testing.T) {
-	db, cleanup := dbtest.Open(t)
-	defer cleanup()
-
-	var orgID int64
-	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).
-		Scan(&orgID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO adventures(slug, title, org_id) VALUES ('demo', 'Demo', $1)`, orgID); err != nil {
-		t.Fatal(err)
-	}
-	var eventID int64
-	if err := db.QueryRow(`
-		INSERT INTO events(adventure_slug, org_id, state, live_token, name,
-		                   public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size)
-		VALUES ('demo', $1, 'running', 'lt-' || md5(random()::text), 'Hidden',
-		        FALSE, 2500, 'eur', 5)
-		RETURNING id
-	`, orgID).Scan(&eventID); err != nil {
-		t.Fatal(err)
-	}
-
-	r := chi.NewRouter()
-	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte("404"))
-	})
-	r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
-		renderStoreEventPage(w, req, db, "")
+		body := rec.Body.String()
+		if strings.Contains(body, "{{") {
+			idx := strings.Index(body, "{{")
+			end := idx + 50
+			if end > len(body) {
+				end = len(body)
+			}
+			t.Fatalf("leftover placeholder at %d: %q", idx, body[idx:end])
+		}
+		// The canonical URL moved under /o/{slug}/ when per-org store
+		// pages landed (migration 0051). The trigger auto-derives slug
+		// "acme" from the seeded org name, so the absolute URL is
+		// `https://zv.example.com/o/acme/store/event/{id}` rather than
+		// the legacy `/store/event/` path.
+		for _, want := range []string{
+			"Demo Adv",                      // adventure title
+			"Acme",                          // org name
+			"A two-hour outdoor adventure.", // blurb
+			"https://zv.example.com/o/acme/store/event/", // canonical URL
+			"€25", // formatted price
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("body missing %q", want)
+			}
+		}
+		// Cache headers + content type are part of the contract.
+		if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
+			t.Errorf("Content-Type = %q, want text/html…", got)
+		}
 	})
 
-	req := httptest.NewRequest("GET", "/store/event/"+itoa64(eventID), nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	// Asserts that a 404 is returned for events that exist but aren't
+	// currently for sale — stale link from a previously-listed event
+	// must not leak the row's data.
+	t.Run("404 on unlisted", func(t *testing.T) {
+		var eventID int64
+		if err := db.QueryRow(`
+			INSERT INTO events(adventure_slug, org_id, state, live_token, name,
+			                   public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size)
+			VALUES ('demo', $1, 'running', 'lt-' || md5(random()::text), 'Hidden',
+			        FALSE, 2500, 'eur', 5)
+			RETURNING id
+		`, orgID).Scan(&eventID); err != nil {
+			t.Fatal(err)
+		}
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", rec.Code)
-	}
+		r := chi.NewRouter()
+		r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("404"))
+		})
+		r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
+			renderStoreEventPage(w, req, db, "")
+		})
+
+		req := httptest.NewRequest("GET", "/store/event/"+itoa64(eventID), nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", rec.Code)
+		}
+	})
+
+	// An adventure's icon shows on its store card and beside the title
+	// on its event page, and is the link preview when the event has no
+	// cover.
+	t.Run("shows adventure icon", func(t *testing.T) {
+		if _, err := db.Exec(`
+			INSERT INTO adventures(slug, title, org_id, avatar_mime_type, avatar_size_bytes, avatar_content)
+			VALUES ('iconic', 'Iconic', $1, 'image/png', 1, '\x89'::bytea), ('plain', 'Plain', $1, NULL, NULL, NULL)
+		`, orgID); err != nil {
+			t.Fatal(err)
+		}
+		ids := map[string]int64{}
+		for _, slug := range []string{"iconic", "plain"} {
+			var id int64
+			if err := db.QueryRow(`
+				INSERT INTO events(adventure_slug, org_id, state, live_token, public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size)
+				VALUES ($1, $2, 'running', 'lt-' || md5(random()::text), TRUE, 2500, 'eur', 4) RETURNING id
+			`, slug, orgID).Scan(&id); err != nil {
+				t.Fatal(err)
+			}
+			ids[slug] = id
+		}
+
+		r := chi.NewRouter()
+		r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
+			renderStoreEventPage(w, req, db, "https://zv.example.com")
+		})
+		page := func(slug string) string {
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest("GET", "/store/event/"+itoa64(ids[slug]), nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s: status %d", slug, rec.Code)
+			}
+			return rec.Body.String()
+		}
+		if body := page("iconic"); !strings.Contains(body, `src="/adventure-assets/avatar/iconic"`) || !strings.Contains(body, `data-has="true"`) ||
+			!strings.Contains(body, `content="https://zv.example.com/adventure-assets/avatar/iconic"`) {
+			t.Errorf("the icon is missing from the event page or its preview")
+		}
+		if body := page("plain"); !strings.Contains(body, `data-has="false"`) || strings.Contains(body, "/adventure-assets/avatar/") {
+			t.Errorf("an adventure without an icon shows none")
+		}
+
+		rec := httptest.NewRecorder()
+		lr := chi.NewRouter()
+		lr.Get("/api/o/{slug}/store/items", (&public.Handlers{DB: db, Lib: adventure.New(db)}).StoreListByOrg)
+		lr.ServeHTTP(rec, httptest.NewRequest("GET", "/api/o/acme/store/items", nil))
+		var list struct {
+			Items []public.StoreItemDTO `json:"items"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+			t.Fatal(err)
+		}
+		icons := map[string]string{}
+		for _, it := range list.Items {
+			icons[it.AdventureSlug] = it.AdventureIconURL
+		}
+		if icons["iconic"] != "/adventure-assets/avatar/iconic" || icons["plain"] != "" {
+			t.Errorf("store items' icons = %v", icons)
+		}
+	})
 }
 
 // TestFormatStorePrice covers the currency-aware formatter so a
@@ -199,70 +252,4 @@ func itoa64(n int64) string {
 		b[i] = '-'
 	}
 	return string(b[i:])
-}
-
-// An adventure's icon shows on its store card and beside the title on
-// its event page, and is the link preview when the event has no cover.
-func TestStoreShowsAdventureIcon(t *testing.T) {
-	db, cleanup := dbtest.Open(t)
-	defer cleanup()
-	var orgID int64
-	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).Scan(&orgID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`
-		INSERT INTO adventures(slug, title, org_id, avatar_mime_type, avatar_size_bytes, avatar_content)
-		VALUES ('iconic', 'Iconic', $1, 'image/png', 1, '\x89'::bytea), ('plain', 'Plain', $1, NULL, NULL, NULL)
-	`, orgID); err != nil {
-		t.Fatal(err)
-	}
-	ids := map[string]int64{}
-	for _, slug := range []string{"iconic", "plain"} {
-		var id int64
-		if err := db.QueryRow(`
-			INSERT INTO events(adventure_slug, org_id, state, live_token, public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size)
-			VALUES ($1, $2, 'running', 'lt-' || md5(random()::text), TRUE, 2500, 'eur', 4) RETURNING id
-		`, slug, orgID).Scan(&id); err != nil {
-			t.Fatal(err)
-		}
-		ids[slug] = id
-	}
-
-	r := chi.NewRouter()
-	r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
-		renderStoreEventPage(w, req, db, "https://zv.example.com")
-	})
-	page := func(slug string) string {
-		rec := httptest.NewRecorder()
-		r.ServeHTTP(rec, httptest.NewRequest("GET", "/store/event/"+itoa64(ids[slug]), nil))
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%s: status %d", slug, rec.Code)
-		}
-		return rec.Body.String()
-	}
-	if body := page("iconic"); !strings.Contains(body, `src="/adventure-assets/avatar/iconic"`) || !strings.Contains(body, `data-has="true"`) ||
-		!strings.Contains(body, `content="https://zv.example.com/adventure-assets/avatar/iconic"`) {
-		t.Errorf("the icon is missing from the event page or its preview")
-	}
-	if body := page("plain"); !strings.Contains(body, `data-has="false"`) || strings.Contains(body, "/adventure-assets/avatar/") {
-		t.Errorf("an adventure without an icon shows none")
-	}
-
-	rec := httptest.NewRecorder()
-	lr := chi.NewRouter()
-	lr.Get("/api/o/{slug}/store/items", (&public.Handlers{DB: db, Lib: adventure.New(db)}).StoreListByOrg)
-	lr.ServeHTTP(rec, httptest.NewRequest("GET", "/api/o/acme/store/items", nil))
-	var list struct {
-		Items []public.StoreItemDTO `json:"items"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
-		t.Fatal(err)
-	}
-	icons := map[string]string{}
-	for _, it := range list.Items {
-		icons[it.AdventureSlug] = it.AdventureIconURL
-	}
-	if icons["iconic"] != "/adventure-assets/avatar/iconic" || icons["plain"] != "" {
-		t.Errorf("store items' icons = %v", icons)
-	}
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/klahr/zonventure/internal/admin"
@@ -14,12 +15,21 @@ import (
 	"github.com/klahr/zonventure/internal/dbtest"
 )
 
-func seedUsernameUser(t *testing.T, db *sql.DB, username, email, password string) auth.User {
+// testPassword is the one password the username tests log in with.
+// Its hash is computed once per process: hashing is deliberately
+// slow, and only the login-checking test needs a real one.
+const testPassword = "correct horse battery"
+
+var testPasswordHash = sync.OnceValues(func() (string, error) {
+	return auth.HashPassword(testPassword)
+})
+
+// placeholderHash stands in for users that never log in; the handler
+// under test never reads password_hash.
+const placeholderHash = "x"
+
+func seedUsernameUser(t *testing.T, db *sql.DB, username, email, hash string) auth.User {
 	t.Helper()
-	hash, err := auth.HashPassword(password)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var uid int64
 	if err := db.QueryRowContext(context.Background(), `
 		INSERT INTO users(username, email, email_verified, password_hash) VALUES ($1,$2,1,$3)
@@ -54,10 +64,15 @@ func errorCode(t *testing.T, w *httptest.ResponseRecorder) string {
 // email) picks a name, can log in with it and with the email, and the
 // change lands in their auth_events.
 func TestChangeMyUsername_Success(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	ctx := context.Background()
-	me := seedUsernameUser(t, db, "alice@acme.com", "alice@acme.com", "correct horse battery")
+	hash, err := testPasswordHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	me := seedUsernameUser(t, db, "alice@acme.com", "alice@acme.com", hash)
 	h := &admin.Handlers{DB: db}
 
 	w := postChangeUsername(t, h, me, "  alice.k_1-  ")
@@ -76,7 +91,7 @@ func TestChangeMyUsername_Success(t *testing.T) {
 	}
 
 	for _, ident := range []string{"alice.k_1-", "ALICE.K_1-", "alice@acme.com"} {
-		u, err := auth.VerifyPassword(ctx, db, ident, "correct horse battery")
+		u, err := auth.VerifyPassword(ctx, db, ident, testPassword)
 		if err != nil {
 			t.Errorf("login as %q: %v", ident, err)
 			continue
@@ -98,9 +113,10 @@ func TestChangeMyUsername_Success(t *testing.T) {
 }
 
 func TestChangeMyUsername_Invalid(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
-	me := seedUsernameUser(t, db, "alice", "alice@acme.com", "correct horse battery")
+	me := seedUsernameUser(t, db, "alice", "alice@acme.com", placeholderHash)
 	h := &admin.Handlers{DB: db}
 
 	for _, name := range []string{
@@ -124,10 +140,11 @@ func TestChangeMyUsername_Invalid(t *testing.T) {
 // TestChangeMyUsername_Taken: another user's name is a 409 whatever
 // the case, while a case-only change of your own name goes through.
 func TestChangeMyUsername_Taken(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
-	me := seedUsernameUser(t, db, "alice", "alice@acme.com", "correct horse battery")
-	seedUsernameUser(t, db, "bob", "bob@acme.com", "correct horse battery")
+	me := seedUsernameUser(t, db, "alice", "alice@acme.com", placeholderHash)
+	seedUsernameUser(t, db, "bob", "bob@acme.com", placeholderHash)
 	h := &admin.Handlers{DB: db}
 
 	w := postChangeUsername(t, h, me, "BOB")

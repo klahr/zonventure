@@ -8,6 +8,7 @@ import (
 )
 
 func TestExportResultsCSV_NilAdminGuard(t *testing.T) {
+	t.Parallel()
 	s := &Server{Admin: nil}
 	ctx := withScopes(context.Background(), []string{"read"})
 	res, err := exportEventResultsCSV(ctx, s, json.RawMessage(`{"event_id":1}`))
@@ -23,6 +24,7 @@ func TestExportResultsCSV_NilAdminGuard(t *testing.T) {
 }
 
 func TestExportResultsCSV_ArgValidation(t *testing.T) {
+	t.Parallel()
 	s := &Server{Admin: nil}
 	ctx := withScopes(context.Background(), []string{"read"})
 	res, err := exportEventResultsCSV(ctx, s, json.RawMessage(`{}`))
@@ -43,6 +45,7 @@ func TestExportResultsCSV_ArgValidation(t *testing.T) {
 // or adds a state without updating the doc, this test catches it
 // before the model starts giving stale advice.
 func TestDescribeEventLifecycle_Content(t *testing.T) {
+	t.Parallel()
 	res, err := describeEventLifecycle(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -68,6 +71,7 @@ func TestDescribeEventLifecycle_Content(t *testing.T) {
 }
 
 func TestSlice3Tools_AreRegisteredWithCorrectScope(t *testing.T) {
+	t.Parallel()
 	s := &Server{tools: newRegistry()}
 	s.registerResultsTools()
 	s.registerLifecycleTool()

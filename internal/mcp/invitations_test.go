@@ -8,6 +8,7 @@ import (
 )
 
 func TestInvitationTools_NilAdminGuard(t *testing.T) {
+	t.Parallel()
 	s := &Server{Admin: nil}
 	ctx := withScopes(context.Background(), []string{"read", "write"})
 
@@ -38,6 +39,7 @@ func TestInvitationTools_NilAdminGuard(t *testing.T) {
 }
 
 func TestInvitationTools_ArgValidation(t *testing.T) {
+	t.Parallel()
 	s := &Server{Admin: nil}
 	ctx := withScopes(context.Background(), []string{"read", "write"})
 
@@ -69,6 +71,7 @@ func TestInvitationTools_ArgValidation(t *testing.T) {
 }
 
 func TestInvitationTools_AreRegisteredWithCorrectScope(t *testing.T) {
+	t.Parallel()
 	s := &Server{tools: newRegistry()}
 	s.registerInvitationTools()
 

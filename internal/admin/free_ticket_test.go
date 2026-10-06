@@ -18,6 +18,7 @@ import (
 // tester the buyer's email — team link and voucher code — and the reply
 // carries both; another organisation's event is refused.
 func TestGiveFreeTicket(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	var orgID, otherOrg int64

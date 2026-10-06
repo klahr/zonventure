@@ -72,6 +72,7 @@ func getTracks(t *testing.T, db *sql.DB, token string) trackResp {
 
 // A short event keeps the 10 s buckets, each stamped with its start.
 func TestTracks_ShortEventKeeps10sBuckets(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	start := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)
@@ -92,6 +93,7 @@ func TestTracks_ShortEventKeeps10sBuckets(t *testing.T) {
 // The track is resent on every push, so a long event must not grow it
 // without bound: a 3 h event at one ping per 5 s is 2,160 pings.
 func TestTracks_LongEventIsBounded(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	start := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)

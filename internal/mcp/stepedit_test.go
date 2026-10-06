@@ -18,6 +18,7 @@ func stepGraph(t *testing.T) *graph.Graph {
 }
 
 func TestSetText(t *testing.T) {
+	t.Parallel()
 	g := stepGraph(t)
 	mustApply(t, g, graphOp{Op: "set_text", Slug: "fish", Find: "on the fountain", Replace: "in the **pond**"})
 	if b := g.Nodes[0].PuzzleCfg.Blocks[0].Text; b != "Count the fish in the **pond**." {
@@ -44,6 +45,7 @@ func TestSetText(t *testing.T) {
 }
 
 func TestPatchNode(t *testing.T) {
+	t.Parallel()
 	g := stepGraph(t)
 	mustApply(t, g, graphOp{Op: "patch_node", Slug: "fish", Patch: json.RawMessage(`{"title":"Fishy","puzzle":{
 		"blocks":[{"id":"b2","text":"Now the ducks."},{"id":"b1","_delete":true},{"id":"b3","kind":"text","text":"New."}],

@@ -32,6 +32,7 @@ func (stubProvider) CustomerPortal(ctx context.Context, customerID, returnURL st
 }
 
 func TestPurchaseTools_NilAdminGuard(t *testing.T) {
+	t.Parallel()
 	s := &Server{Admin: nil}
 	ctx := withScopes(context.Background(), []string{"read", "write"})
 	// grant_slots_to_event runs an isAdmin check before the
@@ -66,6 +67,7 @@ func TestPurchaseTools_NilAdminGuard(t *testing.T) {
 }
 
 func TestPurchaseTools_ArgValidation(t *testing.T) {
+	t.Parallel()
 	s := &Server{Admin: nil}
 	ctx := withScopes(context.Background(), []string{"read", "write"})
 
@@ -108,6 +110,7 @@ func TestPurchaseTools_ArgValidation(t *testing.T) {
 // proving the gate is the only thing standing between the LLM and
 // a real-money flow.
 func TestCreatePurchase_RefusesOnStripeEnabled(t *testing.T) {
+	t.Parallel()
 	stripeOn := &Server{Admin: &admin.Handlers{
 		Provider: stubProvider{},
 	}}
@@ -145,6 +148,7 @@ func TestCreatePurchase_RefusesOnStripeEnabled(t *testing.T) {
 // 'forbidden' regardless of whether the rest of the server is
 // wired.
 func TestGrantSlots_RefusesNonAdmin(t *testing.T) {
+	t.Parallel()
 	s := &Server{Admin: nil}
 	ctx := auth.WithUser(context.Background(), auth.User{
 		ID: 7, Username: "alice", Role: auth.RoleOrgAdmin,
@@ -183,6 +187,7 @@ func TestGrantSlots_RefusesNonAdmin(t *testing.T) {
 }
 
 func TestPurchaseTools_AreRegisteredWithCorrectScope(t *testing.T) {
+	t.Parallel()
 	s := &Server{tools: newRegistry()}
 	s.registerPurchaseTools()
 

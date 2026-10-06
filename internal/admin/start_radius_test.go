@@ -11,6 +11,7 @@ import (
 // The start radius takes a number of metres in range, refuses one out
 // of it, and clears with null.
 func TestStartRadiusMeta(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	var orgID int64
@@ -55,6 +56,7 @@ func TestStartRadiusMeta(t *testing.T) {
 // a *Nullable field could not tell the two apart, so clearing it in the
 // details dialog silently did nothing.
 func TestClearStartPoint(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	var orgID int64

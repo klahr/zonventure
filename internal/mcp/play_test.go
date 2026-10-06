@@ -12,6 +12,7 @@ import (
 )
 
 func TestPlayTools_AreRegisteredRead(t *testing.T) {
+	t.Parallel()
 	s := &Server{tools: newRegistry()}
 	s.registerPlayTools()
 	for _, name := range []string{"playtest_start", "playtest_act", "playtest_end"} {
@@ -22,6 +23,7 @@ func TestPlayTools_AreRegisteredRead(t *testing.T) {
 }
 
 func TestPlayHelpers(t *testing.T) {
+	t.Parallel()
 	if got := morse("sos ab"); got != "... --- ... / .- -..." {
 		t.Errorf("morse = %q", got)
 	}
@@ -40,6 +42,7 @@ func TestPlayHelpers(t *testing.T) {
 // A blind playtest: the team must walk to the door, cannot see the
 // answer, waits for the hint, guesses wrong, then right.
 func TestPlaytest(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 

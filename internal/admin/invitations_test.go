@@ -38,6 +38,7 @@ func (f *fakeMailer) Send(_ context.Context, m mailer.Message) error {
 // and the .ics attachment. The team without an email shows up in
 // `skipped_no_email`.
 func TestSendEventInvitations_HappyPath(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -188,6 +189,7 @@ func TestSendEventInvitations_HappyPath(t *testing.T) {
 // a self-host without ZV_SMTP_HOST gets a clear "configure SMTP"
 // signal instead of silently swallowing the click.
 func TestSendEventInvitations_NoMailer(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -237,6 +239,7 @@ func TestSendEventInvitations_NoMailer(t *testing.T) {
 // and the .ics. Used when the arranger needs to resend to a single
 // team that lost its original message.
 func TestSendTeamInvitation_HappyPath(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -326,6 +329,7 @@ func TestSendTeamInvitation_HappyPath(t *testing.T) {
 // contact email is unset — there's nothing to send to. Better as
 // an explicit error than silently swallowing the click.
 func TestSendTeamInvitation_NoEmail(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -394,6 +398,7 @@ func TestSendTeamInvitation_NoEmail(t *testing.T) {
 // when they know the team id. Same authorize-event check that
 // gates other event-scoped endpoints.
 func TestSendTeamInvitation_CrossOrgRejected(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 

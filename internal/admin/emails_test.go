@@ -61,6 +61,7 @@ func do(t *testing.T, r http.Handler, method, path string, body any, into any) i
 // both; an arranger writes to the event's teams, each getting the
 // message filled in for them in the event's look.
 func TestEmails_ThemesPreviewsAndTeamMessages(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	var orgID, userID, eventID int64
@@ -165,6 +166,7 @@ func TestEmails_ThemesPreviewsAndTeamMessages(t *testing.T) {
 // step is put up for review — never about what they did themselves, nor
 // what they turned off.
 func TestEmails_DesignerNotifications(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	var orgID, bossID, annaID, advID int64
@@ -245,6 +247,7 @@ func TestEmails_DesignerNotifications(t *testing.T) {
 // Emails speak the players' language: an event's follow its adventure's,
 // a designer's notification the language they use the console in.
 func TestEmails_InTheirLanguage(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	must := func(err error) {
@@ -304,6 +307,7 @@ func TestEmails_InTheirLanguage(t *testing.T) {
 // An arranger can send themselves exactly what a preview shows, marked
 // as a test: a sample of a kind, or their draft.
 func TestEmails_SendMeATest(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	var orgID, userID int64
@@ -336,6 +340,7 @@ func TestEmails_SendMeATest(t *testing.T) {
 // A person sets their own picture; it is served at a versioned address,
 // named beside them in the work, and can be cleared again.
 func TestUserAvatar(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	var orgID, userID, advID int64
@@ -359,8 +364,9 @@ func TestUserAvatar(t *testing.T) {
 	r.Get("/api/admin/users/{userID}/avatar", h.ServeUserAvatar)
 	r.Get("/api/admin/adventures/{slug}/collab", h.GetCollab)
 
-	// A 600×400 PNG: it is kept at most 256 wide.
-	img := image.NewRGBA(image.Rect(0, 0, 600, 400))
+	// A 300×4 PNG: it is kept at most 256 wide. Wider than the cap so
+	// the downscale runs, but a thin strip keeps the resize cheap.
+	img := image.NewRGBA(image.Rect(0, 0, 300, 4))
 	var png bytes.Buffer
 	if err := pngenc.Encode(&png, img); err != nil {
 		t.Fatal(err)

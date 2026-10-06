@@ -5,60 +5,62 @@ import (
 
 	"github.com/klahr/zonventure/internal/admin"
 
-	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/server"
 )
 
-// TestCreate_RequiresAuthor: creating content is an authoring act, so
-// an org_member (who can run events but not author) is refused on
-// every create path.
-func TestCreate_RequiresAuthor(t *testing.T) {
-	ts, _, orgID, cleanup := seedPurchaseStack(t, server.Config{})
+// TestContentNeedsAnAuthor runs both refusals on one server: an
+// org_member may not author, and a user with no organisation reaches no
+// content at all.
+func TestContentNeedsAnAuthor(t *testing.T) {
+	ts, db, orgID, cleanup := seedPurchaseStack(t, server.Config{})
 	defer cleanup()
-	boss := newClient(t, ts)
-	if s := boss.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
-		t.Fatalf("boss login = %d", s)
-	}
-	body := map[string]string{"username": "member", "password": "longpw01", "role": "org_member"}
-	if s := boss.do("POST", "/api/admin/organizations/"+itoa(orgID)+"/members", body, nil); s != 201 {
-		t.Fatalf("add member = %d", s)
-	}
-	member := newClient(t, ts)
-	if s := member.do("POST", "/api/auth/login", map[string]string{"username": "member", "password": "longpw01"}, nil); s != 200 {
-		t.Fatalf("member login = %d", s)
-	}
-	if s := member.do("POST", "/api/admin/adventures", map[string]any{"slug": "m-trip", "title": "M"}, nil); s != 403 {
-		t.Errorf("member create adventure = %d, want 403", s)
-	}
-}
 
-// TestLobby_CannotReachContent: a user with no organisation passes the
-// /api/admin gate but has no org to scope content to — the list
-// endpoints used to dereference the nil org and panic, and creates
-// used to land in the global catalog.
-func TestLobby_CannotReachContent(t *testing.T) {
-	ts, db, _, cleanup := seedPurchaseStack(t, server.Config{})
-	defer cleanup()
-	hash, _ := auth.HashPassword("longpw01")
-	if _, err := db.Exec(`INSERT INTO users(username, password_hash, email_verified) VALUES ('drifter', $1, 1)`, hash); err != nil {
-		t.Fatalf("seed lobby user: %v", err)
-	}
-	c := newClient(t, ts)
-	if s := c.do("POST", "/api/auth/login", map[string]string{"username": "drifter", "password": "longpw01"}, nil); s != 200 {
-		t.Fatalf("login = %d", s)
-	}
-	for _, path := range []string{"/api/admin/adventures"} {
-		if s := c.do("GET", path, nil, nil); s != 403 {
-			t.Errorf("GET %s = %d, want 403", path, s)
+	// Creating content is an authoring act, so an org_member (who can
+	// run events but not author) is refused on every create path.
+	t.Run("create requires author", func(t *testing.T) {
+		boss := newClient(t, ts)
+		if s := boss.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
+			t.Fatalf("boss login = %d", s)
 		}
-	}
-	if s := c.do("POST", "/api/admin/adventures", map[string]any{"slug": "lobby-trip", "title": "L"}, nil); s != 403 {
-		t.Errorf("create adventure = %d, want 403", s)
-	}
-	var n int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM adventures WHERE slug = 'lobby-trip'`).Scan(&n); err != nil || n != 0 {
-		t.Errorf("lobby create left a row (n=%d, err=%v)", n, err)
-	}
+		body := map[string]string{"username": "member", "password": "longpw01", "role": "org_member"}
+		if s := boss.do("POST", "/api/admin/organizations/"+itoa(orgID)+"/members", body, nil); s != 201 {
+			t.Fatalf("add member = %d", s)
+		}
+		member := newClient(t, ts)
+		if s := member.do("POST", "/api/auth/login", map[string]string{"username": "member", "password": "longpw01"}, nil); s != 200 {
+			t.Fatalf("member login = %d", s)
+		}
+		if s := member.do("POST", "/api/admin/adventures", map[string]any{"slug": "m-trip", "title": "M"}, nil); s != 403 {
+			t.Errorf("member create adventure = %d, want 403", s)
+		}
+	})
+
+	// A user with no organisation passes the /api/admin gate but has no
+	// org to scope content to — the list endpoints used to dereference
+	// the nil org and panic, and creates used to land in the global
+	// catalog.
+	t.Run("lobby cannot reach content", func(t *testing.T) {
+		hash := fixtureHash(t, "longpw01")
+		if _, err := db.Exec(`INSERT INTO users(username, password_hash, email_verified) VALUES ('drifter', $1, 1)`, hash); err != nil {
+			t.Fatalf("seed lobby user: %v", err)
+		}
+		c := newClient(t, ts)
+		if s := c.do("POST", "/api/auth/login", map[string]string{"username": "drifter", "password": "longpw01"}, nil); s != 200 {
+			t.Fatalf("login = %d", s)
+		}
+		for _, path := range []string{"/api/admin/adventures"} {
+			if s := c.do("GET", path, nil, nil); s != 403 {
+				t.Errorf("GET %s = %d, want 403", path, s)
+			}
+		}
+		if s := c.do("POST", "/api/admin/adventures", map[string]any{"slug": "lobby-trip", "title": "L"}, nil); s != 403 {
+			t.Errorf("create adventure = %d, want 403", s)
+		}
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM adventures WHERE slug = 'lobby-trip'`).Scan(&n); err != nil || n != 0 {
+			t.Errorf("lobby create left a row (n=%d, err=%v)", n, err)
+		}
+	})
 }
 
 func login(t *testing.T, c *client, user, pass string) {
@@ -90,9 +92,10 @@ func orgIDByName(t *testing.T, root *client, name string) int64 {
 	return 0
 }
 
-// TestAdmin_CannotAuthorOrRunEvents: the platform admin manages orgs
-// and monitors; every authoring and event-running route refuses them.
-func TestAdmin_CannotAuthorOrRunEvents(t *testing.T) {
+// TestPlatformAdmin runs the operator's limits and powers on one event:
+// the refusals change nothing, so the operator part finds the org's
+// one event still scheduled.
+func TestPlatformAdmin(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
 	boss := newClient(t, ts)
@@ -105,82 +108,79 @@ func TestAdmin_CannotAuthorOrRunEvents(t *testing.T) {
 	}
 	root := newClient(t, ts)
 	login(t, root, "root", "rootpw")
-	for _, c := range []struct{ method, path string }{
-		{"GET", "/api/admin/adventures"},
-		{"POST", "/api/admin/adventures"},
-		{"GET", "/api/admin/adventures/demo"},
-		{"GET", "/api/admin/adventures/demo/edit"},
-		{"PATCH", "/api/admin/adventures/demo"},
-		{"GET", "/api/admin/adventures/demo/graph"},
-		{"PUT", "/api/admin/adventures/demo/graph"},
-		{"POST", "/api/admin/adventures/demo/graph/publish"},
-		{"GET", "/api/admin/events"},
-		{"POST", "/api/admin/events"},
-		{"GET", "/api/admin/events/" + itoa(ev.ID)},
-		{"POST", "/api/admin/events/" + itoa(ev.ID) + "/start"},
-		{"POST", "/api/admin/events/" + itoa(ev.ID) + "/teams"},
-		{"GET", "/api/admin/assignments"},
-		{"GET", "/api/admin/webhooks"},
-		{"GET", "/ws/arrange"},
-	} {
-		if s := root.do(c.method, c.path, map[string]any{}, nil); s != 403 {
-			t.Errorf("admin %s %s = %d, want 403", c.method, c.path, s)
+
+	// The platform admin manages orgs and monitors; every authoring and
+	// event-running route refuses them.
+	t.Run("cannot author or run events", func(t *testing.T) {
+		root := root.in(t)
+		for _, c := range []struct{ method, path string }{
+			{"GET", "/api/admin/adventures"},
+			{"POST", "/api/admin/adventures"},
+			{"GET", "/api/admin/adventures/demo"},
+			{"GET", "/api/admin/adventures/demo/edit"},
+			{"PATCH", "/api/admin/adventures/demo"},
+			{"GET", "/api/admin/adventures/demo/graph"},
+			{"PUT", "/api/admin/adventures/demo/graph"},
+			{"POST", "/api/admin/adventures/demo/graph/publish"},
+			{"GET", "/api/admin/events"},
+			{"POST", "/api/admin/events"},
+			{"GET", "/api/admin/events/" + itoa(ev.ID)},
+			{"POST", "/api/admin/events/" + itoa(ev.ID) + "/start"},
+			{"POST", "/api/admin/events/" + itoa(ev.ID) + "/teams"},
+			{"GET", "/api/admin/assignments"},
+			// Admins aren't org-scoped, so a buy would have no target.
+			{"POST", "/api/admin/purchases"},
+			{"GET", "/api/admin/webhooks"},
+			{"GET", "/ws/arrange"},
+		} {
+			if s := root.do(c.method, c.path, map[string]any{}, nil); s != 403 {
+				t.Errorf("admin %s %s = %d, want 403", c.method, c.path, s)
+			}
 		}
-	}
-}
+	})
 
-// TestOperator_OrgEvents: the operator lists an org's events without
-// the live token, and cancels one only through its own org's path.
-func TestOperator_OrgEvents(t *testing.T) {
-	ts, assignmentID, cleanup := newTestServer(t)
-	defer cleanup()
-	boss := newClient(t, ts)
-	login(t, boss, "boss", "s3cret")
-	var ev struct {
-		ID int64 `json:"id"`
-	}
-	if s := boss.do("POST", "/api/admin/events", map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &ev); s != 201 {
-		t.Fatalf("create event = %d", s)
-	}
-	root := newClient(t, ts)
-	login(t, root, "root", "rootpw")
-	orgID := orgIDByName(t, root, "TestOrg")
-	pubID := orgIDByName(t, root, "Catalog")
+	// The operator lists an org's events without the live token, and
+	// cancels one only through its own org's path.
+	t.Run("org events", func(t *testing.T) {
+		boss, root := boss.in(t), root.in(t)
+		orgID := orgIDByName(t, root, "TestOrg")
+		pubID := orgIDByName(t, root, "Catalog")
 
-	var list struct {
-		Events []struct {
-			ID        int64  `json:"id"`
-			LiveToken string `json:"live_token"`
-		} `json:"events"`
-	}
-	if s := root.do("GET", "/api/admin/organizations/"+itoa(orgID)+"/events", nil, &list); s != 200 {
-		t.Fatalf("org events = %d", s)
-	}
-	if len(list.Events) != 1 || list.Events[0].ID != ev.ID {
-		t.Fatalf("org events = %+v, want the one event", list.Events)
-	}
-	if list.Events[0].LiveToken != "" {
-		t.Errorf("operator list leaked the live token")
-	}
-	if s := boss.do("GET", "/api/admin/organizations/"+itoa(orgID)+"/events", nil, nil); s != 403 {
-		t.Errorf("org user on operator list = %d, want 403", s)
-	}
+		var list struct {
+			Events []struct {
+				ID        int64  `json:"id"`
+				LiveToken string `json:"live_token"`
+			} `json:"events"`
+		}
+		if s := root.do("GET", "/api/admin/organizations/"+itoa(orgID)+"/events", nil, &list); s != 200 {
+			t.Fatalf("org events = %d", s)
+		}
+		if len(list.Events) != 1 || list.Events[0].ID != ev.ID {
+			t.Fatalf("org events = %+v, want the one event", list.Events)
+		}
+		if list.Events[0].LiveToken != "" {
+			t.Errorf("operator list leaked the live token")
+		}
+		if s := boss.do("GET", "/api/admin/organizations/"+itoa(orgID)+"/events", nil, nil); s != 403 {
+			t.Errorf("org user on operator list = %d, want 403", s)
+		}
 
-	cancel := func(org int64, pw string) int {
-		return root.doWithConfirm("POST", "/api/admin/organizations/"+itoa(org)+"/events/"+itoa(ev.ID)+"/cancel", pw, nil, nil)
-	}
-	if s := cancel(pubID, "rootpw"); s != 404 {
-		t.Errorf("cancel via another org = %d, want 404", s)
-	}
-	if s := cancel(orgID, "nope"); s != 401 {
-		t.Errorf("cancel with wrong password = %d, want 401", s)
-	}
-	if s := cancel(orgID, "rootpw"); s != 204 {
-		t.Fatalf("cancel = %d, want 204", s)
-	}
-	if s := cancel(orgID, "rootpw"); s != 409 {
-		t.Errorf("re-cancel = %d, want 409", s)
-	}
+		cancel := func(org int64, pw string) int {
+			return root.doWithConfirm("POST", "/api/admin/organizations/"+itoa(org)+"/events/"+itoa(ev.ID)+"/cancel", pw, nil, nil)
+		}
+		if s := cancel(pubID, "rootpw"); s != 404 {
+			t.Errorf("cancel via another org = %d, want 404", s)
+		}
+		if s := cancel(orgID, "nope"); s != 401 {
+			t.Errorf("cancel with wrong password = %d, want 401", s)
+		}
+		if s := cancel(orgID, "rootpw"); s != 204 {
+			t.Fatalf("cancel = %d, want 204", s)
+		}
+		if s := cancel(orgID, "rootpw"); s != 409 {
+			t.Errorf("re-cancel = %d, want 409", s)
+		}
+	})
 }
 
 // TestCatalogCuration: the publisher authors, the operator lists /

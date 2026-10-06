@@ -133,6 +133,7 @@ func assertGraphMediaOwned(t *testing.T, db *sql.DB, advID int64, g *graph.Graph
 }
 
 func TestDuplicateAdventure_CopiesGraphAndMedia(t *testing.T) {
+	t.Parallel()
 	db, srcID, user, pic, snd := graphFixture(t, "graphy")
 	ctx := context.Background()
 

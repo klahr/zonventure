@@ -7,6 +7,7 @@ import (
 	"hash/crc32"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/jpeg"
 	"image/png"
 	"testing"
@@ -20,11 +21,7 @@ import (
 func makeImage(t *testing.T, w, h int, enc string) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			img.Set(x, y, color.RGBA{R: 180, G: 30, B: 90, A: 255})
-		}
-	}
+	draw.Draw(img, img.Bounds(), image.NewUniform(color.RGBA{R: 180, G: 30, B: 90, A: 255}), image.Point{}, draw.Src)
 	var buf bytes.Buffer
 	var err error
 	switch enc {
@@ -59,11 +56,7 @@ func decode(t *testing.T, data []byte) (w, h int) {
 func makeTransparentPNG(t *testing.T, w, h int) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			img.Set(x, y, color.RGBA{R: 200, G: 20, B: 80, A: 255})
-		}
-	}
+	draw.Draw(img, img.Bounds(), image.NewUniform(color.RGBA{R: 200, G: 20, B: 80, A: 255}), image.Point{}, draw.Src)
 	// Punch the top-left corner transparent.
 	img.Set(0, 0, color.RGBA{})
 	var buf bytes.Buffer
@@ -121,8 +114,10 @@ func TestShrinkKeepAlpha_PNGOnlyWhenTransparent(t *testing.T) {
 }
 
 func TestShrink_LargerThanCap_ResizesAndReencodes(t *testing.T) {
-	src := makeImage(t, 2000, 1500, "png")
-	out, mime, err := imageutil.Shrink(src, 512)
+	// Small source + small cap: the resize path is the same at any
+	// scale, and full-size inputs cost seconds under -race.
+	src := makeImage(t, 200, 150, "png")
+	out, mime, err := imageutil.Shrink(src, 64)
 	if err != nil {
 		t.Fatalf("shrink: %v", err)
 	}
@@ -130,16 +125,16 @@ func TestShrink_LargerThanCap_ResizesAndReencodes(t *testing.T) {
 		t.Errorf("mime = %q, want image/jpeg (re-encode)", mime)
 	}
 	w, h := decode(t, out)
-	if w > 512 || h > 512 {
-		t.Errorf("result %dx%d exceeds 512 cap", w, h)
+	if w > 64 || h > 64 {
+		t.Errorf("result %dx%d exceeds 64 cap", w, h)
 	}
 	// Aspect ratio should be preserved (landscape → wider than tall).
 	if w <= h {
-		t.Errorf("aspect lost: src was 2000x1500, got %dx%d", w, h)
+		t.Errorf("aspect lost: src was 200x150, got %dx%d", w, h)
 	}
 	// Want the longer side to be the cap.
-	if w != 512 {
-		t.Errorf("longer side = %d, want 512", w)
+	if w != 64 {
+		t.Errorf("longer side = %d, want 64", w)
 	}
 }
 
@@ -179,17 +174,18 @@ func TestShrink_RejectsPixelBomb(t *testing.T) {
 }
 
 func TestShrink_PortraitAspect(t *testing.T) {
-	src := makeImage(t, 800, 2000, "jpeg")
-	out, _, err := imageutil.Shrink(src, 512)
+	// JPEG source keeps the YCbCr decode path covered.
+	src := makeImage(t, 80, 200, "jpeg")
+	out, _, err := imageutil.Shrink(src, 64)
 	if err != nil {
 		t.Fatalf("shrink: %v", err)
 	}
 	w, h := decode(t, out)
-	if h != 512 {
-		t.Errorf("tall side = %d, want 512", h)
+	if h != 64 {
+		t.Errorf("tall side = %d, want 64", h)
 	}
 	if w >= h {
-		t.Errorf("aspect lost: src was 800x2000, got %dx%d", w, h)
+		t.Errorf("aspect lost: src was 80x200, got %dx%d", w, h)
 	}
 }
 
@@ -231,16 +227,17 @@ func TestShrink_BadMaxDim(t *testing.T) {
 	}
 }
 
-// Integration-ish: verify the shrinker trims a huge JPEG to well under
-// the 5 MB upload cap — the main practical benefit for the product.
+// Integration-ish: verify the shrinker trims a large JPEG down in
+// bytes — the main practical benefit for the product. Scaled down
+// (400px → 32px) to keep the test fast; the ratio is what matters.
 func TestShrink_DrasticSizeReduction(t *testing.T) {
-	src := makeImage(t, 3000, 3000, "jpeg")
-	out, _, err := imageutil.Shrink(src, 512)
+	src := makeImage(t, 400, 400, "jpeg")
+	out, _, err := imageutil.Shrink(src, 32)
 	if err != nil {
 		t.Fatalf("shrink: %v", err)
 	}
-	// Not a tight bound, but 3000x3000 JPEG of even a flat colour → a
-	// few hundred KB; shrunk to 512 it should come down substantially.
+	// Not a tight bound, but a 400x400 JPEG of even a flat colour
+	// shrunk to 32px should come down substantially.
 	if len(out) >= len(src) {
 		t.Errorf("output %d bytes not smaller than input %d", len(out), len(src))
 	}

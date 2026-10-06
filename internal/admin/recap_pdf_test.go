@@ -38,6 +38,7 @@ func mintTinyJPEG(t *testing.T) []byte {
 const pdfMagic = "%PDF-"
 
 func TestWriteRecapPDF_HappyPath(t *testing.T) {
+	t.Parallel()
 	d := recapPDFData{
 		OrgName:        "Acme Corp",
 		AdventureTitle: "Stockholm Old Town",
@@ -78,6 +79,7 @@ func TestWriteRecapPDF_HappyPath(t *testing.T) {
 }
 
 func TestWriteRecapPDF_EmptyTeams(t *testing.T) {
+	t.Parallel()
 	d := recapPDFData{
 		OrgName:        "Acme Corp",
 		AdventureTitle: "Empty event",
@@ -95,6 +97,7 @@ func TestWriteRecapPDF_EmptyTeams(t *testing.T) {
 }
 
 func TestWriteRecapPDF_LongNamesAndUnicode(t *testing.T) {
+	t.Parallel()
 	d := recapPDFData{
 		OrgName:        "Företaget AB", // Swedish chars
 		AdventureTitle: "En väldigt lång äventyrstitel som testar radbrytning",
@@ -123,6 +126,7 @@ func TestWriteRecapPDF_LongNamesAndUnicode(t *testing.T) {
 // Helvetica in the PDF reads Windows-1252; UTF-8 bytes passed straight
 // through print "Gröna" as "GrÃ¶na".
 func TestRecapTextIsWindows1252(t *testing.T) {
+	t.Parallel()
 	text := recapText(fpdf.New("P", "mm", pdfPageSize, ""))
 	if got, want := text("Operation Gröna linjen – Åre"), "Operation Gr\xf6na linjen - \xc5re"; got != want {
 		t.Errorf("text = %q, want %q", got, want)
@@ -134,6 +138,7 @@ func TestRecapTextIsWindows1252(t *testing.T) {
 }
 
 func TestWriteRecapPDF_WithLogo(t *testing.T) {
+	t.Parallel()
 	d := recapPDFData{
 		OrgName:        "Acme Corp",
 		AdventureTitle: "Stockholm Old Town",
@@ -169,6 +174,7 @@ func TestWriteRecapPDF_WithLogo(t *testing.T) {
 }
 
 func TestWriteRecapPDF_NoStartTime(t *testing.T) {
+	t.Parallel()
 	// Event that hasn't started yet — the cover-page date line should
 	// just render empty rather than blowing up on a zero time.
 	d := recapPDFData{
@@ -184,6 +190,7 @@ func TestWriteRecapPDF_NoStartTime(t *testing.T) {
 }
 
 func TestHexToRGB(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in       string
 		want     [3]int
@@ -215,6 +222,7 @@ func TestHexToRGB(t *testing.T) {
 }
 
 func TestTruncateText(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   string
 		max  int
@@ -236,6 +244,7 @@ func TestTruncateText(t *testing.T) {
 }
 
 func TestFormatHMS(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   time.Duration
 		want string
@@ -256,6 +265,7 @@ func TestFormatHMS(t *testing.T) {
 }
 
 func TestRecapDateLine(t *testing.T) {
+	t.Parallel()
 	zero := time.Time{}
 	may1 := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	may1evening := time.Date(2026, 5, 1, 22, 0, 0, 0, time.UTC)
@@ -285,6 +295,7 @@ func TestRecapDateLine(t *testing.T) {
 }
 
 func TestParseRecapTimestamp(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in    string
 		ok    bool
@@ -313,6 +324,7 @@ func TestParseRecapTimestamp(t *testing.T) {
 }
 
 func TestSafeText(t *testing.T) {
+	t.Parallel()
 	in := "Lag · with “fancy” quotes — and an ellipsis…"
 	want := `Lag - with "fancy" quotes - and an ellipsis...`
 	if got := safeText(in); got != want {
@@ -327,6 +339,7 @@ func TestSafeText(t *testing.T) {
 // buyer base prints these in EU offices; Letter (US) would
 // chop the margins.
 func TestWriteRecapPDF_PageSizeIsA4(t *testing.T) {
+	t.Parallel()
 	ref := func(size string) []byte {
 		var buf bytes.Buffer
 		p := newPDFRef(size)
@@ -399,6 +412,7 @@ func newPDFRef(size string) interface {
 // recapDateLine. Both call sites must now go through safeText, so the
 // emitted PDF stream contains no UTF-8 em-dash sequence (e2 80 94).
 func TestWriteRecapPDF_NoMojibakeOnDashes(t *testing.T) {
+	t.Parallel()
 	multiDay := recapPDFData{
 		OrgName:        "Acme",
 		AdventureTitle: "T",

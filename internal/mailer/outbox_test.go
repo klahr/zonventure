@@ -42,6 +42,7 @@ func (r *recordingMailer) Calls() []mailer.Message {
 // TestOutbox_Enqueue_HappyPath persists a single message, runs one
 // tick, and asserts the underlying Mailer saw exactly one Send.
 func TestOutbox_Enqueue_HappyPath(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -86,6 +87,7 @@ func TestOutbox_Enqueue_HappyPath(t *testing.T) {
 // one failed tick the row should still be pending, attempts bumped,
 // next_attempt_at scheduled in the future.
 func TestOutbox_Enqueue_RetryOnFailure(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -143,6 +145,7 @@ func TestOutbox_Enqueue_RetryOnFailure(t *testing.T) {
 // TestOutbox_Enqueue_RejectsBadInput asserts the caller-side
 // validation (no recipients, empty body, attachments).
 func TestOutbox_Enqueue_RejectsBadInput(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	o := &mailer.Outbox{DB: db, Mailer: &recordingMailer{mode: "ok"}}
@@ -164,6 +167,7 @@ func TestOutbox_Enqueue_RejectsBadInput(t *testing.T) {
 // next_attempt_at and in_flight_until are UTC text; a session TimeZone
 // behind UTC must not leave a due message waiting for hours.
 func TestOutbox_DueRegardlessOfTimeZone(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	var name string

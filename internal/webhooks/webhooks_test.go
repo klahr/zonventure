@@ -1,47 +1,35 @@
 package webhooks
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
-
-func TestSignDeterministic(t *testing.T) {
-	a := sign("hunter2", []byte(`{"hello":"world"}`))
-	b := sign("hunter2", []byte(`{"hello":"world"}`))
-	if a != b {
-		t.Fatalf("sign should be deterministic: %q vs %q", a, b)
-	}
-	if !strings.HasPrefix(a, "sha256=") {
-		t.Fatalf("expected sha256= prefix, got %q", a)
-	}
-}
-
-func TestSignChangesWithBody(t *testing.T) {
-	a := sign("k", []byte("a"))
-	b := sign("k", []byte("b"))
-	if a == b {
-		t.Fatalf("different bodies must produce different signatures")
-	}
-}
-
-func TestSignChangesWithSecret(t *testing.T) {
-	a := sign("k1", []byte("body"))
-	b := sign("k2", []byte("body"))
-	if a == b {
-		t.Fatalf("different secrets must produce different signatures")
-	}
-}
 
 func TestSignKnownVector(t *testing.T) {
 	// Stable test vector — guards against accidental algorithm
 	// changes (eg. someone swapping sha256 for sha1) that would
 	// silently invalidate every deployed customer's verification.
-	got := sign("topsecret", []byte("hello"))
-	want := "sha256=ed76fd36523b8becda5a3b36d0e3737e8ae5111f55e26c7c3a455a3ce29636d2"
-	if got != want {
-		t.Errorf("vector mismatch:\ngot  %s\nwant %s", got, want)
-	}
+	// A fixed expected string also pins determinism and the
+	// "sha256=" prefix.
+	t.Run("vector", func(t *testing.T) {
+		got := sign("topsecret", []byte("hello"))
+		want := "sha256=ed76fd36523b8becda5a3b36d0e3737e8ae5111f55e26c7c3a455a3ce29636d2"
+		if got != want {
+			t.Errorf("vector mismatch:\ngot  %s\nwant %s", got, want)
+		}
+	})
+	// One vector can't tell a real HMAC from something that ignores
+	// an input, so pin both inputs as load-bearing.
+	t.Run("changes with body", func(t *testing.T) {
+		if sign("k", []byte("a")) == sign("k", []byte("b")) {
+			t.Fatalf("different bodies must produce different signatures")
+		}
+	})
+	t.Run("changes with secret", func(t *testing.T) {
+		if sign("k1", []byte("body")) == sign("k2", []byte("body")) {
+			t.Fatalf("different secrets must produce different signatures")
+		}
+	})
 }
 
 func TestBackoffDelaySchedule(t *testing.T) {

@@ -17,6 +17,7 @@ import (
 )
 
 func TestApplyGraphOp(t *testing.T) {
+	t.Parallel()
 	g := &graph.Graph{}
 	for _, op := range []string{
 		`{"op":"put_node","node":{"slug":"start","type":"start"}}`,
@@ -74,6 +75,7 @@ func TestApplyGraphOp(t *testing.T) {
 }
 
 func TestHereRadius(t *testing.T) {
+	t.Parallel()
 	for acc, want := range map[float64]float64{3: 15, 7.5: 15, 8: 30, 15: 30, 16: 60, 200: 60} {
 		if got := hereRadius(acc); got != want {
 			t.Errorf("hereRadius(%v) = %v, want %v", acc, got, want)
@@ -91,6 +93,7 @@ func mustApply(t *testing.T, g *graph.Graph, op graphOp) {
 // End to end: build a graph on an adventure that has none, one edit at a
 // time, and check a failing batch saves nothing.
 func TestEditAdventureGraph(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -195,6 +198,7 @@ func TestEditAdventureGraph(t *testing.T) {
 
 // The assistant's own playtest: build start → puzzle → end, then play it.
 func TestSimulateAdventure(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 

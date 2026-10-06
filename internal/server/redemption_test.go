@@ -233,8 +233,33 @@ func TestRedemption_TrueStoryLifecycle(t *testing.T) {
 // Partner setup is the org admin's, the queue belongs to the org, and a
 // Live it code needs its box number.
 func TestRedemption_ScopingAndLiveit(t *testing.T) {
-	boss, db, _, orgID, eventID, cleanup := redemptionStack(t)
+	boss, db, httpc, orgID, eventID, cleanup := redemptionStack(t)
 	defer cleanup()
+
+	// The redeem page renders in the visitor's language, per org or for all.
+	t.Run("page", func(t *testing.T) {
+		get := func(path string) (int, string) {
+			t.Helper()
+			resp, err := httpc.Get(boss.ts.URL + path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			b, _ := io.ReadAll(resp.Body)
+			return resp.StatusCode, string(b)
+		}
+		if s, body := get("/redeem?lang=sv"); s != 200 || !strings.Contains(body, "Lös in ett presentkort") ||
+			!strings.Contains(body, "'/api/redeem'") {
+			t.Errorf("/redeem = %d, Swedish title or API base missing", s)
+		}
+		if s, body := get("/o/testorg/redeem"); s != 200 || !strings.Contains(body, "'/api/o/testorg/redeem'") ||
+			strings.Contains(body, "{{") {
+			t.Errorf("/o/testorg/redeem = %d, org API base missing or placeholder left", s)
+		}
+		if s, _ := get("/o/nosuchorg/redeem"); s != 404 {
+			t.Errorf("unknown org = %d, want 404", s)
+		}
+	})
 
 	var partner struct {
 		ID int64 `json:"id"`
@@ -266,7 +291,7 @@ func TestRedemption_ScopingAndLiveit(t *testing.T) {
 		t.Errorf("manual redemption = %+v", r)
 	}
 
-	hash, _ := auth.HashPassword("pw")
+	hash := fixtureHash(t, "pw")
 	var janeID, eveID, otherOrg int64
 	if err := db.QueryRow(`INSERT INTO users(username, password_hash, email_verified) VALUES ('jane', $1, 1) RETURNING id`, hash).Scan(&janeID); err != nil {
 		t.Fatal(err)
@@ -314,32 +339,5 @@ func TestRedemption_ScopingAndLiveit(t *testing.T) {
 
 	if s, e := doErr(boss, "DELETE", "/api/admin/partners/"+itoa(partner.ID), nil); s != 409 || e.Reason != "in_use" {
 		t.Errorf("deleting a partner with redemptions = %d %+v, want 409 in_use", s, e)
-	}
-}
-
-// The redeem page renders in the visitor's language, per org or for all.
-func TestRedemption_Page(t *testing.T) {
-	boss, _, httpc, _, _, cleanup := redemptionStack(t)
-	defer cleanup()
-	get := func(path string) (int, string) {
-		t.Helper()
-		resp, err := httpc.Get(boss.ts.URL + path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-		b, _ := io.ReadAll(resp.Body)
-		return resp.StatusCode, string(b)
-	}
-	if s, body := get("/redeem?lang=sv"); s != 200 || !strings.Contains(body, "Lös in ett presentkort") ||
-		!strings.Contains(body, "'/api/redeem'") {
-		t.Errorf("/redeem = %d, Swedish title or API base missing", s)
-	}
-	if s, body := get("/o/testorg/redeem"); s != 200 || !strings.Contains(body, "'/api/o/testorg/redeem'") ||
-		strings.Contains(body, "{{") {
-		t.Errorf("/o/testorg/redeem = %d, org API base missing or placeholder left", s)
-	}
-	if s, _ := get("/o/nosuchorg/redeem"); s != 404 {
-		t.Errorf("unknown org = %d, want 404", s)
 	}
 }

@@ -53,98 +53,95 @@ func uploadFile(t *testing.T, c *client, path, filename, contentType string, bod
 	return resp.StatusCode, respBody
 }
 
-// TestImportTeams_CSVPreviewParses round-trips a CSV body through
-// the import handler and asserts the preview shape is what the
-// front-end expects: a "format" string + the parsed teams.
-func TestImportTeams_CSVPreviewParses(t *testing.T) {
+// TestImportTeams uploads rosters to one event's import preview, which
+// creates nothing, so the subtests can share it.
+func TestImportTeams(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
-	arr, _, _, eventID := setupRun(t, ts, assignmentID)
+	boss, _, _, eventID := setupRun(t, ts, assignmentID)
 
-	body := []byte("Alpha,alice,bob\nBeta,carol,dave,ezra\n")
-	status, raw := uploadFile(t, arr,
-		"/api/admin/events/"+itoa(eventID)+"/teams/import",
-		"roster.csv", "text/csv", body)
-	if status != 200 {
-		t.Fatalf("import = %d, body=%s", status, raw)
-	}
-	var preview struct {
-		Format string `json:"format"`
-		Teams  []struct {
-			Name        string   `json:"name"`
-			MemberNames []string `json:"member_names"`
-		} `json:"teams"`
-	}
-	if err := json.Unmarshal(raw, &preview); err != nil {
-		t.Fatalf("unmarshal preview: %v", err)
-	}
-	if preview.Format != "CSV" {
-		t.Errorf("Format = %q, want CSV", preview.Format)
-	}
-	if len(preview.Teams) != 2 {
-		t.Fatalf("teams = %+v", preview.Teams)
-	}
-	if preview.Teams[0].Name != "Alpha" || len(preview.Teams[0].MemberNames) != 2 {
-		t.Errorf("Alpha = %+v", preview.Teams[0])
-	}
-	if preview.Teams[1].Name != "Beta" || len(preview.Teams[1].MemberNames) != 3 {
-		t.Errorf("Beta = %+v", preview.Teams[1])
-	}
-}
+	// Round-trips a CSV body through the import handler and asserts the
+	// preview shape is what the front-end expects: a "format" string +
+	// the parsed teams.
+	t.Run("CSV preview parses", func(t *testing.T) {
+		arr := boss.in(t)
+		body := []byte("Alpha,alice,bob\nBeta,carol,dave,ezra\n")
+		status, raw := uploadFile(t, arr,
+			"/api/admin/events/"+itoa(eventID)+"/teams/import",
+			"roster.csv", "text/csv", body)
+		if status != 200 {
+			t.Fatalf("import = %d, body=%s", status, raw)
+		}
+		var preview struct {
+			Format string `json:"format"`
+			Teams  []struct {
+				Name        string   `json:"name"`
+				MemberNames []string `json:"member_names"`
+			} `json:"teams"`
+		}
+		if err := json.Unmarshal(raw, &preview); err != nil {
+			t.Fatalf("unmarshal preview: %v", err)
+		}
+		if preview.Format != "CSV" {
+			t.Errorf("Format = %q, want CSV", preview.Format)
+		}
+		if len(preview.Teams) != 2 {
+			t.Fatalf("teams = %+v", preview.Teams)
+		}
+		if preview.Teams[0].Name != "Alpha" || len(preview.Teams[0].MemberNames) != 2 {
+			t.Errorf("Alpha = %+v", preview.Teams[0])
+		}
+		if preview.Teams[1].Name != "Beta" || len(preview.Teams[1].MemberNames) != 3 {
+			t.Errorf("Beta = %+v", preview.Teams[1])
+		}
+	})
 
-// TestImportTeams_RejectsUnknownFormat confirms the handler 415s
-// (rather than 5xx) when neither the filename nor the MIME maps
-// to a registered importer. The UI uses the 415 to surface a
-// clear "we don't know this format" message.
-func TestImportTeams_RejectsUnknownFormat(t *testing.T) {
-	ts, assignmentID, cleanup := newTestServer(t)
-	defer cleanup()
-	arr, _, _, eventID := setupRun(t, ts, assignmentID)
+	// Confirms the handler 415s (rather than 5xx) when neither the
+	// filename nor the MIME maps to a registered importer. The UI uses
+	// the 415 to surface a clear "we don't know this format" message.
+	t.Run("rejects unknown format", func(t *testing.T) {
+		arr := boss.in(t)
+		status, _ := uploadFile(t, arr,
+			"/api/admin/events/"+itoa(eventID)+"/teams/import",
+			"roster.lol", "application/octet-stream", []byte("nonsense"))
+		if status != http.StatusUnsupportedMediaType {
+			t.Fatalf("status = %d, want 415", status)
+		}
+	})
 
-	status, _ := uploadFile(t, arr,
-		"/api/admin/events/"+itoa(eventID)+"/teams/import",
-		"roster.lol", "application/octet-stream", []byte("nonsense"))
-	if status != http.StatusUnsupportedMediaType {
-		t.Fatalf("status = %d, want 415", status)
-	}
-}
-
-// TestImportTeams_IOFXMLParses round-trips an IOF XML EntryList
-// payload through the handler. Shorter sample than the package
-// test — the integration concern here is that the registry picks
-// the .xml file up and dispatches to iofxml, not the parser
-// internals.
-func TestImportTeams_IOFXMLParses(t *testing.T) {
-	ts, assignmentID, cleanup := newTestServer(t)
-	defer cleanup()
-	arr, _, _, eventID := setupRun(t, ts, assignmentID)
-
-	body := []byte(`<EntryList>
-  <TeamEntry>
-    <Name>Alpha</Name>
-    <TeamEntryPerson><Person><Name><Given>A</Given><Family>B</Family></Name></Person></TeamEntryPerson>
-  </TeamEntry>
-</EntryList>`)
-	status, raw := uploadFile(t, arr,
-		"/api/admin/events/"+itoa(eventID)+"/teams/import",
-		"entries.xml", "application/xml", body)
-	if status != 200 {
-		t.Fatalf("import = %d, body=%s", status, raw)
-	}
-	var preview struct {
-		Format string `json:"format"`
-		Teams  []struct {
-			Name        string   `json:"name"`
-			MemberNames []string `json:"member_names"`
-		} `json:"teams"`
-	}
-	if err := json.Unmarshal(raw, &preview); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if preview.Format != "IOF XML" {
-		t.Errorf("Format = %q, want IOF XML", preview.Format)
-	}
-	if len(preview.Teams) != 1 || preview.Teams[0].Name != "Alpha" {
-		t.Errorf("teams = %+v", preview.Teams)
-	}
+	// Round-trips an IOF XML EntryList payload through the handler.
+	// Shorter sample than the package test — the integration concern
+	// here is that the registry picks the .xml file up and dispatches to
+	// iofxml, not the parser internals.
+	t.Run("IOF XML parses", func(t *testing.T) {
+		arr := boss.in(t)
+		body := []byte(`<EntryList>
+	  <TeamEntry>
+	    <Name>Alpha</Name>
+	    <TeamEntryPerson><Person><Name><Given>A</Given><Family>B</Family></Name></Person></TeamEntryPerson>
+	  </TeamEntry>
+	</EntryList>`)
+		status, raw := uploadFile(t, arr,
+			"/api/admin/events/"+itoa(eventID)+"/teams/import",
+			"entries.xml", "application/xml", body)
+		if status != 200 {
+			t.Fatalf("import = %d, body=%s", status, raw)
+		}
+		var preview struct {
+			Format string `json:"format"`
+			Teams  []struct {
+				Name        string   `json:"name"`
+				MemberNames []string `json:"member_names"`
+			} `json:"teams"`
+		}
+		if err := json.Unmarshal(raw, &preview); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if preview.Format != "IOF XML" {
+			t.Errorf("Format = %q, want IOF XML", preview.Format)
+		}
+		if len(preview.Teams) != 1 || preview.Teams[0].Name != "Alpha" {
+			t.Errorf("teams = %+v", preview.Teams)
+		}
+	})
 }

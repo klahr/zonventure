@@ -10,6 +10,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 
 	"github.com/klahr/zonventure/internal/adventure"
@@ -65,7 +66,7 @@ func newTestServerWith(t *testing.T, cfg server.Config) (*httptest.Server, int64
 	// Post-migration 0020 schema: role column dropped from users.
 	// Org-scoped role lives on org_memberships; admin status on
 	// users.is_admin.
-	hash, _ := auth.HashPassword("s3cret")
+	hash := fixtureHash(t, "s3cret")
 	var bossID int64
 	if err := sqlDB.QueryRow(
 		`INSERT INTO users(username, password_hash, email_verified) VALUES ($1, $2, 1) RETURNING id`,
@@ -79,7 +80,7 @@ func newTestServerWith(t *testing.T, cfg server.Config) (*httptest.Server, int64
 		dbCleanup()
 		t.Fatalf("seed arranger membership: %v", err)
 	}
-	rootHash, _ := auth.HashPassword("rootpw")
+	rootHash := fixtureHash(t, "rootpw")
 	if _, err := sqlDB.Exec(
 		`INSERT INTO users(username, password_hash, email_verified, is_admin) VALUES ($1, $2, 1, TRUE)`,
 		"root", rootHash); err != nil {
@@ -173,6 +174,15 @@ func newClient(t *testing.T, ts *httptest.Server) *client {
 	return c
 }
 
+// in returns a copy of c that reports to t but shares c's cookies, so a
+// subtest can reuse a client its parent logged in: failing the parent's
+// t from inside a subtest is not allowed.
+func (c *client) in(t *testing.T) *client {
+	cp := *c
+	cp.t = t
+	return &cp
+}
+
 // csrfCookie returns the current zv_csrf cookie value from the jar, or
 // "" if absent. The jar is keyed by URL host, so we ask via the test
 // server's URL.
@@ -229,10 +239,39 @@ func TestFullFlow(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
 
+	// --- Anonymous callers are refused on both sides. ---
+	anon := newClient(t, ts)
+	if s := anon.do("GET", "/api/player/play", nil, nil); s != 401 {
+		t.Fatalf("anonymous state = %d, want 401", s)
+	}
+	if s := anon.do("GET", "/api/admin/adventures", nil, nil); s != 401 {
+		t.Fatalf("anonymous admin = %d, want 401", s)
+	}
+	// A magic link the server can't honour leaves /play with the token
+	// stripped and a reason the page can show, rather than asking the
+	// player to open the link they just opened.
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := noFollow.Get(ts.URL + "/play?t=not-a-real-token")
+	if err != nil {
+		t.Fatalf("GET bad magic link: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("bad magic link status = %d, want 302", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Location"); got != "/play?link=invalid" {
+		t.Fatalf("bad magic link Location = %q, want /play?link=invalid", got)
+	}
+
 	// --- Arranger logs in and schedules an event. ---
 	arr := newClient(t, ts)
 	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 		t.Fatalf("arranger login = %d", s)
+	}
+	// The arranger has a staff cookie but no slot cookie, so player
+	// endpoints reject with 401 ("open your magic link").
+	if s := arr.do("GET", "/api/player/play", nil, nil); s != 401 {
+		t.Fatalf("arranger on player = %d, want 401", s)
 	}
 	var advList struct {
 		Adventures []struct {
@@ -360,28 +399,15 @@ func TestFullFlow(t *testing.T) {
 	if pos.Positions[0].Lat == 0 && pos.Positions[0].Lng == 0 {
 		t.Fatalf("expected non-zero coords")
 	}
-}
 
-func TestAuthRoleSeparation(t *testing.T) {
-	ts, _, cleanup := newTestServer(t)
-	defer cleanup()
-
-	anon := newClient(t, ts)
-	if s := anon.do("GET", "/api/player/play", nil, nil); s != 401 {
-		t.Fatalf("anonymous state = %d, want 401", s)
+	// The game refused alice's session once the event was over, but she
+	// can still erase her data from the phone; afterwards the session is
+	// gone for erasing too. (Last: erasing takes her pings with it.)
+	if s := alice.doAny("POST", "/api/player/forget", map[string]any{}, nil); s/100 != 2 {
+		t.Fatalf("forget after the event ended = %d", s)
 	}
-	if s := anon.do("GET", "/api/admin/adventures", nil, nil); s != 401 {
-		t.Fatalf("anonymous admin = %d, want 401", s)
-	}
-
-	// Arranger has a staff cookie but no slot cookie, so player endpoints
-	// reject with 401 ("open your magic link").
-	arr := newClient(t, ts)
-	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
-		t.Fatalf("arranger login = %d", s)
-	}
-	if s := arr.do("GET", "/api/player/play", nil, nil); s != 401 {
-		t.Fatalf("arranger on player = %d, want 401", s)
+	if s := alice.doAny("POST", "/api/player/forget", map[string]any{}, nil); s != 401 {
+		t.Errorf("after forgetting, the session should be gone: %d", s)
 	}
 }
 
@@ -407,12 +433,40 @@ func itoa(i int64) string {
 	return string(buf)
 }
 
+// fixtureHashes caches one real, full-cost password hash per fixture
+// password for the whole test process. Each hash is still produced by
+// auth.HashPassword at production strength — it is just computed once
+// instead of in every fixture, since hashing dominates fixture setup.
+// Logins still verify against it at full cost.
+var fixtureHashes struct {
+	sync.Mutex
+	m map[string]string
+}
+
+func fixtureHash(t *testing.T, password string) string {
+	t.Helper()
+	fixtureHashes.Lock()
+	defer fixtureHashes.Unlock()
+	if h, ok := fixtureHashes.m[password]; ok {
+		return h
+	}
+	h, err := auth.HashPassword(password)
+	if err != nil {
+		t.Fatalf("hash %q: %v", password, err)
+	}
+	if fixtureHashes.m == nil {
+		fixtureHashes.m = map[string]string{}
+	}
+	fixtureHashes.m[password] = h
+	return h
+}
+
 // seedPublisher creates the catalog publisher org with an org_admin
 // "pub" / "pubpw" who authors its adventures, and returns the org id.
 func seedPublisher(t *testing.T, db *sql.DB) int64 {
 	t.Helper()
 	orgID := dbtest.PublisherOrg(t, db)
-	hash, _ := auth.HashPassword("pubpw")
+	hash := fixtureHash(t, "pubpw")
 	var userID int64
 	if err := db.QueryRow(
 		`INSERT INTO users(username, password_hash, email_verified) VALUES ('pub', $1, 1) RETURNING id`,

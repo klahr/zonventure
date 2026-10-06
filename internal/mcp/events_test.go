@@ -16,6 +16,7 @@ import (
 // Each tool is called with valid args so the failure mode under
 // test is the nil-Admin guard, not arg validation.
 func TestEventTools_NilAdminGuard(t *testing.T) {
+	t.Parallel()
 	s := &Server{Admin: nil}
 	ctx := withScopes(context.Background(), []string{"read", "write"})
 
@@ -55,6 +56,7 @@ func TestEventTools_NilAdminGuard(t *testing.T) {
 // validate-first paths fire BEFORE the nil-Admin guard so a bad
 // id surfaces a useful error regardless of server state.
 func TestEventTools_ArgValidation(t *testing.T) {
+	t.Parallel()
 	s := &Server{Admin: nil}
 	ctx := withScopes(context.Background(), []string{"read", "write"})
 
@@ -94,6 +96,7 @@ func TestEventTools_ArgValidation(t *testing.T) {
 // The 8 Phase 1 tools split 2 read / 6 write — list_events and
 // get_event are read-side; everything else mutates state.
 func TestEventTools_AreRegisteredWithCorrectScope(t *testing.T) {
+	t.Parallel()
 	s := &Server{tools: newRegistry()}
 	s.registerEventTools()
 

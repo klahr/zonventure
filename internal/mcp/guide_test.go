@@ -14,6 +14,7 @@ import (
 // The guide's recipes are what the model copies, so they must be exactly
 // what the server accepts: strict parsing, and no validation errors.
 func TestGuideExampleIsValid(t *testing.T) {
+	t.Parallel()
 	env, err := graph.ParseEnvelope([]byte(guideExample))
 	if err != nil {
 		t.Fatal(err)
@@ -34,6 +35,7 @@ func TestGuideExampleIsValid(t *testing.T) {
 
 // Every tool the instructions and guide tell the model to call exists.
 func TestGuideNamesRealTools(t *testing.T) {
+	t.Parallel()
 	s := New(nil, "", nil, nil)
 	text := serverInstructions + authoringGuide()
 	for _, name := range []string{"get_authoring_guide", "create_adventure", "get_adventure", "get_adventure_graph",
@@ -51,6 +53,7 @@ func TestGuideNamesRealTools(t *testing.T) {
 
 // The lifecycle reference indexes every tool, and only tools that exist.
 func TestLifecycleIndexesEveryTool(t *testing.T) {
+	t.Parallel()
 	s := New(nil, "", nil, nil)
 	index := eventLifecycleDoc[strings.Index(eventLifecycleDoc, "## Full tool index"):strings.Index(eventLifecycleDoc, "## Security boundaries")]
 	for _, d := range s.tools.descriptors {
@@ -66,6 +69,7 @@ func TestLifecycleIndexesEveryTool(t *testing.T) {
 }
 
 func TestInitializeAndPrompts(t *testing.T) {
+	t.Parallel()
 	s := New(nil, "", nil, nil)
 	ctx := context.Background()
 	resp, _ := s.dispatch(ctx, Request{JSONRPC: "2.0", ID: json.RawMessage(`1`), Method: "initialize"})

@@ -15,13 +15,23 @@ func TestStart_ImmediateInvocation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	fired := make(chan struct{}, 1)
 	done := Start(ctx, time.Hour, func(_ context.Context) {
 		atomic.AddInt32(&calls, 1)
+		select {
+		case fired <- struct{}{}:
+		default:
+		}
 	})
 
-	// Give the goroutine a moment to fire its immediate pass; the
-	// 1h interval guarantees no second invocation reaches us first.
-	time.Sleep(20 * time.Millisecond)
+	// Wait for the immediate pass rather than sleeping a guessed
+	// amount; the 1h interval guarantees no second invocation
+	// reaches us first.
+	select {
+	case <-fired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("fn not invoked within 5s of Start")
+	}
 	cancel()
 	<-done
 
@@ -38,11 +48,19 @@ func TestStart_TicksUntilCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	ticked := make(chan struct{})
 	done := Start(ctx, 10*time.Millisecond, func(_ context.Context) {
-		atomic.AddInt32(&calls, 1)
+		if atomic.AddInt32(&calls, 1) == 2 {
+			close(ticked)
+		}
 	})
 
-	time.Sleep(55 * time.Millisecond)
+	// Wait for the immediate pass plus one tick instead of sleeping.
+	select {
+	case <-ticked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no tick within 5s of Start")
+	}
 	cancel()
 
 	select {

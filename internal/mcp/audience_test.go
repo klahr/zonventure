@@ -13,6 +13,7 @@ import (
 // operator (and shared) tools, an org user's only org (and shared)
 // ones — both in tools/list and at dispatch.
 func TestRegistry_AudienceGate(t *testing.T) {
+	t.Parallel()
 	r := newRegistry()
 	ok := func(_ context.Context, _ *Server, _ json.RawMessage) (ToolCallResult, error) {
 		return textResult("ok"), nil

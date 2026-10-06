@@ -13,6 +13,7 @@ import (
 // An organisation with nothing visible gets an empty JSON array, not
 // null, so a client can't mistake "no adventures" for a failure.
 func TestListAdventures_EmptyIsArray(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	var orgID int64

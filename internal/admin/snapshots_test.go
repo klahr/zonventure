@@ -9,6 +9,7 @@ import (
 )
 
 func TestSnapshotsShareOneBuild(t *testing.T) {
+	t.Parallel()
 	var s snapshots
 	var builds atomic.Int32
 	release := make(chan struct{})
@@ -37,6 +38,7 @@ func TestSnapshotsShareOneBuild(t *testing.T) {
 }
 
 func TestSnapshotsRebuildAfterAPublish(t *testing.T) {
+	t.Parallel()
 	var s snapshots
 	n := 0
 	build := func() ([]byte, error) { n++; return []byte{byte(n)}, nil }
@@ -54,6 +56,7 @@ func TestSnapshotsRebuildAfterAPublish(t *testing.T) {
 }
 
 func TestSnapshotsDoNotKeepFailures(t *testing.T) {
+	t.Parallel()
 	var s snapshots
 	n := 0
 	fail := func() ([]byte, error) { n++; return nil, errors.New("db down") }

@@ -15,165 +15,154 @@ import (
 	"github.com/klahr/zonventure/internal/public"
 )
 
-// TestTicketTeamToken_Pending: a freshly-recorded purchase whose
-// webhook hasn't fired yet returns state=pending and an empty token.
-func TestTicketTeamToken_Pending(t *testing.T) {
+// TestTicketTeamToken covers GET /api/store/ticket/{id}/team-token.
+// The cases share one cloned DB and seeded event — each subtest
+// inserts its own purchase with a distinct stripe session id, so
+// none of them can see another's row through the endpoint.
+func TestTicketTeamToken(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
 	eventID := seedEvent(t, db)
-	var purchaseID int64
-	if err := db.QueryRow(`
-		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, stripe_session_id)
-		VALUES ($1, 'b@x.com', 4, 2500, 'eur', 'cs_test_pending')
-		RETURNING id
-	`, eventID).Scan(&purchaseID); err != nil {
-		t.Fatal(err)
-	}
 
-	body := callTeamToken(t, db, purchaseID, "cs_test_pending", http.StatusOK)
-	if body.State != "pending" {
-		t.Errorf("state = %q, want pending", body.State)
-	}
-	if body.TeamToken != "" {
-		t.Errorf("team_token = %q, want empty", body.TeamToken)
-	}
-}
+	// Pending: a freshly-recorded purchase whose webhook hasn't fired
+	// yet returns state=pending and an empty token.
+	t.Run("Pending", func(t *testing.T) {
+		var purchaseID int64
+		if err := db.QueryRow(`
+			INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, stripe_session_id)
+			VALUES ($1, 'b@x.com', 4, 2500, 'eur', 'cs_test_pending')
+			RETURNING id
+		`, eventID).Scan(&purchaseID); err != nil {
+			t.Fatal(err)
+		}
 
-// TestTicketTeamToken_PaidReturnsToken: the happy path. Purchase
-// is paid, team is linked, session_id matches → state=paid plus the
-// team_token the JS uses to redirect.
-func TestTicketTeamToken_PaidReturnsToken(t *testing.T) {
-	db, cleanup := dbtest.Open(t)
-	defer cleanup()
+		body := callTeamToken(t, db, purchaseID, "cs_test_pending", http.StatusOK)
+		if body.State != "pending" {
+			t.Errorf("state = %q, want pending", body.State)
+		}
+		if body.TeamToken != "" {
+			t.Errorf("team_token = %q, want empty", body.TeamToken)
+		}
+	})
 
-	eventID := seedEvent(t, db)
-	var teamID int64
-	if err := db.QueryRow(`
-		INSERT INTO teams(event_id, name, token) VALUES ($1, 'buyer', 'team-tok-paid')
-		RETURNING id
-	`, eventID).Scan(&teamID); err != nil {
-		t.Fatal(err)
-	}
-	var purchaseID int64
-	if err := db.QueryRow(`
-		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency,
-		                             state, paid_at, team_id, stripe_session_id)
-		VALUES ($1, 'b@x.com', 1, 1000, 'eur', 'paid', now_text(), $2, 'cs_test_paid')
-		RETURNING id
-	`, eventID, teamID).Scan(&purchaseID); err != nil {
-		t.Fatal(err)
-	}
+	// PaidReturnsToken: the happy path. Purchase is paid, team is
+	// linked, session_id matches → state=paid plus the team_token the
+	// JS uses to redirect.
+	t.Run("PaidReturnsToken", func(t *testing.T) {
+		var teamID int64
+		if err := db.QueryRow(`
+			INSERT INTO teams(event_id, name, token) VALUES ($1, 'buyer-paid', 'team-tok-paid')
+			RETURNING id
+		`, eventID).Scan(&teamID); err != nil {
+			t.Fatal(err)
+		}
+		var purchaseID int64
+		if err := db.QueryRow(`
+			INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency,
+			                             state, paid_at, team_id, stripe_session_id)
+			VALUES ($1, 'b@x.com', 1, 1000, 'eur', 'paid', now_text(), $2, 'cs_test_paid')
+			RETURNING id
+		`, eventID, teamID).Scan(&purchaseID); err != nil {
+			t.Fatal(err)
+		}
 
-	body := callTeamToken(t, db, purchaseID, "cs_test_paid", http.StatusOK)
-	if body.State != "paid" {
-		t.Errorf("state = %q, want paid", body.State)
-	}
-	if body.TeamToken != "team-tok-paid" {
-		t.Errorf("team_token = %q, want team-tok-paid", body.TeamToken)
-	}
-}
+		body := callTeamToken(t, db, purchaseID, "cs_test_paid", http.StatusOK)
+		if body.State != "paid" {
+			t.Errorf("state = %q, want paid", body.State)
+		}
+		if body.TeamToken != "team-tok-paid" {
+			t.Errorf("team_token = %q, want team-tok-paid", body.TeamToken)
+		}
+	})
 
-// TestTicketTeamToken_WrongSessionIs404: the security-critical case.
-// A scraper guesses a real purchase id but supplies a session_id that
-// doesn't match. Endpoint MUST 404 (not 403, not 200 with empty
-// token) — indistinguishable from "no such purchase".
-func TestTicketTeamToken_WrongSessionIs404(t *testing.T) {
-	db, cleanup := dbtest.Open(t)
-	defer cleanup()
+	// WrongSessionIs404: the security-critical case. A scraper guesses
+	// a real purchase id but supplies a session_id that doesn't match.
+	// Endpoint MUST 404 (not 403, not 200 with empty token) —
+	// indistinguishable from "no such purchase".
+	t.Run("WrongSessionIs404", func(t *testing.T) {
+		var teamID int64
+		if err := db.QueryRow(`
+			INSERT INTO teams(event_id, name, token) VALUES ($1, 'buyer-real', 'super-secret-token')
+			RETURNING id
+		`, eventID).Scan(&teamID); err != nil {
+			t.Fatal(err)
+		}
+		var purchaseID int64
+		if err := db.QueryRow(`
+			INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency,
+			                             state, paid_at, team_id, stripe_session_id)
+			VALUES ($1, 'b@x.com', 1, 1000, 'eur', 'paid', now_text(), $2, 'cs_test_real')
+			RETURNING id
+		`, eventID, teamID).Scan(&purchaseID); err != nil {
+			t.Fatal(err)
+		}
 
-	eventID := seedEvent(t, db)
-	var teamID int64
-	if err := db.QueryRow(`
-		INSERT INTO teams(event_id, name, token) VALUES ($1, 'buyer', 'super-secret-token')
-		RETURNING id
-	`, eventID).Scan(&teamID); err != nil {
-		t.Fatal(err)
-	}
-	var purchaseID int64
-	if err := db.QueryRow(`
-		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency,
-		                             state, paid_at, team_id, stripe_session_id)
-		VALUES ($1, 'b@x.com', 1, 1000, 'eur', 'paid', now_text(), $2, 'cs_test_real')
-		RETURNING id
-	`, eventID, teamID).Scan(&purchaseID); err != nil {
-		t.Fatal(err)
-	}
+		rec := callTeamTokenRaw(t, db, purchaseID, "cs_test_DIFFERENT")
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404", rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), "super-secret-token") {
+			t.Errorf("body leaked team token: %s", rec.Body.String())
+		}
+	})
 
-	rec := callTeamTokenRaw(t, db, purchaseID, "cs_test_DIFFERENT")
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404", rec.Code)
-	}
-	if strings.Contains(rec.Body.String(), "super-secret-token") {
-		t.Errorf("body leaked team token: %s", rec.Body.String())
-	}
-}
+	// MissingSessionIs404: dropping the session_id query param entirely
+	// also 404s — same shape as the auth-fail case so a stripped URL
+	// doesn't reveal whether the id is real.
+	t.Run("MissingSessionIs404", func(t *testing.T) {
+		var purchaseID int64
+		if err := db.QueryRow(`
+			INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, stripe_session_id)
+			VALUES ($1, 'b@x.com', 1, 1000, 'eur', 'cs_test_x')
+			RETURNING id
+		`, eventID).Scan(&purchaseID); err != nil {
+			t.Fatal(err)
+		}
 
-// TestTicketTeamToken_MissingSessionIs404: dropping the session_id
-// query param entirely also 404s — same shape as the auth-fail case
-// so a stripped URL doesn't reveal whether the id is real.
-func TestTicketTeamToken_MissingSessionIs404(t *testing.T) {
-	db, cleanup := dbtest.Open(t)
-	defer cleanup()
+		publicH := &public.Handlers{DB: db, Lib: adventure.New(db)}
+		r := chi.NewRouter()
+		r.Get("/api/store/ticket/{purchase_id}/team-token", publicH.TicketTeamToken)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/api/store/ticket/"+strconv.FormatInt(purchaseID, 10)+"/team-token", nil)
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404 (missing session_id)", rec.Code)
+		}
+	})
 
-	eventID := seedEvent(t, db)
-	var purchaseID int64
-	if err := db.QueryRow(`
-		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, stripe_session_id)
-		VALUES ($1, 'b@x.com', 1, 1000, 'eur', 'cs_test_x')
-		RETURNING id
-	`, eventID).Scan(&purchaseID); err != nil {
-		t.Fatal(err)
-	}
+	// BogusIdIs404: a non-existent purchase id 404s regardless of
+	// session id supplied.
+	t.Run("BogusIdIs404", func(t *testing.T) {
+		rec := callTeamTokenRaw(t, db, 999999, "cs_anything")
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404", rec.Code)
+		}
+	})
 
-	publicH := &public.Handlers{DB: db, Lib: adventure.New(db)}
-	r := chi.NewRouter()
-	r.Get("/api/store/ticket/{purchase_id}/team-token", publicH.TicketTeamToken)
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/api/store/ticket/"+strconv.FormatInt(purchaseID, 10)+"/team-token", nil)
-	r.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404 (missing session_id)", rec.Code)
-	}
-}
+	// FailedNoToken: a purchase that flipped to failed surfaces
+	// state=failed (so the JS shows the "contact seller" message) and
+	// returns no token even if one happens to be linked.
+	t.Run("FailedNoToken", func(t *testing.T) {
+		var purchaseID int64
+		if err := db.QueryRow(`
+			INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency,
+			                             state, stripe_session_id)
+			VALUES ($1, 'b@x.com', 1, 1000, 'eur', 'failed', 'cs_test_failed')
+			RETURNING id
+		`, eventID).Scan(&purchaseID); err != nil {
+			t.Fatal(err)
+		}
 
-// TestTicketTeamToken_BogusIdIs404: a non-existent purchase id 404s
-// regardless of session id supplied.
-func TestTicketTeamToken_BogusIdIs404(t *testing.T) {
-	db, cleanup := dbtest.Open(t)
-	defer cleanup()
-
-	rec := callTeamTokenRaw(t, db, 999999, "cs_anything")
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404", rec.Code)
-	}
-}
-
-// TestTicketTeamToken_FailedNoToken: a purchase that flipped to
-// failed surfaces state=failed (so the JS shows the "contact seller"
-// message) and returns no token even if one happens to be linked.
-func TestTicketTeamToken_FailedNoToken(t *testing.T) {
-	db, cleanup := dbtest.Open(t)
-	defer cleanup()
-
-	eventID := seedEvent(t, db)
-	var purchaseID int64
-	if err := db.QueryRow(`
-		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency,
-		                             state, stripe_session_id)
-		VALUES ($1, 'b@x.com', 1, 1000, 'eur', 'failed', 'cs_test_failed')
-		RETURNING id
-	`, eventID).Scan(&purchaseID); err != nil {
-		t.Fatal(err)
-	}
-
-	body := callTeamToken(t, db, purchaseID, "cs_test_failed", http.StatusOK)
-	if body.State != "failed" {
-		t.Errorf("state = %q, want failed", body.State)
-	}
-	if body.TeamToken != "" {
-		t.Errorf("team_token = %q, want empty on failed state", body.TeamToken)
-	}
+		body := callTeamToken(t, db, purchaseID, "cs_test_failed", http.StatusOK)
+		if body.State != "failed" {
+			t.Errorf("state = %q, want failed", body.State)
+		}
+		if body.TeamToken != "" {
+			t.Errorf("team_token = %q, want empty on failed state", body.TeamToken)
+		}
+	})
 }
 
 // seedEvent inserts an org, an adventure, and a public-for-sale

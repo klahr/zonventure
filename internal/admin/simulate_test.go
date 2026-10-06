@@ -66,6 +66,7 @@ func sim(t *testing.T, tm *session.Team, a simulateAction) simulateResponse {
 }
 
 func TestSimulatePlaysTheDraft(t *testing.T) {
+	t.Parallel()
 	r := sim(t, nil, simulateAction{Kind: "start"})
 	if r.Result.View.Node != "riddle" || r.Result.View.Input == nil {
 		t.Fatalf("start should land on the riddle: %+v", r.Result.View)
@@ -94,6 +95,7 @@ func TestSimulatePlaysTheDraft(t *testing.T) {
 // A right answer on an unconnected output must not leave the simulated
 // team half-moved: the live engine would roll the transaction back.
 func TestSimulateRollsBackAFailedStep(t *testing.T) {
+	t.Parallel()
 	start := sim(t, nil, simulateAction{Kind: "start"})
 	r := sim(t, start.Team, simulateAction{Kind: "answer", Node: "riddle", Guess: "right"})
 	if r.Refuse == nil || r.Refuse.Code != "graph" {
@@ -108,6 +110,7 @@ func TestSimulateRollsBackAFailedStep(t *testing.T) {
 }
 
 func TestSimulateMoveAndPlace(t *testing.T) {
+	t.Parallel()
 	r := sim(t, nil, simulateAction{Kind: "place", Node: "riddle"})
 	r = sim(t, r.Team, simulateAction{Kind: "move", Zone: "square"})
 	if r.Team.Position == nil || !r.Team.InZone("square") {
@@ -129,6 +132,7 @@ func TestSimulateMoveAndPlace(t *testing.T) {
 // Passing a puzzle takes the chosen output without its answer, and a
 // map pick puts the team at a point rather than a zone's centre.
 func TestSimulateForceAndPoint(t *testing.T) {
+	t.Parallel()
 	r := sim(t, nil, simulateAction{Kind: "start"})
 	r = sim(t, r.Team, simulateAction{Kind: "force", Node: "riddle", Port: "left"})
 	if !r.Result.View.Finished || r.Result.View.Score != 10 {
@@ -161,6 +165,7 @@ func TestSimulateForceAndPoint(t *testing.T) {
 // at the start screen, as a live event does, until it moves there — and
 // the requirement survives the round trip, which does not carry it.
 func TestSimulateHoldsAtStartPlace(t *testing.T) {
+	t.Parallel()
 	r1, r2, r3 := 59.31, 18.01, 30.0
 	place := session.NewStartPlace(&r1, &r2, &r3, "The gate")
 	step := func(tm *session.Team, a simulateAction) simulateResponse {

@@ -45,6 +45,7 @@ func must(t *testing.T, err error) {
 }
 
 func TestWebhookDelivered(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	var got *http.Request
@@ -78,6 +79,7 @@ func TestWebhookDelivered(t *testing.T) {
 }
 
 func TestWebhookGETQueryAndRetry(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	var query string
@@ -110,6 +112,7 @@ func TestWebhookGETQueryAndRetry(t *testing.T) {
 // Without the development switch, a webhook may not call the server's
 // own machine: any author could otherwise reach its private services.
 func TestWebhookRefusesLoopback(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	called := false

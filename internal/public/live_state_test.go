@@ -49,6 +49,7 @@ func getLive(t *testing.T, db *sql.DB, eventID int64) liveSnap {
 // A withdrawn team drops below every team still playing on a lane
 // board, as it already does on a graph board, and is flagged.
 func TestLive_WithdrawnTeamsRankLast(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	eventID := seedEvent(t, db)
@@ -76,6 +77,7 @@ func TestLive_WithdrawnTeamsRankLast(t *testing.T) {
 // The board needs the pause totals to leave paused time out of the
 // elapsed clock and to freeze it while paused.
 func TestLive_ReportsPauses(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	eventID := seedEvent(t, db)
@@ -103,6 +105,7 @@ func TestLive_ReportsPauses(t *testing.T) {
 // cache window they share one build instead of each re-aggregating the
 // event's ping history.
 func TestTracks_SharedWithinCacheWindow(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	start := time.Date(2026, 9, 28, 10, 0, 0, 0, time.UTC)

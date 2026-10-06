@@ -6,7 +6,8 @@ import (
 
 // TestEndEvent ends a paused event early: it completes with its open
 // pause closed, the unfinished team's recap opens, players are signed
-// out, and a second end — or ending a scheduled event — is refused.
+// out, and a second end — or ending a scheduled event — is refused. A
+// self-guided adventure can't be ended at all.
 func TestEndEvent(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
@@ -86,15 +87,11 @@ func TestEndEvent(t *testing.T) {
 	if s := arr.doWithConfirm("POST", end, "s3cret", nil, nil); s != 409 {
 		t.Fatalf("second end = %d, want 409", s)
 	}
-}
 
-// A self-guided adventure never ends: it is paused or cancelled.
-func TestEndEventRefusesSelfGuided(t *testing.T) {
-	ts, _, cleanup := newTestServer(t)
-	defer cleanup()
+	// A self-guided adventure never ends: it is paused or cancelled.
 	pub := newClient(t, ts)
 	if s := pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
-		t.Fatalf("login = %d", s)
+		t.Fatalf("pub login = %d", s)
 	}
 	var ev struct {
 		ID int64 `json:"id"`
@@ -103,7 +100,7 @@ func TestEndEventRefusesSelfGuided(t *testing.T) {
 		t.Fatalf("create self-guided = %d", s)
 	}
 	if s := pub.do("POST", "/api/admin/events/"+itoa(ev.ID)+"/start", nil, nil); s != 204 {
-		t.Fatalf("start = %d", s)
+		t.Fatalf("start self-guided = %d", s)
 	}
 	if s := pub.doWithConfirm("POST", "/api/admin/events/"+itoa(ev.ID)+"/end", "pubpw", nil, nil); s != 409 {
 		t.Errorf("end a self-guided adventure = %d, want 409", s)

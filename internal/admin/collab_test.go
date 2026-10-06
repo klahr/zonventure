@@ -6,6 +6,7 @@ import (
 )
 
 func TestMentionsIn(t *testing.T) {
+	t.Parallel()
 	people := []userRef{{ID: 1, Name: "anna"}, {ID: 2, Name: "bob@example.org"}, {ID: 3, Name: "Carl.D"}}
 	cases := []struct {
 		body      string

@@ -173,30 +173,30 @@ func TestGraphAuthoringLoop(t *testing.T) {
 	}
 }
 
-func TestGraphRejectsMalformedEnvelopes(t *testing.T) {
-	ts, _, cleanup := newTestServer(t)
-	defer cleanup()
-	pub := newClient(t, ts)
-	pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil)
-
-	for name, body := range map[string]any{
-		"v1 format":     map[string]any{"format": "zonventure-adventure-v1", "graph": map[string]any{"nodes": []any{}, "edges": []any{}}},
-		"unknown field": map[string]any{"format": graph.FormatV2, "graph": map[string]any{"nodes": []any{}, "edges": []any{}}, "extra": 1},
-		"not an object": []int{1, 2, 3},
-	} {
-		var refused refusalDTO
-		if s := pub.doAny("PUT", "/api/admin/adventures/demo/graph", body, &refused); s != 400 || refused.Code != "graph_malformed" {
-			t.Errorf("%s: got %d %+v; want 400 graph_malformed", name, s, refused)
-		}
-	}
-}
-
 // The graph carries every answer, so only someone who can edit the
 // adventure may see it. The seeded demo is in the global catalog, which
-// an org admin cannot edit.
+// an org admin cannot edit. Its author, who can, still has malformed
+// envelopes refused.
 func TestGraphRequiresEditRights(t *testing.T) {
 	ts, _, cleanup := newTestServer(t)
 	defer cleanup()
+
+	pub := newClient(t, ts)
+	pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil)
+
+	t.Run("malformed envelopes", func(t *testing.T) {
+		pub := pub.in(t)
+		for name, body := range map[string]any{
+			"v1 format":     map[string]any{"format": "zonventure-adventure-v1", "graph": map[string]any{"nodes": []any{}, "edges": []any{}}},
+			"unknown field": map[string]any{"format": graph.FormatV2, "graph": map[string]any{"nodes": []any{}, "edges": []any{}}, "extra": 1},
+			"not an object": []int{1, 2, 3},
+		} {
+			var refused refusalDTO
+			if s := pub.doAny("PUT", "/api/admin/adventures/demo/graph", body, &refused); s != 400 || refused.Code != "graph_malformed" {
+				t.Errorf("%s: got %d %+v; want 400 graph_malformed", name, s, refused)
+			}
+		}
+	})
 
 	boss := newClient(t, ts)
 	if s := boss.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
@@ -213,14 +213,23 @@ func TestGraphRequiresEditRights(t *testing.T) {
 			t.Errorf("%s %s as an org admin on a global adventure = %d, want 403", c.method, c.path, s)
 		}
 	}
+	// Nor may boss rename it, or save a well-formed graph over it. The
+	// org only holds a share of the catalog adventure; that also keeps
+	// it from rebranding (colours ride on the same PATCH).
+	if s := boss.do("PATCH", "/api/admin/adventures/demo",
+		map[string]any{"title": "hacked"}, nil); s != 403 {
+		t.Errorf("patch catalog adventure = %d, want 403", s)
+	}
+	if s := boss.doAny("PUT", "/api/admin/adventures/demo/graph",
+		graph.Envelope{Format: graph.FormatV2, Graph: *demoGraph()}, nil); s != 403 {
+		t.Errorf("save graph on catalog adventure = %d, want 403", s)
+	}
 
 	anon := newClient(t, ts)
 	if s := anon.do("GET", "/api/admin/adventures/demo/graph", nil, nil); s != 401 && s != 403 {
 		t.Errorf("anonymous GET = %d, want 401 or 403", s)
 	}
 
-	pub := newClient(t, ts)
-	pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil)
 	if s := pub.do("GET", "/api/admin/adventures/no-such-adventure/graph", nil, nil); s != 404 {
 		t.Errorf("unknown adventure = %d, want 404", s)
 	}
@@ -228,7 +237,9 @@ func TestGraphRequiresEditRights(t *testing.T) {
 
 // A new adventure is listed with nothing to play, so the console offers
 // to design it rather than schedule it; its puzzle count follows its
-// designer draft, and publishing makes it playable.
+// designer draft, and publishing makes it playable. The org's own
+// adventure is its to edit; the catalog demo it was shared is listed
+// but not editable.
 func TestAdventureListFollowsTheDesigner(t *testing.T) {
 	ts, _, cleanup := newTestServer(t)
 	defer cleanup()
@@ -241,9 +252,11 @@ func TestAdventureListFollowsTheDesigner(t *testing.T) {
 		t.Fatalf("create = %d", s)
 	}
 	type row struct {
-		Slug      string `json:"slug"`
-		PageCount int    `json:"page_count"`
-		Playable  bool   `json:"playable"`
+		Slug       string `json:"slug"`
+		PageCount  int    `json:"page_count"`
+		Playable   bool   `json:"playable"`
+		MineToEdit bool   `json:"mine_to_edit"`
+		OrgID      *int64 `json:"org_id"`
 	}
 	listed := func(slug string) row {
 		t.Helper()
@@ -261,11 +274,22 @@ func TestAdventureListFollowsTheDesigner(t *testing.T) {
 		t.Fatalf("%s is not listed", slug)
 		return row{}
 	}
-	if a := listed("fresh"); a.Playable || a.PageCount != 0 {
-		t.Errorf("a new adventure has nothing to play: %+v", a)
+	fresh := listed("fresh")
+	if fresh.Playable || fresh.PageCount != 0 {
+		t.Errorf("a new adventure has nothing to play: %+v", fresh)
 	}
-	if a := listed("demo"); !a.Playable || a.PageCount != 3 {
-		t.Errorf("the published demo plays its three puzzles: %+v", a)
+	if !fresh.MineToEdit || fresh.OrgID == nil {
+		t.Errorf("own adventure should be editable and carry its org_id: %+v", fresh)
+	}
+	demo := listed("demo")
+	if !demo.Playable || demo.PageCount != 3 {
+		t.Errorf("the published demo plays its three puzzles: %+v", demo)
+	}
+	if demo.MineToEdit || demo.OrgID == nil {
+		t.Errorf("the shared catalog demo is not editable and carries its publisher org_id: %+v", demo)
+	}
+	if s := arr.do("PATCH", "/api/admin/adventures/fresh", map[string]any{"title": "Fresh (edited)"}, nil); s != 204 {
+		t.Errorf("patch own adventure = %d", s)
 	}
 
 	g := graph.Graph{

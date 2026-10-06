@@ -107,231 +107,10 @@ func eventEnvelope(t *testing.T, id, eventType string, object any) []byte {
 // signature" with a wrapped log line about API version mismatch.
 const testStripeAPIVersion = "2025-08-27.basil"
 
-func TestStripeWebhook_DisabledWithoutCreds(t *testing.T) {
-	ts, _, _, cleanup := seedPurchaseStack(t, server.Config{})
-	defer cleanup()
-
-	// No Stripe creds → handler should refuse with 503 before even
-	// attempting signature verification.
-	if status, _ := postWebhook(t, ts, []byte(`{}`), ""); status != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", status)
-	}
-}
-
-func TestStripeWebhook_RejectsBadSignature(t *testing.T) {
-	cfg := server.Config{
-		StripeSecretKey:     testStripeSecretKey,
-		StripeWebhookSecret: testStripeWebhookKey,
-		Env:                 "dev",
-	}
-	ts, _, _, cleanup := seedPurchaseStack(t, cfg)
-	defer cleanup()
-
-	body := []byte(`{"id":"evt_1","type":"checkout.session.completed","data":{"object":{}}}`)
-
-	// Missing header.
-	if status, _ := postWebhook(t, ts, body, ""); status != http.StatusBadRequest {
-		t.Fatalf("missing sig = %d, want 400", status)
-	}
-
-	// Wrong secret.
-	wrongSig := stripeSign(t, body, "whsec_wrong")
-	if status, _ := postWebhook(t, ts, body, wrongSig); status != http.StatusBadRequest {
-		t.Fatalf("wrong-secret sig = %d, want 400", status)
-	}
-
-	// Tampered body — signature is valid for a different payload.
-	goodSig := stripeSign(t, body, testStripeWebhookKey)
-	if status, _ := postWebhook(t, ts, []byte(`{"id":"tampered"}`), goodSig); status != http.StatusBadRequest {
-		t.Fatalf("tampered body = %d, want 400", status)
-	}
-}
-
-func TestStripeWebhook_CheckoutCompleted_HappyPath(t *testing.T) {
-	cfg := server.Config{
-		StripeSecretKey:     testStripeSecretKey,
-		StripeWebhookSecret: testStripeWebhookKey,
-		Env:                 "dev",
-	}
-	ts, db, _, cleanup := seedPurchaseStack(t, cfg)
-	defer cleanup()
-
-	// Boss creates a pending stripe-flagged purchase row directly. We
-	// can't go through CreatePurchase here because that would call out
-	// to Stripe to mint a Checkout Session; the webhook test only
-	// exercises the inbound side.
-	c := newClient(t, ts)
-	if s := c.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
-		t.Fatalf("login = %d", s)
-	}
-	var orgID int64
-	if err := db.QueryRow(`SELECT org_id FROM org_memberships WHERE user_id = (SELECT id FROM users WHERE username = 'boss') LIMIT 1`).Scan(&orgID); err != nil {
-		t.Fatalf("lookup org: %v", err)
-	}
-	var purchaseID int64
-	if err := db.QueryRow(`
-		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
-		                     amount_cents, currency, provider, state)
-		VALUES ($1, (SELECT id FROM users WHERE username = 'boss'), 'demo', 20,
-		        2500, 'EUR', 'stripe', 'pending')
-		RETURNING id
-	`, orgID).Scan(&purchaseID); err != nil {
-		t.Fatalf("seed purchase: %v", err)
-	}
-
-	body := eventEnvelope(t, "evt_test_completed_1", "checkout.session.completed",
-		map[string]any{
-			"id":              "cs_test_abc",
-			"object":          "checkout.session",
-			"amount_total":    2500,
-			"amount_subtotal": 2500,
-			"currency":        "eur",
-			"payment_status":  "paid",
-			"metadata": map[string]string{
-				"zv_purchase_id": fmt.Sprintf("%d", purchaseID),
-			},
-		})
-	sig := stripeSign(t, body, testStripeWebhookKey)
-	if status, msg := postWebhook(t, ts, body, sig); status != http.StatusOK {
-		t.Fatalf("status = %d (%s), want 200", status, msg)
-	}
-
-	// Purchase should be paid with an assignment id and the provider
-	// session id stamped.
-	var (
-		state  string
-		assID  *int64
-		sessID *string
-	)
-	if err := db.QueryRow(
-		`SELECT state, assignment_id, provider_session_id FROM purchases WHERE id = $1`, purchaseID,
-	).Scan(&state, &assID, &sessID); err != nil {
-		t.Fatalf("readback: %v", err)
-	}
-	if state != "paid" {
-		t.Fatalf("state = %q, want paid", state)
-	}
-	if assID == nil || *assID == 0 {
-		t.Fatalf("expected assignment_id")
-	}
-	if sessID == nil || *sessID != "cs_test_abc" {
-		t.Fatalf("provider_session_id = %v, want cs_test_abc", sessID)
-	}
-
-	// Idempotency: redelivering the *same* event id is a no-op — no
-	// new assignment row, state unchanged.
-	if status, _ := postWebhook(t, ts, body, sig); status != http.StatusOK {
-		t.Fatalf("redelivery = %d, want 200", status)
-	}
-	var assnCount int
-	if err := db.QueryRow(
-		`SELECT COUNT(*) FROM adventure_assignments WHERE org_id = $1 AND adventure_slug = 'demo'`, orgID,
-	).Scan(&assnCount); err != nil {
-		t.Fatalf("count: %v", err)
-	}
-	if assnCount != 1 {
-		t.Fatalf("assignment count = %d after redelivery, want 1", assnCount)
-	}
-}
-
-func TestStripeWebhook_CheckoutCompleted_UnknownPurchase(t *testing.T) {
-	cfg := server.Config{
-		StripeSecretKey:     testStripeSecretKey,
-		StripeWebhookSecret: testStripeWebhookKey,
-		Env:                 "dev",
-	}
-	ts, _, _, cleanup := seedPurchaseStack(t, cfg)
-	defer cleanup()
-
-	// Metadata pointing at a nonexistent purchase row should still
-	// 200 — the handler treats it as "not ours, skip" so Stripe doesn't
-	// retry forever.
-	body := eventEnvelope(t, "evt_test_orphan_1", "checkout.session.completed",
-		map[string]any{
-			"id":             "cs_orphan",
-			"object":         "checkout.session",
-			"payment_status": "paid",
-			"metadata": map[string]string{
-				"zv_purchase_id": "999999",
-			},
-		})
-	sig := stripeSign(t, body, testStripeWebhookKey)
-	if status, msg := postWebhook(t, ts, body, sig); status != http.StatusOK {
-		t.Fatalf("status = %d (%s), want 200", status, msg)
-	}
-}
-
-func TestStripeWebhook_ChargeRefunded(t *testing.T) {
-	cfg := server.Config{
-		StripeSecretKey:     testStripeSecretKey,
-		StripeWebhookSecret: testStripeWebhookKey,
-		Env:                 "dev",
-	}
-	ts, db, _, cleanup := seedPurchaseStack(t, cfg)
-	defer cleanup()
-
-	// Seed a paid purchase with a known stripe_charge_id so the refund
-	// handler has something to flip.
-	var orgID int64
-	if err := db.QueryRow(`SELECT org_id FROM org_memberships WHERE user_id = (SELECT id FROM users WHERE username = 'boss') LIMIT 1`).Scan(&orgID); err != nil {
-		t.Fatalf("lookup org: %v", err)
-	}
-	var purchaseID int64
-	if err := db.QueryRow(`
-		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
-		                     amount_cents, currency, provider, state, stripe_charge_id, paid_at)
-		VALUES ($1, (SELECT id FROM users WHERE username = 'boss'), 'demo', 16,
-		        500, 'EUR', 'stripe', 'paid', 'ch_test_xyz', now_text())
-		RETURNING id
-	`, orgID).Scan(&purchaseID); err != nil {
-		t.Fatalf("seed paid: %v", err)
-	}
-
-	body := eventEnvelope(t, "evt_test_refunded_1", "charge.refunded",
-		map[string]any{
-			"id":              "ch_test_xyz",
-			"object":          "charge",
-			"amount":          200,
-			"amount_refunded": 200,
-			"refunded":        true,
-		})
-	sig := stripeSign(t, body, testStripeWebhookKey)
-	if status, msg := postWebhook(t, ts, body, sig); status != http.StatusOK {
-		t.Fatalf("status = %d (%s), want 200", status, msg)
-	}
-
-	var state string
-	if err := db.QueryRow(`SELECT state FROM purchases WHERE id = $1`, purchaseID).Scan(&state); err != nil {
-		t.Fatalf("readback: %v", err)
-	}
-	if state != "refunded" {
-		t.Fatalf("state = %q, want refunded", state)
-	}
-}
-
-func TestStripeWebhook_UnhandledEventType(t *testing.T) {
-	cfg := server.Config{
-		StripeSecretKey:     testStripeSecretKey,
-		StripeWebhookSecret: testStripeWebhookKey,
-		Env:                 "dev",
-	}
-	ts, _, _, cleanup := seedPurchaseStack(t, cfg)
-	defer cleanup()
-
-	// Event types we don't subscribe to should still 200 so Stripe
-	// doesn't redrive forever.
-	body := eventEnvelope(t, "evt_test_unhandled_1", "customer.created",
-		map[string]any{"id": "cus_x", "object": "customer"})
-	sig := stripeSign(t, body, testStripeWebhookKey)
-	if status, _ := postWebhook(t, ts, body, sig); status != http.StatusOK {
-		t.Fatalf("status = %d, want 200", status)
-	}
-}
-
-// An async payment method completes the session "unpaid": nothing is
-// granted until async_payment_succeeded, and async_payment_failed
-// marks the purchase failed.
-func TestStripeWebhook_AsyncPayment(t *testing.T) {
+// TestStripeWebhook drives the inbound webhook on one server with
+// Stripe configured. Every subtest seeds its own purchase rows and uses
+// its own event ids, so they don't see each other's deliveries.
+func TestStripeWebhook(t *testing.T) {
 	cfg := server.Config{
 		StripeSecretKey:     testStripeSecretKey,
 		StripeWebhookSecret: testStripeWebhookKey,
@@ -340,55 +119,237 @@ func TestStripeWebhook_AsyncPayment(t *testing.T) {
 	ts, db, orgID, cleanup := seedPurchaseStack(t, cfg)
 	defer cleanup()
 
-	seed := func() int64 {
-		var id int64
+	t.Run("rejects bad signature", func(t *testing.T) {
+		body := []byte(`{"id":"evt_1","type":"checkout.session.completed","data":{"object":{}}}`)
+
+		// Missing header.
+		if status, _ := postWebhook(t, ts, body, ""); status != http.StatusBadRequest {
+			t.Fatalf("missing sig = %d, want 400", status)
+		}
+
+		// Wrong secret.
+		wrongSig := stripeSign(t, body, "whsec_wrong")
+		if status, _ := postWebhook(t, ts, body, wrongSig); status != http.StatusBadRequest {
+			t.Fatalf("wrong-secret sig = %d, want 400", status)
+		}
+
+		// Tampered body — signature is valid for a different payload.
+		goodSig := stripeSign(t, body, testStripeWebhookKey)
+		if status, _ := postWebhook(t, ts, []byte(`{"id":"tampered"}`), goodSig); status != http.StatusBadRequest {
+			t.Fatalf("tampered body = %d, want 400", status)
+		}
+	})
+
+	t.Run("checkout completed", func(t *testing.T) {
+		// Boss creates a pending stripe-flagged purchase row directly. We
+		// can't go through CreatePurchase here because that would call out
+		// to Stripe to mint a Checkout Session; the webhook test only
+		// exercises the inbound side.
+		c := newClient(t, ts)
+		if s := c.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
+			t.Fatalf("login = %d", s)
+		}
+		var purchaseID int64
 		if err := db.QueryRow(`
-			INSERT INTO purchases(org_id, adventure_slug, max_players, amount_cents, currency, provider, state)
-			VALUES ($1, 'demo', 20, 2500, 'EUR', 'stripe', 'pending') RETURNING id
-		`, orgID).Scan(&id); err != nil {
+			INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
+			                     amount_cents, currency, provider, state)
+			VALUES ($1, (SELECT id FROM users WHERE username = 'boss'), 'demo', 20,
+			        2500, 'EUR', 'stripe', 'pending')
+			RETURNING id
+		`, orgID).Scan(&purchaseID); err != nil {
 			t.Fatalf("seed purchase: %v", err)
 		}
-		return id
-	}
-	deliver := func(evtID, typ, sessID, status string, purchaseID int64) {
-		body := eventEnvelope(t, evtID, typ, map[string]any{
-			"id": sessID, "object": "checkout.session",
-			"amount_total": 2500, "amount_subtotal": 2500, "currency": "eur", "payment_status": status,
-			"metadata": map[string]string{"zv_purchase_id": fmt.Sprintf("%d", purchaseID)},
-		})
-		if code, msg := postWebhook(t, ts, body, stripeSign(t, body, testStripeWebhookKey)); code != http.StatusOK {
-			t.Fatalf("%s = %d (%s), want 200", typ, code, msg)
+
+		body := eventEnvelope(t, "evt_test_completed_1", "checkout.session.completed",
+			map[string]any{
+				"id":              "cs_test_abc",
+				"object":          "checkout.session",
+				"amount_total":    2500,
+				"amount_subtotal": 2500,
+				"currency":        "eur",
+				"payment_status":  "paid",
+				"metadata": map[string]string{
+					"zv_purchase_id": fmt.Sprintf("%d", purchaseID),
+				},
+			})
+		sig := stripeSign(t, body, testStripeWebhookKey)
+		if status, msg := postWebhook(t, ts, body, sig); status != http.StatusOK {
+			t.Fatalf("status = %d (%s), want 200", status, msg)
 		}
-	}
-	stateOf := func(id int64) string {
-		var st string
-		if err := db.QueryRow(`SELECT state FROM purchases WHERE id = $1`, id).Scan(&st); err != nil {
+
+		// Purchase should be paid with an assignment id and the provider
+		// session id stamped.
+		var (
+			state  string
+			assID  *int64
+			sessID *string
+		)
+		if err := db.QueryRow(
+			`SELECT state, assignment_id, provider_session_id FROM purchases WHERE id = $1`, purchaseID,
+		).Scan(&state, &assID, &sessID); err != nil {
 			t.Fatalf("readback: %v", err)
 		}
-		return st
-	}
+		if state != "paid" {
+			t.Fatalf("state = %q, want paid", state)
+		}
+		if assID == nil || *assID == 0 {
+			t.Fatalf("expected assignment_id")
+		}
+		if sessID == nil || *sessID != "cs_test_abc" {
+			t.Fatalf("provider_session_id = %v, want cs_test_abc", sessID)
+		}
 
-	ok := seed()
-	deliver("evt_async_1", "checkout.session.completed", "cs_async_ok", "unpaid", ok)
-	if st := stateOf(ok); st != "pending" {
-		t.Fatalf("after unpaid completion state = %q, want pending", st)
-	}
-	deliver("evt_async_2", "checkout.session.async_payment_succeeded", "cs_async_ok", "paid", ok)
-	if st := stateOf(ok); st != "paid" {
-		t.Fatalf("after async success state = %q, want paid", st)
-	}
+		// Idempotency: redelivering the *same* event id is a no-op — no
+		// new assignment row, state unchanged. Other subtests grant to
+		// the same org, so count against this subtest's own baseline.
+		countAssignments := func() int {
+			t.Helper()
+			var n int
+			if err := db.QueryRow(
+				`SELECT COUNT(*) FROM adventure_assignments WHERE org_id = $1 AND adventure_slug = 'demo'`, orgID,
+			).Scan(&n); err != nil {
+				t.Fatalf("count: %v", err)
+			}
+			return n
+		}
+		before := countAssignments()
+		if status, _ := postWebhook(t, ts, body, sig); status != http.StatusOK {
+			t.Fatalf("redelivery = %d, want 200", status)
+		}
+		if n := countAssignments(); n != before {
+			t.Fatalf("assignment count = %d after redelivery, want %d", n, before)
+		}
+		var afterAssID *int64
+		if err := db.QueryRow(
+			`SELECT state, assignment_id FROM purchases WHERE id = $1`, purchaseID,
+		).Scan(&state, &afterAssID); err != nil {
+			t.Fatalf("readback after redelivery: %v", err)
+		}
+		if state != "paid" || afterAssID == nil || *afterAssID != *assID {
+			t.Fatalf("after redelivery: state=%q assignment=%v, want paid / %d", state, afterAssID, *assID)
+		}
+	})
 
-	bad := seed()
-	deliver("evt_async_3", "checkout.session.completed", "cs_async_bad", "unpaid", bad)
-	deliver("evt_async_4", "checkout.session.async_payment_failed", "cs_async_bad", "unpaid", bad)
-	if st := stateOf(bad); st != "failed" {
-		t.Fatalf("after async failure state = %q, want failed", st)
-	}
-	// A late failure for an already-paid purchase must not undo it.
-	deliver("evt_async_5", "checkout.session.async_payment_failed", "cs_async_ok", "unpaid", ok)
-	if st := stateOf(ok); st != "paid" {
-		t.Fatalf("late failure flipped paid purchase to %q", st)
-	}
+	t.Run("checkout completed for unknown purchase", func(t *testing.T) {
+		// Metadata pointing at a nonexistent purchase row should still
+		// 200 — the handler treats it as "not ours, skip" so Stripe doesn't
+		// retry forever.
+		body := eventEnvelope(t, "evt_test_orphan_1", "checkout.session.completed",
+			map[string]any{
+				"id":             "cs_orphan",
+				"object":         "checkout.session",
+				"payment_status": "paid",
+				"metadata": map[string]string{
+					"zv_purchase_id": "999999",
+				},
+			})
+		sig := stripeSign(t, body, testStripeWebhookKey)
+		if status, msg := postWebhook(t, ts, body, sig); status != http.StatusOK {
+			t.Fatalf("status = %d (%s), want 200", status, msg)
+		}
+	})
+
+	t.Run("charge refunded", func(t *testing.T) {
+		// Seed a paid purchase with a known stripe_charge_id so the refund
+		// handler has something to flip.
+		var purchaseID int64
+		if err := db.QueryRow(`
+			INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
+			                     amount_cents, currency, provider, state, stripe_charge_id, paid_at)
+			VALUES ($1, (SELECT id FROM users WHERE username = 'boss'), 'demo', 16,
+			        500, 'EUR', 'stripe', 'paid', 'ch_test_xyz', now_text())
+			RETURNING id
+		`, orgID).Scan(&purchaseID); err != nil {
+			t.Fatalf("seed paid: %v", err)
+		}
+
+		body := eventEnvelope(t, "evt_test_refunded_1", "charge.refunded",
+			map[string]any{
+				"id":              "ch_test_xyz",
+				"object":          "charge",
+				"amount":          200,
+				"amount_refunded": 200,
+				"refunded":        true,
+			})
+		sig := stripeSign(t, body, testStripeWebhookKey)
+		if status, msg := postWebhook(t, ts, body, sig); status != http.StatusOK {
+			t.Fatalf("status = %d (%s), want 200", status, msg)
+		}
+
+		var state string
+		if err := db.QueryRow(`SELECT state FROM purchases WHERE id = $1`, purchaseID).Scan(&state); err != nil {
+			t.Fatalf("readback: %v", err)
+		}
+		if state != "refunded" {
+			t.Fatalf("state = %q, want refunded", state)
+		}
+	})
+
+	t.Run("unhandled event type", func(t *testing.T) {
+		// Event types we don't subscribe to should still 200 so Stripe
+		// doesn't redrive forever.
+		body := eventEnvelope(t, "evt_test_unhandled_1", "customer.created",
+			map[string]any{"id": "cus_x", "object": "customer"})
+		sig := stripeSign(t, body, testStripeWebhookKey)
+		if status, _ := postWebhook(t, ts, body, sig); status != http.StatusOK {
+			t.Fatalf("status = %d, want 200", status)
+		}
+	})
+
+	// An async payment method completes the session "unpaid": nothing is
+	// granted until async_payment_succeeded, and async_payment_failed
+	// marks the purchase failed.
+	t.Run("async payment", func(t *testing.T) {
+		seed := func() int64 {
+			var id int64
+			if err := db.QueryRow(`
+				INSERT INTO purchases(org_id, adventure_slug, max_players, amount_cents, currency, provider, state)
+				VALUES ($1, 'demo', 20, 2500, 'EUR', 'stripe', 'pending') RETURNING id
+			`, orgID).Scan(&id); err != nil {
+				t.Fatalf("seed purchase: %v", err)
+			}
+			return id
+		}
+		deliver := func(evtID, typ, sessID, status string, purchaseID int64) {
+			body := eventEnvelope(t, evtID, typ, map[string]any{
+				"id": sessID, "object": "checkout.session",
+				"amount_total": 2500, "amount_subtotal": 2500, "currency": "eur", "payment_status": status,
+				"metadata": map[string]string{"zv_purchase_id": fmt.Sprintf("%d", purchaseID)},
+			})
+			if code, msg := postWebhook(t, ts, body, stripeSign(t, body, testStripeWebhookKey)); code != http.StatusOK {
+				t.Fatalf("%s = %d (%s), want 200", typ, code, msg)
+			}
+		}
+		stateOf := func(id int64) string {
+			var st string
+			if err := db.QueryRow(`SELECT state FROM purchases WHERE id = $1`, id).Scan(&st); err != nil {
+				t.Fatalf("readback: %v", err)
+			}
+			return st
+		}
+
+		ok := seed()
+		deliver("evt_async_1", "checkout.session.completed", "cs_async_ok", "unpaid", ok)
+		if st := stateOf(ok); st != "pending" {
+			t.Fatalf("after unpaid completion state = %q, want pending", st)
+		}
+		deliver("evt_async_2", "checkout.session.async_payment_succeeded", "cs_async_ok", "paid", ok)
+		if st := stateOf(ok); st != "paid" {
+			t.Fatalf("after async success state = %q, want paid", st)
+		}
+
+		bad := seed()
+		deliver("evt_async_3", "checkout.session.completed", "cs_async_bad", "unpaid", bad)
+		deliver("evt_async_4", "checkout.session.async_payment_failed", "cs_async_bad", "unpaid", bad)
+		if st := stateOf(bad); st != "failed" {
+			t.Fatalf("after async failure state = %q, want failed", st)
+		}
+		// A late failure for an already-paid purchase must not undo it.
+		deliver("evt_async_5", "checkout.session.async_payment_failed", "cs_async_ok", "unpaid", ok)
+		if st := stateOf(ok); st != "paid" {
+			t.Fatalf("late failure flipped paid purchase to %q", st)
+		}
+	})
 }
 
 // stubStripeAPI points stripe-go at a local server for the test: a

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -274,34 +273,47 @@ func TestHub_EventTopicFormat(t *testing.T) {
 }
 
 func TestCoalesce_BurstCollapses(t *testing.T) {
+	const interval = 100 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	events := make(chan []byte, 16)
-	var pushes atomic.Int32
-	done := make(chan struct{})
-	go func() {
-		ws.Coalesce(ctx, events, 100*time.Millisecond, func() { pushes.Add(1) })
-		close(done)
-	}()
-
+	// Queue the whole burst before Coalesce starts so it lands inside
+	// the first cooldown no matter how the goroutines are scheduled.
 	for i := 0; i < 10; i++ {
 		events <- nil
 	}
-	time.Sleep(50 * time.Millisecond)
-	if got := pushes.Load(); got != 1 {
-		t.Fatalf("pushes after burst = %d, want 1 (leading edge)", got)
+	pushes := make(chan struct{}, 16)
+	done := make(chan struct{})
+	go func() {
+		ws.Coalesce(ctx, events, interval, func() { pushes <- struct{}{} })
+		close(done)
+	}()
+
+	waitPush := func(what string) {
+		t.Helper()
+		select {
+		case <-pushes:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("no push: %s", what)
+		}
 	}
-	time.Sleep(250 * time.Millisecond)
-	if got := pushes.Load(); got != 2 {
-		t.Fatalf("pushes after cooldown = %d, want 2 (one trailing)", got)
+	noPush := func(what string) {
+		t.Helper()
+		select {
+		case <-pushes:
+			t.Fatalf("unexpected push: %s", what)
+		case <-time.After(interval + interval/2):
+		}
 	}
 
-	// A lone wake-up after a quiet spell pushes straight away.
+	waitPush("leading edge of burst")
+	waitPush("one trailing push for the rest of the burst")
+	noPush("burst should collapse to leading + one trailing")
+
+	// A lone wake-up after a quiet spell pushes once, with no trailing.
 	events <- nil
-	time.Sleep(50 * time.Millisecond)
-	if got := pushes.Load(); got != 3 {
-		t.Fatalf("pushes after lone wake-up = %d, want 3", got)
-	}
+	waitPush("lone wake-up")
+	noPush("lone wake-up should not trail")
 
 	cancel()
 	select {

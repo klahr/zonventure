@@ -65,12 +65,12 @@ func TestHTTPMiddlewareExtendDeadlines(t *testing.T) {
 	mw := HTTPMiddleware(func(*http.Request) string { return "/slow" })
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		httpx.ExtendDeadlines(w, 5*time.Second)
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(80 * time.Millisecond)
 		_, _ = w.Write([]byte("ok"))
 	}))
 
 	ts := httptest.NewUnstartedServer(handler)
-	ts.Config.WriteTimeout = 100 * time.Millisecond
+	ts.Config.WriteTimeout = 20 * time.Millisecond
 	ts.Start()
 	defer ts.Close()
 

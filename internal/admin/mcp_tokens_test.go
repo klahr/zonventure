@@ -61,6 +61,7 @@ func postCreateToken(t *testing.T, h *admin.Handlers, me auth.User, body any) *h
 // ['read','write'] set, matching the column DEFAULT. Old clients
 // keep working without a code change.
 func TestCreateMCPToken_DefaultScopes(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	me := seedMCPUser(t, db)
@@ -97,6 +98,7 @@ func TestCreateMCPToken_DefaultScopes(t *testing.T) {
 // narrowed set, so the MCP gate will refuse write tools when this
 // token is presented.
 func TestCreateMCPToken_ReadOnly(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	me := seedMCPUser(t, db)
@@ -130,6 +132,7 @@ func TestCreateMCPToken_ReadOnly(t *testing.T) {
 // caller fishing for future scope names gets a 400 with a clear
 // message rather than silently storing the unknown string.
 func TestCreateMCPToken_RejectsUnknownScope(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	me := seedMCPUser(t, db)

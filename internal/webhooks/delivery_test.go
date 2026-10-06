@@ -64,6 +64,7 @@ func seedEndpoint(t *testing.T, db *sql.DB, url string, eventKinds []string) (en
 // pending row to delivered, records last_status=200, attempts=1,
 // stamps delivered_at, and clears last_error.
 func TestWorker_DeliveredOnSuccess(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -153,6 +154,7 @@ func TestWorker_DeliveredOnSuccess(t *testing.T) {
 // pending, increments attempts, records last_status=500, advances
 // next_attempt_at by the first backoff slot (1 minute).
 func TestWorker_RetryOnNon2xx(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -214,6 +216,7 @@ func TestWorker_RetryOnNon2xx(t *testing.T) {
 // MaxAttempts-1 transitions to dead on the next failed attempt and
 // stops being picked up.
 func TestWorker_DeadLetterAfterMaxAttempts(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -277,6 +280,7 @@ func TestWorker_DeadLetterAfterMaxAttempts(t *testing.T) {
 // transitions to dead with last_error="endpoint disabled" and the
 // customer's URL is never hit.
 func TestWorker_DisabledEndpointDeadletters(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 

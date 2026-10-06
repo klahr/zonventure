@@ -128,6 +128,7 @@ func TestDuplicateAdventure_HappyPath(t *testing.T) {
 // regresses, the role-tightening shipped earlier has been quietly
 // undone.
 func TestDuplicateAdventure_OrgMemberRejected(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -176,6 +177,7 @@ func TestDuplicateAdventure_OrgMemberRejected(t *testing.T) {
 // belonging to a different org just because they happen to know the
 // slug. Stops cross-org content theft via the duplicate endpoint.
 func TestDuplicateAdventure_CrossOrgPrivateRejected(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 

@@ -24,34 +24,11 @@ func getRaw(t *testing.T, c *client, path string) (int, string) {
 	return resp.StatusCode, string(body)
 }
 
-func TestTeamShare_CreateTeamMintsToken(t *testing.T) {
-	ts, assignmentID, cleanup := newTestServer(t)
-	defer cleanup()
-
-	arr, _, _, eventID := setupRun(t, ts, assignmentID)
-
-	// Read the event detail — the team row should carry a non-empty token.
-	var detail struct {
-		Teams []struct {
-			ID    int64  `json:"id"`
-			Token string `json:"token"`
-		} `json:"teams"`
-	}
-	if s := arr.do("GET", "/api/admin/events/"+itoa(eventID), nil, &detail); s != 200 {
-		t.Fatalf("run detail = %d", s)
-	}
-	if len(detail.Teams) != 1 {
-		t.Fatalf("expected 1 team, got %d", len(detail.Teams))
-	}
-	if detail.Teams[0].Token == "" {
-		t.Fatalf("team.token is empty — CreateTeam didn't mint one")
-	}
-}
-
 func TestTeamShare_PageRendersSlots(t *testing.T) {
-	// End-to-end: the captain opens /team/{token} with no session and
-	// sees a page that names the team, the adventure, and links to each
-	// slot's magic-link URL.
+	// End-to-end: CreateTeam mints the team a share token; the captain
+	// opens /team/{token} with no session and sees a page that names the
+	// team, the adventure, and links to each slot's magic-link URL. An
+	// unknown token is a 404.
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
 
@@ -68,7 +45,13 @@ func TestTeamShare_PageRendersSlots(t *testing.T) {
 	if s := arr.do("GET", "/api/admin/events/"+itoa(eventID), nil, &detail); s != 200 {
 		t.Fatalf("run detail = %d", s)
 	}
+	if len(detail.Teams) != 1 {
+		t.Fatalf("expected 1 team, got %d", len(detail.Teams))
+	}
 	team := detail.Teams[0]
+	if team.Token == "" {
+		t.Fatalf("team.token is empty — CreateTeam didn't mint one")
+	}
 
 	// Unauthenticated fetch of /team/{token} — the captain gets the URL
 	// from the arranger and has no session of their own.
@@ -92,14 +75,8 @@ func TestTeamShare_PageRendersSlots(t *testing.T) {
 			t.Errorf("team page missing link for %s", m.Name)
 		}
 	}
-}
 
-func TestTeamShare_UnknownToken404(t *testing.T) {
-	ts, _, cleanup := newTestServer(t)
-	defer cleanup()
-	anon := newClient(t, ts)
-	status, _ := getRaw(t, anon, "/team/doesnotexist")
-	if status != 404 {
+	if status, _ := getRaw(t, anon, "/team/doesnotexist"); status != 404 {
 		t.Errorf("unknown team token = %d, want 404", status)
 	}
 }

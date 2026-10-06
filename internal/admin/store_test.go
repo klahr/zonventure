@@ -21,6 +21,7 @@ import (
 // with public_for_sale=true AND a non-NULL price AND state in
 // (running, paused) appear. Other rows must NOT leak.
 func TestStoreList_Filtering(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -91,6 +92,7 @@ func TestStoreList_Filtering(t *testing.T) {
 // can deterministically exercise the 4xx paths even on a server
 // without keys.
 func TestBuyTicket_RejectsBadInput(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -130,6 +132,7 @@ func TestBuyTicket_RejectsBadInput(t *testing.T) {
 // + N slots are created, the purchase row flips to paid, and the
 // buyer receives one email.
 func TestHandleTicketCheckoutCompleted_HappyPath(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -249,6 +252,7 @@ func TestHandleTicketCheckoutCompleted_HappyPath(t *testing.T) {
 // row flips to refunded, and the team it created is withdrawn so
 // the buyer can no longer act on the magic link.
 func TestHandleChargeRefunded_TicketWithdrawsTeam(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -314,6 +318,7 @@ func TestHandleChargeRefunded_TicketWithdrawsTeam(t *testing.T) {
 // charge.refunded fires for every refund delta, so the handler
 // has to read amount/amount_refunded/refunded and gate.
 func TestHandleChargeRefunded_PartialDoesNotWithdraw(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -383,6 +388,7 @@ func TestHandleChargeRefunded_PartialDoesNotWithdraw(t *testing.T) {
 // pre-fix handler dispatched on event.Type alone and would create
 // the team on an unpaid session.
 func TestHandleTicketCheckoutCompleted_RejectsUnpaid(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 

@@ -54,13 +54,15 @@ func TestPresenceVisitExpires(t *testing.T) {
 	ch, unsub := h.Subscribe(ws.LiveTopic("adventure:2"))
 	defer unsub()
 	p := ws.Peer{ID: ws.AssistantPeerID(7), UserID: 7, Kind: ws.PeerAssistant, Touched: []string{"a"}}
-	h.Visit("adventure:2", p, 30*time.Millisecond)
+	h.Visit("adventure:2", p, 50*time.Millisecond)
 	recvTimeout(t, ch, time.Second)
 	// A second visit restarts the clock rather than racing the first.
-	time.Sleep(15 * time.Millisecond)
-	h.Visit("adventure:2", p, 60*time.Millisecond)
+	// Margins are generous on both sides (refresh well inside the first
+	// ttl, check well inside the second) so a slow scheduler under
+	// -race can't flip the outcome.
+	h.Visit("adventure:2", p, 250*time.Millisecond)
 	recvTimeout(t, ch, time.Second)
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	if len(h.Peers("adventure:2")) != 1 {
 		t.Fatal("assistant left before its refreshed visit ran out")
 	}

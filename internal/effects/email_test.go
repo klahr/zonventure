@@ -26,6 +26,7 @@ func (f *fakeMailer) Send(_ context.Context, m mailer.Message) error {
 }
 
 func TestEmailDelivered(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	_, _, id := queueEffect(t, db, "email", Email{Subject: "{{team}} rang the bell", Body: "In {{event}}, at {{step}}.", Step: "The bell"}, "captain@example.com")
@@ -59,6 +60,7 @@ func TestEmailDelivered(t *testing.T) {
 // A team without an address will not gain one by waiting, so the email
 // is given up on at once instead of retried for a day.
 func TestEmailWithoutAddressGivesUp(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	_, _, id := queueEffect(t, db, "email", Email{Subject: "s", Body: "b"}, "")
@@ -77,6 +79,7 @@ func TestEmailWithoutAddressGivesUp(t *testing.T) {
 }
 
 func TestEmailMailerFailureRetries(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	_, _, id := queueEffect(t, db, "email", Email{Subject: "s", Body: "b"}, "captain@example.com")

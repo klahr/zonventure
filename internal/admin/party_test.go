@@ -182,6 +182,7 @@ func (f *partyFixture) host(t *testing.T, token string) hostView {
 // booked and starts, and a team at the zone's step is let in by
 // scanning that card — not by where it stands.
 func TestParty_BookHostAndPlay(t *testing.T) {
+	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
 
@@ -289,6 +290,7 @@ func TestParty_BookHostAndPlay(t *testing.T) {
 // TestParty_OfferRefusesUnplayable keeps an adventure that asks where
 // each player stands out of parties: cards put a team in one place.
 func TestParty_OfferRefusesUnplayable(t *testing.T) {
+	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
 	var advID int64
@@ -314,6 +316,7 @@ func TestParty_OfferRefusesUnplayable(t *testing.T) {
 
 // TestParty_BookingValidation covers the refusals a public form meets.
 func TestParty_BookingValidation(t *testing.T) {
+	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
 	w := call(t, f.console, "PUT", "/api/admin/party-offers/treasure", map[string]any{
@@ -343,6 +346,7 @@ func TestParty_BookingValidation(t *testing.T) {
 // TestParty_RefundCancelsAndResendRotates: a refunded party is called
 // off, and a resent host link replaces the old one.
 func TestParty_RefundCancelsAndResendRotates(t *testing.T) {
+	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
 	purchaseID, token := f.book(t, 3)
@@ -383,6 +387,7 @@ func (l fixedLocator) Position(context.Context, play.Querier, int64) (float64, f
 // them — the birthday child's name, the answer — and moves the
 // adventure to their park; the party plays exactly that, by GPS.
 func TestParty_PersonaliseAndPark(t *testing.T) {
+	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
 	var advID int64

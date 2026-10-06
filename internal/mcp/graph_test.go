@@ -14,6 +14,7 @@ import (
 )
 
 func TestGraphTools_AreRegisteredWithCorrectScope(t *testing.T) {
+	t.Parallel()
 	s := &Server{tools: newRegistry()}
 	s.registerGraphTools()
 
@@ -35,6 +36,7 @@ func TestGraphTools_AreRegisteredWithCorrectScope(t *testing.T) {
 }
 
 func TestGraphTools_ArgValidation(t *testing.T) {
+	t.Parallel()
 	s := &Server{tools: newRegistry()}
 	ctx := context.Background()
 	for name, call := range map[string]func() (ToolCallResult, error){
@@ -65,6 +67,7 @@ func TestGraphTools_ArgValidation(t *testing.T) {
 // End to end through the real admin handler: save a graph, publish it,
 // and have a broken one refused — the loop an assistant uses.
 func TestGraphTools_SavePublish(t *testing.T) {
+	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 

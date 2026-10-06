@@ -22,6 +22,7 @@ import (
 // the archive: the import gets its own media rows and a published graph
 // whose picture block shows the same picture.
 func TestPortabilityGraphRoundTrip(t *testing.T) {
+	t.Parallel()
 	db, _, user, pic, snd := graphFixture(t, "graphy")
 	ctx := context.Background()
 
@@ -106,6 +107,7 @@ func TestPortabilityGraphRoundTrip(t *testing.T) {
 // editor — pages and no graph — since nothing can play it, and still
 // imports an adventure with neither, as an empty one to design.
 func TestImportClassicEnvelopeRefused(t *testing.T) {
+	t.Parallel()
 	db, _, user, _, _ := graphFixture(t, "graphy")
 	ctx := context.Background()
 	manifest := `{"format":"zonventure-adventure-v1","exported_at":"2026-01-01T00:00:00Z",
@@ -130,6 +132,7 @@ func TestImportClassicEnvelopeRefused(t *testing.T) {
 // TestImportEnvelopeGraphMediaMissing refuses a graph whose media is not
 // in the archive — as the MCP path, which has no archive, must.
 func TestImportEnvelopeGraphMediaMissing(t *testing.T) {
+	t.Parallel()
 	db, srcID, user, _, _ := graphFixture(t, "graphy")
 	ctx := context.Background()
 	manifest, err := admin.ExportAdventureEnvelopeJSON(ctx, db, srcID)
