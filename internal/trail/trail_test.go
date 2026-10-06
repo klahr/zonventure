@@ -122,9 +122,14 @@ func TestTemplates(t *testing.T) {
 	}
 }
 
+// TestCover: every look the party adventure creator offers
+// (web/packages/trail/src/themes.ts TRAIL_THEMES) has its print picture.
 func TestCover(t *testing.T) {
-	if len(Cover("unicorn")) == 0 {
-		t.Error("no cover for unicorn")
+	for _, id := range []string{"party", "sunshine", "candy", "rainbow", "unicorn", "ice-cream", "jungle",
+		"pirate", "ocean", "space", "detective", "retro-80s", "office", "pen-and-paper"} {
+		if len(Cover(id)) == 0 {
+			t.Errorf("no cover for %s", id)
+		}
 	}
 	for _, id := range []string{"", "nope", "../trail"} {
 		if Cover(id) != nil {

@@ -1,8 +1,9 @@
 /**
  * A starter theme's cover picture (STARTER_THEMES id), 16:9: small (800
  * px wide, a card's backdrop) and wide (1600 px, a page's banner). Its
- * subject is on the right, its left side calm, for text. Not every theme
- * has one yet. Print takes its own copy: internal/trail/covers.
+ * subject is on the right, its left side calm, for text. Every theme the
+ * party adventure creator offers has one (THEMES.md, made with
+ * `make theme-cover`). Print takes its own copy: internal/trail/covers.
  */
 export interface ThemeCover {
   small: string;
@@ -13,5 +14,57 @@ export const THEME_COVERS: Record<string, ThemeCover> = {
   unicorn: {
     small: new URL("./covers/unicorn-800.webp", import.meta.url).href,
     wide: new URL("./covers/unicorn-1600.webp", import.meta.url).href,
+  },
+  candy: {
+    small: new URL("./covers/candy-800.webp", import.meta.url).href,
+    wide: new URL("./covers/candy-1600.webp", import.meta.url).href,
+  },
+  detective: {
+    small: new URL("./covers/detective-800.webp", import.meta.url).href,
+    wide: new URL("./covers/detective-1600.webp", import.meta.url).href,
+  },
+  "ice-cream": {
+    small: new URL("./covers/ice-cream-800.webp", import.meta.url).href,
+    wide: new URL("./covers/ice-cream-1600.webp", import.meta.url).href,
+  },
+  jungle: {
+    small: new URL("./covers/jungle-800.webp", import.meta.url).href,
+    wide: new URL("./covers/jungle-1600.webp", import.meta.url).href,
+  },
+  ocean: {
+    small: new URL("./covers/ocean-800.webp", import.meta.url).href,
+    wide: new URL("./covers/ocean-1600.webp", import.meta.url).href,
+  },
+  office: {
+    small: new URL("./covers/office-800.webp", import.meta.url).href,
+    wide: new URL("./covers/office-1600.webp", import.meta.url).href,
+  },
+  "pen-and-paper": {
+    small: new URL("./covers/pen-and-paper-800.webp", import.meta.url).href,
+    wide: new URL("./covers/pen-and-paper-1600.webp", import.meta.url).href,
+  },
+  space: {
+    small: new URL("./covers/space-800.webp", import.meta.url).href,
+    wide: new URL("./covers/space-1600.webp", import.meta.url).href,
+  },
+  party: {
+    small: new URL("./covers/party-800.webp", import.meta.url).href,
+    wide: new URL("./covers/party-1600.webp", import.meta.url).href,
+  },
+  pirate: {
+    small: new URL("./covers/pirate-800.webp", import.meta.url).href,
+    wide: new URL("./covers/pirate-1600.webp", import.meta.url).href,
+  },
+  rainbow: {
+    small: new URL("./covers/rainbow-800.webp", import.meta.url).href,
+    wide: new URL("./covers/rainbow-1600.webp", import.meta.url).href,
+  },
+  "retro-80s": {
+    small: new URL("./covers/retro-80s-800.webp", import.meta.url).href,
+    wide: new URL("./covers/retro-80s-1600.webp", import.meta.url).href,
+  },
+  sunshine: {
+    small: new URL("./covers/sunshine-800.webp", import.meta.url).href,
+    wide: new URL("./covers/sunshine-1600.webp", import.meta.url).href,
   },
 };

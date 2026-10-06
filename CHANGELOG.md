@@ -13,7 +13,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ### Added — cover pictures for party adventure looks
 
-- **A look can have a cover picture**, starting with Unicorn. It shows
+- **Every party adventure look has a cover picture** (all 14, made with
+  Gemini from the prompts in THEMES.md). It shows
   behind the sample card on the start page (and the landing page's
   creator), across the top of the join page and the players' welcome,
   and as a banner on the printed cover with the QR code. The phone
@@ -22,6 +23,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 - Pictures live in `web/packages/play-ui/src/covers` (WebP, 800 and
   1600 px, `THEME_COVERS`) and `internal/trail/covers` (JPEG, for the
   PDF). `make theme-cover ID=… SRC=…` makes all three from one image.
+- The printed cover's title goes white, over a soft shadow, on a dark
+  picture (Space, Retro 80s, Detective), measured from the picture.
 - The join page no longer repeats the title above itself when the party
   and the adventure share a name.
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/jpeg"
 	"io"
 	"net/http"
 	"strings"
@@ -136,6 +137,25 @@ func trailPDFWords(lang string) trailWords {
 	}
 }
 
+// darkLeft is whether a cover picture's left side, where the title goes,
+// is dark (Space, Retro 80s): the title is then white.
+func darkLeft(jpg []byte) bool {
+	img, err := jpeg.Decode(bytes.NewReader(jpg))
+	if err != nil {
+		return false
+	}
+	b := img.Bounds()
+	var sum, n float64
+	for y := b.Min.Y + b.Dy()/5; y < b.Max.Y-b.Dy()/5; y += 8 {
+		for x := b.Min.X; x < b.Min.X+b.Dx()*45/100; x += 8 {
+			r, g, bl, _ := img.At(x, y).RGBA()
+			sum += 0.2126*float64(r>>8) + 0.7152*float64(g>>8) + 0.0722*float64(bl>>8)
+			n++
+		}
+	}
+	return n > 0 && sum/n < 110
+}
+
 // rgb is a colour for the PDF.
 type rgb struct{ r, g, b int }
 
@@ -244,10 +264,21 @@ func writeTrailCardsPDF(w io.Writer, p trailPrint) error {
 			pdf.ClipRoundedRectExt(12, 12, w, bannerH, 8, 8, 0, 0, false)
 			pdf.ImageOptions("cover", 12, 12-(h-bannerH)*0.12, w, h, false, fpdf.ImageOptions{ImageType: "JPG"}, 0, "")
 			pdf.ClipEnd()
-			accent.ink().shade(-0.45).text(pdf)
 			pdf.SetFont("Helvetica", "B", 26)
 			lines := pdf.SplitText(p.Title, w*0.42)
-			pdf.SetXY(margin+4, 12+bannerH/2-float64(len(lines))*11/2)
+			ty := 12 + bannerH/2 - float64(len(lines))*11/2
+			if darkLeft(p.Cover) {
+				// White, over a soft shadow, to hold on a busy picture.
+				pdf.SetAlpha(0.55, "Normal")
+				pdf.SetTextColor(20, 12, 8)
+				pdf.SetXY(margin+4.5, ty+0.6)
+				pdf.MultiCell(w*0.42, 11, text(p.Title), "", "L", false)
+				pdf.SetAlpha(1, "Normal")
+				pdf.SetTextColor(255, 255, 255)
+			} else {
+				accent.ink().shade(-0.45).text(pdf)
+			}
+			pdf.SetXY(margin+4, ty)
 			pdf.MultiCell(w*0.42, 11, text(p.Title), "", "L", false)
 			qy = 12 + bannerH + 14
 		} else {

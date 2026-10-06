@@ -3,8 +3,8 @@ package trail
 import "embed"
 
 // The starter themes' cover pictures, for print: a JPEG per theme id
-// (the web's own copies are in web/packages/play-ui/src/covers). Not
-// every theme has one yet.
+// (the web's own copies are in web/packages/play-ui/src/covers). See
+// THEMES.md.
 //
 //go:embed covers/*.jpg
 var covers embed.FS
