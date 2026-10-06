@@ -1,0 +1,17 @@
+/* Parties: the offers table, its edit dialog, and the adventures that can't be offered. */
+.dz .pt-actions { display: inline-flex; gap: 2px; }
+.dz .pt-price { align-items: flex-end; }
+
+/* Base price, per child, currency, most children: one row, two on a phone. */
+.dz .pt-terms { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--dz-space-3); }
+@media (max-width: 40rem) {
+  .dz .pt-terms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Named, not listed: one collapsed line until someone asks why. */
+.dz .pt-unavailable { margin-top: var(--dz-space-4); font-size: var(--dz-text-sm); color: var(--dz-muted); }
+.dz .pt-unavailable > summary { cursor: pointer; width: fit-content; }
+.dz .pt-unavailable > summary:hover { color: var(--dz-ink); }
+.dz .pt-unavailable ul { list-style: none; margin: var(--dz-space-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--dz-space-1); }
+.dz .pt-unavailable li { display: flex; flex-wrap: wrap; gap: 0 var(--dz-space-2); }
+.dz .pt-unavailable li strong { color: var(--dz-ink); font-weight: 500; }

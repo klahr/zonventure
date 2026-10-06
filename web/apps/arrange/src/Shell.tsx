@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from "react";
 import { createPortal } from "react-dom";
-import { Menu as MenuIcon, X, Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, Gift, LogOut, Map as MapIcon, Monitor, Moon, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
+import { Menu as MenuIcon, X, Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, Gift, LogOut, Map as MapIcon, Monitor, Moon, PartyPopper, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
 import { auth, emails, siteName, siteWordmark, type Whoami } from "@zonventure/api";
 import { readTheme, setTheme, type Theme } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
@@ -47,6 +47,7 @@ function reloadOnce(): boolean {
 const Designer = page(() => import("./designer/Designer.tsx"), "Designer");
 const EventsPage = page(() => import("./pages/events/index.tsx"), "EventsPage");
 const QuestsPage = page(() => import("./pages/events/index.tsx"), "QuestsPage");
+const PartiesPage = page(() => import("./pages/parties/index.tsx"), "PartiesPage");
 const EventPage = page(() => import("./pages/event/index.tsx"), "EventPage");
 const EventControlPage = page(() => import("./pages/control/index.tsx"), "EventControlPage");
 const AdventuresPage = page(() => import("./pages/adventures/index.tsx"), "AdventuresPage");
@@ -89,7 +90,7 @@ const ROLE: Record<Whoami["role"], string> = { admin: "Administrator", org_admin
  * before joining an organisation — only the way out. `adventures`
  * marks the section the designer belongs to.
  */
-type Section = "dashboard" | "organizations" | "logs" | "settings" | "adventures" | "events" | "quests" | "redemptions";
+type Section = "dashboard" | "organizations" | "logs" | "settings" | "adventures" | "events" | "quests" | "parties" | "redemptions";
 
 // Settings is not listed here: the account menu at the foot of the
 // sidebar leads there, on every screen.
@@ -108,6 +109,8 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
     item("Adventures", MapIcon, { name: "adventures" }, "adventures"),
     item("Events", CalendarDays, { name: "events" }, "events"),
     item("Self-guided", Compass, { name: "quests" }, "quests"),
+    // Party offers set prices, which only an org admin may do.
+    ...(user.role === "org_admin" ? [item("Parties", PartyPopper, { name: "parties" }, "parties")] : []),
     item("Box redemptions", Gift, { name: "redemptions" }, "redemptions"),
   ];
 }
@@ -128,6 +131,8 @@ function sectionOf(r: Route): { section: Section; label: string } {
       return { section: "events", label: "Events" };
     case "quests":
       return { section: "quests", label: "Self-guided" };
+    case "parties":
+      return { section: "parties", label: "Parties" };
     case "redemptions":
       return { section: "redemptions", label: "Box redemptions" };
     case "organizations":
@@ -152,6 +157,7 @@ function allowed(r: Route, user: Whoami): boolean {
   const s = sectionOf(r).section;
   if (user.role === "admin") return s === "dashboard" || s === "organizations" || s === "logs" || s === "settings";
   if (!user.memberships.length) return s === "dashboard" || s === "settings";
+  if (s === "parties") return user.role === "org_admin";
   return s !== "organizations" && s !== "logs";
 }
 
@@ -529,6 +535,8 @@ function Page({ route }: { route: Route }) {
       return <EventControlPage key={route.id} id={route.id} />;
     case "quests":
       return <QuestsPage />;
+    case "parties":
+      return <PartiesPage slug={route.slug} />;
     case "redemptions":
       return <RedemptionsPage tab={route.tab} />;
     case "organizations":

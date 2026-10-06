@@ -29,6 +29,7 @@ export type Route =
   | { name: "event"; id: number }
   | { name: "event-control"; id: number }
   | { name: "quests" }
+  | { name: "parties"; slug?: string }
   | { name: "redemptions"; tab?: string }
   | { name: "organizations" }
   | { name: "organization"; id: number }
@@ -85,6 +86,9 @@ export function parseRoute(hash: string): Route {
       const id = num(arg);
       return id ? { name: "event", id } : { name: "quests" };
     }
+    // "#/parties/<slug>" opens that adventure's offer over the list.
+    case "parties":
+      return arg ? { name: "parties", slug: arg } : { name: "parties" };
     case "redemptions":
       return arg ? { name: "redemptions", tab: arg } : { name: "redemptions" };
     case "organizations": {
@@ -94,6 +98,8 @@ export function parseRoute(hash: string): Route {
     case "logs":
       return { name: "logs" };
     case "settings":
+      // Parties was a Settings tab before it became its own section.
+      if (arg === "parties") return { name: "parties" };
       return arg ? { name: "settings", tab: arg } : { name: "settings" };
     // Old top-level sections that became Settings tabs.
     case "members":
@@ -140,6 +146,8 @@ export function href(r: Route): string {
       return `#/events/${r.id}/control`;
     case "quests":
       return "#/quests";
+    case "parties":
+      return r.slug ? `#/parties/${e(r.slug)}` : "#/parties";
     case "redemptions":
       return r.tab ? `#/redemptions/${e(r.tab)}` : "#/redemptions";
     case "organizations":

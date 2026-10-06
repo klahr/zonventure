@@ -11,6 +11,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- **Parties** has its own entry in the console sidebar, next to
+  Self-guided, instead of a Settings tab. Org admins only, as before;
+  old `#/settings/parties` links land on it.
+
 ## [0.17.0] - 2026-10-05
 
 ### Added — parties
