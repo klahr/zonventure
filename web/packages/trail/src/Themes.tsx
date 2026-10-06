@@ -1,26 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import type { I18n } from "@zonventure/i18n";
+import { THEME_COVERS } from "@zonventure/play-ui";
 import { CHOICES } from "./cards.ts";
 import { Icon } from "./Icons.tsx";
 import { TRAIL_THEMES, themeById, themeStyle, type TrailTheme } from "./themes.ts";
 
-/** The looks to pick from, each a little card in its own colours and font. */
-export function ThemePicker({ i18n, selected, onPick, busy }: { i18n: I18n; selected: string; onPick: (t: TrailTheme) => void; busy?: boolean }) {
+/**
+ * The looks to pick from, each a little card in its own colours and font,
+ * wrapped in rows (nothing to scroll). Compact, each is a swatch alone,
+ * named to screen readers and on hover: for beside a card that shows the
+ * look's name.
+ */
+export function ThemePicker({ i18n, selected, onPick, busy, compact }: { i18n: I18n; selected: string; onPick: (t: TrailTheme) => void; busy?: boolean; compact?: boolean }) {
   const t = i18n.t;
-  const strip = useRef<HTMLDivElement>(null);
-  // The chosen look stays in view. The strip scrolls, never the page:
-  // in a frame on the landing page, scrollIntoView would move it too.
-  useEffect(() => {
-    const el = strip.current?.querySelector<HTMLElement>(".trail-theme.is-on");
-    const box = strip.current;
-    if (!el || !box) return;
-    const left = el.offsetLeft - box.offsetLeft;
-    if (left < box.scrollLeft || left + el.offsetWidth > box.scrollLeft + box.clientWidth) {
-      box.scrollTo({ left: Math.max(0, left - 12), behavior: "smooth" });
-    }
-  }, [selected]);
   return (
-    <div className="trail-themes" ref={strip} role="radiogroup" aria-label={t("Look")}>
+    <div className={"trail-themes" + (compact ? " trail-themes--compact" : "")} role="radiogroup" aria-label={t("Look")}>
       {TRAIL_THEMES.map((th) => (
         <button
           key={th.id}
@@ -30,6 +24,7 @@ export function ThemePicker({ i18n, selected, onPick, busy }: { i18n: I18n; sele
           className={"trail-theme" + (th.id === selected ? " is-on" : "")}
           disabled={busy}
           style={themeStyle(th.look)}
+          title={compact ? t(th.label) : undefined}
           onClick={() => onPick(th)}
         >
           <span className="trail-theme__swatch">
@@ -107,7 +102,11 @@ export function ThemeShowcase({ i18n, value, onChange, sample }: { i18n: I18n; v
   const theme = themeById(value) ?? TRAIL_THEMES[0]!;
   return (
     <section className="trail-showcase" style={themeStyle(theme.look)} aria-label={t("Look")}>
-      <div className="trail-showcase__stage">
+      {/* A look with a cover picture shows the card in front of it. */}
+      <div
+        className={"trail-showcase__stage" + (THEME_COVERS[theme.id] ? " has-cover" : "")}
+        style={THEME_COVERS[theme.id] ? { backgroundImage: `url(${THEME_COVERS[theme.id]!.small})` } : undefined}
+      >
         <div className="trail-showcase__card" key={theme.id}>
           <PaperPreview i18n={i18n} number={1} {...sample} />
         </div>
@@ -117,7 +116,7 @@ export function ThemeShowcase({ i18n, value, onChange, sample }: { i18n: I18n; v
         </span>
       </div>
       <p className="trail-muted">{still ? t("Pick a look. You can change it any time.") : t("Trying on looks… tap one to keep it.")}</p>
-      <ThemePicker i18n={i18n} selected={theme.id} onPick={(th) => onChange(th.id)} />
+      <ThemePicker i18n={i18n} selected={theme.id} onPick={(th) => onChange(th.id)} compact />
     </section>
   );
 }

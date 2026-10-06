@@ -47,6 +47,25 @@ body {
   box-shadow: var(--shadow-sm);
   padding: var(--sp-5);
 }
+/* A party adventure's cover picture across the card's top, fading in. */
+.party-card--cover {
+  padding-top: 0;
+  overflow: hidden;
+}
+.party-cover {
+  position: relative;
+  height: min(52vw, 15rem);
+  margin: 0 calc(-1 * var(--sp-5)) var(--sp-2);
+  background-size: cover;
+  background-position: 75% 30%;
+}
+.party-cover::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 40%;
+  background: linear-gradient(transparent, var(--surface));
+}
 .party-card h1 {
   margin: 0 0 var(--sp-2);
   font-size: var(--text-xl);
@@ -439,6 +458,10 @@ a.party-btn {
 .party--embed {
   min-height: 100dvh;
   background: transparent;
+}
+/* Sized to its content: the landing page makes the frame as tall. */
+.party--fit {
+  min-height: 0;
 }
 html:has(.party--embed),
 html:has(.party--embed) body {

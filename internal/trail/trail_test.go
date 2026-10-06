@@ -121,3 +121,14 @@ func TestTemplates(t *testing.T) {
 		t.Error("unknown template")
 	}
 }
+
+func TestCover(t *testing.T) {
+	if len(Cover("unicorn")) == 0 {
+		t.Error("no cover for unicorn")
+	}
+	for _, id := range []string{"", "nope", "../trail"} {
+		if Cover(id) != nil {
+			t.Errorf("cover for %q", id)
+		}
+	}
+}

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { siteName } from "@zonventure/api";
 import { Book } from "./Book.tsx";
 import { Host } from "./Host.tsx";
@@ -5,7 +6,7 @@ import { Join } from "./Join.tsx";
 import { TrailEdit } from "./TrailEdit.tsx";
 import { TrailMine, TrailPaid, TrailStart, TrailVerify } from "./TrailPages.tsx";
 import { useT } from "./i18n.tsx";
-import { embedded } from "./embed.ts";
+import { embedded, fitFrame } from "./embed.ts";
 
 /**
  * The pages, by path: /app/party/book/{org}/{offer}, /app/party/host/{token},
@@ -37,8 +38,11 @@ export function route(path: string): Route {
 export function App() {
   const t = useT().t;
   const r = route(location.pathname);
+  const editing = r.page === "trail-edit" || r.page === "trail-host";
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => fitFrame(root.current!, editing ? "screen" : "content"), [editing]);
   return (
-    <div className={"party" + (r.page === "trail-edit" || r.page === "trail-host" ? " party--wide" : "") + (embedded ? " party--embed" : "")}>
+    <div ref={root} className={"party" + (editing ? " party--wide" : "") + (embedded ? " party--embed" + (editing ? "" : " party--fit") : "")}>
       {!embedded && (
         <header className="party-top">
           <a href="/" className="party-brand">

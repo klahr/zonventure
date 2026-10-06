@@ -208,6 +208,29 @@ body {
 .app-lobby p {
   margin: 0 0 var(--sp-3);
 }
+/* A party adventure's cover picture across the card's top, fading into
+   it; the title sits where it fades. */
+.app-lobby--cover {
+  padding-top: 0;
+  overflow: hidden;
+}
+.app-lobby__cover {
+  position: relative;
+  height: min(52vw, 16rem);
+  margin: 0 calc(-1 * var(--sp-5)) calc(-1 * var(--sp-4));
+  background-size: cover;
+  background-position: 75% 30%;
+}
+.app-lobby__cover::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 45%;
+  background: linear-gradient(transparent, var(--surface));
+}
+.app-lobby--cover h1 {
+  position: relative;
+}
 /* The author's welcome reads as a letter, not centred marketing copy. */
 .app-lobby__intro {
   margin: var(--sp-4) 0;

@@ -11,6 +11,40 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — cover pictures for party adventure looks
+
+- **A look can have a cover picture**, starting with Unicorn. It shows
+  behind the sample card on the start page (and the landing page's
+  creator), across the top of the join page and the players' welcome,
+  and as a banner on the printed cover with the QR code. The phone
+  learns the look from a new `theme` on the play state's event and the
+  join info (`adventures.trail_theme`).
+- Pictures live in `web/packages/play-ui/src/covers` (WebP, 800 and
+  1600 px, `THEME_COVERS`) and `internal/trail/covers` (JPEG, for the
+  PDF). `make theme-cover ID=… SRC=…` makes all three from one image.
+- The join page no longer repeats the title above itself when the party
+  and the adventure share a name.
+
+### Changed — the printed cards wear the look
+
+- **The cards PDF follows the adventure's look, easy on the printer**:
+  each card's header is the creator's gradient (the look's two colours,
+  as `--trail-brand`; information cards as `--trail-info`) with white
+  text and a white number badge; the rest of the card — outline,
+  options, hints — is plain grey and black. The cover matches. Fonts
+  stay Helvetica: the look's fonts exist only as web fonts.
+
+### Changed — less scrolling in the landing page's creator
+
+- **The creator's frame fits its content**: the start page tells the
+  landing page its height (a `zv-trail-frame` message, same origin), so
+  only the page scrolls; the editor asks for the screen's height and is
+  brought into view, its bar and card row pinned.
+- **Looks wrap in rows** instead of a sideways strip; on the start page
+  they are compact swatches, the name shown on the sample card.
+- The editor's card row no longer scrolls the landing page around the
+  frame when a card is selected.
+
 ## [0.19.1] - 2026-10-06
 
 ### Added — switch party adventures on per organisation

@@ -23,3 +23,20 @@ export function leave(url: string) {
 
 /** The target for a link that leaves the frame. */
 export const outside = embedded ? "_top" : undefined;
+
+/**
+ * How the landing page should size the frame, told by message (same
+ * origin): "content", as tall as the page, so only the landing page
+ * scrolls; "screen", the window's height, for the editor, whose bar and
+ * card row stay pinned. Not embedded, it does nothing.
+ */
+export function fitFrame(root: HTMLElement, mode: "content" | "screen"): () => void {
+  if (!embedded) return () => {};
+  const post = () =>
+    window.parent.postMessage({ type: "zv-trail-frame", mode, height: Math.ceil(root.getBoundingClientRect().height) }, location.origin);
+  post();
+  if (mode === "screen") return () => {};
+  const ro = new ResizeObserver(post);
+  ro.observe(root);
+  return () => ro.disconnect();
+}

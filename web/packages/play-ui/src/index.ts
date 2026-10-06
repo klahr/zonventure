@@ -16,3 +16,4 @@ export { StaticMap, project, unproject, TILE_URL, type MapPin, type MapPoint, ty
 export { bearing, metresBetween } from "./geo.ts";
 export { fractionAt } from "./pictures.ts";
 export { STARTER_GROUPS, STARTER_THEMES } from "./starterThemes.ts";
+export { THEME_COVERS, type ThemeCover } from "./covers.ts";

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Markdown, PlayView, StartCeremony, brandVars, formatSeconds, loadFont, metresBetween, useEngineClock, withTheme, type Translate } from "@zonventure/play-ui";
+import { Markdown, PlayView, StartCeremony, THEME_COVERS, brandVars, formatSeconds, loadFont, metresBetween, useEngineClock, withTheme, type Translate } from "@zonventure/play-ui";
 import { play, siteName } from "@zonventure/api";
 import { useT } from "./i18n.tsx";
 import { useGame } from "./useGame.ts";
@@ -283,8 +283,10 @@ function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
   if (state.event.state === "completed") {
     return <p>{t("This event has ended. Thanks for playing!")}</p>;
   }
+  const cover = THEME_COVERS[state.event.theme ?? ""];
   return (
-    <div className="app-lobby">
+    <div className={"app-lobby" + (cover ? " app-lobby--cover" : "")}>
+      {cover && <div className="app-lobby__cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
       <h1>{t("You're on team {{team}}", { team: state.team.name })}</h1>
       <p>
         {at && !Number.isNaN(at.getTime())
@@ -319,8 +321,10 @@ function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
 /** The welcome before the first step, for a player who joins a game already running. */
 function Intro({ state, t, usesLocation, onDone }: { state: play.PlayState; t: Translate; usesLocation: boolean; onDone: () => void }) {
   const name = state.me?.name;
+  const cover = THEME_COVERS[state.event.theme ?? ""];
   return (
-    <div className="app-lobby">
+    <div className={"app-lobby" + (cover ? " app-lobby--cover" : "")}>
+      {cover && <div className="app-lobby__cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
       <h1>{state.event.adventure_title || siteName()}</h1>
       <p>
         {name

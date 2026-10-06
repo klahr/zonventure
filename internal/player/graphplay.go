@@ -96,6 +96,9 @@ type PlayEvent struct {
 	// Cheat says the adventure has a cheat password, so the phone offers
 	// its hidden way to enter one.
 	Cheat bool `json:"cheat,omitempty"`
+	// Theme is the starter theme a party adventure's look was taken from
+	// (adventures.trail_theme), for the phone to show its cover picture.
+	Theme string `json:"theme,omitempty"`
 }
 
 // PlayStart is the adventure's meeting point. RadiusM is set when teams
@@ -186,6 +189,7 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	out.Event.AdventureTitle, out.Event.IntroText, out.Event.OutroText = look.title, look.intro, look.outro
 	out.Event.Start = look.start
 	out.Event.Cheat = look.cheat
+	out.Event.Theme = look.theme
 	if !look.brand.Empty() {
 		out.Brand = &look.brand
 	}
@@ -300,6 +304,7 @@ func (h *Handlers) finishOf(ctx context.Context, eventID, teamID int64) (*PlayFi
 // it.
 type look struct {
 	title, intro, outro string
+	theme               string
 	brand               adventure.Colors
 	start               *PlayStart
 	cheat               bool
@@ -318,10 +323,12 @@ func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
 		SELECT title, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font,
 		       heading_font, corners, cards, card_outline, backdrop, look_style,
-		       start_lat, start_lng, start_label, start_radius_m, (cheat_password IS NOT NULL), (avatar_mime_type IS NOT NULL)
+		       start_lat, start_lng, start_label, start_radius_m, (cheat_password IS NOT NULL), (avatar_mime_type IS NOT NULL),
+		       trail_theme
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&l.title, &l.intro, &l.outro, &accent, &second, &bg, &ink, &dock, &l.brand.Font,
-		&l.brand.HeadingFont, &l.brand.Corners, &l.brand.Cards, &l.brand.CardOutline, &backdrop, &style, &lat, &lng, &label, &radius, &l.cheat, &l.icon)
+		&l.brand.HeadingFont, &l.brand.Corners, &l.brand.Cards, &l.brand.CardOutline, &backdrop, &style, &lat, &lng, &label, &radius, &l.cheat, &l.icon,
+		&l.theme)
 	if errors.Is(err, sql.ErrNoRows) {
 		return look{}, nil
 	}

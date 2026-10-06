@@ -104,6 +104,8 @@ type joinInfoDTO struct {
 	AdventureTitle string `json:"adventure_title"`
 	OrgName        string `json:"org_name"`
 	Status         string `json:"status"`
+	// Theme is a party adventure's starter theme, for its cover picture.
+	Theme string `json:"theme,omitempty"`
 }
 
 // GetJoin is the join page's view of a hosted event.
@@ -117,10 +119,10 @@ func (h *Handlers) GetJoin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var out joinInfoDTO
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT e.party_name, COALESCE(NULLIF(a.title, ''), a.slug), o.name
+		SELECT e.party_name, COALESCE(NULLIF(a.title, ''), a.slug), o.name, a.trail_theme
 		FROM events e JOIN adventures a ON a.slug = e.adventure_slug JOIN organizations o ON o.id = e.org_id
 		WHERE e.id = $1
-	`, p.EventID).Scan(&out.Name, &out.AdventureTitle, &out.OrgName); err != nil {
+	`, p.EventID).Scan(&out.Name, &out.AdventureTitle, &out.OrgName, &out.Theme); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "game lookup failed", err)
 		return
 	}

@@ -1,6 +1,6 @@
 .PHONY: help up down rebuild logs psql reset seed run \
         test test-race vet tidy build major minor patch _bump latest upgrade \
-        web web-dev web-clean
+        web web-dev web-clean theme-cover
 
 # `make` alone prints the menu so a new contributor sees what's
 # available without grepping the file.
@@ -50,6 +50,8 @@ help:
 	@echo "    make web        Build the React apps into internal/server/web/dist"
 	@echo "    make web-dev    Vite dev server, proxying /api to :8080"
 	@echo "    make web-clean  Remove build output, keeping the committed stub"
+	@echo "    make theme-cover ID=pirate SRC=~/Downloads/pic.jpg"
+	@echo "                    A starter theme's cover picture, for web and print"
 	@echo ""
 	@echo "  Build & release"
 	@echo "    make build      Production binary (trimpath, stripped, static)"
@@ -166,6 +168,16 @@ web-dev:
 web-clean:
 	find internal/server/web/dist -mindepth 1 -maxdepth 1 \
 	  ! -name index.html -exec rm -rf {} +
+
+# theme-cover makes a starter theme's cover picture from a 16:9 source
+# (subject on the right, left side calm): web sizes for play-ui and a
+# JPEG for print. The theme then needs its line in play-ui's covers.ts.
+theme-cover:
+	@test -n "$(ID)" -a -f "$(SRC)" || { echo "usage: make theme-cover ID=<theme id> SRC=<image>"; exit 1; }
+	magick "$(SRC)" -resize 800x -quality 78 web/packages/play-ui/src/covers/$(ID)-800.webp
+	magick "$(SRC)" -resize 1600x -quality 80 web/packages/play-ui/src/covers/$(ID)-1600.webp
+	magick "$(SRC)" -resize 1800x -strip -quality 80 internal/trail/covers/$(ID).jpg
+	@echo "Now add $(ID) to THEME_COVERS in web/packages/play-ui/src/covers.ts."
 
 # --- Release -----------------------------------------------------------------
 

@@ -30,6 +30,8 @@ export interface JoinInfo {
   adventure_title: string;
   org_name: string;
   status: "open" | "full" | "not_ready" | "ended";
+  /** A party adventure's starter theme, for its cover picture. */
+  theme?: string;
 }
 
 export const getJoin = (token: string) => request<JoinInfo>(`/api/join/${enc(token)}`);

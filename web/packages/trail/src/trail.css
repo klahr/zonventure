@@ -892,15 +892,13 @@
   margin: 0;
 }
 .trail-themes {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.4rem, 1fr));
   gap: var(--sp-2);
   width: 100%;
   max-width: 60rem;
   margin: 0 auto;
-  padding: 4px 2px 6px;
-  overflow-x: auto;
-  scroll-snap-type: x proximity;
-  scrollbar-width: thin;
+  padding: 6px 2px;
 }
 .trail-theme {
   position: relative;
@@ -909,7 +907,7 @@
   flex-direction: column;
   align-items: stretch;
   gap: 0.35rem;
-  width: 5.6rem;
+  min-width: 0;
   padding: 0.35rem;
   border: 2px solid transparent;
   border-radius: 16px;
@@ -917,7 +915,6 @@
   color: var(--ink);
   font: inherit;
   cursor: pointer;
-  scroll-snap-align: start;
   transition: transform 0.2s var(--trail-ease), border-color 0.2s;
 }
 .trail-theme:hover:not(:disabled) {
@@ -976,6 +973,39 @@
   box-shadow: 0 0 0 2px var(--surface);
 }
 
+/* Compact: swatches alone, seven to a row; the card shows the name. */
+.trail-themes--compact {
+  grid-template-columns: repeat(7, minmax(0, 3.4rem));
+  justify-content: center;
+  gap: var(--sp-2);
+}
+.trail-themes--compact .trail-theme {
+  padding: 3px;
+  border-radius: 50%;
+  aspect-ratio: 1;
+}
+.trail-themes--compact .trail-theme__swatch {
+  height: 100%;
+  border-radius: 50%;
+}
+.trail-themes--compact .trail-theme__dot {
+  display: none;
+}
+.trail-themes--compact .trail-theme__name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.trail-themes--compact .trail-theme__check {
+  top: -4px;
+  right: -4px;
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
 /* The showcase: a card trying looks on. */
 .trail-showcase {
   display: grid;
@@ -992,6 +1022,15 @@
   overflow: hidden;
   transition: background-color 0.6s ease;
   box-shadow: inset 0 0 0 1px rgba(31, 51, 73, 0.08);
+}
+.trail-showcase__stage.has-cover {
+  place-items: center start;
+  background-size: cover;
+  background-position: 70% center;
+  background-repeat: no-repeat;
+}
+.trail-showcase__stage.has-cover .trail-showcase__card {
+  width: min(62%, 22rem);
 }
 .trail-showcase__card {
   width: min(100%, 22rem);

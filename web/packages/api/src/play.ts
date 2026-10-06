@@ -549,6 +549,8 @@ export interface PlayState {
     org_logo_url?: string;
     /** The adventure's own picture, when it has one; shown in place of the organisation's logo. */
     adventure_icon_url?: string;
+    /** A party adventure's starter theme, for its cover picture (play-ui THEME_COVERS). */
+    theme?: string;
     /** The author's welcome and farewell, Markdown. */
     intro_text?: string;
     outro_text?: string;

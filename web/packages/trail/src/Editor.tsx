@@ -416,10 +416,16 @@ function Timeline(props: {
     return () => el.removeEventListener("touchmove", stop);
   }, []);
 
-  // The selected chip stays in view.
+  // The selected chip stays in view. The strip scrolls, never the page:
+  // in a frame on the landing page, scrollIntoView would move it too.
   useEffect(() => {
-    const i = cards.findIndex((c) => c.id === props.selected);
-    chips.current[i]?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    const el = chips.current[cards.findIndex((c) => c.id === props.selected)];
+    const box = strip.current;
+    if (!el || !box) return;
+    const left = el.offsetLeft; // the strip is positioned: its own coordinates
+    if (left < box.scrollLeft || left + el.offsetWidth > box.scrollLeft + box.clientWidth) {
+      box.scrollTo({ left: Math.max(0, left - 16), behavior: "smooth" });
+    }
   }, [props.selected, cards]);
 
   const overAt = (x: number) => {
