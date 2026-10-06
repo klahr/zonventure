@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-06
+
 ### Changed
 
 - **Parties** has its own entry in the console sidebar, next to
