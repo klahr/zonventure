@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-10-06
+
 ### Added — switch party adventures on per organisation
 
 - **Site admin → organisation → Settings → Party adventures** opens or
