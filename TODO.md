@@ -19,7 +19,7 @@ for self-hosters and operators.
 
 The spec is `QUIZ_TRAIL.md` (read its **Decisions** section first: it
 records what was built and where it differs from the first draft). The
-work is in four phases; A–C are built, D is next.
+work is in four phases, all built; what's left of D is listed below.
 
 - **A. Hosted foundation — done.** A party is a hosted event: player
   link `/j/{token}`, teams name themselves, games are rounds
@@ -38,54 +38,28 @@ work is in four phases; A–C are built, D is next.
   save, publish-on-use, designer handover), `trail_pdf.go` (cards +
   answer key), `web/packages/trail` (Editor, autosave, templates),
   console route `#/adventures/{slug}/cards`. Migration 0111.
+- **D. Public quiz trail, no account — built.** `/o/{slug}/trail` on
+  an org with `quiz_trail_enabled`: hidden adventures
+  (`adventures.trail_hidden`) plus `trails` rows, drafts by secret,
+  Save to email / sign-in sessions, My trails, checkout as a 'hosted'
+  purchase, edit from the host link, Keep it into an account
+  (`#/keep/{token}` in the console), `SweepTrails` (drafts 30 days,
+  ended trails, day-7 keep mail), five emails. `internal/admin/
+  trails_public.go`, party app `TrailEdit.tsx` / `TrailPages.tsx`.
+  Migration 0112.
 
-### Phase D — public quiz trail, no account (next)
+### Phase D — what's left
 
-Spec sections: Availability, Lifecycle (trail), Data model (`trails`,
-`trail_email_tokens`), Screens 1–7, Emails, Conversion, Retention,
-Security and abuse, API sketch.
-
-- [ ] Migration 0112: `organizations.quiz_trail_enabled`;
-      `adventures.trail_hidden` (hide from org lists, store, MCP,
-      party offers); `trails` table (secret hash, adventure, event,
-      email + confirmed, keep_offer_sent_at); `trail_email_tokens`.
-- [ ] Hide `trail_hidden` adventures everywhere an org lists its
-      adventures (console list, `ListPartyOffers`, catalog, MCP
-      `list_adventures`, Host it/self-guided pickers).
-- [ ] Public API `/api/o/{slug}/trail`: `POST /drafts` (template, lang)
-      → `{id, secret}` creating a hidden adventure in the seller org;
-      `GET|PUT /drafts/{id}` (secret in a header, revision check — reuse
-      `trails.go` save/describe logic, don't duplicate it);
-      `POST /drafts/{id}/checkout {blocks}`; `POST /email/confirm`,
-      `POST /email/signin`, `GET /mine`. Refuse when the org's flag is
-      off. Rate limits: 20 drafts/IP/day, save cap per draft.
-- [ ] Checkout: purchase kind for a trail (or reuse `hosted` with the
-      hidden adventure); webhook creates the hosted event
-      (`createHostedEvent`), sets the trail's email (confirmed by
-      payment), sends the host link. Guardian consent when `trail_kids`.
-- [ ] Public pages (party app or a new `trail` app): Start
-      (`/o/{slug}/trail`, templates, "Free to make · 149 kr to play"),
-      creator (reuse `@zonventure/trail` `Editor` + `useTrailSave` with
-      a draft API adapter; draft id+secret in localStorage, "Copy link
-      to this draft" as `#{id}.{secret}`), checkout, My trails
-      (`/trail/mine`).
-- [ ] Save to email: confirm link attaches every trail this browser
-      holds; sign-in link lists all trails for the email. Never reveal
-      whether an email has trails.
-- [ ] Host page for a trail: Edit trail (opens the creator with the
-      host token as credential), Keep it (from day 7 of play).
-- [ ] Emails (`internal/emailtpl`, sv + en): `trail_confirm`,
-      `trail_signin`, `trail_paid`, `trail_keep` (day 7), `trail_ended`.
-- [ ] Conversion ("Keep it"): signup with email prefilled → personal
-      org → move the adventure to it, clear `trail_hidden`, delete the
-      `trails` row and its hosted event, send `trail_ended`.
-- [ ] Retention (`internal/retention`): unpaid drafts 30 days after the
-      last edit (with their hidden adventure); trail events at
-      `valid_until` (finish game, `trail_ended`, delete trail + adventure
-      + event); day-7 keep email once; expired email tokens.
-- [ ] zonventure-web links to `/o/zonventure/trail`; set
-      `quiz_trail_enabled` on the Zonventure org.
-- [ ] Docs: CHANGELOG, OPERATIONS.md retention paragraph, privacy page.
+- [ ] zonventure-web (separate repo) links to `/o/zonventure/trail`.
+- [ ] Production: `UPDATE organizations SET quiz_trail_enabled = TRUE
+      WHERE slug = 'zonventure'` once legal has signed off.
+- [ ] Keep it: signup doesn't prefill the trail's email; the console
+      shows the login screen, and "Create account" starts empty.
+- [ ] No console view of public trails for moderation (spec: Hosted →
+      Quiz trails, Zonventure org only). Today the seller sees the trails'
+      events under Hosted.
+- [ ] Not tried against real Stripe; the trail's checkout lands on
+      `/app/party/trail/paid`.
 
 ### Follow-ups and known gaps
 

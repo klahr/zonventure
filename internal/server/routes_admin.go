@@ -217,6 +217,8 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// Quiz trails: adventures written in the simple creator as
 			// cards (trails.go, trail_pdf.go).
 			r.Get("/trail-templates", adminH.ListTrailTemplates)
+			// Keep it: a public quiz trail moves into the caller's org.
+			r.Post("/trail-keep", adminH.KeepTrail)
 			r.Post("/trails", adminH.CreateTrail)
 			r.Get("/adventures/{slug}/cards", adminH.GetTrail)
 			r.Put("/adventures/{slug}/cards", adminH.PutTrail)

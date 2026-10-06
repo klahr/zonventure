@@ -3,6 +3,7 @@ import { ApiError } from "@zonventure/api";
 import { Game, HostedProvider, PersonaliseSection, PlacesSection, PlayerLink, TrailPrint, WhereSection, adaptable, partyApi, type HostedEvent } from "@zonventure/hosted";
 import { Resend } from "./Book.tsx";
 import { useT } from "./i18n.tsx";
+import { hostEditURL, keepLink } from "./trail.ts";
 
 /**
  * The host page: a hosted event's player link, its cards to print and
@@ -139,6 +140,13 @@ export function Host({ token }: { token: string }) {
         {party.trail ? (
           <section className="party-card">
             {heading(t("Cards"))}
+            {party.public_trail && !party.expired && (party.state === "scheduled" || party.state === "running" || party.state === "paused") && (
+              <p>
+                <a className="party-btn" href={hostEditURL(token)}>
+                  {t("Edit the quiz trail")}
+                </a>
+              </p>
+            )}
             <TrailPrint event={party} />
           </section>
         ) : party.mode === "park" ? (
@@ -190,6 +198,20 @@ export function Host({ token }: { token: string }) {
           {heading(t("Play"))}
           <Game event={party} />
         </section>
+
+        {party.public_trail && party.keep_from && new Date(party.keep_from) <= new Date() && (party.state === "running" || party.state === "paused") && !party.expired && (
+          <section className="party-card">
+            <h2>{t("Keep it")}</h2>
+            <p className="party-muted">
+              {t("Your quiz trail is deleted on {{date}}. Create a free account and it moves there instead, to play again whenever you like. Moving it ends the games you have now.", {
+                date: date(party.valid_until),
+              })}
+            </p>
+            <button type="button" className="party-btn party-btn--primary" disabled={busy} onClick={() => void run(async () => (location.href = (await keepLink(token)).url))}>
+              {t("Create a free account to keep this quiz trail")}
+            </button>
+          </section>
+        )}
       </div>
 
       {printing && <PrintSheet party={party} qr={api.qr} />}

@@ -27,6 +27,8 @@ export interface EditorProps {
   focus?: { id: string; nonce: number } | null;
   /** Say what each card still needs: once the author has tried to finish. */
   showProblems?: boolean;
+  /** What "Saved" says, e.g. where: "Saved on this phone". */
+  savedText?: string | undefined;
 }
 
 /**
@@ -91,7 +93,7 @@ export function Editor(props: EditorProps) {
           aria-label={t("Name of the quiz trail")}
           onChange={(e) => onChange({ title: e.target.value })}
         />
-        <SaveNote t={t} state={props.state} />
+        <SaveNote t={t} state={props.state} savedText={props.savedText} />
         {props.actions && <div className="trail-bar__actions">{props.actions}</div>}
       </header>
 
@@ -143,9 +145,9 @@ export function Editor(props: EditorProps) {
   );
 }
 
-function SaveNote({ t, state }: { t: T; state: SaveState }) {
+function SaveNote({ t, state, savedText }: { t: T; state: SaveState; savedText?: string | undefined }) {
   const text: Record<SaveState, string> = {
-    saved: t("Saved"),
+    saved: savedText ?? t("Saved"),
     saving: t("Saving…"),
     unsaved: t("Saving…"),
     failed: t("Not saved — check your connection"),

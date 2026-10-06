@@ -151,6 +151,80 @@ func HostedPlayerLink(lang, playerURL, party, org string) (string, Content) {
 	}
 }
 
+// TrailConfirm saves the trails a browser holds to an email address:
+// the link confirms the address is the reader's.
+func TrailConfirm(lang, link string) (string, Content) {
+	return T(lang, "Save your quiz trails"), Content{
+		Lang:      lang,
+		Preheader: T(lang, "Confirm your email address to keep your quiz trails."),
+		Heading:   T(lang, "Save your quiz trails"),
+		Body:      T(lang, "Open the link to save your quiz trails to this address. Then you can open them from any phone or computer. The link works for an hour."),
+		Buttons:   []Button{{T(lang, "Save my quiz trails"), link}},
+		Footer:    T(lang, "Didn't ask for this? Ignore this email and nothing is saved."),
+	}
+}
+
+// TrailSignin opens the quiz trails saved to an email address.
+func TrailSignin(lang, link string) (string, Content) {
+	return T(lang, "Your quiz trails"), Content{
+		Lang:      lang,
+		Preheader: T(lang, "Open your quiz trails."),
+		Heading:   T(lang, "Your quiz trails"),
+		Body:      T(lang, "Open the link to see every quiz trail saved to this address. The link works for an hour."),
+		Buttons:   []Button{{T(lang, "Open my quiz trails"), link}},
+		Footer:    T(lang, "Didn't ask for this? Ignore this email."),
+	}
+}
+
+// TrailPaid is a paid quiz trail's host link, mailed to the buyer: where
+// to print the cards and show the players their link. Stripe mails the
+// receipt.
+func TrailPaid(lang, hostURL, playerURL, title, startBy, org string) (string, Content) {
+	return T(lang, "%s is ready to play", title), Content{
+		Lang:      lang,
+		Preheader: T(lang, "Print the cards, hide them and let the teams join."),
+		Heading:   T(lang, "%s is ready to play", title),
+		Body: T(lang, "Open the admin page to print the cards and the answer key, and to show the players their link. Start the first game by %s; from then you can play as many games as you like for 14 days.", startBy) +
+			"\n\n" + T(lang, "Players join here: %s", playerURL) +
+			"\n\n" + T(lang, "Anyone with the admin link can run and change your quiz trail, so keep it to yourself. Your receipt comes in a separate email."),
+		Buttons: []Button{{T(lang, "Open the admin page"), hostURL}},
+		Footer:  T(lang, "The quiz trail and everything about the players is deleted 14 days after the first game.") + " " + playerFooter(lang, "", org),
+	}
+}
+
+// TrailKeep offers, a week into play, to keep a quiz trail for good in
+// an account of the buyer's own.
+func TrailKeep(lang, keepURL, title, until string) (string, Content) {
+	return T(lang, "Keep %s?", title), Content{
+		Lang:      lang,
+		Preheader: T(lang, "Create a free account and the quiz trail is yours to keep."),
+		Heading:   T(lang, "Keep %s?", title),
+		Body: T(lang, "Your quiz trail is deleted on %s. Create a free account and it moves there instead, cards and all, to play again whenever you like.", until) +
+			"\n\n" + T(lang, "Moving it ends the games you have now; their summaries were already mailed to you."),
+		Buttons: []Button{{T(lang, "Keep my quiz trail"), keepURL}},
+		Footer:  T(lang, "Not interested? Do nothing and it is deleted as planned."),
+	}
+}
+
+// TrailEnded says a quiz trail is gone: deleted when its days were over,
+// or moved into the buyer's account (kept).
+func TrailEnded(lang, title string, kept bool, org string) (string, Content) {
+	if kept {
+		return T(lang, "%s is in your account", title), Content{
+			Lang:    lang,
+			Heading: T(lang, "%s is in your account", title),
+			Body:    T(lang, "Your quiz trail is now an adventure in your account. Edit it, print it and host it from there. The summaries of the games you played were mailed to you before."),
+			Footer:  playerFooter(lang, "", org),
+		}
+	}
+	return T(lang, "%s has ended", title), Content{
+		Lang:    lang,
+		Heading: T(lang, "%s has ended", title),
+		Body:    T(lang, "Your quiz trail's days are over, so it and everything about its players has been deleted. The summaries of the games you played were mailed to you before.") + "\n\n" + T(lang, "Thank you for playing!"),
+		Footer:  playerFooter(lang, "", org),
+	}
+}
+
 // RoundTeam is one team's line in a game summary.
 type RoundTeam struct {
 	Name     string

@@ -6,6 +6,7 @@ import {
 } from "react";
 import { I18n } from "@zonventure/i18n";
 import { hostedSv } from "@zonventure/hosted";
+import { trailSv } from "@zonventure/trail";
 import sv from "./locales/sv.json";
 
 /**
@@ -13,7 +14,7 @@ import sv from "./locales/sv.json";
  * string. Swedish is the primary market, so every string a booker or
  * host reads has a translation here.
  */
-const catalogs = { en: {}, sv: { ...hostedSv, ...sv } };
+const catalogs = { en: {}, sv: { ...hostedSv, ...trailSv, ...sv } };
 
 const instance = new I18n(catalogs);
 const I18nContext = createContext(instance);

@@ -2,15 +2,30 @@ import { siteName } from "@zonventure/api";
 import { Book } from "./Book.tsx";
 import { Host } from "./Host.tsx";
 import { Join } from "./Join.tsx";
+import { TrailEdit } from "./TrailEdit.tsx";
+import { TrailMine, TrailPaid, TrailStart, TrailVerify } from "./TrailPages.tsx";
 import { useT } from "./i18n.tsx";
 
 /**
  * The pages, by path: /app/party/book/{org}/{offer}, /app/party/host/{token},
  * /app/party/join/{token}, and /app/party/paid, where a payment made from
- * the host page lands.
+ * the host page lands. The quiz trail's pages are under /app/party/trail/:
+ * start/{org}, edit (#id), host (#hostToken), mine, verify (#token), paid.
  */
-export function route(path: string): { page: "book"; org: string; offer: string } | { page: "host" | "join"; token: string } | { page: "paid" | "none" } {
+type Route =
+  | { page: "book"; org: string; offer: string }
+  | { page: "host" | "join"; token: string }
+  | { page: "trail-start"; org: string }
+  | { page: "paid" | "none" | "trail-edit" | "trail-host" | "trail-mine" | "trail-verify" | "trail-paid" };
+
+export function route(path: string): Route {
   const parts = path.replace(/^\/app\/party\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  if (parts[0] === "trail") {
+    if (parts[1] === "start" && parts.length === 3) return { page: "trail-start", org: parts[2]! };
+    const sub = { edit: "trail-edit", host: "trail-host", mine: "trail-mine", verify: "trail-verify", paid: "trail-paid" } as const;
+    const page = parts.length === 2 ? sub[parts[1] as keyof typeof sub] : undefined;
+    return page ? { page } : { page: "none" };
+  }
   if (parts[0] === "book" && parts.length === 3) return { page: "book", org: parts[1]!, offer: parts[2]! };
   if (parts[0] === "host" && parts.length === 2) return { page: "host", token: parts[1]! };
   if (parts[0] === "join" && parts.length === 2) return { page: "join", token: parts[1]! };
@@ -22,7 +37,7 @@ export function App() {
   const t = useT().t;
   const r = route(location.pathname);
   return (
-    <div className="party">
+    <div className={"party" + (r.page === "trail-edit" || r.page === "trail-host" ? " party--wide" : "")}>
       <header className="party-top">
         <a href="/" className="party-brand">
           {siteName()}
@@ -35,6 +50,16 @@ export function App() {
           <Host token={r.token} />
         ) : r.page === "join" ? (
           <Join token={r.token} />
+        ) : r.page === "trail-start" ? (
+          <TrailStart org={r.org} />
+        ) : r.page === "trail-edit" || r.page === "trail-host" ? (
+          <TrailEdit host={r.page === "trail-host"} />
+        ) : r.page === "trail-mine" ? (
+          <TrailMine />
+        ) : r.page === "trail-verify" ? (
+          <TrailVerify />
+        ) : r.page === "trail-paid" ? (
+          <TrailPaid />
         ) : r.page === "paid" ? (
           <section className="party-card">
             <h1>{t("Thank you — payment received")}</h1>

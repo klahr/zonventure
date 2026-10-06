@@ -496,6 +496,19 @@ Console: `POST /api/admin/adventures/{slug}/host {blocks}` → Stripe URL.
 
 ## Decisions
 
+- Built (Phase D): the public API is `/api/o/{slug}/trail` (start page,
+  new draft) and `/api/trail/…` (drafts by id, email, mine, keep); the
+  draft secret travels in `X-Trail-Secret`, an email session in
+  `X-Trail-Session`. Confirm and sign-in links both open a 30-day
+  session, so My trails lists every trail of the email without ever
+  holding their secrets. Checkout asks for the email itself (as party
+  booking does) rather than reading it back from Stripe. A paid trail
+  is a 'hosted' purchase of the seller org's hidden adventure; the
+  webhook marks the trail paid (`trails.paid_at`). Retention runs in
+  the admin package (`SweepTrails`, hourly) because it mails. Keep it
+  is a token link to the console (`#/keep/{token}`): whoever is
+  signed in there — after signing up, or into an existing account —
+  takes the trail into their org. The pages live in the party app.
 - Built (Phase C): the columns are `adventures.trail_*` (`cards` was
   taken by the theme). Saving makes the draft; Done, Host it and a
   hosted game opening publish it, so typing makes no versions. Quiz

@@ -15,5 +15,11 @@
   "Quiz trail (simple)": "Tipspromenad (enkel)",
   "Reload": "Ladda om",
   "Start from an example and make it yours.": "Börja med ett exempel och gör det till ditt.",
-  "The designer can do much more, but you can't go back to the simple editor: its cards are left behind.": "Designern kan mycket mer, men du kan inte gå tillbaka till den enkla redigeraren: korten lämnas kvar."
+  "The designer can do much more, but you can't go back to the simple editor: its cards are left behind.": "Designern kan mycket mer, men du kan inte gå tillbaka till den enkla redigeraren: korten lämnas kvar.",
+  "Keep a quiz trail": "Behåll en tipspromenad",
+  "This link has expired or was used already. A quiz trail can be kept until its days of play are over.": "Länken har gått ut eller har redan använts. En tipspromenad kan behållas tills dess speldagar är slut.",
+  "Keep {{title}}": "Behåll {{title}}",
+  "The quiz trail and its {{n}} cards become an adventure of your organisation, to edit, print and host whenever you like.": "Tipspromenaden och dess {{n}} kort blir ett äventyr i din organisation, att redigera, skriva ut och köra när du vill.",
+  "Its admin page and the games played so far end now. Their summaries were mailed to {{email}}.": "Dess adminsida och omgångarna som spelats hittills avslutas nu. Sammanfattningarna har mejlats till {{email}}.",
+  "Keep it": "Behåll den"
 }

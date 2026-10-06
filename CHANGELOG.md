@@ -11,6 +11,36 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — the public quiz trail
+
+- **`/o/{slug}/trail`**: anyone makes a quiz trail on a phone with no
+  account, where the org sells them (`organizations.quiz_trail_enabled`,
+  set by a site admin). Pick a template, write the cards in the same
+  creator as the console's, and pay the hosted pass to play. "Free to
+  make · 149 kr to play for 14 days."
+- A trail is a hidden adventure of the seller org
+  (`adventures.trail_hidden`: kept out of its adventure lists, the
+  catalog, MCP, party offers and Host it) plus a `trails` row. A draft
+  opens with a secret only the maker's browser holds; **Copy link**
+  carries it in the URL fragment.
+- **Save to email**: a link confirms the address and saves every trail
+  the browser holds there; **My trails** (`/trail/mine`) lists them, and
+  a sign-in link opens them from any browser. Neither says whether an
+  address has trails.
+- **Checkout** asks for the email the admin link goes to, the teams per
+  game ("More than 15 teams in one game?") and, for a kids' trail, the
+  guardian's consent; payment makes the hosted event and mails the
+  admin link (`trail_paid`). Where hosting is free it opens at once.
+- The **host page** edits the trail (changes apply from the next game)
+  and, a week into play, offers **Keep it**: in the console
+  (`#/keep/{token}`, after signing in or up) the trail moves into the
+  keeper's org as an ordinary quiz trail, and its event goes. The same
+  link is mailed on day 7 (`trail_keep`).
+- An hourly sweeper deletes unpaid drafts 30 days after their last edit
+  and paid trails when their event has ended (`trail_ended`).
+- Migration `0112_quiz_trail`: `organizations.quiz_trail_enabled`,
+  `adventures.trail_hidden`, `trails`, `trail_email_tokens`.
+
 ### Added — quiz trails in the console
 
 - **New adventure → Quiz trail (simple)**: an adventure written as a row

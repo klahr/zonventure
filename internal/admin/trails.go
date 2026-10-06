@@ -90,31 +90,14 @@ func (h *Handlers) CreateTrail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	slug, err := freeAdventureSlug(ctx, h.DB, title)
-	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "create failed", err)
-		return
-	}
-	cards, err := json.Marshal(t.Cards)
-	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "create failed", err)
-		return
-	}
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "create failed", err)
 		return
 	}
 	defer tx.Rollback() //nolint:errcheck
-	var advID int64
-	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO adventures (slug, title, author, language, org_id, created_by_user_id, trail_cards, trail_template, trail_kids)
-		VALUES ($1, $2, '', $3, $4, $5, $6, $7, $8) RETURNING id
-	`, slug, title, lang, org.Int64, me.ID, cards, t.Name, t.Kids).Scan(&advID); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "create failed", err)
-		return
-	}
-	if err := saveTrailDraft(ctx, tx, advID, me.ID, t.Cards, lang); err != nil {
+	_, slug, err := createTrailAdventure(ctx, tx, org.Int64, me.ID, t, title, lang, false)
+	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "create failed", err)
 		return
 	}
@@ -125,8 +108,37 @@ func (h *Handlers) CreateTrail(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusCreated, map[string]string{"slug": slug})
 }
 
+// createTrailAdventure makes org's adventure of a trail from template t,
+// with its draft, in tx; hidden keeps it out of the org's lists (a
+// public-door trail). It returns the adventure's id and slug.
+func createTrailAdventure(ctx context.Context, tx *sql.Tx, orgID, userID int64, t trail.Template, title, lang string, hidden bool) (int64, string, error) {
+	slug, err := freeAdventureSlug(ctx, tx, title)
+	if err != nil {
+		return 0, "", err
+	}
+	cards, err := json.Marshal(t.Cards)
+	if err != nil {
+		return 0, "", err
+	}
+	var user any
+	if userID > 0 {
+		user = userID
+	}
+	var advID int64
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO adventures (slug, title, author, language, org_id, created_by_user_id, trail_cards, trail_template, trail_kids, trail_hidden)
+		VALUES ($1, $2, '', $3, $4, $5, $6, $7, $8, $9) RETURNING id
+	`, slug, title, lang, orgID, user, cards, t.Name, t.Kids, hidden).Scan(&advID); err != nil {
+		return 0, "", err
+	}
+	if err := saveTrailDraft(ctx, tx, advID, userID, t.Cards, lang); err != nil {
+		return 0, "", err
+	}
+	return advID, slug, nil
+}
+
 // freeAdventureSlug is a slug for title no adventure has.
-func freeAdventureSlug(ctx context.Context, db *sql.DB, title string) (string, error) {
+func freeAdventureSlug(ctx context.Context, db graphstore.Querier, title string) (string, error) {
 	base := orgslug.Slugify(title)
 	if base == "" {
 		base = "trail"
@@ -318,67 +330,75 @@ func (h *Handlers) PutTrail(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.trailFor(w, r); !ok {
 		return
 	}
+	me, _ := auth.FromContext(r.Context())
+	if t, ok := h.saveTrail(w, r.Context(), chi.URLParam(r, "slug"), me.ID, req); ok {
+		h.writeTrail(w, r.Context(), t, http.StatusOK)
+	}
+}
+
+// saveTrail saves req to the trail slug, as PutTrail does for every
+// door, and returns the trail as it is then. When it can't, it writes
+// why and returns false.
+func (h *Handlers) saveTrail(w http.ResponseWriter, ctx context.Context, slug string, userID int64, req putTrailRequest) (loadedTrail, bool) {
 	if err := trail.Check(req.Cards); err != nil {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
-		return
+		return loadedTrail{}, false
 	}
-	ctx := r.Context()
-	me, _ := auth.FromContext(ctx)
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "save failed", err)
-		return
+		return loadedTrail{}, false
 	}
 	defer tx.Rollback() //nolint:errcheck
-	t, err := loadTrail(ctx, tx, chi.URLParam(r, "slug"), true)
+	t, err := loadTrail(ctx, tx, slug, true)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "save failed", err)
-		return
+		return loadedTrail{}, false
 	}
 	if err := t.describe(ctx, tx); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "save failed", err)
-		return
+		return loadedTrail{}, false
 	}
 	if !t.dto.Editable {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the trail was changed in the designer", "code": "designer"})
-		return
+		return loadedTrail{}, false
 	}
 	if req.Revision != t.dto.Revision {
 		httpx.JSON(w, http.StatusConflict, map[string]any{"error": "the trail was saved elsewhere meanwhile", "code": "changed", "trail": t.dto})
-		return
+		return loadedTrail{}, false
 	}
 	title := t.dto.Title
 	if req.Title != nil {
 		if title, err = validateName(*req.Title, MaxNameLen); err != nil {
 			httpx.Error(w, http.StatusBadRequest, err.Error())
-			return
+			return loadedTrail{}, false
 		}
 	}
 	cards, err := json.Marshal(req.Cards)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "save failed", err)
-		return
+		return loadedTrail{}, false
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE adventures SET trail_cards = $2, trail_revision = trail_revision + 1, title = $3 WHERE id = $1
 	`, t.ID, cards, title); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "save failed", err)
-		return
+		return loadedTrail{}, false
 	}
-	if err := saveTrailDraft(ctx, tx, t.ID, me.ID, req.Cards, trailLang(t.dto.Language)); err != nil {
+	if err := saveTrailDraft(ctx, tx, t.ID, userID, req.Cards, trailLang(t.dto.Language)); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "save failed", err)
-		return
+		return loadedTrail{}, false
 	}
 	if err := tx.Commit(); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "save failed", err)
-		return
+		return loadedTrail{}, false
 	}
 	t, err = loadTrail(ctx, h.DB, t.dto.Slug, false)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "save failed", err)
-		return
+		return loadedTrail{}, false
 	}
-	h.writeTrail(w, ctx, t, http.StatusOK)
+	return t, true
 }
 
 // PublishTrail publishes the cards as they are, when they can be played.

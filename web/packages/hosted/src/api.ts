@@ -89,6 +89,9 @@ export interface HostedEvent {
   /** A quiz trail: its cards print as a PDF; reprint when they changed since. */
   trail: boolean;
   reprint: boolean;
+  /** A quiz trail made at the public door: the host link edits it, and from keep_from it may be kept. */
+  public_trail?: boolean;
+  keep_from?: string;
   first_game_at?: string;
   teams: Team[];
   rounds: Round[];

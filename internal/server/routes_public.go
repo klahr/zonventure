@@ -153,6 +153,9 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		r.Post("/api/party/{token}/send-player-link", adminH.SendHostedPlayerLink)
 		r.Post("/api/party/{token}/blocks", adminH.AddHostedBlocks)
 		r.Get("/api/party/{token}/cards.pdf", adminH.HostedTrailPDF)
+		r.Get("/api/party/{token}/cards", adminH.GetHostTrail)
+		r.Put("/api/party/{token}/cards", adminH.PutHostTrail)
+		r.Post("/api/party/{token}/keep", adminH.HostTrailKeep)
 		r.Get("/api/party/{token}/qr", adminH.HostPartyQR)
 		r.Put("/api/party/{token}/personalise", adminH.PutHostPersonalise)
 		r.Put("/api/party/{token}/mode", adminH.PutHostMode)
@@ -169,6 +172,35 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		})
 		r.Get("/api/join/{token}", adminH.GetJoin)
 		r.Post("/api/join/{token}", adminH.Join)
+
+		// Quiz trails at the public door (admin/trails_public.go): made
+		// with no account, opened by the draft's secret (a header, never
+		// the URL) or an email session. The pages are the party app's;
+		// the copied link to a draft carries its secret in the fragment,
+		// which a redirect keeps.
+		r.Get("/o/{slug}/trail", func(w http.ResponseWriter, req *http.Request) {
+			redirectKeepingQuery(w, req, "/app/party/trail/start/"+url.PathEscape(chi.URLParam(req, "slug")))
+		})
+		r.Get("/o/{slug}/trail/edit", func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+			http.Redirect(w, req, "/app/party/trail/edit", http.StatusFound)
+		})
+		r.Get("/trail/mine", func(w http.ResponseWriter, req *http.Request) {
+			http.Redirect(w, req, "/app/party/trail/mine", http.StatusFound)
+		})
+		r.Get("/api/o/{slug}/trail", adminH.GetTrailStart)
+		r.Post("/api/o/{slug}/trail/drafts", adminH.CreateTrailDraft)
+		r.Get("/api/trail/drafts/{id}", adminH.GetTrailDraft)
+		r.Put("/api/trail/drafts/{id}", adminH.PutTrailDraft)
+		r.Delete("/api/trail/drafts/{id}", adminH.DeleteTrailDraft)
+		r.Post("/api/trail/drafts/{id}/duplicate", adminH.DuplicateTrailDraft)
+		r.Post("/api/trail/drafts/{id}/checkout", adminH.CheckoutTrailDraft)
+		r.Post("/api/trail/drafts/{id}/host-link", adminH.SendTrailHostLink)
+		r.Post("/api/trail/email/save", adminH.SaveTrailsToEmail)
+		r.Post("/api/trail/email/signin", adminH.SignInToTrails)
+		r.Post("/api/trail/email/verify", adminH.VerifyTrailEmail)
+		r.Post("/api/trail/mine", adminH.ListMyTrails)
+		r.Get("/api/trail/keep/{token}", adminH.GetKeepTrail)
 
 		// Gift box redemption (Live it, TrueStory). The bare /redeem
 		// offers every organisation's products; /o/{slug}/redeem only

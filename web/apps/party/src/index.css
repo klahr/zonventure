@@ -1,6 +1,7 @@
 /* The party app: a booking form and a host page, on the shared tokens. */
 @import "@zonventure/ui/tokens.css";
 @import "@zonventure/hosted/hosted.css";
+@import "@zonventure/trail/trail.css";
 
 html,
 body {
@@ -310,4 +311,125 @@ body {
     left: 4mm;
     font-weight: 700;
   }
+}
+
+/* Links that look like buttons, and buttons that look like links. */
+a.party-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+.party-btn--danger {
+  color: var(--danger);
+}
+.party-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  justify-self: start;
+}
+.party-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.party-right {
+  margin: 0;
+  text-align: right;
+}
+.party-price {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* The quiz trail creator: the editor fills the column, its timeline
+   sticking to the foot of the screen. */
+.party--wide .party-main {
+  padding-bottom: 0;
+}
+.party-trail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-height: calc(100dvh - 8rem);
+}
+.party-trail > .trail {
+  flex: 1;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  overflow: clip;
+}
+.party-menu {
+  position: relative;
+}
+.party-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  list-style: none;
+  cursor: pointer;
+}
+.party-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.party-menu__items {
+  position: absolute;
+  left: 0;
+  z-index: 5;
+  min-width: 14rem;
+  max-width: calc(100vw - 2rem);
+  margin-top: var(--sp-1);
+  padding: var(--sp-1);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.party-menu__items > * {
+  min-height: 2.75rem;
+  padding: 0 var(--sp-3);
+  display: flex;
+  align-items: center;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.party-menu__items > *:hover,
+.party-menu__items > *:focus-visible {
+  background: var(--surface-2);
+}
+.party-menu__items .is-danger {
+  color: var(--danger);
+}
+
+/* My trails */
+.party-trails {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.party-trails li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.party-trails li > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
 }

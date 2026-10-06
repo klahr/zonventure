@@ -233,7 +233,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	         WHERE s.adventure_slug = a.slug AND s.org_id = $1
 	       ))::int AS shared
 	FROM adventures a
-	WHERE (
+	WHERE NOT a.trail_hidden AND (
 	  a.org_id = $1
 	  OR ` + CatalogFilter() + `
 	  OR EXISTS (

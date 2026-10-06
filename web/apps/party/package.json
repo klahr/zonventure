@@ -17,7 +17,8 @@
     "@zonventure/api": "*",
     "@zonventure/ui": "*",
     "@zonventure/i18n": "*",
-    "@zonventure/hosted": "*"
+    "@zonventure/hosted": "*",
+    "@zonventure/trail": "*"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

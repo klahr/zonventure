@@ -362,7 +362,8 @@ func (h *Handlers) sendRoundSummary(ctx context.Context, eventID int64, round in
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	var to, party string
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE((SELECT buyer_email FROM ticket_purchases WHERE event_id = e.id ORDER BY id LIMIT 1), ''), e.party_name
+		SELECT COALESCE((SELECT buyer_email FROM ticket_purchases WHERE event_id = e.id ORDER BY id LIMIT 1),
+		                (SELECT email FROM trails WHERE event_id = e.id), ''), e.party_name
 		FROM events e WHERE e.id = $1
 	`, eventID).Scan(&to, &party); err != nil {
 		return err

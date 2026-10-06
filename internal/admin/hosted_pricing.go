@@ -98,7 +98,7 @@ func (h *Handlers) HostAdventure(w http.ResponseWriter, r *http.Request) {
 	)
 	if err := h.DB.QueryRowContext(ctx, `
 		SELECT a.id, COALESCE(NULLIF(a.title, ''), a.slug) FROM adventures a
-		WHERE a.slug = $1 AND (a.org_id = $2
+		WHERE a.slug = $1 AND NOT a.trail_hidden AND (a.org_id = $2
 		   OR EXISTS (SELECT 1 FROM adventure_shares s WHERE s.adventure_slug = a.slug AND s.org_id = $2))
 	`, slug, *me.OrgID).Scan(&advID, &title); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -295,6 +295,10 @@ func (h *Handlers) fulfilHostedCheckout(ctx context.Context, tx *sql.Tx, event p
 		var err error
 		if eventID, hostToken, err = createHostedEvent(ctx, tx, orgID.Int64, slug, name, 0, blocks); err != nil {
 			return fmt.Errorf("hosted create: %w", err)
+		}
+		// A public quiz trail's: it is paid for now.
+		if _, err := attachTrailEvent(ctx, tx, slug, eventID, email); err != nil {
+			return fmt.Errorf("trail attach: %w", err)
 		}
 	case "hosted_blocks":
 		if eventID == 0 {

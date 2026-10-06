@@ -221,6 +221,16 @@ after they end, when a booked one passes its 60-day validity unstarted,
 or that many days after its days of play if it was somehow never ended.
 The ticket purchase stays, its email blanked.
 
+Quiz trails made at the public door (`/o/{slug}/trail`, on an org with
+`organizations.quiz_trail_enabled`, set by a site admin in the
+database) are hidden adventures of that org with a `trails` row. An
+hourly sweeper (`SweepTrails`) deletes an unpaid draft 30 days after its
+last edit, deletes a paid one — adventure, event and trail — once its
+event has ended or lapsed unplayed (mailing the buyer that it is gone),
+mails the buyer a Keep it link a week into play, and drops expired
+email links. Keeping a trail moves its adventure into the keeper's org
+and deletes its event.
+
 ## Platform admin vs organisations
 
 The global admin is the operator: organisations, admins, settings,

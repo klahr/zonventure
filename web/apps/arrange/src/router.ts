@@ -22,6 +22,7 @@ export type Route =
   | { name: "adventure"; slug: string }
   | { name: "designer"; slug: string }
   | { name: "trail"; slug: string }
+  | { name: "keep"; token: string }
   | { name: "field" }
   | { name: "authorize" }
   | { name: "catalog" }
@@ -73,6 +74,9 @@ export function parseRoute(hash: string): Route {
       return arg ? { name: "designer", slug: arg } : { name: "adventures" };
     case "field":
       return { name: "field" };
+    // Keep it: a public quiz trail moving into this organisation.
+    case "keep":
+      return arg ? { name: "keep", token: arg } : { name: "adventures" };
     // An MCP client asking to sign in; its request is in the query.
     case "authorize":
       return { name: "authorize" };
@@ -135,6 +139,8 @@ export function href(r: Route): string {
       return `#/adventures/${e(r.slug)}/design`;
     case "trail":
       return `#/adventures/${e(r.slug)}/cards`;
+    case "keep":
+      return `#/keep/${e(r.token)}`;
     case "field":
       return "#/field";
     case "authorize":

@@ -371,6 +371,9 @@ func New(cfg Config) http.Handler {
 	// Hosted events: finish idle games, end lapsed events, retry game
 	// summaries. See admin/hosted.go.
 	periodic.Start(bgCtx, time.Minute, adminH.SweepHosted)
+	// Public quiz trails: delete old drafts and ended trails, offer
+	// Keep it a week into play. See admin/trails_public.go.
+	periodic.Start(bgCtx, time.Hour, adminH.SweepTrails)
 	publicH := &public.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL, Engine: playerH.Engine,
 		// Same PlatformFee as adminH so the /store listing filter

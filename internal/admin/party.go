@@ -93,8 +93,9 @@ func (h *Handlers) ListPartyOffers(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(o.blurb, '')
 		FROM adventures a
 		LEFT JOIN party_offers o ON o.org_id = $1 AND o.adventure_slug = a.slug
-		WHERE a.org_id = $1
-		   OR EXISTS (SELECT 1 FROM adventure_shares s WHERE s.adventure_slug = a.slug AND s.org_id = $1)
+		WHERE NOT a.trail_hidden
+		  AND (a.org_id = $1
+		   OR EXISTS (SELECT 1 FROM adventure_shares s WHERE s.adventure_slug = a.slug AND s.org_id = $1))
 		ORDER BY 3
 	`, *me.OrgID)
 	if err != nil {
@@ -302,7 +303,7 @@ const publicPartyOffersSQL = `
 	FROM party_offers o
 	JOIN organizations g ON g.id = o.org_id
 	JOIN adventures a ON a.slug = o.adventure_slug
-	WHERE o.enabled AND a.published_graph_id IS NOT NULL AND g.slug = $1`
+	WHERE o.enabled AND a.published_graph_id IS NOT NULL AND NOT a.trail_hidden AND g.slug = $1`
 
 func (h *Handlers) scanPublicOffer(row interface{ Scan(...any) error }) (PublicPartyOfferDTO, error) {
 	var (
@@ -600,6 +601,12 @@ func (h *Handlers) sendPartyHostLink(ctx context.Context, eventID int64, to, hos
 	if publicURL == "" {
 		return errors.New("party email requires PublicURL")
 	}
+	// A public quiz trail's buyer gets the trail's own mail.
+	if _, ok, err := h.trailOfEvent(ctx, eventID); err != nil {
+		return err
+	} else if ok {
+		return h.sendTrailPaid(ctx, eventID, to, hostToken)
+	}
 	l := h.eventLook(ctx, eventID)
 	var name string
 	_ = h.DB.QueryRowContext(ctx, `SELECT party_name FROM events WHERE id = $1`, eventID).Scan(&name)
@@ -752,8 +759,13 @@ type hostPartyDTO struct {
 	// Trail is set for a quiz trail, whose cards print as a PDF
 	// (cards.pdf) instead of the station cards; Reprint when they
 	// changed since they were printed.
-	Trail       bool           `json:"trail"`
-	Reprint     bool           `json:"reprint"`
+	Trail   bool `json:"trail"`
+	Reprint bool `json:"reprint"`
+	// PublicTrail is set for a quiz trail made at the public door: the
+	// host link edits its cards (cards), and from KeepFrom its buyer may
+	// keep it (keep).
+	PublicTrail bool           `json:"public_trail"`
+	KeepFrom    *time.Time     `json:"keep_from,omitempty"`
 	FirstGameAt *time.Time     `json:"first_game_at,omitempty"`
 	Teams       []hostTeamDTO  `json:"teams"`
 	Rounds      []hostRoundDTO `json:"rounds"`
@@ -849,6 +861,16 @@ func (h *Handlers) GetHostParty(w http.ResponseWriter, r *http.Request) {
 	} else if !errors.Is(err, errNotTrail) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "trail lookup failed", err)
 		return
+	}
+	if pt, ok, err := h.trailOfEvent(ctx, p.EventID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "trail lookup failed", err)
+		return
+	} else if ok {
+		out.PublicTrail = true
+		if pt.FirstGameAt.Valid {
+			k := keepFrom(pt.FirstGameAt.Time)
+			out.KeepFrom = &k
+		}
 	}
 	if out.Teams, err = h.roundTeams(ctx, p.EventID, p.Round); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "teams lookup failed", err)
@@ -1093,9 +1115,11 @@ func (h *Handlers) ResendPartyLinks(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT e.id FROM ticket_purchases p JOIN events e ON e.id = p.event_id
-		WHERE p.kind = 'party' AND p.state = 'paid' AND p.buyer_email = $1
-		  AND e.party AND e.state IN ('scheduled', 'running', 'paused')
+		SELECT e.id FROM events e
+		WHERE e.party AND e.state IN ('scheduled', 'running', 'paused')
+		  AND (EXISTS (SELECT 1 FROM ticket_purchases p WHERE p.event_id = e.id AND p.kind IN ('party', 'hosted')
+		               AND p.state = 'paid' AND p.buyer_email = $1)
+		    OR EXISTS (SELECT 1 FROM trails t WHERE t.event_id = e.id AND LOWER(t.email) = $1))
 	`, email)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)

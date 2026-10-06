@@ -40,7 +40,7 @@ func CatalogFilter() string {
 	if !CatalogEnabled {
 		return `FALSE`
 	}
-	return `(a.published = 1 AND a.org_id = (SELECT id FROM organizations WHERE is_publisher))`
+	return `(a.published = 1 AND NOT a.trail_hidden AND a.org_id = (SELECT id FROM organizations WHERE is_publisher))`
 }
 
 // publisherOrgID returns the publisher org's id; ok is false when no
@@ -103,7 +103,7 @@ func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 		       a.published_graph_id IS NOT NULL,
 		       a.avatar_mime_type IS NOT NULL
 		FROM adventures a
-		WHERE a.org_id = $1
+		WHERE a.org_id = $1 AND NOT a.trail_hidden
 		ORDER BY LOWER(a.title), a.slug
 	`, pid)
 	if err != nil {
