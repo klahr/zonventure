@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-06
+
 ### Changed — party adventures are free for small parties
 
 - **Free for up to 3 teams per game.** Hosting with no blocks — now the
