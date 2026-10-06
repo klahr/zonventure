@@ -367,6 +367,7 @@ func New(cfg Config) http.Handler {
 		Updates:        updateSvc,
 		ConfirmLimiter: newSweptLimiter(bgCtx),
 	}
+	adminH.Hosted = payments.HostedPassFromEnv(adminH.PlatformFee.Enabled())
 	// Hosted events: finish idle games, end lapsed events, retry game
 	// summaries. See admin/hosted.go.
 	periodic.Start(bgCtx, time.Minute, adminH.SweepHosted)

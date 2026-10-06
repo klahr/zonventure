@@ -1,0 +1,15 @@
+/* The simple creator in the console: it fills the content area, the
+   timeline sticking to its foot. */
+.trail-page {
+  min-height: calc(100dvh - var(--topbar-h, 3.5rem));
+  display: flex;
+  flex-direction: column;
+}
+.trail-page > .trail {
+  flex: 1;
+}
+.trail-page a.trail-btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}

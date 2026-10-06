@@ -122,6 +122,11 @@ services:
       ZV_PLATFORM_FEE_PERCENT_BPS: ${ZV_PLATFORM_FEE_PERCENT_BPS:-}
       ZV_PLATFORM_FEE_FIXED_CENTS: ${ZV_PLATFORM_FEE_FIXED_CENTS:-}
       ZV_PLATFORM_FEE_MIN_CENTS:   ${ZV_PLATFORM_FEE_MIN_CENTS:-}
+      # Hosted events (parties, Host it): the pass price per block of
+      # 15 teams a game holds. Empty → 14900 when a platform fee is
+      # set, else 0 (free); currency empty → sek.
+      ZV_HOSTED_BLOCK_CENTS:       ${ZV_HOSTED_BLOCK_CENTS:-}
+      ZV_HOSTED_CURRENCY:          ${ZV_HOSTED_CURRENCY:-}
       # Postgres pool sizing; empty → server defaults (25 open / 5 idle).
       ZV_DB_MAX_OPEN_CONNS:       ${ZV_DB_MAX_OPEN_CONNS:-}
       ZV_DB_MAX_IDLE_CONNS:       ${ZV_DB_MAX_IDLE_CONNS:-}

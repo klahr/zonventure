@@ -86,11 +86,17 @@
   font-weight: 600;
   cursor: pointer;
 }
+.hosted-btn--link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
 .hosted-btn:disabled {
   opacity: 0.55;
   cursor: default;
 }
-.hosted-btn--primary {
+.hosted-btn--primary,
+.hosted-btn--primary:hover:not(:disabled) {
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
@@ -99,6 +105,20 @@
   border-color: transparent;
   background: transparent;
   font-size: var(--text-lg);
+}
+.hosted-link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.hosted-link-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 .hosted-actions {
   display: flex;

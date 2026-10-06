@@ -1,6 +1,6 @@
 import { Suspense, lazy, useState, type ReactNode } from "react";
-import { CalendarPlus, ChevronLeft, Coins, Compass, Copy, Download, ExternalLink, MapPin, Pencil, Play, Trash2, Workflow } from "lucide-react";
-import { ApiError } from "@zonventure/api";
+import { CalendarPlus, ChevronLeft, Coins, Compass, Copy, Download, ExternalLink, ListOrdered, MapPin, PartyPopper, Pencil, Play, Trash2, Workflow } from "lucide-react";
+import { ApiError, request } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { useTopBarTitle } from "../../topbar.tsx";
@@ -8,6 +8,7 @@ import { CATALOG_ENABLED, href, navigate } from "../../router.ts";
 import { Button, Card, ErrorBox, ICON, Loading, Page, PageHeader, Pill, Stat, Stats, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 import { NewEventDialog } from "../events/NewEventDialog.tsx";
 import { NewQuestDialog } from "../events/NewQuestDialog.tsx";
+import { HostItDialog } from "../events/HostItDialog.tsx";
 import { deleteAdventure, duplicateAdventure, exportURL, firstPlaceOf, getAdventure, getGraphState, isPublisher, listAdventures, listAssignments, type AdventureDetail, type Assignment } from "./api.ts";
 import { AdventureMap } from "./AdventureMap.tsx";
 import { EditDetailsDialog, PickPassDialog } from "./dialogs.tsx";
@@ -53,6 +54,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
   const user = state.status === "authenticated" ? state.user : null;
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [selling, setSelling] = useState(false);
+  const [hosting, setHosting] = useState(false);
   const [testing, setTesting] = useState(false);
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -157,14 +159,43 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
     );
   }
 
+  // A quiz trail is edited as cards; the designer takes it over for good.
+  const toDesigner = async () => {
+    const ok = await dialogs.confirm({
+      title: t.t("Open in the designer?"),
+      message: t.t("The designer can do much more, but you can't go back to the simple editor: its cards are left behind."),
+      confirmLabel: t.t("Open in the designer"),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await request(`/api/admin/adventures/${encodeURIComponent(a.slug)}/cards/designer`, { method: "POST" });
+      navigate({ name: "designer", slug: a.slug });
+    } catch (e) {
+      toast.err(e);
+    }
+  };
+  if (a.mine_to_edit && a.trail) {
+    more.unshift(
+      { label: t.t("Open in the designer"), icon: <Workflow size={ICON.sm} aria-hidden />, title: t.t("Hand the trail over to the full designer, for good"), onClick: () => void toDesigner() },
+      { separator: true },
+    );
+  }
+
   const actions = (
     <>
-      {a.mine_to_edit && (
-        <a className="btn adv-btn primary" href={href({ name: "designer", slug: a.slug })} title={t.t("Design the adventure as a flow of steps")}>
-          <Workflow size={ICON.md} aria-hidden />
-          {t.t("Open designer")}
-        </a>
-      )}
+      {a.mine_to_edit &&
+        (a.trail ? (
+          <a className="btn adv-btn primary" href={href({ name: "trail", slug: a.slug })} title={t.t("Edit the quiz trail's cards")}>
+            <ListOrdered size={ICON.md} aria-hidden />
+            {t.t("Edit cards")}
+          </a>
+        ) : (
+          <a className="btn adv-btn primary" href={href({ name: "designer", slug: a.slug })} title={t.t("Design the adventure as a flow of steps")}>
+            <Workflow size={ICON.md} aria-hidden />
+            {t.t("Open designer")}
+          </a>
+        ))}
       {own || shared || passes.length ? (
         !designed && (
           <Button variant={a.mine_to_edit ? "secondary" : "primary"} icon={<CalendarPlus size={ICON.md} aria-hidden />} onClick={openSchedule}>
@@ -184,6 +215,11 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
       {(a.mine_to_edit || shared) && !designed && (
         <Button icon={<Compass size={ICON.md} aria-hidden />} title={t.t("New self-guided adventure")} onClick={() => setSelling(true)}>
           {t.t("Self-guided adventure")}
+        </Button>
+      )}
+      {(a.mine_to_edit || shared) && !designed && (
+        <Button icon={<PartyPopper size={ICON.md} aria-hidden />} title={t.t("Run it yourself, game after game, from a host page")} onClick={() => setHosting(true)}>
+          {t.t("Host it")}
         </Button>
       )}
       {more.length > 0 && <MoreMenu label={t.t("More")} items={more} />}
@@ -313,6 +349,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
         </Suspense>
       )}
       {selling && <NewQuestDialog slug={a.slug} onClose={() => setSelling(false)} onCreated={(id) => navigate({ name: "event", id })} />}
+      {hosting && <HostItDialog slug={a.slug} title={a.title || a.slug} onClose={() => setHosting(false)} />}
     </Page>
   );
 }

@@ -88,7 +88,8 @@ export function TeamsCard(props: {
             <MoreMenu label={t.t("Share links")} items={share} />
           </>
         )}
-        {!isTerminal(event) && (
+        {/* A hosted event's teams join from its player link. */}
+        {!isTerminal(event) && !event.party && (
         <Button
           size="sm"
           {...(teams.length === 0 ? { variant: "primary" as const } : {})}

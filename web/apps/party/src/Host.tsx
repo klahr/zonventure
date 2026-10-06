@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "@zonventure/api";
-import { Game, HostedProvider, PersonaliseSection, PlacesSection, PlayerLink, WhereSection, adaptable, partyApi, type HostedEvent } from "@zonventure/hosted";
+import { Game, HostedProvider, PersonaliseSection, PlacesSection, PlayerLink, TrailPrint, WhereSection, adaptable, partyApi, type HostedEvent } from "@zonventure/hosted";
 import { Resend } from "./Book.tsx";
 import { useT } from "./i18n.tsx";
 
@@ -136,7 +136,12 @@ export function Host({ token }: { token: string }) {
           </section>
         )}
 
-        {party.mode === "park" ? (
+        {party.trail ? (
+          <section className="party-card">
+            {heading(t("Cards"))}
+            <TrailPrint event={party} />
+          </section>
+        ) : party.mode === "park" ? (
           <section className="party-card">
             {heading(t("Places"))}
             <PlacesSection party={party} />

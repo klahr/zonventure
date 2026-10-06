@@ -84,6 +84,9 @@ type Handlers struct {
 	// right posture for self-host: the operator runs the platform
 	// for themselves and pays nobody a cut.
 	PlatformFee payments.PlatformFee
+	// Hosted is the price of a hosted event's pass, per block of teams:
+	// see payments.HostedPass and hosted_pricing.go.
+	Hosted payments.HostedPass
 	// SecureCookie is the operator's force-secure override, mirrored
 	// from server.Config. Cookie-emitting paths in this package pass
 	// it to auth.CookieSecure for parity with the auth/player handlers.
@@ -708,10 +711,16 @@ func (h *Handlers) transitionEvent(w http.ResponseWriter, r *http.Request, actio
 	var (
 		state         string
 		publicForSale bool
+		party         bool
 	)
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT state, public_for_sale FROM events WHERE id = $1`, eventID).Scan(&state, &publicForSale); err != nil {
+		`SELECT state, public_for_sale, party FROM events WHERE id = $1`, eventID).Scan(&state, &publicForSale, &party); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	// A hosted event starts when its first team joins.
+	if party && action == "start" {
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "a hosted event starts when its first team joins", "reason": "event_hosted"})
 		return
 	}
 	var want, update string

@@ -1,0 +1,75 @@
+import { useState } from "react";
+import { ApiError, request } from "@zonventure/api";
+import { TemplatePicker, type TemplateInfo } from "@zonventure/trail";
+import { useT } from "../../i18n.tsx";
+import { navigate } from "../../router.ts";
+import { Dialog, ErrorBox, Field, Loading, useLoad } from "../../ui/index.ts";
+
+/**
+ * "New adventure" asks which editor first: a quiz trail in the simple
+ * creator — cards in a row, done in minutes — or the full designer. A
+ * quiz trail starts from a template, in Swedish or English.
+ */
+export function NewKindDialog({ onDesigner, onClose }: { onDesigner: () => void; onClose: () => void }) {
+  const t = useT();
+  const [kind, setKind] = useState<"choose" | "trail">("choose");
+  const [lang, setLang] = useState(t.current() === "sv" ? "sv" : "en");
+  const templates = useLoad(
+    (signal) => (kind === "trail" ? request<{ templates: TemplateInfo[] }>(`/api/admin/trail-templates?lang=${lang}`, { signal }).then((r) => r.templates) : Promise.resolve([])),
+    [kind, lang],
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = async (template: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await request<{ slug: string }>("/api/admin/trails", { method: "POST", body: { template, language: lang } });
+      onClose();
+      navigate({ name: "trail", slug: r.slug });
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog title={t.t("New adventure")} wide onClose={() => !busy && onClose()}>
+      {kind === "choose" ? (
+        <ul className="trail-templates">
+          <li>
+            <button type="button" onClick={() => setKind("trail")}>
+              <strong>{t.t("Quiz trail (simple)")}</strong>
+              <span>{t.t("Questions on cards you print and hide; teams answer on their phones. Made in minutes, on a phone too.")}</span>
+            </button>
+          </li>
+          <li>
+            <button type="button" onClick={onDesigner}>
+              <strong>{t.t("Designer (full)")}</strong>
+              <span>{t.t("Places on a map, puzzles of every kind, branches and story. The full toolbox.")}</span>
+            </button>
+          </li>
+        </ul>
+      ) : (
+        <>
+          <Field label={t.t("Language")}>
+            <select value={lang} onChange={(e) => setLang(e.target.value)} disabled={busy}>
+              <option value="sv">Svenska</option>
+              <option value="en">English</option>
+            </select>
+          </Field>
+          <p className="evs-muted">{t.t("Start from an example and make it yours.")}</p>
+          {templates.error ? (
+            <ErrorBox message={templates.error} retry={templates.reload} retryLabel={t.t("Retry")} />
+          ) : !templates.data ? (
+            <Loading label={t.t("Loading…")} />
+          ) : (
+            <TemplatePicker i18n={t} templates={templates.data} busy={busy} onPick={(name) => void create(name)} />
+          )}
+          {error && <ErrorBox message={error} />}
+        </>
+      )}
+    </Dialog>
+  );
+}

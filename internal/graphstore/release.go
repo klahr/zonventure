@@ -2,7 +2,9 @@ package graphstore
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -262,6 +264,13 @@ func Versions(ctx context.Context, q Lister, adventureID int64) ([]Version, erro
 // worth publishing — which matches the editor's "unpublished changes".
 func Differs(a, b *graph.Graph) bool {
 	return canonical(a) != canonical(b)
+}
+
+// Fingerprint is a short digest of what Differs compares: equal for two
+// graphs a team could not tell apart.
+func Fingerprint(g *graph.Graph) string {
+	sum := sha256.Sum256([]byte(canonical(g)))
+	return hex.EncodeToString(sum[:])
 }
 
 func canonical(g *graph.Graph) string {

@@ -11,6 +11,57 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — quiz trails in the console
+
+- **New adventure → Quiz trail (simple)**: an adventure written as a row
+  of cards — a question with three options (1, X, 2), a question with a
+  typed answer, or a card to read — from a template (birthday party,
+  kids' trail, office or team, family, blank), in Swedish or English.
+  The creator works on a phone: the selected card above, a timeline of
+  numbered cards below, hold and drag to reorder (or Move earlier/later),
+  Undo after a delete or move. It saves as you type.
+- The cards make the graph, one way (`internal/trail`): each card is a
+  step with no place. The question is on paper; the phone shows "Card N"
+  and the options, or a field for a typed answer (one try, a point when
+  right). Quiz answers count at the end, as on a tipspromenad.
+- Saving keeps the draft; **Done** publishes when every card is finished
+  and says what each still needs otherwise. A hosted game (and Host it)
+  publishes the latest cards first, so edits between games apply.
+- **Print cards** (two to an A4 sheet: number, question, options) and an
+  **answer key**, as PDFs; from a hosted event the cards come after a
+  cover with the player link's QR code. The creator and the host page
+  say when the cards changed since they were printed.
+- **Open in the designer** hands a trail over for good; a trail whose
+  draft was changed in the designer is read-only in the creator.
+- The creator lives in a shared package, `@zonventure/trail`.
+- Migration `0111_trail_cards`: `adventures.trail_cards`,
+  `trail_revision`, `trail_graph`, `trail_printed`, `trail_template`,
+  `trail_kids`.
+
+### Added — paying for hosted events
+
+- **A hosted event costs a pass per block of 15 teams per game**:
+  `ZV_HOSTED_BLOCK_CENTS` (default 14900 — 149 kr — where a platform
+  fee is set, free otherwise) in `ZV_HOSTED_CURRENCY` (default sek).
+- **Host it**, on an adventure's page in the console: a hosted event of
+  the org's own adventure, run from the console or the host link mailed
+  to the arranger. Paid on the platform's own Stripe account (no
+  connected account); made at once where hosting is free. "More than 15
+  teams in one game?" buys more blocks.
+- **Add 15 teams** on the host page and the console: one more block per
+  game, paid in a tab of its own (the host link never goes to the
+  payment provider), landing on `/app/party/paid`. A refund takes the
+  block back.
+- **A party's platform fee is the pass price** instead of the percent
+  formula, where a platform fee is set. An offer must cost more than the
+  pass and be in its currency.
+- The console no longer makes teams or player places for a hosted
+  event, schedules it or starts it (`event_hosted`): its teams join from
+  the player link, and its games start as they do.
+- Migration `0110_hosted_pricing`: purchase kinds `hosted` and
+  `hosted_blocks`; `ticket_purchases.blocks`, `buyer_org_id`,
+  `adventure_slug`.
+
 ### Changed — hosted events
 
 - **A party is a hosted event that plays game after game.** Its first

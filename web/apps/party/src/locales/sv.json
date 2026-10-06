@@ -63,5 +63,7 @@
   "The host is still setting the game up. Try again in a moment.": "Värden håller fortfarande på att förbereda spelet. Försök igen om en stund.",
   "This game has ended.": "Det här spelet är slut.",
   "This game is full. Ask the host to add teams.": "Det här spelet är fullt. Be värden att lägga till fler lag.",
-  "This link doesn't open a game": "Den här länken öppnar inget spel"
+  "This link doesn't open a game": "Den här länken öppnar inget spel",
+  "Thank you — payment received": "Tack – betalningen är mottagen",
+  "Close this tab and go back to your host page. The new teams show there in a moment.": "Stäng den här fliken och gå tillbaka till din värdsida. De nya lagen syns där om en stund."
 }

@@ -38,6 +38,14 @@ import (
 // (party_stations). The retention sweeper deletes the event a while after
 // the party, keeping only the purchase. See migration 0108.
 
+// formatMinor shows minor units as an amount: "149 SEK".
+func formatMinor(cents int64, currency string) string {
+	if cents%100 == 0 {
+		return fmt.Sprintf("%d %s", cents/100, strings.ToUpper(currency))
+	}
+	return fmt.Sprintf("%.2f %s", float64(cents)/100, strings.ToUpper(currency))
+}
+
 // PartyValidity is how long a booked party may wait for its first game.
 const PartyValidity = 60 * 24 * time.Hour
 
@@ -215,6 +223,25 @@ func (h *Handlers) PutPartyOffer(w http.ResponseWriter, r *http.Request) {
 		if req.BaseCents+req.PerKidCents <= 0 {
 			httpx.Error(w, http.StatusBadRequest, "set a price before offering the party")
 			return
+		}
+		// The platform's cut of a party is its pass price, in the pass's
+		// currency: the smallest party must cost more than that.
+		if h.PlatformFee.Enabled() && !h.Hosted.Free() {
+			if req.Currency != h.Hosted.Currency {
+				httpx.JSON(w, http.StatusBadRequest, map[string]string{
+					"error": fmt.Sprintf("parties are sold in %s", strings.ToUpper(h.Hosted.Currency)),
+					"code":  "currency_not_supported",
+				})
+				return
+			}
+			if fee := h.Hosted.Price(1); int64(req.BaseCents+req.PerKidCents) <= fee {
+				httpx.JSON(w, http.StatusBadRequest, map[string]any{
+					"error":     fmt.Sprintf("a party must cost more than the platform's %s", formatMinor(fee, h.Hosted.Currency)),
+					"code":      "price_below_fee",
+					"fee_cents": fee,
+				})
+				return
+			}
 		}
 		g, err := h.partyGraph(r.Context(), advID)
 		if errors.Is(err, errNoPartyGraph) {
@@ -427,14 +454,16 @@ func (h *Handlers) BookParty(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		connectedAccountID = acct
-		applicationFee = h.PlatformFee.Compute(amount)
+		// A party is a hosted event of one block: the platform takes
+		// the pass price.
+		applicationFee = h.Hosted.Fee(amount, 1)
 	}
 
 	var purchaseID int64
 	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO ticket_purchases (kind, party_offer_id, party_name, consent_at, buyer_email,
-		                              team_size, amount_cents, currency, application_fee_cents)
-		VALUES ('party', $1, $2, now(), $3, $4, $5, $6, $7) RETURNING id
+		                              team_size, amount_cents, currency, application_fee_cents, blocks)
+		VALUES ('party', $1, $2, now(), $3, $4, $5, $6, $7, 1) RETURNING id
 	`, offer.ID, name, email, req.Kids, amount, offer.Currency, applicationFee).Scan(&purchaseID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "booking failed", err)
 		return
@@ -478,25 +507,43 @@ func (h *Handlers) stripeConnectAccountForOrgSlug(ctx context.Context, slug stri
 /* ---------------- fulfilment ---------------- */
 
 // fulfilParty turns a paid party booking into its event, inside the
-// webhook's transaction: the seller's event, unstarted, with a station
-// card for every zone, and a host link. It returns the host link's
-// secret, which only the email carries.
+// webhook's transaction: the seller's hosted event of the offered
+// adventure. It returns the host link's secret, which only the email
+// carries.
 func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, partyName string, kids int) (eventID int64, hostToken string, err error) {
 	var (
 		orgID   int64
 		advSlug string
-		advID   int64
 		title   string
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT o.org_id, o.adventure_slug, a.id, COALESCE(NULLIF(a.title, ''), a.slug)
+		SELECT o.org_id, o.adventure_slug, COALESCE(NULLIF(a.title, ''), a.slug)
 		FROM party_offers o JOIN adventures a ON a.slug = o.adventure_slug
 		WHERE o.id = $1
-	`, offerID).Scan(&orgID, &advSlug, &advID, &title); err != nil {
+	`, offerID).Scan(&orgID, &advSlug, &title); err != nil {
 		return 0, "", fmt.Errorf("party offer %d: %w", offerID, err)
 	}
 	if strings.TrimSpace(partyName) == "" {
 		partyName = title
+	}
+	eventID, hostToken, err = createHostedEvent(ctx, tx, orgID, advSlug, partyName, kids, 1)
+	if err != nil {
+		return 0, "", err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE ticket_purchases SET event_id = $1 WHERE id = $2`, eventID, purchaseID); err != nil {
+		return 0, "", err
+	}
+	return eventID, hostToken, nil
+}
+
+// createHostedEvent makes a hosted event of orgID's, unstarted, playing
+// advSlug: with a station card for every zone, a host link and a player
+// link, blocks blocks of teams per game, and 60 days to start its first
+// game. It returns the event and the host link's secret.
+func createHostedEvent(ctx context.Context, tx *sql.Tx, orgID int64, advSlug, name string, kids, blocks int) (eventID int64, hostToken string, err error) {
+	var advID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM adventures WHERE slug = $1`, advSlug).Scan(&advID); err != nil {
+		return 0, "", fmt.Errorf("adventure %q: %w", advSlug, err)
 	}
 	hostToken, err = tokenx.New(24)
 	if err != nil {
@@ -511,7 +558,7 @@ func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, par
 		return 0, "", err
 	}
 	// Cards where the adventure allows them, which is anywhere; a park
-	// otherwise. The host may change it until the party starts.
+	// otherwise. The host may change it between games.
 	mode := "qr"
 	published, err := graphstore.Published(ctx, tx, advID)
 	if err != nil && !errors.Is(err, graphstore.ErrNotFound) {
@@ -522,25 +569,22 @@ func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, par
 	}
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO events (adventure_slug, org_id, state, live_token, name, attested_no_minors_at,
-		                    party, host_token_hash, party_name, party_kids, party_mode, valid_until, player_token)
-		VALUES ($1, $2, 'scheduled', $3, $4, now_text(), TRUE, $5, $4, $6, $7, $8, $9)
+		                    party, host_token_hash, party_name, party_kids, party_mode, valid_until, player_token, hosted_blocks)
+		VALUES ($1, $2, 'scheduled', $3, $4, now_text(), TRUE, $5, $4, $6, $7, $8, $9, $10)
 		RETURNING id
-	`, advSlug, orgID, liveToken, partyName, hashHostToken(hostToken), kids, mode,
-		time.Now().Add(PartyValidity), playerToken).Scan(&eventID); err != nil {
-		return 0, "", fmt.Errorf("party event: %w", err)
+	`, advSlug, orgID, liveToken, name, hashHostToken(hostToken), kids, mode,
+		time.Now().Add(PartyValidity), playerToken, blocks).Scan(&eventID); err != nil {
+		return 0, "", fmt.Errorf("hosted event: %w", err)
 	}
 	// Cards for the zones the adventure has now, so the host can print
-	// them before the party; any added later get theirs at the start.
+	// them before the first game; any added later get theirs then.
 	if published.Graph != nil {
 		if err := play.EnsureStations(ctx, tx, eventID, published.Graph.Zones); err != nil {
 			return 0, "", err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE ticket_purchases SET event_id = $1 WHERE id = $2`, eventID, purchaseID); err != nil {
-		return 0, "", err
-	}
 	activity.Record(ctx, tx, eventID, nil, activity.Actor{}, activity.EventCreated,
-		map[string]any{"adventure_slug": advSlug, "party": true, "kids": kids})
+		map[string]any{"adventure_slug": advSlug, "party": true, "kids": kids, "blocks": blocks})
 	return eventID, hostToken, nil
 }
 
@@ -697,10 +741,19 @@ type hostPartyDTO struct {
 
 	// The player link teams join from, and the games played so far.
 	// Teams are those of the game being played, or of the last one.
-	PlayerURL   string         `json:"player_url"`
-	Round       int            `json:"round"`
-	RoundOpen   bool           `json:"round_open"`
-	TeamsLimit  int            `json:"teams_limit"`
+	PlayerURL  string `json:"player_url"`
+	Round      int    `json:"round"`
+	RoundOpen  bool   `json:"round_open"`
+	TeamsLimit int    `json:"teams_limit"`
+	// MaxTeams is the most teams a game can be bought up to, and Price
+	// what each block more costs (0 where hosting is free).
+	MaxTeams int            `json:"max_teams"`
+	Price    hostedPriceDTO `json:"price"`
+	// Trail is set for a quiz trail, whose cards print as a PDF
+	// (cards.pdf) instead of the station cards; Reprint when they
+	// changed since they were printed.
+	Trail       bool           `json:"trail"`
+	Reprint     bool           `json:"reprint"`
 	FirstGameAt *time.Time     `json:"first_game_at,omitempty"`
 	Teams       []hostTeamDTO  `json:"teams"`
 	Rounds      []hostRoundDTO `json:"rounds"`
@@ -727,7 +780,7 @@ func (h *Handlers) GetHostParty(w http.ResponseWriter, r *http.Request) {
 	out := hostPartyDTO{State: p.State, Kids: p.Kids, ValidUntil: p.ValidUntil,
 		Expired: partyLapsed(p), PlayURL: base + "/play",
 		PlayerURL: base + "/j/" + p.PlayerToken, Round: p.Round, RoundOpen: p.RoundOpen,
-		TeamsLimit: p.Blocks * TeamsPerBlock}
+		TeamsLimit: p.Blocks * TeamsPerBlock, MaxTeams: maxBlocks * TeamsPerBlock, Price: h.hostedPrice()}
 	var liveToken string
 	if err := h.DB.QueryRowContext(ctx, `
 		SELECT e.party_name, COALESCE(NULLIF(a.title, ''), a.slug), o.name, e.live_token, e.first_game_at
@@ -790,6 +843,13 @@ func (h *Handlers) GetHostParty(w http.ResponseWriter, r *http.Request) {
 			URL: base + "/play?station=" + code})
 	}
 
+	if t, err := loadTrail(ctx, h.DB, p.AdvSlug, false); err == nil {
+		out.Trail = true
+		out.Reprint = t.printed.Valid && int(t.printed.Int64) != t.dto.Revision
+	} else if !errors.Is(err, errNotTrail) {
+		httpx.ServerErr(w, http.StatusInternalServerError, "trail lookup failed", err)
+		return
+	}
 	if out.Teams, err = h.roundTeams(ctx, p.EventID, p.Round); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "teams lookup failed", err)
 		return

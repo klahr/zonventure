@@ -209,6 +209,21 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Get("/events/{eventID}/hosted/qr", adminH.HostPartyQR)
 			r.Post("/events/{eventID}/hosted/finish-game", adminH.FinishHostedGame)
 			r.Post("/events/{eventID}/hosted/send-player-link", adminH.SendHostedPlayerLink)
+			r.Post("/events/{eventID}/hosted/blocks", adminH.AddHostedBlocks)
+			// Host it: a hosted event of the org's own adventure, at the
+			// platform's pass price (hosted_pricing.go).
+			r.Get("/hosted-price", adminH.GetHostedPrice)
+			r.Post("/adventures/{slug}/host", adminH.HostAdventure)
+			// Quiz trails: adventures written in the simple creator as
+			// cards (trails.go, trail_pdf.go).
+			r.Get("/trail-templates", adminH.ListTrailTemplates)
+			r.Post("/trails", adminH.CreateTrail)
+			r.Get("/adventures/{slug}/cards", adminH.GetTrail)
+			r.Put("/adventures/{slug}/cards", adminH.PutTrail)
+			r.Post("/adventures/{slug}/cards/publish", adminH.PublishTrail)
+			r.Post("/adventures/{slug}/cards/designer", adminH.OpenTrailInDesigner)
+			r.Get("/adventures/{slug}/cards.pdf", adminH.TrailPDF)
+			r.Get("/events/{eventID}/hosted/cards.pdf", adminH.HostedTrailPDF)
 			r.Put("/events/{eventID}/hosted/personalise", adminH.PutHostPersonalise)
 			r.Put("/events/{eventID}/hosted/mode", adminH.PutHostMode)
 			r.Put("/events/{eventID}/hosted/places/{slug}", adminH.PutHostPlace)

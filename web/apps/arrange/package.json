@@ -16,6 +16,7 @@
     "@zonventure/api": "*",
     "@zonventure/graph": "*",
     "@zonventure/hosted": "*",
+    "@zonventure/trail": "*",
     "@zonventure/i18n": "*",
     "@zonventure/play-ui": "*",
     "@zonventure/ui": "*",

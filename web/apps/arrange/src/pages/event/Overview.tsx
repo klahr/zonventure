@@ -40,7 +40,7 @@ export function QuickStats({ event, teams, now }: { event: EventInfo; teams: Tea
             label={soon ? t.t("starts in") : t.t("starts {{when}}", { when: relTime(event.scheduled_at, loc) })}
           />
         ) : (
-          <Stat value="—" label={t.t("starts when you start it")} />
+          <Stat value="—" label={event.party ? t.t("starts when the first team joins") : t.t("starts when you start it")} />
         )}
       </Stats>
     );

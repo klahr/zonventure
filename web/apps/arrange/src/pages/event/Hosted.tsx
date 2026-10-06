@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Game, HostedProvider, PersonaliseSection, PlacesSection, PlayerLink, WhereSection, adaptable, consoleApi, type HostedEvent } from "@zonventure/hosted";
+import { Game, HostedProvider, PersonaliseSection, PlacesSection, PlayerLink, TrailPrint, WhereSection, adaptable, consoleApi, type HostedEvent } from "@zonventure/hosted";
 import { useT } from "../../i18n.tsx";
 import { Card, ErrorBox, Loading, useToast } from "../../ui/index.ts";
 
@@ -59,7 +59,12 @@ export function HostedCards({ eventId, refresh }: { eventId: number; refresh: nu
           </Card>
         </div>
         <div className="ev-col">
-          {adaptable(hosted) && hosted.cards_ok && hosted.park_ok && (
+          {hosted.trail && (
+            <Card title={t.t("Cards")}>
+              <TrailPrint event={hosted} />
+            </Card>
+          )}
+          {!hosted.trail && adaptable(hosted) && hosted.cards_ok && hosted.park_ok && (
             <Card title={t.t("Where it is played")}>
               <WhereSection party={hosted} />
             </Card>

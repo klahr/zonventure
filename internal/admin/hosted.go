@@ -255,9 +255,17 @@ func (h *Handlers) Join(w http.ResponseWriter, r *http.Request) {
 }
 
 // openRound opens the event's next game in tx: it pins the graph the
-// game plays and, for the first game, starts the event and its days of
+// game plays — publishing a quiz trail's latest cards first — and, for the first game, starts the event and its days of
 // play. It returns the new round.
 func openRound(ctx context.Context, tx *sql.Tx, p hostParty) (int, error) {
+	// A quiz trail plays its cards as they are now.
+	var advID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM adventures WHERE slug = $1`, p.AdvSlug).Scan(&advID); err != nil {
+		return 0, err
+	}
+	if _, err := publishTrail(ctx, tx, advID, 0); err != nil {
+		return 0, err
+	}
 	graphID, err := play.PinRound(ctx, tx, p.EventID)
 	if err != nil {
 		return 0, err

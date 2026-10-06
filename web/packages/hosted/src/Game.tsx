@@ -1,4 +1,4 @@
-import type { HostedEvent } from "./api.ts";
+import { money, type HostedEvent } from "./api.ts";
 import { useHosted } from "./context.tsx";
 
 /**
@@ -12,6 +12,18 @@ export function Game({ event }: { event: HostedEvent }) {
   const over = event.expired || event.state === "completed" || event.state === "cancelled";
   const earlier = event.rounds.filter((r) => r.finished_at);
   const date = (s: string) => new Date(s).toLocaleString(i18n.current(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const block = event.price.teams_per_block;
+  const canAdd = !over && event.teams_limit + block <= event.max_teams;
+  const addTeams = () =>
+    run(async () => {
+      const r = await api.addBlocks(1);
+      // Paid in a tab of its own: this page keeps its link, and shows the
+      // new limit once the payment lands.
+      if (!r.checkout_url) return;
+      const tab = window.open(r.checkout_url, "_blank");
+      if (tab) tab.opener = null;
+      else location.assign(r.checkout_url);
+    });
 
   return (
     <div className="hosted-game">
@@ -86,6 +98,17 @@ export function Game({ event }: { event: HostedEvent }) {
           {event.round === 0
             ? t("No game yet. The first team to join through the player link starts game 1.")
             : t("No game is being played. The next team to join starts game {{n}}.", { n: event.round + 1 })}
+        </p>
+      )}
+
+      {canAdd && (
+        <p className="hosted-muted">
+          {t("Up to {{n}} teams can play in one game.", { n: event.teams_limit })}{" "}
+          <button type="button" className="hosted-link-btn" disabled={busy} onClick={() => void addTeams()}>
+            {event.price.block_cents > 0
+              ? t("Add {{n}} teams for {{price}}", { n: block, price: money(event.price.block_cents, event.price.currency, i18n.current()) })
+              : t("Add {{n}} teams", { n: block })}
+          </button>
         </p>
       )}
 

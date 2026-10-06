@@ -484,7 +484,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		d.TicketPriceCents = int(priceCents.Int64)
 	}
 	d.ShowMap = showMap != 0
-	d.AllowedOps = allowedOpsForState(d.State)
+	d.AllowedOps = allowedOpsForState(d.State, d.Party)
 
 	teams := []eventDetailTeamDTO{}
 	rows, err := h.DB.QueryContext(ctx, `

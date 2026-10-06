@@ -106,7 +106,9 @@ export function EventPage({ id }: { id: number }) {
         ? t.t("Started {{when}}", { when: fmtDateTime(event.started_at, loc) })
         : event.scheduled_at
           ? t.t("Auto-start {{when}}", { when: fmtDateTime(event.scheduled_at, loc) }) + " · " + relTime(event.scheduled_at, loc)
-          : t.t("Not scheduled — starts when you start it");
+          : event.party
+            ? t.t("Starts when the first team joins")
+            : t.t("Not scheduled — starts when you start it");
   const openTeam = open && (open.kind === "team" || open.kind === "edit-team") ? teams.find((tm) => tm.id === open.id) : undefined;
 
   return (

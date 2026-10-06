@@ -43,9 +43,14 @@ func partyGraph() *graph.Graph {
 type partyFixture struct {
 	h       *admin.Handlers
 	mail    *fakeMailer
-	console http.Handler
+	console chi.Router
 	public  http.Handler
 	orgID   int64
+}
+
+// consoleRoute adds a route to the console router.
+func (f *partyFixture) consoleRoute(method, pattern string, h http.HandlerFunc) {
+	f.console.Method(method, pattern, h)
 }
 
 func newPartyFixture(t *testing.T) (*partyFixture, func()) {
@@ -87,6 +92,7 @@ func newPartyFixture(t *testing.T) (*partyFixture, func()) {
 	public.Delete("/api/party/{token}/teams/{teamID}", f.h.RemoveHostTeam)
 	public.Post("/api/party/{token}/finish-game", f.h.FinishHostedGame)
 	public.Post("/api/party/{token}/send-player-link", f.h.SendHostedPlayerLink)
+	public.Post("/api/party/{token}/blocks", f.h.AddHostedBlocks)
 	public.Get("/api/join/{token}", f.h.GetJoin)
 	public.Post("/api/join/{token}", f.h.Join)
 	public.Put("/api/party/{token}/personalise", f.h.PutHostPersonalise)
@@ -355,6 +361,16 @@ func TestParty_Console(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "/api/admin/events/" + strconv.FormatInt(eventID, 10) + "/hosted"
+	// Its teams join from the player link and its games start as they do:
+	// the console makes no teams for it and does not start it.
+	f.consoleRoute("POST", "/api/admin/events/{eventID}/teams", f.h.CreateTeam)
+	f.consoleRoute("POST", "/api/admin/events/{eventID}/start", f.h.StartEvent)
+	for _, p := range []string{"/teams", "/start"} {
+		w := call(t, f.console, "POST", "/api/admin/events/"+strconv.FormatInt(eventID, 10)+p, map[string]any{"name": "Owls"})
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "event_hosted") {
+			t.Errorf("console %s: %d %s", p, w.Code, w.Body)
+		}
+	}
 	w := call(t, f.console, "GET", path, nil)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "/j/") {
 		t.Fatalf("console host page: %d %s", w.Code, w.Body)

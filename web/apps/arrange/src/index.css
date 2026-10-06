@@ -3,6 +3,7 @@
  * a literal, or the theme stops being a single source of truth. */
 @import "@zonventure/ui/tokens.css";
 @import "@zonventure/hosted/hosted.css";
+@import "@zonventure/trail/trail.css";
 
 /* --- Shared primitives --------------------------------------------- */
 

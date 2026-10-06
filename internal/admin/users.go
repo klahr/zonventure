@@ -195,12 +195,14 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		ownerOrg     sql.NullInt64
 		language     string
 		runningN     int
+		isTrail      bool
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT (avatar_mime_type IS NOT NULL)::int, published, org_id, language,
-		       (SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND state = 'running')
+		       (SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND state = 'running'),
+		       trail_cards IS NOT NULL
 		FROM adventures WHERE slug = $1
-	`, slug).Scan(&hasAvatar, &publishedInt, &ownerOrg, &language, &runningN)
+	`, slug).Scan(&hasAvatar, &publishedInt, &ownerOrg, &language, &runningN, &isTrail)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "unknown adventure")
 		return
@@ -247,6 +249,8 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	out["published"] = published
 	out["running_event_count"] = runningN
+	// A quiz trail is edited in the simple creator (trails.go).
+	out["trail"] = isTrail
 	out["language"] = language
 	if ownerOrg.Valid {
 		out["org_id"] = ownerOrg.Int64

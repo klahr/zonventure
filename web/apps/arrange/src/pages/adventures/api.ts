@@ -66,6 +66,8 @@ export interface AdventureDetail {
   language?: string;
   org_id?: number;
   mine_to_edit: boolean;
+  /** A quiz trail, edited in the simple creator. */
+  trail?: boolean;
   start_lat?: number;
   start_lng?: number;
   start_label?: string;

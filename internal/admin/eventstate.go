@@ -98,13 +98,27 @@ func allowedForState(state string, op eventOp) bool {
 	return false
 }
 
+// allowedForEvent is allowedForState for an event that may be hosted
+// (events.party). A hosted event's teams join from its player link into
+// a game, and its games start as they join: making teams or player
+// places, or scheduling it, would go round its games.
+func allowedForEvent(state string, party bool, op eventOp) bool {
+	if party {
+		switch op {
+		case OpRescheduleEvent, OpCreateTeam, OpAddSlot, OpRemoveSlot:
+			return false
+		}
+	}
+	return allowedForState(state, op)
+}
+
 // allowedOpsForState lists every operation permitted at the given
 // state, as wire-format strings. Surfaced in event-detail responses
 // so the client can disable affordances that the server would 409.
-func allowedOpsForState(state string) []string {
+func allowedOpsForState(state string, party bool) []string {
 	out := make([]string, 0, len(allOps))
 	for _, op := range allOps {
-		if allowedForState(state, op) {
+		if allowedForEvent(state, party, op) {
 			out = append(out, string(op))
 		}
 	}
@@ -130,14 +144,26 @@ func reasonForState(state string) string {
 // op is allowed; otherwise writes a 409 with a stable reason field
 // and returns false. Callers should `return` immediately on false.
 func (h *Handlers) requireEventOp(w http.ResponseWriter, ctx context.Context, eventID int64, op eventOp) bool {
-	var state string
+	var (
+		state string
+		party bool
+	)
 	if err := h.DB.QueryRowContext(ctx,
-		`SELECT state FROM events WHERE id = $1`, eventID).Scan(&state); err != nil {
+		`SELECT state, party FROM events WHERE id = $1`, eventID).Scan(&state, &party); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "event not found")
 			return false
 		}
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return false
+	}
+	if party && !allowedForEvent(state, party, op) {
+		httpx.JSON(w, http.StatusConflict, map[string]any{
+			"error":  "a hosted event's teams join from its player link",
+			"reason": "event_hosted",
+			"state":  state,
+			"op":     string(op),
+		})
 		return false
 	}
 	if !allowedForState(state, op) {

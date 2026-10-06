@@ -82,6 +82,13 @@ export interface HostedEvent {
   round: number;
   round_open: boolean;
   teams_limit: number;
+  /** The most teams a game can be bought up to. */
+  max_teams: number;
+  /** What one more block of teams costs (block_cents 0: free). */
+  price: { block_cents: number; currency: string; teams_per_block: number };
+  /** A quiz trail: its cards print as a PDF; reprint when they changed since. */
+  trail: boolean;
+  reprint: boolean;
   first_game_at?: string;
   teams: Team[];
   rounds: Round[];
@@ -104,8 +111,15 @@ export interface Personalisation {
  * same handlers under different bases: /api/party/{token} by host link,
  * /api/admin/events/{id}/hosted by the arranger's session.
  */
+/** A purchase's answer: the checkout to pay at, or nothing to pay. */
+export interface Checkout {
+  checkout_url?: string;
+}
+
 export interface HostedApi {
   get(): Promise<HostedEvent>;
+  /** Buys blocks more blocks of teams per game. */
+  addBlocks(blocks: number): Promise<Checkout>;
   finishGame(): Promise<void>;
   sendPlayerLink(email: string): Promise<void>;
   personalise(body: Personalisation): Promise<void>;
@@ -114,6 +128,8 @@ export interface HostedApi {
   shiftTo(lat: number, lng: number): Promise<void>;
   /** The URL of a QR code image: a station card's, or the player link's. */
   qr(station?: string): string;
+  /** The URL of a quiz trail's cards PDF, or its answer key. */
+  pdf(answers?: boolean): string;
   /** Takes a team out of the game; absent where the page has its own way. */
   removeTeam?: (id: number) => Promise<void>;
   /** Pauses or resumes the game; absent where the page has its own controls. */
@@ -126,6 +142,7 @@ const enc = encodeURIComponent;
 export function hostedApi(base: string, extra: Pick<HostedApi, "removeTeam" | "action"> = {}): HostedApi {
   return {
     get: () => request<HostedEvent>(base),
+    addBlocks: (blocks) => request<Checkout>(`${base}/blocks`, { method: "POST", body: { blocks } }),
     finishGame: () => request<void>(`${base}/finish-game`, { method: "POST" }),
     sendPlayerLink: (email) => request<void>(`${base}/send-player-link`, { method: "POST", body: { email } }),
     personalise: (body) => request<void>(`${base}/personalise`, { method: "PUT", body }),
@@ -133,6 +150,7 @@ export function hostedApi(base: string, extra: Pick<HostedApi, "removeTeam" | "a
     placeAt: (slug, lat, lng) => request<void>(`${base}/places/${enc(slug)}`, { method: "PUT", body: { lat, lng } }),
     shiftTo: (lat, lng) => request<void>(`${base}/places/shift`, { method: "POST", body: { lat, lng } }),
     qr: (station) => `${base}/qr` + (station ? `?station=${enc(station)}` : ""),
+    pdf: (answers) => `${base}/cards.pdf` + (answers ? "?answers=1" : ""),
     ...extra,
   };
 }
@@ -154,4 +172,13 @@ export function consoleApi(eventId: number): HostedApi {
 /** Whether what the host sets up may change now: only between games. */
 export function adaptable(e: HostedEvent): boolean {
   return !e.round_open && !e.expired && e.state !== "completed" && e.state !== "cancelled";
+}
+
+/** A price in minor units, in the reader's locale. */
+export function money(cents: number, currency: string, locale: string): string {
+  try {
+    return new Intl.NumberFormat(locale, { style: "currency", currency: currency.toUpperCase(), maximumFractionDigits: cents % 100 === 0 ? 0 : 2 }).format(cents / 100);
+  } catch {
+    return `${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
+  }
 }

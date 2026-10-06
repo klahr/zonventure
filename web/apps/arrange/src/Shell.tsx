@@ -45,6 +45,7 @@ function reloadOnce(): boolean {
   return true;
 }
 const Designer = page(() => import("./designer/Designer.tsx"), "Designer");
+const TrailPage = page(() => import("./pages/adventures/Trail.tsx"), "TrailPage");
 const EventsPage = page(() => import("./pages/events/index.tsx"), "EventsPage");
 const QuestsPage = page(() => import("./pages/events/index.tsx"), "QuestsPage");
 const PartiesPage = page(() => import("./pages/parties/index.tsx"), "PartiesPage");
@@ -120,6 +121,7 @@ function sectionOf(r: Route): { section: Section; label: string } {
     case "adventures":
     case "adventure":
     case "designer":
+    case "trail":
     case "field":
     case "catalog":
     case "catalog-item":
@@ -518,6 +520,8 @@ function Page({ route }: { route: Route }) {
       return <AdventurePage key={route.slug} slug={route.slug} />;
     case "designer":
       return <Designer key={route.slug} slug={route.slug} />;
+    case "trail":
+      return <TrailPage key={route.slug} slug={route.slug} />;
     case "field":
       return <FieldPage />;
     case "authorize":

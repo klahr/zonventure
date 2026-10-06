@@ -15,6 +15,110 @@ for self-hosters and operators.
 > current `[Unreleased]` section. This file tracks what's still
 > open.
 
+## Quiz trail & hosted events (in progress)
+
+The spec is `QUIZ_TRAIL.md` (read its **Decisions** section first: it
+records what was built and where it differs from the first draft). The
+work is in four phases; A–C are built, D is next.
+
+- **A. Hosted foundation — done.** A party is a hosted event: player
+  link `/j/{token}`, teams name themselves, games are rounds
+  (`event_rounds`, `teams.round`, a graph pin per round), Finish game +
+  summary email, sweeper (`SweepHosted`: idle 3 h, lapse at
+  `valid_until`), 60 days to start / 14 days of play, console "Hosted"
+  page, shared views in `web/packages/hosted`. Handlers serve both the
+  host link (`/api/party/{token}/…`) and the console
+  (`/api/admin/events/{id}/hosted/…`). Migration 0109.
+- **B. Pricing — done.** `ZV_HOSTED_BLOCK_CENTS` (default 14900 when a
+  platform fee is set, else free) per block of 15 teams per game; Host
+  it (`HostItDialog`), Add 15 teams, party fee = pass price, refunds.
+  Charged on the platform's own Stripe account. Migration 0110.
+- **C. Creator in the console — done.** `internal/trail` (cards,
+  `Problems`, `Compile`, templates), `internal/admin/trails.go` (create,
+  save, publish-on-use, designer handover), `trail_pdf.go` (cards +
+  answer key), `web/packages/trail` (Editor, autosave, templates),
+  console route `#/adventures/{slug}/cards`. Migration 0111.
+
+### Phase D — public quiz trail, no account (next)
+
+Spec sections: Availability, Lifecycle (trail), Data model (`trails`,
+`trail_email_tokens`), Screens 1–7, Emails, Conversion, Retention,
+Security and abuse, API sketch.
+
+- [ ] Migration 0112: `organizations.quiz_trail_enabled`;
+      `adventures.trail_hidden` (hide from org lists, store, MCP,
+      party offers); `trails` table (secret hash, adventure, event,
+      email + confirmed, keep_offer_sent_at); `trail_email_tokens`.
+- [ ] Hide `trail_hidden` adventures everywhere an org lists its
+      adventures (console list, `ListPartyOffers`, catalog, MCP
+      `list_adventures`, Host it/self-guided pickers).
+- [ ] Public API `/api/o/{slug}/trail`: `POST /drafts` (template, lang)
+      → `{id, secret}` creating a hidden adventure in the seller org;
+      `GET|PUT /drafts/{id}` (secret in a header, revision check — reuse
+      `trails.go` save/describe logic, don't duplicate it);
+      `POST /drafts/{id}/checkout {blocks}`; `POST /email/confirm`,
+      `POST /email/signin`, `GET /mine`. Refuse when the org's flag is
+      off. Rate limits: 20 drafts/IP/day, save cap per draft.
+- [ ] Checkout: purchase kind for a trail (or reuse `hosted` with the
+      hidden adventure); webhook creates the hosted event
+      (`createHostedEvent`), sets the trail's email (confirmed by
+      payment), sends the host link. Guardian consent when `trail_kids`.
+- [ ] Public pages (party app or a new `trail` app): Start
+      (`/o/{slug}/trail`, templates, "Free to make · 149 kr to play"),
+      creator (reuse `@zonventure/trail` `Editor` + `useTrailSave` with
+      a draft API adapter; draft id+secret in localStorage, "Copy link
+      to this draft" as `#{id}.{secret}`), checkout, My trails
+      (`/trail/mine`).
+- [ ] Save to email: confirm link attaches every trail this browser
+      holds; sign-in link lists all trails for the email. Never reveal
+      whether an email has trails.
+- [ ] Host page for a trail: Edit trail (opens the creator with the
+      host token as credential), Keep it (from day 7 of play).
+- [ ] Emails (`internal/emailtpl`, sv + en): `trail_confirm`,
+      `trail_signin`, `trail_paid`, `trail_keep` (day 7), `trail_ended`.
+- [ ] Conversion ("Keep it"): signup with email prefilled → personal
+      org → move the adventure to it, clear `trail_hidden`, delete the
+      `trails` row and its hosted event, send `trail_ended`.
+- [ ] Retention (`internal/retention`): unpaid drafts 30 days after the
+      last edit (with their hidden adventure); trail events at
+      `valid_until` (finish game, `trail_ended`, delete trail + adventure
+      + event); day-7 keep email once; expired email tokens.
+- [ ] zonventure-web links to `/o/zonventure/trail`; set
+      `quiz_trail_enabled` on the Zonventure org.
+- [ ] Docs: CHANGELOG, OPERATIONS.md retention paragraph, privacy page.
+
+### Follow-ups and known gaps
+
+- [ ] Timeline drag-to-reorder is untested on a real touch device
+      (Move earlier/later is the fallback).
+- [ ] Templates set no theme/colours yet (spec: each template sets a
+      theme from the existing themes).
+- [ ] Party offers must be in the pass currency (SEK) when a platform
+      fee is set — blocks orgs selling in EUR. Decide.
+- [ ] Production: set `ZV_HOSTED_BLOCK_CENTS=14900` if no platform fee
+      is configured there (otherwise hosting is free).
+- [ ] Console: a hosted event's page highlights "Events" in the
+      sidebar instead of "Hosted"; the Hosted list shows a redundant
+      "Hosted" pill per row.
+- [ ] A joined player reads "You're playing as Owls on team Owls" (the
+      slot is named after the team).
+- [ ] Not tested against real Stripe (tests use a fake provider).
+- [ ] Later (spec): places mode, more card kinds, teams starting at
+      different cards.
+
+### Working on it locally
+
+- DB tests: `IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' zonventure-db-1)`
+  then `ZV_TEST_DSN="postgres://zv:zv@$IP:5432/postgres?sslmode=disable" go test -p 2 ./... -count=1`
+  (`-p 2`, or Postgres runs out of connections).
+- Web: `cd web && npm install && npm test && npm run typecheck`;
+  `make web` builds the apps into the server's embedded assets (rebuild
+  the server binary after it).
+- Live check: create a scratch database, run the server once with
+  `-seed-arranger user:password` (it seeds and exits), then run it with
+  `-addr 127.0.0.1:8199 -public-url http://127.0.0.1:8199`. Hosting is
+  free there (no platform fee), so Host it and Add teams skip payment.
+
 ## View-by-view UX review (current focus)
 
 We're walking every view in the product to confirm it's good, simple,

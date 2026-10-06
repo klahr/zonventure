@@ -9,6 +9,7 @@ import { NewEventDialog } from "../events/NewEventDialog.tsx";
 import { NewQuestDialog } from "../events/NewQuestDialog.tsx";
 import { duplicateAdventure, isPublisher, listAdventures, listAssignments, type AdventureRow, type Assignment } from "./api.ts";
 import { PickPassDialog, useImportAdventure } from "./dialogs.tsx";
+import { NewKindDialog } from "./NewKind.tsx";
 import { AdventureTabs, Cover, LanguagePill, puzzleCount } from "./parts.tsx";
 
 /** What the schedule dialog opens with. */
@@ -46,7 +47,7 @@ export function AdventuresPage() {
   const user = state.status === "authenticated" ? state.user : null;
   const author = !!user && canAuthor(user);
   const load = useLoad((signal) => Promise.all([listAdventures(signal), listAssignments(signal)]), []);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<false | "choose" | "designer">(false);
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [selling, setSelling] = useState<string | null>(null);
   const [picking, setPicking] = useState<{ a: AdventureRow; passes: Assignment[] } | null>(null);
@@ -80,7 +81,7 @@ export function AdventuresPage() {
               {t.t("Field mode")}
             </a>
             <Button icon={<Upload size={ICON.md} aria-hidden />} onClick={importer.pick} title={t.t("Import an adventure exported as a .zip")}>{t.t("Import")}</Button>
-            <Button variant="primary" filled icon={<Plus size={ICON.md} aria-hidden />} onClick={() => setCreating(true)}>{t.t("New adventure")}</Button>
+            <Button variant="primary" filled icon={<Plus size={ICON.md} aria-hidden />} onClick={() => setCreating("choose")}>{t.t("New adventure")}</Button>
           </>
         )
       }
@@ -180,7 +181,8 @@ export function AdventuresPage() {
       {header}
       <AdventureTabs current="yours" />
       {body}
-      {creating && (
+      {creating === "choose" && <NewKindDialog onDesigner={() => setCreating("designer")} onClose={() => setCreating(false)} />}
+      {creating === "designer" && (
         <Suspense fallback={null}>
           <NewAdventure onClose={() => setCreating(false)} />
         </Suspense>

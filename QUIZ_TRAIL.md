@@ -37,14 +37,18 @@ Three ways in:
 |---|---|---|---|---|
 | Quiz trail | The trail's adventure | Anyone, no account | Pass price | Pass price |
 | Party offer | The org's adventure | Parent, no account | The org's price | Pass price, as application fee |
-| Host it | Any adventure the account's org owns | Account user | Pass price | Pass price |
+| Host it | Any adventure the account's org owns or was shared | Account user | Pass price | Pass price |
 
 **Pass price:** 149 kr per started block of 15 teams, counted per game
 (teams playing in one round, below). Hosted events only; Events and
 Self-guided keep their current pricing.
 
-- Price per block is one setting (`hosted_block_cents`, currency
-  `sek`), never hard-coded.
+- Price per block is one setting (`ZV_HOSTED_BLOCK_CENTS`, default
+  14900 where a platform fee is set, free otherwise; `ZV_HOSTED_CURRENCY`,
+  default `sek`), never hard-coded.
+- Quiz trails, Host it and added blocks are charged on the platform's
+  own Stripe account (the platform is the seller); a party offer goes
+  through the org's connected account with the pass price as the fee.
 - The buyer picks blocks at checkout: one by default, "More than 15
   teams in one game?" reveals a stepper. More blocks can be bought
   later on the host page ("Add 15 teams").
@@ -205,17 +209,17 @@ Title, language and theme use the adventure's existing fields.
 ```json
 [
   {"id": "c7f2", "kind": "quiz", "text": "Vilket år föddes Elsa?",
-   "options": ["2016", "2018", "2020"], "correct": 1},
+   "options": ["2016", "2018", "2020"], "correct": "X"},
   {"id": "a91b", "kind": "answer", "text": "Vad heter katten?",
    "answers": ["Måns", "Mons"]},
   {"id": "e03d", "kind": "info", "text": "Grattis! Nästa kort hittar ni vid brevlådan."}
 ]
 ```
 
-- `quiz`: 2–3 options (shown as 1 / X / 2 when there are three), one
-  correct.
-- `answer`: typed answer; `answers` lists accepted spellings, matched
-  case- and accent-insensitively with the existing matcher.
+- `quiz`: exactly 3 options, for 1 / X / 2 (the graph's quiz block),
+  `correct` is "1", "X" or "2".
+- `answer`: typed answer; `answers` lists accepted spellings (up to 5),
+  matched case-insensitively with the existing matcher.
 - `info`: text only, no answer, no points.
 - Card `id`s are stable so reorders keep per-card statistics apart.
 
@@ -491,6 +495,12 @@ Player, `/api/trail/p/{token}`: `GET`, `POST join {team, headcount}`.
 Console: `POST /api/admin/adventures/{slug}/host {blocks}` → Stripe URL.
 
 ## Decisions
+
+- Built (Phase C): the columns are `adventures.trail_*` (`cards` was
+  taken by the theme). Saving makes the draft; Done, Host it and a
+  hosted game opening publish it, so typing makes no versions. Quiz
+  cards compile to a story with the graph's quiz block (scored at the
+  end), answer cards to a one-try puzzle, info cards to a story.
 
 - No arrival step: each card is a zone-less puzzle showing "Card N"
   and the answer input; no QR scan, no engine change.

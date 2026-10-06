@@ -96,7 +96,8 @@ export function LifecycleActions({ event, teams, adventure, user, reload }: { ev
   } else if (event.state !== "cancelled") {
     more.push({ label: t.t("Live control"), icon: <Terminal size={ICON.sm} aria-hidden />, href: href(control), title: t.t("Live leaderboard, map, and activity") });
   }
-  if (event.state === "scheduled") {
+  // A hosted event starts when its first team joins from the player link.
+  if (event.state === "scheduled" && !event.party) {
     buttons.push(
       <Button key="start" variant="primary" icon={<Play size={ICON.md} aria-hidden />} onClick={() => setOpen(event.teams_count > 0 || teams.length > 0 ? "start" : "no-teams")}>
         {t.t("Start now")}

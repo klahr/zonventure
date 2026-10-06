@@ -624,9 +624,20 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event payments.Even
 		return err
 	}
 	for _, rr := range tickets {
-		if rr.kind == "party" && rr.eventID != 0 {
-			// A refunded party is called off: the whole event, which the
-			// sweeper then deletes once its days are up.
+		if rr.kind == "hosted_blocks" && rr.eventID != 0 {
+			// Refunded teams: the event holds that many fewer per game, from
+			// the next team to join.
+			if _, berr := h.DB.ExecContext(ctx, `
+				UPDATE events SET hosted_blocks = GREATEST(1, hosted_blocks - (SELECT blocks FROM ticket_purchases WHERE id = $2))
+				 WHERE id = $1
+			`, rr.eventID, rr.purchaseID); berr != nil {
+				logx.Warn("payments.hosted_blocks.refund", "purchase_id", rr.purchaseID, "event_id", rr.eventID, "err", berr.Error())
+			}
+			continue
+		}
+		if (rr.kind == "party" || rr.kind == "hosted") && rr.eventID != 0 {
+			// A refunded hosted event is called off: the whole event, which
+			// the sweeper then deletes once its days are up.
 			if _, cerr := h.DB.ExecContext(ctx, `
 				UPDATE events SET state = 'cancelled', cancelled_at = now_text(), `+activity.ClosePause+`
 				 WHERE id = $1 AND state IN ('scheduled', 'running', 'paused')

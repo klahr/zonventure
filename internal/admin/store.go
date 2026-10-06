@@ -451,8 +451,11 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 	if state != "pending" {
 		return nil
 	}
-	if kind == "party" {
+	switch kind {
+	case "party":
 		return h.fulfilPartyCheckout(ctx, tx, event, purchaseID, offerID, partyName, buyerEmail, teamSize)
+	case "hosted", "hosted_blocks":
+		return h.fulfilHostedCheckout(ctx, tx, event, purchaseID, kind)
 	}
 	if eventID == 0 {
 		// Event deleted while the payment was in flight; the row is
