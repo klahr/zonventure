@@ -11,6 +11,13 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed
+
+- `make upgrade` on a host that pulls from ghcr.io pins the release in
+  `.env` (`VERSION=X.Y.Z`), so a later bare `docker compose up -d` keeps
+  running it instead of falling back to the host's stale `:latest`. It
+  also picks the newest X.Y.Z tag the same way `make latest` does.
+
 ## [0.21.0] - 2026-10-07
 
 ### Changed — legal settings in the console
@@ -67,11 +74,6 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   from the New theme gallery.
 
 ### Fixed
-
-- `make upgrade` on a host that pulls from ghcr.io pins the release in
-  `.env` (`VERSION=X.Y.Z`), so a later bare `docker compose up -d` keeps
-  running it instead of falling back to the host's stale `:latest`. It
-  also picks the newest X.Y.Z tag the same way `make latest` does.
 
 - A theme saved to the organisation's library no longer keeps the
   adventure's cover picture, as it already dropped its picture and
