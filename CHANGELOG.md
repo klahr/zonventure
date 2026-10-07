@@ -11,6 +11,29 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — a clearer theme editor
+
+- The theme editor shows its themes as a strip of cards in their own
+  colours, title face and accent, and folds the look's controls into
+  Colours, Text, Cards and buttons, Background, and Motion and
+  celebration, beside a phone preview of a sample puzzle that stays in
+  view, the same in an adventure and in Settings. Save for the
+  organisation is now just **Save**.
+- **Main look** under Adventure settings offers the organisation's
+  themes and the starters beside the adventure's own. Picking one the
+  adventure lacks applies it and adds a copy to its themes.
+- **Settings → Themes** edits the organisation's theme library outside
+  any adventure: new from a starter, rename, change, duplicate, delete,
+  each change saved by itself and previewed on a sample step. Pictures
+  and sounds are not offered there. Removing a library theme moved here
+  from the New theme gallery.
+
+### Fixed
+
+- A theme saved to the organisation's library no longer keeps the
+  adventure's cover picture, as it already dropped its picture and
+  sounds.
+
 ### Added — your own cover picture
 
 - The designer's theme editor has a **Cover picture**: upload a

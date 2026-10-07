@@ -615,26 +615,43 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .dz .look__segment.is-on { background: var(--accent); color: #fff; font-weight: 700; }
 .look__contrast { margin: 0; }
 .look__contrast ul { margin: var(--sp-1) 0 0; padding-left: 1.2em; }
-.look__controls { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
-.look__preview { position: sticky; top: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 .sim--bare { display: block; }
-/* The theme editor: its themes, the look's controls, and the phone. */
-.themes { display: grid; grid-template-columns: 12rem minmax(0, 1fr) auto; gap: var(--dz-space-4); align-items: start; }
-.themes--empty { grid-template-columns: 12rem minmax(0, 1fr); }
-.themes__list { display: flex; flex-direction: column; gap: var(--sp-1); }
-.dz .themes__item { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2); border: 1px solid transparent; border-radius: var(--radius); background: none; color: var(--ink-soft); font-size: var(--text-sm); text-align: left; cursor: pointer; }
-.dz .themes__item.is-on { border-color: var(--accent); background: var(--surface-2, var(--surface)); color: var(--ink); font-weight: 700; }
-.themes__swatch.look__thumb { flex: none; width: 2rem; height: 1.5rem; border: 1px solid var(--border-soft); }
-.themes--choosing { grid-template-columns: 12rem minmax(0, 1fr); }
-.themes__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.themes__editor { gap: var(--sp-3); }
-.themes__editor > h4,
-.themes__editor .look__backdrop > h4 { margin: var(--sp-2) 0 0; font-size: var(--text-xs); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
-.themes__none { margin: 0; }
-@media (max-width: 60rem) {
-  .themes { grid-template-columns: 1fr; }
-  .themes .look__preview { position: static; }
+/* The theme editor (ThemeEditor.tsx): the themes as a strip of cards, then
+   the look's controls in folded groups beside a phone that stays in view. */
+.themes { display: flex; flex-direction: column; gap: var(--dz-space-4, var(--sp-4)); min-width: 0; }
+.theme-strip { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.theme-strip .theme-strip__item { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-1); width: 6.5rem; padding: var(--sp-1); border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); color: var(--ink-soft); font-size: var(--text-xs); text-align: center; cursor: pointer; }
+.theme-strip .theme-strip__item:hover, .theme-strip .theme-strip__item:focus-visible { border-color: var(--accent); }
+.theme-strip .theme-strip__item.is-on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); color: var(--ink); font-weight: 700; }
+.theme-strip .theme-strip__thumb { position: relative; display: flex; align-items: flex-end; justify-content: space-between; height: 3.5rem; padding: 0.3rem 0.4rem; }
+.theme-strip .theme-strip__thumb.look__thumb--add { display: grid; place-items: center; border-radius: calc(var(--radius) - 2px); }
+.theme-strip__aa { font-family: var(--font-brand, inherit); font-size: 1.1rem; font-weight: 700; line-height: 1; color: var(--pv-accent-2nd, var(--accent)); }
+.theme-strip__dot { width: 0.8rem; height: 0.8rem; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--bg, #fff) 70%, transparent); }
+.theme-strip__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-ed { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--dz-space-4, var(--sp-4)); align-items: start; }
+.theme-ed__form { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.theme-ed__head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-2) var(--sp-3); }
+.theme-ed__name { flex: 1 1 14rem; margin: 0; }
+.theme-ed__head .look__actions { flex-wrap: wrap; }
+.theme-ed__note { margin: 0; }
+.theme-ed__preview { position: sticky; top: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+@media (max-width: 52rem) {
+  .theme-ed { grid-template-columns: 1fr; }
+  .theme-ed__preview { position: static; align-items: center; }
 }
+/* A group of the look's controls, folded under its name and what is in it. */
+.look__groups { display: flex; flex-direction: column; gap: var(--sp-2); }
+.look__group { border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); }
+.look__group-head { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-2) var(--sp-3) var(--sp-2) 2.1rem; cursor: pointer; list-style: none; position: relative; }
+.look__group-head::-webkit-details-marker { display: none; }
+.look__group-head::before { content: ""; position: absolute; left: var(--sp-3); top: 1.05rem; width: 0.45rem; height: 0.45rem; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform 120ms ease; }
+.look__group[open] > .look__group-head::before { transform: rotate(45deg); top: 0.9rem; }
+.look__group-title { font-size: var(--text-sm); font-weight: 700; color: var(--ink); }
+.look__group-head .field__hint { margin: 0; }
+.look__group-body { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-1) var(--sp-3) var(--sp-3); border-top: 1px solid var(--border-soft); padding-top: var(--sp-3); }
+.look__group-body .look__backdrop > h4,
+.look__group-body > h4 { margin: var(--sp-2) 0 0; font-size: var(--text-xs); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.look__group-body .look__backdrop > h4:first-child { margin-top: 0; }
 .colour-list { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .colour-list__item { display: inline-flex; align-items: center; gap: 2px; }
 .spots { display: flex; flex-direction: column; gap: var(--sp-2); }

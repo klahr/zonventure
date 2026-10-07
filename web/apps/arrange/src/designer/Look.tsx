@@ -1,6 +1,6 @@
 import type { play } from "@zonventure/api";
 import type { Theme } from "@zonventure/graph";
-import { FONTS, isHex, lookContrast, type ContrastIssue } from "@zonventure/play-ui";
+import { FONTS, STARTER_GROUPS, STARTER_THEMES, isHex, lookContrast, type ContrastIssue } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
 import { X } from "lucide-react";
 import { BackdropPicker, Check, ColourList, Slider } from "./BackdropPicker.tsx";
@@ -8,7 +8,7 @@ import { CoverPicker } from "./CoverPicker.tsx";
 import { demoAnswer } from "./blocks/Animation.tsx";
 import { AdventureSlug } from "./MediaEditor.tsx";
 import { adventures, play as playApi } from "@zonventure/api";
-import { useContext, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { ICON } from "./dz/ui.tsx";
 
@@ -67,6 +67,8 @@ interface Props {
   savedThemes: Theme[];
   /** Make this the adventure's main look, saved at once; {} is the standard look. */
   onApply: (b: play.Brand) => void;
+  /** Keep a starter or organisation theme picked as the main look among the adventure's themes. */
+  onAddTheme?: (name: string, look: play.Brand) => void;
   /** Save the main look as a new theme, to edit it in the theme editor. */
   onSaveAsTheme?: () => void;
   /** Open the theme editor. */
@@ -81,16 +83,36 @@ function canon(v: unknown): string {
 }
 
 /**
- * The adventure's main look, picked from its saved themes. Looks are
- * made and changed in the theme editor; here one is chosen, and saved at
- * once. A main look that matches no theme (one set before themes, or
- * through the API) shows as custom, and can be saved as a theme to edit.
+ * The adventure's main look: one of its saved themes, the organisation's,
+ * or a starter, saved at once. One not yet among the adventure's themes is
+ * added to them as a copy, to change in the theme editor. A main look that
+ * matches no theme (one set before themes, or through the API) shows as
+ * custom, and can be saved as a theme to edit.
  */
-export function Look({ brand, saving, error, savedThemes, onApply, onSaveAsTheme, onEditThemes }: Props) {
+export function Look({ brand, saving, error, savedThemes, onApply, onAddTheme, onSaveAsTheme, onEditThemes }: Props) {
   const t = useT();
+  const [library, setLibrary] = useState<adventures.OrgTheme[]>([]);
+  useEffect(() => {
+    const ac = new AbortController();
+    // Without the library the starters and the adventure's own remain.
+    adventures.listOrgThemes(ac.signal).then(setLibrary, () => {});
+    return () => ac.abort();
+  }, []);
   const standard = Object.keys(brand).length === 0;
   const matched = savedThemes.find((th) => canon(th.look) === canon(brand));
-  const value = standard ? "standard" : (matched?.slug ?? "custom");
+  const value = standard ? "standard" : matched ? `saved:${matched.slug}` : "custom";
+  const choose = (v: string) => {
+    if (v === "standard") return onApply({});
+    const [kind, id] = [v.slice(0, v.indexOf(":")), v.slice(v.indexOf(":") + 1)];
+    const saved = kind === "saved" ? savedThemes.find((x) => x.slug === id) : undefined;
+    if (saved) return onApply(structuredClone(saved.look));
+    const own = kind === "org" ? library.find((x) => String(x.id) === id) : undefined;
+    const starter = kind === "starter" ? STARTER_THEMES.find((x) => x.id === id) : undefined;
+    const picked = own ? { name: own.name, look: own.look } : starter ? { name: t.t(starter.label), look: starter.look as play.Brand } : null;
+    if (!picked) return;
+    onApply(structuredClone(picked.look));
+    if (!savedThemes.some((th) => canon(th.look) === canon(picked.look))) onAddTheme?.(picked.name, picked.look);
+  };
   return (
     <section className="look insp__section">
       <h3>
@@ -99,21 +121,30 @@ export function Look({ brand, saving, error, savedThemes, onApply, onSaveAsTheme
       </h3>
       <label className="field">
         <span className="field__label">{t.t("Main look")}</span>
-        <select
-          className="field__input"
-          value={value}
-          disabled={saving}
-          onChange={(e) => {
-            if (e.target.value === "standard") return onApply({});
-            const th = savedThemes.find((x) => x.slug === e.target.value);
-            if (th) onApply(structuredClone(th.look));
-          }}
-        >
+        <select className="field__input" value={value} disabled={saving} onChange={(e) => choose(e.target.value)}>
           <option value="standard">{t.t("Standard look")}</option>
-          {savedThemes.map((th) => (
-            <option key={th.slug} value={th.slug}>{th.name || t.t("Untitled theme")}</option>
-          ))}
           {value === "custom" && <option value="custom" disabled>{t.t("Custom look (not a saved theme)")}</option>}
+          {savedThemes.length > 0 && (
+            <optgroup label={t.t("This adventure")}>
+              {savedThemes.map((th) => (
+                <option key={th.slug} value={`saved:${th.slug}`}>{th.name || t.t("Untitled theme")}</option>
+              ))}
+            </optgroup>
+          )}
+          {library.length > 0 && (
+            <optgroup label={t.t("Your organisation")}>
+              {library.map((th) => (
+                <option key={th.id} value={`org:${th.id}`}>{th.name}</option>
+              ))}
+            </optgroup>
+          )}
+          {STARTER_GROUPS.map((g) => (
+            <optgroup key={g.id} label={g.label ? t.t(g.label) : t.t("More looks")}>
+              {STARTER_THEMES.filter((s) => s.group === g.id).map((s) => (
+                <option key={s.id} value={`starter:${s.id}`}>{t.t(s.label)}</option>
+              ))}
+            </optgroup>
+          ))}
         </select>
       </label>
       {error && <div className="alert alert--danger">{error}</div>}
@@ -129,11 +160,11 @@ export function Look({ brand, saving, error, savedThemes, onApply, onSaveAsTheme
 }
 
 /**
- * The look's controls — colours, typefaces, corners, cards and the
- * background pattern — for any look: the adventure's own here, a saved
- * theme in the theme editor.
+ * The look's controls for any look — the adventure's own, a saved theme,
+ * an organisation's theme — in folded groups, colours open. Pictures and
+ * sounds are an adventure's own media: without media they are not offered.
  */
-export function LookControls({ brand, onChange }: { brand: play.Brand; onChange: (b: play.Brand) => void }) {
+export function LookControls({ brand, onChange, media = true }: { brand: play.Brand; onChange: (b: play.Brand) => void; media?: boolean }) {
   const t = useT();
   const set = (key: ColourKey, v: string | null) => {
     const next = { ...brand };
@@ -161,134 +192,152 @@ export function LookControls({ brand, onChange }: { brand: play.Brand; onChange:
   };
 
   return (
-    <>
-      {FIELDS.map((f) => (
-        <ColourRow key={f.key} label={f.label} hint={f.hint} value={brand[f.key]} onSet={(v) => set(f.key, v)} />
-      ))}
-      <ContrastNote issues={lookContrast(brand)} />
-      <h4>{t.t("Style")}</h4>
-      <label className="field">
-        <span className="field__label">{t.t("Typeface")}</span>
-        <select className="field__input" value={brand.font ?? ""} onChange={(e) => pick("font", e.target.value)}>
-          <option value="">{t.t("Standard")}</option>
-          {Object.entries(FONT_LABELS).filter(([k]) => !TITLE_ONLY.has(k) || brand.font === k).map(([k, label]) => (
-            <option key={k} value={k}>{t.t(label)} — {FONTS[k]}</option>
-          ))}
-        </select>
-      </label>
-      <label className="field">
-        <span className="field__label">{t.t("Titles typeface")}</span>
-        <select className="field__input" value={brand.heading_font ?? ""} onChange={(e) => pick("heading_font", e.target.value)}>
-          <option value="">{t.t("Same as the text")}</option>
-          {Object.entries(FONT_LABELS).map(([k, label]) => (
-            <option key={k} value={k}>{t.t(label)} — {FONTS[k]}</option>
-          ))}
-        </select>
-      </label>
-      <Choice
-        label={t.t("Corners")}
-        options={CORNERS.map((c) => ({ value: c.value, label: t.t(c.label) }))}
-        value={brand.corners ?? "rounded"}
-        onPick={(v) => pick("corners", v, "rounded")}
-      />
-      <Choice
-        label={t.t("Cards")}
-        options={CARDS.map((c) => ({ value: c.value, label: t.t(c.label) }))}
-        value={brand.cards ?? "raised"}
-        onPick={(v) => pick("cards", v, "raised")}
-      />
-      <label className="look__check">
-        <input
-          type="checkbox"
+    <div className="look__groups">
+      <Group title={t.t("Colours")} hint={t.t("Accent, titles, page, text and the answer bar.")} open>
+        {FIELDS.map((f) => (
+          <ColourRow key={f.key} label={f.label} hint={f.hint} value={brand[f.key]} onSet={(v) => set(f.key, v)} />
+        ))}
+        <ContrastNote issues={lookContrast(brand)} />
+      </Group>
+      <Group title={t.t("Text")} hint={t.t("Typefaces, size and how titles look.")}>
+        <label className="field">
+          <span className="field__label">{t.t("Typeface")}</span>
+          <select className="field__input" value={brand.font ?? ""} onChange={(e) => pick("font", e.target.value)}>
+            <option value="">{t.t("Standard")}</option>
+            {Object.entries(FONT_LABELS).filter(([k]) => !TITLE_ONLY.has(k) || brand.font === k).map(([k, label]) => (
+              <option key={k} value={k}>{t.t(label)} — {FONTS[k]}</option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span className="field__label">{t.t("Titles typeface")}</span>
+          <select className="field__input" value={brand.heading_font ?? ""} onChange={(e) => pick("heading_font", e.target.value)}>
+            <option value="">{t.t("Same as the text")}</option>
+            {Object.entries(FONT_LABELS).map(([k, label]) => (
+              <option key={k} value={k}>{t.t(label)} — {FONTS[k]}</option>
+            ))}
+          </select>
+        </label>
+        <Slider
+          label={t.t("Text size")}
+          value={brand.style?.text_scale ?? 1}
+          min={0.85}
+          max={1.4}
+          step={0.05}
+          shown={`${Math.round((brand.style?.text_scale ?? 1) * 100)} %`}
+          onSlide={(v) => setStyle({ text_scale: Math.abs(v - 1) < 0.001 ? undefined : v })}
+        />
+        <Choice
+          label={t.t("Titles")}
+          options={[{ value: "", label: t.t("Plain") }, { value: "ribbon", label: t.t("Ribbon") }, { value: "underline", label: t.t("Underline") }, { value: "shadow", label: t.t("Shadow") }]}
+          value={brand.style?.title_style ?? ""}
+          onPick={(v) => setStyle({ title_style: v || undefined })}
+        />
+        <Check label={t.t("Titles in capitals")} checked={!!brand.style?.title_upper} onCheck={(v) => setStyle({ title_upper: v || undefined })} />
+      </Group>
+      <Group title={t.t("Cards and buttons")} hint={t.t("Corners, cards, buttons and the answer bar.")}>
+        <Choice
+          label={t.t("Corners")}
+          options={CORNERS.map((c) => ({ value: c.value, label: t.t(c.label) }))}
+          value={brand.corners ?? "rounded"}
+          onPick={(v) => pick("corners", v, "rounded")}
+        />
+        <Choice
+          label={t.t("Cards")}
+          options={CARDS.map((c) => ({ value: c.value, label: t.t(c.label) }))}
+          value={brand.cards ?? "raised"}
+          onPick={(v) => pick("cards", v, "raised")}
+        />
+        <Check
+          label={t.t("Outline cards")}
           checked={!!brand.card_outline}
-          onChange={(e) => {
+          onCheck={(v) => {
             const next = { ...brand };
-            if (e.target.checked) next.card_outline = true;
+            if (v) next.card_outline = true;
             else delete next.card_outline;
             onChange(next);
           }}
         />
-        <span>{t.t("Outline cards")}</span>
-      </label>
-      <Slider
-        label={t.t("Card opacity")}
-        value={brand.style?.card_opacity ?? 1}
-        min={0.2}
-        max={1}
-        step={0.05}
-        shown={(brand.style?.card_opacity ?? 1) >= 1 ? t.t("Solid") : `${Math.round((brand.style?.card_opacity ?? 1) * 100)} %`}
-        onSlide={(v) => setStyle({ card_opacity: v >= 1 ? undefined : v })}
-      />
-      <label className="field">
-        <span className="field__label">{t.t("Step transition")}</span>
-        <select className="field__input" value={brand.style?.transition ?? ""} onChange={(e) => setStyle({ transition: (e.target.value || undefined) as never })}>
-          <option value="">{t.t("Gentle rise (standard)")}</option>
-          <option value="fade">{t.t("Fade")}</option>
-          <option value="slide">{t.t("Slide in")}</option>
-          <option value="zoom">{t.t("Zoom")}</option>
-          <option value="flip">{t.t("Flip")}</option>
-          <option value="pop">{t.t("Pop")}</option>
-          <option value="none">{t.t("No movement")}</option>
-        </select>
-        <span className="field__hint">{t.t("How each new step comes in. Phones set to reduce motion skip it.")}</span>
-      </label>
-      {(brand.style?.card_opacity ?? 1) < 1 && (
-        <Check label={t.t("Frost what shows through")} hint={t.t("Keeps text readable over a busy background.")} checked={!!brand.style?.card_blur} onCheck={(v) => setStyle({ card_blur: v || undefined })} />
-      )}
-      <h4>{t.t("Buttons and text")}</h4>
-      <Choice
-        label={t.t("Button shape")}
-        options={[{ value: "", label: t.t("Pill") }, { value: "rounded", label: t.t("Rounded") }, { value: "square", label: t.t("Square") }]}
-        value={brand.style?.button_shape ?? ""}
-        onPick={(v) => setStyle({ button_shape: v || undefined })}
-      />
-      <Choice
-        label={t.t("Button fill")}
-        options={[{ value: "", label: t.t("Classic") }, { value: "gradient", label: t.t("Gradient") }, { value: "flat", label: t.t("Flat") }, { value: "outline", label: t.t("Outline") }, { value: "soft", label: t.t("Soft") }]}
-        value={brand.style?.button_fill ?? ""}
-        onPick={(v) => setStyle({ button_fill: v || undefined })}
-      />
-      {ANSWER_FIELDS.map((f) => (
-        <ColourRow
-          key={f.key}
-          label={f.label}
-          hint={f.hint}
-          value={brand.style?.[f.key]}
-          onSet={(v) => setStyle({ [f.key]: v && isHex(v) ? v.toLowerCase() : undefined })}
+        <Slider
+          label={t.t("Card opacity")}
+          value={brand.style?.card_opacity ?? 1}
+          min={0.2}
+          max={1}
+          step={0.05}
+          shown={(brand.style?.card_opacity ?? 1) >= 1 ? t.t("Solid") : `${Math.round((brand.style?.card_opacity ?? 1) * 100)} %`}
+          onSlide={(v) => setStyle({ card_opacity: v >= 1 ? undefined : v })}
         />
-      ))}
-      <Choice
-        label={t.t("Button size")}
-        options={[{ value: "small", label: t.t("Small") }, { value: "", label: t.t("Normal") }, { value: "large", label: t.t("Large") }]}
-        value={brand.style?.button_size ?? ""}
-        onPick={(v) => setStyle({ button_size: v || undefined })}
-      />
-      <Choice
-        label={t.t("Answer bar")}
-        options={[{ value: "", label: t.t("Along the bottom") }, { value: "floating", label: t.t("Floating") }]}
-        value={brand.style?.dock ?? ""}
-        onPick={(v) => setStyle({ dock: v || undefined })}
-      />
-      <Slider
-        label={t.t("Text size")}
-        value={brand.style?.text_scale ?? 1}
-        min={0.85}
-        max={1.4}
-        step={0.05}
-        shown={`${Math.round((brand.style?.text_scale ?? 1) * 100)} %`}
-        onSlide={(v) => setStyle({ text_scale: Math.abs(v - 1) < 0.001 ? undefined : v })}
-      />
-      <Choice
-        label={t.t("Titles")}
-        options={[{ value: "", label: t.t("Plain") }, { value: "ribbon", label: t.t("Ribbon") }, { value: "underline", label: t.t("Underline") }, { value: "shadow", label: t.t("Shadow") }]}
-        value={brand.style?.title_style ?? ""}
-        onPick={(v) => setStyle({ title_style: v || undefined })}
-      />
-      <Check label={t.t("Titles in capitals")} checked={!!brand.style?.title_upper} onCheck={(v) => setStyle({ title_upper: v || undefined })} />
-      <Celebration brand={brand} setStyle={setStyle} />
-      <BackdropPicker brand={brand} onChange={onChange} />
-      <CoverPicker brand={brand} setStyle={setStyle} />
-    </>
+        {(brand.style?.card_opacity ?? 1) < 1 && (
+          <Check label={t.t("Frost what shows through")} hint={t.t("Keeps text readable over a busy background.")} checked={!!brand.style?.card_blur} onCheck={(v) => setStyle({ card_blur: v || undefined })} />
+        )}
+        <Choice
+          label={t.t("Button shape")}
+          options={[{ value: "", label: t.t("Pill") }, { value: "rounded", label: t.t("Rounded") }, { value: "square", label: t.t("Square") }]}
+          value={brand.style?.button_shape ?? ""}
+          onPick={(v) => setStyle({ button_shape: v || undefined })}
+        />
+        <Choice
+          label={t.t("Button fill")}
+          options={[{ value: "", label: t.t("Classic") }, { value: "gradient", label: t.t("Gradient") }, { value: "flat", label: t.t("Flat") }, { value: "outline", label: t.t("Outline") }, { value: "soft", label: t.t("Soft") }]}
+          value={brand.style?.button_fill ?? ""}
+          onPick={(v) => setStyle({ button_fill: v || undefined })}
+        />
+        <Choice
+          label={t.t("Button size")}
+          options={[{ value: "small", label: t.t("Small") }, { value: "", label: t.t("Normal") }, { value: "large", label: t.t("Large") }]}
+          value={brand.style?.button_size ?? ""}
+          onPick={(v) => setStyle({ button_size: v || undefined })}
+        />
+        <Choice
+          label={t.t("Answer bar")}
+          options={[{ value: "", label: t.t("Along the bottom") }, { value: "floating", label: t.t("Floating") }]}
+          value={brand.style?.dock ?? ""}
+          onPick={(v) => setStyle({ dock: v || undefined })}
+        />
+        {ANSWER_FIELDS.map((f) => (
+          <ColourRow
+            key={f.key}
+            label={f.label}
+            hint={f.hint}
+            value={brand.style?.[f.key]}
+            onSet={(v) => setStyle({ [f.key]: v && isHex(v) ? v.toLowerCase() : undefined })}
+          />
+        ))}
+      </Group>
+      <Group title={t.t("Background")} hint={media ? t.t("A pattern or a picture behind the steps, and a cover picture.") : t.t("A pattern behind the steps.")}>
+        <BackdropPicker brand={brand} onChange={onChange} media={media} />
+        {media && <CoverPicker brand={brand} setStyle={setStyle} />}
+      </Group>
+      <Group title={t.t("Motion and celebration")} hint={t.t("How steps come in and how answers are met.")}>
+        <label className="field">
+          <span className="field__label">{t.t("Step transition")}</span>
+          <select className="field__input" value={brand.style?.transition ?? ""} onChange={(e) => setStyle({ transition: (e.target.value || undefined) as never })}>
+            <option value="">{t.t("Gentle rise (standard)")}</option>
+            <option value="fade">{t.t("Fade")}</option>
+            <option value="slide">{t.t("Slide in")}</option>
+            <option value="zoom">{t.t("Zoom")}</option>
+            <option value="flip">{t.t("Flip")}</option>
+            <option value="pop">{t.t("Pop")}</option>
+            <option value="none">{t.t("No movement")}</option>
+          </select>
+          <span className="field__hint">{t.t("How each new step comes in. Phones set to reduce motion skip it.")}</span>
+        </label>
+        <Celebration brand={brand} setStyle={setStyle} media={media} />
+      </Group>
+    </div>
+  );
+}
+
+/** A part of the look, folded until wanted: its name and what is in it. */
+function Group({ title, hint, open, children }: { title: string; hint: string; open?: boolean; children: ReactNode }) {
+  return (
+    <details className="look__group" open={open}>
+      <summary className="look__group-head">
+        <span className="look__group-title">{title}</span>
+        <span className="field__hint">{hint}</span>
+      </summary>
+      <div className="look__group-body">{children}</div>
+    </details>
   );
 }
 
@@ -333,12 +382,11 @@ function ColourRow({ label, hint, value, onSet }: { label: string; hint: string;
   );
 }
 
-function Celebration({ brand, setStyle }: { brand: play.Brand; setStyle: (patch: Partial<Record<keyof play.LookStyle, number | boolean | string | string[] | undefined>>) => void }) {
+function Celebration({ brand, setStyle, media }: { brand: play.Brand; setStyle: (patch: Partial<Record<keyof play.LookStyle, number | boolean | string | string[] | undefined>>) => void; media: boolean }) {
   const t = useT();
   const st = brand.style ?? {};
   return (
     <>
-      <h4>{t.t("Celebration")}</h4>
       <Choice
         label={t.t("A right answer")}
         options={[{ value: "", label: t.t("Confetti") }, { value: "quiet", label: t.t("Just the tick") }, { value: "none", label: t.t("Only the words") }]}
@@ -369,8 +417,12 @@ function Celebration({ brand, setStyle }: { brand: play.Brand; setStyle: (patch:
           <input className="field__input" value={st.miss_text ?? ""} maxLength={40} placeholder={t.t("Not quite")} onChange={(e) => setStyle({ miss_text: e.target.value || undefined })} />
         </label>
       </div>
-      <SoundPick label={t.t("Sound on a right answer")} id={st.sound_right} onPick={(id) => setStyle({ sound_right: id })} />
-      <SoundPick label={t.t("Sound on a wrong answer")} id={st.sound_wrong} onPick={(id) => setStyle({ sound_wrong: id })} />
+      {media && (
+        <>
+          <SoundPick label={t.t("Sound on a right answer")} id={st.sound_right} onPick={(id) => setStyle({ sound_right: id })} />
+          <SoundPick label={t.t("Sound on a wrong answer")} id={st.sound_wrong} onPick={(id) => setStyle({ sound_wrong: id })} />
+        </>
+      )}
       <div className="look__actions">
         <button type="button" className="btn btn--ghost btn--sm" onClick={() => demoAnswer(true)}>{t.t("Try a right answer")}</button>
         <button type="button" className="btn btn--ghost btn--sm" onClick={() => demoAnswer(false)}>{t.t("Try a wrong answer")}</button>

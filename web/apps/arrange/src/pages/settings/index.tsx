@@ -13,6 +13,7 @@ import { SystemTab } from "./System.tsx";
 import { MigrationTab } from "./Migration.tsx";
 import { SoftwareUpdateTab } from "./SoftwareUpdate.tsx";
 import { IntegrationsTab } from "./Integrations.tsx";
+import { ThemesTab } from "./Themes.tsx";
 import "./settings.css";
 
 /**
@@ -32,6 +33,7 @@ export function SettingsPage({ tab }: { tab?: string | undefined }) {
     { id: "organization", label: t.t("Organization"), visible: orgAdmin },
     { id: "account", label: t.t("Account"), visible: true },
     { id: "members", label: t.t("Members"), visible: orgAdmin },
+    { id: "themes", label: t.t("Themes"), visible: orgAdmin },
     { id: "admins", label: t.t("Admins"), visible: admin },
     { id: "audit", label: t.t("Audit"), visible: orgAdmin || admin },
     { id: "purchases", label: t.t("Purchases"), visible: orgUser },
@@ -59,6 +61,8 @@ function SettingsTab({ id }: { id: string }) {
       return <OrganizationTab />;
     case "members":
       return <MembersTab />;
+    case "themes":
+      return <ThemesTab />;
     case "admins":
       return <AdminsTab />;
     case "audit":

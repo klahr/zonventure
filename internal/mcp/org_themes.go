@@ -42,7 +42,7 @@ func listOrgThemes(ctx context.Context, s *Server, _ json.RawMessage) (ToolCallR
 		return errorResult("decoding the themes: " + err.Error()), nil
 	}
 	if len(resp.Themes) == 0 {
-		return ToolCallResult{Content: []ToolContent{{Type: "text", Text: "The organisation has no themes of its own yet. An org admin adds one in the designer's theme editor with Save for the organisation."}}}, nil
+		return ToolCallResult{Content: []ToolContent{{Type: "text", Text: "The organisation has no themes of its own yet. An org admin adds one under Settings → Themes, or with Save in the designer's theme editor."}}}, nil
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "The organisation's %d themes:\n", len(resp.Themes))

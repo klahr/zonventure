@@ -18,7 +18,7 @@ func TestOrgThemeLibrary(t *testing.T) {
 	look := map[string]any{
 		"accent":   "#ff3399",
 		"backdrop": map[string]any{"kind": "picture", "media": 1, "opacity": 1, "scale": 24},
-		"style":    map[string]any{"card_opacity": 0.8, "sound_right": 2},
+		"style":    map[string]any{"card_opacity": 0.8, "sound_right": 2, "cover": 3},
 	}
 	if s := pub.doAny("POST", "/api/admin/org-themes", map[string]any{"name": "  ", "look": look}, nil); s != 400 {
 		t.Errorf("blank name = %d, want 400", s)
@@ -34,6 +34,7 @@ func TestOrgThemeLibrary(t *testing.T) {
 				Style    struct {
 					CardOpacity float64 `json:"card_opacity"`
 					SoundRight  int64   `json:"sound_right"`
+					Cover       int64   `json:"cover"`
 				} `json:"style"`
 			} `json:"look"`
 		} `json:"theme"`
@@ -42,8 +43,8 @@ func TestOrgThemeLibrary(t *testing.T) {
 	if s := pub.do("POST", "/api/admin/org-themes", map[string]any{"name": "House pink", "look": look}, &made); s != 201 {
 		t.Fatalf("create = %d", s)
 	}
-	if !made.DroppedMedia || made.Theme.Look.Backdrop != nil || made.Theme.Look.Style.SoundRight != 0 || made.Theme.Look.Style.CardOpacity != 0.8 {
-		t.Errorf("picture and sounds not dropped, or the rest lost: %+v", made)
+	if !made.DroppedMedia || made.Theme.Look.Backdrop != nil || made.Theme.Look.Style.SoundRight != 0 || made.Theme.Look.Style.Cover != 0 || made.Theme.Look.Style.CardOpacity != 0.8 {
+		t.Errorf("picture, cover and sounds not dropped, or the rest lost: %+v", made)
 	}
 	if s := pub.doAny("POST", "/api/admin/org-themes", map[string]any{"name": "House pink", "look": map[string]any{}}, nil); s != 409 {
 		t.Errorf("duplicate name = %d, want 409", s)

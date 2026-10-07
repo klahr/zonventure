@@ -1,13 +1,13 @@
-import { createContext, useState, type CSSProperties } from "react";
+import { createContext, useState } from "react";
 import { adventures, type play } from "@zonventure/api";
-import type { Envelope, Graph, Theme, ThemeLook } from "@zonventure/graph";
-import { brandVars } from "@zonventure/play-ui";
-import { Building2, Copy, Plus, Trash2 } from "lucide-react";
+import type { Graph, Theme, ThemeLook } from "@zonventure/graph";
+import { Building2, Copy, Trash2 } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { useSession } from "../session.tsx";
-import { LookControls } from "./Look.tsx";
-import { LookPreview } from "./LookPreview.tsx";
+import { href } from "../router.ts";
+import { SamplePreview } from "./SamplePreview.tsx";
 import { StarterGallery } from "./StarterGallery.tsx";
+import { ThemeEditor, ThemeStrip } from "./ThemeEditor.tsx";
 import { PanelModal } from "./dz/dialogs.tsx";
 import { ConfirmModal, ICON } from "./dz/ui.tsx";
 
@@ -16,7 +16,7 @@ import { ConfirmModal, ICON } from "./dz/ui.tsx";
 export const OpenThemes = createContext<((theme?: string) => void) | null>(null);
 
 /** theme-1, theme-2, … — never a built-in theme's name, never one in use. */
-function freshSlug(themes: Theme[]): string {
+export function freshSlug(themes: Theme[]): string {
   const taken = new Set(themes.map((th) => th.slug));
   for (let i = 1; ; i++) if (!taken.has(`theme-${i}`)) return `theme-${i}`;
 }
@@ -27,12 +27,7 @@ export function themeUses(g: Graph, slug: string): number {
 }
 
 interface Props {
-  slug: string;
   graph: Graph;
-  envelope: Envelope;
-  title: string;
-  /** The designer's selected step, previewed first. */
-  selected: string | null;
   /** The theme to open on. */
   initial?: string | null;
   onChange: (g: Graph) => void;
@@ -40,12 +35,13 @@ interface Props {
 }
 
 /**
- * The adventure's saved themes, edited with the same controls as its
- * main look and previewed on a phone. Themes live in the graph: every
- * change is a draft edit — autosaved, undoable, published with the rest —
- * so a running event keeps the themes its steps switch to.
+ * The adventure's saved themes, edited beside a phone showing a sample
+ * puzzle. Themes live in the graph: every change is a draft edit —
+ * autosaved, undoable, published with the rest — so a running event keeps
+ * the themes its steps switch to. The organisation's library, which new
+ * themes may start from, is edited under Settings → Themes.
  */
-export function ThemesModal({ slug, graph, envelope, title, selected, initial, onChange, onClose }: Props) {
+export function ThemesModal({ graph, initial, onChange, onClose }: Props) {
   const t = useT();
   const themes = graph.themes ?? [];
   const [current, setCurrent] = useState<string | null>(initial ?? themes[0]?.slug ?? null);
@@ -103,34 +99,22 @@ export function ThemesModal({ slug, graph, envelope, title, selected, initial, o
 
   return (
     <PanelModal title={t.t("Themes")} wide onClose={onClose}>
-      <div className={"themes" + (choosing ? " themes--choosing" : theme ? "" : " themes--empty")}>
-        <nav className="themes__list" aria-label={t.t("Saved themes")}>
-          {themes.map((th) => (
-            <button key={th.slug} type="button" className={"themes__item" + (th.slug === current ? " is-on" : "")} aria-current={th.slug === current} onClick={() => setCurrent(th.slug)}>
-              <span className="themes__swatch look__thumb" style={brandVars(th.look) as CSSProperties} />
-              <span className="themes__name">{th.name || t.t("Untitled theme")}</span>
-            </button>
-          ))}
-          <button type="button" className={"btn btn--ghost btn--sm" + (choosing ? " is-on" : "")} aria-pressed={choosing} onClick={() => setChoosing((c) => !c)}>
-            <Plus size={ICON.sm} aria-hidden />
-            {t.t("New theme")}
-          </button>
-        </nav>
-
-        {choosing ? (
+      <div className="themes">
+        <ThemeStrip themes={themes.map((th) => ({ key: th.slug, name: th.name, look: th.look }))} current={current} adding={choosing || !theme} onPick={(s) => { setCurrent(s); setChoosing(false); }} onAdd={() => setChoosing(true)} />
+        {choosing || !theme ? (
           <StarterGallery
             onPick={(name, look) => add(name || t.t("Theme {{n}}", { n: themes.length + 1 }), look)}
-            onCancel={() => setChoosing(false)}
-            manage
+            {...(theme ? { onCancel: () => setChoosing(false) } : {})}
           />
-        ) : theme ? (
-          <>
-            <div className="themes__editor look__controls">
-              <label className="field">
-                <span className="field__label">{t.t("Name")}</span>
-                <input className="field__input" value={theme.name} maxLength={80} onChange={(e) => update({ name: e.target.value })} />
-              </label>
-              <div className="look__actions">
+        ) : (
+          <ThemeEditor
+            name={theme.name}
+            onName={(name) => update({ name })}
+            look={theme.look}
+            onLook={(look) => update({ look })}
+            media
+            actions={
+              <>
                 <button type="button" className="btn btn--ghost btn--sm" onClick={() => add(t.t("{{name}} (copy)", { name: theme.name }), theme.look)}>
                   <Copy size={ICON.sm} aria-hidden />
                   {t.t("Duplicate")}
@@ -138,7 +122,7 @@ export function ThemesModal({ slug, graph, envelope, title, selected, initial, o
                 {orgAdmin && (
                   <button type="button" className="btn btn--ghost btn--sm" title={t.t("Keep this theme for all the organisation's adventures")} onClick={() => void share(theme)}>
                     <Building2 size={ICON.sm} aria-hidden />
-                    {t.t("Save for the organisation")}
+                    {t.t("Save")}
                   </button>
                 )}
                 <button
@@ -151,26 +135,18 @@ export function ThemesModal({ slug, graph, envelope, title, selected, initial, o
                   <Trash2 size={ICON.sm} aria-hidden />
                   {t.t("Delete")}
                 </button>
-              </div>
-              {shared?.slug === theme.slug && (
-                <p className="field__hint" role="status">
-                  {shared.text}
-                </p>
-              )}
-              <p className="field__hint">
-                {uses > 0
-                  ? t.plural(uses, { one: t.t("{{n}} step switches to this theme."), other: t.t("{{n}} steps switch to this theme.") })
-                  : t.t("No step uses it yet. Add a Change the theme step, or use it as the main look under Adventure settings.")}
+              </>
+            }
+            note={
+              <p className="field__hint theme-ed__note" role="status">
+                {shared?.slug === theme.slug
+                  ? shared.text
+                  : uses > 0 && t.plural(uses, { one: t.t("{{n}} step switches to this theme."), other: t.t("{{n}} steps switch to this theme.") })}{" "}
+                {orgAdmin && <a href={href({ name: "settings", tab: "themes" })}>{t.t("Organisation themes")}</a>}
               </p>
-              <LookControls brand={theme.look} onChange={(look) => update({ look })} />
-              <p className="field__hint">{t.t("Themes are part of the draft: changes save with it and reach players when you publish.")}</p>
-            </div>
-            <aside className="look__preview">
-              <LookPreview slug={slug} graph={graph} envelope={envelope} brand={theme.look} title={title} selected={selected} />
-            </aside>
-          </>
-        ) : (
-          <p className="themes__none field__hint">{t.t("No saved themes yet. Make one to switch to it from a step, or to swap the adventure's style in one go.")}</p>
+            }
+            preview={<SamplePreview brand={theme.look} />}
+          />
         )}
       </div>
       {deleting && (

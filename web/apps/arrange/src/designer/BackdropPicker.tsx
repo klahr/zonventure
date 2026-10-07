@@ -13,7 +13,7 @@ import { AdventureSlug, downscale } from "./MediaEditor.tsx";
  * the patterns it changes. The phone preview above follows every change;
  * Save look stores the values, not the preset.
  */
-export function BackdropPicker({ brand, onChange }: { brand: play.Brand; onChange: (b: play.Brand) => void }) {
+export function BackdropPicker({ brand, onChange, media = true }: { brand: play.Brand; onChange: (b: play.Brand) => void; media?: boolean }) {
   const t = useT();
   const bd = brand.backdrop;
   const [base, setBase] = useState<string | null>(() => presetOf(bd));
@@ -67,17 +67,19 @@ export function BackdropPicker({ brand, onChange }: { brand: play.Brand; onChang
           <span className="look__thumb" style={thumb(undefined)} />
           <span>{t.t("None")}</span>
         </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={picture}
-          className={"look__pattern" + (picture ? " is-on" : "")}
-          disabled={!slug || uploading}
-          onClick={() => file.current?.click()}
-        >
-          {picture ? <span className="look__thumb" style={thumb(bd)} /> : <span className="look__thumb look__thumb--add"><ImagePlus size={ICON.md} aria-hidden /></span>}
-          <span>{uploading ? t.t("Uploading…") : t.t("Picture")}</span>
-        </button>
+        {media && (
+          <button
+            type="button"
+            role="radio"
+            aria-checked={picture}
+            className={"look__pattern" + (picture ? " is-on" : "")}
+            disabled={!slug || uploading}
+            onClick={() => file.current?.click()}
+          >
+            {picture ? <span className="look__thumb" style={thumb(bd)} /> : <span className="look__thumb look__thumb--add"><ImagePlus size={ICON.md} aria-hidden /></span>}
+            <span>{uploading ? t.t("Uploading…") : t.t("Picture")}</span>
+          </button>
+        )}
         {BACKDROP_PRESETS.map((p) => (
           <button key={p.id} type="button" role="radio" aria-checked={base === p.id && !!bd} className={"look__pattern" + (base === p.id && bd ? " is-on" : "")} onClick={() => choose(p.id)}>
             <span className="look__thumb" style={thumb(p.backdrop)} />

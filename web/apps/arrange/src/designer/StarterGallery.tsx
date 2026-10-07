@@ -2,10 +2,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { adventures } from "@zonventure/api";
 import type { ThemeLook } from "@zonventure/graph";
 import { DEFAULT_LOOK, brandVars, loadFont } from "@zonventure/play-ui";
-import { Trash2 } from "lucide-react";
 import { useT } from "../i18n.tsx";
-import { useSession } from "../session.tsx";
-import { ConfirmModal, ICON } from "./dz/ui.tsx";
 import { STARTER_GROUPS, STARTER_THEMES } from "@zonventure/play-ui";
 import "./starters.css";
 
@@ -15,21 +12,18 @@ import "./starters.css";
  * in its own colours, fonts, background and cards. The organisation's
  * own themes come first, after the default.
  */
-export function StarterGallery({ onPick, onCancel, selected, sample, manage }: {
+export function StarterGallery({ onPick, onCancel, selected, sample, ownLookHint = true }: {
   onPick: (name: string, look: ThemeLook, id: string) => void;
   onCancel?: () => void;
   /** The starter picked so far, marked. */
   selected?: string;
   /** The title and text on each sample page; the adventure's own when known. */
   sample?: { title: string; text: string };
-  /** Offer an org admin to remove the organisation's themes. */
-  manage?: boolean;
+  /** Point to starting from the adventure's own look; off outside an adventure. */
+  ownLookHint?: boolean;
 }) {
   const t = useT();
-  const { state } = useSession();
-  const canRemove = !!manage && state.status === "authenticated" && state.user.role === "org_admin";
   const [library, setLibrary] = useState<adventures.OrgTheme[]>([]);
-  const [removing, setRemoving] = useState<adventures.OrgTheme | null>(null);
   const starters = [{ id: "default", label: "Default look", group: "", look: DEFAULT_LOOK as ThemeLook }, ...STARTER_THEMES];
   const own = library.map((th) => ({ id: `org-${th.id}`, label: th.name, own: th, look: th.look as ThemeLook }));
   useEffect(() => {
@@ -67,7 +61,7 @@ export function StarterGallery({ onPick, onCancel, selected, sample, manage }: {
             {g.items.map((s) => {
               const name = s.own ? s.label : t.t(s.label);
               return (
-                <div key={s.id} className="starters__cell">
+                <div key={s.id}>
                   <button type="button" className={"starters__pick" + (selected === s.id ? " is-on" : "")} aria-pressed={selected === s.id} onClick={() => onPick(s.id === "default" ? "" : name, s.look, s.id)}>
                     <span className="starters__page pv" data-theme="light" style={brandVars(s.look) as CSSProperties}>
                       <span className="starters__title">{sample?.title || t.t("Erik's stolen elephants")}</span>
@@ -76,32 +70,13 @@ export function StarterGallery({ onPick, onCancel, selected, sample, manage }: {
                     </span>
                     <span className="starters__name">{name}</span>
                   </button>
-                  {s.own && canRemove && (
-                    <button type="button" className="starters__remove btn btn--ghost btn--sm" title={t.t("Remove from the organisation's themes")} aria-label={t.t("Remove from the organisation's themes")} onClick={() => setRemoving(s.own!)}>
-                      <Trash2 size={ICON.sm} aria-hidden />
-                    </button>
-                  )}
                 </div>
               );
             })}
           </div>
         </div>
       ))}
-      <p className="field__hint">{t.t("To start from the adventure's own look, use Save this look as a theme under Adventure settings.")}</p>
-      {removing && (
-        <ConfirmModal
-          title={t.t("Remove “{{name}}” from the organisation's themes?", { name: removing.name })}
-          message={t.t("Adventures that use it keep their copy.")}
-          confirmLabel={t.t("Remove")}
-          danger
-          onConfirm={() => {
-            const gone = removing;
-            setRemoving(null);
-            adventures.deleteOrgTheme(gone.id).then(() => setLibrary((l) => l.filter((th) => th.id !== gone.id)), () => {});
-          }}
-          onCancel={() => setRemoving(null)}
-        />
-      )}
+      {ownLookHint && <p className="field__hint">{t.t("To start from the adventure's own look, use Save this look as a theme under Adventure settings.")}</p>}
     </section>
   );
 }

@@ -77,7 +77,7 @@ import { Resources } from "./Resources.tsx";
 import { Simulator, type SimMode } from "./Simulator.tsx";
 import { EventSim } from "./EventSim.tsx";
 import { FloatingWindow } from "./FloatingWindow.tsx";
-import { OpenThemes, ThemesModal } from "./ThemesModal.tsx";
+import { OpenThemes, ThemesModal, freshSlug } from "./ThemesModal.tsx";
 import { DevTicketModal } from "./DevTicket.tsx";
 import { useInspectorWidth } from "./InspectorResize.tsx";
 import { TopBarPortal, useTopBarTitle } from "../topbar.tsx";
@@ -1554,6 +1554,10 @@ export function Designer({ slug }: { slug: string }) {
               {...(readOnly
                 ? {}
                 : {
+                    onAddTheme: (name, look) => {
+                      const themes = graph.themes ?? [];
+                      change({ ...graph, themes: [...themes, { slug: freshSlug(themes), name, look: structuredClone(look) }] });
+                    },
                     onSaveAsTheme: () => {
                       const themes = graph.themes ?? [];
                       let n = 1;
@@ -1568,14 +1572,10 @@ export function Designer({ slug }: { slug: string }) {
         </PanelModal>
       )}
       {devOpen && <DevTicketModal slug={slug} onClose={() => setDevOpen(false)} />}
-      {themesOpen && draft && simEnvelope && (
+      {themesOpen && draft && (
         <AdventureSlug.Provider value={slug}>
           <ThemesModal
-            slug={slug}
             graph={graph}
-            envelope={simEnvelope}
-            title={adventureTitle}
-            selected={selected}
             initial={themesOpen.theme ?? null}
             onChange={change}
             onClose={() => setThemesOpen(null)}

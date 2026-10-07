@@ -19,7 +19,7 @@ import (
 // The organisation's theme library: looks made once and picked in any of
 // its adventures, where the theme editor copies one into the graph. Any
 // member may use them; an org admin — who may author — adds and edits.
-// A look in the library has no picture or sounds: those are an
+// A look in the library has no picture, cover or sounds: those are an
 // adventure's own media, which another adventure may not use.
 
 type orgThemeDTO struct {
@@ -29,15 +29,15 @@ type orgThemeDTO struct {
 	UpdatedAt time.Time  `json:"updated_at"`
 }
 
-// withoutMedia drops a look's picture and sounds, reporting whether it had any.
+// withoutMedia drops a look's picture, cover and sounds, reporting whether it had any.
 func withoutMedia(l *glook.Look) bool {
 	dropped := false
 	if b := l.Backdrop; b != nil && b.Kind == "picture" {
 		l.Backdrop = nil
 		dropped = true
 	}
-	if s := l.Style; s != nil && (s.SoundRight != 0 || s.SoundWrong != 0) {
-		s.SoundRight, s.SoundWrong = 0, 0
+	if s := l.Style; s != nil && (s.SoundRight != 0 || s.SoundWrong != 0 || s.Cover != 0) {
+		s.SoundRight, s.SoundWrong, s.Cover = 0, 0, 0
 		dropped = true
 	}
 	return dropped
