@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
-import { CalendarPlus, Coins, Compass, MapPin, Plus, Upload, Workflow } from "lucide-react";
+import { CalendarPlus, Coins, Compass, GraduationCap, MapPin, Plus, Upload, Workflow } from "lucide-react";
 import { canAuthor } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
@@ -11,6 +11,7 @@ import { NewQuestDialog } from "../events/NewQuestDialog.tsx";
 import { duplicateAdventure, isPublisher, listAdventures, listAssignments, type AdventureRow, type Assignment } from "./api.ts";
 import { PickPassDialog, useImportAdventure } from "./dialogs.tsx";
 import { NewKindDialog } from "./NewKind.tsx";
+import { START_TUTORIAL } from "../dashboard/Onboarding.tsx";
 import { AdventureTabs, Cover, LanguagePill, lookCover, puzzleCount } from "./parts.tsx";
 
 /** What the schedule dialog opens with. */
@@ -48,7 +49,16 @@ export function AdventuresPage() {
   const user = state.status === "authenticated" ? state.user : null;
   const author = !!user && canAuthor(user);
   const load = useLoad((signal) => Promise.all([listAdventures(signal), listAssignments(signal)]), []);
-  const [creating, setCreating] = useState<false | "choose" | "designer">(false);
+  const [creating, setCreating] = useState<false | "choose" | "designer" | "tutorial">(() => {
+    // Sent here from the welcome to follow the tutorial.
+    try {
+      const go = sessionStorage.getItem(START_TUTORIAL) === "1";
+      sessionStorage.removeItem(START_TUTORIAL);
+      return go && author ? "tutorial" : false;
+    } catch {
+      return false;
+    }
+  });
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [selling, setSelling] = useState<string | null>(null);
   const [picking, setPicking] = useState<{ a: AdventureRow; passes: Assignment[] } | null>(null);
@@ -157,11 +167,17 @@ export function AdventuresPage() {
           title={t.t("No adventures you can use yet.")}
           illustration={SPOTS.noAdventures}
           action={
-            CATALOG_ENABLED && (
+            CATALOG_ENABLED ? (
               <a className="btn adv-btn" href={href({ name: "catalog" })}>
                 <Coins size={ICON.md} aria-hidden />
                 {t.t("Browse the Catalog")}
               </a>
+            ) : (
+              author && (
+                <Button icon={<GraduationCap size={ICON.md} aria-hidden />} onClick={() => setCreating("tutorial")}>
+                  {t.t("Follow the tutorial")}
+                </Button>
+              )
             )
           }
         >
@@ -183,10 +199,10 @@ export function AdventuresPage() {
       {header}
       <AdventureTabs current="yours" />
       {body}
-      {creating === "choose" && <NewKindDialog onDesigner={() => setCreating("designer")} onClose={() => setCreating(false)} />}
-      {creating === "designer" && (
+      {creating === "choose" && <NewKindDialog onDesigner={() => setCreating("designer")} onTutorial={() => setCreating("tutorial")} onClose={() => setCreating(false)} />}
+      {(creating === "designer" || creating === "tutorial") && (
         <Suspense fallback={null}>
-          <NewAdventure onClose={() => setCreating(false)} />
+          <NewAdventure tutorial={creating === "tutorial"} onClose={() => setCreating(false)} />
         </Suspense>
       )}
       {importer.dialog}

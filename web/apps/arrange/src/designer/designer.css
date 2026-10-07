@@ -1175,3 +1175,121 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
   .esim__side { width: 100%; }
   .esim__panes { grid-template-columns: 1fr; }
 }
+
+/* The tutorial's guide, docked at the top left of the canvas. */
+.tut {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  background: var(--dz-surface);
+  color: var(--dz-ink);
+  border: 1px solid var(--dz-border);
+  border-radius: var(--dz-r-3);
+  box-shadow: var(--dz-shadow-pop);
+  font-size: var(--dz-text-sm);
+}
+.tut__head { display: flex; align-items: center; gap: var(--dz-space-2); padding: var(--dz-space-2) var(--dz-space-2) var(--dz-space-2) var(--dz-space-3); color: var(--dz-accent); }
+.tut__head strong { flex: 1; color: var(--dz-ink); font-size: var(--dz-text-md); }
+.tut__bar { height: 4px; margin: 0 var(--dz-space-3); border-radius: var(--dz-r-pill); background: var(--dz-surface-2); overflow: hidden; }
+.tut__bar span { display: block; height: 100%; background: var(--dz-success); transition: width var(--dz-dur-3) var(--dz-ease-out); }
+.tut__steps { margin: 0; padding: var(--dz-space-2); list-style: none; overflow-y: auto; min-height: 0; }
+.tut__step {
+  display: flex;
+  align-items: center;
+  gap: var(--dz-space-2);
+  width: 100%;
+  padding: 6px var(--dz-space-1h);
+  border: 0;
+  border-radius: var(--dz-r-2);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tut__step:hover { background: var(--dz-surface-2); }
+.tut__n {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--dz-border-strong);
+  font-size: var(--dz-text-xs);
+  font-weight: 600;
+  color: var(--dz-muted);
+}
+.tut__title { flex: 1; }
+.tut .is-open .tut__title { font-weight: 600; }
+.tut .is-done .tut__n { border-color: var(--dz-success); background: var(--dz-success); color: #fff; }
+.tut .is-done:not(.is-open) .tut__title { color: var(--dz-muted); text-decoration: line-through; }
+.tut__body { padding: 0 var(--dz-space-1h) var(--dz-space-2) calc(20px + var(--dz-space-2) + var(--dz-space-1h)); }
+.tut__body p { margin: var(--dz-space-1) 0 var(--dz-space-2); line-height: 1.45; }
+.tut__example { position: relative; margin-bottom: var(--dz-space-2); border: 1px dashed var(--dz-border-strong); border-radius: var(--dz-r-2); background: var(--dz-surface-2); }
+.tut__example pre { margin: 0; padding: var(--dz-space-2); padding-right: 64px; white-space: pre-wrap; font: inherit; font-style: italic; }
+.tut__example button { position: absolute; top: 4px; right: 4px; gap: 4px; }
+.tut__actions { display: flex; flex-wrap: wrap; gap: var(--dz-space-1); }
+.tut__done { padding: var(--dz-space-2) var(--dz-space-3) var(--dz-space-3); border-top: 1px solid var(--dz-border); }
+.tut__done p { margin: 0 0 var(--dz-space-2); line-height: 1.45; }
+.tut-pill {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--dz-border);
+  border-radius: var(--dz-r-pill);
+  background: var(--dz-surface);
+  color: var(--dz-ink);
+  box-shadow: var(--dz-shadow-pop);
+  font: inherit;
+  font-size: var(--dz-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.tut-pill svg { color: var(--dz-accent); }
+@media (prefers-reduced-motion: reduce) { .tut__bar span { transition: none; } }
+.tut__all { margin: 0 var(--dz-space-2) var(--dz-space-2); padding: 6px; border: 0; background: none; color: var(--dz-accent); font: inherit; font-size: var(--dz-text-sm); text-align: left; cursor: pointer; }
+/* On a phone: a sheet along the bottom, above an open step's form. */
+@media (max-width: 720px) {
+  .tut {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 60dvh;
+    border-radius: var(--dz-r-3) var(--dz-r-3) 0 0;
+    border-width: 1px 0 0;
+    z-index: calc(var(--dz-z-inspector-sheet) + 1);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tut-pill {
+    position: fixed;
+    top: auto;
+    left: auto;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    z-index: calc(var(--dz-z-inspector-sheet) + 1);
+    padding: 10px 14px;
+  }
+  .tut__step { padding: 10px var(--dz-space-1h); }
+}
+/* Room under a phone's form and outline for the tutorial's pill. */
+@media (max-width: 720px) {
+  .dz-designer.has-tutorial .inspector-body,
+  .dz-designer.has-tutorial .listview { padding-bottom: 72px; }
+}
+.tut-pill { max-width: calc(100% - 24px); }
+.tut-pill > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tut-pill__step { font-weight: 400; }

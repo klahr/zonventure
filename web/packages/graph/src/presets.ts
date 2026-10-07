@@ -96,7 +96,7 @@ export const PRESETS: Preset[] = [
     label: "Check in at a place",
     hint: "Reach a spot on the map to continue",
     keywords: "gps location geofence arrive zone place map checkpoint",
-    build: () => ({ type: "story", title: "Check in", story: { text: "", zone: "" } }),
+    build: () => ({ type: "story", title: "Check in", story: { blocks: [{ id: "b1", kind: "text", text: "" }], zone: "" } }),
   },
   {
     id: "story",

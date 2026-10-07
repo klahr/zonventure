@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { adventures, type play } from "@zonventure/api";
+import { ApiError, adventures, type play } from "@zonventure/api";
 import { FORMAT_V2, type Graph, type ThemeLook } from "@zonventure/graph";
-import { DEFAULT_LOOK, PlayView, type Feedback } from "@zonventure/play-ui";
+import { DEFAULT_LOOK, PlayView, STARTER_THEMES, type Feedback } from "@zonventure/play-ui";
 import "@zonventure/play-ui/play-ui.css";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
@@ -10,6 +10,7 @@ import { Button, Dialog, Field, useToast } from "../../ui/index.ts";
 import { PointMap } from "../../designer/PointMap.tsx";
 import { PhoneFrame } from "../../designer/SamplePreview.tsx";
 import { StarterGallery } from "../../designer/StarterGallery.tsx";
+import { saveTutorial } from "../../designer/tutorial.ts";
 import { createAdventure, orgName, updateAdventure } from "./api.ts";
 import { slugFrom, useGuardedClose } from "./dialogs.tsx";
 import "./new-adventure.css";
@@ -42,25 +43,29 @@ type Step = 0 | 1 | 2 | 3;
  * made. A phone beside the steps shows the adventure's first page as it
  * takes shape. Made, it opens in the designer with the chosen look as
  * its main look and its first saved theme, and a first step to build on.
+ *
+ * For the tutorial it comes filled in with its example, Erik's stolen
+ * elephants in the jungle, and the designer opens with the guide.
  */
-export default function NewAdventure({ onClose }: { onClose: () => void }) {
+export default function NewAdventure({ onClose, tutorial = false }: { onClose: () => void; tutorial?: boolean }) {
   const t = useT();
+  const [example] = useState(() => (tutorial ? exampleOf(t) : null));
   const toast = useToast();
   const { state } = useSession();
   const [step, setStep] = useState<Step>(0);
-  const [title, setTitle] = useState("");
-  const [slug, setSlug] = useState("");
+  const [title, setTitle] = useState(example?.title ?? "");
+  const [slug, setSlug] = useState(example ? slugFrom(example.title) : "");
   const [slugEdited, setSlugEdited] = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
-  const [pitch, setPitch] = useState("");
+  const [pitch, setPitch] = useState(example?.pitch ?? "");
   const [author] = useState(orgName(state.status === "authenticated" ? state.user : null));
   const [language, setLanguage] = useState(() => (LANGUAGES.some((l) => l.code === t.current()) ? t.current() : "en"));
-  const [audience, setAudience] = useState<(typeof AUDIENCES)[number]["value"] | "">("");
-  const [theme, setTheme] = useState<{ id: string; name: string; look: ThemeLook }>({ id: "default", name: "", look: DEFAULT_LOOK as ThemeLook });
+  const [audience, setAudience] = useState<(typeof AUDIENCES)[number]["value"] | "">(example ? "families" : "");
+  const [theme, setTheme] = useState<{ id: string; name: string; look: ThemeLook }>(example?.theme ?? { id: "default", name: "", look: DEFAULT_LOOK as ThemeLook });
   const [start, setStart] = useState<{ lat: number; lng: number } | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [busy, setBusy] = useState(false);
-  const close = useGuardedClose(!!(title || pitch), t.t("Discard this adventure?"), onClose);
+  const close = useGuardedClose(!!(title || pitch) && !example, t.t("Discard this adventure?"), onClose);
 
   const badSlug = slug !== "" && !SLUG.test(slug);
   const basicsDone = title.trim() !== "" && slug.trim() !== "" && !badSlug;
@@ -91,7 +96,7 @@ export default function NewAdventure({ onClose }: { onClose: () => void }) {
     setBusy(true);
     let made: string;
     try {
-      made = (await createAdventure({ slug: slug.trim(), title: title.trim(), description: pitch.trim(), author })).slug;
+      made = await createFree(slug.trim(), !!example && !slugEdited, (s) => createAdventure({ slug: s, title: title.trim(), description: pitch.trim(), author }));
     } catch (e) {
       // A taken short name is the usual reason: back to where it is set.
       setSlugError(e instanceof Error ? e.message : t.t("Could not create the adventure."));
@@ -112,6 +117,7 @@ export default function NewAdventure({ onClose }: { onClose: () => void }) {
     } catch (e) {
       toast.err(e);
     }
+    if (example) saveTutorial(made, { baseline: welcome, done: [] });
     location.hash = href({ name: "designer", slug: made });
     onClose();
   };
@@ -132,6 +138,9 @@ export default function NewAdventure({ onClose }: { onClose: () => void }) {
         </>
       }
     >
+      {example && step === 0 && (
+        <p className="newadv__lead">{t.t("This is the tutorial. We have filled in an example to follow: change anything you like, or press Next.")}</p>
+      )}
       <ol className="newadv__steps" aria-label={t.t("Steps")}>
         {steps.map((s, i) => (
           <li key={s} className={i === step ? "is-on" : i < step ? "is-done" : ""}>
@@ -284,3 +293,28 @@ function firstGraph(title: string, welcome: string, language: string, theme: { i
   } as Graph;
 }
 
+
+/** The tutorial's adventure, in the author's language. */
+function exampleOf(t: ReturnType<typeof useT>) {
+  const jungle = STARTER_THEMES.find((s) => s.id === "jungle");
+  return {
+    title: t.t("Erik's stolen elephants"),
+    pitch: t.t("Help Erik find his stolen elephants before dark! About 45 minutes in the park."),
+    theme: jungle ? { id: jungle.id, name: t.t(jungle.label), look: jungle.look as ThemeLook } : { id: "default", name: "", look: DEFAULT_LOOK as ThemeLook },
+  };
+}
+
+/**
+ * Creates under the short name asked for or, when `retry`, the first of
+ * name-2, name-3… that is free: the tutorial may be followed more than
+ * once, and its author never chose the name.
+ */
+async function createFree(slug: string, retry: boolean, create: (slug: string) => Promise<{ slug: string }>): Promise<string> {
+  for (let n = 1; ; n++) {
+    try {
+      return (await create(n === 1 ? slug : `${slug}-${n}`)).slug;
+    } catch (e) {
+      if (!retry || n >= 20 || !(e instanceof ApiError && e.status === 409)) throw e;
+    }
+  }
+}

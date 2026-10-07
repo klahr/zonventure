@@ -8,6 +8,9 @@ import { activeMembership, pricing } from "../events/api.ts";
 
 export type OnboardingVariant = "arranger" | "publisher" | "admin";
 
+/** Set on the way to Adventures to open the tutorial there. */
+export const START_TUTORIAL = "zv-start-tutorial";
+
 export function onboardingVariant(user: Whoami): OnboardingVariant {
   if (user.role === "admin") return "admin";
   return CATALOG_ENABLED && activeMembership(user)?.is_publisher ? "publisher" : "arranger";
@@ -91,6 +94,23 @@ export function OnboardingDialog({ user, onClose }: { user: Whoami; onClose: () 
       footer={
         <>
           <Button onClick={onClose}>{t.t("Skip")}</Button>
+          {variant !== "admin" && (
+            <a
+              className="btn"
+              href={href({ name: "adventures" })}
+              onClick={() => {
+                // The adventures page opens the tutorial's wizard on arrival.
+                try {
+                  sessionStorage.setItem(START_TUTORIAL, "1");
+                } catch {
+                  /* storage blocked: the adventures page still offers it */
+                }
+                onClose();
+              }}
+            >
+              {t.t("Follow the tutorial")}
+            </a>
+          )}
           <a className="btn primary" href={href(go.route)} onClick={onClose}>{go.label}</a>
         </>
       }

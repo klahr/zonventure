@@ -1,8 +1,9 @@
 import type { Block, Graph, Node } from "@zonventure/graph";
 import type { T } from "./types.ts";
 
-const clip = (s: string, n = 48) => {
-  const one = s.replace(/[#*_>`[\]]/g, "").replace(/\s+/g, " ").trim();
+// A text the author left empty comes back from the server without it.
+const clip = (s: string | undefined, n = 48) => {
+  const one = (s ?? "").replace(/[#*_>`[\]]/g, "").replace(/\s+/g, " ").trim();
   return one.length > n ? one.slice(0, n - 1) + "…" : one;
 };
 

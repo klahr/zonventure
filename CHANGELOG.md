@@ -11,6 +11,38 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — a designer tutorial
+
+- **Tutorial: your first adventure** is a third choice under New
+  adventure, and a button on an empty Adventures list. The wizard comes
+  filled in with the example, Erik's stolen elephants in the Jungle look,
+  and the designer opens with a guide docked over the canvas.
+- The guide has ten steps: welcome text, a zone, a check-in, a puzzle, a
+  hint, a choice, tying up the ends, the look, Test play and publishing.
+  Each says what to do with the designer's own labels, offers example
+  text to copy, and has a button that opens the right place. Steps tick
+  themselves off as the draft gets there, or by hand. It can be hidden
+  to a pill, and is started on any adventure from ⋮ → Tutorial.
+- **On a phone** the guide is a sheet along the bottom showing the step
+  at hand, and it tucks away into a pill once its button has opened a
+  form. Its words follow the phone's simple step form, steps go straight
+  into the outline, and the choice comes ready-wired, left to the end and
+  right to a story leading back, since nothing can be dragged.
+- Progress lives in the browser, per adventure. In English and Swedish.
+  The welcome after signing up offers it too.
+
+### Fixed
+
+- **The designer no longer goes blank** when a step whose text was left
+  empty is opened after a reload: the server leaves an empty text out,
+  and the step's discussion choked on it.
+- **A new "Check in at a place" step has a text to write in**, like a
+  story; it came with only a title, so teams were sent off with no
+  words.
+- **The theme editor's "Save" is now "Share with organisation"**, which
+  is what it does: a theme's changes save by themselves, and the button
+  only copies it to the organisation's themes.
+
 ## [0.22.0] - 2026-10-07
 
 ### Added — pictures in emails

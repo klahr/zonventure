@@ -83,6 +83,8 @@ import { useInspectorWidth } from "./InspectorResize.tsx";
 import { TopBarPortal, useTopBarTitle } from "../topbar.tsx";
 import { Look } from "./Look.tsx";
 import { StepSearch } from "./StepSearch.tsx";
+import { Tutorial } from "./Tutorial.tsx";
+import { addChoiceAfter, addStepAfter, checkInStep, choiceDraft, emptyStep, loadTutorial, saveTutorial, welcomeStep, welcomeText, type TutorialState, type TutorialStep } from "./tutorial.ts";
 import { AdventureSlug } from "./MediaEditor.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
 import { DiffDialog, HelpModal, PanelModal, PublishCelebration, PublishLabelModal } from "./dz/dialogs.tsx";
@@ -226,6 +228,24 @@ export function Designer({ slug }: { slug: string }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [kebab, setKebab] = useState<{ x: number; y: number } | null>(null);
+  // The tutorial's guide, when the author follows it on this adventure.
+  const [tutorial, setTutorialState] = useState<TutorialState | null>(() => loadTutorial(slug));
+  const setTutorial = useCallback(
+    (s: TutorialState | null) => {
+      setTutorialState(s);
+      saveTutorial(slug, s);
+    },
+    [slug],
+  );
+  const tutorialDid = useCallback(
+    (x: TutorialStep) => setTutorialState((s) => {
+      if (!s || s.done.includes(x)) return s;
+      const next = { ...s, done: [...s.done, x] };
+      saveTutorial(slug, next);
+      return next;
+    }),
+    [slug],
+  );
 
   const [simMode, setSimMode] = useState<SimMode>("step");
   const [simRestart, setSimRestart] = useState(0);
@@ -968,12 +988,102 @@ export function Designer({ slug }: { slug: string }) {
     { label: t.t("Adventure settings"), onClick: () => setSettingsOpen(true) },
     { label: t.t("Themes"), onClick: () => openThemes() },
     { label: t.t("Play the draft on my phone"), onClick: () => setDevOpen(true) },
+    {
+      label: t.t("Tutorial"),
+      onClick: () => setTutorial(tutorial ? { ...tutorial, collapsed: false } : { baseline: welcomeText(graph), done: [] }),
+    },
     // A phone has no keyboard to take shortcuts from.
     ...(isTouch() ? [] : [{ label: t.t("Keyboard shortcuts"), shortcut: "?", onClick: () => setHelpOpen(true) }]),
   ];
 
+  // The tutorial's "show me" buttons: each takes the author where its step is done.
+  const openAt = (x: string | undefined) => {
+    if (!x) return;
+    choose(x);
+    setSlot("inspect");
+    setFocusRequest((n) => n + 1);
+  };
+  const addAfter = (x: string | undefined) => {
+    setListView(false);
+    if (x) choose(x);
+    setPaletteRequest((n) => n + 1);
+  };
+  // On a phone the step goes straight into the outline and opens, as its
+  // add buttons do: the canvas and its palette are not for a thumb.
+  const added = (r: { graph: Graph; slug: string } | null) => {
+    if (!r) return;
+    change(r.graph);
+    openAt(r.slug);
+  };
+  const openCheckIn = () => {
+    const welcome = welcomeStep(graph)?.slug;
+    const at = checkInStep(graph) ?? graph.nodes.find((n) => n.type === "story" && n.slug !== welcome);
+    if (at) openAt(at.slug);
+    else added(addStepAfter(graph, welcome, "story"));
+  };
+  const phone = narrowScreen();
+  // A step begun already is opened again rather than added twice.
+  const question = () => graph.nodes.find((n) => n.type === "puzzle" && n.slug !== choiceDraft(graph)?.slug);
+  const fixNext = () => {
+    const empty = emptyStep(graph);
+    if (errors.length) setIssuePanel("error");
+    else if (empty) openAt(empty.slug);
+    else if (!phone) change(tidy(graph, cardSizes()));
+  };
+  const tutorialActs: Partial<Record<TutorialStep, () => void>> = readOnly
+    ? {}
+    : phone
+      ? {
+          welcome: () => openAt(welcomeStep(graph)?.slug),
+          // The place is made where it is used, in the check-in's form: both open it.
+          zone: () => openCheckIn(),
+          checkin: () => openCheckIn(),
+          puzzle: () => {
+            const q = question();
+            if (q) openAt(q.slug);
+            else added(addStepAfter(graph, (checkInStep(graph) ?? welcomeStep(graph))?.slug, "puzzle"));
+          },
+          hint: () => openAt(question()?.slug),
+          choice: () =>
+            choiceDraft(graph) ? openAt(choiceDraft(graph)!.slug) : added(
+              addChoiceAfter(graph, question()?.slug, {
+                title: t.t("Which way did they go?"),
+                left: t.t("left"),
+                right: t.t("right"),
+                back: t.t("Wrong track"),
+                backText: t.t("A tidy path, and not a single footprint. Elephants are not tidy. Back you go!"),
+              }),
+            ),
+          finish: fixNext,
+          look: () => setSettingsOpen(true),
+          test: () => {
+            setSimMode("run");
+            setSimRestart((n) => n + 1);
+            setPreviewing(true);
+            tutorialDid("test");
+          },
+          publish: () => setPublishAsk({ kind: isLive ? "update" : "first" }),
+        }
+      : {
+        welcome: () => openAt(welcomeStep(graph)?.slug),
+        zone: () => setSettingsOpen(true),
+        checkin: () => addAfter(welcomeStep(graph)?.slug),
+        puzzle: () => (question() ? openAt(question()!.slug) : addAfter((checkInStep(graph) ?? welcomeStep(graph))?.slug)),
+        hint: () => openAt(question()?.slug),
+        choice: () => (choiceDraft(graph) ? openAt(choiceDraft(graph)!.slug) : addAfter(question()?.slug)),
+        finish: fixNext,
+        look: () => setSettingsOpen(true),
+        test: () => {
+          setSimMode("run");
+          setSimRestart((n) => n + 1);
+          setPreviewing(true);
+          tutorialDid("test");
+        },
+        publish: () => setPublishAsk({ kind: isLive ? "update" : "first" }),
+      };
+
   return (
-    <div className="dz dz-designer" ref={root} style={inspectorWidth.style}>
+    <div className={"dz dz-designer" + (tutorial ? " has-tutorial" : "")} ref={root} style={inspectorWidth.style}>
       <div className="editor" data-has-selection={slotOpen ? "true" : "false"} data-inspector-expanded={slotOpen ? "true" : "false"}>
         <div className="canvas">
           <div className="editor-toolbar">
@@ -1131,6 +1241,7 @@ export function Designer({ slug }: { slug: string }) {
                   setSimMode("run");
                   setSimRestart((n) => n + 1);
                   setPreviewing(true);
+                  tutorialDid("test");
                 }}
                 title={t.t("Play the draft from the start, as a team")}
                 aria-label={t.t("Test play")}
@@ -1262,6 +1373,15 @@ export function Designer({ slug }: { slug: string }) {
                 </li>
               ))}
             </ol>
+          )}
+          {tutorial && !preview && (
+            <Tutorial
+              slug={slug}
+              state={tutorial}
+              facts={{ graph: draft ?? graph, errors: errors.length, published: isLive }}
+              act={tutorialActs}
+              onChange={setTutorial}
+            />
           )}
           {preview && (
             <div className={"history-preview-banner" + (slot === "history" ? " with-panel" : "")}>
@@ -1538,6 +1658,7 @@ export function Designer({ slug }: { slug: string }) {
               error={brandError}
               savedThemes={graph.themes ?? []}
               onApply={async (b) => {
+                tutorialDid("look");
                 const before = brand;
                 setBrand(b);
                 setBrandSaving(true);
@@ -1577,7 +1698,10 @@ export function Designer({ slug }: { slug: string }) {
           <ThemesModal
             graph={graph}
             initial={themesOpen.theme ?? null}
-            onChange={change}
+            onChange={(g) => {
+              if (g.themes !== graph.themes) tutorialDid("look");
+              change(g);
+            }}
             onClose={() => setThemesOpen(null)}
           />
         </AdventureSlug.Provider>

@@ -122,7 +122,7 @@ export function ThemesModal({ graph, initial, onChange, onClose }: Props) {
                 {orgAdmin && (
                   <button type="button" className="btn btn--ghost btn--sm" title={t.t("Keep this theme for all the organisation's adventures")} onClick={() => void share(theme)}>
                     <Building2 size={ICON.sm} aria-hidden />
-                    {t.t("Save")}
+                    {t.t("Share with organisation")}
                   </button>
                 )}
                 <button

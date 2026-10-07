@@ -116,3 +116,8 @@ test("fillFields asks a typed puzzle for its answer, and a gate only for its tit
   assert.deepEqual(fillFields(by("gate")), ["title"]);
   assert.deepEqual(fillFields(by("start")), []);
 });
+
+test("a check-in has a text to write where to go", () => {
+  const p = PRESETS.find((x) => x.id === "checkin")!;
+  assert.deepEqual(p.build("c").story?.blocks?.map((b) => b.kind), ["text"]);
+});

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, PartyPopper, Workflow } from "lucide-react";
+import { ChevronRight, GraduationCap, PartyPopper, Workflow } from "lucide-react";
 import { ApiError, request } from "@zonventure/api";
 import { TEMPLATE_THEMES, TemplatePicker, themeById, type TemplateInfo } from "@zonventure/trail";
 import { useT } from "../../i18n.tsx";
@@ -12,7 +12,7 @@ import "@zonventure/trail/trail.css";
  * creator — cards in a row, done in minutes — or the full designer. A
  * quiz trail starts from a template, in Swedish or English.
  */
-export function NewKindDialog({ onDesigner, onClose }: { onDesigner: () => void; onClose: () => void }) {
+export function NewKindDialog({ onDesigner, onTutorial, onClose }: { onDesigner: () => void; onTutorial: () => void; onClose: () => void }) {
   const t = useT();
   const [kind, setKind] = useState<"choose" | "trail">("choose");
   const [lang, setLang] = useState(t.current() === "sv" ? "sv" : "en");
@@ -65,6 +65,20 @@ export function NewKindDialog({ onDesigner, onClose }: { onDesigner: () => void;
               <span className="trail-template__body">
                 <strong>{t.t("Designer (full)")}</strong>
                 <span>{t.t("Places on a map, puzzles of every kind, branches and story. The full toolbox.")}</span>
+              </span>
+              <span className="trail-template__go" aria-hidden="true">
+                <ChevronRight size={18} />
+              </span>
+            </button>
+          </li>
+          <li>
+            <button type="button" className="trail-template trail-template--family" onClick={onTutorial}>
+              <span className="trail-template__art" aria-hidden="true">
+                <GraduationCap size={26} />
+              </span>
+              <span className="trail-template__body">
+                <strong>{t.t("Tutorial: your first adventure")}</strong>
+                <span>{t.t("Learn the designer by building a short adventure, Erik's stolen elephants, with a guide beside you. About 30 minutes.")}</span>
               </span>
               <span className="trail-template__go" aria-hidden="true">
                 <ChevronRight size={18} />
