@@ -1293,3 +1293,135 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .tut-pill { max-width: calc(100% - 24px); }
 .tut-pill > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tut-pill__step { font-weight: 400; }
+
+/* The guided tutorial on a desktop (Coach.tsx): a spotlight on what to
+   press, a pulsing arrow at it and a card saying what to do. Above every
+   dialog, menu and palette, below the markdown toolbar's menus. */
+.coach-dim,
+.coach-spot { position: fixed; z-index: 1050; pointer-events: none; }
+.coach-dim { inset: 0; background: rgb(10 14 24 / 0.55); }
+.coach-spot {
+  border-radius: var(--dz-r-2);
+  box-shadow: 0 0 0 200vmax rgb(10 14 24 / 0.55);
+  outline: 3px solid var(--dz-accent);
+  outline-offset: 0;
+  transition: left var(--dz-dur-2) var(--dz-ease-out), top var(--dz-dur-2) var(--dz-ease-out), width var(--dz-dur-2) var(--dz-ease-out), height var(--dz-dur-2) var(--dz-ease-out);
+  animation: coach-ring 1.6s ease-in-out infinite;
+}
+@keyframes coach-ring {
+  0%, 100% { outline-color: var(--dz-accent); outline-offset: 0; }
+  50% { outline-color: color-mix(in srgb, var(--dz-accent) 40%, transparent); outline-offset: 4px; }
+}
+.coach-arrow {
+  position: fixed;
+  z-index: 1052;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  color: var(--dz-accent);
+  filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.35));
+  pointer-events: none;
+}
+.coach-arrow--left { animation: coach-nudge-x 0.9s ease-in-out infinite; }
+.coach-arrow--right { animation: coach-nudge-x 0.9s ease-in-out infinite reverse; --nudge: -10px; }
+.coach-arrow--above { animation: coach-nudge-y 0.9s ease-in-out infinite; }
+.coach-arrow--below { animation: coach-nudge-y 0.9s ease-in-out infinite; --nudge: -10px; }
+@keyframes coach-nudge-x { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(var(--nudge, 10px)); } }
+@keyframes coach-nudge-y { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(var(--nudge, 10px)); } }
+.coach {
+  position: fixed;
+  z-index: 1051;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dz-space-2);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: var(--dz-space-3);
+  background: var(--dz-surface);
+  color: var(--dz-ink);
+  border: 1px solid var(--dz-border);
+  border-radius: var(--dz-r-3);
+  box-shadow: var(--dz-shadow-pop);
+  font-size: var(--dz-text-sm);
+  transition: left var(--dz-dur-2) var(--dz-ease-out), top var(--dz-dur-2) var(--dz-ease-out);
+}
+.coach__head { display: flex; align-items: center; gap: var(--dz-space-2); color: var(--dz-accent); }
+.coach__head strong { flex: 1; color: var(--dz-ink); font-size: var(--dz-text-md); }
+.coach__bar { height: 4px; border-radius: var(--dz-r-pill); background: var(--dz-surface-2); overflow: hidden; }
+.coach__bar span { display: block; height: 100%; background: var(--dz-success); transition: width var(--dz-dur-3) var(--dz-ease-out); }
+.coach__body { margin: 0; line-height: 1.5; }
+.coach__lost { margin: 0; color: var(--dz-ink-soft); font-size: var(--dz-text-xs); }
+.coach__example { border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); background: var(--dz-surface-2); }
+.coach__example pre { margin: 0; padding: var(--dz-space-2); white-space: pre-wrap; font: inherit; }
+.coach__row { display: flex; gap: var(--dz-space-1); padding: 0 var(--dz-space-1) var(--dz-space-1); }
+.coach__foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--dz-space-2); }
+.coach__count { margin-right: auto; color: var(--dz-ink-soft); font-size: var(--dz-text-xs); font-variant-numeric: tabular-nums; }
+.coach-pill {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 1050;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--dz-border);
+  border-radius: var(--dz-r-pill);
+  background: var(--dz-surface);
+  color: var(--dz-ink);
+  box-shadow: var(--dz-shadow-pop);
+  font: inherit;
+  cursor: pointer;
+}
+.coach-pill svg { color: var(--dz-accent); }
+@media (prefers-reduced-motion: reduce) {
+  .coach-spot, .coach-arrow { animation: none; }
+  .coach, .coach-spot, .coach__bar span { transition: none; }
+}
+
+/* The tutorials list (Coach.tsx), docked over the canvas like the phone guide. */
+.tuts {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  width: min(360px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  background: var(--dz-surface);
+  color: var(--dz-ink);
+  border: 1px solid var(--dz-border);
+  border-radius: var(--dz-r-3);
+  box-shadow: var(--dz-shadow-pop);
+  font-size: var(--dz-text-sm);
+}
+.tuts__head { display: flex; align-items: center; gap: var(--dz-space-2); padding: var(--dz-space-2) var(--dz-space-2) 0 var(--dz-space-3); color: var(--dz-accent); }
+.tuts__head strong { color: var(--dz-ink); font-size: var(--dz-text-md); }
+.tuts__count { flex: 1; color: var(--dz-ink-soft); font-size: var(--dz-text-xs); }
+.tuts__lead { margin: 0; padding: var(--dz-space-1) var(--dz-space-3) var(--dz-space-2); color: var(--dz-ink-soft); line-height: 1.45; }
+.tuts__list { margin: 0; padding: 0 var(--dz-space-2) var(--dz-space-2); list-style: none; overflow-y: auto; min-height: 0; }
+.tuts__item { display: flex; align-items: center; gap: var(--dz-space-2); padding: var(--dz-space-2); border-radius: var(--dz-r-2); }
+.tuts__item + .tuts__item { border-top: 1px solid var(--dz-border); }
+.tuts__item.is-going { background: color-mix(in srgb, var(--dz-accent) 8%, transparent); border-top-color: transparent; }
+.tuts__n {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1.5px solid var(--dz-border);
+  border-radius: var(--dz-r-pill);
+  color: var(--dz-ink-soft);
+  font-size: var(--dz-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.tuts__item.is-done .tuts__n { border-color: var(--dz-success); background: var(--dz-success); color: #fff; }
+.tuts__item.is-going .tuts__n { border-color: var(--dz-accent); color: var(--dz-accent); }
+.tuts__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tuts__title { font-weight: 600; }
+.tuts__item.is-done .tuts__title { color: var(--dz-ink-soft); }
+.tuts__blurb { color: var(--dz-ink-soft); line-height: 1.4; }
+.tuts__meta { color: var(--dz-ink-soft); font-size: var(--dz-text-xs); }
+.tuts__item.is-going .tuts__meta { color: var(--dz-accent); font-weight: 600; }

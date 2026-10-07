@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Check, ChevronDown, ChevronUp, Copy, GraduationCap, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
+import { useDialogs } from "../ui/dialogs.tsx";
 import { href } from "../router.ts";
 import { Button, ICON } from "./dz/ui.tsx";
 import { isNarrow } from "./device.ts";
@@ -155,8 +156,18 @@ export function Tutorial({
     act[x]?.();
     if (narrow) onChange({ ...state, collapsed: true });
   };
-  const stop = () => {
-    if (count === TUTORIAL_STEPS.length || confirm(t.t("Stop the tutorial? Your adventure stays as it is."))) onChange(null);
+  const dialogs = useDialogs();
+  const stop = async () => {
+    if (
+      count === TUTORIAL_STEPS.length ||
+      (await dialogs.confirm({
+        title: t.t("Stop this tutorial?"),
+        message: t.t("Your adventure stays as it is. You can start it again from the ⋮ menu."),
+        confirmLabel: t.t("Stop"),
+        cancelLabel: t.t("Keep going"),
+      }))
+    )
+      onChange(null);
   };
 
   if (state.collapsed)
@@ -179,7 +190,7 @@ export function Tutorial({
         <Button variant="ghost" size="icon" onClick={() => onChange({ ...state, collapsed: true })} aria-label={t.t("Hide the tutorial")} title={t.t("Hide the tutorial")}>
           <ChevronDown size={ICON.md} />
         </Button>
-        <Button variant="ghost" size="icon" onClick={stop} aria-label={t.t("Stop the tutorial")} title={t.t("Stop the tutorial")}>
+        <Button variant="ghost" size="icon" onClick={() => void stop()} aria-label={t.t("Stop the tutorial")} title={t.t("Stop the tutorial")}>
           <X size={ICON.md} />
         </Button>
       </header>

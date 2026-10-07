@@ -84,7 +84,10 @@ import { TopBarPortal, useTopBarTitle } from "../topbar.tsx";
 import { Look } from "./Look.tsx";
 import { StepSearch } from "./StepSearch.tsx";
 import { Tutorial } from "./Tutorial.tsx";
-import { addChoiceAfter, addStepAfter, checkInStep, choiceDraft, emptyStep, loadTutorial, saveTutorial, welcomeStep, welcomeText, type TutorialState, type TutorialStep } from "./tutorial.ts";
+import { Coach, TutorialList, TutorialPill } from "./Coach.tsx";
+import { checkInDraft, coachTutorials, DONE, freshOf, lastStep, loadCoach, questionStep, saveCoach, startRun, type CoachAct, type CoachProgress, type CoachRun, type TutorialId } from "./coach.ts";
+import { START_TUTORIAL } from "../pages/dashboard/Onboarding.tsx";
+import { addChoiceAfter, addStepAfter, checkInStep, choiceDraft, emptyStep, loadTutorial, saveTutorial, welcomeStep, welcomeText, withHint, withText, withZoneName, type TutorialState, type TutorialStep } from "./tutorial.ts";
 import { AdventureSlug } from "./MediaEditor.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
 import { DiffDialog, HelpModal, PanelModal, PublishCelebration, PublishLabelModal } from "./dz/dialogs.tsx";
@@ -237,14 +240,21 @@ export function Designer({ slug }: { slug: string }) {
     },
     [slug],
   );
+  // The tutorials on a desktop: which are done and the lesson under way,
+  // per account in this browser. Loaded once the account is known.
+  const [coach, setCoachState] = useState<CoachProgress | null>(null);
+  const setCoach = useCallback((f: (p: CoachProgress) => CoachProgress) => setCoachState((p) => (p ? f(p) : p)), []);
   const tutorialDid = useCallback(
-    (x: TutorialStep) => setTutorialState((s) => {
-      if (!s || s.done.includes(x)) return s;
-      const next = { ...s, done: [...s.done, x] };
-      saveTutorial(slug, next);
-      return next;
-    }),
-    [slug],
+    (x: TutorialStep) => {
+      setTutorialState((s) => {
+        if (!s || s.done.includes(x)) return s;
+        const next = { ...s, done: [...s.done, x] };
+        saveTutorial(slug, next);
+        return next;
+      });
+      setCoach((p) => (p.run && !p.run.flags.includes(x) ? { ...p, run: { ...p.run, flags: [...p.run.flags, x] } } : p));
+    },
+    [slug, setCoach],
   );
 
   const [simMode, setSimMode] = useState<SimMode>("step");
@@ -486,6 +496,12 @@ export function Designer({ slug }: { slug: string }) {
   const presence = usePresence();
   const session = useSession();
   const me = session.state.status === "authenticated" ? session.state.user.id : 0;
+  useEffect(() => {
+    if (me) setCoachState(loadCoach(me));
+  }, [me]);
+  useEffect(() => {
+    if (me && coach) saveCoach(me, coach);
+  }, [me, coach]);
   const { collab, reload: reloadCollab } = useCollab(slug, loaded.state === "ready");
   const busy = useRef({ saving, readOnly });
   busy.current = { saving, readOnly };
@@ -730,6 +746,7 @@ export function Designer({ slug }: { slug: string }) {
       setIssues(r.report.issues ?? []);
       setSaveError(null);
       setCelebrate(true);
+      tutorialDid("publish");
       setTimeout(() => setCelebrate(false), CELEBRATION_MS);
       if (versions) void loadVersions();
     } catch (e) {
@@ -955,6 +972,13 @@ export function Designer({ slug }: { slug: string }) {
 
   // --- render ----------------------------------------------------------------------
 
+  // Made by the tutorial's wizard: carry on with writing its welcome.
+  useEffect(() => {
+    if (!graph || !tutorial || !coach || narrowScreen() || readOnly) return;
+    setCoach((p) => ({ ...p, run: startRun("create", graph, tutorial.baseline), panel: "min" }));
+    setTutorial(null);
+  }, [tutorial, coach, readOnly, graph, setCoach, setTutorial]);
+
   if (loaded.state === "loading") return <p className="lede">{t.t("Loading…")}</p>;
   if (loaded.state === "error") {
     // A refusal is explained in words, with a way back; only an
@@ -989,8 +1013,11 @@ export function Designer({ slug }: { slug: string }) {
     { label: t.t("Themes"), onClick: () => openThemes() },
     { label: t.t("Play the draft on my phone"), onClick: () => setDevOpen(true) },
     {
-      label: t.t("Tutorial"),
-      onClick: () => setTutorial(tutorial ? { ...tutorial, collapsed: false } : { baseline: welcomeText(graph), done: [] }),
+      label: narrowScreen() ? t.t("Tutorial") : t.t("Tutorials"),
+      onClick: () =>
+        narrowScreen()
+          ? setTutorial(tutorial ? { ...tutorial, collapsed: false } : { baseline: welcomeText(graph), done: [] })
+          : setCoach((p) => ({ ...p, panel: "open", run: p.run && { ...p.run, paused: true } })),
     },
     // A phone has no keyboard to take shortcuts from.
     ...(isTouch() ? [] : [{ label: t.t("Keyboard shortcuts"), shortcut: "?", onClick: () => setHelpOpen(true) }]),
@@ -1022,6 +1049,13 @@ export function Designer({ slug }: { slug: string }) {
     else added(addStepAfter(graph, welcome, "story"));
   };
   const phone = narrowScreen();
+  const choiceWords = () => ({
+    title: t.t("Which way did they go?"),
+    left: t.t("left"),
+    right: t.t("right"),
+    back: t.t("Wrong track"),
+    backText: t.t("A tidy path, and not a single footprint. Elephants are not tidy. Back you go!"),
+  });
   // A step begun already is opened again rather than added twice.
   const question = () => graph.nodes.find((n) => n.type === "puzzle" && n.slug !== choiceDraft(graph)?.slug);
   const fixNext = () => {
@@ -1044,16 +1078,7 @@ export function Designer({ slug }: { slug: string }) {
             else added(addStepAfter(graph, (checkInStep(graph) ?? welcomeStep(graph))?.slug, "puzzle"));
           },
           hint: () => openAt(question()?.slug),
-          choice: () =>
-            choiceDraft(graph) ? openAt(choiceDraft(graph)!.slug) : added(
-              addChoiceAfter(graph, question()?.slug, {
-                title: t.t("Which way did they go?"),
-                left: t.t("left"),
-                right: t.t("right"),
-                back: t.t("Wrong track"),
-                backText: t.t("A tidy path, and not a single footprint. Elephants are not tidy. Back you go!"),
-              }),
-            ),
+          choice: () => (choiceDraft(graph) ? openAt(choiceDraft(graph)!.slug) : added(addChoiceAfter(graph, question()?.slug, choiceWords()))),
           finish: fixNext,
           look: () => setSettingsOpen(true),
           test: () => {
@@ -1081,6 +1106,55 @@ export function Designer({ slug }: { slug: string }) {
         },
         publish: () => setPublishAsk({ kind: isLive ? "update" : "first" }),
       };
+  // The guided tutorial's buttons on a desktop: write a step's text in, or add the choice.
+  const tutorials = coachTutorials(t);
+  const coachRun = coach?.run;
+  const coachLesson = coachRun && tutorials.find((x) => x.id === coachRun.id);
+  const coachFresh = coachRun ? freshOf(draft ?? graph, coachRun) : null;
+  // The guided tutorial's buttons on a desktop: write a step's text in, or add the choice.
+  const coachAct = (act: CoachAct, text?: string) => {
+    if (readOnly || !coachFresh) return;
+    const g = draft ?? graph;
+    const f = coachFresh.fresh;
+    const write = (n: { slug: string } | undefined) => n && text && change(withText(g, n.slug, text));
+    switch (act) {
+      case "welcome":
+        return write(welcomeStep(g));
+      case "zone":
+        return text && change(withZoneName(g, text));
+      case "checkin":
+        return write(checkInDraft(f));
+      case "puzzle":
+        return write(questionStep(f));
+      case "choice":
+        return write(choiceDraft(f));
+      case "hint": {
+        const q = questionStep(f);
+        return q && text && change(withHint(g, q.slug, text));
+      }
+      case "add-choice":
+        return added(addChoiceAfter(g, (questionStep(f) ?? lastStep(g))?.slug, choiceWords()));
+    }
+  };
+  // A lesson starts on this adventure; making one starts on the Adventures page.
+  const startLesson = (id: TutorialId) => {
+    if (id === "create") {
+      try {
+        sessionStorage.setItem(START_TUTORIAL, "1");
+      } catch {
+        /* the Adventures page still offers it */
+      }
+      setCoach((p) => ({ ...p, run: undefined, panel: "min" }));
+      location.hash = href({ name: "adventures" });
+      return;
+    }
+    setCoach((p) => ({ ...p, run: startRun(id, draft ?? graph), panel: "min" }));
+  };
+  const upNext = coachLesson && [...tutorials.slice(tutorials.indexOf(coachLesson) + 1), ...tutorials].find((x) => x !== coachLesson && !coach!.done.includes(x.id));
+  const coachDone = () => {
+    if (coachRun) setCoach((p) => (p.done.includes(coachRun.id) ? p : { ...p, done: [...p.done, coachRun.id] }));
+  };
+  const coachSetRun = (r: CoachRun) => setCoach((p) => ({ ...p, run: r }));
 
   return (
     <div className={"dz dz-designer" + (tutorial ? " has-tutorial" : "")} ref={root} style={inspectorWidth.style}>
@@ -1374,7 +1448,58 @@ export function Designer({ slug }: { slug: string }) {
               ))}
             </ol>
           )}
-          {tutorial && !preview && (
+          {coach && !preview && !phone && coachLesson && coachRun && !coachRun.paused && coach.panel !== "open" && (
+            <Coach
+              tutorial={coachLesson}
+              next={upNext}
+              run={coachRun}
+              ctx={{
+                graph: draft ?? graph,
+                ...coachFresh!,
+                selected,
+                inspecting: slot === "inspect" && !!node,
+                menu: !!kebab,
+                settings: settingsOpen,
+                previewing,
+                playing: previewing ? playing : null,
+                publishing: !!publishAsk,
+                errors: errors.length,
+                flags: coachRun.flags,
+                baseline: coachRun.baseline,
+              }}
+              onAct={coachAct}
+              onRun={coachSetRun}
+              onDone={coachDone}
+              onPause={() => setCoach((p) => ({ ...p, run: p.run && { ...p.run, paused: true }, panel: "min" }))}
+              onList={() => setCoach((p) => ({ ...p, run: p.run && { ...p.run, paused: true }, panel: "open" }))}
+              onStop={() => setCoach((p) => ({ ...p, run: undefined, panel: "min" }))}
+              onRestart={() => setCoach((p) => ({ ...p, run: startRun(coachRun.id, draft ?? graph) }))}
+              onStart={startLesson}
+            />
+          )}
+          {coach && !preview && !phone && coach.panel === "open" && (
+            <TutorialList
+              tutorials={tutorials}
+              progress={coach}
+              onStart={startLesson}
+              onResume={() => setCoach((p) => ({ ...p, run: p.run && { ...p.run, paused: false }, panel: "min" }))}
+              onMin={() => setCoach((p) => ({ ...p, panel: "min" }))}
+              onClose={() => setCoach((p) => ({ ...p, panel: "closed" }))}
+            />
+          )}
+          {coach && !preview && !phone && coach.panel === "min" && (!coachRun || coachRun.paused || coachRun.at === DONE) && (
+            <TutorialPill
+              label={
+                coachRun?.paused && coachLesson && coachRun.at !== DONE
+                  ? t.t("Resume: {{title}}", { title: coachLesson.title })
+                  : t.t("Tutorials · {{done}}/{{n}}", { done: coach.done.length, n: tutorials.length })
+              }
+              onClick={() =>
+                setCoach((p) => (p.run?.paused && p.run.at !== DONE ? { ...p, run: { ...p.run, paused: false } } : { ...p, panel: "open" }))
+              }
+            />
+          )}
+          {tutorial && !preview && phone && (
             <Tutorial
               slug={slug}
               state={tutorial}

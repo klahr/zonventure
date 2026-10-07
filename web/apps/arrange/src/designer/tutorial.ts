@@ -17,6 +17,8 @@ export interface TutorialState {
   /** Ticked by hand, or done by doing (test, look). */
   done: TutorialStep[];
   collapsed?: boolean;
+  /** The guided step at hand, on a desktop (coach.ts). */
+  at?: string;
 }
 
 export interface TutorialFacts {
@@ -77,7 +79,7 @@ export function checkInStep(g: Graph): Node | undefined {
 export const emptyStep = (g: Graph) => g.nodes.find((n) => (n.type === "story" || n.type === "puzzle") && readOf(n) === "");
 
 /** The answers a puzzle takes that a team can actually type. */
-const answers = (n: Node) =>
+export const answers = (n: Node) =>
   (n.puzzle?.outputs ?? []).filter(
     (o) => o.trigger === "answer" && (o.matchers ?? []).some((m) => m.kind === "anything" || (m.value ?? "").trim() !== "" || (m.members ?? []).length > 0 || m.low !== undefined || m.target !== undefined),
   );
@@ -165,4 +167,37 @@ export function addChoiceAfter(
   out = { ...out, nodes: [...out.nodes, back] };
   out = connect(connect(out, choice.slug, b.port, back.slug), back.slug, "out", choice.slug);
   return { graph: out, slug: choice.slug };
+}
+
+/** The step's first text to read set to `text`, as the guide writes it in. */
+export function withText(g: Graph, slug: string, text: string): Graph {
+  return {
+    ...g,
+    nodes: g.nodes.map((n) => {
+      const part = n.story ?? n.puzzle;
+      if (n.slug !== slug || !part) return n;
+      const bs = part.blocks ?? [];
+      const i = bs.findIndex((b) => b.kind === "text" && !b.disabled);
+      const blocks = i >= 0 ? bs.map((b, j) => (j === i ? { ...b, text } : b)) : [...bs, { id: "tutorial", kind: "text" as const, text }];
+      return n.story ? { ...n, story: { ...n.story, blocks } } : { ...n, puzzle: { ...n.puzzle!, blocks } };
+    }),
+  };
+}
+
+/** The first unnamed place named. */
+export function withZoneName(g: Graph, name: string): Graph {
+  const i = (g.zones ?? []).findIndex((z) => !(z.name ?? "").trim());
+  return i < 0 ? g : { ...g, zones: g.zones!.map((z, j) => (j === i ? { ...z, name } : z)) };
+}
+
+/** The puzzle's first hint written. */
+export function withHint(g: Graph, slug: string, text: string): Graph {
+  return {
+    ...g,
+    nodes: g.nodes.map((n) => {
+      const hs = n.puzzle?.hints ?? [];
+      if (n.slug !== slug || !hs.length) return n;
+      return { ...n, puzzle: { ...n.puzzle!, hints: hs.map((h, j) => (j === 0 ? { ...h, text } : h)) } };
+    }),
+  };
 }
