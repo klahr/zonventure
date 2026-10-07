@@ -11,6 +11,34 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-10-08
+
+### Changed — the tutorial is seven short, guided lessons
+
+- **Tutorials** (⋮ → Tutorials) lists seven lessons on a panel over the
+  canvas: Create an adventure, Places and check-ins, Puzzles and hints,
+  Choices, The look, Test it and Publish. Each is a few steps, ticks
+  itself off once done, and can be done in any order, on any adventure,
+  and again. The one to do next stands out.
+- **A lesson shows one thing at a time**: a card says what to do, a
+  pulsing arrow points at it, and the rest of the designer is dimmed and
+  locked so nothing is touched by mistake. Steps move on by themselves
+  as they get done; text to write comes with Copy and "Write it for me".
+- **Back, Start over, Pause and Stop** on every card. Back holds a step
+  already done until Next; Pause hands the designer back and leaves a
+  "Resume" pill. Progress is kept per account in this browser, so a
+  lesson picks up where it was left, after a reload too.
+- **A lesson only counts what it adds**: started on an adventure that
+  already has places or puzzles, it asks for new ones instead of
+  skipping to the end.
+- **Test it follows the team**: it asks for a place under "Team is at"
+  only once the previewed team stands at a check-in, and shows "+5 min"
+  unlocking a hint once it reaches a puzzle.
+- **Create an adventure** opens the filled-in wizard and carries on in
+  the designer with the welcome text. Phones keep the docked guide.
+- **Stopping a tutorial asks in the app's own dialog**, on a phone too,
+  not the browser's.
+
 ## [0.23.0] - 2026-10-07
 
 ### Added — a designer tutorial
