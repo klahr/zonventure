@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-10-07
+
 ### Added — pictures in emails
 
 - **Players' and hosts' emails show the adventure's cover** across the
