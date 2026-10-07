@@ -996,5 +996,7 @@
   "Party words": "Partyord",
   "Shown when there is no host": "Visas när det inte finns någon värd",
   "What the host is asked": "Vad värden får frågan om",
-  "Words a party's host fills in, such as the birthday child's name. Write {{host:slug}} in a text to use one.": "Ord som en partyvärd fyller i, som födelsedagsbarnets namn. Skriv {{host:slug}} i en text för att använda ett."
+  "Words a party's host fills in, such as the birthday child's name. Write {{host:slug}} in a text to use one.": "Ord som en partyvärd fyller i, som födelsedagsbarnets namn. Skriv {{host:slug}} i en text för att använda ett.",
+  "Add a cover picture": "Lägg till en omslagsbild",
+  "Shown across the top of the join page and the players' welcome, and on a quiz trail's printed cover. Landscape (16:9) works best, with the subject on the right: titles sit on the left.": "Visas överst på sidan där lagen ansluter och på spelarnas välkomstsida, och på en tipspromenads utskrivna försättsblad. Liggande format (16:9) fungerar bäst, med motivet till höger: rubrikerna hamnar till vänster."
 }

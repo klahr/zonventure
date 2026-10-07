@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -206,23 +207,24 @@ func (h *Handlers) cloneAdventure(ctx context.Context, sourceSlug, newSlug strin
 	return tx.Commit()
 }
 
-// clonePicture copies the media of the source's own look — its picture
-// and its sounds — and points the copy's look at its own copies: the
+// clonePicture copies the media of the source's own look — its picture,
+// its sounds and its cover — and points the copy's look at its own copies: the
 // graph's media are copied with the graph, but the look is not in it.
 func clonePicture(ctx context.Context, tx *sql.Tx, sourceAdvID, newAdvID, byUserID int64) error {
-	var picture, right, wrong int64
+	var picture, right, wrong, cover int64
 	err := tx.QueryRowContext(ctx, `
 		SELECT COALESCE(CASE WHEN backdrop->>'kind' = 'picture' THEN (backdrop->>'media')::bigint END, 0),
 		       COALESCE((look_style->>'sound_right')::bigint, 0),
-		       COALESCE((look_style->>'sound_wrong')::bigint, 0)
+		       COALESCE((look_style->>'sound_wrong')::bigint, 0),
+		       COALESCE((look_style->>'cover')::bigint, 0)
 		FROM adventures WHERE id = $1
-	`, sourceAdvID).Scan(&picture, &right, &wrong)
+	`, sourceAdvID).Scan(&picture, &right, &wrong, &cover)
 	if err != nil {
 		return fmt.Errorf("load look media: %w", err)
 	}
 	var ids []int64
-	for _, id := range []int64{picture, right, wrong} {
-		if id > 0 {
+	for _, id := range []int64{picture, right, wrong, cover} {
+		if id > 0 && !slices.Contains(ids, id) {
 			ids = append(ids, id)
 		}
 	}
@@ -236,7 +238,7 @@ func clonePicture(ctx context.Context, tx *sql.Tx, sourceAdvID, newAdvID, byUser
 	for _, u := range []struct {
 		old         int64
 		column, key string
-	}{{picture, "backdrop", "media"}, {right, "look_style", "sound_right"}, {wrong, "look_style", "sound_wrong"}} {
+	}{{picture, "backdrop", "media"}, {right, "look_style", "sound_right"}, {wrong, "look_style", "sound_wrong"}, {cover, "look_style", "cover"}} {
 		if u.old == 0 {
 			continue
 		}

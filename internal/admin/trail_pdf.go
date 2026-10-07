@@ -45,8 +45,17 @@ func (h *Handlers) printTrail(ctx context.Context, slug string) (trailPrint, loa
 	}
 	var accent, second string
 	_ = h.DB.QueryRowContext(ctx, `SELECT COALESCE(accent_color, ''), COALESCE(accent_secondary_color, '') FROM adventures WHERE id = $1`, t.ID).Scan(&accent, &second)
+	// The adventure's own cover, else its starter theme's.
+	cover := trail.Cover(t.dto.Theme)
+	if id, f, err := h.adventureCover(ctx, slug, true); err != nil {
+		return trailPrint{}, t, err
+	} else if id > 0 {
+		if jpg := printCover(f); jpg != nil {
+			cover = jpg
+		}
+	}
 	return trailPrint{Title: t.dto.Title, Lang: trailLang(t.dto.Language), Accent: accent, Second: second, Cards: t.dto.Cards,
-		Cover: trail.Cover(t.dto.Theme)}, t, nil
+		Cover: cover}, t, nil
 }
 
 // sendTrailPDF writes the cards (or, with ?answers=1, the answer key) as

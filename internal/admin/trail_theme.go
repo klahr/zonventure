@@ -61,6 +61,16 @@ func (h *Handlers) applyTrailTheme(w http.ResponseWriter, ctx context.Context, s
 	if style == nil {
 		style = &adventure.Style{}
 	}
+	// A cover picture of the adventure's own outlasts a change of theme:
+	// it is shown in place of the theme's.
+	if style.Cover == 0 {
+		cover, _, err := h.adventureCover(ctx, slug, false)
+		if err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "theme failed", err)
+			return false
+		}
+		style.Cover = cover
+	}
 	err := applyAdventureMetaUpdate(ctx, h.DB, slug, updateAdventureRequest{
 		AccentColor: &l.Accent, AccentSecondaryColor: &l.AccentSecondary, BackgroundColor: &l.Background,
 		TextColor: &l.Text, SubmitBgColor: &l.SubmitBg, Font: &l.Font, HeadingFont: &l.HeadingFont,

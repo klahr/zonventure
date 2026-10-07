@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError } from "@zonventure/api";
-import { THEME_COVERS } from "@zonventure/play-ui";
+import { coverOf } from "@zonventure/play-ui";
 import { getJoin, join, type JoinInfo } from "./api.ts";
 import { useT } from "./i18n.tsx";
 
@@ -40,7 +40,7 @@ export function Join({ token }: { token: string }) {
     open: null,
   }[info.status];
 
-  const cover = THEME_COVERS[info.theme ?? ""];
+  const cover = coverOf(info.theme, info.cover_url);
   return (
     <section className={"party-card" + (cover ? " party-card--cover" : "")}>
       {cover && <div className="party-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}

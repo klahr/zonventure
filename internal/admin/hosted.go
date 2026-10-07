@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/mail"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -106,6 +107,9 @@ type joinInfoDTO struct {
 	Status         string `json:"status"`
 	// Theme is a party adventure's starter theme, for its cover picture.
 	Theme string `json:"theme,omitempty"`
+	// CoverURL is the adventure's own cover picture, in place of the
+	// theme's, served by the player link (JoinCover).
+	CoverURL string `json:"cover_url,omitempty"`
 }
 
 // GetJoin is the join page's view of a hosted event.
@@ -125,6 +129,12 @@ func (h *Handlers) GetJoin(w http.ResponseWriter, r *http.Request) {
 	`, p.EventID).Scan(&out.Name, &out.AdventureTitle, &out.OrgName, &out.Theme); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "game lookup failed", err)
 		return
+	}
+	if cover, _, err := h.adventureCover(ctx, p.AdvSlug, false); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "game lookup failed", err)
+		return
+	} else if cover > 0 {
+		out.CoverURL = "/api/join/" + chi.URLParam(r, "token") + "/cover?v=" + strconv.FormatInt(cover, 10)
 	}
 	status, err := h.joinStatus(ctx, h.DB, p)
 	if err != nil {

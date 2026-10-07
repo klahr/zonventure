@@ -6,6 +6,16 @@ sample card on the start page (and the landing page's creator), across
 the top of the join page and the players' welcome, and as a banner on
 the printed cover with the QR code. A theme without one looks as before.
 
+## An adventure's own picture
+
+A theme in the designer's theme editor can have a **Cover picture** of
+its own, uploaded there (`look.Style.Cover`, an adventure media id).
+Applying the theme gives the adventure that cover, shown in place of
+the starter theme's everywhere above. Picking another starter theme in
+the quiz trail creator keeps it. Print cuts it to 16:9 about its
+middle; the join page serves it by the player link
+(`/api/join/{token}/cover`).
+
 ## Adding a picture
 
 1. Generate it with the theme's prompt below (made with Gemini so far).

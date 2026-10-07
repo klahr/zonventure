@@ -32,6 +32,8 @@ export interface JoinInfo {
   status: "open" | "full" | "not_ready" | "ended";
   /** A party adventure's starter theme, for its cover picture. */
   theme?: string;
+  /** The adventure's own cover picture, in place of the theme's. */
+  cover_url?: string;
 }
 
 export const getJoin = (token: string) => request<JoinInfo>(`/api/join/${enc(token)}`);

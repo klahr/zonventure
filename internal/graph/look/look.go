@@ -99,6 +99,11 @@ type Style struct {
 	// on a right and a wrong answer.
 	SoundRight int64 `json:"sound_right,omitempty"`
 	SoundWrong int64 `json:"sound_wrong,omitempty"`
+	// Cover is an adventure_media id: the adventure's own cover picture,
+	// 16:9, across the top of the join page and the players' welcome and
+	// on a printed cover, in place of its starter theme's (THEMES.md).
+	// Only the adventure's own look shows it, not a theme in its graph.
+	Cover int64 `json:"cover,omitempty"`
 }
 
 // Celebrations: "quiet" keeps the mark without confetti, "none" leaves
@@ -122,7 +127,7 @@ func (s Style) Sounds() []int64 {
 	return out
 }
 
-// MediaIDs are the look's own media: its picture and its sounds.
+// MediaIDs are the look's own media: its picture, its sounds and its cover.
 func (c Look) MediaIDs() []int64 {
 	var out []int64
 	if b := c.Backdrop; b != nil && b.Kind == "picture" && b.Media > 0 {
@@ -130,6 +135,9 @@ func (c Look) MediaIDs() []int64 {
 	}
 	if c.Style != nil {
 		out = append(out, c.Style.Sounds()...)
+		if c.Style.Cover > 0 {
+			out = append(out, c.Style.Cover)
+		}
 	}
 	return out
 }
@@ -157,6 +165,9 @@ const MinCardOpacity = 0.2
 
 // Validate reports the first value out of bounds.
 func (s Style) Validate() error {
+	if s.Cover < 0 {
+		return errors.New("cover must be a media id")
+	}
 	if s.CardOpacity != 0 && (s.CardOpacity < MinCardOpacity || s.CardOpacity > 1) {
 		return fmt.Errorf("card_opacity must be %g–1", MinCardOpacity)
 	}

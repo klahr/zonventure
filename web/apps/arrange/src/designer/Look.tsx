@@ -4,6 +4,7 @@ import { FONTS, isHex, lookContrast, type ContrastIssue } from "@zonventure/play
 import { useT } from "../i18n.tsx";
 import { X } from "lucide-react";
 import { BackdropPicker, Check, ColourList, Slider } from "./BackdropPicker.tsx";
+import { CoverPicker } from "./CoverPicker.tsx";
 import { demoAnswer } from "./blocks/Animation.tsx";
 import { AdventureSlug } from "./MediaEditor.tsx";
 import { adventures, play as playApi } from "@zonventure/api";
@@ -286,6 +287,7 @@ export function LookControls({ brand, onChange }: { brand: play.Brand; onChange:
       <Check label={t.t("Titles in capitals")} checked={!!brand.style?.title_upper} onCheck={(v) => setStyle({ title_upper: v || undefined })} />
       <Celebration brand={brand} setStyle={setStyle} />
       <BackdropPicker brand={brand} onChange={onChange} />
+      <CoverPicker brand={brand} setStyle={setStyle} />
     </>
   );
 }

@@ -11,6 +11,16 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — your own cover picture
+
+- The designer's theme editor has a **Cover picture**: upload a
+  picture, and an adventure in that look shows it across the top of
+  the join page and the players' welcome and on a quiz trail's printed
+  cover, in place of its starter theme's. It is stored in the look's
+  style (`cover`, a media id of the adventure's own), copied when the
+  adventure is duplicated, and kept when another starter theme is
+  picked.
+
 ## [0.20.0] - 2026-10-06
 
 ### Added — cover pictures for party adventure looks

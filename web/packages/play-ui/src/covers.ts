@@ -68,3 +68,12 @@ export const THEME_COVERS: Record<string, ThemeCover> = {
     wide: new URL("./covers/sunshine-1600.webp", import.meta.url).href,
   },
 };
+
+/**
+ * The cover to show: the look's own picture (url, e.g. /media/{id}) when
+ * it has one, else its starter theme's.
+ */
+export function coverOf(theme: string | undefined, url?: string): ThemeCover | undefined {
+  if (url) return { small: url, wide: url };
+  return THEME_COVERS[theme ?? ""];
+}

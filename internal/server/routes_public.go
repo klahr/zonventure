@@ -172,6 +172,7 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 			http.Redirect(w, req, "/app/party/join/"+url.PathEscape(chi.URLParam(req, "token")), http.StatusFound)
 		})
 		r.Get("/api/join/{token}", adminH.GetJoin)
+		r.Get("/api/join/{token}/cover", adminH.JoinCover)
 		r.Post("/api/join/{token}", adminH.Join)
 
 		// Quiz trails at the public door (admin/trails_public.go): made

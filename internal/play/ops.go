@@ -606,21 +606,23 @@ func (e *Engine) media(ctx context.Context, teamID int64, prefetch bool) ([]int6
 	var (
 		strict              bool
 		picture, right, bad int64
+		cover               int64
 	)
-	// The adventure's own look may have a picture and sounds: every team
-	// may fetch them, an adventure with a graph or without.
+	// The adventure's own look may have a picture, sounds and a cover:
+	// every team may fetch them, an adventure with a graph or without.
 	if err := e.DB.QueryRowContext(ctx, `
 		SELECT a.strict_assets,
 		       COALESCE(CASE WHEN a.backdrop->>'kind' = 'picture' THEN (a.backdrop->>'media')::bigint END, 0),
 		       COALESCE((a.look_style->>'sound_right')::bigint, 0),
-		       COALESCE((a.look_style->>'sound_wrong')::bigint, 0)
+		       COALESCE((a.look_style->>'sound_wrong')::bigint, 0),
+		       COALESCE((a.look_style->>'cover')::bigint, 0)
 		FROM teams t JOIN events ev ON ev.id = t.event_id JOIN adventures a ON a.slug = ev.adventure_slug
 		WHERE t.id = $1
-	`, teamID).Scan(&strict, &picture, &right, &bad); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	`, teamID).Scan(&strict, &picture, &right, &bad, &cover); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	var ids []int64
-	for _, id := range []int64{picture, right, bad} {
+	for _, id := range []int64{picture, right, bad, cover} {
 		if id > 0 && !slices.Contains(ids, id) {
 			ids = append(ids, id)
 		}

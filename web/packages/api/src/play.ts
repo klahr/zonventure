@@ -469,6 +469,8 @@ export interface LookStyle {
   answer_button_text_color?: string;
   /** The answer bar: absent is across the bottom. */
   dock?: "floating";
+  /** The look's cover picture (an adventure media id), in place of the starter theme's. */
+  cover?: number;
   /** 0.85–1.4: text and titles together; absent is 1. */
   text_scale?: number;
   /** Step titles: absent is plain. */
@@ -551,6 +553,8 @@ export interface PlayState {
     adventure_icon_url?: string;
     /** A party adventure's starter theme, for its cover picture (play-ui THEME_COVERS). */
     theme?: string;
+    /** The adventure's own cover picture (a media id), in place of the theme's. */
+    cover?: number;
     /** The author's welcome and farewell, Markdown. */
     intro_text?: string;
     outro_text?: string;

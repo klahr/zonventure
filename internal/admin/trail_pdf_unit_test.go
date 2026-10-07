@@ -1,6 +1,10 @@
 package admin
 
 import (
+	"bytes"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"testing"
 
 	"github.com/klahr/zonventure/internal/trail"
@@ -15,5 +19,25 @@ func TestDarkLeft(t *testing.T) {
 	}
 	if darkLeft([]byte("not a jpeg")) {
 		t.Error("garbage is dark")
+	}
+}
+
+// TestPrintCover: an uploaded cover prints as a JPEG cut to 16:9.
+func TestPrintCover(t *testing.T) {
+	for _, size := range [][2]int{{400, 400}, {1600, 600}, {320, 180}} {
+		img := image.NewRGBA(image.Rect(0, 0, size[0], size[1]))
+		var buf bytes.Buffer
+		_ = png.Encode(&buf, img)
+		out := printCover(coverFile{Mime: "image/png", Content: buf.Bytes()})
+		cfg, err := jpeg.DecodeConfig(bytes.NewReader(out))
+		if err != nil {
+			t.Fatalf("%v: %v", size, err)
+		}
+		if r := float64(cfg.Width) / float64(cfg.Height); r < 1.76 || r > 1.79 {
+			t.Errorf("%v → %d×%d", size, cfg.Width, cfg.Height)
+		}
+	}
+	if printCover(coverFile{Content: []byte("nope")}) != nil {
+		t.Error("garbage printed")
 	}
 }

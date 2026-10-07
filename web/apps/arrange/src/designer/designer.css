@@ -643,6 +643,7 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .dz .spots__dot.is-auto { border-style: dashed; }
 .dz .spots__dot.is-on { box-shadow: 0 0 0 3px var(--accent), 0 2px 6px rgba(0, 0, 0, 0.25); }
 .look__backdrop { display: flex; flex-direction: column; gap: var(--sp-2); }
+.look__cover { display: block; width: 100%; max-width: 20rem; aspect-ratio: 16 / 9; object-fit: cover; border: 1px solid var(--border-soft); border-radius: var(--radius); }
 .look__patterns { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.75rem, 1fr)); gap: var(--sp-2); }
 .dz .look__pattern { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-1); padding: var(--sp-1); border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); color: var(--ink-soft); font-size: var(--text-xs); text-align: center; cursor: pointer; }
 .dz .look__pattern.is-on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); color: var(--ink); font-weight: 700; }

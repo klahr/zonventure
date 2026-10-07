@@ -573,6 +573,19 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 				return badRequestf("style sound is not one of this adventure's sounds")
 			}
 		}
+		// So must the cover be one of its pictures.
+		if id := req.Style.Cover; id > 0 {
+			var ok bool
+			if err := db.QueryRowContext(ctx, `
+				SELECT EXISTS (SELECT 1 FROM adventure_media m JOIN adventures a ON a.id = m.adventure_id
+				               WHERE m.id = $1 AND a.slug = $2 AND m.kind = 'image')
+			`, id, slug).Scan(&ok); err != nil {
+				return err
+			}
+			if !ok {
+				return badRequestf("style cover is not one of this adventure's pictures")
+			}
+		}
 		if b, _ := json.Marshal(req.Style); string(b) == "{}" {
 			add("look_style", nil)
 		} else {

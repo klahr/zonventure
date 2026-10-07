@@ -99,6 +99,9 @@ type PlayEvent struct {
 	// Theme is the starter theme a party adventure's look was taken from
 	// (adventures.trail_theme), for the phone to show its cover picture.
 	Theme string `json:"theme,omitempty"`
+	// Cover is the adventure's own cover picture (a media id the team
+	// may fetch), shown in place of the starter theme's.
+	Cover int64 `json:"cover,omitempty"`
 }
 
 // PlayStart is the adventure's meeting point. RadiusM is set when teams
@@ -190,6 +193,9 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	out.Event.Start = look.start
 	out.Event.Cheat = look.cheat
 	out.Event.Theme = look.theme
+	if s := look.brand.Style; s != nil {
+		out.Event.Cover = s.Cover
+	}
 	if !look.brand.Empty() {
 		out.Brand = &look.brand
 	}
