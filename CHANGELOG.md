@@ -68,6 +68,11 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ### Fixed
 
+- `make upgrade` on a host that pulls from ghcr.io pins the release in
+  `.env` (`VERSION=X.Y.Z`), so a later bare `docker compose up -d` keeps
+  running it instead of falling back to the host's stale `:latest`. It
+  also picks the newest X.Y.Z tag the same way `make latest` does.
+
 - A theme saved to the organisation's library no longer keeps the
   adventure's cover picture, as it already dropped its picture and
   sounds.

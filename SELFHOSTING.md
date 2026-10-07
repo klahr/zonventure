@@ -313,7 +313,10 @@ docker login ghcr.io -u <github-user> --password-stdin
 
 Leave `compose.override.yaml` out of that list if you don't use one.
 `make upgrade` then pulls the tag's image instead of building it, so a
-1 vCPU / 2 GB host is enough.
+1 vCPU / 2 GB host is enough. It also writes `VERSION=X.Y.Z` to `.env`:
+every later `docker compose up -d` runs that release. Without the line
+Compose runs `:latest` as this host last pulled it, which can be months
+old.
 
 ## Reverse proxy (TLS termination)
 

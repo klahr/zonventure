@@ -12,8 +12,10 @@
 #
 #   docker login ghcr.io -u <github-user> --password-stdin
 #
-# `make upgrade` then pulls the newest tag. A bare `docker compose up -d`
-# runs :latest, which CI moves only on a release tag.
+# `make upgrade` then pulls the newest tag and pins it as VERSION in
+# .env, so a bare `docker compose up -d` keeps running it. Without that
+# line it would run :latest as last pulled on this host, which may be
+# far older than the newest release.
 services:
   app:
     image: ghcr.io/klahr/zonventure:${VERSION:-latest}

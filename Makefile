@@ -253,9 +253,13 @@ latest:
 #
 # With compose.prod.yaml enabled (the app image is on ghcr.io) it pulls
 # the image CI published for the tag instead of building here.
+#
+# A pulled tag is then written to .env as VERSION=X.Y.Z, so a later bare
+# `docker compose up -d` (after editing .env, say) keeps running it
+# rather than whatever :latest this host pulled long ago.
 upgrade:
 	git fetch --tags
-	@LATEST=$$(git tag --sort=-v:refname | head -1) && \
+	@LATEST=$$($(LATEST_TAG)) && \
 	if [ -z "$$LATEST" ]; then \
 		echo "No release tags found — nothing to upgrade to."; exit 1; \
 	fi && \
@@ -264,7 +268,14 @@ upgrade:
 	if docker compose config --images 2>/dev/null | grep -q '^ghcr\.io/'; then \
 		echo "Pulling $$LATEST from ghcr.io; nothing is built on this host." && \
 		VERSION="$$LATEST" docker compose pull app && \
-		VERSION="$$LATEST" docker compose up -d --no-build; \
+		VERSION="$$LATEST" docker compose up -d --no-build && \
+		touch .env && \
+		if grep -q '^VERSION=' .env; then \
+			sed -i "s/^VERSION=.*/VERSION=$$LATEST/" .env; \
+		else \
+			printf '\n# Release running here; set by make upgrade.\nVERSION=%s\n' "$$LATEST" >> .env; \
+		fi && \
+		echo "Pinned VERSION=$$LATEST in .env"; \
 	else \
 		VERSION="$$LATEST" docker compose up -d --build; \
 	fi
