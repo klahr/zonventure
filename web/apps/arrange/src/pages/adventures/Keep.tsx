@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ApiError, request } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { navigate } from "../../router.ts";
-import { Card, ErrorBox, Loading, Page, PageHeader, useLoad } from "../../ui/index.ts";
+import { Button, Card, ErrorBox, Loading, Page, PageHeader, Row, useLoad } from "../../ui/index.ts";
 
 interface Kept {
   title: string;
@@ -56,9 +56,11 @@ export function KeepPage({ token }: { token: string }) {
         <p>{t.t("The party adventure and its {{n}} cards become an adventure of your organisation, to edit, print and host whenever you like.", { n: load.data.cards })}</p>
         <p>{t.t("Its admin page and the games played so far end now. Their summaries were mailed to {{email}}.", { email: load.data.email })}</p>
         {error && <ErrorBox message={error} />}
-        <button type="button" className="btn primary" disabled={busy} onClick={() => void keep()}>
-          {t.t("Keep it")}
-        </button>
+        <Row>
+          <Button variant="primary" filled loading={busy} onClick={() => void keep()}>
+            {t.t("Keep it")}
+          </Button>
+        </Row>
       </Card>
     </Page>
   );

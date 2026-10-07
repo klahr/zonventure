@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { ApiError, request } from "@zonventure/api";
 import { money } from "@zonventure/hosted";
+import { coverOf } from "@zonventure/play-ui";
 import { TRAIL_THEMES, TemplatePicker, ThemeShowcase, themeById } from "@zonventure/trail";
+import { SPOTS } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import {
   createDraft,
@@ -25,6 +27,7 @@ import {
   type TrailSummary,
 } from "./trail.ts";
 import { embedded, outside } from "./embed.ts";
+import { Spot, ThankYouBanner } from "./pictures.tsx";
 
 const MINE = "/app/party/trail/mine";
 
@@ -198,17 +201,27 @@ export function TrailMine() {
         {!list ? (
           <p className="party-muted">{t("Loading…")}</p>
         ) : list.length === 0 ? (
-          <p className="party-muted">{t("No party adventures here yet.")}</p>
+          <div className="party-empty">
+            <Spot src={SPOTS.noTrails} />
+            <p className="party-muted">{t("No party adventures here yet.")}</p>
+          </div>
         ) : (
           <ul className="party-trails">
             {list.map((x) => (
               <li key={x.id}>
-                <div>
-                  <strong>{x.title}</strong>
-                  <small className="party-muted">
-                    {t("{{n}} cards", { n: x.cards })} · {stateText(x)}
-                    {!x.saved && " · " + t("only on this phone")}
-                  </small>
+                <div className="party-trails__head">
+                  <span
+                    className="party-trails__thumb"
+                    style={{ backgroundColor: themeById(x.theme)?.look.accent, backgroundImage: coverOf(x.theme) ? `url(${coverOf(x.theme)!.small})` : undefined }}
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <strong>{x.title}</strong>
+                    <small className="party-muted">
+                      {t("{{n}} cards", { n: x.cards })} · {stateText(x)}
+                      {!x.saved && " · " + t("only on this phone")}
+                    </small>
+                  </div>
                 </div>
                 <div className="party-actions">
                   {x.state !== "ended" && (
@@ -373,7 +386,8 @@ export function TrailPaid() {
   }, [held]);
 
   return (
-    <section className="party-card">
+    <section className="party-card party-card--cover">
+      <ThankYouBanner />
       <h1>{t("Thank you — your party adventure is ready to play")}</h1>
       {held && !late ? (
         <p className="party-lead" role="status">

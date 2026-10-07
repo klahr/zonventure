@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/public"
 )
 
 // renderStoreEventPage serves the per-game detail page paired with
@@ -138,9 +139,22 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	}
 	priceDisplay := formatStorePrice(priceCents.Int64, currency)
 
-	coverURL := ""
+	// The adventure's look: its cover stands in for the event's, and
+	// its title typeface heads the page.
+	look, err := public.LoadPageLook(r.Context(), db, public.LookAssets{ThemeCover: themeCoverURL, Font: lookFontURL}, advSlug)
+	if err != nil {
+		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		return
+	}
+	coverURL, lookFont := "", ""
 	if hasCover {
 		coverURL = "/store-cover/event/" + strconv.FormatInt(id, 10)
+	} else if look != nil && look.CoverURL != "" {
+		coverURL, hasCover = look.CoverURL, true
+	}
+	if look != nil && look.FontCSS != "" {
+		lookFont = `<link rel="stylesheet" href="` + html.EscapeString(look.FontCSS) + `">` +
+			`<style>.hero h1 { font-family: "` + html.EscapeString(look.HeadingFont) + `", var(--font-brand); }</style>`
 	}
 	iconURL, ogImage := "", coverURL
 	if hasIcon {
@@ -197,6 +211,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		// nested-context decode chain.
 		[2]string{"{{COVER_URL}}", html.EscapeString(cssURLQuote(coverURL))},
 		[2]string{"{{HAS_COVER}}", boolAttr(hasCover)},
+		[2]string{"{{LOOK_FONT}}", lookFont},
 		// The adventure's icon, beside the title; also what a link
 		// preview shows when the event has no cover of its own.
 		[2]string{"{{ICON_URL}}", html.EscapeString(iconURL)},

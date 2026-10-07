@@ -40,6 +40,8 @@ type look struct {
 	Event string
 	// Lang is the language its emails are written in.
 	Lang string
+	// Cover is the event's adventure's picture for its players' emails.
+	Cover emailtpl.Picture
 }
 
 // eventLook is an event's: its theme, else its organisation's.
@@ -49,13 +51,23 @@ func (h *Handlers) eventLook(ctx context.Context, eventID int64) look {
 	_ = h.DB.QueryRowContext(ctx, `
 		SELECT COALESCE(NULLIF(e.name, ''), a.title, e.adventure_slug) FROM events e LEFT JOIN adventures a ON a.slug = e.adventure_slug WHERE e.id = $1
 	`, eventID).Scan(&name)
-	return look{Theme: lk.Theme, Brand: lk.Brand, Event: name, Lang: lk.Lang}
+	return look{Theme: lk.Theme, Brand: lk.Brand, Event: name, Lang: lk.Lang, Cover: lk.Cover}
 }
 
 // orgLook is an organisation's, for what no event sends.
 func (h *Handlers) orgLook(ctx context.Context, orgID int64) look {
 	lk := emailtpl.Lookup(ctx, h.DB, h.PublicURL, orgID, 0)
 	return look{Theme: lk.Theme, Brand: lk.Brand, Lang: lk.Lang}
+}
+
+// house is a house picture for an email, none without a public URL.
+func (h *Handlers) house(lang, id string) emailtpl.Picture {
+	return emailtpl.House(h.PublicURL, lang, id)
+}
+
+// emailCover is adventure slug's picture for its players' emails.
+func (h *Handlers) emailCover(ctx context.Context, lang, slug string) emailtpl.Picture {
+	return emailtpl.CoverFor(ctx, h.DB, h.PublicURL, lang, slug)
 }
 
 func (l look) message(to []string, subject string, c emailtpl.Content) mailerpkg.Message {
@@ -149,8 +161,31 @@ func (h *Handlers) samplePreview(w http.ResponseWriter, r *http.Request, kind st
 	if l.Event != "" {
 		subject, c = sampleForEvent(k.ID, l)
 	}
+	if coverKinds[k.ID] {
+		c.Picture = h.previewCover(r, eventID, l.Lang)
+	}
 	html, text := emailtpl.Render(l.Theme, l.Brand, subject, c)
 	return previewDTO{Subject: subject, HTML: html, Text: text, Theme: string(l.Theme)}, true
+}
+
+// coverKinds are the previewed emails that show the adventure's cover.
+var coverKinds = map[string]bool{"team_invitation": true, "game_email": true, "team_link": true, "play_links": true}
+
+// previewCover is the cover a preview shows: the event's adventure's,
+// else a starter theme's as a sample. Without a public URL it points at
+// this site, where the console's preview frame finds it.
+func (h *Handlers) previewCover(r *http.Request, eventID int64, lang string) emailtpl.Picture {
+	base := h.PublicURL
+	if strings.TrimSpace(base) == "" {
+		base = "//" + r.Host
+	}
+	if eventID > 0 {
+		var slug string
+		if h.DB.QueryRowContext(r.Context(), `SELECT adventure_slug FROM events WHERE id = $1`, eventID).Scan(&slug) == nil {
+			return emailtpl.CoverFor(r.Context(), h.DB, base, lang, slug)
+		}
+	}
+	return emailtpl.ThemeCover(base, lang, "pirate")
 }
 
 // sampleForEvent is a kind's sample with the event's own name.
@@ -222,6 +257,7 @@ func (h *Handlers) draftPreview(w http.ResponseWriter, r *http.Request, req draf
 	case "game_email":
 		step := strings.NewReplacer("{{step}}", req.Step)
 		subject, c = emailtpl.GameEmail(l.Lang, step.Replace(fill(req.Subject, team, event)), step.Replace(fill(req.Body, team, event)), event, l.Brand.Name)
+		c.Picture = h.previewCover(r, req.EventID, l.Lang)
 	case "", "team_message":
 		subject, c = emailtpl.TeamMessage(l.Lang, fill(req.Subject, team, event), fill(req.Body, team, event), event, l.Brand.Name)
 	default:

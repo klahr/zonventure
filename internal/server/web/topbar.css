@@ -1,6 +1,7 @@
 /* Shared topbar / hamburger / mobile-overlay / language-picker CSS.
- * Linked by landing, pricing, manual, store, store-event and
- * org-landing so the menu system is one source of truth. Pages must define `--accent-deep`
+ * Linked by landing, pricing, manual, store, store-event, redeem,
+ * privacy and terms so the menu system (and the footer) is one source
+ * of truth. Pages must define `--accent-deep`
  * (the brand-deep colour used by the picker active state and the
  * mobile-overlay primary button); other colour values are baked in
  * because the topbar is intentionally identical regardless of which
@@ -54,11 +55,21 @@ body.has-hero { padding-top: 0; }
    * cascaded into a visible height difference before this rule). */
   line-height: 1.2;
   transition: background .25s ease, border-bottom-color .25s ease;
+  /* Nav colours: dark ink on a light glass bar, white over a page's
+   * dark hero band (body.has-hero). */
+  --_nav: var(--ink-soft); --_nav-hi: var(--ink);
+  --_glass: color-mix(in srgb, var(--bg) 82%, transparent);
+  --_edge: var(--border-soft);
+}
+body.has-hero .topbar {
+  --_nav: rgba(255,255,255,.85); --_nav-hi: #fff;
+  --_glass: rgba(15, 22, 36, .82);
+  --_edge: rgba(255,255,255,.08);
 }
 .topbar::before {
   content: '';
   position: absolute; inset: 0;
-  background: rgba(15, 22, 36, .82);
+  background: var(--_glass);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   opacity: 0;
@@ -72,7 +83,7 @@ body.has-hero { padding-top: 0; }
  * everywhere instead of broken at the top.
  */
 .topbar:not(.at-top)::before { opacity: 1; }
-.topbar:not(.at-top) { border-bottom-color: rgba(255,255,255,.08); }
+.topbar:not(.at-top) { border-bottom-color: var(--_edge); }
 
 .topbar-row {
   display: flex; align-items: center;
@@ -89,28 +100,28 @@ body.has-hero { padding-top: 0; }
 }
 .topbar nav { margin-left: auto; display: flex; gap: 1.25rem; align-items: center; }
 .topbar nav a {
-  color: rgba(255,255,255,.85); font-weight: 600; font-size: .95rem;
+  color: var(--_nav); font-weight: 600; font-size: .95rem;
   text-decoration: none;
 }
-.topbar nav a:hover { color: #fff; text-decoration: none; }
+.topbar nav a:hover { color: var(--_nav-hi); text-decoration: none; }
 .topbar nav .btn {
   padding: .55rem 1.4rem;
   border-radius: 999px;
-  background: #fff;
-  color: var(--accent-deep);
+  background: transparent;
+  color: var(--_nav-hi);
   font-weight: 700;
-  border: 0;
+  border: 1px solid color-mix(in srgb, var(--_nav) 35%, transparent);
 }
-.topbar nav .btn:hover { background: rgba(255,255,255,.92); }
+.topbar nav .btn:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
 
 .brand {
-  font-family: 'Aclonica', Georgia, serif;
+  font-family: var(--font-brand, 'Aclonica', Georgia, serif);
   font-size: 1.55rem;
-  color: #fff;
+  color: var(--_nav-hi);
   text-decoration: none;
   letter-spacing: .01em;
-  text-shadow: 0 2px 12px rgba(0,0,0,.25);
 }
+body.has-hero .brand { text-shadow: 0 2px 12px rgba(0,0,0,.25); }
 
 /* Hidden toggle. Pinned to viewport (0,0) so focus-into-view does
  * not jerk the page to the top when the user taps the hamburger.
@@ -121,7 +132,7 @@ body.has-hero { padding-top: 0; }
   opacity: 0; pointer-events: none;
 }
 .nav-toggle:focus-visible ~ .topbar .hamburger {
-  outline: 2px solid #fff; outline-offset: 3px; border-radius: 6px;
+  outline: 2px solid var(--_nav-hi); outline-offset: 3px; border-radius: 6px;
 }
 
 .hamburger {
@@ -129,14 +140,15 @@ body.has-hero { padding-top: 0; }
   width: 2.5rem; height: 2.5rem;
   flex-direction: column; justify-content: center; align-items: center;
   gap: .35rem;
-  border-radius: 8px;
+  border-radius: 50%;
   cursor: pointer;
-  background: rgba(255,255,255,.12);
+  /* After the nav, at the bar's end, as on the marketing site. */
+  order: 99;
 }
 .hamburger span {
   display: block;
   width: 1.4rem; height: 2px;
-  background: #fff;
+  background: var(--_nav-hi);
   border-radius: 2px;
   transition: transform .2s, opacity .2s;
 }
@@ -161,26 +173,26 @@ body.has-hero { padding-top: 0; }
 .lang-picker {
   display: inline-flex;
   align-items: center;
-  gap: .35rem;
-  padding: .25rem;
-  background: rgba(255,255,255,.12);
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--_nav) 30%, transparent);
   border-radius: 999px;
-  margin-right: .5rem;
+  margin-right: .25rem;
 }
 .lang-picker .lang-link {
-  display: inline-flex; align-items: center; gap: .3rem;
-  padding: .3rem .7rem;
+  display: inline-flex; align-items: center;
+  padding: .38rem .55rem;
   border-radius: 999px;
-  font-size: .8rem; font-weight: 600;
-  color: rgba(255,255,255,.85);
+  font-size: .72rem; font-weight: 700; letter-spacing: .06em;
+  color: var(--_nav);
   line-height: 1;
 }
-.lang-picker .lang-link:hover { color: #fff; text-decoration: none; }
+.lang-picker .lang-link:hover { color: var(--_nav-hi); text-decoration: none; }
 .lang-picker .lang-link.active {
-  background: rgba(255,255,255,.92);
-  color: var(--accent-deep);
+  background: color-mix(in srgb, var(--_nav-hi) 16%, transparent);
+  color: var(--_nav-hi);
 }
-.lang-picker .flag { font-size: 1rem; line-height: 1; }
+/* Text codes, not flags: a flag is a country, not a language. */
+.lang-picker .flag { display: none; }
 
 /* Theme toggle — tiny round-square button placed by topbar.js right
  * after the language picker. Three-state cycle (light / dark / auto)
@@ -189,21 +201,20 @@ body.has-hero { padding-top: 0; }
  * pages and the app. */
 .theme-toggle {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 2rem; height: 2rem;
-  margin-left: .25rem;
+  width: 2.4rem; height: 2.4rem;
   padding: 0;
   border: 0;
-  border-radius: 999px;
-  background: rgba(255,255,255,.12);
-  color: rgba(255,255,255,.85);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--_nav);
   cursor: pointer;
   flex: 0 0 auto;
 }
-.theme-toggle:hover { background: rgba(255,255,255,.2); color: #fff; }
-.theme-toggle svg { width: 1.05rem; height: 1.05rem; }
+.theme-toggle:hover { background: color-mix(in srgb, currentColor 12%, transparent); color: var(--_nav-hi); }
+.theme-toggle svg { width: 1.2rem; height: 1.2rem; }
 
-/* Narrow-screen rules: hamburger replaces the inline links, lang
- * picker shrinks to flag-only. 45rem (720px) breakpoint covers
+/* Narrow-screen rules: hamburger replaces the inline links; the menu
+ * opens as a light panel under the bar, which turns light with it. 45rem (720px) breakpoint covers
  * iPhone 12 (390px) through iPad mini (744px) widths.
  */
 @media (max-width: 45rem) {
@@ -218,7 +229,7 @@ body.has-hero { padding-top: 0; }
     position: fixed;
     inset: 0;
     padding: calc(var(--topbar-h) + 1rem) 0 2rem;
-    background: rgba(15, 22, 36, .98);
+    background: var(--bg);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     overflow-y: auto;
@@ -237,27 +248,45 @@ body.has-hero { padding-top: 0; }
     transition: opacity .2s ease, visibility 0s linear 0s;
   }
   .nav-overlay a {
-    color: rgba(255,255,255,.85); font-weight: 600;
+    color: var(--ink); font-weight: 600;
     text-decoration: none;
     padding: 1.1rem 1.5rem;
     font-size: 1.15rem;
-    border-bottom: 1px solid rgba(255,255,255,.08);
+    border-bottom: 1px solid var(--border-soft);
   }
   .nav-overlay a:last-child { border-bottom: none; }
-  .nav-overlay a:hover { color: #fff; }
+  .nav-overlay a:hover { color: var(--accent); }
   .nav-overlay .btn {
     margin: 1.25rem 1.5rem 0;
     padding: .9rem 1.25rem;
     border-radius: 999px;
-    background: #fff;
-    color: var(--accent-deep);
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff;
     text-align: center;
     font-size: 1rem;
     border-bottom: none;
   }
+  .nav-toggle:checked ~ .topbar {
+    --_nav: var(--ink-soft); --_nav-hi: var(--ink);
+    --_glass: var(--bg); --_edge: var(--border-soft);
+  }
+  .nav-toggle:checked ~ .topbar::before { opacity: 1; }
+  body.has-hero .nav-toggle:checked ~ .topbar .brand { text-shadow: none; }
 }
 @media (max-width: 32rem) {
   .lang-picker { margin-right: 0; }
-  .lang-picker .lang-link { padding: .25rem .5rem; }
-  .lang-picker .lang-link .label { display: none; }
+  .lang-picker .lang-link { padding: .32rem .45rem; }
 }
+
+/* The site footer under every page that has this topbar. Pages adjust
+ * spacing in their own <style> (manual, landing). */
+footer {
+  padding: 1.75rem 0 2.5rem;
+  color: var(--muted);
+  font-size: .88rem;
+  text-align: center;
+  border-top: 1px solid var(--border-soft);
+}
+footer a { color: inherit; margin: 0 .5rem; }
+footer a:hover { color: var(--accent); }
+footer .copy, footer .seller { margin-top: .5rem; font-size: .8rem; }

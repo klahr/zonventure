@@ -302,7 +302,7 @@ export function Shell({ user }: { user: Whoami }) {
         <AccountMenu user={user} orgName={org?.org_name} collapsed={collapsed} onLogout={() => void logout()} />
       </aside>
 
-      <main className={"shell__main dz" + (route.name === "designer" ? " shell__main--full" : "")} id="main">
+      <main className={"shell__main dz" + (route.name === "designer" ? " shell__main--full" : route.name === "trail" ? " shell__main--flush" : "")} id="main">
         {/* Leaving a seeded credential on a reachable box is a
             takeover, so this is loud and not dismissible. */}
         {user.password_is_default && route.name !== "designer" && (

@@ -2,10 +2,10 @@
 .dz .pt-actions { display: inline-flex; gap: 2px; }
 .dz .pt-price { align-items: flex-end; }
 
-/* Base price, per child, currency, most children: one row, two on a phone. */
-.dz .pt-terms { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--dz-space-3); }
+/* Base price, per child, most children: one row, one column on a phone. */
+.dz .pt-terms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--dz-space-3); }
 @media (max-width: 40rem) {
-  .dz .pt-terms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dz .pt-terms { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Named, not listed: one collapsed line until someone asks why. */

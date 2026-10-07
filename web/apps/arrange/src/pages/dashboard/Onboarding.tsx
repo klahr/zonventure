@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { siteName, type Whoami } from "@zonventure/api";
+import { WIDE, wideSrcSet } from "@zonventure/ui";
 import { useT } from "../../i18n.tsx";
 import { CATALOG_ENABLED, href, type Route } from "../../router.ts";
 import { Button, Dialog } from "../../ui/index.ts";
@@ -86,6 +87,7 @@ export function OnboardingDialog({ user, onClose }: { user: Whoami; onClose: () 
     <Dialog
       title={t.t("Welcome to {{name}}", { name: siteName() })}
       onClose={onClose}
+      banner={<img src={WIDE.welcome.small} srcSet={wideSrcSet(WIDE.welcome)} sizes="32rem" alt="" width={800} height={267} />}
       footer={
         <>
           <Button onClick={onClose}>{t.t("Skip")}</Button>

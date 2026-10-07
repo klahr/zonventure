@@ -1,0 +1,19 @@
+/* A look's cover picture across the top of a card, fading into it: the
+   party join page and the players' welcome. The card sets the margins
+   (it bleeds over the card's padding); .party-cover and .app-lobby__cover
+   are the apps' names for it. */
+.pv-cover,
+.party-cover,
+.app-lobby__cover {
+  position: relative;
+  height: min(52vw, 16rem);
+  background-size: cover;
+  background-position: 75% 30%;
+}
+:is(.pv-cover, .party-cover, .app-lobby__cover)::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 45%;
+  background: linear-gradient(transparent, var(--surface));
+}

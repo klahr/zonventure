@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { ApiError } from "@zonventure/api";
+import { coverOf } from "@zonventure/play-ui";
+import { SPOTS } from "@zonventure/ui";
 import { book, getOffer, money, resend, type Offer } from "./api.ts";
 import { useT } from "./i18n.tsx";
+import { useLook } from "./look.ts";
+import { Spot, ThankYouBanner } from "./pictures.tsx";
 
 /**
  * Booking a party: how many children, an email for the host link, and the
@@ -23,6 +27,7 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useLook(offer?.look);
 
   useEffect(() => {
     getOffer(org, offerID).then(
@@ -38,6 +43,7 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
   if (missing) {
     return (
       <section className="party-card">
+        <Spot src={SPOTS.notFound} />
         <h1>{t("This party can't be found")}</h1>
         <p>{t("It may no longer be offered.")}</p>
       </section>
@@ -60,8 +66,10 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
     }
   };
 
+  const cover = coverOf(offer.theme, offer.cover_url);
   return (
-    <section className="party-card">
+    <section className={"party-card" + (cover ? " party-card--cover" : "")}>
+      {cover && <div className="party-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
       <p className="party-eyebrow">{t("A party by {{org}}", { org: offer.org_name })}</p>
       <h1>{offer.title}</h1>
       {offer.blurb && <p className="party-lead">{offer.blurb}</p>}
@@ -127,7 +135,8 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
 function Paid() {
   const t = useT().t;
   return (
-    <section className="party-card">
+    <section className="party-card party-card--cover">
+      <ThankYouBanner />
       <h1>{t("Thank you — your party is booked")}</h1>
       <p className="party-lead">{t("We're emailing you the link to your host page. From there you set up the teams, print the cards and start the game.")}</p>
       <p className="party-muted">{t("It can take a minute or two. Check your spam folder if it doesn't arrive.")}</p>

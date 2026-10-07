@@ -9,8 +9,15 @@
 .st-legal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--dz-space-4); align-items: start; }
 .st-legal__form { display: flex; flex-direction: column; gap: var(--dz-space-4); min-width: 0; }
 .st-legal__preview { position: sticky; top: var(--dz-space-4); display: flex; flex-direction: column; gap: var(--dz-space-2); }
-.st-legal__frame { width: 100%; height: 75vh; border: 1px solid var(--border-soft); border-radius: var(--radius); background: #fff; }
+.st-legal__frame { width: 100%; height: 75vh; border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); background: #fff; }
 @media (max-width: 64rem) {
   .st-legal { grid-template-columns: 1fr; }
   .st-legal__preview { position: static; }
 }
+
+/* Settings → Pricing and Legal: short number fields, and the hints' spacing. */
+.dz .st-num { max-width: 8rem; }
+.dz .st-date { max-width: 11rem; }
+.dz .st-intro { margin: 0 0 var(--dz-space-4); }
+.dz .st-flush { margin: 0; }
+.dz .st-example { margin: var(--dz-space-2) 0 0; }

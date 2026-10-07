@@ -18,6 +18,7 @@
     "@zonventure/ui": "*",
     "@zonventure/i18n": "*",
     "@zonventure/hosted": "*",
+    "@zonventure/play-ui": "*",
     "@zonventure/trail": "*"
   },
   "devDependencies": {

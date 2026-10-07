@@ -1,4 +1,4 @@
-import { request } from "@zonventure/api";
+import { request, type play } from "@zonventure/api";
 
 /** A station card: a zone of the adventure, as a card the host hides. */
 export interface Station {
@@ -101,6 +101,10 @@ export interface HostedEvent {
   values: HostValue[];
   editables: Editable[];
   places: Place[];
+  /** The adventure's look, starter theme and cover picture, as the join page shows them. */
+  look?: play.Brand;
+  theme?: string;
+  cover_url?: string;
 }
 
 export interface Personalisation {

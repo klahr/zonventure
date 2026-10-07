@@ -11,6 +11,108 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — pictures in emails
+
+- **Players' and hosts' emails show the adventure's cover** across the
+  top of the card: its own cover picture, else its starter theme's, else
+  a house banner. The team invitation, the ticket and gift-box team
+  links, lost links, the hosted player link, the party host link, the
+  round summary, email steps during the game, and the party adventure's
+  paid, keep-it and ended mails.
+- **Account emails show a small picture** above the heading: verify,
+  email change, password reset and the party adventure's confirm and
+  sign-in links an envelope, a new gift-box redemption a gift box.
+- Pictures are JPEG at the instance's public URL (`/assets/email/…`,
+  `/assets/email/covers/<theme>.jpg`, from
+  `internal/server/web/assets/email`), so every mail client shows them;
+  without `ZV_PUBLIC_URL` no picture is sent. Each has alt text, and an
+  email reads the same with images blocked. The mapping is in
+  `internal/emailtpl/pictures.go`; `make theme-cover` now also writes the
+  email cover and `make illustration … EMAIL=1` an email picture.
+- The console's email previews show them too.
+
+### Added — illustrations
+
+- **Pictures for the players' and party pages** (ILLUSTRATIONS.md): the
+  play app's "Open your invitation link" and "Can't reach the game"
+  screens, the party thank-you pages (booked, payment received, party
+  adventure paid) with a banner across the card, an empty My trails,
+  "Nothing here" and a party that can't be found. The 404 page shows a
+  picture above a small "404" (`/assets/illustrations/not-found.webp`).
+- **Pictures in the console**: a banner across the welcome dialog, a
+  picture beside the sign-in form (a strip above it on a phone), one
+  with "a reset link is on its way", in the lobby for someone with no
+  organisation, and above "Something went wrong". Empty lists show one
+  too — events, self-guided adventures, adventures, teams, party
+  offers, purchases and redemptions (`Empty`'s `illustration`; `Dialog`
+  takes a `banner`). The pictures live in `@zonventure/ui`
+  (`SPOTS`, `WIDE`); `make illustration` adds one.
+
+### Changed — the store, recap and live board wear the look
+
+- **Store**: an event with no cover of its own shows its adventure's
+  look cover (its own picture, else its starter theme's) on the store
+  card and the event page, and the adventure's title is set in the
+  look's title font (`look` on store items; `{{LOOK_FONT}}` in
+  store-event.html).
+- **Recap**: the look's second colour, page colour and text apply as on
+  the live board, the cards keeping a readable palette on that colour;
+  the cover sits above the title, in the look's font (`look` on the
+  recap).
+- **Live board**: the title, the pre-start and the finish card use the
+  look's title font, and the cards show its cover (`look` on the
+  snapshot).
+- The look's fonts and starter covers are served from the player's
+  build (`/assets/look-font/{key}.css`); an adventure's own cover is
+  public at `/adventure-assets/cover/{slug}`, as its icon is.
+
+### Changed — tidier public pages
+
+- **Privacy and Terms** use the site's tokens, topbar and footer and
+  follow the light/dark choice; until Settings → Legal is filled in,
+  they show a styled page saying what is missing instead of plain text.
+- **The topbar** of the built-in pages (manual, store, redeem, legal)
+  is the marketing site's: a light glass bar, EN/SV as text, the menu
+  button at the end; it stays dark over a dark hero.
+- Shared `--font-brand`, `--font-body`, `--danger` (with a dark
+  variant) and radius tokens in page-tokens.css; the footer's CSS lives
+  once, in topbar.css.
+
+### Changed — the party pages wear the adventure's look
+
+- **The join page, the host page and the booking page** take the
+  adventure's colours, title font and backdrop, and its cover picture
+  across the top, so they match the game the teams then play. The join
+  info, the host page's party and a public party offer carry the look
+  (`look`, and `theme` and `cover_url` where they were missing); a
+  picture backdrop stays on the phones.
+- **My trails** shows each party adventure's look as a little cover
+  beside its name (`theme` on `/api/trail/mine`).
+
+### Changed — a tidier console
+
+- **Covers where there is no icon**: the adventures list and page, the
+  events and parties lists and the event pickers show an adventure's
+  look cover — its own picture, else its starter theme's — in place of
+  its initials. The adventure and event lists carry `theme` and `cover`
+  (`adventure_theme`, `adventure_cover` on events).
+- **Settings → Themes** sits in a card like the other tabs and asks
+  before removing a theme in the console's own dialog. **Pricing**,
+  **Legal** and **Themes** say Saved, or what went wrong, in a toast.
+- **New adventure** shows its first page in the designer's phone
+  frame, which fits a narrow phone, and picks the audience with the
+  same segmented control as the designer and the theme editor.
+- **The party adventure creator** fills the content area, its card row
+  pinned in view, instead of starting below the fold. Its templates are
+  tinted in the look each one starts in.
+
+### Fixed
+
+- **Printed cards stay readable in light looks**: a card's header text
+  (and a cover's title band) is black on a light look colour and white
+  on a dark one, as in the creator, instead of always white — Retro
+  80s' yellow information cards and Space's light blue were unreadable.
+
 ## [0.21.1] - 2026-10-07
 
 ### Fixed

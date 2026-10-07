@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "@zonventure/api";
+import { coverOf } from "@zonventure/play-ui";
 import { Game, HostedProvider, PersonaliseSection, PlacesSection, PlayerLink, TrailPrint, WhereSection, adaptable, partyApi, type HostedEvent } from "@zonventure/hosted";
 import { Resend } from "./Book.tsx";
 import { useT } from "./i18n.tsx";
+import { useLook } from "./look.ts";
 import { hostEditURL, keepLink } from "./trail.ts";
 
 /**
@@ -20,6 +22,7 @@ export function Host({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [printing, setPrinting] = useState(false);
+  useLook(party?.look);
 
   const load = useCallback(() => {
     api.get().then(
@@ -97,11 +100,13 @@ export function Host({ token }: { token: string }) {
   );
   const chooseWhere = adaptable(party) && party.cards_ok && party.park_ok;
   const personal = party.values.length > 0 || party.editables.length > 0;
+  const cover = coverOf(party.theme, party.cover_url);
 
   return (
     <HostedProvider value={{ i18n, api, run, busy }}>
       <div className="party-screen">
-        <section className="party-card party-head">
+        <section className={"party-card party-head" + (cover ? " party-card--cover" : "")}>
+          {cover && <div className="party-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
           <p className="party-eyebrow">{party.adventure_title}</p>
           <h1>{party.name}</h1>
           <p className="party-muted">

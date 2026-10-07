@@ -8,6 +8,7 @@ import { useSession } from "../../session.tsx";
 import { href } from "../../router.ts";
 import { Button, Dialog, Field, useToast } from "../../ui/index.ts";
 import { PointMap } from "../../designer/PointMap.tsx";
+import { PhoneFrame } from "../../designer/SamplePreview.tsx";
 import { StarterGallery } from "../../designer/StarterGallery.tsx";
 import { createAdventure, orgName, updateAdventure } from "./api.ts";
 import { slugFrom, useGuardedClose } from "./dialogs.tsx";
@@ -170,9 +171,9 @@ export default function NewAdventure({ onClose }: { onClose: () => void }) {
                   </select>
                 </Field>
                 <Field label={t.t("Who is it for?")}>
-                  <div className="newadv__chips" role="radiogroup">
+                  <div className="seg" role="radiogroup">
                     {AUDIENCES.map((a) => (
-                      <button key={a.value} type="button" role="radio" aria-checked={audience === a.value} className={"newadv__chip" + (audience === a.value ? " is-on" : "")} onClick={() => setAudience(audience === a.value ? "" : a.value)}>
+                      <button key={a.value} type="button" role="radio" aria-checked={audience === a.value} className={audience === a.value ? "is-on" : undefined} onClick={() => setAudience(audience === a.value ? "" : a.value)}>
                         {t.t(a.label)}
                       </button>
                     ))}
@@ -250,11 +251,9 @@ export default function NewAdventure({ onClose }: { onClose: () => void }) {
           )}
         </div>
         <aside className="newadv__preview" aria-label={t.t("Preview")}>
-          <div className="newadv__phone">
-            <div className="newadv__screen">
-              <PlayView view={view} live={false} preview brand={theme.look as play.Brand} feedback={feedback} onAction={() => {}} />
-            </div>
-          </div>
+          <PhoneFrame>
+            <PlayView view={view} live={false} preview brand={theme.look as play.Brand} feedback={feedback} onAction={() => {}} />
+          </PhoneFrame>
           <div className="newadv__try">
             <Button onClick={() => setFeedback({ tone: "good", text: t.t("Correct!"), burst: { kind: "celebrate", head: t.t("Correct!") } })}>{t.t("Try a right answer")}</Button>
           </div>

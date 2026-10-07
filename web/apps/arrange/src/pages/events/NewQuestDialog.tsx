@@ -3,6 +3,7 @@ import { useT } from "../../i18n.tsx";
 import { CATALOG_ENABLED, navigate } from "../../router.ts";
 import { Button, Dialog, ErrorBox, Field, ImageDrop, Loading, errorText, useLoad, useToast } from "../../ui/index.ts";
 import { createEvent, listAdventures, startEvent, updateEvent, uploadEventCover } from "./api.ts";
+import { iconOrCover } from "../adventures/parts.tsx";
 import { AdventureCover } from "./parts.tsx";
 
 
@@ -117,7 +118,7 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
     >
       {advs.data.length === 1 ? (
         <div className="evs-chosen">
-          <AdventureCover title={advs.data[0]!.title} src={advs.data[0]!.avatar_url} size={36} />
+          <AdventureCover title={advs.data[0]!.title} src={iconOrCover(advs.data[0]!)} size={36} />
           <strong>{advs.data[0]!.title}</strong>
         </div>
       ) : (
@@ -127,7 +128,7 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
             {advs.data.map((a) => (
               <label key={a.slug} className={"evs-choice" + (a.slug === picked ? " is-on" : "")}>
                 <input type="radio" name="evs-quest-adventure" checked={a.slug === picked} onChange={() => setPicked(a.slug)} />
-                <AdventureCover title={a.title} src={a.avatar_url} />
+                <AdventureCover title={a.title} src={iconOrCover(a)} />
                 <span className="evs-stack">
                   <strong className="evs-ellipsis">{a.title}</strong>
                   <span className="evs-muted evs-small">{a.mine_to_edit ? t.t("yours") : CATALOG_ENABLED ? t.t("catalog") : t.t("shared")}</span>

@@ -45,7 +45,7 @@ import (
 	"github.com/klahr/zonventure/internal/ws"
 )
 
-//go:embed web/play-sw.js web/play.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/og-image.png web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/redeem.html web/topbar.css web/topbar.js web/page-tokens.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/leaflet/leaflet.js web/assets/leaflet/leaflet.css web/assets/leaflet/images/*.png
+//go:embed web/play-sw.js web/play.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/og-image.png web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/redeem.html web/topbar.css web/topbar.js web/page-tokens.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/leaflet/leaflet.js web/assets/leaflet/leaflet.css web/assets/leaflet/images/*.png web/assets/illustrations/not-found.webp web/assets/email/*.jpg web/assets/email/covers/*.jpg
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -390,6 +390,7 @@ func New(cfg Config) http.Handler {
 	publicH := &public.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL, Engine: playerH.Engine,
 		SecureCookie: cfg.SecureCookie,
+		Looks:        public.LookAssets{ThemeCover: themeCoverURL, Font: lookFontURL},
 	}
 
 	// Read-only sitemap template + computed version metadata —

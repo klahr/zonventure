@@ -4,7 +4,9 @@ import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { CATALOG_ENABLED, navigate } from "../../router.ts";
 import { Button, Callout, Dialog, Empty, ErrorBox, Field, Loading, Row, fmtMoney, useLoad, useToast, errorText } from "../../ui/index.ts";
+import { SPOTS } from "@zonventure/ui";
 import { activeMembership, createEvent, createPurchase, createTeam, listAdventures, listAssignments, pricing, type AdventureRow, type Assignment } from "./api.ts";
+import { iconOrCover } from "../adventures/parts.tsx";
 import { AdventureCover } from "./parts.tsx";
 import "./events.css";
 
@@ -197,6 +199,7 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
   })();
 
   const adventureTitle = pickedAdv?.title ?? pass?.adventure_title ?? advs.find((a) => a.slug === (pass?.adventure_slug ?? slug))?.title ?? pass?.adventure_slug ?? slug ?? "";
+  const chosenAdv = advs.find((a) => a.slug === (pickedAdv?.slug ?? pass?.adventure_slug ?? slug));
 
   async function submit(provider: "invoice" | null) {
     if (busy || !ctx) return;
@@ -331,7 +334,7 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
           </>
         }
       >
-        <Empty title={t.t("No adventures you can use yet.")}>
+        <Empty title={t.t("No adventures you can use yet.")} illustration={SPOTS.noAdventures}>
           {author ? t.t("Create your own adventure to get started.") : t.t("An organisation admin can create one for you.")}
         </Empty>
       </Dialog>
@@ -385,7 +388,7 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
       ) : (
         adventureTitle && (
           <div className="evs-chosen">
-            <AdventureCover title={adventureTitle} src={advs.find((a) => a.slug === (pickedAdv?.slug ?? pass?.adventure_slug ?? slug))?.avatar_url} size={36} />
+            <AdventureCover title={adventureTitle} src={chosenAdv && iconOrCover(chosenAdv)} size={36} />
             <span className="evs-stack">
               <strong>{adventureTitle}</strong>
               {pass ? (
@@ -494,7 +497,7 @@ function AdventureChoice({ adv, checked, pass, onPick }: { adv: AdventureRow; ch
   return (
     <label className={"evs-choice" + (checked ? " is-on" : "")}>
       <input type="radio" name="evs-adventure" checked={checked} onChange={onPick} />
-      <AdventureCover title={adv.title} src={adv.avatar_url} size={32} />
+      <AdventureCover title={adv.title} src={iconOrCover(adv)} size={32} />
       <span className="evs-stack">
         <strong className="evs-ellipsis">{adv.title}</strong>
         <span className="evs-muted evs-small">

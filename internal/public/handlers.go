@@ -47,6 +47,9 @@ type Handlers struct {
 	// slot cookie set by the scan-to-join flow matches the auth/player
 	// handlers' Secure attribute.
 	SecureCookie bool
+	// Looks resolves look covers and typefaces for the store, recap and
+	// live board (LoadPageLook).
+	Looks LookAssets
 	// tracks caches each event's tracks for tracksTTL; see buildTracks.
 	tracks tracksCache
 }
@@ -101,6 +104,8 @@ type LiveDTO struct {
 	// Teams are ranked by points (see play.Ahead).
 	Teams  []teamDTO         `json:"teams"`
 	Colors *adventure.Colors `json:"colors,omitempty"`
+	// Look is the adventure's cover picture and title typeface.
+	Look *PageLook `json:"look,omitempty"`
 }
 
 // runByToken resolves a URL token to an event id, returning sql.ErrNoRows if
@@ -229,6 +234,11 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		c := adv.Colors
 		dto.Colors = &c
 	}
+	look, err := LoadPageLook(ctx, h.DB, h.Looks, slug)
+	if err != nil {
+		return LiveDTO{}, id, http.StatusInternalServerError, "look lookup failed"
+	}
+	dto.Look = look
 	return dto, id, http.StatusOK, ""
 }
 

@@ -55,6 +55,8 @@
   --tap-target: 2.75rem;
   --font-body:    'Open Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --font-brand:   'Aclonica', 'Vollkorn', Georgia, serif;
+  /* The adventure's title typeface, when its look has one (applyLook). */
+  --font-title:   var(--font-brand);
 }
 .visually-hidden {
   position: absolute !important;
@@ -108,6 +110,7 @@ html, body {
   text-align: center; line-height: 1;
 }
 .title h1 {
+  font-family: var(--font-title);
   font-weight: 800;
   font-size: clamp(1.6rem, 4vw, 3rem);
   letter-spacing: -.01em;
@@ -383,6 +386,12 @@ html, body {
    countdown digits when a start time is set, calmer copy otherwise.
    Fills the leaderboard slot so the TV has something worth watching
    before the flag drops. */
+/* The look's cover picture, atop the pre-start and finish cards. */
+.prestart .cover {
+  width: min(36rem, 90%); aspect-ratio: 16 / 7;
+  border-radius: 18px; background: center / cover no-repeat;
+  box-shadow: 0 14px 50px rgba(0,0,0,.45);
+}
 .prestart {
   flex: 1;
   display: flex; flex-direction: column;
@@ -392,7 +401,7 @@ html, body {
   padding: 2rem 1rem;
 }
 .prestart .banner {
-  font-family: var(--font-brand);
+  font-family: var(--font-title);
   color: var(--accent-secondary);
   font-size: clamp(1.2rem, 2.5vw, 2rem);
   letter-spacing: .08em; text-transform: uppercase;
@@ -611,6 +620,29 @@ function applyColors(c) {
   if (fallback) root.style.setProperty('--muted', fallback.muted); else root.style.removeProperty('--muted');
 }
 
+// applyLook sets the title in the look's typeface. Its cover goes on
+// the pre-start and finish cards (lookCover).
+let lookFontCSS = null;
+function applyLook(look) {
+  const css = look?.font_css || null;
+  if (css === lookFontCSS) return;
+  lookFontCSS = css;
+  if (css) {
+    document.head.append(h('link', { rel: 'stylesheet', href: css }));
+    document.documentElement.style.setProperty('--font-title', '"' + look.heading_font + '", var(--font-brand)');
+  } else {
+    document.documentElement.style.removeProperty('--font-title');
+  }
+}
+
+// lookCover is the look's cover picture for a card, or null.
+function lookCover(data) {
+  if (!data.look?.cover_url) return null;
+  const c = h('div', { class: 'cover', 'aria-hidden': 'true' });
+  c.style.backgroundImage = 'url("' + encodeURI(data.look.cover_url) + '")';
+  return c;
+}
+
 // textToneOn returns dark or light text tones for a #rrggbb / #rgb
 // background by WCAG relative luminance; null for anything else.
 function textToneOn(bg) {
@@ -736,6 +768,7 @@ function render() {
   const data = latestSnapshot;
   if (!data) return;
   applyColors(data.colors);
+  applyLook(data.look);
   assignTeamColours(data.teams || []);
 
   // Detect scheduled → running so the start animation fires exactly
@@ -1247,6 +1280,8 @@ function buildCompletionFrame(data) {
     .sort((a, b) => (a.rank || Infinity) - (b.rank || Infinity));
   const winner = teams[0];
   const card = h('div', { class: 'prestart' });
+  const cover = lookCover(data);
+  if (cover) card.append(cover);
   card.append(h('div', { class: 'banner' }, t('Event complete')));
   if (data.adventure_title) {
     card.append(h('div', { class: 'whenline' }, data.adventure_title));
@@ -1279,6 +1314,8 @@ function buildCompletionFrame(data) {
 // .countdown .digits text in place so the digits tick smoothly.
 function buildPreStart(data) {
   const card = h('div', { class: 'prestart' });
+  const cover = lookCover(data);
+  if (cover) card.append(cover);
   card.append(h('div', { class: 'banner' }, t('Starting soon')));
   // Adventure title + team count framing — gives the audience context
   // about what they're about to watch even before the run begins, so a

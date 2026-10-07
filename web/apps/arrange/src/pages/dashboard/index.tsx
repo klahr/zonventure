@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ArrowRight, Building2, CalendarClock, Plus, Radio, Ticket, Users } from "lucide-react";
 import { siteName, type Whoami } from "@zonventure/api";
+import { WIDE, wideSrcSet } from "@zonventure/ui";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { CATALOG_ENABLED, href, navigate } from "../../router.ts";
@@ -185,9 +186,14 @@ function LobbyDashboard() {
     <Page>
       <PageHeader title={t.t("Welcome to {{name}}", { name: siteName() })} />
       <Card>
-        <p>{t.t("You're signed in but not part of any organization yet. Either create one (you'll be its admin) or ask someone in an existing organization to invite you.")}</p>
-        <div>
-          <Button variant="primary" icon={<Building2 size={16} aria-hidden />} onClick={() => setCreating(true)}>{t.t("Create an organization")}</Button>
+        <div className="db-lobby">
+          <img className="db-lobby__art" src={WIDE.noOrganisation.small} srcSet={wideSrcSet(WIDE.noOrganisation)} sizes="(min-width: 40rem) 28rem, 100vw" alt="" width={800} height={609} />
+          <div className="db-lobby__text">
+            <p>{t.t("You're signed in but not part of any organization yet. Either create one (you'll be its admin) or ask someone in an existing organization to invite you.")}</p>
+            <div>
+              <Button variant="primary" icon={<Building2 size={16} aria-hidden />} onClick={() => setCreating(true)}>{t.t("Create an organization")}</Button>
+            </div>
+          </div>
         </div>
       </Card>
       {creating && <CreateOrgDialog own onClose={() => setCreating(false)} />}

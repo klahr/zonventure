@@ -188,6 +188,8 @@ type adventureDTO struct {
 	OrgID       *int64 `json:"org_id,omitempty"` // owning org; the publisher's are the catalog
 	MineToEdit  bool   `json:"mine_to_edit"`
 	AvatarURL   string `json:"avatar_url,omitempty"`
+	Theme       string `json:"theme,omitempty"` // the look's starter theme, for a missing avatar (lookCoverSQL)
+	Cover       int64  `json:"cover,omitempty"` // the look's own cover picture, a media id
 	Published   bool   `json:"published"`
 	Shared      bool   `json:"shared"` // visible to caller via a commissioned share
 	// Language of the puzzle content (BCP 47). Surfaced on the
@@ -218,7 +220,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 		       ` + PuzzleCountSQL() + ` AS page_count,
 		       (a.published_graph_id IS NOT NULL)::int AS playable,
 		       (a.avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       a.published, a.language,
+		       a.published, a.language, ` + lookCoverSQL("a") + `,
 	`
 	query += `
 	       (EXISTS (
@@ -258,7 +260,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 			shared    int
 			playable  int
 		)
-		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount, &playable, &hasAvatar, &published, &d.Language, &shared); err != nil {
+		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount, &playable, &hasAvatar, &published, &d.Language, &d.Theme, &d.Cover, &shared); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -294,6 +296,8 @@ type eventDTO struct {
 	// fetch per event. Empty means the client should fall back to
 	// the initials tile.
 	AdventureAvatarURL string `json:"adventure_avatar_url,omitempty"`
+	AdventureTheme     string `json:"adventure_theme,omitempty"` // stand-ins for a missing avatar (lookCoverSQL)
+	AdventureCover     int64  `json:"adventure_cover,omitempty"`
 	State              string `json:"state"`
 	ScheduledAt        string `json:"scheduled_at,omitempty"`
 	StartedAt          string `json:"started_at,omitempty"`
@@ -634,7 +638,7 @@ func (h *Handlers) writeOrgEvents(w http.ResponseWriter, r *http.Request, orgID 
 		       COALESCE(ar.ticket_currency, ''),
 		       COALESCE(ar.ticket_team_size, 0),
 		       COALESCE(ar.cover_image_mime_type, '') <> '' AS has_cover_image,
-		       ar.party
+		       ar.party, ` + lookCoverSQL("adv") + `
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		LEFT JOIN adventures adv ON adv.slug = ar.adventure_slug
@@ -674,7 +678,8 @@ func (h *Handlers) writeOrgEvents(w http.ResponseWriter, r *http.Request, orgID 
 			&d.CompletedAt, &d.CancelledAt,
 			&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
 			&d.LiveToken, &showMap, &hasAvatar, &d.TeamsCount, &d.PlayerSlotsCount,
-			&d.PublicForSale, &d.TicketPriceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.HasCoverImage, &d.Party); err != nil {
+			&d.PublicForSale, &d.TicketPriceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.HasCoverImage, &d.Party,
+			&d.AdventureTheme, &d.AdventureCover); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}

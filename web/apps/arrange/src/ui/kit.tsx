@@ -158,9 +158,10 @@ export function Pill({ tone = "neutral", children, title }: { tone?: Tone; child
 }
 
 /** What a list or section shows when there is nothing in it yet, with the way to change that. */
-export function Empty({ title, children, action }: { title: ReactNode; children?: ReactNode; action?: ReactNode }) {
+export function Empty({ title, children, action, illustration }: { title: ReactNode; children?: ReactNode; action?: ReactNode; illustration?: string }) {
   return (
     <div className="cs-empty">
+      {illustration && <img className="cs-empty__art" src={illustration} alt="" aria-hidden="true" width={480} height={480} loading="lazy" />}
       <p className="cs-empty__title">{title}</p>
       {children && <p className="cs-empty__text">{children}</p>}
       {action && <div className="cs-empty__action">{action}</div>}

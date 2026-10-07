@@ -502,14 +502,14 @@ function Choice(props: { label: string; options: { value: string; label: string 
   return (
     <div className="field" role="radiogroup" aria-label={props.label}>
       <span className="field__label">{props.label}</span>
-      <div className="look__segments">
+      <div className="seg seg--fill">
         {props.options.map((o) => (
           <button
             key={o.value}
             type="button"
             role="radio"
             aria-checked={props.value === o.value}
-            className={"look__segment" + (props.value === o.value ? " is-on" : "")}
+            className={props.value === o.value ? "is-on" : undefined}
             onClick={() => props.onPick(o.value)}
           >
             {o.label}

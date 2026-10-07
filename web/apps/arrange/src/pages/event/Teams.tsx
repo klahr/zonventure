@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Copy, Gift, Link2, Mail, Pencil, Plus, Trash2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { Button, Card, Empty, fmtAgo, fmtDateTime, HelpPopover, ICON, Pill, useToast } from "../../ui/index.ts";
+import { SPOTS } from "@zonventure/ui";
 import { giveFreeTicket, type EventGraph, type EventInfo, type FreeTicket, type Team } from "./api.ts";
 import { TeamAvatar, useTeamActions } from "./teamActions.tsx";
 import { useInviteAll } from "./Lifecycle.tsx";
@@ -120,6 +121,7 @@ export function TeamsCard(props: {
       {shown.length === 0 ? (
         <Empty
           title={teams.length === 0 ? t.t("No teams yet.") : t.t("No teams match this filter.")}
+          {...(teams.length === 0 ? { illustration: SPOTS.noTeams } : {})}
           {...(teams.length === 0 && canCreate ? { action: <Button variant="primary" icon={<Plus size={ICON.sm} aria-hidden />} onClick={props.onNew}>{t.t("Add the first team")}</Button> } : {})}
         />
       ) : (

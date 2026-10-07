@@ -1,4 +1,4 @@
-import { request } from "@zonventure/api";
+import { request, type play } from "@zonventure/api";
 
 /** A party an organisation offers: internal/admin/party.go PublicPartyOfferDTO. */
 export interface Offer {
@@ -13,6 +13,10 @@ export interface Offer {
   org_name: string;
   org_slug: string;
   payments_open: boolean;
+  /** The adventure's look, starter theme and cover picture. */
+  look?: play.Brand;
+  theme?: string;
+  cover_url?: string;
 }
 
 const enc = encodeURIComponent;
@@ -34,6 +38,8 @@ export interface JoinInfo {
   theme?: string;
   /** The adventure's own cover picture, in place of the theme's. */
   cover_url?: string;
+  /** The adventure's look, so the page matches the game. */
+  look?: play.Brand;
 }
 
 export const getJoin = (token: string) => request<JoinInfo>(`/api/join/${enc(token)}`);

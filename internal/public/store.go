@@ -32,13 +32,16 @@ type StoreItemDTO struct {
 	StartLat       float64 `json:"start_lat,omitempty"`
 	StartLng       float64 `json:"start_lng,omitempty"`
 	HasStartLatLng bool    `json:"has_start_latlng"`
-	// CoverImageURL is set when the event has uploaded a hero image.
+	// CoverImageURL is the event's uploaded hero image, else its look's cover.
 	// Empty means the store card renders text-only — the JS template
 	// already has a fallback layout.
 	CoverImageURL string `json:"cover_image_url,omitempty"`
 	// AdventureIconURL is set when the adventure has an icon — the one
 	// its players see in their top bar.
 	AdventureIconURL string `json:"adventure_icon_url,omitempty"`
+	// Look is the adventure's title typeface and cover picture. The
+	// cover also stands in for CoverImageURL when the event has none.
+	Look *PageLook `json:"look,omitempty"`
 }
 
 // TicketTeamTokenDTO is the response shape for the post-purchase
@@ -234,7 +237,7 @@ const storeItemSelect = `
 	       e.ticket_team_size,
 	       a.start_label, a.start_lat, a.start_lng,
 	       (e.cover_image_mime_type IS NOT NULL) AS has_cover,
-	       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon
+	       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,` + pageLookColumns + `
 	FROM events e
 	JOIN organizations o ON o.id = e.org_id
 	LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
@@ -269,7 +272,7 @@ func (h *Handlers) storeItemRowFilter() string {
 func (h *Handlers) loadStoreItem(ctx context.Context, eventID int64) (StoreItemDTO, error) {
 	row := h.DB.QueryRowContext(ctx,
 		storeItemSelect+h.storeItemRowFilter()+` AND e.id = $1`, eventID)
-	return scanStoreItem(row)
+	return h.scanStoreItem(row)
 }
 
 // loadStoreItemsByOrg lists one organisation's store items. The
@@ -288,7 +291,7 @@ func (h *Handlers) loadStoreItemsByOrg(ctx context.Context, orgID int64) ([]Stor
 	defer rows.Close()
 	var out []StoreItemDTO
 	for rows.Next() {
-		item, err := scanStoreItem(rows)
+		item, err := h.scanStoreItem(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -304,7 +307,7 @@ func (h *Handlers) loadStoreItemByOrg(ctx context.Context, orgID, eventID int64)
 	row := h.DB.QueryRowContext(ctx,
 		storeItemSelect+h.storeItemRowFilter()+` AND e.id = $1 AND e.org_id = $2`,
 		eventID, orgID)
-	return scanStoreItem(row)
+	return h.scanStoreItem(row)
 }
 
 // rowScanner is the subset of *sql.Row / *sql.Rows scanStoreItem
@@ -313,7 +316,7 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanStoreItem(s rowScanner) (StoreItemDTO, error) {
+func (h *Handlers) scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 	var (
 		item       StoreItemDTO
 		eventName  sql.NullString
@@ -324,16 +327,23 @@ func scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 		priceCents sql.NullInt64
 		hasCover   bool
 		hasIcon    bool
+		lookFont   string
+		lookTheme  string
+		ownCover   bool
 	)
 	if err := s.Scan(
 		&item.EventID, &eventName, &item.AdventureSlug, &item.AdventureTitle,
 		&item.OrgName, &blurb, &priceCents, &item.Currency, &item.TeamSize,
 		&startLabel, &startLat, &startLng, &hasCover, &hasIcon,
+		&lookFont, &lookTheme, &ownCover,
 	); err != nil {
 		return StoreItemDTO{}, err
 	}
+	item.Look = h.Looks.pageLook(item.AdventureSlug, lookFont, lookTheme, ownCover)
 	if hasCover {
 		item.CoverImageURL = "/store-cover/event/" + strconv.FormatInt(item.EventID, 10)
+	} else if item.Look != nil {
+		item.CoverImageURL = item.Look.CoverURL
 	}
 	if hasIcon {
 		item.AdventureIconURL = "/adventure-assets/avatar/" + url.PathEscape(item.AdventureSlug)

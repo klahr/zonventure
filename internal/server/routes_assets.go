@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/klahr/zonventure/internal/emailtpl"
 )
 
 // registerStaticAssetRoutes wires every URL whose response is a
@@ -84,6 +86,15 @@ func registerStaticAssetRoutes(r chi.Router, env *routesEnv) {
 	// load it lazily; the canvas-based decode runs entirely
 	// client-side, no network beyond fetching this asset.
 	r.Get("/assets/jsqr.js", serveAsset("web/jsqr.js", "application/javascript; charset=utf-8"))
+	r.Get("/assets/illustrations/not-found.webp", serveAsset("web/assets/illustrations/not-found.webp", "image/webp"))
+	// Emails' pictures (internal/emailtpl/pictures.go): JPEG, which
+	// every mail client shows, at the instance's public URL.
+	for _, f := range emailtpl.HouseFiles() {
+		r.Get("/assets/email/"+f, serveAsset("web/assets/email/"+f, "image/jpeg"))
+	}
+	for _, id := range emailtpl.CoverThemes {
+		r.Get("/assets/email/covers/"+id+".jpg", serveAsset("web/assets/email/covers/"+id+".jpg", "image/jpeg"))
+	}
 
 	// Crawler hygiene: robots.txt and a small sitemap of public URLs.
 	// {{HOST}} in the sitemap is rewritten with the operator-configured
@@ -133,6 +144,9 @@ func registerAdventureAssetRoutes(r chi.Router, env *routesEnv) {
 	// Adventure cover pictures — same public-read rationale: the slug is
 	// already in the URL, no extra sensitive metadata is leaked.
 	r.Get("/adventure-assets/avatar/{slug}", adminH.ServeAdventureAvatar)
+	// The adventure's own cover picture (its look's), for the pages that
+	// wear the look outside the player: store, recap, live board.
+	r.Get("/adventure-assets/cover/{slug}", adminH.ServeAdventureCover)
 	// Org brand logo — public-read for the same reasons; companies put
 	// their logo on their website, it's not sensitive material. Path
 	// is short ("/org-logo/{id}") so the bytes embed cleanly into the

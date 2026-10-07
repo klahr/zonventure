@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { play } from "@zonventure/api";
 import { I18n } from "@zonventure/i18n";
 import { PlayView, type Feedback } from "@zonventure/play-ui";
@@ -6,6 +6,7 @@ import "@zonventure/play-ui/play-ui.css";
 import playSv from "../../../play/src/locales/sv.json";
 import { useT } from "../i18n.tsx";
 import { DEMO_ANSWER_EVENT } from "./blocks/Animation.tsx";
+import "./phone.css";
 import { DEVICES } from "./Simulator.tsx";
 
 const PHONE_CATALOGS = { en: {}, sv: playSv as Record<string, string> };
@@ -54,14 +55,22 @@ export function SamplePreview({ brand }: { brand: play.Brand }) {
     }),
     [t],
   );
+  return (
+    <PhoneFrame>
+      <PlayView view={view} onAction={nowhere} feedback={feedback} live={false} t={tr} brand={brand} preview instant storageKey="theme-sample" />
+    </PhoneFrame>
+  );
+}
+
+/** The designer's phone frame at preview size, for a screen without the simulator. */
+export function PhoneFrame({ children }: { children: ReactNode }) {
+  const t = useT();
   const w = DEVICE.w + 2 * BEZEL;
   const h = DEVICE.h + 2 * BEZEL;
   return (
     <div className="phone-fit" style={{ width: w * SCALE, height: h * SCALE }}>
       <div className="phone" aria-label={t.t("What the team sees")} style={{ width: w, height: h, transform: `scale(${SCALE})` }}>
-        <div className="phone__screen">
-          <PlayView view={view} onAction={nowhere} feedback={feedback} live={false} t={tr} brand={brand} preview instant storageKey="theme-sample" />
-        </div>
+        <div className="phone__screen">{children}</div>
       </div>
     </div>
   );

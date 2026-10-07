@@ -41,3 +41,14 @@ func TestPrintCover(t *testing.T) {
 		t.Error("garbage printed")
 	}
 }
+
+// TestHeaderOn: a header's text is black on light look colours and
+// white on dark ones, as the creator's readableOn picks it.
+func TestHeaderOn(t *testing.T) {
+	black, white := rgb{0, 0, 0}, rgb{255, 255, 255}
+	for hex, want := range map[string]rgb{"#ffd319": black, "#4fc3f7": black, "#ff4fa3": black, "#db2777": white, "#6d28d9": white, "#173f6e": white} {
+		if got := hexRGB(hex, rgb{}).on(); got != want {
+			t.Errorf("%s: on = %v, want %v", hex, got, want)
+		}
+	}
+}

@@ -16,7 +16,8 @@
     {{TITLE}} {{SUBTITLE}} {{ORG_NAME}} {{BLURB}}
     {{PRICE_DISPLAY}} {{PRICE_MAJOR}} {{CURRENCY}}
     {{TEAM_SIZE}} {{TEAM_LABEL}} {{START_LABEL}}
-    {{COVER_URL}} {{HAS_COVER}}
+    {{COVER_URL}} {{HAS_COVER}} (the event's cover, else its look's)
+    {{LOOK_FONT}} (the look's title typeface: a stylesheet and a rule)
     {{EVENT_ID}} {{ADVENTURE_SLUG}} {{CANONICAL_URL}}
   Plus every topbar substitution (LANG_CODE, NAV_*, FOOTER_*, …).
 -->
@@ -53,6 +54,7 @@
 <script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
 
 {{ORG_BRAND_OVERRIDES}}
+{{LOOK_FONT}}
 
 <style>
   /* Design tokens, .btn, .skip-link, focus outlines, prefers-reduced-motion
@@ -90,7 +92,7 @@
   .adv-icon[data-has="false"] { display: none; }
   .org { color: var(--muted); font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; }
   h1 {
-    font-family: 'Aclonica', Georgia, serif;
+    font-family: var(--font-brand);
     font-size: clamp(2rem, 5vw, 3rem);
     margin: .5rem 0 .35rem;
     line-height: 1.1;
@@ -125,7 +127,7 @@
   .buy-card {
     background: var(--surface);
     border: 1px solid var(--border-soft);
-    border-radius: 18px;
+    border-radius: var(--radius);
     padding: 1.75rem;
     box-shadow: var(--shadow);
   }
@@ -136,19 +138,19 @@
   .buy-card input[type=email] {
     padding: .75rem .9rem;
     border: 1px solid var(--border-soft);
-    border-radius: 10px;
+    border-radius: var(--radius-sm);
     background: var(--bg);
     color: var(--ink);
     font: inherit;
   }
-  .buy-card .err { color: #c0392b; font-size: .9rem; min-height: 1.2em; }
+  .buy-card .err { color: var(--danger); font-size: .9rem; min-height: 1.2em; }
   .buy-card .terms-note, .buy-card .seller { color: var(--muted); font-size: .8rem; margin: .5rem 0 0; }
 
   .toast {
     background: var(--surface);
     border: 1px solid var(--border-soft);
     border-left: 4px solid var(--accent);
-    border-radius: 8px;
+    border-radius: var(--radius-xs);
     padding: 1rem 1.25rem;
     margin: 0 0 1.5rem;
     color: var(--ink);
@@ -156,16 +158,6 @@
   }
   .toast.cancelled { border-left-color: var(--muted); color: var(--ink-soft); }
 
-  footer {
-    padding: 1.75rem 0 2.5rem;
-    color: var(--muted);
-    font-size: .88rem;
-    text-align: center;
-    border-top: 1px solid var(--border-soft);
-  }
-  footer a { color: inherit; margin: 0 .5rem; }
-  footer a:hover { color: var(--accent); }
-  footer .copy, footer .seller { margin-top: .5rem; font-size: .8rem; }
 </style>
 </head>
 <body>

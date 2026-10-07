@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/activity"
+	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graphstore"
@@ -110,6 +111,8 @@ type joinInfoDTO struct {
 	// CoverURL is the adventure's own cover picture, in place of the
 	// theme's, served by the player link (JoinCover).
 	CoverURL string `json:"cover_url,omitempty"`
+	// Look is the adventure's look, so the page matches the game: see partyLook.
+	Look *adventure.Colors `json:"look,omitempty"`
 }
 
 // GetJoin is the join page's view of a hosted event.
@@ -136,6 +139,12 @@ func (h *Handlers) GetJoin(w http.ResponseWriter, r *http.Request) {
 	} else if cover > 0 {
 		out.CoverURL = "/api/join/" + chi.URLParam(r, "token") + "/cover?v=" + strconv.FormatInt(cover, 10)
 	}
+	look, _, err := h.partyLook(ctx, p.AdvSlug)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "game lookup failed", err)
+		return
+	}
+	out.Look = look
 	status, err := h.joinStatus(ctx, h.DB, p)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "game lookup failed", err)
@@ -401,6 +410,7 @@ func (h *Handlers) sendRoundSummary(ctx context.Context, eventID int64, round in
 		// The host link's secret is only ever in the host's mail, so the
 		// summary links to the host page's resend form instead.
 		subject, c := emailtpl.RoundSummary(l.Lang, publicURL+"/app/party/host/", party, l.Brand.Name, round, teams, cards)
+		c.Picture = l.Cover
 		msg := l.message([]string{to}, subject, c)
 		if h.MailOutbox != nil {
 			err = h.MailOutbox.Enqueue(ctx, "round_summary", msg)
@@ -555,6 +565,7 @@ func (h *Handlers) SendHostedPlayerLink(w http.ResponseWriter, r *http.Request) 
 	_ = h.DB.QueryRowContext(ctx, `SELECT party_name FROM events WHERE id = $1`, p.EventID).Scan(&party)
 	l := h.eventLook(ctx, p.EventID)
 	subject, c := emailtpl.HostedPlayerLink(l.Lang, strings.TrimRight(h.PublicURL, "/")+"/j/"+p.PlayerToken, party, l.Brand.Name)
+	c.Picture = l.Cover
 	msg := l.message([]string{email}, subject, c)
 	var err error
 	if h.MailOutbox != nil {

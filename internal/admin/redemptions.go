@@ -1131,6 +1131,7 @@ func (h *Handlers) sendRedemptionApproved(ctx context.Context, eventID int64, em
 	}
 	l := h.eventLook(ctx, eventID)
 	subject, c := emailtpl.BoxConfirmed(l.Lang, partnerNames[kind], publicURL+"/team/"+teamToken, publicURL+"/play", auth.FormatVoucherCode(voucher), l.Brand.Name)
+	c.Picture = l.Cover
 	msg := l.message([]string{email}, subject, c)
 	if h.MailOutbox != nil {
 		return h.MailOutbox.Enqueue(ctx, "redemption_team_link", msg)
@@ -1165,6 +1166,8 @@ func (h *Handlers) notifyNewRedemption(ctx context.Context, id, orgID int64) {
 	}
 	link := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/") + "/arrange#redemptions"
 	h.sendRedemptionMail(ctx, "redemption_new", to, func(lang string) (string, emailtpl.Content) {
-		return emailtpl.BoxWaiting(lang, link)
+		subject, c := emailtpl.BoxWaiting(lang, link)
+		c.Picture = h.house(lang, emailtpl.PictureGiftBox)
+		return subject, c
 	}, id, orgID)
 }

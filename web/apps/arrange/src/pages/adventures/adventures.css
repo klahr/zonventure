@@ -4,6 +4,8 @@
 .dz .adv-cover { display: inline-grid; place-items: center; flex: none; overflow: hidden; color: #fff; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid rgb(0 0 0 / 0.08); box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
 .dz .adv-cover--img { background: transparent; border: 0; box-shadow: none; }
 .dz .adv-cover--img img { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* A look's cover photo fills the tile, cropped; an icon is shown whole. */
+.dz .adv-cover--photo img { object-fit: cover; }
 
 .dz .adv-lang { text-transform: uppercase; letter-spacing: 0.05em; }
 .dz .adv-mono { font-family: var(--dz-font-mono, ui-monospace, monospace); font-size: var(--dz-text-sm); }

@@ -3,6 +3,7 @@ import { ApiError } from "@zonventure/api";
 import { coverOf } from "@zonventure/play-ui";
 import { getJoin, join, type JoinInfo } from "./api.ts";
 import { useT } from "./i18n.tsx";
+import { useLook } from "./look.ts";
 
 /**
  * The join page a hosted event's player link opens: the team names
@@ -16,6 +17,8 @@ export function Join({ token }: { token: string }) {
   const [players, setPlayers] = useState(2);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useLook(info?.look);
 
   useEffect(() => {
     getJoin(token).then(setInfo, (e) => {

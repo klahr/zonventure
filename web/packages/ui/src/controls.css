@@ -1,0 +1,106 @@
+/* Buttons, fields and button rows shared by the party app, the hosted
+   views and the trail creator, on the shared tokens (tokens.css).
+   The older per-package names (.party-*, .hosted-*, .trail-btn) are
+   aliases here, so every surface draws the same pill.
+
+   A primary button wears the look: --btn-brand (a gradient, from the
+   accent by default) with --pv-on-accent text, which brandVars sets to
+   black or white for the look's accent. */
+
+/* ---------- Buttons ---------- */
+.zv-btn,
+.party-btn,
+.hosted-btn,
+.trail-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+}
+:is(.zv-btn, .party-btn, .hosted-btn, .trail-btn):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-soft));
+  background: var(--surface);
+  text-decoration: none;
+}
+:is(.zv-btn, .party-btn, .hosted-btn, .trail-btn):disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+:is(.zv-btn--primary, .party-btn--primary, .hosted-btn--primary, .trail-btn--primary),
+:is(.zv-btn--primary, .party-btn--primary, .hosted-btn--primary, .trail-btn--primary):hover:not(:disabled) {
+  border-color: transparent;
+  background: var(
+    --btn-brand,
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 78%, #ff7aa8), var(--accent) 55%, color-mix(in srgb, var(--accent) 70%, #3b0a22))
+  );
+  color: var(--pv-on-accent, #fff);
+  box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+:is(.zv-btn--primary, .party-btn--primary, .hosted-btn--primary, .trail-btn--primary):hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px -10px color-mix(in srgb, var(--accent) 85%, transparent);
+}
+.zv-btn--danger,
+.party-btn--danger,
+.trail-btn--danger {
+  color: var(--danger);
+}
+.zv-btn--quiet,
+.hosted-btn--quiet,
+.trail-btn--quiet {
+  border-color: transparent;
+  background: transparent;
+  font-size: var(--text-lg);
+}
+.zv-btn--wide,
+.party-btn--wide {
+  width: 100%;
+}
+
+/* ---------- Fields ---------- */
+.zv-field,
+.party-field,
+.hosted-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  flex: 1;
+  min-width: 0;
+}
+:is(.zv-field, .party-field, .hosted-field) > span {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+:is(.zv-field, .party-field, .hosted-field) :is(input, textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+/* ---------- A row of fields and buttons ---------- */
+.zv-inline,
+.party-inline,
+.hosted-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: flex-end;
+  margin: var(--sp-3) 0;
+}

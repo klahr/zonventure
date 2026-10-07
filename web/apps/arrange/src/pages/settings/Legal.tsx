@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { csrfToken, get, put } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
-import { Button, Callout, Card, ErrorBox, Field, Loading, Row, errorText, useLoad } from "../../ui/index.ts";
+import { Button, Callout, Card, ErrorBox, Field, Loading, Row, errorText, useLoad, useToast } from "../../ui/index.ts";
 
 /** settings.Legal, internal/settings/legal.go. */
 interface Legal {
@@ -34,8 +34,8 @@ export function LegalTab() {
   const t = useT();
   const load = useLoad((signal) => get<Legal>("/api/admin/legal", { signal }), []);
   const [draft, setDraft] = useState<Legal | null>(null);
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   useEffect(() => {
     if (load.data) setDraft(load.data);
   }, [load.data]);
@@ -57,17 +57,16 @@ export function LegalTab() {
   );
   const days = (k: DaysKey, label: string) => (
     <Field label={label}>
-      <input type="number" min={0} max={3650} value={draft[k]} onChange={(e) => setDraft({ ...draft, [k]: Math.max(0, Math.trunc(Number(e.target.value) || 0)) })} style={{ maxWidth: "7rem" }} />
+      <input type="number" min={0} max={3650} value={draft[k]} className="st-num" onChange={(e) => setDraft({ ...draft, [k]: Math.max(0, Math.trunc(Number(e.target.value) || 0)) })} />
     </Field>
   );
   const save = async () => {
     setBusy(true);
-    setStatus(null);
     try {
       load.set(await put<Legal>("/api/admin/legal", draft));
-      setStatus({ ok: true, text: t.t("Saved.") });
+      toast.ok(t.t("Saved"));
     } catch (e) {
-      setStatus({ ok: false, text: errorText(e) });
+      toast.err(e);
     } finally {
       setBusy(false);
     }
@@ -79,7 +78,7 @@ export function LegalTab() {
         {missing.length > 0 ? (
           <Callout variant="warning">{t.t("Privacy and terms are not published yet. Fill in: {{missing}}.", { missing: missing.join(", ") })}</Callout>
         ) : (
-          <p className="cs-field__hint" style={{ margin: 0 }}>
+          <p className="cs-field__hint st-flush">
             <a href="/privacy" target="_blank" rel="noopener">{t.t("Privacy policy ↗")}</a> · <a href="/terms" target="_blank" rel="noopener">{t.t("Terms ↗")}</a>
           </p>
         )}
@@ -112,19 +111,18 @@ export function LegalTab() {
           </Row>
         </Card>
         <Card title={t.t("Review")}>
-          <label className="cs-row cs-row--sm" style={{ alignItems: "center" }}>
+          <label className="cs-row cs-row--sm">
             <input type="checkbox" checked={draft.reviewed} onChange={(e) => setDraft({ ...draft, reviewed: e.target.checked })} />
             <span>{t.t("Reviewed by a lawyer: remove the draft notes from both pages")}</span>
           </label>
           <Field label={t.t("Last updated")} hint={t.t("Moves to today when a save changes what the pages say.")}>
-            <input type="date" value={draft.last_updated} onChange={(e) => setDraft({ ...draft, last_updated: e.target.value })} style={{ maxWidth: "11rem" }} />
+            <input type="date" value={draft.last_updated} className="st-date" onChange={(e) => setDraft({ ...draft, last_updated: e.target.value })} />
           </Field>
         </Card>
         <Row>
           <Button variant="primary" loading={busy} disabled={!changed} onClick={() => void save()}>
             {t.t("Save")}
           </Button>
-          {status && !changed && <span className="cs-field__hint" style={{ color: status.ok ? undefined : "var(--dz-danger)" }}>{status.text}</span>}
         </Row>
       </div>
       <LegalPreview legal={draft} />

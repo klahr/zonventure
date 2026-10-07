@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Copy, Trash2 } from "lucide-react";
 import { adventures, type play } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
-import { ErrorBox, Loading, errorText } from "../../ui/index.ts";
-import { ConfirmModal, ICON } from "../../designer/dz/ui.tsx";
+import { Button, Card, ErrorBox, ICON, Loading, errorText, useDialogs, useToast } from "../../ui/index.ts";
 import { SamplePreview } from "../../designer/SamplePreview.tsx";
 import { StarterGallery } from "../../designer/StarterGallery.tsx";
 import { ThemeEditor, ThemeStrip } from "../../designer/ThemeEditor.tsx";
@@ -26,12 +25,13 @@ function freeName(themes: adventures.OrgTheme[], name: string): string {
  */
 export function ThemesTab() {
   const t = useT();
+  const toast = useToast();
+  const dialogs = useDialogs();
   const [themes, setThemes] = useState<adventures.OrgTheme[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [current, setCurrent] = useState<number | null>(null);
   const [choosing, setChoosing] = useState(false);
-  const [deleting, setDeleting] = useState<adventures.OrgTheme | null>(null);
-  const [status, setStatus] = useState<{ id: number; text: string; bad?: boolean } | null>(null);
+  const [status, setStatus] = useState<{ id: number; text: string } | null>(null);
   const latest = useRef(themes);
   latest.current = themes;
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
@@ -64,7 +64,8 @@ export function ThemesTab() {
       await adventures.updateOrgTheme(id, th.name.trim(), th.look);
       setStatus({ id, text: t.t("Saved") });
     } catch (e) {
-      setStatus({ id, text: errorText(e), bad: true });
+      setStatus(null);
+      toast.err(e);
     }
   };
   const edit = (id: number, patch: Partial<adventures.OrgTheme>) => {
@@ -81,10 +82,17 @@ export function ThemesTab() {
       setChoosing(false);
       setStatus(null);
     } catch (e) {
-      setStatus({ id: -1, text: errorText(e), bad: true });
+      toast.err(e);
     }
   };
   const remove = async (th: adventures.OrgTheme) => {
+    const go = await dialogs.confirm({
+      title: t.t("Remove “{{name}}” from the organisation's themes?", { name: th.name }),
+      message: t.t("Adventures that use it keep their copy."),
+      confirmLabel: t.t("Remove"),
+      danger: true,
+    });
+    if (!go) return;
     try {
       clearTimeout(timers.current.get(th.id));
       await adventures.deleteOrgTheme(th.id);
@@ -92,16 +100,16 @@ export function ThemesTab() {
       setThemes(next);
       setCurrent(next[0]?.id ?? null);
     } catch (e) {
-      setStatus({ id: th.id, text: errorText(e), bad: true });
+      toast.err(e);
     }
   };
 
   return (
-    <div className="dz st-themes">
-      <p className="field__hint">
-        {t.t("Your organisation's adventures can start a theme from these. Each adventure keeps its own copy, so a change here reaches new copies, not adventures already using the theme.")}
-      </p>
-      <div className="themes">
+    <Card
+      title={t.t("Theme library")}
+      subtitle={t.t("Your organisation's adventures can start a theme from these. Each adventure keeps its own copy, so a change here reaches new copies, not adventures already using the theme.")}
+    >
+      <div className="themes st-themes">
         <ThemeStrip
           themes={themes.map((th) => ({ key: String(th.id), name: th.name, look: th.look }))}
           current={current === null ? null : String(current)}
@@ -112,7 +120,6 @@ export function ThemesTab() {
           }}
           onAdd={() => setChoosing(true)}
         />
-        {status?.id === -1 && <ErrorBox message={status.text} />}
         {choosing || !theme ? (
           <StarterGallery
             onPick={(name, look) => void create(name || t.t("Theme {{n}}", { n: themes.length + 1 }), look)}
@@ -128,18 +135,16 @@ export function ThemesTab() {
             media={false}
             actions={
               <>
-                <button type="button" className="btn btn--ghost btn--sm" onClick={() => void create(t.t("{{name}} (copy)", { name: theme.name }), theme.look)}>
-                  <Copy size={ICON.sm} aria-hidden />
+                <Button variant="ghost" size="sm" icon={<Copy size={ICON.sm} aria-hidden />} onClick={() => void create(t.t("{{name}} (copy)", { name: theme.name }), theme.look)}>
                   {t.t("Duplicate")}
-                </button>
-                <button type="button" className="btn btn--ghost btn--sm" onClick={() => setDeleting(theme)}>
-                  <Trash2 size={ICON.sm} aria-hidden />
+                </Button>
+                <Button variant="ghost" size="sm" icon={<Trash2 size={ICON.sm} aria-hidden />} onClick={() => void remove(theme)}>
                   {t.t("Delete")}
-                </button>
+                </Button>
               </>
             }
             note={
-              <p className={"field__hint theme-ed__note" + (status?.id === theme.id && status.bad ? " zone-here__warn" : "")} role="status">
+              <p className="cs-field__hint theme-ed__note" role="status">
                 {!theme.name.trim() ? t.t("A theme needs a name.") : status?.id === theme.id ? status.text : t.t("Changes save by themselves.")}
               </p>
             }
@@ -147,20 +152,6 @@ export function ThemesTab() {
           />
         )}
       </div>
-      {deleting && (
-        <ConfirmModal
-          title={t.t("Remove “{{name}}” from the organisation's themes?", { name: deleting.name })}
-          message={t.t("Adventures that use it keep their copy.")}
-          confirmLabel={t.t("Remove")}
-          danger
-          onConfirm={() => {
-            const gone = deleting;
-            setDeleting(null);
-            void remove(gone);
-          }}
-          onCancel={() => setDeleting(null)}
-        />
-      )}
-    </div>
+    </Card>
   );
 }

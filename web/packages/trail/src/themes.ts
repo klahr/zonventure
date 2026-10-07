@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import type { play } from "@zonventure/api";
-import { FONTS, STARTER_THEMES, backdropVars, loadFont, shade } from "@zonventure/play-ui";
+import { FONTS, STARTER_THEMES, backdropVars, loadFont, readableOn, shade } from "@zonventure/play-ui";
 
 /**
  * The looks a party adventure picks from: the starter themes that suit a
@@ -48,7 +48,9 @@ export function themeStyle(look: play.Brand | undefined): CSSProperties {
     out["--accent"] = a;
     out["--trail-brand"] = `linear-gradient(135deg, ${shade(a, 0.18)}, ${a} 50%, ${b})`;
     out["--trail-info"] = `linear-gradient(135deg, ${shade(b, 0.12)}, ${b} 55%, ${shade(b, -0.32)})`;
-    out["--trail-info-solid"] = b;
+    out["--trail-info-solid"] = readableOn(b) === "#ffffff" ? b : shade(b, -0.55);
+    out["--trail-on-brand"] = readableOn(a);
+    out["--trail-on-info"] = readableOn(b);
   }
   if (look.background) out["--trail-bg"] = look.background;
   if (look.text) out["--trail-ink"] = look.text;

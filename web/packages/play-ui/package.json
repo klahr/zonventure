@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./play-ui.css": "./src/play-ui.css",
+    "./cover.css": "./src/cover.css",
     "./adventure-fonts.css": "./src/fonts/adventure-fonts.css"
   },
   "scripts": {

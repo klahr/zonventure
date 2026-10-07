@@ -11,6 +11,7 @@ import {
   fmtMoney,
   useLoad,
 } from "../../ui/index.ts";
+import "./events.css";
 
 /** internal/admin/hosted_pricing.go hostedPriceDTO */
 interface HostedPrice {

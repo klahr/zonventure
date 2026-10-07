@@ -1,5 +1,6 @@
 /* Designer styles. Colours come from tokens only; per-type accents are
  * derived from the brand palette with color-mix so they follow dark mode. */
+@import "./phone.css";
 
 /* One hue per step type, shared by the canvas card, its icon, the list
  * view and the quick palette. Fixed values rather than theme tokens: the
@@ -41,19 +42,6 @@
 }
 .link-btn:disabled { color: var(--muted); cursor: not-allowed; }
 
-.seg { display: inline-flex; border: 1px solid var(--border-soft); border-radius: var(--radius-pill); overflow: hidden; }
-.seg button {
-  background: var(--surface);
-  border: 0;
-  padding: var(--sp-1) var(--sp-4);
-  font: 600 var(--text-xs) / 1.6 var(--font-body);
-  color: var(--ink-soft);
-  cursor: pointer;
-}
-.seg button + button { border-left: 1px solid var(--border-soft); }
-.seg button:hover:not(:disabled, .is-on) { background: var(--surface-2); color: var(--ink); }
-.seg button.is-on { background: var(--accent); color: #fff; }
-.seg button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* --- canvas ---------------------------------------------------------- */
 
@@ -546,8 +534,6 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .sim__log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--text-xs); color: var(--muted); }
 .sim__log li.is-warn { color: var(--danger); font-weight: 600; }
 
-.phone-fit { flex: none; }
-
 /* The preview's floating window. */
 .float-win {
   position: fixed;
@@ -577,30 +563,6 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .float-win__title { flex: 1; font-weight: 700; font-size: var(--text-sm); }
 .float-win__body { overflow: auto; min-height: 0; }
 
-/* A phone-sized frame, so an author judges the screen at the size a team
- * reads it. The step inside is styled by @zonventure/play-ui alone. */
-.phone {
-  position: relative;
-  /* Makes the frame the containing block for the step's fixed overlays. */
-  transform: translateZ(0);
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-  transform-origin: top left;
-  border: 8px solid var(--ink-soft);
-  border-radius: 1.75rem;
-  overflow: hidden;
-  box-shadow: var(--shadow);
-}
-.phone__screen {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  background: #fbfbfd;
-}
-.phone__empty { margin: auto; padding: var(--sp-5); text-align: center; color: #4f6478; font-size: var(--text-sm); }
-
 .look__row { display: grid; grid-template-columns: auto 1fr 6.5rem auto; align-items: center; gap: var(--sp-2); }
 .look__swatch { width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid var(--border-soft); border-radius: var(--radius); background: none; cursor: pointer; }
 .look__text { display: flex; flex-direction: column; min-width: 0; }
@@ -608,11 +570,7 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .look__hex { font-family: var(--font-mono); font-size: var(--text-xs); padding: var(--sp-2); }
 .look__actions { display: flex; gap: var(--sp-2); }
 /* A preset picker: the options side by side, the chosen one filled. */
-.look__segments { display: flex; border: 1px solid var(--border-soft); border-radius: var(--radius); overflow: hidden; }
-.dz .look__segment { flex: 1; padding: var(--sp-1) var(--sp-2); border: 0; border-radius: 0; background: var(--surface); color: var(--ink-soft); font-size: var(--text-sm); cursor: pointer; }
-.dz .look__segment + .look__segment { border-left: 1px solid var(--border-soft); }
 .look__check { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--text-sm); cursor: pointer; }
-.dz .look__segment.is-on { background: var(--accent); color: #fff; font-weight: 700; }
 .look__contrast { margin: 0; }
 .look__contrast ul { margin: var(--sp-1) 0 0; padding-left: 1.2em; }
 .sim--bare { display: block; }

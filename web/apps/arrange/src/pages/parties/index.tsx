@@ -5,6 +5,8 @@ import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { href, navigate } from "../../router.ts";
 import { Button, Callout, Card, Dialog, Empty, ErrorBox, Field, HelpPopover, ICON, Loading, Page, PageHeader, Pill, Table, fmtMoney, useLoad, useToast, type Column } from "../../ui/index.ts";
+import { SPOTS } from "@zonventure/ui";
+import { iconOrCover } from "../adventures/parts.tsx";
 import { listAdventures, listEvents } from "../events/api.ts";
 import { AdventureCover, EventsTable } from "../events/parts.tsx";
 import "../events/events.css";
@@ -49,7 +51,7 @@ export function PartiesPage({ slug }: { slug?: string | undefined }) {
         ) : !hosted.data ? (
           <Loading label={t.t("Loading…")} />
         ) : (
-          <EventsTable rows={hosted.data} empty={t.t("No hosted events yet. They appear here when someone books one of your offers.")} />
+          <EventsTable rows={hosted.data} empty={<p className="evs-none">{t.t("No hosted events yet. They appear here when someone books one of your offers.")}</p>} />
         )}
       </Card>
       {admin && <Offers slug={slug} />}
@@ -73,7 +75,7 @@ function Offers({ slug }: { slug?: string | undefined }) {
       request<{ offers: PartyOffer[] }>("/api/admin/party-offers", { signal }).then((r) => r.offers),
       listAdventures(signal).catch(() => []),
     ]);
-    const covers = new Map(advs.map((a) => [a.slug, a.avatar_url]));
+    const covers = new Map(advs.map((a) => [a.slug, iconOrCover(a)]));
     return offers.map((o): Row => ({ ...o, cover: covers.get(o.adventure_slug) }));
   }, []);
   const [creating, setCreating] = useState(false);
@@ -139,11 +141,11 @@ function Offers({ slug }: { slug?: string | undefined }) {
   else if (!load.data) body = <Loading label={t.t("Loading…")} />;
   else if (offered.length === 0)
     body = available.length > 0 ? (
-      <Empty title={t.t("No party offers yet.")} action={newBtn}>
+      <Empty title={t.t("No party offers yet.")} action={newBtn} illustration={SPOTS.noPartyOffers}>
         {t.t("Pick an adventure, set a price, and share the booking page with parents.")}
       </Empty>
     ) : (
-      <Empty title={t.t("None of your adventures can be a party yet.")}>
+      <Empty title={t.t("None of your adventures can be a party yet.")} illustration={SPOTS.noPartyOffers}>
         {t.t("A party plays without asking where each player stands. See below what stops each adventure.")}
       </Empty>
     );

@@ -1,6 +1,6 @@
 .PHONY: help up down rebuild logs psql reset seed run \
         test test-race vet tidy build major minor patch _bump latest upgrade \
-        web web-dev web-clean theme-cover
+        web web-dev web-clean theme-cover illustration
 
 # `make` alone prints the menu so a new contributor sees what's
 # available without grepping the file.
@@ -52,6 +52,8 @@ help:
 	@echo "    make web-clean  Remove build output, keeping the committed stub"
 	@echo "    make theme-cover ID=pirate SRC=~/Downloads/pic.jpg"
 	@echo "                    A starter theme's cover picture, for web and print"
+	@echo "    make illustration ID=no-events SRC=~/Downloads/pic.jpg [WIDE=1] [EMAIL=1]"
+	@echo "                    A picture for the product's screens (ILLUSTRATIONS.md)"
 	@echo ""
 	@echo "  Build & release"
 	@echo "    make build      Production binary (trimpath, stripped, static)"
@@ -177,7 +179,25 @@ theme-cover:
 	magick "$(SRC)" -resize 800x -quality 78 web/packages/play-ui/src/covers/$(ID)-800.webp
 	magick "$(SRC)" -resize 1600x -quality 80 web/packages/play-ui/src/covers/$(ID)-1600.webp
 	magick "$(SRC)" -resize 1800x -strip -quality 80 internal/trail/covers/$(ID).jpg
-	@echo "Now add $(ID) to THEME_COVERS in web/packages/play-ui/src/covers.ts."
+	magick "$(SRC)" -gravity center -crop '%[fx:w]x%[fx:w/2]+0+0' +repage -resize 1200x600 -strip -quality 78 internal/server/web/assets/email/covers/$(ID).jpg
+	@echo "Now add $(ID) to THEME_COVERS in web/packages/play-ui/src/covers.ts and to CoverThemes in internal/emailtpl/pictures.go."
+
+# A spot is square, 480 px; WIDE=1 makes a banner or scene in two sizes,
+# 800 px and the source's own width up to 1600 px.
+illustration:
+	@test -n "$(ID)" -a -f "$(SRC)" || { echo "usage: make illustration ID=<id> SRC=<image> [WIDE=1]"; exit 1; }
+ifeq ($(WIDE),1)
+	magick "$(SRC)" -resize 800x -strip -quality 78 web/packages/ui/src/illustrations/$(ID)-800.webp
+	magick "$(SRC)" -resize '1600x>' -strip -quality 80 web/packages/ui/src/illustrations/$(ID)-wide.webp
+	@echo "Now add $(ID) to WIDE in web/packages/ui/src/illustrations.ts, with the wide file's width."
+else
+	magick "$(SRC)" -resize 480x480 -strip -quality 80 web/packages/ui/src/illustrations/$(ID).webp
+	@echo "Now add $(ID) to SPOTS in web/packages/ui/src/illustrations.ts."
+endif
+ifeq ($(EMAIL),1)
+	magick "$(SRC)" $(if $(filter 1,$(WIDE)),-gravity center -crop '%[fx:w]x%[fx:w/3]+0+0' +repage -resize '1200x400!',-resize 280x280) -strip -quality 80 internal/server/web/assets/email/$(ID).jpg
+	@echo "Now add $(ID) to housePictures in internal/emailtpl/pictures.go."
+endif
 
 # --- Release -----------------------------------------------------------------
 

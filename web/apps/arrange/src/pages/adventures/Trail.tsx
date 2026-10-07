@@ -5,6 +5,7 @@ import { useT } from "../../i18n.tsx";
 import { href, navigate } from "../../router.ts";
 import { useTopBarTitle } from "../../topbar.tsx";
 import { ErrorBox, Loading, Page, useLoad, useToast } from "../../ui/index.ts";
+import "@zonventure/trail/trail.css";
 import "./trail-page.css";
 
 const base = (slug: string) => `/api/admin/adventures/${encodeURIComponent(slug)}/cards`;

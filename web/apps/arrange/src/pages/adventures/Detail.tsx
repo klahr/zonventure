@@ -14,7 +14,7 @@ import { AdventureMap } from "./AdventureMap.tsx";
 import { EditDetailsDialog, PickPassDialog } from "./dialogs.tsx";
 import { extentKm, formatKm, pinsOf } from "./facts.ts";
 import type { Schedule } from "./List.tsx";
-import { Cover, LanguagePill, puzzleCount } from "./parts.tsx";
+import { Cover, LanguagePill, lookCover, puzzleCount } from "./parts.tsx";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
 
 const TestPlay = lazy(() => import("../../designer/TestPlay.tsx"));
@@ -236,10 +236,10 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
         <div className="adv-hero__row">
           {a.mine_to_edit ? (
             <button type="button" className="adv-hero__cover" onClick={() => setEditing(true)} title={t.t("Change the cover picture")} aria-label={t.t("Change the cover picture")}>
-              <Cover title={a.title} src={cover} size={96} accent={accent} />
+              <Cover title={a.title} src={cover} photo={lookCover(a.theme, a.cover)} size={96} accent={accent} />
             </button>
           ) : (
-            <Cover title={a.title} src={cover} size={96} accent={accent} />
+            <Cover title={a.title} src={cover} photo={lookCover(a.theme, a.cover)} size={96} accent={accent} />
           )}
           <div className="adv-hero__text">
             <h1 className="cs-title">{a.title}</h1>

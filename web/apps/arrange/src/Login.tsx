@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ApiError, auth, siteName, siteWordmark, type SignupConfig } from "@zonventure/api";
+import { SPOTS, WIDE, wideSrcSet } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 
 /**
@@ -48,6 +49,7 @@ function Card({ sub, children, onSubmit }: { sub?: string; children: ReactNode; 
   const t = useT();
   return (
     <main className="login">
+      <img className="login__art" src={WIDE.signIn.small} srcSet={wideSrcSet(WIDE.signIn)} sizes="(min-width: 56rem) 32rem, 24rem" alt="" width={800} height={576} />
       <form className="login__card" onSubmit={onSubmit}>
         <div className="login__brand">
           <a className="login__wordmark" href="/" aria-label={t.t("{{name}} home page", { name: siteName() })}>{siteWordmark()}</a>
@@ -259,9 +261,12 @@ function ForgotForm({ sentTo, onSent, onBack }: { sentTo?: string | undefined; o
       </label>
       <ErrorLine text={error} />
       {sentTo && (
-        <p className="alert alert--ok" role="status">
-          {t.t("If {{email}} matches an account, a reset link is on its way.", { email: sentTo })}
-        </p>
+        <>
+          <img className="login__spot" src={SPOTS.checkEmail} alt="" width={480} height={480} />
+          <p className="alert alert--ok" role="status">
+            {t.t("If {{email}} matches an account, a reset link is on its way.", { email: sentTo })}
+          </p>
+        </>
       )}
       <button className="btn btn--primary" type="submit" disabled={busy}>
         {t.t("Send reset link")}

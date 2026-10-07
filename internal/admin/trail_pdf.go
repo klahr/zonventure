@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image/jpeg"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 
@@ -21,7 +22,7 @@ import (
 // A quiz trail on paper: the cards to hide — two to an A4 sheet, each a
 // big number, the question and its options — and the host's answer key.
 // They wear the trail's look as the creator draws it — each card's header
-// in the look's gradient, white text and a white number badge — and
+// in the look's gradient, black or white text and a white number badge — and
 // nothing else in colour, to spare the printer.
 // From a hosted event, the cards come after a cover with the player
 // link's QR code. Printing the cards records the revision printed, so
@@ -189,6 +190,23 @@ func (c rgb) ink() rgb {
 	return c
 }
 
+// on is the text colour for a header in c: black on a light colour,
+// white on a dark one, at play-ui's readableOn crossover, so Retro 80s'
+// yellow information cards stay readable.
+func (c rgb) on() rgb {
+	lin := func(v int) float64 {
+		s := float64(v) / 255
+		if s <= 0.03928 {
+			return s / 12.92
+		}
+		return math.Pow((s+0.055)/1.055, 2.4)
+	}
+	if 0.2126*lin(c.r)+0.7152*lin(c.g)+0.0722*lin(c.b) > 0.179 {
+		return rgb{0, 0, 0}
+	}
+	return rgb{255, 255, 255}
+}
+
 // shade is play-ui's shade: toward white by amount, or toward black
 // when amount is negative.
 func (c rgb) shade(amount float64) rgb {
@@ -292,7 +310,7 @@ func writeTrailCardsPDF(w io.Writer, p trailPrint) error {
 			qy = 12 + bannerH + 14
 		} else {
 			band(pdf, 12, 12, pageW-24, 44, 8, brand)
-			pdf.SetTextColor(255, 255, 255)
+			accent.on().text(pdf)
 			pdf.SetFont("Helvetica", "B", 28)
 			pdf.SetXY(margin+4, 24)
 			pdf.MultiCell(pageW-2*margin-8, 12, text(p.Title), "", "C", false)
@@ -343,7 +361,8 @@ func writeTrailCardsPDF(w io.Writer, p trailPrint) error {
 		}
 		fx, fy, fw, fh := inset, top+inset, pageW-2*inset, half-2*inset
 		// The card: the header in the look's gradient, on it a white
-		// badge with the number in the look's colour; the rest plain.
+		// badge with the number in the look's colour and the label in
+		// black or white, whichever reads; the rest plain.
 		band(pdf, fx, fy, fw, bandH, 7, head)
 		pdf.SetLineWidth(0.4)
 		pdfLine.draw(pdf)
@@ -359,7 +378,7 @@ func writeTrailCardsPDF(w io.Writer, p trailPrint) error {
 		pdf.SetFont("Helvetica", "B", 20)
 		pdf.SetXY(cx-9, cy-5)
 		pdf.CellFormat(18, 10, badge, "", 0, "C", false, 0, "")
-		pdf.SetTextColor(255, 255, 255)
+		col.on().text(pdf)
 		pdf.SetFont("Helvetica", "B", 26)
 		pdf.SetXY(cx+14, cy-6)
 		pdf.CellFormat(0, 12, text(label), "", 0, "L", false, 0, "")

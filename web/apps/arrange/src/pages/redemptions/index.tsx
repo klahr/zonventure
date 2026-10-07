@@ -6,6 +6,7 @@ import { href, navigate } from "../../router.ts";
 import {
   Button, Empty, ErrorBox, HelpPopover, ICON, Loading, Page, PageHeader, Pill, Tabs, fmtDateTime, relTime, useDialogs, useLoad, useToast, type Tone,
 } from "../../ui/index.ts";
+import { SPOTS } from "@zonventure/ui";
 import { decide, listPartners, listRedemptions, updateRedemption, type Redemption } from "./api.ts";
 import { AddRedemptionDialog, PostDialog } from "./dialogs.tsx";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
@@ -66,7 +67,7 @@ export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
       ) : !list.data ? (
         <Loading label={t.t("Loading…")} />
       ) : rows.length === 0 ? (
-        <Empty title={total === 0 ? t.t("No redemptions yet.") : st === "pending" ? t.t("No redemptions waiting for review.") : t.t("No redemptions here.")} />
+        <Empty title={total === 0 ? t.t("No redemptions yet.") : st === "pending" ? t.t("No redemptions waiting for review.") : t.t("No redemptions here.")} {...(total === 0 ? { illustration: SPOTS.noRedemptions } : {})} />
       ) : (
         <ul className="rd-list">
           {rows.map((rd) => <RedemptionItem key={rd.id} rd={rd} showState={st === "all"} reload={list.reload} />)}

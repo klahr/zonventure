@@ -21,6 +21,8 @@ var fontFS embed.FS
 // /assets/fonts/ from fontFS, so no page needs Google Fonts.
 func registerFontRoutes(r chi.Router) {
 	r.Get("/assets/fontface.css", serveFontFile("fontface.css", "text/css; charset=utf-8"))
+	// An adventure look's typeface, for the pages that wear the look.
+	r.Get("/assets/look-font/{file}", serveLookFont)
 	entries, err := fontFS.ReadDir("web/assets/fonts")
 	if err != nil {
 		panic("embed: " + err.Error())

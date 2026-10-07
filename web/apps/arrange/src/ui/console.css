@@ -70,6 +70,12 @@
 .dz .cs-empty__title { margin: 0; font-weight: 700; color: var(--dz-ink); }
 .dz .cs-empty__text { margin: 0; max-width: 32rem; color: var(--dz-muted); font-size: var(--dz-text-md); }
 .dz .cs-empty__action { margin-top: var(--dz-space-2); }
+/* An empty list's picture (SPOTS): its own blush background, framed like a tile. Smaller in a dialog and on a phone. */
+.dz .cs-empty__art { width: 9rem; height: 9rem; margin-bottom: var(--dz-space-2); border-radius: var(--dz-r-3); object-fit: cover; }
+.dz .cs-dialog .cs-empty__art { width: 6rem; height: 6rem; }
+@media (max-width: 40rem) {
+  .dz .cs-empty__art { width: 7rem; height: 7rem; }
+}
 
 .dz .cs-field { display: flex; flex-direction: column; gap: var(--dz-space-1); min-width: 0; }
 .dz .cs-field--inline { flex-direction: row; align-items: center; gap: var(--dz-space-2); }
@@ -104,6 +110,9 @@
 
 .dz .cs-dialog { max-width: 32rem; width: calc(100vw - 2rem); }
 .dz .cs-dialog--wide { max-width: 44rem; }
+/* A banner across a dialog's top (WIDE pictures), cropped to 3:1; the dialog's rounded corners clip it. */
+.dz .cs-dialog__banner { flex: none; aspect-ratio: 3 / 1; overflow: hidden; background: #fbeef3; }
+.dz .cs-dialog__banner img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
 .dz .cs-dialog--huge { max-width: 72rem; }
 .dz .cs-dialog--huge .modal-body { max-height: min(80vh, 52rem); }
 .dz .cs-dialog .modal-body { display: flex; flex-direction: column; gap: var(--dz-space-3); max-height: 70vh; overflow-y: auto; }
@@ -164,3 +173,23 @@
 .dz .ev-menu__item:hover, .dz .ev-menu__item:focus-visible { background: var(--dz-surface-3); }
 .dz .ev-menu__item.is-danger { color: var(--dz-danger); }
 .dz .ev-menu__sep { height: 1px; margin: 4px 6px; background: var(--dz-border); }
+
+/* A segmented control: every option in view, one picked. The designer's
+ * toggles, the theme editor's presets (seg--fill spreads them across the
+ * row) and a new adventure's audience. */
+.seg { display: inline-flex; border: 1px solid var(--dz-border); border-radius: var(--dz-r-pill); overflow: hidden; }
+.seg--fill { display: flex; }
+.seg button {
+  background: var(--dz-surface);
+  border: 0;
+  border-radius: 0;
+  padding: var(--dz-space-1) var(--dz-space-4);
+  font: 600 var(--dz-text-xs) / 1.6 var(--dz-font-sans);
+  color: var(--dz-ink-soft);
+  cursor: pointer;
+}
+.seg--fill button { flex: 1; padding: var(--dz-space-1) var(--dz-space-2); font-size: var(--dz-text-sm); }
+.seg button + button { border-left: 1px solid var(--dz-border); }
+.seg button:hover:not(:disabled, .is-on) { background: var(--dz-surface-2); color: var(--dz-ink); }
+.seg button.is-on { background: var(--dz-accent); color: var(--dz-accent-ink); }
+.seg button:disabled { opacity: 0.4; cursor: not-allowed; }

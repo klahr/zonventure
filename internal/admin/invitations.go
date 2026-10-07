@@ -266,6 +266,7 @@ func sendOneInvitation(
 		players[i] = emailtpl.PlayerLink{Team: teamName, Player: s.Player, URL: publicURL + "/play?t=" + s.Token}
 	}
 	subject, c := emailtpl.TeamInvitation(l.Lang, teamName, l.Event, l.Brand.Name, players, len(atts) > 0)
+	c.Picture = l.Cover
 	msg := l.message([]string{teamEmail}, subject, c)
 	msg.Attachments = atts
 	return m.Send(ctx, msg)

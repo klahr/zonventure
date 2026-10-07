@@ -1,5 +1,7 @@
 /* The hosted views, shared by the host page and the console, on the
-   shared tokens (@zonventure/ui/tokens.css), which both apps load. */
+   shared tokens (@zonventure/ui/tokens.css), which both apps load, and
+   the shared buttons and fields. */
+@import "@zonventure/ui/controls.css";
 
 .hosted-muted {
   color: var(--muted);
@@ -36,19 +38,6 @@
   flex-direction: column;
   gap: var(--sp-4);
 }
-.hosted-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  flex: 1;
-  min-width: 0;
-}
-.hosted-field > span {
-  font-weight: 600;
-  font-size: var(--text-sm);
-}
-.hosted-field input,
-.hosted-field textarea,
 .hosted-quiz input:not([type="radio"]) {
   box-sizing: border-box;
   min-height: 2.75rem;
@@ -60,52 +49,7 @@
   font: inherit;
   width: 100%;
 }
-.hosted-field input:focus-visible,
-.hosted-field textarea:focus-visible,
-.hosted-quiz input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-.hosted-inline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-  align-items: flex-end;
-  margin: var(--sp-3) 0;
-}
 
-/* Buttons */
-.hosted-btn {
-  min-height: 2.75rem;
-  padding: 0 var(--sp-4);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-  color: var(--ink);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-.hosted-btn--link {
-  display: inline-flex;
-  align-items: center;
-  text-decoration: none;
-}
-.hosted-btn:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-.hosted-btn--primary,
-.hosted-btn--primary:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
-}
-.hosted-btn--quiet {
-  border-color: transparent;
-  background: transparent;
-  font-size: var(--text-lg);
-}
 .hosted-link-btn {
   padding: 0;
   border: 0;

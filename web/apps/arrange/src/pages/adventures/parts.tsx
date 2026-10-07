@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { flagFor } from "@zonventure/i18n";
+import { coverOf } from "@zonventure/play-ui";
 import { useT } from "../../i18n.tsx";
 import { CATALOG_ENABLED, href } from "../../router.ts";
 import { Pill, Tabs, initials } from "../../ui/index.ts";
@@ -9,13 +10,14 @@ import { Pill, Tabs, initials } from "../../ui/index.ts";
  * cropped), or its initials on the accent colour. Rounded square — the
  * shape reserved for adventures; teams are circles.
  */
-export function Cover({ title, src, size = 48, accent }: { title: string; src?: string | undefined; size?: number; accent?: string | undefined }) {
-  const [broken, setBroken] = useState(false);
+export function Cover({ title, src, photo, size = 48, accent }: { title: string; src?: string | undefined; photo?: string | undefined; size?: number; accent?: string | undefined }) {
+  const [broken, setBroken] = useState<string[]>([]);
   const style = { width: size, height: size, borderRadius: Math.max(6, Math.round(size * 0.18)), fontSize: Math.max(11, Math.round(size * 0.34)) };
-  if (src && !broken) {
+  const pic = [src, photo].find((u): u is string => !!u && !broken.includes(u));
+  if (pic) {
     return (
-      <span className="adv-cover adv-cover--img" style={style}>
-        <img src={src} alt="" onError={() => setBroken(true)} />
+      <span className={"adv-cover adv-cover--img" + (pic === photo ? " adv-cover--photo" : "")} style={style}>
+        <img src={pic} alt="" onError={() => setBroken((b) => [...b, pic])} />
       </span>
     );
   }
@@ -24,6 +26,19 @@ export function Cover({ title, src, size = 48, accent }: { title: string; src?: 
       {initials(title)}
     </span>
   );
+}
+
+/**
+ * The look's cover as the players see it — its own picture, else its
+ * starter theme's — for an adventure with no icon of its own.
+ */
+export function lookCover(theme: string | undefined, cover: number | undefined): string | undefined {
+  return coverOf(theme, cover ? `/media/${cover}` : undefined)?.small;
+}
+
+/** An adventure's icon, else its look's cover. */
+export function iconOrCover(a: { avatar_url?: string | undefined; theme?: string | undefined; cover?: number | undefined }): string | undefined {
+  return a.avatar_url ?? lookCover(a.theme, a.cover);
 }
 
 /** Yours / Catalog, under the Adventures title. */

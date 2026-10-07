@@ -291,17 +291,52 @@ func spliceSellerIdentity(body []byte, c LegalConfig) []byte {
 // 503 body lists the missing keys so the operator knows what to set.
 func renderLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
 	if missing := cfg.missingRequired(); len(missing) > 0 {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte("This page is not yet configured. The operator must fill in the following under Settings → Legal before /privacy and /terms become available:\n\n  " + strings.Join(missing, "\n  ") + "\n"))
+		_, _ = w.Write([]byte(legalUnconfiguredHTML(missing)))
 		return
 	}
 	writeLegalPage(w, name, cfg)
 }
 
+// legalUnconfiguredHTML is the page /privacy and /terms show until the
+// operator fills in missing: the site's own look, saying what to set
+// and where.
+func legalUnconfiguredHTML(missing []string) string {
+	var items strings.Builder
+	for _, m := range missing {
+		items.WriteString("<li>" + html.EscapeString(m) + "</li>")
+	}
+	return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Not configured yet</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/fontface.css">
+<link rel="stylesheet" href="/assets/page-tokens.css">
+<script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
+<style>
+  body { min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
+  .card { max-width: 30rem; padding: 2rem; background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius); box-shadow: var(--shadow); }
+  h1 { font: 400 1.6rem/1.2 var(--font-brand); color: var(--accent); margin: 0 0 .75rem; }
+  p { color: var(--muted); margin: 0 0 .75rem; }
+  ul { margin: 0 0 1.25rem; padding-left: 1.25rem; }
+</style>
+</head><body>
+<main class="card">
+  <h1>Not configured yet</h1>
+  <p>This page is not yet configured. The operator must fill in the following under Settings → Legal before /privacy and /terms become available:</p>
+  <ul>` + items.String() + `</ul>
+  <a class="btn primary" href="/arrange">Open the console</a>
+</main>
+</body></html>
+`
+}
+
 // writeLegalPage renders a legal page from cfg, a missing value shown as
-// where to fill it in.
+// where to fill it in. Its topbar is in English, as the page is.
 func writeLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
 	body, err := readWebFile("web/" + name)
 	if err != nil {
@@ -324,6 +359,9 @@ func writeLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
 		{"{{MAP_PROVIDER}}", html.EscapeString(d.MapProvider)},
 		{"{{COMPANY_IDENTITY}}", legalIdentityHTML(d)},
 	} {
+		out = strings.ReplaceAll(out, sub[0], sub[1])
+	}
+	for _, sub := range topbarSubs(landingLocales["en"], "en") {
 		out = strings.ReplaceAll(out, sub[0], sub[1])
 	}
 	// Once an operator confirms their lawyer has signed off on the

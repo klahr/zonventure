@@ -165,7 +165,9 @@ func (h *Handlers) sendResetEmail(r *http.Request, to, token string) error {
 		return errors.New("no mailer configured")
 	}
 	link := buildResetLink(h.PublicURL, r, token)
-	subject, c := emailtpl.PasswordReset(emailtpl.LangFromRequest(r), link)
+	lang := emailtpl.LangFromRequest(r)
+	subject, c := emailtpl.PasswordReset(lang, link)
+	c.Picture = emailtpl.House(h.PublicURL, lang, emailtpl.PictureReset)
 	return h.Mailer.Send(r.Context(), emailtpl.Message([]string{to}, subject, emailtpl.Classic, emailtpl.Platform(), c))
 }
 

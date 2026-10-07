@@ -228,7 +228,9 @@ func (h *Handlers) sendVerificationEmail(r *http.Request, to, token string) erro
 		return errors.New("no mailer configured")
 	}
 	link := buildVerifyLink(h.PublicURL, r, token)
-	subject, c := emailtpl.VerifyEmail(emailtpl.LangFromRequest(r), link)
+	lang := emailtpl.LangFromRequest(r)
+	subject, c := emailtpl.VerifyEmail(lang, link)
+	c.Picture = emailtpl.House(h.PublicURL, lang, emailtpl.PictureVerify)
 	return h.Mailer.Send(r.Context(), emailtpl.Message([]string{to}, subject, emailtpl.Classic, emailtpl.Platform(), c))
 }
 

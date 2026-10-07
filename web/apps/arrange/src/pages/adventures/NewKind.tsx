@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { ChevronRight, PartyPopper, Workflow } from "lucide-react";
 import { ApiError, request } from "@zonventure/api";
 import { TEMPLATE_THEMES, TemplatePicker, themeById, type TemplateInfo } from "@zonventure/trail";
 import { useT } from "../../i18n.tsx";
 import { navigate } from "../../router.ts";
 import { Dialog, ErrorBox, Field, Loading, useLoad } from "../../ui/index.ts";
+import "@zonventure/trail/trail.css";
 
 /**
  * "New adventure" asks which editor first: a quiz trail in the simple
@@ -42,15 +44,31 @@ export function NewKindDialog({ onDesigner, onClose }: { onDesigner: () => void;
       {kind === "choose" ? (
         <ul className="trail-templates">
           <li>
-            <button type="button" onClick={() => setKind("trail")}>
-              <strong>{t.t("Party adventure (simple)")}</strong>
-              <span>{t.t("A little adventure for a party: questions on cards you print and hide, and teams racing with their phones. Made in minutes, on a phone too.")}</span>
+            <button type="button" className="trail-template trail-template--birthday" onClick={() => setKind("trail")}>
+              <span className="trail-template__art" aria-hidden="true">
+                <PartyPopper size={26} />
+              </span>
+              <span className="trail-template__body">
+                <strong>{t.t("Party adventure (simple)")}</strong>
+                <span>{t.t("A little adventure for a party: questions on cards you print and hide, and teams racing with their phones. Made in minutes, on a phone too.")}</span>
+              </span>
+              <span className="trail-template__go" aria-hidden="true">
+                <ChevronRight size={18} />
+              </span>
             </button>
           </li>
           <li>
-            <button type="button" onClick={onDesigner}>
-              <strong>{t.t("Designer (full)")}</strong>
-              <span>{t.t("Places on a map, puzzles of every kind, branches and story. The full toolbox.")}</span>
+            <button type="button" className="trail-template trail-template--office" onClick={onDesigner}>
+              <span className="trail-template__art" aria-hidden="true">
+                <Workflow size={26} />
+              </span>
+              <span className="trail-template__body">
+                <strong>{t.t("Designer (full)")}</strong>
+                <span>{t.t("Places on a map, puzzles of every kind, branches and story. The full toolbox.")}</span>
+              </span>
+              <span className="trail-template__go" aria-hidden="true">
+                <ChevronRight size={18} />
+              </span>
             </button>
           </li>
         </ul>

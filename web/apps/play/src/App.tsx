@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Markdown, PlayView, StartCeremony, coverOf, brandVars, formatSeconds, loadFont, metresBetween, useEngineClock, withTheme, type Translate } from "@zonventure/play-ui";
 import { play, siteName } from "@zonventure/api";
+import { SPOTS } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import { useGame } from "./useGame.ts";
 import { Inbox } from "./Inbox.tsx";
@@ -140,6 +141,7 @@ export function App() {
   if (game.status === "signed-out") {
     return (
       <Screen>
+        <img className="app-spot" src={SPOTS.invitation} alt="" width={480} height={480} />
         <h1>{t("Open your invitation link")}</h1>
         <p>{t("Use the link you were sent to join your team. It signs you in on this phone.")}</p>
         <RecoverLink t={t} />
@@ -149,6 +151,7 @@ export function App() {
   if (game.status === "error" || !s) {
     return (
       <Screen>
+        <img className="app-spot" src={SPOTS.wentWrong} alt="" width={480} height={480} />
         <h1>{t("Can't reach the game")}</h1>
         <p>{t("Check your connection and try again.")}</p>
         <button className="pv-btn pv-btn--primary" onClick={game.retry}>

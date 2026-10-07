@@ -97,3 +97,13 @@
 .dz .db-org { display: inline-flex; align-items: center; gap: var(--dz-space-2); min-width: 0; max-width: 100%; }
 
 .dz .db-welcome { margin: 0; padding-left: 1.25rem; line-height: 1.7; }
+
+/* The lobby: its picture beside the words on a wide screen, above them on a phone. */
+.dz .db-lobby { display: flex; flex-direction: column; gap: var(--dz-space-4); }
+.dz .db-lobby__text { display: flex; flex-direction: column; gap: var(--dz-space-4); }
+.dz .db-lobby__text p { margin: 0; }
+.dz .db-lobby__art { display: block; width: min(28rem, 100%); height: auto; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--dz-r-3); }
+@media (min-width: 56rem) {
+  .dz .db-lobby { flex-direction: row; align-items: center; gap: var(--dz-space-6); }
+  .dz .db-lobby__art { flex: none; }
+}

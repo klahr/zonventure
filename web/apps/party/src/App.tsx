@@ -1,11 +1,13 @@
 import { useEffect, useRef } from "react";
 import { siteName } from "@zonventure/api";
+import { SPOTS } from "@zonventure/ui";
 import { Book } from "./Book.tsx";
 import { Host } from "./Host.tsx";
 import { Join } from "./Join.tsx";
 import { TrailEdit } from "./TrailEdit.tsx";
 import { TrailMine, TrailPaid, TrailStart, TrailVerify } from "./TrailPages.tsx";
 import { useT } from "./i18n.tsx";
+import { Spot, ThankYouBanner } from "./pictures.tsx";
 import { embedded, fitFrame } from "./embed.ts";
 
 /**
@@ -68,12 +70,14 @@ export function App() {
         ) : r.page === "trail-paid" ? (
           <TrailPaid />
         ) : r.page === "paid" ? (
-          <section className="party-card">
+          <section className="party-card party-card--cover">
+            <ThankYouBanner />
             <h1>{t("Thank you — payment received")}</h1>
             <p>{t("Close this tab and go back to your host page. The new teams show there in a moment.")}</p>
           </section>
         ) : (
           <section className="party-card">
+            <Spot src={SPOTS.notFound} />
             <h1>{t("Nothing here")}</h1>
             <p>{t("Open the link from your booking email to run your party.")}</p>
           </section>

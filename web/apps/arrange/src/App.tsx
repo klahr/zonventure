@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { auth, siteWordmark, type Whoami } from "@zonventure/api";
+import { SPOTS } from "@zonventure/ui";
 import { I18nProvider, useT } from "./i18n.tsx";
 import { SessionProvider, useSession } from "./session.tsx";
 import { Login } from "./Login.tsx";
@@ -116,6 +117,7 @@ function Gate() {
     case "error":
       return (
         <main className="centered">
+          <img className="centered__art" src={SPOTS.wentWrong} alt="" width={480} height={480} />
           <div className="alert alert--danger" role="alert">
             <strong>{t.t("Something went wrong")}</strong>
             <p>{state.message}</p>

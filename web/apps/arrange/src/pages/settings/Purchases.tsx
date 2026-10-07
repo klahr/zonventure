@@ -5,6 +5,7 @@ import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { CATALOG_ENABLED, href } from "../../router.ts";
 import { Button, Card, Empty, ErrorBox, ICON, Loading, Pill, Row, Table, fmtDate, fmtDateTime, fmtMoney, useDialogs, useLoad, useToast, type Tone } from "../../ui/index.ts";
+import { SPOTS } from "@zonventure/ui";
 
 /** purchaseDTO, internal/admin/purchases.go. */
 interface Purchase {
@@ -197,6 +198,7 @@ export function PurchasesTab() {
   const empty = (
     <Empty
       title={t.t("No purchases yet.")}
+      illustration={SPOTS.noPurchases}
       action={<a className="btn primary" href={href({ name: CATALOG_ENABLED ? "catalog" : "adventures" })}><Coins size={ICON.md} aria-hidden />{CATALOG_ENABLED ? t.t("Open the store") : t.t("Open your adventures")}</a>}
     >
       {CATALOG_ENABLED ? t.t("Browse the catalog and get an event pass to start scheduling events.") : t.t("Get an event pass from an adventure's page to start scheduling events.")}

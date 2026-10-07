@@ -42,6 +42,8 @@ export interface TrailSummary {
   valid_until?: string;
   first_game_at?: string;
   saved: boolean;
+  /** Its starter look, for a swatch beside it. */
+  theme?: string;
 }
 
 /** A draft this browser holds. */

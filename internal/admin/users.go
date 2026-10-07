@@ -196,13 +196,15 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		language     string
 		runningN     int
 		isTrail      bool
+		theme        string
+		cover        int64
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT (avatar_mime_type IS NOT NULL)::int, published, org_id, language,
 		       (SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND state = 'running'),
-		       trail_cards IS NOT NULL
-		FROM adventures WHERE slug = $1
-	`, slug).Scan(&hasAvatar, &publishedInt, &ownerOrg, &language, &runningN, &isTrail)
+		       a.trail_cards IS NOT NULL, `+lookCoverSQL("a")+`
+		FROM adventures a WHERE a.slug = $1
+	`, slug).Scan(&hasAvatar, &publishedInt, &ownerOrg, &language, &runningN, &isTrail, &theme, &cover)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "unknown adventure")
 		return
@@ -246,6 +248,12 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	if hasAvatar != 0 {
 		out["avatar_url"] = adventureAvatarURL(slug)
+	}
+	if theme != "" {
+		out["theme"] = theme
+	}
+	if cover != 0 {
+		out["cover"] = cover
 	}
 	out["published"] = published
 	out["running_event_count"] = runningN

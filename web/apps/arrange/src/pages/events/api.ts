@@ -7,6 +7,9 @@ export interface EventRow {
   adventure_slug: string;
   adventure_title?: string;
   adventure_avatar_url?: string;
+  /** Stand-ins for a missing avatar: the look's starter theme and own cover picture. */
+  adventure_theme?: string;
+  adventure_cover?: number;
   state: "scheduled" | "running" | "paused" | "completed" | "cancelled" | string;
   scheduled_at?: string;
   started_at?: string;
@@ -30,6 +33,8 @@ export interface AdventureRow {
   description?: string;
   mine_to_edit: boolean;
   avatar_url?: string;
+  theme?: string;
+  cover?: number;
   published: boolean;
   shared: boolean;
   playable: boolean;

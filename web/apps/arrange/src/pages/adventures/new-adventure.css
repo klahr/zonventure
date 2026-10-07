@@ -1,39 +1,33 @@
 /* A new adventure, step by step (NewAdventure.tsx): the steps across the
- * top, the step's own fields, and the adventure's first page on a phone. */
-.newadv__steps { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: 0 0 var(--sp-2); padding: 0; list-style: none; }
+ * top, the step's own fields, and the adventure's first page on a phone
+ * (designer/phone.css, through PhoneFrame). */
+.newadv__steps { display: flex; flex-wrap: wrap; gap: var(--dz-space-2); margin: 0 0 var(--dz-space-2); padding: 0; list-style: none; }
 .newadv__steps button {
-  display: inline-flex; align-items: center; gap: var(--sp-2);
-  padding: var(--sp-1) var(--sp-3) var(--sp-1) var(--sp-1);
-  border: 1px solid var(--border-soft); border-radius: 999px;
-  background: var(--surface); color: var(--muted); font: inherit; font-size: var(--text-sm); cursor: pointer;
+  display: inline-flex; align-items: center; gap: var(--dz-space-2);
+  padding: var(--dz-space-1) var(--dz-space-3) var(--dz-space-1) var(--dz-space-1);
+  border: 1px solid var(--dz-border); border-radius: var(--dz-r-pill);
+  background: var(--dz-surface); color: var(--dz-muted); font: inherit; font-size: var(--dz-text-sm); cursor: pointer;
 }
 .newadv__steps button:disabled { cursor: default; opacity: 0.6; }
-.newadv__n { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--surface-2, var(--border-soft)); font-weight: 700; }
-.newadv__steps .is-on button { border-color: var(--accent); color: var(--ink); font-weight: 700; }
-.newadv__steps .is-on .newadv__n { background: var(--accent); color: #fff; }
-.newadv__steps .is-done .newadv__n { background: color-mix(in srgb, var(--accent) 20%, var(--surface)); color: var(--accent); }
+.newadv__n { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--dz-surface-2); font-weight: 700; }
+.newadv__steps .is-on button { border-color: var(--dz-accent); color: var(--dz-ink); font-weight: 700; }
+.newadv__steps .is-on .newadv__n { background: var(--dz-accent); color: var(--dz-accent-ink); }
+.newadv__steps .is-done .newadv__n { background: color-mix(in srgb, var(--dz-accent) 20%, var(--dz-surface)); color: var(--dz-accent); }
 
-.newadv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-5); align-items: start; }
-.newadv__body { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
-.newadv__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--sp-3); }
-.newadv__chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.newadv__chip { padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-soft); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
-.newadv__chip.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); font-weight: 700; }
-.newadv__lead { margin: 0; color: var(--ink-soft, var(--ink)); }
-.newadv__row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
-.newadv__summary { display: grid; grid-template-columns: max-content 1fr; gap: var(--sp-2) var(--sp-4); margin: 0; }
-.newadv__summary dt { color: var(--muted); font-size: var(--text-sm); }
+.newadv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--dz-space-5); align-items: start; }
+.newadv__body { display: flex; flex-direction: column; gap: var(--dz-space-3); min-width: 0; }
+.newadv__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); gap: var(--dz-space-3); }
+.newadv__lead { margin: 0; color: var(--dz-ink-soft); }
+.newadv__row { display: flex; align-items: center; justify-content: space-between; gap: var(--dz-space-2); }
+.newadv__summary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--dz-space-2) var(--dz-space-4); margin: 0; }
+.newadv__summary dt { color: var(--dz-muted); font-size: var(--dz-text-sm); }
 .newadv__summary dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 
 /* The phone: the adventure's first page, live, in the chosen look. */
-.newadv__preview { position: sticky; top: 0; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); }
-.newadv__phone { width: 18.5rem; height: 34rem; padding: 0.55rem; border-radius: 2.2rem; background: #111827; box-shadow: 0 18px 40px rgba(17, 24, 39, 0.28); }
-/* A transform makes the screen the containing block for the player's
-   fixed overlays, so a celebration covers the phone, not the page. */
-.newadv__screen { display: flex; flex-direction: column; height: 100%; overflow: auto; border-radius: 1.7rem; background: #fff; transform: translateZ(0); }
-.newadv__try { display: flex; gap: var(--sp-2); }
+.newadv__preview { position: sticky; top: 0; display: flex; flex-direction: column; align-items: center; gap: var(--dz-space-2); }
+.newadv__try { display: flex; gap: var(--dz-space-2); }
 
 @media (max-width: 52rem) {
-  .newadv { grid-template-columns: 1fr; }
+  .newadv { grid-template-columns: minmax(0, 1fr); }
   .newadv__preview { position: static; }
 }

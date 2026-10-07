@@ -28,7 +28,7 @@
   --accent:       #ad1357;
   --accent-fg:    #ffffff;
   --ink:          #0b1220;
-  --muted:        #5a6378;
+  --muted:        #4f6478;
   --bg:           #fafbfc;
   --surface:      #ffffff;
   --surface-2:    #f0f2f6;
@@ -45,6 +45,17 @@
     --border:      #2a3550;
     --border-soft: #1f2940;
   }
+}
+/* A look with a page colour of its own picks the light or dark palette
+   by that colour (data-tone, set by applyColors), whatever the system's
+   scheme, so cards and text stay readable on it. */
+:root[data-tone="light"] {
+  --ink: #0b1220; --muted: #4f6478; --surface: #ffffff; --surface-2: #f0f2f6;
+  --border: #d8dde6; --border-soft: #e8eaf0;
+}
+:root[data-tone="dark"] {
+  --ink: #e6ebf5; --muted: #8b94a8; --surface: #131c2e; --surface-2: #1b2640;
+  --border: #2a3550; --border-soft: #1f2940;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -65,8 +76,17 @@ body {
   font-family: 'Open Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; font-size: .7rem;
   color: var(--muted); font-weight: 600; text-transform: lowercase;
 }
+/* The look's two colours, as a band across the top. */
+body { border-top: 4px solid var(--accent); border-image: linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent))) 1; }
+/* The look's cover picture, above the title. */
+.cover {
+  aspect-ratio: 16 / 7; margin: 0 0 1rem;
+  border-radius: 16px; background: var(--surface-2) center / cover no-repeat;
+  box-shadow: 0 8px 28px rgba(11, 18, 32, .14);
+}
 .head h1 {
   margin: 0 0 .25rem; font-size: 1.6rem; line-height: 1.2;
+  font-family: var(--font-title, inherit);
 }
 .head .who {
   color: var(--muted); font-size: .95rem; margin-bottom: 1rem;
@@ -263,10 +283,55 @@ function el(tag, attrs, ...kids) {
   return e;
 }
 
+// applyColors dresses the page in the adventure's look, as live.html
+// does: accent (with readable text on it), second colour, page colour —
+// which also picks the light or dark palette (data-tone) — and text.
 function applyColors(c) {
   if (!c) return;
-  const r = document.documentElement.style;
-  if (c.accent) r.setProperty('--accent', c.accent);
+  const root = document.documentElement;
+  const r = root.style;
+  if (c.accent) {
+    r.setProperty('--accent', c.accent);
+    const L = luminance(c.accent);
+    if (L != null) r.setProperty('--accent-fg', L > 0.179 ? '#000000' : '#ffffff');
+  }
+  if (c.accent_secondary || c.accent) r.setProperty('--accent-2', c.accent_secondary || c.accent);
+  if (c.background) {
+    const L = luminance(c.background);
+    if (L != null) root.dataset.tone = L > 0.35 ? 'light' : 'dark';
+    r.setProperty('--bg', c.background);
+  }
+  if (c.text) r.setProperty('--ink', c.text);
+}
+
+// applyLook shows the look's cover picture above the title and sets
+// the title in its typeface.
+function applyLook(look, head) {
+  if (!look) return;
+  if (look.cover_url) {
+    const cover = el('div', { class: 'cover', 'aria-hidden': 'true' });
+    cover.style.backgroundImage = 'url("' + encodeURI(look.cover_url) + '")';
+    head.prepend(cover);
+  }
+  if (look.font_css) {
+    document.head.append(el('link', { rel: 'stylesheet', href: look.font_css }));
+    document.documentElement.style.setProperty('--font-title', '"' + look.heading_font + '", ' + "'Open Sans', sans-serif");
+  }
+}
+
+// luminance is a #rrggbb / #rgb colour's WCAG relative luminance, null
+// for anything else.
+function luminance(hex) {
+  let m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex).trim());
+  if (!m) return null;
+  let h = m[1];
+  if (h.length === 3) h = h.split('').map((x) => x + x).join('');
+  const n = parseInt(h, 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
 async function load() {
@@ -314,6 +379,7 @@ function render(d) {
     el('div', { class: 'who' },
       [d.team_name, d.completed_at ? new Date(d.completed_at.replace(' ', 'T') + 'Z').toLocaleString() : '']
         .filter(Boolean).join(' · ')));
+  applyLook(d.look, head);
   root.append(head);
 
   if (d.outro_text && d.outro_text.trim()) {

@@ -3,6 +3,7 @@ import { Play } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
 import { Avatar, Button, Dialog, Pill, Table, fmtDateTime, relTime, useDialogs, useToast, type Column, type Tone } from "../../ui/index.ts";
+import { lookCover } from "../adventures/parts.tsx";
 import { startEvent, type EventRow } from "./api.ts";
 
 /** The event's own name, else "Event #id" — as everywhere in the console. */
@@ -30,6 +31,11 @@ export function StatePill({ event }: { event: Pick<EventRow, "state" | "schedule
   const s = STATE[key];
   if (!s) return <Pill>{event.state}</Pill>;
   return <Pill tone={s.tone}>{t.t(s.label)}</Pill>;
+}
+
+/** The event's adventure's icon, else its look's cover; none when it has neither. */
+export function eventCover(r: EventRow): string | undefined {
+  return r.adventure_avatar_url ?? lookCover(r.adventure_theme, r.adventure_cover);
 }
 
 /** The adventure's cover, or its initials on the accent colour. */
@@ -67,9 +73,10 @@ export function EventsTable({ rows, empty }: { rows: EventRow[]; empty?: ReactNo
   const columns: Column<EventRow>[] = [
     { key: "event", header: t.t("Event"), cell: (r) => {
       const when = eventWhen(t, r);
+      const cover = eventCover(r);
       return (
         <span className="evs-namecell">
-          {r.adventure_avatar_url && <AdventureCover title={r.adventure_title || r.adventure_slug} src={r.adventure_avatar_url} />}
+          {cover && <AdventureCover title={r.adventure_title || r.adventure_slug} src={cover} />}
           <span className="evs-stack">
             <strong>{eventLabel(r)} {r.party && <Pill tone="accent">{t.t("Hosted")}</Pill>}</strong>
             <span className="evs-sub">

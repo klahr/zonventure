@@ -42,5 +42,6 @@ func (w *Worker) sendEmail(ctx context.Context, m Email, q queued) error {
 	// In the event's look, the organisation's unless the event has its own.
 	lk := emailtpl.Lookup(ctx, w.DB, w.PublicURL, 0, q.eventID)
 	subject, c := emailtpl.GameEmail(lk.Lang, r.Replace(m.Subject), r.Replace(m.Body), q.event, lk.Brand.Name)
+	c.Picture = lk.Cover
 	return w.Mailer.Send(ctx, emailtpl.Message([]string{to}, subject, lk.Theme, lk.Brand, c))
 }

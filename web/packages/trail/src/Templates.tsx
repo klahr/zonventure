@@ -1,5 +1,7 @@
+import type { CSSProperties } from "react";
 import type { I18n } from "@zonventure/i18n";
 import { Icon } from "./Icons.tsx";
+import { TEMPLATE_THEMES, themeById } from "./themes.ts";
 
 /** A template a trail starts from: internal/admin/trails.go trailTemplateDTO. */
 export interface TemplateInfo {
@@ -24,9 +26,17 @@ export function TemplatePicker({ i18n, templates, busy, onPick }: { i18n: I18n; 
     <ul className="trail-templates">
       {templates.map((tp) => {
         const about = ABOUT[tp.name];
+        // Tinted in the look the template starts in, so the card matches what it makes.
+        const accent = themeById(TEMPLATE_THEMES[tp.name])?.look.accent;
         return (
           <li key={tp.name}>
-            <button type="button" className={"trail-template trail-template--" + tp.name} disabled={busy} onClick={() => onPick(tp.name)}>
+            <button
+              type="button"
+              className={"trail-template trail-template--" + tp.name}
+              style={accent ? ({ "--tint": accent } as CSSProperties) : undefined}
+              disabled={busy}
+              onClick={() => onPick(tp.name)}
+            >
               <span className="trail-template__art" aria-hidden="true">
                 <Icon name={about?.icon ?? "sparkle"} size={26} />
               </span>

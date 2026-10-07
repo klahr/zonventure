@@ -3,6 +3,7 @@
  * here, or the preview would stop matching. Tokens only. */
 @import "@zonventure/ui/tokens.css";
 @import "@zonventure/play-ui/play-ui.css";
+@import "@zonventure/play-ui/cover.css";
 
 html,
 body {
@@ -193,6 +194,13 @@ body {
 .app-muted {
   color: var(--muted);
 }
+/* A house picture above a screen's title (signed out, can't reach). */
+.app-spot {
+  align-self: center;
+  width: 9rem;
+  height: 9rem;
+  border-radius: var(--radius-lg);
+}
 /* The lobby: a card with the team name, like play.html's pre-start. */
 .app-lobby {
   margin: var(--sp-6) var(--sp-4);
@@ -215,18 +223,7 @@ body {
   overflow: hidden;
 }
 .app-lobby__cover {
-  position: relative;
-  height: min(52vw, 16rem);
   margin: 0 calc(-1 * var(--sp-5)) calc(-1 * var(--sp-4));
-  background-size: cover;
-  background-position: 75% 30%;
-}
-.app-lobby__cover::after {
-  content: "";
-  position: absolute;
-  inset: auto 0 0;
-  height: 45%;
-  background: linear-gradient(transparent, var(--surface));
 }
 .app-lobby--cover h1 {
   position: relative;

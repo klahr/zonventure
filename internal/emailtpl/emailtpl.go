@@ -98,6 +98,8 @@ type Content struct {
 	Buttons []Button
 	// Footer says why the reader gets this.
 	Footer string
+	// Picture shows above the words, when it is set.
+	Picture Picture
 }
 
 var hexRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
@@ -222,9 +224,11 @@ var page = template.Must(template.New("email").Parse(`<!doctype html>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{{.S.Page}};"><tr><td align="center" style="padding:{{if eq .Theme "minimal"}}24px 16px{{else}}32px 16px{{end}};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:{{.S.CardWidth}}px;background:{{.S.Card}};{{if eq .Theme "classic"}}border-top:4px solid {{.S.Rule}};border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.08);{{end}}{{if eq .Theme "adventure"}}border:1px solid {{.S.Rule}};outline:3px double {{.S.Rule}};outline-offset:-8px;{{end}}{{if eq .Theme "bold"}}border-radius:12px;overflow:hidden;{{end}}">
 {{if .S.BandLogo}}<tr><td style="background:{{.S.Band}};padding:28px 32px;">{{if .B.LogoURL}}<img src="{{.B.LogoURL}}" alt="{{.B.Name}}" height="40" style="display:block;height:40px;max-width:200px;border:0;">{{else}}<div style="font:700 20px/1.2 {{.S.HeadFont}};color:{{.BandText}};">{{.B.Name}}</div>{{end}}</td></tr>{{end}}
+{{if and .C.Picture.URL .C.Picture.Wide}}<tr><td style="padding:{{if eq .Theme "adventure"}}14px 14px 0{{else}}0{{end}};line-height:0;font-size:0;"><img src="{{.C.Picture.URL}}" alt="{{.C.Picture.Alt}}" width="{{.S.CardWidth}}" style="display:block;width:100%;max-width:{{.S.CardWidth}}px;height:auto;border:0;{{.PictureRadius}}font:13px/1.4 {{.S.Font}};color:{{.S.Muted}};"></td></tr>{{end}}
 <tr><td style="padding:{{if eq .Theme "minimal"}}8px 4px{{else if eq .Theme "adventure"}}40px 44px{{else}}32px{{end}};font:16px/1.6 {{.S.Font}};color:{{.S.Text}};">
 {{if not .S.BandLogo}}<div style="margin-bottom:24px;{{if eq .Theme "adventure"}}text-align:center;{{end}}">{{if .B.LogoURL}}<img src="{{.B.LogoURL}}" alt="{{.B.Name}}" height="{{if eq .Theme "minimal"}}24{{else}}36{{end}}" style="{{if eq .Theme "adventure"}}display:inline-block;{{else}}display:block;{{end}}height:{{if eq .Theme "minimal"}}24{{else}}36{{end}}px;max-width:180px;border:0;">{{else}}<span style="font:700 {{if eq .Theme "minimal"}}14px{{else}}18px{{end}}/1.2 {{.S.HeadFont}};color:{{.B.Accent}};letter-spacing:.02em;">{{.B.Name}}</span>{{end}}</div>{{end}}
 {{if eq .Theme "adventure"}}<div style="text-align:center;color:{{.S.Rule}};font-size:14px;letter-spacing:.6em;margin:-8px 0 12px;">✦ ✦ ✦</div>{{end}}
+{{if and .C.Picture.URL (not .C.Picture.Wide)}}<div style="margin:0 0 20px;{{if ne .Theme "minimal"}}text-align:center;{{end}}"><img src="{{.C.Picture.URL}}" alt="{{.C.Picture.Alt}}" width="140" style="display:inline-block;width:140px;max-width:140px;height:auto;border:0;border-radius:16px;font:13px/1.4 {{.S.Font}};color:{{.S.Muted}};"></div>{{end}}
 {{if .C.Heading}}<h1 style="margin:0 0 16px;font:700 {{if eq .Theme "bold"}}30px{{else if eq .Theme "minimal"}}20px{{else}}24px{{end}}/1.25 {{.S.HeadFont}};color:{{.S.Text}};{{if eq .Theme "adventure"}}text-align:center;{{end}}">{{.C.Heading}}</h1>{{end}}
 {{.BodyHTML}}
 {{if .C.Quote}}<div style="margin:16px 0;padding:12px 16px;background:{{.S.Quote}};border-left:4px solid {{.B.Accent}};border-radius:4px;white-space:pre-wrap;">{{.C.Quote}}</div>{{end}}
@@ -244,17 +248,18 @@ func Render(t Theme, b Brand, subject string, c Content) (htmlOut, text string) 
 	s := styleOf(t, b)
 	var buf bytes.Buffer
 	_ = page.Execute(&buf, map[string]any{
-		"Theme":      string(t),
-		"Lang":       Lang(c.Lang),
-		"Signature":  signature(b, Lang(c.Lang)),
-		"Subject":    subject,
-		"C":          c,
-		"B":          b,
-		"S":          s,
-		"BodyHTML":   template.HTML(styleBody(mdx.Render(c.Body), s, b)),
-		"BandText":   bandText(s),
-		"FooterRule": mix(s.Card, s.Text, 0.12),
-		"FinePrint":  mix(s.Page, s.Text, 0.45),
+		"Theme":         string(t),
+		"Lang":          Lang(c.Lang),
+		"Signature":     signature(b, Lang(c.Lang)),
+		"Subject":       subject,
+		"C":             c,
+		"B":             b,
+		"S":             s,
+		"BodyHTML":      template.HTML(styleBody(mdx.Render(c.Body), s, b)),
+		"BandText":      bandText(s),
+		"FooterRule":    mix(s.Card, s.Text, 0.12),
+		"PictureRadius": pictureRadius(t),
+		"FinePrint":     mix(s.Page, s.Text, 0.45),
 	})
 	return buf.String(), Text(c)
 }
@@ -265,6 +270,16 @@ func signature(b Brand, lang string) string {
 		return b.Name
 	}
 	return T(lang, "%s · sent with %s", b.Name, sitename.Name())
+}
+
+// pictureRadius rounds a banner's top corners as its card's are, unless
+// a band sits above it.
+func pictureRadius(t Theme) template.CSS {
+	switch t {
+	case Classic:
+		return "border-radius:6px 6px 0 0;"
+	}
+	return ""
 }
 
 func bandText(s style) string {
@@ -332,6 +347,9 @@ type Look struct {
 	Theme Theme
 	Brand Brand
 	Lang  string
+	// Cover is the event's adventure's picture for its players' emails
+	// (coverOf); none without an event or a public URL.
+	Cover Picture
 }
 
 // Lookup returns the look an organisation's emails go out in; with an
@@ -346,15 +364,17 @@ func Lookup(ctx context.Context, q Querier, publicURL string, orgID, eventID int
 		accent, accent2, bg, text sql.NullString
 		lang                      sql.NullString
 		hasLogo                   bool
+		slug, theme               string
+		ownCover                  bool
 	)
 	var err error
 	if eventID > 0 {
 		err = q.QueryRowContext(ctx, `
 			SELECT o.id, o.name, e.email_theme, o.email_theme, o.accent_color, o.accent_secondary_color, o.background_color, o.text_color,
-			       COALESCE(o.logo_size_bytes, 0) > 0, COALESCE(a.language, o.language)
+			       COALESCE(o.logo_size_bytes, 0) > 0, COALESCE(a.language, o.language), `+coverColumns+`
 			FROM events e JOIN organizations o ON o.id = e.org_id LEFT JOIN adventures a ON a.slug = e.adventure_slug
 			WHERE e.id = $1
-		`, eventID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &hasLogo, &lang)
+		`, eventID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &hasLogo, &lang, &slug, &theme, &ownCover)
 	} else if orgID > 0 {
 		err = q.QueryRowContext(ctx, `
 			SELECT o.id, o.name, NULL, o.email_theme, o.accent_color, o.accent_secondary_color, o.background_color, o.text_color,
@@ -378,5 +398,9 @@ func Lookup(ctx context.Context, q Querier, publicURL string, orgID, eventID int
 	if !Valid(t) {
 		t = Classic
 	}
-	return Look{Theme: t, Brand: b, Lang: Lang(lang.String)}
+	lk := Look{Theme: t, Brand: b, Lang: Lang(lang.String)}
+	if eventID > 0 {
+		lk.Cover = coverOf(publicURL, lk.Lang, slug, theme, ownCover)
+	}
+	return lk
 }

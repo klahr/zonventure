@@ -2,6 +2,7 @@
    Phone first: the card fills the screen like the printed card it will
    become, and the timeline — the trail itself, card after card — sits
    at the bottom within thumb reach. */
+@import "@zonventure/ui/controls.css";
 
 .trail,
 .trail-showcase,
@@ -50,7 +51,7 @@
   gap: var(--sp-2);
   padding: 0 var(--sp-2);
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   color: var(--muted);
   transition: border-color 0.2s, background 0.2s;
 }
@@ -261,12 +262,13 @@
   background:
     radial-gradient(18rem 8rem at 100% 0%, rgba(255, 255, 255, 0.22), transparent 70%),
     var(--trail-brand);
-  color: #fff;
+  color: var(--trail-on-brand, #fff);
 }
 .trail-paper--info .trail-paper__head {
   background:
     radial-gradient(18rem 8rem at 100% 0%, rgba(255, 255, 255, 0.2), transparent 70%),
     var(--trail-info, linear-gradient(135deg, #3d5573, #1f3349));
+  color: var(--trail-on-info, #fff);
 }
 .trail-paper__badge {
   display: grid;
@@ -380,7 +382,7 @@
   background: color-mix(in srgb, var(--ink) 7%, var(--surface));
   color: var(--ink);
   font: inherit;
-  font-size: 1.05rem;
+  font-size: var(--text-base);
   font-weight: 800;
   cursor: pointer;
   transition: background 0.2s, color 0.2s, transform 0.2s var(--trail-ease);
@@ -446,7 +448,7 @@
   align-items: flex-start;
   padding: var(--sp-3) var(--sp-4);
   border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--warning-bg);
   color: var(--warning);
   font-size: var(--text-sm);
@@ -515,50 +517,13 @@
   color: var(--danger);
 }
 
-/* ---------- Buttons the pages put in the bar ---------- */
-.trail-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  min-height: 2.6rem;
-  padding: 0 1.1rem;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  color: var(--ink);
-  font: inherit;
-  font-weight: 700;
-  text-decoration: none;
-  cursor: pointer;
-  transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
-}
-.trail-btn:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-soft));
-  background: var(--surface);
-}
-.trail-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
+/* ---------- Buttons the pages put in the bar ----------
+   Shape and states are the shared .trail-btn (@zonventure/ui/controls.css);
+   the primary wears the look's gradient and its text colour. */
 .trail-btn--primary,
 .trail-btn--primary:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--trail-brand);
-  color: #fff;
-  box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--accent) 75%, transparent);
-}
-.trail-btn--primary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 26px -10px color-mix(in srgb, var(--accent) 85%, transparent);
-}
-.trail-btn--danger {
-  color: var(--danger);
-}
-.trail-btn--quiet {
-  border-color: transparent;
-  background: transparent;
-  font-size: var(--text-lg);
+  background: var(--trail-brand, var(--accent));
+  color: var(--trail-on-brand, #fff);
 }
 
 /* ---------- Empty ---------- */
@@ -663,7 +628,7 @@
   height: 5.2rem;
   padding: 0.55rem 0.65rem;
   border: 1.5px solid var(--border-soft);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
@@ -716,7 +681,7 @@
 }
 .trail-chip.is-on .trail-chip__no {
   background: var(--trail-brand);
-  color: #fff;
+  color: var(--trail-on-brand, #fff);
 }
 .trail-chip__text {
   width: 100%;
@@ -767,7 +732,7 @@
   height: 100%;
   padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-3);
   border: 1px solid var(--border-soft);
-  border-radius: 18px;
+  border-radius: var(--trail-radius);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
@@ -786,18 +751,18 @@
   opacity: 0.6;
   cursor: progress;
 }
-.trail-template--birthday { --tint: #e24080; }
-.trail-template--kids { --tint: #0e8a7e; }
-.trail-template--office { --tint: #4f5bd5; }
-.trail-template--family { --tint: #c2410c; }
-.trail-template--blank { --tint: #4f6478; }
+.trail-template--birthday { --tint: var(--accent-2); }
+.trail-template--kids { --tint: var(--c-flow); }
+.trail-template--office { --tint: var(--c-logic); }
+.trail-template--family { --tint: var(--c-time); }
+.trail-template--blank { --tint: var(--muted); }
 .trail-template__art {
   flex: none;
   display: grid;
   place-items: center;
   width: 3.4rem;
   height: 3.4rem;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background:
     radial-gradient(3rem 2rem at 80% 10%, rgba(255, 255, 255, 0.35), transparent 70%),
     linear-gradient(135deg, color-mix(in srgb, var(--tint) 75%, #fff), var(--tint));
@@ -910,7 +875,7 @@
   min-width: 0;
   padding: 0.35rem;
   border: 2px solid transparent;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--ink);
   font: inherit;
@@ -930,7 +895,7 @@
   position: relative;
   display: block;
   height: 3.6rem;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   box-shadow: 0 0 0 1px rgba(31, 51, 73, 0.12), 0 6px 14px -8px rgba(31, 51, 73, 0.45);
 }
@@ -952,7 +917,7 @@
 }
 .trail-theme__name {
   font-family: var(--trail-heading, inherit);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   line-height: 1.1;
   text-align: center;
   white-space: nowrap;
@@ -1018,7 +983,7 @@
   place-items: center;
   min-height: 21rem;
   padding: var(--sp-6) var(--sp-5) var(--sp-7);
-  border-radius: 22px;
+  border-radius: var(--trail-radius);
   overflow: hidden;
   transition: background-color 0.6s ease;
   box-shadow: inset 0 0 0 1px rgba(31, 51, 73, 0.08);
@@ -1070,7 +1035,7 @@
   margin: 0;
   min-height: 0;
   border-bottom-style: solid;
-  font-size: 1.1rem;
+  font-size: var(--text-lg);
 }
 .trail-option__text {
   flex: 1;
@@ -1083,7 +1048,7 @@
 .trail-paper--preview .trail-mark {
   width: 2.1rem;
   height: 2.1rem;
-  font-size: 0.95rem;
+  font-size: var(--text-sm);
 }
 
 /* ---------- Motion ---------- */
@@ -1135,8 +1100,8 @@
     gap: 2px;
     min-height: 3.1rem;
     padding: 0.3rem 0.4rem;
-    border-radius: 18px;
-    font-size: 0.72rem;
+    border-radius: var(--trail-radius);
+    font-size: var(--text-xs);
     white-space: normal;
     line-height: 1.15;
     text-align: center;

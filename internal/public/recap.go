@@ -40,11 +40,13 @@ import (
 
 // recapResponse is the JSON shape the recap page renders against.
 type recapResponse struct {
-	TeamName        string       `json:"team_name"`
-	AdventureTitle  string       `json:"adventure_title"`
-	AdventureSlug   string       `json:"adventure_slug,omitempty"`
-	OutroText       string       `json:"outro_text,omitempty"`
-	Colors          *recapColors `json:"colors,omitempty"`
+	TeamName       string       `json:"team_name"`
+	AdventureTitle string       `json:"adventure_title"`
+	AdventureSlug  string       `json:"adventure_slug,omitempty"`
+	OutroText      string       `json:"outro_text,omitempty"`
+	Colors         *recapColors `json:"colors,omitempty"`
+	// Look is the adventure's cover picture and title typeface.
+	Look            *PageLook    `json:"look,omitempty"`
 	StartedAt       string       `json:"started_at,omitempty"`
 	CompletedAt     string       `json:"completed_at,omitempty"`
 	DurationSeconds int          `json:"duration_seconds"`
@@ -202,6 +204,13 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 			Text:            adv.Colors.Text,
 		}
 	}
+
+	look, err := LoadPageLook(r.Context(), h.DB, h.Looks, adv.Slug)
+	if err != nil {
+		http.Error(w, "look lookup failed", http.StatusInternalServerError)
+		return
+	}
+	resp.Look = look
 
 	// Counts, score, steps and pins come from the team's graph state.
 	if err := h.recapGraph(r.Context(), eventID, teamID, &resp); err != nil {

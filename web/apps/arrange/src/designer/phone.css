@@ -1,0 +1,27 @@
+/* The phone frame of the designer's preview, the theme sample and a new
+ * adventure's first page. .phone-fit holds the scaled frame's space. */
+.phone-fit { flex: none; }
+
+/* A phone-sized frame, so an author judges the screen at the size a team
+ * reads it. The step inside is styled by @zonventure/play-ui alone. */
+.phone {
+  position: relative;
+  /* Makes the frame the containing block for the step's fixed overlays. */
+  transform: translateZ(0);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  transform-origin: top left;
+  border: 8px solid var(--ink-soft);
+  border-radius: 1.75rem;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.phone__screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: #fbfbfd;
+}
+.phone__empty { margin: auto; padding: var(--sp-5); text-align: center; color: #4f6478; font-size: var(--text-sm); }

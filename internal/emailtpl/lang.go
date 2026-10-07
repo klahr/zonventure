@@ -56,6 +56,13 @@ var catalog = map[string]map[string]string{
 		// The page around every email.
 		"%s · sent with %s": "%s · skickat med %s",
 
+		// Pictures' alt text.
+		"A dotted route across a town, from map pin to map pin": "En prickad väg genom en stad, från kartnål till kartnål",
+		"An envelope flying out of a phone":                     "Ett kuvert som flyger ut ur en mobil",
+		"A golden ticket rising out of an envelope":             "En gyllene biljett som stiger upp ur ett kuvert",
+		"A wrapped gift box with a key tag":                     "Ett inslaget presentpaket med en nyckellapp",
+		"The adventure's cover picture":                         "Äventyrets omslagsbild",
+
 		// Signing in.
 		"Reset your %s password":                              "Återställ ditt lösenord för %s",
 		"Choose a new password — the link works for an hour.": "Välj ett nytt lösenord – länken fungerar i en timme.",

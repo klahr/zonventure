@@ -70,7 +70,7 @@ func TestEverySwedishStringIsThere(t *testing.T) {
 	re := regexp.MustCompile("T\\(lang, (\"(?:[^\"\\\\]|\\\\.)*\")")
 	missing := map[string]bool{}
 	found := 0
-	for _, f := range []string{"kinds.go", "emailtpl.go"} {
+	for _, f := range []string{"kinds.go", "emailtpl.go", "pictures.go"} {
 		src, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
@@ -93,6 +93,11 @@ func TestEverySwedishStringIsThere(t *testing.T) {
 	for _, key := range []string{"%[1]s accepted your suggestion on “%[2]s”", "%[1]s declined your suggestion on “%[2]s”", "Your suggestion was accepted.", "Your suggestion was declined.", "Suggestion accepted", "Suggestion declined", "%[1]s accepted the change you suggested to %[2]s.", "%[1]s declined the change you suggested to %[2]s."} {
 		if _, ok := catalog["sv"][key]; !ok {
 			missing[key] = true
+		}
+	}
+	for _, p := range housePictures {
+		if _, ok := catalog["sv"][p.alt]; !ok {
+			missing[p.alt] = true
 		}
 	}
 	for k := range missing {

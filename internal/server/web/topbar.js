@@ -2,11 +2,12 @@
  *   1. Scroll-fade. Toggles `.at-top` on the topbar so the CSS can
  *      fade the glass background in once the user starts scrolling.
  *      Only runs on pages that opt in via `<body class="has-hero">`.
- *      Pages without a dark hero (e.g. /manual) keep the topbar
- *      solid so its white text reads against the light body.
+ *      Pages without a dark hero (e.g. /manual) keep the topbar's
+ *      light glass bar throughout.
  *   2. Theme. Reads `localStorage.zv-theme` and applies it as a
  *      `data-theme` attribute on <html>. Renders a small toggle
- *      button next to the language picker that cycles
+ *      button next to the language picker (at the start of the nav
+ *      on pages without one: privacy, terms) that cycles
  *      Light → Dark → Auto (= follow system). The same key is
  *      shared with /play and /arrange so a visitor's choice
  *      round-trips across the whole product.
@@ -41,7 +42,8 @@
   // states: light → dark → auto (no attribute, follows OS) → light.
   // Uses the sun / moon glyphs already loaded by the page chrome.
   var picker = document.querySelector('.lang-picker');
-  if (!picker) return;
+  var nav = document.querySelector('.topbar nav');
+  if (!picker && !nav) return;
   var btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'theme-toggle';
@@ -75,5 +77,6 @@
   btn.addEventListener('click', next);
   repaint();
   // Place after the language picker on the topbar.
-  picker.parentNode.insertBefore(btn, picker.nextSibling);
+  if (picker) picker.parentNode.insertBefore(btn, picker.nextSibling);
+  else nav.insertBefore(btn, nav.firstChild);
 })();

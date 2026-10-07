@@ -5,12 +5,13 @@ import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { CATALOG_ENABLED, href, navigate } from "../../router.ts";
 import { Button, Empty, ErrorBox, HelpPopover, ICON, Loading, Page, PageHeader, Pill, useLoad, useToast } from "../../ui/index.ts";
+import { SPOTS } from "@zonventure/ui";
 import { NewEventDialog } from "../events/NewEventDialog.tsx";
 import { NewQuestDialog } from "../events/NewQuestDialog.tsx";
 import { duplicateAdventure, isPublisher, listAdventures, listAssignments, type AdventureRow, type Assignment } from "./api.ts";
 import { PickPassDialog, useImportAdventure } from "./dialogs.tsx";
 import { NewKindDialog } from "./NewKind.tsx";
-import { AdventureTabs, Cover, LanguagePill, puzzleCount } from "./parts.tsx";
+import { AdventureTabs, Cover, LanguagePill, lookCover, puzzleCount } from "./parts.tsx";
 
 /** What the schedule dialog opens with. */
 // The guide brings the player along for its preview: loaded when opened.
@@ -23,7 +24,7 @@ function AdventureCard({ a, to, tags, actions }: { a: AdventureRow; to: string; 
   return (
     <article className="adv-card">
       <div className="adv-card__head">
-        <Cover title={a.title} src={a.avatar_url} size={56} />
+        <Cover title={a.title} src={a.avatar_url} photo={lookCover(a.theme, a.cover)} size={56} />
         <h2 className="adv-card__title">
           <a href={to} className="adv-card__link">{a.title || a.slug}</a>
         </h2>
@@ -154,6 +155,7 @@ export function AdventuresPage() {
       runnable.length === 0 ? (
         <Empty
           title={t.t("No adventures you can use yet.")}
+          illustration={SPOTS.noAdventures}
           action={
             CATALOG_ENABLED && (
               <a className="btn adv-btn" href={href({ name: "catalog" })}>
@@ -245,7 +247,7 @@ export function CatalogPage() {
     const catalog = load.data.filter((a) => !a.mine_to_edit && a.published);
     body =
       catalog.length === 0 ? (
-        <Empty title={t.t("No published adventures yet.")}>
+        <Empty title={t.t("No published adventures yet.")} illustration={SPOTS.noAdventures}>
           {publisher ? t.t("Your organization publishes the catalog, so your adventures are listed under Yours.") : t.t("Check back soon — operators publish new adventures regularly.")}
         </Empty>
       ) : (

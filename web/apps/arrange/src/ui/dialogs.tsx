@@ -15,6 +15,8 @@ export function Dialog(props: {
   wide?: boolean;
   /** Wider still, for a guide with a preview beside it. */
   huge?: boolean;
+  /** A picture across the top, edge to edge, above the title. */
+  banner?: ReactNode;
 }) {
   const id = useId();
   useEscapeToClose(props.onClose);
@@ -43,6 +45,7 @@ export function Dialog(props: {
           aria-labelledby={id}
           {...(props.onSubmit ? { onSubmit: (e: FormEvent) => { e.preventDefault(); props.onSubmit!(); } } : {})}
         >
+          {props.banner && <div className="cs-dialog__banner">{props.banner}</div>}
           <div className="modal-head">
             <h2 id={id}>{props.title}</h2>
           </div>

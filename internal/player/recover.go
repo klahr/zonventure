@@ -147,6 +147,7 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 		// In the look of the organisation that runs the first game.
 		lk := emailtpl.Lookup(r.Context(), h.DB, h.PublicURL, 0, links[0].EventID)
 		subject, content := emailtpl.PlayLinks(lk.Lang, players, lk.Brand.Name)
+		content.Picture = lk.Cover
 		// Build one .ics per unique event referenced by the
 		// recovered links so the recipient can drop each event onto
 		// their calendar in one click. Best-effort: a missing

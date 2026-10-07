@@ -638,18 +638,19 @@ func (h *Handlers) sendTrailPaid(ctx context.Context, eventID int64, to, hostTok
 		title, player string
 		validUntil    time.Time
 		orgID         int64
-		lang          string
+		lang, slug    string
 	)
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT e.party_name, COALESCE(e.player_token, ''), e.valid_until, e.org_id, a.language
+		SELECT e.party_name, COALESCE(e.player_token, ''), e.valid_until, e.org_id, a.language, a.slug
 		FROM events e JOIN adventures a ON a.slug = e.adventure_slug WHERE e.id = $1
-	`, eventID).Scan(&title, &player, &validUntil, &orgID, &lang); err != nil {
+	`, eventID).Scan(&title, &player, &validUntil, &orgID, &lang, &slug); err != nil {
 		return err
 	}
 	l := h.orgLook(ctx, orgID)
 	l.Lang = emailtpl.Lang(lang)
 	subject, c := emailtpl.TrailPaid(l.Lang, base+"/party/"+hostToken, base+"/j/"+player, title,
 		trailDate(l.Lang, validUntil), l.Brand.Name)
+	c.Picture = h.emailCover(ctx, l.Lang, slug)
 	if h.SellerIdentity != nil {
 		if seller := h.SellerIdentity(l.Lang); seller != "" {
 			c.Footer = strings.TrimSpace(c.Footer + " " + seller)
@@ -894,6 +895,7 @@ func (h *Handlers) mailTrailLink(w http.ResponseWriter, r *http.Request, email, 
 	} else {
 		subject, c = emailtpl.TrailSignin(l.Lang, link)
 	}
+	c.Picture = h.house(l.Lang, emailtpl.PictureVerify)
 	if err := h.send(ctx, "trail_"+purpose, l.message([]string{email}, subject, c)); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "send failed", err)
 		return
@@ -969,6 +971,8 @@ type trailSummaryDTO struct {
 	// Saved is whether the trail is saved to an email (else only this
 	// browser has it).
 	Saved bool `json:"saved"`
+	// Theme is its starter look, for a swatch beside it.
+	Theme string `json:"theme,omitempty"`
 }
 
 // ListMyTrails lists the trails this browser holds and, with a session,
@@ -1024,7 +1028,7 @@ func (h *Handlers) ListMyTrails(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		d := trailSummaryDTO{ID: p.ID, Title: t.dto.Title, State: p.State(), Cards: len(t.dto.Cards),
-			CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Saved: p.Confirmed}
+			CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Saved: p.Confirmed, Theme: t.dto.Theme}
 		if p.ValidUntil.Valid {
 			d.ValidUntil = &p.ValidUntil.Time
 		}
@@ -1286,6 +1290,7 @@ func (h *Handlers) mailTrailEnded(ctx context.Context, orgID int64, to, title, s
 		l.Lang = emailtpl.Lang(lang)
 	}
 	subject, c := emailtpl.TrailEnded(l.Lang, title, kept, l.Brand.Name)
+	c.Picture = h.emailCover(ctx, l.Lang, slug)
 	if err := h.send(ctx, "trail_ended", l.message([]string{to}, subject, c)); err != nil {
 		logx.Warn("admin.trail.ended_mail", "adventure", slug, "err", err.Error())
 	}
@@ -1395,11 +1400,12 @@ func (h *Handlers) offerKeep(ctx context.Context) {
 			logx.Error("trail.sweep.keep", "trail_id", p.ID, "err", err.Error())
 			continue
 		}
-		var title, lang string
-		_ = h.DB.QueryRowContext(ctx, `SELECT title, language FROM adventures WHERE id = $1`, p.AdvID).Scan(&title, &lang)
+		var title, lang, slug string
+		_ = h.DB.QueryRowContext(ctx, `SELECT title, language, slug FROM adventures WHERE id = $1`, p.AdvID).Scan(&title, &lang, &slug)
 		l := h.orgLook(ctx, p.OrgID)
 		l.Lang = emailtpl.Lang(lang)
 		subject, c := emailtpl.TrailKeep(l.Lang, link, title, trailDate(l.Lang, p.ValidUntil.Time))
+		c.Picture = h.emailCover(ctx, l.Lang, slug)
 		if err := h.send(ctx, "trail_keep", l.message([]string{p.Email.String}, subject, c)); err != nil {
 			logx.Warn("trail.sweep.keep_mail", "trail_id", p.ID, "err", err.Error())
 		}

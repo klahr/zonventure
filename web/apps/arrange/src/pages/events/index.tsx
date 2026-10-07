@@ -3,8 +3,9 @@ import { Map as MapIcon, Plus } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
 import { Button, Card, Empty, ErrorBox, Loading, Page, PageHeader, Table, fmtMoney, useLoad, type Column } from "../../ui/index.ts";
+import { SPOTS } from "@zonventure/ui";
 import { listAdventures, listAssignments, listEvents, type EventRow } from "./api.ts";
-import { AdventureCover, EventsTable, StatePill, eventLabel } from "./parts.tsx";
+import { AdventureCover, EventsTable, StatePill, eventCover, eventLabel } from "./parts.tsx";
 import { NewEventDialog, canStartEvent, type NewEventProps } from "./NewEventDialog.tsx";
 import { NewQuestDialog } from "./NewQuestDialog.tsx";
 import { useJustPurchased } from "./justPurchased.ts";
@@ -27,6 +28,7 @@ export function NoEvents({ onSchedule }: { onSchedule?: (() => void) | undefined
     return (
       <Empty
         title={t.t("No events yet.")}
+        illustration={SPOTS.noEvents}
         action={<Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={onSchedule}>{t.t("Schedule event")}</Button>}
       >
         {t.t("Pick an adventure to schedule your first event — you can add teams and share player links once it's created.")}
@@ -36,6 +38,7 @@ export function NoEvents({ onSchedule }: { onSchedule?: (() => void) | undefined
   return (
     <Empty
       title={t.t("No events yet.")}
+      illustration={SPOTS.noEvents}
       action={<a className="btn primary" href={href({ name: "adventures" })}><MapIcon size={16} aria-hidden />{t.t("Go to Adventures")}</a>}
     >
       {t.t("An event runs a published adventure. Make or publish one first, then schedule it here.")}
@@ -123,7 +126,7 @@ export function QuestsPage() {
   const columns: Column<EventRow>[] = [
     { key: "name", header: t.t("Self-guided adventure"), cell: (r) => (
       <span className="evs-namecell">
-        {r.adventure_avatar_url && <AdventureCover title={r.adventure_title || r.adventure_slug} src={r.adventure_avatar_url} />}
+        {eventCover(r) && <AdventureCover title={r.adventure_title || r.adventure_slug} src={eventCover(r)} />}
         <span className="evs-stack">
           <strong>{eventLabel(r)}</strong>
           <span className="evs-sub">{r.adventure_title || r.adventure_slug}</span>
@@ -149,7 +152,7 @@ export function QuestsPage() {
         <Loading label={t.t("Loading…")} />
       ) : (
         quests.data.length === 0 ? (
-          <Empty title={t.t("No self-guided adventures yet.")} action={newBtn} />
+          <Empty title={t.t("No self-guided adventures yet.")} action={newBtn} illustration={SPOTS.noSelfGuided} />
         ) : (
           <Card flush>
             <Table columns={columns} rows={quests.data} rowKey={(r) => r.id} rowHref={(r) => href({ name: "event", id: r.id })} caption={t.t("Self-guided adventures")} />

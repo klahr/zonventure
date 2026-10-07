@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { get, put } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
-import { Button, Card, ErrorBox, Field, Loading, Row, errorText, fmtMoney, useLoad } from "../../ui/index.ts";
+import { Button, Card, ErrorBox, Field, Loading, Row, fmtMoney, useLoad, useToast } from "../../ui/index.ts";
 
 /** pricingResponse, internal/admin/pricing.go. Amounts in öre, VAT included. */
 interface Pricing {
@@ -73,8 +73,8 @@ export function PricingTab() {
   const kr = (cents: number) => fmtMoney(cents, "SEK", t.current());
   const set = (k: keyof Pricing) => (e: { target: { value: string } }) => setDraft({ ...draft, [k]: e.target.value });
   const input = (k: keyof Pricing, suffix: string) => (
-    <span className="cs-row cs-row--sm" style={{ alignItems: "center" }}>
-      <input inputMode="decimal" value={draft[k]} onChange={set(k)} style={{ maxWidth: "8rem" }} aria-invalid={parsed === k} />
+    <span className="cs-row cs-row--sm">
+      <input className="st-num" inputMode="decimal" value={draft[k]} onChange={set(k)} aria-invalid={parsed === k} />
       <span>{suffix}</span>
     </span>
   );
@@ -83,7 +83,7 @@ export function PricingTab() {
 
   return (
     <>
-      <p className="cs-field__hint" style={{ margin: "0 0 var(--dz-space-4)" }}>
+      <p className="cs-field__hint st-intro">
         {t.t("What the platform charges, in SEK including VAT. A saved price applies to the next checkout; purchases already made or started keep theirs.")}
       </p>
       <PriceCard
@@ -159,8 +159,8 @@ function PriceCard(props: {
   children: ReactNode;
 }) {
   const t = useT();
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const bad = typeof props.parsed === "string" && props.keys.includes(props.parsed);
   const mine = typeof props.parsed === "string" ? null : props.parsed;
   const changed = !!mine && props.keys.some((k) => mine[k] !== props.saved[k]);
@@ -170,12 +170,11 @@ function PriceCard(props: {
     const next = { ...props.saved };
     for (const k of props.keys) next[k] = mine[k];
     setBusy(true);
-    setStatus(null);
     try {
       props.onSaved(await put<Pricing>("/api/admin/pricing", next));
-      setStatus({ ok: true, text: t.t("Saved.") });
+      toast.ok(t.t("Saved"));
     } catch (e) {
-      setStatus({ ok: false, text: errorText(e) });
+      toast.err(e);
     } finally {
       setBusy(false);
     }
@@ -191,8 +190,8 @@ function PriceCard(props: {
       }
     >
       {props.children}
-      <p className="cs-field__hint" role="status" style={{ margin: "var(--dz-space-2) 0 0" }}>
-        {bad ? t.t("Use whole kronor and öre, 0 or more.") : status && !changed ? <span style={{ color: status.ok ? undefined : "var(--dz-danger)" }}>{status.text}</span> : props.example}
+      <p className="cs-field__hint st-example" role="status">
+        {bad ? t.t("Use whole kronor and öre, 0 or more.") : props.example}
       </p>
     </Card>
   );

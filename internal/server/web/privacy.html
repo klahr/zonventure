@@ -4,26 +4,67 @@
 
   This file is a scaffold. Every section below needs review by a lawyer
   qualified in your jurisdiction(s) before you publish it. The {{...}}
-  placeholders are filled at request time from the ZV_* env vars
-  (see internal/server/legal.go). Do not ship to paying customers
-  without legal review.
+  placeholders are filled at request time from Settings → Legal in the
+  console (see internal/server/legal.go). Do not ship to paying
+  customers without legal review.
 -->
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <title>Privacy Policy · {{COMPANY_NAME}}</title>
 <link rel="stylesheet" href="/assets/fontface.css">
+<link rel="stylesheet" href="/assets/page-tokens.css">
+<link rel="stylesheet" href="/assets/topbar.css">
+<script defer src="/assets/topbar.js"></script>
+<script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
 <style>
-  body { font: 16px/1.55 'Open Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', system-ui, -apple-system, 'Segoe UI', sans-serif; max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; color:#1f2937; }
-  h1 { font: 700 1.7rem/1.2 'Aclonica', serif; margin: 0 0 .25rem; }
+  /* Tokens, .skip-link and focus rules: page-tokens.css; topbar and
+     footer: topbar.css. */
+  .legal { max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem 0; }
+  h1 { font: 400 2rem/1.2 var(--font-brand); color: var(--accent); margin: 0 0 .25rem; }
   h2 { margin: 2rem 0 .35rem; font-size: 1.1rem; }
   p, ul { margin: .35rem 0; }
-  small.muted { color: #6b7280; }
-  a { color: #ad1357; }
-  .draft-note { background:#fff7e0; border:1px solid #f3d57a; padding:.75rem 1rem; border-radius:8px; font-size:.92rem; }
-  footer { margin-top: 3rem; font-size:.85rem; color:#6b7280; }
+  small.muted { color: var(--muted); }
+  .draft-note {
+    margin: 1rem 0; padding: .75rem 1rem;
+    border-radius: var(--radius-xs);
+    border-left: 4px solid #d99500;
+    background: color-mix(in srgb, #d99500 10%, var(--surface));
+    font-size: .92rem;
+  }
+  footer { margin-top: 3rem; font-size: .85rem; }
 </style>
 </head><body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
+
+<header class="topbar" role="banner">
+  <div class="wrap topbar-row">
+    <label for="nav-toggle" class="hamburger" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </label>
+    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">{{SITE_WORDMARK}}</a>
+    <nav aria-label="{{NAV_PRIMARY_ARIA}}">
+      <div class="nav-menu">
+        <a href="/manual">{{NAV_MANUAL}}</a>
+        <a href="/pricing">{{NAV_PRICING}}</a>
+        <a href="/store">{{NAV_STORE}}</a>
+        <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<aside class="nav-overlay" aria-label="{{NAV_PRIMARY_ARIA}}">
+  <a href="/manual">{{NAV_MANUAL}}</a>
+  <a href="/pricing">{{NAV_PRICING}}</a>
+  <a href="/store">{{NAV_STORE}}</a>
+  <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+</aside>
+
+<main id="main" class="legal">
 
 <h1>Privacy Policy</h1>
 <small class="muted">Last updated: {{LAST_UPDATED}}</small>
@@ -183,5 +224,7 @@
   <a href="/terms">Terms of Service</a> ·
   <a href="/arrange">Back to {{COMPANY_NAME}}</a>
 </footer>
+
+</main>
 
 </body></html>

@@ -14,6 +14,9 @@ export interface AdventureRow {
   org_id?: number;
   mine_to_edit: boolean;
   avatar_url?: string;
+  /** The look's starter theme and own cover picture (a media id), for a missing avatar. */
+  theme?: string;
+  cover?: number;
   published: boolean;
   shared: boolean;
   language: string;
@@ -61,6 +64,8 @@ export interface AdventureDetail {
   outro_html?: string;
   colors?: { accent?: string };
   avatar_url?: string;
+  theme?: string;
+  cover?: number;
   published: boolean;
   running_event_count?: number;
   language?: string;

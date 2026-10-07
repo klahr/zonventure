@@ -11,6 +11,7 @@ import (
 	"github.com/klahr/zonventure/internal/settings"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/activity"
+	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/graph"
@@ -292,6 +294,11 @@ type PublicPartyOfferDTO struct {
 	// PaymentsOpen is false when the org can't take the money yet: the
 	// page then shows the party without a way to book it.
 	PaymentsOpen bool `json:"payments_open"`
+	// The adventure's look, starter theme and cover picture, on the
+	// booking page only (GetPartyByOrg): see joinInfoDTO.
+	Look     *adventure.Colors `json:"look,omitempty"`
+	Theme    string            `json:"theme,omitempty"`
+	CoverURL string            `json:"cover_url,omitempty"`
 }
 
 const publicPartyOffersSQL = `
@@ -350,6 +357,18 @@ func (h *Handlers) GetPartyByOrg(w http.ResponseWriter, r *http.Request) {
 	d, ok := h.publicOffer(w, r)
 	if !ok {
 		return
+	}
+	ctx := r.Context()
+	var err error
+	if d.Look, d.Theme, err = h.partyLook(ctx, d.AdventureSlug); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "party lookup failed", err)
+		return
+	}
+	if cover, _, err := h.adventureCover(ctx, d.AdventureSlug, false); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "party lookup failed", err)
+		return
+	} else if cover > 0 {
+		d.CoverURL = "/adventure-assets/cover/" + url.PathEscape(d.AdventureSlug) + "?v=" + strconv.FormatInt(cover, 10)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, d)
@@ -612,6 +631,7 @@ func (h *Handlers) sendPartyHostLink(ctx context.Context, eventID int64, to, hos
 	var name string
 	_ = h.DB.QueryRowContext(ctx, `SELECT party_name FROM events WHERE id = $1`, eventID).Scan(&name)
 	subject, c := emailtpl.PartyHost(l.Lang, publicURL+"/party/"+hostToken, name, l.Brand.Name)
+	c.Picture = l.Cover
 	if h.SellerIdentity != nil {
 		if seller := h.SellerIdentity(l.Lang); seller != "" {
 			c.Footer = strings.TrimSpace(c.Footer + " " + seller)
@@ -778,6 +798,12 @@ type hostPartyDTO struct {
 	Values    []hostValueDTO    `json:"values"`
 	Editables []hostEditableDTO `json:"editables"`
 	Places    []hostPlaceDTO    `json:"places"`
+
+	// The adventure's look, starter theme and cover picture, as the join
+	// page shows them: see joinInfoDTO.
+	Look     *adventure.Colors `json:"look,omitempty"`
+	Theme    string            `json:"theme,omitempty"`
+	CoverURL string            `json:"cover_url,omitempty"`
 }
 
 // GetHostParty is everything the host page shows.
@@ -804,6 +830,18 @@ func (h *Handlers) GetHostParty(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out.LiveURL = base + "/live/" + liveToken
+	look, theme, err := h.partyLook(ctx, p.AdvSlug)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "party lookup failed", err)
+		return
+	}
+	out.Look, out.Theme = look, theme
+	if cover, _, err := h.adventureCover(ctx, p.AdvSlug, false); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "party lookup failed", err)
+		return
+	} else if cover > 0 {
+		out.CoverURL = "/api/join/" + p.PlayerToken + "/cover?v=" + strconv.FormatInt(cover, 10)
+	}
 
 	// The cards follow the zones of the graph the party plays: the
 	// game's while one is being played, the adventure's between games.

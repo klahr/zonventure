@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	_ "golang.org/x/image/webp" // and as WebP
 )
 
@@ -72,6 +73,29 @@ func (h *Handlers) JoinCover(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", f.Mime)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("ETag", `"`+f.Sum+`"`)
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(f.Content))
+}
+
+// ServeAdventureCover is an adventure's own cover picture by slug, for
+// the server-rendered pages that wear its look (store, recap, live). No
+// auth, as the adventure's icon at /adventure-assets/avatar/{slug}: the
+// picture is meant for the join page and the players' welcome anyway.
+//
+// GET /adventure-assets/cover/{slug}
+func (h *Handlers) ServeAdventureCover(w http.ResponseWriter, r *http.Request) {
+	id, f, err := h.adventureCover(r.Context(), chi.URLParam(r, "slug"), true)
+	if err != nil {
+		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		return
+	}
+	if id == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", f.Mime)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("ETag", `"`+f.Sum+`"`)
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(f.Content))
 }
