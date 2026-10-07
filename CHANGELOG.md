@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-10-07
+
 ### Fixed
 
 - `make upgrade` on a host that pulls from ghcr.io pins the release in
