@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/klahr/zonventure/internal/settings"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -14,7 +15,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
-	"github.com/klahr/zonventure/internal/payments"
 	"github.com/klahr/zonventure/internal/trail"
 )
 
@@ -183,7 +183,7 @@ func TestPublicTrail_PayHostKeep(t *testing.T) {
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
 	f.publicTrailRoutes()
-	f.h.Hosted = payments.HostedPass{BlockCents: 14900, Currency: "sek"}
+	f.h.Pricing = func() settings.Pricing { return settings.Pricing{HostedBlockCents: 14900} }
 	d := f.newDraft(t, "kids")
 	path := draftPath(d)
 
@@ -407,7 +407,7 @@ func TestPublicTrail_Free(t *testing.T) {
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
 	f.publicTrailRoutes()
-	f.h.Hosted = payments.HostedPass{BlockCents: 14900, Currency: "sek"}
+	f.h.Pricing = func() settings.Pricing { return settings.Pricing{HostedBlockCents: 14900} }
 	d := f.newDraft(t, "birthday")
 	mailed := len(f.mail.messages)
 

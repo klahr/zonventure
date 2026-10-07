@@ -107,7 +107,7 @@ func registerStaticAssetRoutes(r chi.Router, env *routesEnv) {
 		orgURLs := buildOrgSitemapURLs(req.Context(), cfg.DB, host)
 		out := strings.ReplaceAll(string(sitemapBody), "{{HOST}}", host)
 		out = strings.ReplaceAll(out, "{{ORG_URLS}}", orgURLs)
-		out = dropSitemapPages(out, host, unavailablePages(cfg.Legal))
+		out = dropSitemapPages(out, host, unavailablePages(legalNow(cfg.Legal)))
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		_, _ = w.Write([]byte(out))

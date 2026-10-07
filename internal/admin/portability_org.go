@@ -44,6 +44,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/klahr/zonventure/internal/settings"
 	"io"
 	"strings"
 	"time"
@@ -827,7 +828,7 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 			ev.AdventureSlug, orgID, eventAuthorID, ev.State,
 			sqlNullStr(ev.ScheduledAt), assignArg, ev.LiveToken, ev.Name, sqlNullStr(ev.AttestedNoMinorsAt),
 			ev.PublicForSale, ev.PublicBlurb,
-			nullableInt64(ev.TicketPriceCents), defaultStr(ev.TicketCurrency, "eur"), defaultInt(ev.TicketTeamSize, 5),
+			nullableInt64(ev.TicketPriceCents), defaultStr(ev.TicketCurrency, settings.Currency), defaultInt(ev.TicketTeamSize, 5),
 			sqlNullStr(ev.StartedAt), sqlNullStr(ev.CompletedAt), sqlNullStr(ev.CancelledAt),
 			coverMime, coverBytes, int64(len(coverBytes)),
 		).Scan(&newEventID); err != nil {

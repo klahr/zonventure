@@ -49,12 +49,10 @@ func TestRenderLegalPage_PrivacySubstitutesPlaceholders(t *testing.T) {
 	}
 }
 
-// An unconfigured operator (no ZV_COMPANY_NAME / ZV_CONTACT_EMAIL /
-// ZV_JURISDICTION) used to see placeholder text on /privacy and
-// /terms — bad optics for a real customer who hits those URLs. The
-// new behaviour 503s with a list of missing env vars so the page
-// is conspicuously not yet ready, and the operator gets concrete
-// guidance about what to set.
+// An unconfigured operator (no company name, contact email or
+// jurisdiction under Settings → Legal) must not show placeholder text on
+// /privacy and /terms to a real customer. The page 503s with what is
+// missing and where to fill it in.
 func TestRenderLegalPage_RefusesWhenUnconfigured(t *testing.T) {
 	rr := httptest.NewRecorder()
 	renderLegalPage(rr, "privacy.html", LegalConfig{})
@@ -63,12 +61,13 @@ func TestRenderLegalPage_RefusesWhenUnconfigured(t *testing.T) {
 	}
 	body := rr.Body.String()
 	for _, want := range []string{
-		"ZV_COMPANY_NAME",
-		"ZV_CONTACT_EMAIL",
-		"ZV_JURISDICTION",
+		"Settings → Legal",
+		"company name",
+		"contact email",
+		"jurisdiction",
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("503 body missing env-var hint %q", want)
+			t.Errorf("503 body missing hint %q", want)
 		}
 	}
 }

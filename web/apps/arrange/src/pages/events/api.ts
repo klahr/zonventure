@@ -125,7 +125,7 @@ export function pricing(user: Whoami) {
   const p = (user.pricing ?? {}) as Partial<Pricing>;
   const priceCents = p.player_cents || 500;
   const free = p.free_players_per_event ?? 15;
-  const currency = p.currency || "EUR";
+  const currency = p.currency || "SEK";
   return { priceCents, free, currency, chargeable: (n: number) => Math.max(0, n - free) * priceCents };
 }
 

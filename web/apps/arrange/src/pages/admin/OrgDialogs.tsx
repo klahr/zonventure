@@ -334,7 +334,7 @@ export function GrantSlotsDialog({ org, event, onClose, onDone }: Done & { org: 
   const { state } = useSession();
   const pricing = (state.status === "authenticated" ? state.user.pricing : undefined) as { player_cents?: number; currency?: string } | undefined;
   const PRICE = pricing?.player_cents || 500;
-  const CURRENCY = pricing?.currency || "EUR";
+  const CURRENCY = pricing?.currency || "SEK";
   const trusted = org.trusted;
   const [players, setPlayers] = useState("5");
   const suggest = (p: string) => String(Math.max(1, Number.parseInt(p, 10) || 0) * PRICE);

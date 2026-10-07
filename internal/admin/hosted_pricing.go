@@ -18,7 +18,7 @@ import (
 )
 
 // Paying for hosted events: free for up to FreeTeams teams a game (no
-// blocks), else a pass of h.Hosted's price per started block of
+// blocks), else a pass of h.hosted()'s price per started block of
 // TeamsPerBlock teams a game may hold. "Host it" buys an
 // arranger a hosted event of their own adventure; "Add teams" buys an
 // event more blocks. Both are charged on the platform's own account
@@ -41,7 +41,7 @@ type hostedPriceDTO struct {
 }
 
 func (h *Handlers) hostedPrice() hostedPriceDTO {
-	return hostedPriceDTO{BlockCents: h.Hosted.BlockCents, Currency: h.Hosted.Currency, TeamsPer: TeamsPerBlock, FreeTeams: FreeTeams}
+	return hostedPriceDTO{BlockCents: h.hosted().BlockCents, Currency: h.hosted().Currency, TeamsPer: TeamsPerBlock, FreeTeams: FreeTeams}
 }
 
 // GetHostedPrice is the pass price, for the console's Host it dialog.
@@ -139,7 +139,7 @@ func (h *Handlers) HostAdventure(w http.ResponseWriter, r *http.Request) {
 		name = title
 	}
 
-	if h.Hosted.Free() || req.Blocks == 0 {
+	if h.hosted().Free() || req.Blocks == 0 {
 		eventID, err := h.hostFree(ctx, *me.OrgID, slug, name, req.Blocks, me.Email)
 		if err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "host failed", err)
@@ -152,13 +152,13 @@ func (h *Handlers) HostAdventure(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusConflict, "payments are not set up on this server")
 		return
 	}
-	amount := h.Hosted.Price(req.Blocks)
+	amount := h.hosted().Price(req.Blocks)
 	var purchaseID int64
 	if err := h.DB.QueryRowContext(ctx, `
 		INSERT INTO ticket_purchases (kind, buyer_org_id, adventure_slug, party_name, buyer_email,
 		                              team_size, amount_cents, currency, blocks)
 		VALUES ('hosted', $1, $2, $3, $4, 0, $5, $6, $7) RETURNING id
-	`, *me.OrgID, slug, name, strings.ToLower(me.Email), amount, h.Hosted.Currency, req.Blocks).Scan(&purchaseID); err != nil {
+	`, *me.OrgID, slug, name, strings.ToLower(me.Email), amount, h.hosted().Currency, req.Blocks).Scan(&purchaseID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "host failed", err)
 		return
 	}
@@ -192,7 +192,7 @@ func (h *Handlers) hostFree(ctx context.Context, orgID int64, slug, name string,
 // where the buyer lands afterwards; hostURL, when set, the admin page
 // the purchase opens once paid.
 func (h *Handlers) startHostedCheckout(w http.ResponseWriter, r *http.Request, purchaseID int64, product string, amount int64, email, back, hostURL string) {
-	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, product, h.Hosted.Currency, amount,
+	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, product, h.hosted().Currency, amount,
 		email, "", 0, back)
 	if err != nil {
 		_, _ = h.DB.ExecContext(r.Context(),
@@ -233,7 +233,7 @@ func (h *Handlers) AddHostedBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if h.Hosted.Free() {
+	if h.hosted().Free() {
 		if _, err := h.DB.ExecContext(ctx, `UPDATE events SET hosted_blocks = hosted_blocks + $2 WHERE id = $1`, p.EventID, req.Blocks); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "add teams failed", err)
 			return
@@ -259,12 +259,12 @@ func (h *Handlers) AddHostedBlocks(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "add teams failed", err)
 		return
 	}
-	amount := h.Hosted.Price(req.Blocks)
+	amount := h.hosted().Price(req.Blocks)
 	var purchaseID int64
 	if err := h.DB.QueryRowContext(ctx, `
 		INSERT INTO ticket_purchases (kind, event_id, buyer_email, team_size, amount_cents, currency, blocks)
 		VALUES ('hosted_blocks', $1, $2, 0, $3, $4, $5) RETURNING id
-	`, p.EventID, strings.ToLower(email), amount, h.Hosted.Currency, req.Blocks).Scan(&purchaseID); err != nil {
+	`, p.EventID, strings.ToLower(email), amount, h.hosted().Currency, req.Blocks).Scan(&purchaseID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "add teams failed", err)
 		return
 	}

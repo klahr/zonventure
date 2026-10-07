@@ -14,7 +14,10 @@ import (
 // it's operator-level information and shouldn't leak which providers
 // are installed to org-scoped users.
 func (h *Handlers) ListComponents(w http.ResponseWriter, r *http.Request) {
-	out := h.Components
+	var out []components.Component
+	if h.Components != nil {
+		out = h.Components()
+	}
 	if out == nil {
 		out = []components.Component{}
 	}

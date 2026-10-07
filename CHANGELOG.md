@@ -11,6 +11,42 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — legal settings in the console
+
+- **Settings → Legal** (platform admin) sets the company (name,
+  organisation and VAT numbers, address), contact and data-protection
+  emails, jurisdiction, the sub-processors named in the privacy policy,
+  how many days player locations, login history and finished parties
+  are kept, and the lawyer review. A preview shows /privacy and /terms
+  with the values as typed. A save applies at once to the pages, the
+  seller line by every buy button and the landing page, and to the
+  retention sweeper from its next run; one that changes what the pages
+  say moves their Last updated date to today.
+- **Upgrading:** the first start copies `ZV_COMPANY_*`,
+  `ZV_CONTACT_EMAIL`, `ZV_DPO_EMAIL`, `ZV_JURISDICTION`,
+  `ZV_HOSTING_PROVIDER`, `ZV_EMAIL_PROVIDER`, `ZV_LEGAL_REVIEWED`,
+  `ZV_LEGAL_LAST_UPDATED` and `ZV_*_RETENTION_DAYS` in once, logging
+  each; after that they are ignored. The `-retention-*-days` flags are
+  removed. Map tiles stay env vars for now.
+
+### Changed — prices in the console, in SEK
+
+- **Settings → Pricing** (platform admin) sets the event pass (price
+  per player, free players per event), the hosted pass (per block of
+  15 teams) and the platform fee on what orgs sell, in SEK including
+  VAT. A save applies to the next checkout without a restart; past and
+  open purchases keep their amounts. Defaults: 49 kr per player after
+  15 free, 149 kr per block, no fee. Nothing is set in Stripe.
+- **Removed:** `ZV_PRICE_PER_PLAYER_CENTS`, `ZV_FREE_PLAYERS_PER_EVENT`,
+  `ZV_HOSTED_BLOCK_CENTS`, `ZV_HOSTED_CURRENCY` and
+  `ZV_PLATFORM_FEE_*`. A server started with one set logs that it is
+  ignored. **Upgrading:** enter your prices under Settings → Pricing,
+  then drop the vars.
+- **SEK only.** The event pass is sold in SEK (was EUR), and orgs sell
+  tickets and parties in SEK: the currency pickers are gone and another
+  currency is refused. A listing priced in another currency keeps it
+  until its price is next saved. Migration `0116_sek_only`.
+
 ### Changed — a clearer theme editor
 
 - The theme editor shows its themes as a strip of cards in their own

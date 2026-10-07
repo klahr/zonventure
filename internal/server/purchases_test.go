@@ -257,7 +257,7 @@ func TestConfirmPurchase_Simulated(t *testing.T) {
 		}
 		// 20 players triggers the simulated /confirm path; ≤15 would
 		// short-circuit to the free path with no checkout step.
-		// 15 free + 5 chargeable @ 500c each = 2500c.
+		// 15 free + 5 chargeable @ 4900 öre each = 24500.
 		body := map[string]any{"adventure_slug": "demo", "max_players": 20}
 		if s := c.do("POST", "/api/admin/purchases", body, &created); s != 201 {
 			t.Fatalf("create = %d", s)
@@ -265,8 +265,8 @@ func TestConfirmPurchase_Simulated(t *testing.T) {
 		if created.ID == 0 {
 			t.Fatalf("expected purchase id, got %+v", created)
 		}
-		if created.AmountCents != 5*500 {
-			t.Fatalf("amount_cents = %d, want 2500", created.AmountCents)
+		if created.AmountCents != 5*4900 {
+			t.Fatalf("amount_cents = %d, want 24500", created.AmountCents)
 		}
 		if created.Provider != "simulated" {
 			t.Fatalf("provider = %q, want simulated (no Stripe creds set)", created.Provider)

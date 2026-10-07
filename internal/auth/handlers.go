@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/klahr/zonventure/internal/settings"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/klahr/zonventure/internal/httpx"
@@ -18,10 +20,6 @@ import (
 type Handlers struct {
 	DB           *sql.DB
 	SecureCookie bool // set to true when behind TLS
-	// Pricing carries the operator's catalog price per slot, for client
-	// totals. Zero values render as "$0.00" — operator should always set
-	// this; the server's actual charge is enforced separately.
-	Pricing Pricing
 	// Limiter throttles failed login attempts. Optional: nil disables.
 	Limiter *LoginLimiter
 	// ForgotLimiter is a separate per-IP bucket for /forgot. We keep it
@@ -70,12 +68,18 @@ type Handlers struct {
 // on /whoami so the bootstrap fetch already carries it.
 //
 // FreePlayersPerEvent is subtracted from the player count before
-// multiplying by PlayerCents — the buyer sees "first N free, then €X
-// per player" without doing arithmetic in their head.
+// multiplying by PlayerCents — the buyer sees "first N free, then X kr
+// per player" without doing arithmetic in their head. Read from the
+// prices in force (Settings → Pricing) on every /whoami.
 type Pricing struct {
 	PlayerCents         int    `json:"player_cents"`
 	FreePlayersPerEvent int    `json:"free_players_per_event"`
 	Currency            string `json:"currency"`
+}
+
+func currentPricing() Pricing {
+	p := settings.CurrentPricing()
+	return Pricing{PlayerCents: int(p.PlayerCents), FreePlayersPerEvent: int(p.FreePlayers), Currency: strings.ToUpper(settings.Currency)}
 }
 
 type loginRequest struct {
@@ -136,7 +140,7 @@ func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
 	resp := whoamiResponse{
 		ID: u.ID, Username: u.Username, Role: u.Role, OrgID: u.OrgID,
 		Email: u.Email, EmailVerified: u.EmailVerified,
-		Pricing:           h.Pricing,
+		Pricing:           currentPricing(),
 		Memberships:       []membershipDTO{},
 		PasswordIsDefault: u.PasswordIsDefault,
 		MCPEnabled:        h.MCPEnabled,

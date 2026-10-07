@@ -145,8 +145,6 @@ export function ConnectBanner({ event, status, user }: { event: EventInfo; statu
   );
 }
 
-const CURRENCIES = ["eur", "usd", "sek", "gbp", "dkk", "nok"];
-
 /**
  * A quest's store settings: ticket price, currency, team size, blurb and
  * cover. Whether it is listed follows its state (running/paused →
@@ -192,7 +190,6 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
   const toast = useToast();
   const saved = event.ticket_price_cents ? (event.ticket_price_cents / 100).toFixed(2) : "";
   const [price, setPrice] = useState(saved);
-  const [currency, setCurrency] = useState((event.ticket_currency || "eur").toLowerCase());
   const [size, setSize] = useState(String(event.ticket_team_size || 5));
   const [blurb, setBlurb] = useState(event.public_blurb || "");
   const [busy, setBusy] = useState(false);
@@ -206,7 +203,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
     if (!Number.isFinite(n) || n < 1 || n > 50) return toast.err(t.t("Team size must be between 1 and 50"));
     setBusy(true);
     try {
-      await api.patchEvent(event.id, { ticket_price_cents: cents, ticket_currency: currency, ticket_team_size: n, public_blurb: blurb.trim() });
+      await api.patchEvent(event.id, { ticket_price_cents: cents, ticket_team_size: n, public_blurb: blurb.trim() });
       toast.ok(t.t("Saved"));
       onSaved();
     } catch (e) {
@@ -253,13 +250,8 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
         </div>
       </Row>
       <Row>
-        <Field label={t.t("Price")}>
-          <input type="number" step="0.01" min="0" placeholder="25.00" className="ev-w8" value={price} onChange={(e) => setPrice(e.target.value)} />
-        </Field>
-        <Field label={t.t("Currency")}>
-          <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            {CURRENCIES.map((c) => <option key={c} value={c}>{c.toUpperCase()}</option>)}
-          </select>
+        <Field label={t.t("Price (kr)")}>
+          <input type="number" step="0.01" min="0" placeholder="199" className="ev-w8" value={price} onChange={(e) => setPrice(e.target.value)} />
         </Field>
         <Field label={t.t("Team size")}>
           <input type="number" min="1" max="50" className="ev-w5" value={size} onChange={(e) => setSize(e.target.value)} />

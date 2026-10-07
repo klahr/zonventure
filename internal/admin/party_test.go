@@ -3,6 +3,7 @@ package admin_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/klahr/zonventure/internal/settings"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -73,7 +74,9 @@ func newPartyFixture(t *testing.T) (*partyFixture, func()) {
 		t.Fatal(err)
 	}
 	f.h = &admin.Handlers{DB: db, Lib: adventure.New(db), Hub: ws.NewHub(), Mailer: f.mail,
-		PublicURL: "https://zv.example.com", Provider: &fakeProvider{}}
+		PublicURL: "https://zv.example.com", Provider: &fakeProvider{},
+		// Free hosting and no platform fee unless a test sets its prices.
+		Pricing: func() settings.Pricing { return settings.Pricing{} }}
 
 	user := auth.User{ID: userID, Role: auth.RoleOrgAdmin, OrgID: &f.orgID, Email: "boss@acme.com", EmailVerified: true}
 	console := chi.NewRouter()

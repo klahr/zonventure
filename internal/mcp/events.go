@@ -84,7 +84,7 @@ func (s *Server) registerEventTools() {
 				"show_map":           map[string]any{"type": "boolean", "description": "Whether the audience /live/{token} page renders team positions."},
 				"secret_roles":       map[string]any{"type": "boolean", "description": "Deal the adventure's secret saboteur role in this event."},
 				"ticket_price_cents": map[string]any{"type": "integer", "description": "Self-guided: price per ticket in cents, e.g. 19900 for 199.00."},
-				"ticket_currency":    map[string]any{"type": "string", "description": "Self-guided: ISO 4217 currency, e.g. SEK or EUR."},
+				"ticket_currency":    map[string]any{"type": "string", "description": "Self-guided: always SEK, the one currency tickets are sold in; may be left out."},
 				"ticket_team_size":   map[string]any{"type": "integer", "description": "Self-guided: players per ticket."},
 				"public_blurb":       map[string]any{"type": "string", "description": "Self-guided: the line shown in the store."},
 			},

@@ -8,8 +8,10 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/hex"
+	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -181,6 +183,27 @@ func New(cfg Config) http.Handler {
 	// flaky DB during cutover still serves clean 301s and 503s.
 	settings.LoadRedirectTarget(context.Background(), cfg.DB)
 	settings.LoadMaintenanceMode(context.Background(), cfg.DB)
+	// Prices are set under Settings → Pricing; the env vars that set
+	// them before are ignored, so say so rather than silently charge
+	// something else.
+	settings.LoadPricing(context.Background(), cfg.DB)
+	// Settings → Legal, once copied from the env vars it replaced;
+	// after that they are ignored.
+	copied := map[string]bool{}
+	for _, name := range settings.LoadLegal(context.Background(), cfg.DB, os.Getenv) {
+		copied[name] = true
+		log.Printf("%s copied to Settings → Legal; remove it from the env", name)
+	}
+	for _, name := range settings.LegalEnvVars() {
+		if !copied[name] && os.Getenv(name) != "" {
+			log.Printf("%s is no longer read: set it under Settings → Legal", name)
+		}
+	}
+	for _, name := range []string{"ZV_PRICE_PER_PLAYER_CENTS", "ZV_FREE_PLAYERS_PER_EVENT", "ZV_HOSTED_BLOCK_CENTS", "ZV_HOSTED_CURRENCY", "ZV_PLATFORM_FEE_PERCENT_BPS", "ZV_PLATFORM_FEE_FIXED_CENTS", "ZV_PLATFORM_FEE_MIN_CENTS"} {
+		if os.Getenv(name) != "" {
+			log.Printf("%s is no longer read: set prices under Settings → Pricing", name)
+		}
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -199,7 +222,7 @@ func New(cfg Config) http.Handler {
 	r.Use(securityHeaders(cspFor(cfg.Legal.MapTileURL)))
 	// Hide links to /privacy, /terms and /pricing while they'd answer
 	// 503 / 404 (legal identity unset, landing off).
-	r.Use(hideUnavailableLinks(cfg.Legal))
+	r.Use(hideUnavailableLinks(func() LegalConfig { return legalNow(cfg.Legal) }))
 	// Cutover redirect: when the operator has flipped redirect mode,
 	// every non-allowlisted path 301s to the hosted instance so
 	// printed QR codes / emailed magic links keep working.
@@ -242,13 +265,8 @@ func New(cfg Config) http.Handler {
 		bgCtx = context.Background()
 	}
 	authH := &auth.Handlers{
-		DB:           cfg.DB,
-		SecureCookie: cfg.SecureCookie,
-		Pricing: auth.Pricing{
-			PlayerCents:         admin.PricePerPlayerCents,
-			FreePlayersPerEvent: admin.FreePlayersPerEvent,
-			Currency:            "EUR",
-		},
+		DB:            cfg.DB,
+		SecureCookie:  cfg.SecureCookie,
 		Limiter:       newSweptLimiter(bgCtx),
 		ForgotLimiter: newSweptLimiter(bgCtx),
 		TOTPLimiter:   newSweptLimiter(bgCtx),
@@ -353,21 +371,16 @@ func New(cfg Config) http.Handler {
 		Mailer:         mail,
 		MailOutbox:     mailOutbox,
 		PublicURL:      cfg.PublicURL,
-		SellerIdentity: cfg.Legal.SellerIdentityText,
+		SellerIdentity: func(lang string) string { return legalNow(cfg.Legal).SellerIdentityText(lang) },
 		Provider:       paymentProvider,
-		// Platform fee is read once at startup and held on the
-		// handler set. Zero-value (no env vars) keeps self-host
-		// inert: no marketplace flow, no Connect onboarding gate.
-		PlatformFee:    payments.PlatformFeeFromEnv(),
 		SecureCookie:   cfg.SecureCookie,
-		Components:     withLegalComponent(cfg.Components, cfg.Legal),
+		Components:     func() []components.Component { return withLegalComponent(cfg.Components, legalNow(cfg.Legal)) },
 		Storage:        store,
 		TOTPKey:        cfg.TOTPKey,
 		TeamImporters:  importers,
 		Updates:        updateSvc,
 		ConfirmLimiter: newSweptLimiter(bgCtx),
 	}
-	adminH.Hosted = payments.HostedPassFromEnv(adminH.PlatformFee.Enabled())
 	// Hosted events: finish idle games, end lapsed events, retry game
 	// summaries. See admin/hosted.go.
 	periodic.Start(bgCtx, time.Minute, adminH.SweepHosted)
@@ -376,11 +389,6 @@ func New(cfg Config) http.Handler {
 	periodic.Start(bgCtx, time.Hour, adminH.SweepTrails)
 	publicH := &public.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL, Engine: playerH.Engine,
-		// Same PlatformFee as adminH so the /store listing filter
-		// agrees with the BuyTicket gate: an un-onboarded quest
-		// neither lists nor accepts purchases when the marketplace
-		// fee is configured.
-		PlatformFee:  adminH.PlatformFee,
 		SecureCookie: cfg.SecureCookie,
 	}
 

@@ -14,6 +14,8 @@ import { MigrationTab } from "./Migration.tsx";
 import { SoftwareUpdateTab } from "./SoftwareUpdate.tsx";
 import { IntegrationsTab } from "./Integrations.tsx";
 import { ThemesTab } from "./Themes.tsx";
+import { PricingTab } from "./Pricing.tsx";
+import { LegalTab } from "./Legal.tsx";
 import "./settings.css";
 
 /**
@@ -38,6 +40,8 @@ export function SettingsPage({ tab }: { tab?: string | undefined }) {
     { id: "audit", label: t.t("Audit"), visible: orgAdmin || admin },
     { id: "purchases", label: t.t("Purchases"), visible: orgUser },
     { id: "billing", label: t.t("Billing"), visible: orgAdmin },
+    { id: "pricing", label: t.t("Pricing"), visible: admin },
+    { id: "legal", label: t.t("Legal"), visible: admin },
     { id: "system", label: t.t("System"), visible: admin },
     { id: "migration", label: t.t("Migration"), visible: admin },
     { id: "software-update", label: t.t("Software update"), visible: admin },
@@ -71,6 +75,10 @@ function SettingsTab({ id }: { id: string }) {
       return <PurchasesTab />;
     case "billing":
       return <BillingTab />;
+    case "pricing":
+      return <PricingTab />;
+    case "legal":
+      return <LegalTab />;
     case "system":
       return <SystemTab />;
     case "migration":

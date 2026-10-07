@@ -447,8 +447,8 @@ func TestCreatePurchase_StripeCheckoutTaxParams(t *testing.T) {
 	if got := form.Get("line_items[0][price_data][tax_behavior]"); got != "inclusive" {
 		t.Fatalf("tax_behavior = %q, want inclusive", got)
 	}
-	if got := form.Get("line_items[0][price_data][unit_amount]"); got != "2500" {
-		t.Fatalf("unit_amount = %q, want 2500", got)
+	if got := form.Get("line_items[0][price_data][unit_amount]"); got != "24500" {
+		t.Fatalf("unit_amount = %q, want 24500", got)
 	}
 }
 

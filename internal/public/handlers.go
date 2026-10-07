@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/klahr/zonventure/internal/settings"
 	"math"
 	"net/http"
 	"sort"
@@ -48,13 +49,14 @@ type Handlers struct {
 	SecureCookie bool
 	// tracks caches each event's tracks for tracksTTL; see buildTracks.
 	tracks tracksCache
-	// PlatformFee gates the marketplace-aware /store filter: when
-	// the operator has configured a platform fee, only quests whose
-	// org has completed Stripe Connect onboarding are listed
-	// (because un-onboarded quests can't actually take a payment).
-	// Zero-value = no marketplace = no extra filter, which is the
-	// right posture for self-host.
-	PlatformFee payments.PlatformFee
+}
+
+// platformFee gates the marketplace-aware /store filter: with a
+// platform fee set, only quests whose org has completed Stripe Connect
+// onboarding are listed (un-onboarded quests can't take a payment).
+// Zero = no marketplace = no extra filter.
+func (h *Handlers) platformFee() payments.PlatformFee {
+	return payments.FeeFrom(settings.CurrentPricing())
 }
 
 type memberDTO struct {

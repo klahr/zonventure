@@ -67,10 +67,14 @@ work is in four phases, all built; what's left of D is listed below.
       (Move earlier/later is the fallback).
 - [ ] Templates set no theme/colours yet (spec: each template sets a
       theme from the existing themes).
-- [ ] Party offers must be in the pass currency (SEK) when a platform
-      fee is set — blocks orgs selling in EUR. Decide.
-- [ ] Production: set `ZV_HOSTED_BLOCK_CENTS=14900` if no platform fee
-      is configured there (otherwise hosting is free).
+- [x] Party offers must be in the pass currency — decided 2026-10-07:
+      the platform and orgs sell in SEK only (PLATFORM_PRICING.md).
+- [ ] Production: after deploying Settings → Legal, check the log for
+      "copied to Settings → Legal", review the tab, then drop those vars
+      from the env file and their passthrough lines from compose.yaml.
+- [ ] Production: after deploying Settings → Pricing, enter prod's
+      prices there and drop the old `ZV_PRICE_*` / `ZV_HOSTED_*` /
+      `ZV_PLATFORM_FEE_*` vars from its env file.
 - [ ] Console: a hosted event's page highlights "Events" in the
       sidebar instead of "Hosted"; the Hosted list shows a redundant
       "Hosted" pill per row.

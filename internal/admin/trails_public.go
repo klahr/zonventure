@@ -93,7 +93,7 @@ func (h *Handlers) trailOrg(ctx context.Context, slug string) (id int64, name st
 }
 
 // trailPaymentsOpen is whether a trail can be paid for now.
-func (h *Handlers) trailPaymentsOpen() bool { return h.Hosted.Free() || h.paymentsEnabled() }
+func (h *Handlers) trailPaymentsOpen() bool { return h.hosted().Free() || h.paymentsEnabled() }
 
 // GetTrailStart is the start page of an org's quiz trails.
 //
@@ -536,7 +536,7 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "confirm that you have the children's guardians' consent", "code": "consent"})
 		return
 	}
-	free := h.Hosted.Free() || req.Blocks == 0
+	free := h.hosted().Free() || req.Blocks == 0
 	if !free && !h.trailPaymentsOpen() {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "booking isn't open right now", "code": "payments_closed"})
 		return
@@ -552,7 +552,7 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		// lest anyone could have us mail strangers. The answer opens the
 		// admin page either way.
 		session, _ := h.trailSession(ctx, r)
-		vouched := h.Hosted.Free() || strings.EqualFold(session, email)
+		vouched := h.hosted().Free() || strings.EqualFold(session, email)
 		tx, err := h.DB.BeginTx(ctx, nil)
 		if err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
@@ -590,13 +590,13 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 		return
 	}
-	amount := h.Hosted.Price(req.Blocks)
+	amount := h.hosted().Price(req.Blocks)
 	var purchaseID int64
 	if err := h.DB.QueryRowContext(ctx, `
 		INSERT INTO ticket_purchases (kind, buyer_org_id, adventure_slug, party_name, buyer_email,
 		                              team_size, amount_cents, currency, blocks, host_token)
 		VALUES ('hosted', $1, $2, $3, $4, 0, $5, $6, $7, $8) RETURNING id
-	`, p.OrgID, p.Slug, t.dto.Title, email, amount, h.Hosted.Currency, req.Blocks, hostToken).Scan(&purchaseID); err != nil {
+	`, p.OrgID, p.Slug, t.dto.Title, email, amount, h.hosted().Currency, req.Blocks, hostToken).Scan(&purchaseID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 		return
 	}

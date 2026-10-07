@@ -121,7 +121,7 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 		connectedAccountID string
 		applicationFee     int64
 	)
-	if h.PlatformFee.Enabled() {
+	if h.platformFee().Enabled() {
 		acct, err := h.stripeConnectAccountForEvent(r.Context(), req.EventID)
 		if err != nil {
 			if errors.Is(err, ErrConnectNotReady) {
@@ -137,7 +137,7 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		connectedAccountID = acct
-		applicationFee = h.PlatformFee.Compute(priceCents.Int64)
+		applicationFee = h.platformFee().Compute(priceCents.Int64)
 	}
 
 	var purchaseID int64
@@ -266,7 +266,7 @@ func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
 		connectedAccountID string
 		applicationFee     int64
 	)
-	if h.PlatformFee.Enabled() {
+	if h.platformFee().Enabled() {
 		acct, err := h.stripeConnectAccountForEvent(r.Context(), req.EventID)
 		if err != nil {
 			if errors.Is(err, ErrConnectNotReady) {
@@ -277,7 +277,7 @@ func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		connectedAccountID = acct
-		applicationFee = h.PlatformFee.Compute(priceCents.Int64)
+		applicationFee = h.platformFee().Compute(priceCents.Int64)
 	}
 
 	var purchaseID int64

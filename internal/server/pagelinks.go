@@ -41,7 +41,7 @@ const hideLinksScript = `<script>(()=>{const u=%s;const q=u.map(p=>'a[href="'+p+
 // markers (spliceSellerIdentity) on every HTML page. Only HTML is held back, and only an
 // HTML response pays for the availability check; other responses stream
 // straight through.
-func hideUnavailableLinks(legal LegalConfig) func(http.Handler) http.Handler {
+func hideUnavailableLinks(current func() LegalConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet || strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") {
@@ -53,6 +53,7 @@ func hideUnavailableLinks(legal LegalConfig) func(http.Handler) http.Handler {
 			if !bw.html {
 				return
 			}
+			legal := current()
 			body := spliceSellerIdentity(bw.buf.Bytes(), legal)
 			if gone := unavailablePages(legal); len(gone) > 0 {
 				list, _ := json.Marshal(gone)

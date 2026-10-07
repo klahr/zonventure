@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/klahr/zonventure/internal/settings"
 	"io"
 	"net/http"
 	"os"
@@ -67,7 +68,7 @@ func (h *Handlers) createPurchaseCheckoutSession(ctx context.Context, purchaseID
 
 	sess, err := h.Provider.CreateCheckout(ctx, payments.CheckoutParams{
 		AmountCents: int64(amountCents),
-		Currency:    "eur",
+		Currency:    settings.Currency,
 		ProductName: productName,
 		// Both URLs return to the arrange app. The query param tells
 		// the front-end which toast to flash; the actual paid-state

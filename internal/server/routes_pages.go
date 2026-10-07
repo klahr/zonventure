@@ -11,6 +11,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"github.com/klahr/zonventure/internal/settings"
 	"net/http"
 	"net/url"
 	"time"
@@ -120,7 +121,7 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 			http.Redirect(w, req, "/arrange", http.StatusFound)
 			return
 		}
-		renderLandingPage(w, req, cfg.PublicURL, cfg.Legal.CompanyName, cfg.HomeOrg)
+		renderLandingPage(w, req, cfg.PublicURL, settings.CurrentLegal().CompanyName, cfg.HomeOrg)
 	})
 
 	// Extra pages from ZV_WEB_OVERRIDE_DIR (/create → create.html),
@@ -204,9 +205,9 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 	r.Get("/shop/*", serveShop)
 
 	r.Get("/privacy", func(w http.ResponseWriter, _ *http.Request) {
-		renderLegalPage(w, "privacy.html", cfg.Legal)
+		renderLegalPage(w, "privacy.html", legalNow(cfg.Legal))
 	})
 	r.Get("/terms", func(w http.ResponseWriter, _ *http.Request) {
-		renderLegalPage(w, "terms.html", cfg.Legal)
+		renderLegalPage(w, "terms.html", legalNow(cfg.Legal))
 	})
 }

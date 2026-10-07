@@ -5,7 +5,6 @@ import { Button, Dialog, ErrorBox, Field, ImageDrop, Loading, errorText, useLoad
 import { createEvent, listAdventures, startEvent, updateEvent, uploadEventCover } from "./api.ts";
 import { AdventureCover } from "./parts.tsx";
 
-const CURRENCIES = ["EUR", "USD", "SEK", "GBP", "NOK", "DKK"];
 
 /**
  * A new self-guided adventure: an always-on event sold per ticket in
@@ -21,8 +20,7 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
   const [picked, setPicked] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [blurb, setBlurb] = useState("");
-  const [price, setPrice] = useState("20");
-  const [currency, setCurrency] = useState("EUR");
+  const [price, setPrice] = useState("199");
   const [teamSize, setTeamSize] = useState("4");
   const [cover, setCover] = useState<File | null>(null);
   const [coverSrc, setCoverSrc] = useState<string | undefined>(undefined);
@@ -69,7 +67,7 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
     // A failure from here on leaves a quest to finish on its own page,
     // rather than one to clean up.
     try {
-      await updateEvent(id, { public_blurb: blurb.trim(), ticket_price_cents: priceN * 100, ticket_currency: currency, ticket_team_size: teamN });
+      await updateEvent(id, { public_blurb: blurb.trim(), ticket_price_cents: priceN * 100, ticket_team_size: teamN });
     } catch {
       toast.err(t.t("Self-guided adventure created, but its ticket details were not saved"));
       onClose();
@@ -146,13 +144,8 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
         <textarea rows={4} maxLength={1000} value={blurb} onChange={(e) => setBlurb(e.target.value)} placeholder={t.t("Short description shown in your store.")} />
       </Field>
       <div className="evs-grid3">
-        <Field label={t.t("Ticket price")}>
+        <Field label={t.t("Ticket price (kr)")}>
           <input type="number" min={1} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
-        </Field>
-        <Field label={t.t("Currency")}>
-          <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
         </Field>
         <Field label={t.t("Players per ticket")}>
           <input type="number" min={1} max={20} value={teamSize} onChange={(e) => setTeamSize(e.target.value)} />

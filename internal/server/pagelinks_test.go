@@ -22,7 +22,7 @@ func TestHideUnavailableLinks(t *testing.T) {
 	})
 	// No legal identity: /privacy and /terms are unavailable; no
 	// override pricing.html makes /pricing unavailable too.
-	mw := hideUnavailableLinks(LegalConfig{})
+	mw := hideUnavailableLinks(func() LegalConfig { return LegalConfig{} })
 
 	rec := httptest.NewRecorder()
 	mw(page).ServeHTTP(rec, httptest.NewRequest("GET", "/arrange", nil))

@@ -3,6 +3,7 @@ package admin_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/klahr/zonventure/internal/settings"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -10,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/klahr/zonventure/internal/admin"
-	"github.com/klahr/zonventure/internal/payments"
 )
 
 // pay lands the checkout of the latest purchase of kind, as the webhook
@@ -45,7 +45,7 @@ func TestHosted_HostIt(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
-	f.h.Hosted = payments.HostedPass{BlockCents: 14900, Currency: "sek"}
+	f.h.Pricing = func() settings.Pricing { return settings.Pricing{HostedBlockCents: 14900} }
 	f.consoleRoute("POST", "/api/admin/adventures/{slug}/host", f.h.HostAdventure)
 
 	if w := call(t, f.console, "POST", "/api/admin/adventures/nope/host", map[string]any{"blocks": 1}); w.Code != http.StatusNotFound {
@@ -110,7 +110,7 @@ func TestHosted_AddBlocks(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
-	f.h.Hosted = payments.HostedPass{BlockCents: 14900, Currency: "sek"}
+	f.h.Pricing = func() settings.Pricing { return settings.Pricing{HostedBlockCents: 14900} }
 	_, token := f.book(t, 5)
 
 	if w := call(t, f.public, "POST", "/api/party/"+token+"/blocks", map[string]any{"blocks": 10}); w.Code != http.StatusBadRequest {
@@ -174,8 +174,7 @@ func TestHosted_PartyFee(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
-	f.h.PlatformFee = payments.PlatformFee{PercentBPS: 500}
-	f.h.Hosted = payments.HostedPass{BlockCents: 14900, Currency: "sek"}
+	f.h.Pricing = func() settings.Pricing { return settings.Pricing{HostedBlockCents: 14900, FeePercentBPS: 500} }
 	if _, err := f.h.DB.Exec(`UPDATE organizations SET stripe_connect_account_id = 'acct_acme', stripe_connect_charges_enabled = TRUE WHERE id = $1`, f.orgID); err != nil {
 		t.Fatal(err)
 	}

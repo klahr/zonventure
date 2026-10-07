@@ -3,9 +3,11 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/klahr/zonventure/internal/settings"
 	"html"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,15 +15,14 @@ import (
 )
 
 // LegalConfig is the bag of human-facing strings we splice into the
-// privacy + terms templates at request time. All optional — empty
-// values render an obvious "[fill in via ZV_*]" so the operator
-// notices unset config before a customer does.
+// privacy + terms templates at request time. All but the map come from
+// Settings → Legal (legalNow); the map's tiles are still env config.
 type LegalConfig struct {
 	CompanyName           string
 	ContactEmail          string
 	DPOEmail              string
 	Jurisdiction          string
-	LocationRetentionDays string // strings so the env passes through unchanged
+	LocationRetentionDays string
 	AuditRetentionDays    string
 	PartyRetentionDays    string
 	LastUpdated           string // YYYY-MM-DD; defaults to today on first render
@@ -43,28 +44,43 @@ type LegalConfig struct {
 	MapTileAttribution string // HTML, as Leaflet expects
 	MapProvider        string
 	// Reviewed flips off the "draft template — needs lawyer review"
-	// banner. Operators set ZV_LEGAL_REVIEWED=1 once their lawyer has
-	// signed off on the wording; self-host without it keeps the
-	// banner so an unconfigured operator doesn't ship a template
-	// verbatim.
+	// banner, ticked under Settings → Legal once a lawyer has signed off
+	// on the wording; without it an unconfigured operator doesn't ship a
+	// template verbatim.
 	Reviewed bool
 }
 
-// missingRequired returns the env-var names whose values are empty.
+// legalNow is the legal config in force: Settings → Legal's values
+// over map, which carries the env's map tiles.
+func legalNow(m LegalConfig) LegalConfig { return legalFrom(m, settings.CurrentLegal()) }
+
+// legalFrom is l's values over m's map tiles.
+func legalFrom(m LegalConfig, l settings.Legal) LegalConfig {
+	m.CompanyName, m.CompanyOrgNumber, m.CompanyAddress, m.CompanyVATNumber = l.CompanyName, l.CompanyOrgNumber, l.CompanyAddress, l.CompanyVATNumber
+	m.ContactEmail, m.DPOEmail, m.Jurisdiction = l.ContactEmail, l.DPOEmail, l.Jurisdiction
+	m.HostingProvider, m.EmailProvider = l.HostingProvider, l.EmailProvider
+	m.LocationRetentionDays = strconv.Itoa(l.LocationRetentionDays)
+	m.AuditRetentionDays = strconv.Itoa(l.AuditRetentionDays)
+	m.PartyRetentionDays = strconv.Itoa(l.PartyRetentionDays)
+	m.Reviewed, m.LastUpdated = l.Reviewed, l.LastUpdated
+	return m
+}
+
+// missingRequired names the required Settings → Legal values left empty.
 // CompanyName, ContactEmail, and Jurisdiction are load-bearing: a
-// page that says "controlled by [set ZV_COMPANY_NAME]" or doesn't
+// page that says "controlled by [company name: …]" or doesn't
 // name a venue for disputes is worse than no page at all. DPO email
 // falls back to ContactEmail so it's not on the required list.
 func (c LegalConfig) missingRequired() []string {
 	var missing []string
 	if strings.TrimSpace(c.CompanyName) == "" {
-		missing = append(missing, "ZV_COMPANY_NAME")
+		missing = append(missing, "company name")
 	}
 	if strings.TrimSpace(c.ContactEmail) == "" {
-		missing = append(missing, "ZV_CONTACT_EMAIL")
+		missing = append(missing, "contact email")
 	}
 	if strings.TrimSpace(c.Jurisdiction) == "" {
-		missing = append(missing, "ZV_JURISDICTION")
+		missing = append(missing, "jurisdiction")
 	}
 	return missing
 }
@@ -76,7 +92,7 @@ func withLegalComponent(list []components.Component, c LegalConfig) []components
 	missing := c.missingRequired()
 	comp := components.Component{Name: "legal-pages", Impl: "templates", Enabled: len(missing) == 0}
 	if len(missing) > 0 {
-		comp.Notes = "set $" + strings.Join(missing, ", $") + " to publish /privacy and /terms"
+		comp.Notes = "fill in " + strings.Join(missing, ", ") + " under Settings → Legal to publish /privacy and /terms"
 	}
 	return append(append([]components.Component{}, list...), comp)
 }
@@ -84,10 +100,10 @@ func withLegalComponent(list []components.Component, c LegalConfig) []components
 func (c LegalConfig) defaulted() LegalConfig {
 	d := c
 	if d.CompanyName == "" {
-		d.CompanyName = "[set ZV_COMPANY_NAME]"
+		d.CompanyName = "[company name: Settings → Legal]"
 	}
 	if d.ContactEmail == "" {
-		d.ContactEmail = "[set ZV_CONTACT_EMAIL]"
+		d.ContactEmail = "[contact email: Settings → Legal]"
 	}
 	if d.DPOEmail == "" {
 		// Fall back to contact email so the page renders something
@@ -95,7 +111,7 @@ func (c LegalConfig) defaulted() LegalConfig {
 		d.DPOEmail = d.ContactEmail
 	}
 	if d.Jurisdiction == "" {
-		d.Jurisdiction = "[set ZV_JURISDICTION]"
+		d.Jurisdiction = "[jurisdiction: Settings → Legal]"
 	}
 	if d.LocationRetentionDays == "" {
 		d.LocationRetentionDays = "30"
@@ -110,10 +126,10 @@ func (c LegalConfig) defaulted() LegalConfig {
 		d.LastUpdated = time.Now().UTC().Format("2006-01-02")
 	}
 	if d.HostingProvider == "" {
-		d.HostingProvider = "[set ZV_HOSTING_PROVIDER]"
+		d.HostingProvider = "[hosting provider: Settings → Legal]"
 	}
 	if d.EmailProvider == "" {
-		d.EmailProvider = "[set ZV_EMAIL_PROVIDER]"
+		d.EmailProvider = "[email provider: Settings → Legal]"
 	}
 	if d.MapTileURL == "" {
 		d.MapTileURL = defaultMapTileURL
@@ -270,7 +286,7 @@ func spliceSellerIdentity(body []byte, c LegalConfig) []byte {
 //
 // Refuses to render when the operator-supplied identity (company name,
 // contact email, jurisdiction) is missing — shipping a page with
-// "[set ZV_COMPANY_NAME]" visible to real users is worse than 503ing
+// "[company name: Settings → Legal]" visible to real users is worse than 503ing
 // the route until the operator finishes the configuration. The
 // 503 body lists the missing keys so the operator knows what to set.
 func renderLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
@@ -278,9 +294,15 @@ func renderLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte("This page is not yet configured. The operator must set the following environment variables before /privacy and /terms become available:\n\n  " + strings.Join(missing, "\n  ") + "\n\nSee SELFHOSTING.md for guidance on each value.\n"))
+		_, _ = w.Write([]byte("This page is not yet configured. The operator must fill in the following under Settings → Legal before /privacy and /terms become available:\n\n  " + strings.Join(missing, "\n  ") + "\n"))
 		return
 	}
+	writeLegalPage(w, name, cfg)
+}
+
+// writeLegalPage renders a legal page from cfg, a missing value shown as
+// where to fill it in.
+func writeLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
 	body, err := readWebFile("web/" + name)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -305,7 +327,7 @@ func renderLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
 		out = strings.ReplaceAll(out, sub[0], sub[1])
 	}
 	// Once an operator confirms their lawyer has signed off on the
-	// template (ZV_LEGAL_REVIEWED=1), the yellow "draft template" notes
+	// template (Reviewed, Settings → Legal), the yellow "draft template" notes
 	// are stripped so paying customers don't see internal guidance.
 	// Self-host without the flag keeps the banner — an explicit
 	// reminder that the operator hasn't yet had the wording reviewed.
@@ -347,4 +369,21 @@ func stripDraftNotes(s string) string {
 		rest = rest[i+j+len(close):]
 	}
 	return b.String()
+}
+
+// legalPreview serves POST /api/admin/legal/preview {legal, page}: the
+// privacy policy or the terms as unsaved values would make them, for
+// Settings → Legal. It never saves. m carries the map tiles.
+func legalPreview(m LegalConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Legal settings.Legal `json:"legal"`
+			Page  string         `json:"page"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil || (req.Page != "privacy" && req.Page != "terms") {
+			http.Error(w, "want {legal, page: privacy|terms}", http.StatusBadRequest)
+			return
+		}
+		writeLegalPage(w, req.Page+".html", legalFrom(m, req.Legal))
+	}
 }

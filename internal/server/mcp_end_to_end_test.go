@@ -114,6 +114,10 @@ func TestMCPFromAdventureToStartedEvents(t *testing.T) {
 
 	// Self-guided: listed in the store with a price and a cover, open.
 	quest := eventID(must("create_event", map[string]any{"adventure_slug": "harbour", "public_for_sale": true, "attest_no_minors": true, "name": "Harbour walk"}))
+	// Tickets are sold in SEK only: another currency is refused before anything is saved.
+	if text, isErr := call("update_event", map[string]any{"event_id": quest, "ticket_price_cents": 1500, "ticket_currency": "EUR"}); !isErr || !strings.Contains(text, "SEK") {
+		t.Errorf("a ticket in EUR: %v %s", isErr, text)
+	}
 	must("update_event", map[string]any{"event_id": quest, "ticket_price_cents": 19900, "ticket_currency": "SEK", "ticket_team_size": 4, "public_blurb": "A walk by the water."})
 	pick(must("get_upload_link", map[string]any{"for": "event_cover", "event_id": quest}))
 	must("start_event", map[string]any{"event_id": quest})

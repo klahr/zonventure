@@ -29,7 +29,6 @@ interface PartyOffer {
 /** An offer with its adventure's cover, which the offers list leaves out. */
 type Row = PartyOffer & { cover?: string | undefined };
 
-const CURRENCIES = ["sek", "eur", "nok", "dkk", "gbp", "usd"];
 
 /**
  * Hosted: the org's hosted events — private events their hosts run
@@ -220,13 +219,11 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
   const [enabled, setEnabled] = useState(props.offer ? props.offer.enabled : true);
   const [base, setBase] = useState(major(start?.base_cents ?? 0));
   const [perKid, setPerKid] = useState(major(start?.per_kid_cents ?? 0));
-  const [currency, setCurrency] = useState(start?.currency || "sek");
   const [maxKids, setMaxKids] = useState(String(start?.max_kids ?? 20));
   const [blurb, setBlurb] = useState(start?.blurb ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const blocked = (target?.problems?.length ?? 0) > 0;
-  const currencies = CURRENCIES.includes(currency) ? CURRENCIES : [currency, ...CURRENCIES];
 
   const kidsN = Number(maxKids);
   const example = Math.min(10, kidsN || 10);
@@ -241,7 +238,7 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
     try {
       await request(`/api/admin/party-offers/${encodeURIComponent(target.adventure_slug)}`, {
         method: "PUT",
-        body: { enabled: enabled && !blocked, base_cents: minor(base), per_kid_cents: minor(perKid), currency, max_kids: kidsN, blurb },
+        body: { enabled: enabled && !blocked, base_cents: minor(base), per_kid_cents: minor(perKid), currency: "sek", max_kids: kidsN, blurb },
       });
       toast.ok(isNew ? t.t("Party offer created") : t.t("Saved"));
       props.onSaved();
@@ -294,16 +291,11 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
       )}
       {blocked && <Callout variant="warning">{t.t("Can't be offered as a party: {{reason}}", { reason: target!.problems![0]! })}</Callout>}
       <div className="pt-terms">
-        <Field label={t.t("Base price")}>
+        <Field label={t.t("Base price (kr)")}>
           <input inputMode="decimal" value={base} onChange={(e) => setBase(e.target.value)} placeholder="0" />
         </Field>
-        <Field label={t.t("Per child")}>
+        <Field label={t.t("Per child (kr)")}>
           <input inputMode="decimal" value={perKid} onChange={(e) => setPerKid(e.target.value)} placeholder="0" />
-        </Field>
-        <Field label={t.t("Currency")}>
-          <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            {currencies.map((c) => <option key={c} value={c}>{c.toUpperCase()}</option>)}
-          </select>
         </Field>
         <Field label={t.t("Most children")}>
           <input type="number" min={1} max={50} value={maxKids} onChange={(e) => setMaxKids(e.target.value)} />
@@ -311,7 +303,7 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
       </div>
       {exampleCents > 0 && (
         <p className="evs-muted evs-small">
-          {t.t("A party of {{n}} children costs {{price}}.", { n: example, price: fmtMoney(exampleCents, currency, loc) })}
+          {t.t("A party of {{n}} children costs {{price}}.", { n: example, price: fmtMoney(exampleCents, "SEK", loc) })}
         </p>
       )}
       <Field label={t.t("Description on the booking page")}>

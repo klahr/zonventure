@@ -91,7 +91,7 @@ func (h *Handlers) StartStripeConnect(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	if !h.PlatformFee.Enabled() {
+	if !h.platformFee().Enabled() {
 		httpx.Error(w, http.StatusServiceUnavailable,
 			"marketplace fee is not configured on this server (set ZV_PLATFORM_FEE_PERCENT_BPS / ZV_PLATFORM_FEE_FIXED_CENTS / ZV_PLATFORM_FEE_MIN_CENTS)")
 		return
@@ -334,7 +334,7 @@ func (h *Handlers) loadStripeConnectStatus(ctx context.Context, orgID int64) (st
 	if synced.Valid {
 		out.SyncedAt = synced.String
 	}
-	out.PlatformFeeEnabled = h.PlatformFee.Enabled()
+	out.PlatformFeeEnabled = h.platformFee().Enabled()
 	return out, nil
 }
 

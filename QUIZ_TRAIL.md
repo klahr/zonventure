@@ -60,9 +60,8 @@ current pricing.
   trail session is signed in with it. The answer opens the admin page
   either way; "My trails" sign-in finds it again.
 
-- Price per block is one setting (`ZV_HOSTED_BLOCK_CENTS`, default
-  14900 where a platform fee is set, free otherwise; `ZV_HOSTED_CURRENCY`,
-  default `sek`), never hard-coded.
+- Price per block is one setting (Settings → Pricing, Hosted pass;
+  default 149 kr, 0 makes it free), never hard-coded.
 - Quiz trails, Host it and added blocks are charged on the platform's
   own Stripe account (the platform is the seller); a party offer goes
   through the org's connected account with the pass price as the fee.
@@ -472,7 +471,7 @@ Added to `internal/retention` (hourly sweep):
   answers, pinned graphs).
 - Day 7 of play: send `trail_keep` once (`keep_offer_sent_at`).
 - Party and Host it events: existing party rules
-  (`ZV_PARTY_RETENTION_DAYS` after the event ends at `valid_until`).
+  (Settings → Legal's party days after the event ends at `valid_until`).
 - Email tokens: delete when expired.
 - Purchase rows stay, email anonymised by the existing trigger.
 

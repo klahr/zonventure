@@ -258,7 +258,7 @@ const storeItemRowFilterBase = `
 // purchase flow can actually take a payment. Self-host (no fee,
 // no marketplace) renders the base filter only.
 func (h *Handlers) storeItemRowFilter() string {
-	if h.PlatformFee.Enabled() {
+	if h.platformFee().Enabled() {
 		return storeItemRowFilterBase + `
 		  AND o.stripe_connect_charges_enabled
 		`

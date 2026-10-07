@@ -79,19 +79,12 @@ short tour:
 | `ZV_PORT` | Host port for the app | `8080` |
 | `ZV_LOG_FORMAT` | `text` (dev) or `json` (aggregator) | `text` |
 | `ZV_SMTP_*` | SMTP relay for verification + reset mail (optional) | unset |
-| `ZV_COMPANY_NAME` / `ZV_CONTACT_EMAIL` | Surfaced on `/privacy` + `/terms`; the company name also names the publisher in the landing page's schema.org data | unset |
-| `ZV_DPO_EMAIL` / `ZV_JURISDICTION` | Data-protection contact + governing law on `/privacy` + `/terms` | unset (DPO falls back to contact) |
-| `ZV_HOSTING_PROVIDER` / `ZV_EMAIL_PROVIDER` | Sub-processor names listed in `/privacy` | unset (page shows `[set ZV_…]`) |
-| `ZV_LEGAL_REVIEWED` | Set to `1` after a lawyer signs off — strips the yellow "draft template" banners | unset (banners visible) |
-| `ZV_LEGAL_LAST_UPDATED` | "Last updated" date (YYYY-MM-DD) on the legal pages | today |
-| `ZV_STRIPE_SECRET_KEY` / `ZV_STRIPE_WEBHOOK_SECRET` | Real payments + Customer Portal (optional) | unset |
-| `ZV_PRICE_PER_PLAYER_CENTS` / `ZV_FREE_PLAYERS_PER_EVENT` | Arranger pricing (EUR): slots beyond the free band cost this much each; the free band is also the minimum event size. Shown on `/pricing` and in the manual | `500` / `15` |
+| _Legal pages, retention_ | Set under **Settings → Legal** (platform admin): company, contacts, jurisdiction, sub-processors, days data is kept, lawyer review. The old `ZV_COMPANY_*`, `ZV_CONTACT_EMAIL`, `ZV_DPO_EMAIL`, `ZV_JURISDICTION`, `ZV_HOSTING_PROVIDER`, `ZV_EMAIL_PROVIDER`, `ZV_LEGAL_*` and `ZV_*_RETENTION_DAYS` are copied in once on the first start after upgrading, then ignored | — |
+| `ZV_STRIPE_SECRET_KEY` / `ZV_STRIPE_WEBHOOK_SECRET` | Real payments + Customer Portal (optional). Prices — event pass, hosted pass, platform fee — are set by the platform admin under **Settings → Pricing**, in SEK including VAT; without Stripe nothing is charged | unset |
 | `ZV_TOTP_KEY` | 32-byte base64 key wrapping each user's TOTP secret at rest. Set to enable opt-in 2FA. **Treat like a database password** — losing it forces every enrolled user to re-enrol | unset |
 | `ZV_OIDC_ENABLED` | `1` enables single sign-on (see [Single sign-on (Google Workspace)](#single-sign-on-google-workspace)) | unset |
 | `ZV_OIDC_ISSUER` / `ZV_OIDC_CLIENT_ID` / `ZV_OIDC_CLIENT_SECRET` / `ZV_OIDC_HOSTED_DOMAIN` / `ZV_OIDC_REDIRECT_URL` | OIDC client config; required when SSO is enabled | unset |
 | `ZV_OIDC_ORG_NAME` | Organisation that JIT-provisioned SSO users join. Defaults to `ZV_OIDC_HOSTED_DOMAIN` | unset |
-| `ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` | Privacy sweepers; `0` to disable | `30` / `90` |
-| `ZV_PARTY_RETENTION_DAYS` | Days a children's party is kept after it ends before the sweeper deletes it whole; `0` to disable | `14` |
 | `ZV_DB_MAX_OPEN_CONNS` / `ZV_DB_MAX_IDLE_CONNS` | Postgres pool sizing; bump for managed clusters with high `max_connections` | `25` / `5` |
 | `ZV_WEB_OVERRIDE_DIR` | Path to a directory of HTML / JSON files that shadow the embedded pages; its `landing.html` and `pricing.html` turn on the public `/` and `/pricing` — see [Custom landing page](#custom-landing-page) | unset (use embedded) |
 | `ZV_MCP_ENABLED` | `1` mounts the `POST /mcp` endpoint so users can connect Claude / other MCP clients to author adventures — see [MCP.md](MCP.md) | unset (off) |

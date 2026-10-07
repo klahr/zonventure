@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/klahr/zonventure/internal/settings"
 	"log"
 	"net/http"
 	"os"
@@ -84,9 +85,6 @@ func main() {
 		restoreFlag       = flag.Bool("restore", false, "read a pg_dump from stdin and replay it into the configured database; pair with -backup for round-trips")
 		exportOrgFlag     = flag.Int64("export-org", 0, "stream a self-host → hosted migration bundle for the given org id to stdout and exit (e.g. `zv -export-org=1 > bundle.zip`)")
 		importOrgFlag     = flag.Bool("import-org", false, "read an org migration bundle from stdin and replay it into the configured database as a fresh org")
-		retentionLocation = flag.Int("retention-location-days", envIntDefault("ZV_LOCATION_RETENTION_DAYS", 30), "delete player location pings + answer attempts this many days after the event completes (0 disables)")
-		retentionAudit    = flag.Int("retention-audit-days", envIntDefault("ZV_AUDIT_RETENTION_DAYS", 90), "delete auth_events rows this many days after they were emitted (0 disables)")
-		retentionParty    = flag.Int("retention-party-days", envIntDefault("ZV_PARTY_RETENTION_DAYS", 14), "delete a party, with everything about its players, this many days after it ends (0 disables)")
 		retentionInterval = flag.Duration("retention-interval", time.Hour, "how often the retention sweeper runs")
 		dbMaxOpenConns    = flag.Int("db-max-open-conns", envIntDefault("ZV_DB_MAX_OPEN_CONNS", 0), "Postgres pool: max open connections (0 = default 25). Bound by the cluster's max_connections")
 		dbMaxIdleConns    = flag.Int("db-max-idle-conns", envIntDefault("ZV_DB_MAX_IDLE_CONNS", 0), "Postgres pool: max idle connections kept warm (0 = default 5)")
@@ -282,24 +280,11 @@ func main() {
 		HomeOrg:      strings.TrimSpace(os.Getenv("ZV_HOME_ORG")),
 		Components:   describeComponents(mail, os.Getenv("ZV_STRIPE_SECRET_KEY"), os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"), os.Getenv("ZV_METRICS_ADDR"), os.Getenv("ZV_PAYMENTS_PROVIDER"), totpKey != nil),
 		TOTPKey:      totpKey,
+		// Everything else on the legal pages is set under Settings → Legal.
 		Legal: server.LegalConfig{
-			CompanyName:           os.Getenv("ZV_COMPANY_NAME"),
-			ContactEmail:          os.Getenv("ZV_CONTACT_EMAIL"),
-			DPOEmail:              os.Getenv("ZV_DPO_EMAIL"),
-			Jurisdiction:          os.Getenv("ZV_JURISDICTION"),
-			LocationRetentionDays: os.Getenv("ZV_LOCATION_RETENTION_DAYS"),
-			AuditRetentionDays:    os.Getenv("ZV_AUDIT_RETENTION_DAYS"),
-			PartyRetentionDays:    os.Getenv("ZV_PARTY_RETENTION_DAYS"),
-			LastUpdated:           os.Getenv("ZV_LEGAL_LAST_UPDATED"),
-			HostingProvider:       os.Getenv("ZV_HOSTING_PROVIDER"),
-			EmailProvider:         os.Getenv("ZV_EMAIL_PROVIDER"),
-			CompanyOrgNumber:      os.Getenv("ZV_COMPANY_ORG_NUMBER"),
-			CompanyAddress:        os.Getenv("ZV_COMPANY_ADDRESS"),
-			CompanyVATNumber:      os.Getenv("ZV_COMPANY_VAT_NUMBER"),
-			MapTileURL:            os.Getenv("ZV_MAP_TILE_URL"),
-			MapTileAttribution:    os.Getenv("ZV_MAP_TILE_ATTRIBUTION"),
-			MapProvider:           os.Getenv("ZV_MAP_PROVIDER"),
-			Reviewed:              envTruthy("ZV_LEGAL_REVIEWED"),
+			MapTileURL:         os.Getenv("ZV_MAP_TILE_URL"),
+			MapTileAttribution: os.Getenv("ZV_MAP_TILE_ATTRIBUTION"),
+			MapProvider:        os.Getenv("ZV_MAP_PROVIDER"),
 		},
 		StripeSecretKey:     os.Getenv("ZV_STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"),
@@ -354,13 +339,14 @@ func main() {
 	schedDone := scheduler.Start(ctx, sqlDB, hub, time.Second)
 
 	// Privacy-retention sweeper: prunes location pings + answer attempts
-	// from completed runs and ages out auth_events. Operator-tunable via
-	// flags (or ZV_*_RETENTION_DAYS env vars); 0 disables.
+	// from completed runs and ages out auth_events. The periods are set
+	// under Settings → Legal and read on every sweep; 0 disables.
 	retDone := retention.Start(ctx, sqlDB, retention.Config{
-		LocationDays: *retentionLocation,
-		AuditDays:    *retentionAudit,
-		PartyDays:    *retentionParty,
-		Interval:     *retentionInterval,
+		Days: func() (int, int, int) {
+			l := settings.CurrentLegal()
+			return l.LocationRetentionDays, l.AuditRetentionDays, l.PartyRetentionDays
+		},
+		Interval: *retentionInterval,
 	})
 
 	// Outbound webhook delivery worker. Drains webhook_deliveries

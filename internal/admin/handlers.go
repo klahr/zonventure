@@ -18,6 +18,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/klahr/zonventure/internal/settings"
 	"net/http"
 	"net/mail"
 	"strconv"
@@ -76,27 +77,19 @@ type Handlers struct {
 	// option (the right default for dev clones) and the webhook
 	// route returns 503.
 	Provider payments.Provider
-	// PlatformFee is the per-charge marketplace fee for /store
-	// quest tickets. Read from ZV_PLATFORM_FEE_* at startup; zero-
-	// value disables the marketplace flow entirely (no Connect
-	// onboarding gate, no application_fee_amount on checkout, no
-	// stripe_connect_charges_enabled filter on the listing). The
-	// right posture for self-host: the operator runs the platform
-	// for themselves and pays nobody a cut.
-	PlatformFee payments.PlatformFee
-	// Hosted is the price of a hosted event's pass, per block of teams:
-	// see payments.HostedPass and hosted_pricing.go.
-	Hosted payments.HostedPass
+	// Pricing returns the platform's prices; nil reads the ones in
+	// force (settings.CurrentPricing), a test sets its own.
+	Pricing func() settings.Pricing
 	// SecureCookie is the operator's force-secure override, mirrored
 	// from server.Config. Cookie-emitting paths in this package pass
 	// it to auth.CookieSecure for parity with the auth/player handlers.
 	SecureCookie bool
-	// Components is the read-only list of pluggable seams the
-	// running binary wired in (mailer impl, payments impl, etc.).
-	// Built once in cmd/server/main.go, surfaced via the admin-only
+	// Components lists the pluggable seams the running binary wired in
+	// (mailer impl, payments impl, etc.) and whether the legal pages are
+	// published, read per request by the admin-only
 	// /api/admin/components endpoint that drives the Settings →
 	// Installed components panel.
-	Components []components.Component
+	Components func() []components.Component
 	// Storage owns the binary asset side of the app (team avatars,
 	// adventure cover art today). Always non-nil thanks to the server
 	// constructor's dbblob fallback. Future S3 / local-FS impls plug
@@ -1057,6 +1050,12 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
+	// Tickets are sold in SEK only: the one value accepted, kept for
+	// clients that still send it.
+	if req.TicketCurrency != nil && !strings.EqualFold(strings.TrimSpace(*req.TicketCurrency), settings.Currency) {
+		httpx.Error(w, http.StatusBadRequest, "tickets are sold in SEK")
+		return
+	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if _, err := validateBlurb(name, MaxNameLen); err != nil {
@@ -1131,24 +1130,10 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		if *req.TicketPriceCents > 0 {
 			v = sql.NullInt64{Int64: int64(*req.TicketPriceCents), Valid: true}
 		}
+		// A price is always in SEK: saving one moves an older listing
+		// in another currency over.
 		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE events SET ticket_price_cents = $1 WHERE id = $2`, v, eventID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "update failed")
-			return
-		}
-	}
-	if req.TicketCurrency != nil {
-		c := strings.ToLower(strings.TrimSpace(*req.TicketCurrency))
-		// ISO 4217 alpha codes are 3 letters. Loose check rather than
-		// a hardcoded allowlist — Stripe rejects unknown currencies
-		// at checkout-create time, so the bound here is just "looks
-		// like a currency".
-		if len(c) != 3 {
-			httpx.Error(w, http.StatusBadRequest, "ticket_currency must be a 3-letter ISO 4217 code")
-			return
-		}
-		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE events SET ticket_currency = $1 WHERE id = $2`, c, eventID); err != nil {
+			`UPDATE events SET ticket_price_cents = $1, ticket_currency = $3 WHERE id = $2`, v, eventID, settings.Currency); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}

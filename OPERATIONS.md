@@ -206,9 +206,9 @@ unaffected.
 
 The retention sweeper prunes location pings, answer attempts, and old
 `auth_events` on a configurable cadence. Defaults: 30 days for
-location/answer data, 90 days for audit events. Tune via
-`ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` (or the
-matching `-retention-*` flags). Set to `0` to disable.
+location/answer data, 90 days for audit events. Tune under
+Settings → Legal (Data kept); the sweeper reads them on every run, and
+the privacy policy prints the same numbers. Set to `0` to disable.
 
 Hosted events (parties booked without an account) play game after game
 for 14 days from their first game, which must start within 60 days of
@@ -216,7 +216,7 @@ purchase. A sweeper in the server, every minute, finishes a game nobody
 has played for 3 hours, ends an event whose days are over, and mails
 each finished game's summary to the host (retrying for a day). They are
 deleted whole — event, teams, players, answers, photos and the graph
-copies its games played — `ZV_PARTY_RETENTION_DAYS` days (default 14)
+copies its games played — Settings → Legal's party days (default 14)
 after they end, when a booked one passes its 60-day validity unstarted,
 or that many days after its days of play if it was somehow never ended.
 The ticket purchase stays, its email blanked.

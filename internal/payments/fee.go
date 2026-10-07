@@ -1,9 +1,6 @@
 package payments
 
-import (
-	"os"
-	"strconv"
-)
+import "github.com/klahr/zonventure/internal/settings"
 
 // PlatformFee captures the per-charge platform fee rule for
 // marketplace flows: "percent-of-price plus a fixed amount, but at
@@ -15,10 +12,8 @@ import (
 // the industry shape (Eventbrite, Tito, etc.) without hardcoding a
 // specific formula in handlers.
 //
-// All three knobs are env-configured (ZV_PLATFORM_FEE_PERCENT_BPS,
-// ZV_PLATFORM_FEE_FIXED_CENTS, ZV_PLATFORM_FEE_MIN_CENTS) so the
-// same binary serves a hosted instance (with a non-zero fee) and a
-// self-host deployment (zero across the board, no marketplace flow).
+// The platform admin sets all three under Settings → Pricing; zero
+// across the board (the default) means no marketplace flow.
 type PlatformFee struct {
 	// PercentBPS is the percentage component in basis points
 	// (100 BPS = 1%). 0 means "no percentage".
@@ -32,23 +27,9 @@ type PlatformFee struct {
 	MinCents int64
 }
 
-// PlatformFeeFromEnv reads the three ZV_PLATFORM_FEE_* env vars and
-// returns the configured fee. All default to 0 (no marketplace
-// flow) which is the right posture for self-host: an operator who
-// doesn't want to take a cut leaves the vars unset and the rest
-// of the marketplace code path stays inert.
-func PlatformFeeFromEnv() PlatformFee {
-	var f PlatformFee
-	if v, _ := strconv.ParseInt(os.Getenv("ZV_PLATFORM_FEE_PERCENT_BPS"), 10, 64); v > 0 {
-		f.PercentBPS = v
-	}
-	if v, _ := strconv.ParseInt(os.Getenv("ZV_PLATFORM_FEE_FIXED_CENTS"), 10, 64); v > 0 {
-		f.FixedCents = v
-	}
-	if v, _ := strconv.ParseInt(os.Getenv("ZV_PLATFORM_FEE_MIN_CENTS"), 10, 64); v > 0 {
-		f.MinCents = v
-	}
-	return f
+// FeeFrom is the platform fee in prices.
+func FeeFrom(p settings.Pricing) PlatformFee {
+	return PlatformFee{PercentBPS: p.FeePercentBPS, FixedCents: p.FeeFixedCents, MinCents: p.FeeMinCents}
 }
 
 // Enabled reports whether the platform fee is configured. When

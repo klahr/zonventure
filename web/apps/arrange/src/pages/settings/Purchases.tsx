@@ -241,7 +241,7 @@ export function PurchasesTab() {
             <p style={{ margin: 0, color: "var(--dz-muted)", fontSize: "var(--dz-text-sm)" }}>
               {t.plural(shown.length, { one: t.t("{{n}} purchase"), other: t.t("{{n}} purchases") })}
               {" · "}
-              {orgs === 1 ? t.t("{{total}} from one org", { total: fmtMoney(total, "EUR", locale) }) : t.t("{{total}} across {{orgs}} orgs", { total: fmtMoney(total, "EUR", locale), orgs })}
+              {orgs === 1 ? t.t("{{total}} from one org", { total: fmtMoney(total, "SEK", locale) }) : t.t("{{total}} across {{orgs}} orgs", { total: fmtMoney(total, "SEK", locale), orgs })}
             </p>
           )}
         </div>

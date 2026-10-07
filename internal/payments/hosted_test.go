@@ -1,19 +1,19 @@
 package payments
 
-import "testing"
+import (
+	"testing"
 
-func TestHostedPassFromEnv(t *testing.T) {
-	t.Setenv("ZV_HOSTED_BLOCK_CENTS", "")
-	t.Setenv("ZV_HOSTED_CURRENCY", "")
-	if p := HostedPassFromEnv(true); p.BlockCents != DefaultHostedBlockCents || p.Currency != "sek" {
-		t.Errorf("hosted instance default = %+v", p)
+	"github.com/klahr/zonventure/internal/settings"
+)
+
+func TestHostedFrom(t *testing.T) {
+	if p := HostedFrom(settings.DefaultPricing); p.BlockCents != 14900 || p.Currency != "sek" {
+		t.Errorf("default = %+v", p)
 	}
-	if p := HostedPassFromEnv(false); !p.Free() {
-		t.Errorf("self-host default = %+v, want free", p)
+	if p := HostedFrom(settings.Pricing{}); !p.Free() {
+		t.Errorf("0 kr = %+v, want free", p)
 	}
-	t.Setenv("ZV_HOSTED_BLOCK_CENTS", "9900")
-	t.Setenv("ZV_HOSTED_CURRENCY", "EUR")
-	if p := HostedPassFromEnv(false); p.BlockCents != 9900 || p.Currency != "eur" || p.Price(3) != 29700 {
+	if p := HostedFrom(settings.Pricing{HostedBlockCents: 9900}); p.Price(3) != 29700 {
 		t.Errorf("configured = %+v", p)
 	}
 }

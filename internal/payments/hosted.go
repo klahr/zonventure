@@ -1,10 +1,6 @@
 package payments
 
-import (
-	"os"
-	"strconv"
-	"strings"
-)
+import "github.com/klahr/zonventure/internal/settings"
 
 // HostedPass is the platform's price for a hosted event: BlockCents for
 // each started block of teams a game may hold. A quiz trail and "Host
@@ -15,25 +11,9 @@ type HostedPass struct {
 	Currency   string
 }
 
-// DefaultHostedBlockCents is the pass price of a hosted instance (one
-// that takes a platform fee): 149 kr.
-const DefaultHostedBlockCents = 14900
-
-// HostedPassFromEnv reads ZV_HOSTED_BLOCK_CENTS and ZV_HOSTED_CURRENCY.
-// Unset, the price is DefaultHostedBlockCents where the platform takes a
-// fee (feeEnabled) and 0 — free — on a self-host that doesn't.
-func HostedPassFromEnv(feeEnabled bool) HostedPass {
-	p := HostedPass{Currency: "sek"}
-	if feeEnabled {
-		p.BlockCents = DefaultHostedBlockCents
-	}
-	if v, err := strconv.ParseInt(strings.TrimSpace(os.Getenv("ZV_HOSTED_BLOCK_CENTS")), 10, 64); err == nil && v >= 0 {
-		p.BlockCents = v
-	}
-	if v := strings.ToLower(strings.TrimSpace(os.Getenv("ZV_HOSTED_CURRENCY"))); v != "" {
-		p.Currency = v
-	}
-	return p
+// HostedFrom is the hosted pass in prices, in the platform's currency.
+func HostedFrom(p settings.Pricing) HostedPass {
+	return HostedPass{BlockCents: p.HostedBlockCents, Currency: settings.Currency}
 }
 
 // Price is what blocks blocks cost.

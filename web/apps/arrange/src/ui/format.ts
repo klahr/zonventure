@@ -62,8 +62,8 @@ export function fmtDuration(totalSeconds: number): string {
   return h > 0 ? `${h}:${p(m)}:${p(s)}` : `${m}:${p(s)}`;
 }
 
-/** Minor units to "€5.00" in the viewer's locale. */
-export function fmtMoney(cents: number, currency = "EUR", locale?: string): string {
+/** Minor units to "49,00 kr" in the viewer's locale. */
+export function fmtMoney(cents: number, currency = "SEK", locale?: string): string {
   return new Intl.NumberFormat(locale, { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
 }
 

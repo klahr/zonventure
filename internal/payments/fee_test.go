@@ -1,8 +1,9 @@
 package payments
 
 import (
-	"os"
 	"testing"
+
+	"github.com/klahr/zonventure/internal/settings"
 )
 
 // TestPlatformFee_Compute exercises the max(percent, floor) rule
@@ -71,40 +72,13 @@ func TestPlatformFee_Enabled(t *testing.T) {
 	}
 }
 
-// TestPlatformFeeFromEnv locks in the env-reading semantics: zero /
-// missing → zero (self-host), valid integers → respective fields.
-// Garbage values are silently ignored (zero) rather than panicking
-// at startup so a typo doesn't take a self-host instance down.
-func TestPlatformFeeFromEnv(t *testing.T) {
-	t.Setenv("ZV_PLATFORM_FEE_PERCENT_BPS", "")
-	t.Setenv("ZV_PLATFORM_FEE_FIXED_CENTS", "")
-	t.Setenv("ZV_PLATFORM_FEE_MIN_CENTS", "")
-	if got := PlatformFeeFromEnv(); got.Enabled() {
-		t.Errorf("empty env: Enabled()=true, want false")
+// TestFeeFrom maps the saved prices onto the fee: none by default.
+func TestFeeFrom(t *testing.T) {
+	if got := FeeFrom(settings.DefaultPricing); got.Enabled() {
+		t.Errorf("default pricing: Enabled()=true, want false")
 	}
-
-	t.Setenv("ZV_PLATFORM_FEE_PERCENT_BPS", "800")
-	t.Setenv("ZV_PLATFORM_FEE_FIXED_CENTS", "300")
-	t.Setenv("ZV_PLATFORM_FEE_MIN_CENTS", "100")
-	got := PlatformFeeFromEnv()
+	got := FeeFrom(settings.Pricing{FeePercentBPS: 800, FeeFixedCents: 300, FeeMinCents: 100})
 	if got.PercentBPS != 800 || got.FixedCents != 300 || got.MinCents != 100 {
-		t.Errorf("set env: %+v", got)
+		t.Errorf("set prices: %+v", got)
 	}
-
-	t.Setenv("ZV_PLATFORM_FEE_PERCENT_BPS", "garbage")
-	t.Setenv("ZV_PLATFORM_FEE_MIN_CENTS", "100")
-	got = PlatformFeeFromEnv()
-	if got.PercentBPS != 0 {
-		t.Errorf("garbage percent: PercentBPS=%d, want 0", got.PercentBPS)
-	}
-	if got.MinCents != 100 {
-		t.Errorf("garbage percent shouldn't drop the floor: MinCents=%d", got.MinCents)
-	}
-
-	// Tidy up so other tests don't inherit our values. t.Setenv
-	// already restores after the test, but unsetting belt-and-
-	// braces protects against a future test that misuses os.Getenv.
-	os.Unsetenv("ZV_PLATFORM_FEE_PERCENT_BPS")
-	os.Unsetenv("ZV_PLATFORM_FEE_FIXED_CENTS")
-	os.Unsetenv("ZV_PLATFORM_FEE_MIN_CENTS")
 }

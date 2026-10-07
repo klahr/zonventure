@@ -83,13 +83,17 @@ services:
       ZV_SMTP_PASS:     ${ZV_SMTP_PASS:-}
       ZV_SMTP_FROM:     ${ZV_SMTP_FROM:-}
       ZV_SMTP_TLS:      ${ZV_SMTP_TLS:-starttls}
+      # Legal values live under Settings → Legal. These pass through only
+      # so the first start after the move can copy them in; drop them
+      # once that has happened.
       ZV_COMPANY_NAME:           ${ZV_COMPANY_NAME:-}
       ZV_CONTACT_EMAIL:          ${ZV_CONTACT_EMAIL:-}
       ZV_DPO_EMAIL:              ${ZV_DPO_EMAIL:-}
       ZV_JURISDICTION:           ${ZV_JURISDICTION:-}
       ZV_LEGAL_LAST_UPDATED:     ${ZV_LEGAL_LAST_UPDATED:-}
-      ZV_LOCATION_RETENTION_DAYS: ${ZV_LOCATION_RETENTION_DAYS:-30}
-      ZV_AUDIT_RETENTION_DAYS:    ${ZV_AUDIT_RETENTION_DAYS:-90}
+      ZV_LOCATION_RETENTION_DAYS: ${ZV_LOCATION_RETENTION_DAYS:-}
+      ZV_AUDIT_RETENTION_DAYS:    ${ZV_AUDIT_RETENTION_DAYS:-}
+      ZV_PARTY_RETENTION_DAYS:    ${ZV_PARTY_RETENTION_DAYS:-}
       ZV_COMPANY_ORG_NUMBER:      ${ZV_COMPANY_ORG_NUMBER:-}
       ZV_COMPANY_ADDRESS:         ${ZV_COMPANY_ADDRESS:-}
       ZV_COMPANY_VAT_NUMBER:      ${ZV_COMPANY_VAT_NUMBER:-}
@@ -112,21 +116,8 @@ services:
       ZV_PAYMENTS_PROVIDER:       ${ZV_PAYMENTS_PROVIDER:-}
       ZV_ENV:                     ${ZV_ENV:-}
       ZV_TOTP_KEY:                ${ZV_TOTP_KEY:-}
-      # Arranger pricing: cents per player slot beyond the free band,
-      # and the free band size per event. Empty → 500 / 15.
-      ZV_PRICE_PER_PLAYER_CENTS:  ${ZV_PRICE_PER_PLAYER_CENTS:-}
-      ZV_FREE_PLAYERS_PER_EVENT:  ${ZV_FREE_PLAYERS_PER_EVENT:-}
-      # Marketplace fee on /store ticket sales (hosted posture):
-      # max(percent + fixed, min). All empty → no fee; sales land in
-      # the platform Stripe account.
-      ZV_PLATFORM_FEE_PERCENT_BPS: ${ZV_PLATFORM_FEE_PERCENT_BPS:-}
-      ZV_PLATFORM_FEE_FIXED_CENTS: ${ZV_PLATFORM_FEE_FIXED_CENTS:-}
-      ZV_PLATFORM_FEE_MIN_CENTS:   ${ZV_PLATFORM_FEE_MIN_CENTS:-}
-      # Hosted events (parties, Host it): the pass price per block of
-      # 15 teams a game holds. Empty → 14900 when a platform fee is
-      # set, else 0 (free); currency empty → sek.
-      ZV_HOSTED_BLOCK_CENTS:       ${ZV_HOSTED_BLOCK_CENTS:-}
-      ZV_HOSTED_CURRENCY:          ${ZV_HOSTED_CURRENCY:-}
+      # Prices (event pass, hosted pass, platform fee) are set under
+      # Settings → Pricing, not here.
       # Postgres pool sizing; empty → server defaults (25 open / 5 idle).
       ZV_DB_MAX_OPEN_CONNS:       ${ZV_DB_MAX_OPEN_CONNS:-}
       ZV_DB_MAX_IDLE_CONNS:       ${ZV_DB_MAX_IDLE_CONNS:-}

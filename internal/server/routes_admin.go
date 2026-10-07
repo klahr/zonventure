@@ -447,6 +447,13 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// public signup, etc.
 			r.Get("/settings", adminH.GetSettings)
 			r.Put("/settings/signup", adminH.SetSignupEnabled)
+			// The platform's prices (Settings → Pricing).
+			r.Get("/pricing", adminH.GetPricing)
+			r.Put("/pricing", adminH.SetPricing)
+			// Who runs the platform, contacts, retention (Settings → Legal).
+			r.Get("/legal", adminH.GetLegal)
+			r.Put("/legal", adminH.SetLegal)
+			r.Post("/legal/preview", legalPreview(env.cfg.Legal))
 
 			// Self-host → hosted migration. Admin-only operator
 			// surface — never an org-self-service flow. Export

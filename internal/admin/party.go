@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/klahr/zonventure/internal/settings"
 	"net/http"
 	"net/mail"
 	"strconv"
@@ -190,7 +191,11 @@ func (h *Handlers) PutPartyOffer(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
+	// Parties are sold in SEK only; an empty currency means it.
 	req.Currency = strings.ToLower(strings.TrimSpace(req.Currency))
+	if req.Currency == "" {
+		req.Currency = settings.Currency
+	}
 	switch {
 	case req.BaseCents < 0 || req.PerKidCents < 0:
 		httpx.Error(w, http.StatusBadRequest, "prices cannot be negative")
@@ -198,8 +203,8 @@ func (h *Handlers) PutPartyOffer(w http.ResponseWriter, r *http.Request) {
 	case req.MaxKids < 1 || req.MaxKids > 50:
 		httpx.Error(w, http.StatusBadRequest, "max_kids must be 1–50")
 		return
-	case len(req.Currency) != 3:
-		httpx.Error(w, http.StatusBadRequest, "currency must be a 3-letter ISO code")
+	case req.Currency != settings.Currency:
+		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "parties are sold in SEK", "code": "currency_not_supported"})
 		return
 	}
 	blurb, err := validateBlurb(strings.TrimSpace(req.Blurb), MaxBlurbLen)
@@ -225,19 +230,12 @@ func (h *Handlers) PutPartyOffer(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusBadRequest, "set a price before offering the party")
 			return
 		}
-		// The platform's cut of a party is its pass price, in the pass's
-		// currency: the smallest party must cost more than that.
-		if h.PlatformFee.Enabled() && !h.Hosted.Free() {
-			if req.Currency != h.Hosted.Currency {
-				httpx.JSON(w, http.StatusBadRequest, map[string]string{
-					"error": fmt.Sprintf("parties are sold in %s", strings.ToUpper(h.Hosted.Currency)),
-					"code":  "currency_not_supported",
-				})
-				return
-			}
-			if fee := h.Hosted.Price(1); int64(req.BaseCents+req.PerKidCents) <= fee {
+		// The platform's cut of a party is its pass price: the smallest
+		// party must cost more than that.
+		if h.platformFee().Enabled() && !h.hosted().Free() {
+			if fee := h.hosted().Price(1); int64(req.BaseCents+req.PerKidCents) <= fee {
 				httpx.JSON(w, http.StatusBadRequest, map[string]any{
-					"error":     fmt.Sprintf("a party must cost more than the platform's %s", formatMinor(fee, h.Hosted.Currency)),
+					"error":     fmt.Sprintf("a party must cost more than the platform's %s", formatMinor(fee, h.hosted().Currency)),
 					"code":      "price_below_fee",
 					"fee_cents": fee,
 				})
@@ -314,7 +312,7 @@ func (h *Handlers) scanPublicOffer(row interface{ Scan(...any) error }) (PublicP
 		&d.Currency, &d.MaxKids, &d.OrgName, &d.OrgSlug, &connectOK)
 	// With a platform fee the money goes through the org's connected
 	// account, which must be able to take charges.
-	d.PaymentsOpen = h.paymentsEnabled() && (!h.PlatformFee.Enabled() || connectOK)
+	d.PaymentsOpen = h.paymentsEnabled() && (!h.platformFee().Enabled() || connectOK)
 	return d, err
 }
 
@@ -444,7 +442,7 @@ func (h *Handlers) BookParty(w http.ResponseWriter, r *http.Request) {
 		connectedAccountID string
 		applicationFee     int64
 	)
-	if h.PlatformFee.Enabled() {
+	if h.platformFee().Enabled() {
 		acct, err := h.stripeConnectAccountForOrgSlug(r.Context(), offer.OrgSlug)
 		if errors.Is(err, ErrConnectNotReady) {
 			httpx.Error(w, http.StatusConflict, "this party can't be booked right now")
@@ -457,7 +455,7 @@ func (h *Handlers) BookParty(w http.ResponseWriter, r *http.Request) {
 		connectedAccountID = acct
 		// A party is a hosted event of one block: the platform takes
 		// the pass price.
-		applicationFee = h.Hosted.Fee(amount, 1)
+		applicationFee = h.hosted().Fee(amount, 1)
 	}
 
 	var purchaseID int64

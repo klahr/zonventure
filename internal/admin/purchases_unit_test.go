@@ -1,21 +1,19 @@
 package admin
 
-import "testing"
+import (
+	"testing"
 
-func TestEnvNonNegInt(t *testing.T) {
-	for _, tc := range []struct {
-		val  string
-		want int
-	}{
-		{"", 15},
-		{"0", 0},
-		{"20", 20},
-		{"-1", 15},
-		{"abc", 15},
-	} {
-		t.Setenv("ZV_TEST_NONNEG", tc.val)
-		if got := envNonNegInt("ZV_TEST_NONNEG", 15); got != tc.want {
-			t.Errorf("envNonNegInt(%q) = %d, want %d", tc.val, got, tc.want)
+	"github.com/klahr/zonventure/internal/settings"
+)
+
+func TestPassAmounts(t *testing.T) {
+	p := settings.Pricing{PlayerCents: 4900, FreePlayers: 15}
+	for _, tc := range []struct{ players, want int }{{10, 0}, {15, 0}, {40, 25 * 4900}} {
+		if got := purchaseAmountCents(p, tc.players); got != tc.want {
+			t.Errorf("purchaseAmountCents(%d) = %d, want %d", tc.players, got, tc.want)
 		}
+	}
+	if got := topUpAmountCents(p, 3); got != 3*4900 {
+		t.Errorf("topUpAmountCents(3) = %d", got)
 	}
 }

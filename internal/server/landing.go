@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/klahr/zonventure/internal/settings"
 	"html"
 	"net/http"
 	"net/url"
@@ -10,7 +11,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/logx"
 )
@@ -721,7 +721,9 @@ func render404(w http.ResponseWriter, r *http.Request) {
 // no more risk of the documentation lying about the price.
 func renderTopbarPage(w http.ResponseWriter, r *http.Request, name string) {
 	lang := resolveLang(w, r)
-	out := cachedRender(lang, name, "", func() []byte {
+	// The prices are part of the key: a save on Settings → Pricing
+	// renders the page anew.
+	out := cachedRender(lang, name, pricingKey(), func() []byte {
 		body, err := readWebFile(name)
 		if err != nil {
 			return nil
@@ -747,24 +749,23 @@ func renderTopbarPage(w http.ResponseWriter, r *http.Request, name string) {
 }
 
 // pricingSubs renders {{FREE_PLAYERS_PER_EVENT}} and
-// {{PRICE_PER_EXTRA_PLAYER}} from the live admin pricing. Single
-// source of truth: changing ZV_PRICE_PER_PLAYER_CENTS /
-// ZV_FREE_PLAYERS_PER_EVENT updates the manual + any future page that
-// opts in.
+// {{PRICE_PER_EXTRA_PLAYER}} from the prices in force (Settings →
+// Pricing), so the manual never disagrees with the charge.
 func pricingSubs() [][2]string {
-	free := strconv.Itoa(admin.FreePlayersPerEvent)
-	priceMajor := admin.PricePerPlayerCents / 100
-	priceMinor := admin.PricePerPlayerCents % 100
-	var price string
-	if priceMinor == 0 {
-		price = "€" + strconv.Itoa(priceMajor)
-	} else {
-		price = "€" + strconv.Itoa(priceMajor) + "." + fmt.Sprintf("%02d", priceMinor)
+	p := settings.CurrentPricing()
+	price := strconv.FormatInt(p.PlayerCents/100, 10)
+	if minor := p.PlayerCents % 100; minor != 0 {
+		price += "," + fmt.Sprintf("%02d", minor)
 	}
 	return [][2]string{
-		{"{{FREE_PLAYERS_PER_EVENT}}", free},
-		{"{{PRICE_PER_EXTRA_PLAYER}}", price},
+		{"{{FREE_PLAYERS_PER_EVENT}}", strconv.FormatInt(p.FreePlayers, 10)},
+		{"{{PRICE_PER_EXTRA_PLAYER}}", price + " kr"},
 	}
+}
+
+func pricingKey() string {
+	p := settings.CurrentPricing()
+	return strconv.FormatInt(p.PlayerCents, 10) + "/" + strconv.FormatInt(p.FreePlayers, 10)
 }
 
 // renderLandingPage substitutes the locale's strings into the embedded

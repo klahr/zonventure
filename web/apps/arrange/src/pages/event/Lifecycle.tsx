@@ -356,8 +356,8 @@ function TopUpDialog({ event, adventure, user, onClose, onDone }: { event: Event
   const t = useT();
   const toast = useToast();
   const pricing = (user.pricing ?? {}) as Pricing;
-  const price = pricing.player_cents || 500;
-  const currency = pricing.currency || "EUR";
+  const price = pricing.player_cents || 4900;
+  const currency = pricing.currency || "SEK";
   const trusted = !!user.memberships.find((m) => m.org_id === user.org_id)?.trusted;
   const [n, setN] = useState("5");
   const [busy, setBusy] = useState(false);

@@ -33,6 +33,9 @@ type Config struct {
 	// ends, for its results page, before the whole event goes. A party
 	// never started goes once its valid_until has passed. Default 14.
 	PartyDays int
+	// Days, when set, replaces the three periods above on every sweep:
+	// Settings → Legal's, so a saved change applies from the next run.
+	Days func() (location, audit, party int)
 	// Interval between sweeps. The work is cheap and incremental;
 	// once an hour is plenty.
 	Interval time.Duration
@@ -46,7 +49,11 @@ func Start(ctx context.Context, db *sql.DB, cfg Config) <-chan struct{} {
 		cfg.Interval = time.Hour
 	}
 	return periodic.Start(ctx, cfg.Interval, func(ctx context.Context) {
-		sweep(ctx, db, cfg)
+		run := cfg
+		if cfg.Days != nil {
+			run.LocationDays, run.AuditDays, run.PartyDays = cfg.Days()
+		}
+		sweep(ctx, db, run)
 	})
 }
 

@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/klahr/zonventure/internal/settings"
 	"net/http"
-	"os"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -36,47 +36,28 @@ import (
  * provider histories (free / simulated / stripe) coexist cleanly.
  */
 
-// PricePerPlayerCents is what each chargeable player slot costs. The
-// first FreePlayersPerEvent slots in any event are free, regardless of
-// how often the buyer comes back. Operators set their own price with
-// ZV_PRICE_PER_PLAYER_CENTS / ZV_FREE_PLAYERS_PER_EVENT; unset or
-// invalid (non-integer, negative) values fall back to the defaults.
-var (
-	PricePerPlayerCents = envNonNegInt("ZV_PRICE_PER_PLAYER_CENTS", 500)
-	FreePlayersPerEvent = envNonNegInt("ZV_FREE_PLAYERS_PER_EVENT", 15)
-)
-
-func envNonNegInt(name string, def int) int {
-	if s := os.Getenv(name); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n >= 0 {
-			return n
-		}
-	}
-	return def
-}
-
 // purchaseAmountCents computes the chargeable total for a NEW
-// assignment buy of N player slots: the first FreePlayersPerEvent are
-// free, the rest cost PricePerPlayerCents each. Returns 0 for any
-// N ≤ FreePlayersPerEvent.
+// assignment buy of N player slots: the first p.FreePlayers are free,
+// the rest cost p.PlayerCents each (Settings → Pricing). Returns 0 for
+// any N ≤ p.FreePlayers.
 //
 // Top-ups (adding slots to an existing assignment) bypass this helper
 // and are always linear — the free band is consumed by the original
 // purchase, so subsequent additions charge per slot regardless of
 // where the resulting total lands. Otherwise a buyer could mint a
 // 1-slot free assignment and grow it 14 more free slots later.
-func purchaseAmountCents(addedPlayers int) int {
-	chargeable := addedPlayers - FreePlayersPerEvent
+func purchaseAmountCents(p settings.Pricing, addedPlayers int) int {
+	chargeable := int64(addedPlayers) - p.FreePlayers
 	if chargeable <= 0 {
 		return 0
 	}
-	return chargeable * PricePerPlayerCents
+	return int(chargeable * p.PlayerCents)
 }
 
-// topUpAmountCents charges PricePerPlayerCents per added slot. No
+// topUpAmountCents charges p.PlayerCents per added slot. No
 // free-band deduction — see purchaseAmountCents for the rationale.
-func topUpAmountCents(addedPlayers int) int {
-	return addedPlayers * PricePerPlayerCents
+func topUpAmountCents(p settings.Pricing, addedPlayers int) int {
+	return int(int64(addedPlayers) * p.PlayerCents)
 }
 
 type purchaseDTO struct {
@@ -159,12 +140,13 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// New-assignment buys carry the FreePlayersPerEvent floor: anything
-	// smaller would still cost €0 and produce a smaller event for no
+	// smaller would still cost 0 kr and produce a smaller event for no
 	// upside. Top-ups skip this — they're billed linearly per slot, so
 	// a +1 add is a meaningful (chargeable) operation.
-	if req.TopUpAssignmentID == nil && req.MaxPlayers < FreePlayersPerEvent {
+	prices := h.pricing()
+	if req.TopUpAssignmentID == nil && int64(req.MaxPlayers) < prices.FreePlayers {
 		httpx.Error(w, http.StatusBadRequest,
-			fmt.Sprintf("minimum %d players per event", FreePlayersPerEvent))
+			fmt.Sprintf("minimum %d players per event", prices.FreePlayers))
 		return
 	}
 	// Top-up branch: derive the adventure slug from the target
@@ -220,9 +202,9 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusForbidden, "that adventure is not available to your org")
 		return
 	}
-	amount := purchaseAmountCents(req.MaxPlayers)
+	amount := purchaseAmountCents(prices, req.MaxPlayers)
 	if topUpID != nil {
-		amount = topUpAmountCents(req.MaxPlayers)
+		amount = topUpAmountCents(prices, req.MaxPlayers)
 	}
 
 	provider := req.Provider
@@ -311,7 +293,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusCreated, map[string]any{
 			"id":            purchaseID,
 			"amount_cents":  amount,
-			"currency":      "EUR",
+			"currency":      "SEK",
 			"state":         "paid",
 			"provider":      provider,
 			"assignment_id": assID,
@@ -327,7 +309,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
 		                      amount_cents, currency, provider, state, top_up_assignment_id)
-		VALUES ($1, $2, $3, $4, $5, 'EUR', $6, 'pending', $7)
+		VALUES ($1, $2, $3, $4, $5, 'SEK', $6, 'pending', $7)
 		RETURNING id
 	`, *me.OrgID, me.ID, req.AdventureSlug, req.MaxPlayers, amount, provider, topUpArg).Scan(&id); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "insert failed", err)
@@ -371,7 +353,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusCreated, map[string]any{
 		"id":           id,
 		"amount_cents": amount,
-		"currency":     "EUR",
+		"currency":     "SEK",
 		"state":        "pending",
 		"provider":     provider,
 		"checkout_url": checkoutURL,
@@ -424,7 +406,7 @@ func (h *Handlers) createOffPlatformPurchase(ctx context.Context, orgID, buyerUs
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
 		                      amount_cents, currency, provider, state, paid_at, assignment_id, top_up_assignment_id)
-		VALUES ($1, $2, $3, $4, $5, 'EUR', $6, 'paid', now_text(), $7, $8)
+		VALUES ($1, $2, $3, $4, $5, 'SEK', $6, 'paid', now_text(), $7, $8)
 		RETURNING id
 	`, orgID, buyerUserID, advSlug, addedPlayers, amountCents, provider, assignmentID, topUpArg).Scan(&purchaseID); err != nil {
 		return 0, 0, fmt.Errorf("purchase insert: %w", err)
