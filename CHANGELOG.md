@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.24.3] - 2026-10-08
+
 ### Changed — a party quiz says "Question", not "Card"
 
 - **A party quiz numbers its questions "Question 1", "Question 2"…**
