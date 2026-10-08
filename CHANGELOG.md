@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.24.5] - 2026-10-09
+
 ### Changed — self-guided events sell in SEK
 
 - **Self-guided events priced in EUR now sell in SEK**, like everything
