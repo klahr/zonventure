@@ -21,14 +21,14 @@ import (
 
 	"github.com/klahr/zonventure/internal/payments"
 
-	stripego "github.com/stripe/stripe-go/v82"
-	"github.com/stripe/stripe-go/v82/account"
-	"github.com/stripe/stripe-go/v82/accountlink"
-	portalsession "github.com/stripe/stripe-go/v82/billingportal/session"
-	checkoutsession "github.com/stripe/stripe-go/v82/checkout/session"
-	"github.com/stripe/stripe-go/v82/loginlink"
-	"github.com/stripe/stripe-go/v82/refund"
-	"github.com/stripe/stripe-go/v82/webhook"
+	stripego "github.com/stripe/stripe-go/v87"
+	"github.com/stripe/stripe-go/v87/account"
+	"github.com/stripe/stripe-go/v87/accountlink"
+	portalsession "github.com/stripe/stripe-go/v87/billingportal/session"
+	checkoutsession "github.com/stripe/stripe-go/v87/checkout/session"
+	"github.com/stripe/stripe-go/v87/loginlink"
+	"github.com/stripe/stripe-go/v87/refund"
+	"github.com/stripe/stripe-go/v87/webhook"
 )
 
 // Provider implements payments.Provider against Stripe's API.

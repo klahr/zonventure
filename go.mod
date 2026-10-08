@@ -13,7 +13,7 @@ require (
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
-	github.com/stripe/stripe-go/v82 v82.5.1
+	github.com/stripe/stripe-go/v87 v87.0.0
 	github.com/xuri/excelize/v2 v2.11.0
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/crypto v0.53.0
@@ -37,6 +37,7 @@ require (
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/richardlehane/mscfb v1.0.7 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
+	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/xuri/efp v0.0.1 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect

@@ -19,7 +19,7 @@ import (
 	"github.com/klahr/zonventure/internal/dbtest"
 	"github.com/klahr/zonventure/internal/server"
 
-	stripego "github.com/stripe/stripe-go/v82"
+	stripego "github.com/stripe/stripe-go/v87"
 )
 
 const (
@@ -105,7 +105,7 @@ func eventEnvelope(t *testing.T, id, eventType string, object any) []byte {
 // in incoming webhook envelopes. Bump this in lockstep with the
 // stripe-go module upgrade. Mismatch surfaces as a 400 "bad
 // signature" with a wrapped log line about API version mismatch.
-const testStripeAPIVersion = "2025-08-27.basil"
+const testStripeAPIVersion = "2026-09-30.endive"
 
 // TestStripeWebhook drives the inbound webhook on one server with
 // Stripe configured. Every subtest seeds its own purchase rows and uses
