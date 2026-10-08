@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.24.2] - 2026-10-08
+
 ### Changed — joining a party is just a team name
 
 - **No "How many are you?"** on a party's join page: a team is one
