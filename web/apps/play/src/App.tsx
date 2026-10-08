@@ -323,7 +323,8 @@ function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
 
 /** The welcome before the first step, for a player who joins a game already running. */
 function Intro({ state, t, usesLocation, onDone }: { state: play.PlayState; t: Translate; usesLocation: boolean; onDone: () => void }) {
-  const name = state.me?.name;
+  // A party's one phone per team plays under the team's own name.
+  const name = state.me?.name !== state.team.name ? state.me?.name : undefined;
   const cover = coverOf(state.event.theme, state.event.cover ? `/media/${state.event.cover}` : undefined);
   return (
     <div className={"app-lobby" + (cover ? " app-lobby--cover" : "")}>

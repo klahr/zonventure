@@ -44,8 +44,8 @@ export interface JoinInfo {
 
 export const getJoin = (token: string) => request<JoinInfo>(`/api/join/${enc(token)}`);
 
-export const join = (token: string, team: string, headcount: number) =>
-  request<{ play_url: string }>(`/api/join/${enc(token)}`, { method: "POST", body: { team, headcount } });
+export const join = (token: string, team: string) =>
+  request<{ play_url: string }>(`/api/join/${enc(token)}`, { method: "POST", body: { team } });
 
 /** A price in minor units, in the reader's locale. */
 export function money(cents: number, currency: string, locale: string): string {

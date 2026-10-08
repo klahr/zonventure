@@ -200,6 +200,10 @@ func (h *Handlers) Join(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "give the team a name of up to 64 characters")
 		return
 	}
+	// The join page no longer asks: one phone per team counts as one.
+	if req.Headcount == 0 {
+		req.Headcount = 1
+	}
 	if req.Headcount < 1 || req.Headcount > 50 {
 		httpx.Error(w, http.StatusBadRequest, "a team has 1 to 50 players")
 		return

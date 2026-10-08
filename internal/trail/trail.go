@@ -161,7 +161,7 @@ func Compile(cards []Card, lang string) *graph.Graph {
 		case Quiz:
 			n++
 			node = graph.Node{Slug: slug, Type: graph.Story, Title: fmt.Sprintf(w.card, n), StoryCfg: &graph.StoryConfig{
-				Blocks: []graph.Block{{ID: "q", Kind: graph.BlockQuiz, Text: fmt.Sprintf(w.card, n), Options: trimmed(c.Options), Answer: c.Correct}},
+				Blocks: []graph.Block{{ID: "q", Kind: graph.BlockQuiz, Text: w.pickIt, Options: trimmed(c.Options), Answer: c.Correct}},
 			}}
 		case Answer:
 			n++
@@ -172,7 +172,7 @@ func Compile(cards []Card, lang string) *graph.Graph {
 				}
 			}
 			node = graph.Node{Slug: slug, Type: graph.Puzzle, Title: fmt.Sprintf(w.card, n), PuzzleCfg: &graph.PuzzleConfig{
-				Blocks: []graph.Block{{ID: "t", Kind: graph.BlockText, Text: fmt.Sprintf("**"+w.card+"**\n\n%s", n, w.typeIt)}},
+				Blocks: []graph.Block{{ID: "t", Kind: graph.BlockText, Text: w.typeIt}},
 				Outputs: []graph.Output{
 					{Port: "right", Trigger: graph.OnAnswer, Matchers: ms, Points: 1},
 					{Port: "wrong", Trigger: graph.OnAttempts, AfterAttempts: 1},
@@ -225,11 +225,11 @@ func Number(cards []Card) []int {
 	return out
 }
 
-type wording struct{ card, info, typeIt, done string }
+type wording struct{ card, info, pickIt, typeIt, done string }
 
 func words(lang string) wording {
 	if lang == "sv" {
-		return wording{card: "Kort %d", info: "Information", typeIt: "Skriv svaret på kortet.", done: "Det var sista kortet. Bra jobbat!"}
+		return wording{card: "Kort %d", info: "Information", pickIt: "Välj svaret på kortet.", typeIt: "Skriv svaret på kortet.", done: "Det var sista kortet. Bra jobbat!"}
 	}
-	return wording{card: "Card %d", info: "Information", typeIt: "Type the answer to the card.", done: "That was the last card. Well done!"}
+	return wording{card: "Card %d", info: "Information", pickIt: "Pick the answer to the card.", typeIt: "Type the answer to the card.", done: "That was the last card. Well done!"}
 }

@@ -11,6 +11,17 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — joining a party is just a team name
+
+- **No "How many are you?"** on a party's join page: a team is one
+  phone, and counts as one player.
+- **🎲 next to Team name** rolls a name, such as "The Speedy Foxes" or
+  "De snabba rävarna". A rolled name that is taken rolls again.
+- **The welcome says "You're on team …"** for a party, instead of
+  naming the team twice as both player and team.
+- **A party quiz card says "Card 1" once**: under the card's title, the
+  phone asks to pick or type the answer to the card.
+
 ## [0.24.1] - 2026-10-08
 
 ### Changed — Stripe API version 2026-09-30.endive

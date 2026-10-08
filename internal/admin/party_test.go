@@ -257,11 +257,12 @@ func TestParty_BookHostAndPlay(t *testing.T) {
 	if w := f.join(t, player, "owls", 2); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "name_taken") {
 		t.Errorf("same name again: %d %s", w.Code, w.Body)
 	}
-	if w := f.join(t, player, "Foxes", 2); w.Code != http.StatusCreated {
+	// Without a headcount, as the join page sends it, a team is one.
+	if w := f.join(t, player, "Foxes", 0); w.Code != http.StatusCreated {
 		t.Fatalf("second team: %d %s", w.Code, w.Body)
 	}
 	v = f.host(t, token)
-	if v.State != "running" || v.Round != 1 || !v.RoundOpen || len(v.Teams) != 2 || v.Teams[0].Headcount != 3 {
+	if v.State != "running" || v.Round != 1 || !v.RoundOpen || len(v.Teams) != 2 || v.Teams[0].Headcount != 3 || v.Teams[1].Headcount != 1 {
 		t.Fatalf("after joining: %+v", v)
 	}
 
@@ -320,7 +321,7 @@ func TestParty_BookHostAndPlay(t *testing.T) {
 		t.Fatalf("finish game: %d %s", w.Code, w.Body)
 	}
 	if len(f.mail.messages) != mails+1 || !strings.Contains(f.mail.messages[mails].Text, "Owls") ||
-		!strings.Contains(f.mail.messages[mails].Text, "2 teams, 5 players") {
+		!strings.Contains(f.mail.messages[mails].Text, "2 teams, 4 players") {
 		t.Fatalf("summary mail: %+v", f.mail.messages[mails:])
 	}
 	if w := call(t, f.public, "POST", "/api/party/"+token+"/finish-game", nil); w.Code != http.StatusConflict {
@@ -330,7 +331,7 @@ func TestParty_BookHostAndPlay(t *testing.T) {
 		t.Fatalf("join game 2: %d %s", w.Code, w.Body)
 	}
 	v = f.host(t, token)
-	if v.Round != 2 || len(v.Teams) != 1 || len(v.Rounds) != 2 || v.Rounds[1].Teams != 2 || v.Rounds[1].Players != 5 {
+	if v.Round != 2 || len(v.Teams) != 1 || len(v.Rounds) != 2 || v.Rounds[1].Teams != 2 || v.Rounds[1].Players != 4 {
 		t.Fatalf("game 2: %+v", v)
 	}
 	var graphs int
