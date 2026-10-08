@@ -62,7 +62,7 @@ export function PurchasesTab() {
   if (!load.data) return <Loading label={t.t("Loading…")} />;
   const purchases = load.data.purchases ?? [];
   const shown = purchases.filter((p) => matches(p, filter));
-  const money = (p: Purchase) => fmtMoney(p.amount_cents, p.currency || "EUR", locale);
+  const money = (p: Purchase) => fmtMoney(p.amount_cents, p.currency || "SEK", locale);
   const hasStripePaid = purchases.some((p) => p.state === "paid" && p.provider === "stripe");
 
   const portal = async () => {

@@ -370,7 +370,7 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           columns={[
             { key: "adv", header: t.t("Adventure"), cell: (p) => p.adventure_title || p.adventure_slug },
             { key: "players", header: t.t("Players"), cell: (p) => <span className="ad-mono">{p.max_players}</span>, wide: true },
-            { key: "total", header: t.t("Total"), cell: (p) => <span className="ad-mono">{fmtMoney(p.amount_cents, p.currency || "EUR", t.current())}</span> },
+            { key: "total", header: t.t("Total"), cell: (p) => <span className="ad-mono">{fmtMoney(p.amount_cents, p.currency || "SEK", t.current())}</span> },
             { key: "state", header: t.t("State"), cell: (p) => <PurchaseState p={p} /> },
             { key: "date", header: t.t("Date"), wide: true, cell: (p) => <span className="ad-sub" title={fmtDateTime(p.created_at, t.current())}>{relTime(p.created_at, t.current())}</span> },
             { key: "x", header: <span className="cs-sr">{t.t("Actions")}</span>, align: "end", cell: (p) => <PurchaseActions p={p} reload={reload} /> },
@@ -654,7 +654,7 @@ function PurchaseActions({ p, reload }: { p: Purchase; reload: () => void }) {
   const [busy, setBusy] = useState(false);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
-  const money = fmtMoney(p.amount_cents, p.currency || "EUR", t.current());
+  const money = fmtMoney(p.amount_cents, p.currency || "SEK", t.current());
 
   const run = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true);

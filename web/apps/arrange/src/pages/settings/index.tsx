@@ -8,6 +8,7 @@ import { MembersTab } from "./Members.tsx";
 import { AdminsTab } from "./Admins.tsx";
 import { AuditTab } from "./Audit.tsx";
 import { PurchasesTab } from "./Purchases.tsx";
+import { TicketSalesCard } from "./TicketSales.tsx";
 import { BillingTab } from "./Billing.tsx";
 import { SystemTab } from "./System.tsx";
 import { MigrationTab } from "./Migration.tsx";
@@ -72,7 +73,12 @@ function SettingsTab({ id }: { id: string }) {
     case "audit":
       return <AuditTab />;
     case "purchases":
-      return <PurchasesTab />;
+      return (
+        <>
+          <PurchasesTab />
+          <TicketSalesCard />
+        </>
+      );
     case "billing":
       return <BillingTab />;
     case "pricing":

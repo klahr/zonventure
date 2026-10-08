@@ -11,6 +11,22 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — self-guided events sell in SEK
+
+- **Self-guided events priced in EUR now sell in SEK**, like everything
+  else. The amount stays as it was set: check the ticket price of any
+  event priced before 0.21.0.
+
+### Added — ticket sales under Settings → Purchases
+
+- **Ticket sales** lists what buyers paid for: self-guided tickets,
+  party bookings, hosted passes and more teams, with the buyer, amount
+  and state. An org sees its own; the platform admin sees every org's.
+- **Refund** (platform admin only) refunds a sale in full. A sale paid
+  to an org's Stripe account takes the org's share back and returns the
+  platform fee. Once Stripe confirms, a ticket's team leaves the game, a
+  party or hosted event is called off, and bought teams are taken away.
+
 ## [0.24.4] - 2026-10-08
 
 ### Changed — questions in the page's own style

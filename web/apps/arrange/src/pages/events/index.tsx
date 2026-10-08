@@ -135,7 +135,7 @@ export function QuestsPage() {
     ) },
     // Teams sold, over the pass's cap when there is one.
     { key: "tickets", header: t.t("Tickets"), wide: true, align: "end", cell: (r) => (r.max_players > 0 ? `${r.teams_count} / ${r.max_players}` : String(r.teams_count)) },
-    { key: "price", header: t.t("Price"), align: "end", cell: (r) => (r.ticket_price_cents && r.ticket_price_cents > 0 ? fmtMoney(r.ticket_price_cents, r.ticket_currency || "EUR", loc) : <span className="evs-muted">—</span>) },
+    { key: "price", header: t.t("Price"), align: "end", cell: (r) => (r.ticket_price_cents && r.ticket_price_cents > 0 ? fmtMoney(r.ticket_price_cents, r.ticket_currency || "SEK", loc) : <span className="evs-muted">—</span>) },
     { key: "state", header: t.t("State"), align: "end", cell: (r) => <StatePill event={r} /> },
   ];
 

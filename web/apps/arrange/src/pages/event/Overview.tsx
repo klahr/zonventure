@@ -233,7 +233,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
   return (
     <Card
       title={t.t("Self-guided adventure details")}
-      subtitle={saved ? t.t("{{price}} {{cur}} per ticket", { price: saved, cur: (event.ticket_currency || "eur").toUpperCase() }) : t.t("No ticket price set yet — players can't buy until you save one.")}
+      subtitle={saved ? t.t("{{price}} {{cur}} per ticket", { price: saved, cur: (event.ticket_currency || "sek").toUpperCase() }) : t.t("No ticket price set yet — players can't buy until you save one.")}
     >
       <Row>
         <div className="ev-stack">
