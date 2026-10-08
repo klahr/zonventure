@@ -32,14 +32,14 @@ func TestCompileValid(t *testing.T) {
 		t.Error("a trail has no places")
 	}
 	q := g.Nodes[2]
-	if q.Type != graph.Story || q.StoryCfg.Blocks[0].Kind != graph.BlockQuiz || q.Title != "Kort 1" || q.StoryCfg.Blocks[0].Text != "Välj svaret på kortet." {
+	if q.Type != graph.Story || q.StoryCfg.Blocks[0].Kind != graph.BlockQuiz || q.Title != "Fråga 1" || q.StoryCfg.Blocks[0].Text != "Välj svaret på frågan." {
 		t.Errorf("quiz card: %+v", q)
 	}
 	if strings.Contains(q.StoryCfg.Blocks[0].Text, "How old") {
 		t.Error("the question is on paper, not the phone")
 	}
 	a := g.Nodes[3]
-	if a.Type != graph.Puzzle || a.Title != "Kort 2" || a.PuzzleCfg.Outputs[0].Points != 1 || a.PuzzleCfg.Outputs[1].AfterAttempts != 1 {
+	if a.Type != graph.Puzzle || a.Title != "Fråga 2" || a.PuzzleCfg.Outputs[0].Points != 1 || a.PuzzleCfg.Outputs[1].AfterAttempts != 1 {
 		t.Errorf("answer card: %+v", a)
 	}
 	if n := Number(cards); n[0] != 0 || n[1] != 1 || n[2] != 2 {

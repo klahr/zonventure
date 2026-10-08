@@ -51,7 +51,7 @@ export function PaperPreview({ i18n, text, options, correct, number }: { i18n: I
       <div className="trail-paper__head">
         <span className="trail-paper__badge">{number}</span>
         <span className="trail-paper__no">
-          <small>{t("Card {{n}}", { n: number })}</small>
+          <small>{t("Question {{n}}", { n: number })}</small>
           {t("Question with options")}
         </span>
       </div>

@@ -21,8 +21,10 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   "De snabba rävarna". A rolled name that is taken rolls again.
 - **The welcome says "You're on team …"** for a party, instead of
   naming the team twice as both player and team.
-- **A party quiz card says "Card 1" once**: under the card's title, the
-  phone asks to pick or type the answer to the card.
+- **A party quiz numbers its questions "Question 1", "Question 2"…**
+  (Fråga 1…) in the creator, on the printed cards and on the phone,
+  instead of "Card 1". The phone says it once, as the title, and asks
+  to pick or type the answer to the question below it.
 
 ## [0.24.1] - 2026-10-08
 

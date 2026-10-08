@@ -240,7 +240,7 @@ function CardEditor(props: {
     answers: t("Write the right answer."),
   };
   return (
-    <section className="trail-card" aria-label={props.number ? t("Card {{n}}", { n: props.number }) : t("Information card")}>
+    <section className="trail-card" aria-label={props.number ? t("Question {{n}}", { n: props.number }) : t("Information card")}>
       <div className="trail-card__top">
         <span className="trail-card__pos">{t("{{n}} of {{count}}", { n: props.position, count: props.count })}</span>
         <div className="trail-kinds" role="radiogroup" aria-label={t("Kind of card")}>
@@ -267,7 +267,7 @@ function CardEditor(props: {
             {props.number ? props.number : <Icon name="info" size={22} />}
           </span>
           <span className="trail-paper__no">
-            {props.number > 0 && <small>{t("Card {{n}}", { n: props.number })}</small>}
+            {props.number > 0 && <small>{t("Question {{n}}", { n: props.number })}</small>}
             {t(KINDS.find((k) => k.kind === card.kind)!.label)}
           </span>
         </div>

@@ -229,7 +229,7 @@ type wording struct{ card, info, pickIt, typeIt, done string }
 
 func words(lang string) wording {
 	if lang == "sv" {
-		return wording{card: "Kort %d", info: "Information", pickIt: "Välj svaret på kortet.", typeIt: "Skriv svaret på kortet.", done: "Det var sista kortet. Bra jobbat!"}
+		return wording{card: "Fråga %d", info: "Information", pickIt: "Välj svaret på frågan.", typeIt: "Skriv svaret på frågan.", done: "Det var sista kortet. Bra jobbat!"}
 	}
-	return wording{card: "Card %d", info: "Information", pickIt: "Pick the answer to the card.", typeIt: "Type the answer to the card.", done: "That was the last card. Well done!"}
+	return wording{card: "Question %d", info: "Information", pickIt: "Pick the answer to the question.", typeIt: "Type the answer to the question.", done: "That was the last card. Well done!"}
 }

@@ -135,13 +135,13 @@ type trailWords struct {
 func trailPDFWords(lang string) trailWords {
 	if lang == "sv" {
 		return trailWords{
-			card: "Kort %d", info: "Information", writeIt: "Skriv svaret i mobilen.",
+			card: "Fråga %d", info: "Information", writeIt: "Skriv svaret i mobilen.",
 			scan: "Skanna för att vara med", howTo: "Varje lag skannar koden med en mobil, ger sig ett namn och letar upp korten i ordning. Svaren skrivs i mobilen.",
 			hide: "Göm korten i ordning, 1 till %d, där lagen kan hitta dem.", answers: "Facit", right: "Rätt svar",
 		}
 	}
 	return trailWords{
-		card: "Card %d", info: "Information", writeIt: "Write the answer on your phone.",
+		card: "Question %d", info: "Information", writeIt: "Write the answer on your phone.",
 		scan: "Scan to join", howTo: "Each team scans the code with one phone, gives itself a name and finds the cards in order. Answers go on the phone.",
 		hide: "Hide the cards in order, 1 to %d, where the teams can find them.", answers: "Answer key", right: "Right answer",
 	}
