@@ -18,6 +18,9 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 - **A party quiz numbers its questions "Question 1", "Question 2"…**
   (Fråga 1…) in the creator, on the printed cards and on the phone,
   instead of "Card 1".
+- **Questions in the page's own style** instead of the browser's: taking
+  a team out, finishing a game and deleting a party adventure ask in a
+  dialog with Cancel and a named button, in the page's language.
 
 ## [0.24.2] - 2026-10-08
 

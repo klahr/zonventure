@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "@zonventure/api";
 import { money } from "@zonventure/hosted";
+import { useConfirm } from "@zonventure/ui";
 import {
   Editor,
   problems,
@@ -107,6 +108,7 @@ function Creator({
 }) {
   const i18n = useT();
   const t = i18n.t;
+  const [ask, confirmDialog] = useConfirm();
   const byHost = "token" in which;
   const api = useMemo<TrailApi>(
     () => ({
@@ -178,7 +180,12 @@ function Creator({
   const remove = async () => {
     if (
       !("id" in which) ||
-      !confirm(t("Delete this party adventure? This can't be undone."))
+      !(await ask({
+        message: t("Delete this party adventure? This can't be undone."),
+        confirmLabel: t("Delete"),
+        cancelLabel: t("Cancel"),
+        danger: true,
+      }))
     )
       return;
     try {
@@ -220,6 +227,7 @@ function Creator({
       : t("Saved on this phone");
   return (
     <div className="party-trail">
+      {confirmDialog}
       {live.round_open && (
         <p className="party-note">
           {t("A game is being played. Changes apply from the next game.")}

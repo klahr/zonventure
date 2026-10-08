@@ -1,3 +1,4 @@
+import { useConfirm } from "@zonventure/ui";
 import { money, type HostedEvent } from "./api.ts";
 import { useHosted } from "./context.tsx";
 
@@ -9,6 +10,7 @@ import { useHosted } from "./context.tsx";
 export function Game({ event }: { event: HostedEvent }) {
   const { i18n, api, run, busy } = useHosted();
   const t = i18n.t;
+  const [ask, confirmDialog] = useConfirm();
   const over =
     event.expired || event.state === "completed" || event.state === "cancelled";
   const earlier = event.rounds.filter((r) => r.finished_at);
@@ -37,6 +39,7 @@ export function Game({ event }: { event: HostedEvent }) {
 
   return (
     <div className="hosted-game">
+      {confirmDialog}
       {event.round_open ? (
         <>
           <p className="hosted-game__status">
@@ -75,13 +78,16 @@ export function Game({ event }: { event: HostedEvent }) {
                       className="hosted-btn hosted-btn--quiet"
                       disabled={busy}
                       aria-label={t("Remove {{team}}", { team: tm.name })}
-                      onClick={() => {
+                      onClick={async () => {
                         if (
-                          confirm(
-                            t("Take {{team}} out of the game?", {
+                          await ask({
+                            message: t("Take {{team}} out of the game?", {
                               team: tm.name,
                             }),
-                          )
+                            confirmLabel: t("Take out"),
+                            cancelLabel: t("Cancel"),
+                            danger: true,
+                          })
                         )
                           void run(() => api.removeTeam!(tm.id));
                       }}
@@ -118,14 +124,16 @@ export function Game({ event }: { event: HostedEvent }) {
               type="button"
               className="hosted-btn hosted-btn--primary"
               disabled={busy}
-              onClick={() => {
+              onClick={async () => {
                 if (
-                  confirm(
-                    t(
+                  await ask({
+                    message: t(
                       "Finish game {{n}}? The teams' phones stop, and you get the results by email.",
                       { n: event.round },
                     ),
-                  )
+                    confirmLabel: t("Finish game"),
+                    cancelLabel: t("Cancel"),
+                  })
                 )
                   void run(() => api.finishGame());
               }}

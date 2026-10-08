@@ -3,7 +3,7 @@ import { ApiError, request } from "@zonventure/api";
 import { money } from "@zonventure/hosted";
 import { coverOf } from "@zonventure/play-ui";
 import { TRAIL_THEMES, TemplatePicker, ThemeShowcase, themeById } from "@zonventure/trail";
-import { SPOTS } from "@zonventure/ui";
+import { SPOTS, useConfirm } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import {
   createDraft,
@@ -130,6 +130,7 @@ export function TrailStart({ org }: { org: string }) {
 export function TrailMine() {
   const i18n = useT();
   const t = i18n.t;
+  const [ask, confirmDialog] = useConfirm();
   const [list, setList] = useState<TrailSummary[] | null>(null);
   const [email, setEmail] = useState(trailSession()?.email ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -171,6 +172,7 @@ export function TrailMine() {
 
   return (
     <>
+      {confirmDialog}
       <section className="party-card">
         <h1>{t("My trails")}</h1>
         {email ? (
@@ -250,8 +252,9 @@ export function TrailMine() {
                     <button
                       type="button"
                       className="party-btn party-btn--danger"
-                      onClick={() => {
-                        if (confirm(t("Delete this party adventure? This can't be undone."))) void act(() => deleteDraft(x.id).then(() => forgetTrails([x.id])));
+                      onClick={async () => {
+                        if (await ask({ message: t("Delete this party adventure? This can't be undone."), confirmLabel: t("Delete"), cancelLabel: t("Cancel"), danger: true }))
+                          void act(() => deleteDraft(x.id).then(() => forgetTrails([x.id])));
                       }}
                     >
                       {t("Delete")}

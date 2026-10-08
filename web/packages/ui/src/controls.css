@@ -104,3 +104,30 @@
   align-items: flex-end;
   margin: var(--sp-3) 0;
 }
+
+/* ---------- A yes/no question (useConfirm) ---------- */
+.zv-confirm {
+  box-sizing: border-box;
+  width: min(24rem, calc(100vw - 2rem));
+  padding: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-lg);
+}
+.zv-confirm::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+.zv-confirm__body {
+  padding: var(--sp-4);
+}
+.zv-confirm__body > p {
+  margin: 0 0 var(--sp-4);
+}
+.zv-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
