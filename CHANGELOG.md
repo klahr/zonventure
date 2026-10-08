@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-10-08
+
 ### Changed — Stripe API version 2026-09-30.endive
 
 - **stripe-go upgraded to v87** (from v82), which speaks Stripe API
