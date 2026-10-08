@@ -11,6 +11,13 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — Stripe API version 2026-09-30.endive
+
+- **stripe-go upgraded to v87** (from v82), which speaks Stripe API
+  version `2026-09-30.endive`. The Stripe webhook endpoint must be on
+  that same version: events of any other release train are refused
+  with a 400 "bad signature" (the log says which version arrived).
+
 ## [0.24.0] - 2026-10-08
 
 ### Changed — the tutorial is seven short, guided lessons
