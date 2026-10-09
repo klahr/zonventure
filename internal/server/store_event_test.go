@@ -127,8 +127,8 @@ func TestStorePages(t *testing.T) {
 	// cover.
 	t.Run("shows adventure icon", func(t *testing.T) {
 		if _, err := db.Exec(`
-			INSERT INTO adventures(slug, title, org_id, avatar_mime_type, avatar_size_bytes, avatar_content)
-			VALUES ('iconic', 'Iconic', $1, 'image/png', 1, '\x89'::bytea), ('plain', 'Plain', $1, NULL, NULL, NULL)
+			INSERT INTO adventures(slug, title, org_id, avatar_mime_type, avatar_size_bytes, avatar_content, area)
+			VALUES ('iconic', 'Iconic', $1, 'image/png', 1, '\x89'::bytea, 'Göteborg · Slottsskogen'), ('plain', 'Plain', $1, NULL, NULL, NULL, '')
 		`, orgID); err != nil {
 			t.Fatal(err)
 		}
@@ -174,12 +174,16 @@ func TestStorePages(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
 			t.Fatal(err)
 		}
-		icons := map[string]string{}
+		icons, areas := map[string]string{}, map[string]string{}
 		for _, it := range list.Items {
 			icons[it.AdventureSlug] = it.AdventureIconURL
+			areas[it.AdventureSlug] = it.Area
 		}
 		if icons["iconic"] != "/adventure-assets/avatar/iconic" || icons["plain"] != "" {
 			t.Errorf("store items' icons = %v", icons)
+		}
+		if areas["iconic"] != "Göteborg · Slottsskogen" || areas["plain"] != "" {
+			t.Errorf("store items' areas = %v", areas)
 		}
 	})
 }

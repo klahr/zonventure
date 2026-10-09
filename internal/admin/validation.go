@@ -19,6 +19,7 @@ import (
 const (
 	MaxNameLen     = 200    // team / org / adventure title / event name
 	MaxAuthorLen   = 200    // adventure author byline
+	MaxAreaLen     = 80     // where an adventure is played, for store cards
 	MaxBlurbLen    = 4_000  // descriptions, intro/outro
 	MaxPromptLen   = 16_000 // puzzle prompt markdown
 	MaxHintTextLen = 4_000  // single hint body markdown

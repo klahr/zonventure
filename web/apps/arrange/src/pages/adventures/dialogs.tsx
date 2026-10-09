@@ -118,7 +118,7 @@ export function PickPassDialog({ title, passes, onPick, onClose }: { title: stri
   );
 }
 
-type Form = { slug: string; title: string; description: string; author: string; intro_text: string; outro_text: string; buyer_note: string; strict_assets: boolean; lat: string; lng: string; start_label: string; require_start: boolean; radius: string; cheat_password: string };
+type Form = { slug: string; title: string; description: string; author: string; intro_text: string; outro_text: string; buyer_note: string; area: string; strict_assets: boolean; lat: string; lng: string; start_label: string; require_start: boolean; radius: string; cheat_password: string };
 
 function formOf(a: AdventureEdit): Form {
   return {
@@ -129,6 +129,7 @@ function formOf(a: AdventureEdit): Form {
     intro_text: a.intro_text || "",
     outro_text: a.outro_text || "",
     buyer_note: a.buyer_note || "",
+    area: a.area || "",
     strict_assets: !!a.strict_assets,
     lat: a.start_lat == null ? "" : String(a.start_lat),
     lng: a.start_lng == null ? "" : String(a.start_lng),
@@ -203,6 +204,7 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
     if (f.intro_text !== initial.intro_text) p.intro_text = f.intro_text;
     if (f.outro_text !== initial.outro_text) p.outro_text = f.outro_text;
     if (f.buyer_note !== initial.buyer_note) p.buyer_note = f.buyer_note;
+    if (f.area.trim() !== initial.area) p.area = f.area.trim();
     if (f.strict_assets !== initial.strict_assets) p.strict_assets = f.strict_assets;
     if (coord(f.lat) !== coord(initial.lat)) p.start_lat = coord(f.lat);
     if (coord(f.lng) !== coord(initial.lng)) p.start_lng = coord(f.lng);
@@ -285,6 +287,9 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
           </Field>
           <Field label={t.t("Author")}>
             <input value={f.author} onChange={(e) => set("author", e.target.value)} />
+          </Field>
+          <Field label={t.t("Area — where it is played")} hint={t.t("A few words for the store card and map, such as “Göteborg · Slottsskogen” or “At home”.")}>
+            <input value={f.area} maxLength={80} onChange={(e) => set("area", e.target.value)} />
           </Field>
           <Field label={t.t("Intro — shown on the welcome screen")} hint={t.t("Markdown. Leave empty for the default welcome + tips.")}>
             <MarkdownArea rows={5} value={f.intro_text} onChange={(e) => set("intro_text", e.target.value)} />

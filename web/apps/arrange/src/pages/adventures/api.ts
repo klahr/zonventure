@@ -90,6 +90,7 @@ export interface AdventureEdit {
   intro_text: string;
   outro_text: string;
   buyer_note: string;
+  area: string;
   language: string;
   avatar_url?: string;
   strict_assets: boolean;

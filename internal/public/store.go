@@ -29,6 +29,7 @@ type StoreItemDTO struct {
 	Currency       string  `json:"currency"`
 	TeamSize       int     `json:"team_size"`
 	StartLabel     string  `json:"start_label,omitempty"`
+	Area           string  `json:"area,omitempty"`
 	StartLat       float64 `json:"start_lat,omitempty"`
 	StartLng       float64 `json:"start_lng,omitempty"`
 	HasStartLatLng bool    `json:"has_start_latlng"`
@@ -235,7 +236,7 @@ const storeItemSelect = `
 	       e.ticket_price_cents,
 	       e.ticket_currency,
 	       e.ticket_team_size,
-	       a.start_label, a.start_lat, a.start_lng,
+	       a.start_label, a.start_lat, a.start_lng, COALESCE(a.area, ''),
 	       (e.cover_image_mime_type IS NOT NULL) AS has_cover,
 	       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,` + pageLookColumns + `
 	FROM events e
@@ -334,7 +335,7 @@ func (h *Handlers) scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 	if err := s.Scan(
 		&item.EventID, &eventName, &item.AdventureSlug, &item.AdventureTitle,
 		&item.OrgName, &blurb, &priceCents, &item.Currency, &item.TeamSize,
-		&startLabel, &startLat, &startLng, &hasCover, &hasIcon,
+		&startLabel, &startLat, &startLng, &item.Area, &hasCover, &hasIcon,
 		&lookFont, &lookTheme, &ownCover,
 	); err != nil {
 		return StoreItemDTO{}, err
@@ -360,6 +361,7 @@ func (h *Handlers) scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 	if startLabel.Valid {
 		item.StartLabel = strings.TrimSpace(startLabel.String)
 	}
+	item.Area = strings.TrimSpace(item.Area)
 	if startLat.Valid && startLng.Valid {
 		item.StartLat = startLat.Float64
 		item.StartLng = startLng.Float64
