@@ -363,7 +363,7 @@ func Lookup(ctx context.Context, q Querier, publicURL string, orgID, eventID int
 		eventTheme, orgTheme      sql.NullString
 		accent, accent2, bg, text sql.NullString
 		lang                      sql.NullString
-		hasLogo                   bool
+		logoVer                   string
 		slug, theme               string
 		ownCover                  bool
 	)
@@ -371,16 +371,16 @@ func Lookup(ctx context.Context, q Querier, publicURL string, orgID, eventID int
 	if eventID > 0 {
 		err = q.QueryRowContext(ctx, `
 			SELECT o.id, o.name, e.email_theme, o.email_theme, o.accent_color, o.accent_secondary_color, o.background_color, o.text_color,
-			       COALESCE(o.logo_size_bytes, 0) > 0, COALESCE(a.language, o.language), `+coverColumns+`
+			       COALESCE(left(md5(o.logo_content), 8), ''), COALESCE(a.language, o.language), `+coverColumns+`
 			FROM events e JOIN organizations o ON o.id = e.org_id LEFT JOIN adventures a ON a.slug = e.adventure_slug
 			WHERE e.id = $1
-		`, eventID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &hasLogo, &lang, &slug, &theme, &ownCover)
+		`, eventID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &logoVer, &lang, &slug, &theme, &ownCover)
 	} else if orgID > 0 {
 		err = q.QueryRowContext(ctx, `
 			SELECT o.id, o.name, NULL, o.email_theme, o.accent_color, o.accent_secondary_color, o.background_color, o.text_color,
-			       COALESCE(o.logo_size_bytes, 0) > 0, o.language
+			       COALESCE(left(md5(o.logo_content), 8), ''), o.language
 			FROM organizations o WHERE o.id = $1
-		`, orgID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &hasLogo, &lang)
+		`, orgID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &logoVer, &lang)
 	} else {
 		return Look{Theme: Classic, Brand: Platform(), Lang: "en"}
 	}
@@ -388,8 +388,10 @@ func Lookup(ctx context.Context, q Querier, publicURL string, orgID, eventID int
 		return Look{Theme: Classic, Brand: Platform(), Lang: "en"}
 	}
 	b := Brand{Name: name, Accent: accent.String, Accent2: accent2.String, Surface: bg.String, Ink: text.String}
-	if base := strings.TrimRight(strings.TrimSpace(publicURL), "/"); hasLogo && base != "" {
-		b.LogoURL = base + "/org-logo/" + strconv.FormatInt(org.Int64, 10)
+	// The logo's address carries a hash of it: mail clients cache images
+	// by URL for good, so a new logo needs a new address to show.
+	if base := strings.TrimRight(strings.TrimSpace(publicURL), "/"); logoVer != "" && base != "" {
+		b.LogoURL = base + "/org-logo/" + strconv.FormatInt(org.Int64, 10) + "?v=" + logoVer
 	}
 	t := Theme(orgTheme.String)
 	if Valid(Theme(eventTheme.String)) {
