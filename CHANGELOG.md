@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.25.6] - 2026-10-09
+
 ### Fixed
 
 - **The area field from 0.25.5 ships.** That release was tagged without
