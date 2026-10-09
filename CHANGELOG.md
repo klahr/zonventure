@@ -11,6 +11,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed
+
+- **The area field from 0.25.5 ships.** That release was tagged without
+  its code: the adventure area, its editor field and its place in the
+  store API arrive now.
+
 ## [0.25.5] - 2026-10-09
 
 ### Added — where an adventure is played
