@@ -13,6 +13,7 @@ export { FitMap } from "./blocks/Map.tsx";
 export { CompassFace } from "./blocks/Compass.tsx";
 export type { BlockContext, Motion } from "./blocks/context.ts";
 export { StaticMap, project, unproject, TILE_URL, type MapPin, type MapPoint, type MapZone } from "./StaticMap.tsx";
+export { setVectorMapLoader, type VectorMapLib } from "./vectorMap.ts";
 export { bearing, metresBetween } from "./geo.ts";
 export { fractionAt } from "./pictures.ts";
 export { STARTER_GROUPS, STARTER_THEMES } from "./starterThemes.ts";

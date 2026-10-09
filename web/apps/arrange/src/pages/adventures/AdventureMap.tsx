@@ -23,8 +23,7 @@ export function AdventureMap({ pins, accent, faint, label, height = 300 }: { pin
       .then((lib) => {
         if (cancelled || !box.current) return;
         const first = pins[0];
-        const m = new lib.Map({ container: box.current, style: STYLE, center: first ? [first.lng, first.lat] : [13.9554, 58.182], zoom: 13, attributionControl: { compact: true } });
-        m.scrollZoom.disable();
+        const m = new lib.Map({ container: box.current, style: STYLE, center: first ? [first.lng, first.lat] : [13.9554, 58.182], zoom: 13, attributionControl: { compact: true }, cooperativeGestures: true });
         m.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         m.on("load", () => {
           // A pin's zone, or the circle of its radius where it has no zone:

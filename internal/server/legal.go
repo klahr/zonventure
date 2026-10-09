@@ -35,14 +35,17 @@ type LegalConfig struct {
 	CompanyOrgNumber string
 	CompanyAddress   string
 	CompanyVATNumber string
-	// Map tiles the players' browsers fetch (live board, recap, the
-	// player app's maps). Empty = OpenStreetMap's public tile server,
-	// fine for development but not for production volume under its
-	// tile usage policy. MapProvider names the tile host in the privacy
-	// policy, since it receives every viewer's IP address.
+	// Raster map tiles, for the small maps when their vector picture
+	// cannot be drawn. Empty = none: then no browser asks a raster tile
+	// server for anything. MapProvider names the map hosts in the
+	// privacy policy, since they receive every viewer's IP address.
 	MapTileURL         string // {z}/{x}/{y} template, https
 	MapTileAttribution string // HTML, as Leaflet expects
-	MapProvider        string
+	// MapStyleURL is the vector map style the MapLibre maps draw: a
+	// style.json address whose tiles, glyphs and sprites live on its
+	// host. Empty = OpenFreeMap's, free and open to commercial use.
+	MapStyleURL string
+	MapProvider string
 	// Reviewed flips off the "draft template — needs lawyer review"
 	// banner, ticked under Settings → Legal once a lawyer has signed off
 	// on the wording; without it an unconfigured operator doesn't ship a
@@ -131,29 +134,41 @@ func (c LegalConfig) defaulted() LegalConfig {
 	if d.EmailProvider == "" {
 		d.EmailProvider = "[email provider: Settings → Legal]"
 	}
-	if d.MapTileURL == "" {
-		d.MapTileURL = defaultMapTileURL
-		if d.MapTileAttribution == "" {
-			d.MapTileAttribution = defaultMapTileAttribution
-		}
+	if d.MapStyleURL == "" {
+		d.MapStyleURL = defaultMapStyleURL
 	}
 	if d.MapProvider == "" {
-		d.MapProvider = mapProviderFor(d.MapTileURL)
+		d.MapProvider = mapStyleProviderFor(d.MapStyleURL)
+		if d.MapTileURL != "" {
+			d.MapProvider += "; " + mapProviderFor(d.MapTileURL)
+		}
 	}
 	return d
 }
 
 const (
-	defaultMapTileURL         = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-	defaultMapTileAttribution = `&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors`
+	osmTileURL         = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+	defaultMapStyleURL = "https://tiles.openfreemap.org/styles/liberty"
 )
 
-// mapProviderFor names the tile host for the privacy policy when the
-// operator hasn't: the OpenStreetMap Foundation for the default, else
-// the configured URL's host, so the disclosure never names the wrong
-// recipient of the viewers' IP addresses.
+// mapStyleProviderFor names the vector style's host for the privacy
+// policy, as mapProviderFor does the raster tiles'.
+func mapStyleProviderFor(styleURL string) string {
+	if styleURL == defaultMapStyleURL {
+		return "OpenFreeMap (tiles.openfreemap.org)"
+	}
+	if u, err := url.Parse(styleURL); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return "[set ZV_MAP_PROVIDER]"
+}
+
+// mapProviderFor names the raster tile host for the privacy policy when
+// the operator hasn't: the OpenStreetMap Foundation for its own tile
+// server, else the configured URL's host, so the disclosure never names
+// the wrong recipient of the viewers' IP addresses.
 func mapProviderFor(tileURL string) string {
-	if tileURL == defaultMapTileURL {
+	if tileURL == osmTileURL {
 		return "OpenStreetMap Foundation (tile.openstreetmap.org)"
 	}
 	if u, err := url.Parse(tileURL); err == nil && u.Host != "" {
@@ -167,7 +182,11 @@ func mapProviderFor(tileURL string) string {
 // providers with an env var instead of a rebuild.
 func mapConfigJS(c LegalConfig) []byte {
 	d := c.defaulted()
-	b, _ := json.Marshal(map[string]string{"tile_url": d.MapTileURL, "attribution": d.MapTileAttribution})
+	m := map[string]string{"style_url": d.MapStyleURL}
+	if d.MapTileURL != "" {
+		m["tile_url"], m["attribution"] = d.MapTileURL, d.MapTileAttribution
+	}
+	b, _ := json.Marshal(m)
 	return []byte("window.ZV_MAP=" + string(b) + ";\n")
 }
 

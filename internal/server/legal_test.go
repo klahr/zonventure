@@ -191,7 +191,7 @@ func TestRenderLegalPage_MapProvider(t *testing.T) {
 		cfg  LegalConfig
 		want string
 	}{
-		{base, "OpenStreetMap Foundation"},
+		{base, "OpenFreeMap (tiles.openfreemap.org)"},
 		{custom, "tiles.example.net"},
 		{named, "Example Maps GmbH (Germany)"},
 	} {
@@ -206,8 +206,11 @@ func TestRenderLegalPage_MapProvider(t *testing.T) {
 
 func TestMapConfigJS(t *testing.T) {
 	got := string(mapConfigJS(LegalConfig{}))
-	if !strings.Contains(got, `"tile_url":"https://tile.openstreetmap.org/{z}/{x}/{y}.png"`) || strings.Contains(got, "{s}") || !strings.Contains(got, "OpenStreetMap") {
-		t.Errorf("default map config = %s", got)
+	if strings.Contains(got, "tile_url") || strings.Contains(got, "openstreetmap") {
+		t.Errorf("default map config names a raster tile server: %s", got)
+	}
+	if !strings.Contains(got, `"style_url":"https://tiles.openfreemap.org/styles/liberty"`) {
+		t.Errorf("default map config has no OpenFreeMap style: %s", got)
 	}
 	got = string(mapConfigJS(LegalConfig{MapTileURL: "https://tiles.example.net/{z}/{x}/{y}.png", MapTileAttribution: "© Example"}))
 	if !strings.Contains(got, `"tile_url":"https://tiles.example.net/{z}/{x}/{y}.png"`) || !strings.Contains(got, `"attribution":"© Example"`) {

@@ -11,6 +11,31 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — vector maps
+
+- **Every map is a vector map** from OpenFreeMap, free and open to
+  commercial use, instead of OpenStreetMap's own tile server: sharper,
+  with labels that stay upright as you zoom. That is the arrange app's
+  maps, the store's, the recap's, the live view's and the small maps
+  in the player and the designer, which one shared hidden map draws as
+  pictures. Point `ZV_MAP_STYLE_URL` at another MapLibre style to
+  change them all; the privacy policy names the style's host.
+- **No raster tiles by default.** `ZV_MAP_TILE_URL` is now optional: set
+  it and the small maps fall back to those tiles when their picture
+  cannot be drawn. Without it, no browser asks OpenStreetMap's tile
+  server for anything.
+- **The store, recap and live view use MapLibre** from this server's
+  own copy, as the arrange app does; Leaflet is gone.
+
+### Fixed
+
+- **Maps in scrolling pages zoom with Ctrl (⌘ on a Mac) and the wheel,
+  and move with two fingers on a phone**: the store's map, the recap's
+  and the adventure map in the arrange app. A plain wheel or one finger
+  still scrolls the page, and a hint says how. The live view's map,
+  which fills its panel, zooms with the plain wheel.
+- **Scripts and styles are served gzipped** to browsers that take it.
+
 ## [0.25.6] - 2026-10-09
 
 ### Fixed

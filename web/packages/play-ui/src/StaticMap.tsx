@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { project, unproject } from "./geo.ts";
+import { vectorCredit, vectorMapsOn, vectorPicture } from "./vectorMap.ts";
 
 export { project, unproject };
 
@@ -35,18 +36,20 @@ export interface MapPin extends MapPoint {
  * Editing a zone uses the real map (the designer's ZoneMap). Players see
  * the same map in a step's map block.
  *
- * Tiles come from the operator's tile source, which the server hands the
- * page as window.ZV_MAP (/assets/map-config.js, set by ZV_MAP_TILE_URL);
- * a page without it falls back to tile.openstreetmap.org, whose usage
- * policy allows light use only.
+ * The map under the shapes is a picture of the operator's vector style
+ * (ZV_MAP_STYLE_URL, in window.ZV_MAP from /assets/map-config.js), drawn
+ * by one hidden map the whole page shares (vectorMap.ts). Without a
+ * vector style or a MapLibre loader, or when the picture cannot be drawn,
+ * it is raster tiles from the operator's tile source (ZV_MAP_TILE_URL),
+ * if one is set; else the shapes on a plain ground.
  */
-const DEFAULT_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const mapConfig = (): { tile_url?: string; attribution?: string } | undefined =>
   (globalThis as { ZV_MAP?: { tile_url?: string; attribution?: string } }).ZV_MAP;
+/** A raster tile's address, or "" when the operator has no tile source. */
 export const TILE_URL = (z: number, x: number, y: number) =>
-  (mapConfig()?.tile_url || DEFAULT_TILES).replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
+  (mapConfig()?.tile_url || "").replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
 
-/** The tile source's credit as plain text: the configured one is HTML, made for Leaflet. */
+/** The tile source's credit as plain text: the configured one is HTML. */
 function credit(): string {
   const html = mapConfig()?.attribution;
   if (!html || typeof DOMParser === "undefined") return "© OpenStreetMap";
@@ -124,9 +127,30 @@ export function StaticMap({ zone, width, height, className, team, pins = [], zoo
       const q = project(p.lat, p.lng, z);
       return { x: q.x - left, y: q.y - top };
     };
-    return { tiles, path, z, left, top, mpp: metresPerPixel(zone.lat, z), team: team && at(team), pins: pins.map((p) => ({ ...at(p), label: p.label })) };
+    // The frame's centre, for the vector picture; MapLibre counts zoom in 512-pixel tiles.
+    const centre = unproject(cx, cy, z);
+    return { tiles, path, z, left, top, centre, mpp: metresPerPixel(zone.lat, z), team: team && at(team), pins: pins.map((p) => ({ ...at(p), label: p.label })) };
     // team and pins are compared by value: new objects each render must not redraw.
   }, [zone, width, height, zoom, JSON.stringify(team), JSON.stringify(pins)]);
+
+  const vector = vectorMapsOn();
+  const [picture, setPicture] = useState<{ key: string; src: string | null } | null>(null);
+  const pictureKey = `${m.centre.lng},${m.centre.lat},${m.z},${width},${height}`;
+  useEffect(() => {
+    if (!vector) return;
+    let live = true;
+    void vectorPicture(m.centre.lng, m.centre.lat, m.z - 1, width, height).then((src) => {
+      if (live) setPicture({ key: pictureKey, src });
+    });
+    return () => {
+      live = false;
+    };
+    // pictureKey covers the centre, zoom and size.
+  }, [vector, pictureKey]);
+  const shown = picture?.key === pictureKey ? picture.src : undefined;
+  // Raster tiles where there is no vector picture to be had, if the
+  // operator has a tile source at all.
+  const raster = (!vector || shown === null) && !!mapConfig()?.tile_url;
 
   return (
     <div
@@ -142,9 +166,9 @@ export function StaticMap({ zone, width, height, className, team, pins = [], zoo
         })
       }
     >
-      {m.tiles.map((t) => (
-        <img key={t.key} src={t.src} alt="" draggable={false} loading="lazy" style={{ left: t.x, top: t.y }} />
-      ))}
+      {raster
+        ? m.tiles.map((t) => <img key={t.key} src={t.src} alt="" draggable={false} loading="lazy" style={{ left: t.x, top: t.y }} />)
+        : shown && <img className="static-map__base" src={shown} alt="" draggable={false} />}
       <svg width={width} height={height} aria-hidden="true">
         <polygon points={m.path} />
         {m.pins.map((p, i) => (
@@ -160,7 +184,7 @@ export function StaticMap({ zone, width, height, className, team, pins = [], zoo
         ))}
         {m.team && <circle className="static-map__dot" cx={m.team.x} cy={m.team.y} r={7} />}
       </svg>
-      <span className="static-map__credit">{credit()}</span>
+      {raster ? <span className="static-map__credit">{credit()}</span> : shown && vectorCredit() && <span className="static-map__credit">{vectorCredit()}</span>}
     </div>
   );
 }

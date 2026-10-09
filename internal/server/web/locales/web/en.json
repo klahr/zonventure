@@ -1361,6 +1361,8 @@
 "Team name required": "Team name required",
 "Team name required.": "Team name required.",
 "Team photo": "Team photo",
+"Use {{key}} + scroll to zoom the map": "Use {{key}} + scroll to zoom the map",
+"Use two fingers to move the map": "Use two fingers to move the map",
 "Team photo removed": "Team photo removed",
 "Team photo updated": "Team photo updated",
 "Team removed": "Team removed",

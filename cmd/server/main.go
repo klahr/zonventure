@@ -284,6 +284,7 @@ func main() {
 		Legal: server.LegalConfig{
 			MapTileURL:         os.Getenv("ZV_MAP_TILE_URL"),
 			MapTileAttribution: os.Getenv("ZV_MAP_TILE_ATTRIBUTION"),
+			MapStyleURL:        os.Getenv("ZV_MAP_STYLE_URL"),
 			MapProvider:        os.Getenv("ZV_MAP_PROVIDER"),
 		},
 		StripeSecretKey:     os.Getenv("ZV_STRIPE_SECRET_KEY"),

@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
+<!-- connect-src https: lets the vector map reach its style host; the server's
+     Content-Security-Policy header narrows it to the configured map hosts. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws: https:; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <title>{{SITE_NAME}} | Recap</title>
 <meta name="application-name" content="{{SITE_NAME}}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -19,8 +21,6 @@
      crawlers that fetch HTML without setting Accept correctly. -->
 <meta name="robots" content="noindex, nofollow">
 <link rel="stylesheet" href="/assets/fontface.css">
-<link rel="stylesheet" href="/assets/leaflet/leaflet.css">
-<script defer src="/assets/leaflet/leaflet.js"></script>
 <script src="/assets/map-config.js"></script>
 <script src="/i18n.js"></script>
 <style>
@@ -472,57 +472,82 @@ function renderPhotos(d) {
       el('figcaption', {}, p.step || p.prompt || '')))));
 }
 
-function mountMap(host, d) {
-  if (typeof L === 'undefined') {
-    setTimeout(() => mountMap(host, d), 100);
+// mountMap draws the team's day on a vector map: its track, the zones
+// (filled once a step there was done, hollow otherwise, so the team sees
+// how far it got) and the playback under it. Ctrl or ⌘ with the wheel
+// zooms, two fingers move it; the page scrolls past it otherwise.
+async function mountMap(host, d) {
+  let zvm, ml;
+  try {
+    zvm = await import('/assets/zv-maplibre.js');
+    ml = await zvm.loadMapLibre();
+  } catch (e) {
+    console.warn('recap map unavailable', e);
+    host.remove();
     return;
   }
-  const map = L.map(host, { scrollWheelZoom: false });
-  const tiles = window.ZV_MAP || { tile_url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' };
-  L.tileLayer(tiles.tile_url, {
-    maxZoom: 19,
-    attribution: tiles.attribution,
-  }).addTo(map);
-
   const accent = getComputedStyle(document.documentElement)
     .getPropertyValue('--accent').trim() || '#ad1357';
 
-  const points = (d.track || []).map((p) => [p.lat, p.lng]);
-  if (points.length >= 2) {
-    L.polyline(points, { color: accent, weight: 4, opacity: 0.85 }).addTo(map);
-  }
-  // Zone pins. Filled once a step there was done; hollow otherwise
-  // (relevant for cancelled events) so the team sees how far it got.
+  const track = (d.track || []).map((p) => [p.lng, p.lat]);
+  const zoneFeatures = [];
   const zonePoints = [];
   for (const z of (d.zones || [])) {
-    const style = {
-      color: accent, weight: 2,
-      fillColor: z.solved ? accent : 'transparent',
-      fillOpacity: z.solved ? 0.35 : 0,
+    const props = {
+      solved: !!z.solved,
+      label: (z.title || z.name || z.slug) + (z.solved ? '' : ' (' + t('not solved') + ')'),
     };
-    const label = (z.title || z.name || z.slug) + (z.solved ? '' : ' (' + t('not solved') + ')');
     if ((z.polygon || []).length >= 3) {
-      L.polygon(z.polygon, style).bindTooltip(label).addTo(map);
-      zonePoints.push(...z.polygon);
+      const ring = z.polygon.map(([lat, lng]) => [lng, lat]);
+      ring.push(ring[0]);
+      zoneFeatures.push({ type: 'Feature', properties: props, geometry: { type: 'Polygon', coordinates: [ring] } });
+      zonePoints.push(...ring);
       continue;
     }
     if (!Number.isFinite(z.lat) || !Number.isFinite(z.lng)) continue;
     if (z.lat === 0 && z.lng === 0) continue;
-    L.circleMarker([z.lat, z.lng], { ...style, radius: 7, fillOpacity: z.solved ? 1 : 0 })
-      .bindTooltip(label).addTo(map);
-    zonePoints.push([z.lat, z.lng]);
+    zoneFeatures.push({ type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [z.lng, z.lat] } });
+    zonePoints.push([z.lng, z.lat]);
   }
 
-  // Fit bounds: the track and zone pins, else a Stockholm default so
+  const map = new ml.Map({
+    container: host,
+    style: zvm.mapStyle(),
+    center: [18.0686, 59.3293],
+    zoom: 13,
+    cooperativeGestures: true,
+    locale: zvm.gestureLocale(t('Use {{key}} + scroll to zoom the map', { key: '{key}' }), t('Use two fingers to move the map')),
+    attributionControl: { compact: true },
+  });
+  map.addControl(new ml.NavigationControl({ showCompass: false }), 'top-right');
+  // Fit the track and the zones, else stay on the Stockholm default so
   // the map never lands on the ocean.
-  const allPoints = points.concat(zonePoints);
-  if (allPoints.length > 0) {
-    map.fitBounds(L.latLngBounds(allPoints), { padding: [24, 24] });
-  } else {
-    map.setView([59.3293, 18.0686], 13);
+  const all = track.concat(zonePoints);
+  if (all.length) {
+    const bounds = all.reduce((b, p) => b.extend(p), new ml.LngLatBounds(all[0], all[0]));
+    map.fitBounds(bounds, { padding: 24, maxZoom: 17, duration: 0 });
   }
 
-  mountPlayback(host, map, d, accent);
+  map.on('load', () => {
+    if (track.length >= 2) {
+      map.addSource('track', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: track } } });
+      map.addLayer({ id: 'track', type: 'line', source: 'track', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': accent, 'line-width': 4, 'line-opacity': 0.85 } });
+    }
+    map.addSource('zones', { type: 'geojson', data: { type: 'FeatureCollection', features: zoneFeatures } });
+    map.addLayer({ id: 'zones-fill', type: 'fill', source: 'zones', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': accent, 'fill-opacity': ['case', ['get', 'solved'], 0.35, 0] } });
+    map.addLayer({ id: 'zones-line', type: 'line', source: 'zones', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'line-color': accent, 'line-width': 2 } });
+    map.addLayer({ id: 'zones-pt', type: 'circle', source: 'zones', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 7, 'circle-color': accent, 'circle-opacity': ['case', ['get', 'solved'], 1, 0], 'circle-stroke-color': accent, 'circle-stroke-width': 2 } });
+    // A zone's name on hover, as a tooltip.
+    const tip = new ml.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+    for (const id of ['zones-fill', 'zones-pt']) {
+      map.on('mousemove', id, (e) => {
+        map.getCanvas().style.cursor = 'pointer';
+        tip.setLngLat(e.lngLat).setText(e.features[0].properties.label).addTo(map);
+      });
+      map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; tip.remove(); });
+    }
+    mountPlayback(host, map, d, accent);
+  });
 }
 
 // parseTs accepts the wire formats the server emits:
@@ -553,20 +578,17 @@ function mountPlayback(mapHost, map, d, accent) {
   const totalMs = Math.max(0, tN - t0);
   if (totalMs <= 0) return;
 
-  const marker = L.circleMarker([points[0].lat, points[0].lng], {
-    radius: 9,
-    color: '#ffffff',
-    weight: 2,
-    fillColor: accent,
-    fillOpacity: 1,
-  }).addTo(map);
-
-  // Trail layer — the polyline of *covered* track from start to
-  // playhead. Drawn over the full track so the part already
-  // walked stands out. Updated every frame as the playhead moves.
-  const trail = L.polyline([[points[0].lat, points[0].lng]], {
-    color: accent, weight: 6, opacity: 1,
-  }).addTo(map);
+  // Trail layer — the line of *covered* track from start to playhead.
+  // Drawn over the full track so the part already walked stands out.
+  // Updated every frame as the playhead moves; the head dot on top.
+  const line = (pts) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: pts.map(([lat, lng]) => [lng, lat]) } });
+  const dot = ([lat, lng]) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lng, lat] } });
+  map.addSource('trail', { type: 'geojson', data: line([[points[0].lat, points[0].lng]]) });
+  map.addLayer({ id: 'trail', type: 'line', source: 'trail', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': accent, 'line-width': 6 } });
+  map.addSource('head', { type: 'geojson', data: dot([points[0].lat, points[0].lng]) });
+  map.addLayer({ id: 'head', type: 'circle', source: 'head', paint: { 'circle-radius': 9, 'circle-color': accent, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+  const trail = { setLatLngs: (pts) => map.getSource('trail').setData(line(pts)) };
+  const marker = { setLatLng: (p) => map.getSource('head').setData(dot(p)) };
 
   const playBtn = el('button', { class: 'pp', type: 'button',
     'aria-label': t('Pause') }, '❚❚');

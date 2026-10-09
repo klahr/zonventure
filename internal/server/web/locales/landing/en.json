@@ -116,6 +116,8 @@
 "StoreMeetsAt": "meets at",
 "StoreMapLabel": "Map of the adventures",
 "StorePlaysAnywhere": "Plays anywhere:",
+"StoreMapZoomHint": "Use {key} + scroll to zoom the map",
+"StoreMapPanHint": "Use two fingers to move the map",
 "StoreMetaDesc": "Buy a ticket. Open the link on your phone. Play right now — no app, no signup, just an adventure waiting outside.",
 "StoreOGDesc": "Buy a ticket and play right now. One purchase, one team, magic link to your inbox.",
 "StorePerTeam": "per team",

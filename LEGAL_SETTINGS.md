@@ -83,10 +83,10 @@ follow.
 
 ## Not in this spec
 
-- **Map tiles** (`ZV_MAP_TILE_URL`, `_ATTRIBUTION`, `ZV_MAP_PROVIDER`).
-  They sit in `LegalConfig` because the privacy policy names the tile
-  host, but the tile URL also builds the Content-Security-Policy at
-  start-up. Next batch, with the site settings.
+- **Maps** (`ZV_MAP_STYLE_URL`, the optional raster `ZV_MAP_TILE_URL`
+  and `_ATTRIBUTION`, `ZV_MAP_PROVIDER`). They sit in `LegalConfig`
+  because the privacy policy names the map hosts, but the style and
+  tile URLs also build the Content-Security-Policy at start-up. Next batch, with the site settings.
 - Editing the page texts themselves. The templates stay in the code
   (or `ZV_WEB_OVERRIDE_DIR`); this page fills in their blanks.
 - Secrets and start-up settings stay env vars (see the earlier split).

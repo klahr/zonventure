@@ -116,6 +116,8 @@
 "StoreMeetsAt": "möts vid",
 "StoreMapLabel": "Karta över äventyren",
 "StorePlaysAnywhere": "Spelas var som helst:",
+"StoreMapZoomHint": "Håll ned {key} och scrolla för att zooma kartan",
+"StoreMapPanHint": "Använd två fingrar för att flytta kartan",
 "StoreMetaDesc": "Köp en biljett. Öppna länken i mobilen. Spela nu — ingen app, ingen registrering, bara ett äventyr som väntar utomhus.",
 "StoreOGDesc": "Köp en biljett och spela nu. Ett köp, ett lag, magisk länk till din inkorg.",
 "StorePerTeam": "per lag",

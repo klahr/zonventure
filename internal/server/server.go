@@ -3,6 +3,8 @@
 package server
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -45,7 +47,7 @@ import (
 	"github.com/klahr/zonventure/internal/ws"
 )
 
-//go:embed web/play-sw.js web/play.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/og-image.png web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/redeem.html web/topbar.css web/topbar.js web/page-tokens.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/leaflet/leaflet.js web/assets/leaflet/leaflet.css web/assets/leaflet/images/*.png web/assets/illustrations/not-found.webp web/assets/email/*.jpg web/assets/email/covers/*.jpg
+//go:embed web/play-sw.js web/play.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/og-image.png web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/redeem.html web/topbar.css web/topbar.js web/page-tokens.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/maplibre/*.mjs web/assets/maplibre/*.css web/assets/zv-maplibre.js web/assets/illustrations/not-found.webp web/assets/email/*.jpg web/assets/email/covers/*.jpg
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -219,7 +221,7 @@ func New(cfg Config) http.Handler {
 	// below — without wrapping them first, those responses would lack
 	// CSP / X-Frame / X-Content-Type-Options. Costs nothing on a 301
 	// where the body is empty anyway; closes a real gap on the 503.
-	r.Use(securityHeaders(cspFor(cfg.Legal.MapTileURL)))
+	r.Use(securityHeaders(cspFor(cfg.Legal.MapTileURL, cfg.Legal.MapStyleURL)))
 	// Hide links to /privacy, /terms and /pricing while they'd answer
 	// 503 / 404 (legal identity unset, landing off).
 	r.Use(hideUnavailableLinks(func() LegalConfig { return legalNow(cfg.Legal) }))
@@ -489,10 +491,10 @@ type routesEnv struct {
 //     fetch / WebSocket. unpkg is whitelisted so devtools can
 //     pull xterm's sourcemaps without the browser logging a
 //     CSP-block warning on every /arrange page open.
-//     tile.openstreetmap.org is where the designer's zone editor
-//     (MapLibre) fetches map tiles.
+//     The map style's host (OpenFreeMap by default) and any raster
+//     tile host are where the MapLibre maps fetch their tiles.
 //   - worker-src 'self' blob: — MapLibre decodes tiles in a
-//     worker it starts from a blob URL.
+//     worker.
 //   - media-src 'self' blob: — audio attachments are blob URLs.
 //   - frame-ancestors 'none' — blocks the clickjacking surface on
 //     /team/{token}, /recap/{token}, /play, /arrange.
@@ -504,9 +506,11 @@ const baselineCSP = "default-src 'self'; " +
 	"style-src 'self' 'unsafe-inline' https://unpkg.com; " +
 	"img-src 'self' data: blob: https:; " +
 	"font-src 'self'; " +
-	// {tiles}: the designer's zone map (MapLibre) fetches its tiles from
-	// the configured tile host (ZV_MAP_TILE_URL, see cspFor); blob:
-	// workers are how MapLibre decodes them off the main thread.
+	// {tiles}: the MapLibre maps fetch their tiles from the configured
+	// raster tile host (ZV_MAP_TILE_URL) and their vector style, tiles,
+	// glyphs and sprites from the style's host (ZV_MAP_STYLE_URL), see
+	// cspFor; blob: workers are how MapLibre decodes them off the main
+	// thread.
 	"connect-src 'self' wss: ws: https://unpkg.com {tiles}; " +
 	"worker-src 'self' blob:; " +
 	"media-src 'self' blob:; " +
@@ -514,14 +518,24 @@ const baselineCSP = "default-src 'self'; " +
 	"object-src 'none'; " +
 	"base-uri 'self'"
 
-// cspFor fills baselineCSP's tile origin from the operator's tile URL
-// template, falling back to OpenStreetMap's.
-func cspFor(tileURL string) string {
-	origin := "https://tile.openstreetmap.org"
-	if u, err := url.Parse(tileURL); err == nil && u.Scheme == "https" && u.Host != "" {
-		origin = "https://" + u.Host
+// cspFor fills baselineCSP's map origins from the operator's vector
+// style URL, falling back to OpenFreeMap's, and raster tile URL
+// template, if any.
+func cspFor(tileURL, styleURL string) string {
+	origin := func(raw string) string {
+		if u, err := url.Parse(raw); err == nil && u.Scheme == "https" && u.Host != "" {
+			return "https://" + u.Host
+		}
+		return ""
 	}
-	return strings.Replace(baselineCSP, "{tiles}", origin, 1)
+	hosts := origin(styleURL)
+	if hosts == "" {
+		hosts = "https://tiles.openfreemap.org"
+	}
+	if tiles := origin(tileURL); tiles != "" && tiles != hosts {
+		hosts += " " + tiles
+	}
+	return strings.Replace(baselineCSP, "{tiles}", hosts, 1)
 }
 
 // trustedProxyRealIP is a gated replacement for chi's middleware.RealIP.
@@ -641,6 +655,10 @@ func servePublicPage(path string, status int) http.HandlerFunc {
 // every navigation to re-download topbar.css, page-tokens.css,
 // fsmap.css, i18n.js, and the 130 KB jsqr.js — the worst single
 // repeat-visit cost in the product.
+//
+// Text assets are also kept gzipped, made once here too, and served so
+// to a browser that accepts it: MapLibre's 1.1 MB of script is 0.3 MB
+// on the wire.
 func serveAsset(path, contentType string) http.HandlerFunc {
 	body, err := readWebFile(path)
 	if err != nil {
@@ -648,16 +666,54 @@ func serveAsset(path, contentType string) http.HandlerFunc {
 	}
 	sum := sha256.Sum256(body)
 	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	var zipped []byte
+	if !strings.HasPrefix(contentType, "image/") || strings.HasPrefix(contentType, "image/svg") {
+		var buf bytes.Buffer
+		zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+		_, _ = zw.Write(body)
+		_ = zw.Close()
+		if buf.Len() < len(body) {
+			zipped = buf.Bytes()
+		}
+	}
+	zipTag := strings.TrimSuffix(etag, `"`) + `-gz"`
 	return func(w http.ResponseWriter, r *http.Request) {
+		gz := zipped != nil && acceptsGzip(r.Header.Get("Accept-Encoding"))
+		tag := etag
+		if gz {
+			tag = zipTag
+		}
 		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("ETag", etag)
+		w.Header().Set("ETag", tag)
 		w.Header().Set("Cache-Control", "public, max-age=3600, must-revalidate")
-		if match := r.Header.Get("If-None-Match"); match != "" && match == etag {
+		if zipped != nil {
+			w.Header().Set("Vary", "Accept-Encoding")
+		}
+		if match := r.Header.Get("If-None-Match"); match != "" && match == tag {
 			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		if gz {
+			w.Header().Set("Content-Encoding", "gzip")
+			_, _ = w.Write(zipped)
 			return
 		}
 		_, _ = w.Write(body)
 	}
+}
+
+// acceptsGzip reports whether an Accept-Encoding header takes gzip,
+// not refused with q=0.
+func acceptsGzip(header string) bool {
+	for _, part := range strings.Split(header, ",") {
+		name, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if strings.TrimSpace(name) != "gzip" {
+			continue
+		}
+		q := strings.ReplaceAll(strings.TrimSpace(params), " ", "")
+		return q != "q=0" && q != "q=0.0" && q != "q=0.00" && q != "q=0.000"
+	}
+	return false
 }
 
 // versionResp is the /api/version payload. Stable shape so monitoring

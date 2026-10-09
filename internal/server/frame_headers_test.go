@@ -10,7 +10,7 @@ import (
 // Only the quiz trail creator may be framed, and only by the site's own
 // pages; everything else stays unframeable.
 func TestSecurityHeaders_Framing(t *testing.T) {
-	h := securityHeaders(cspFor(""))(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	h := securityHeaders(cspFor("", ""))(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	for path, want := range map[string]string{
 		"/app/party/trail/start/zonventure": "SAMEORIGIN",
 		"/app/party/trail/edit":             "SAMEORIGIN",

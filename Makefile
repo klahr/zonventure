@@ -160,6 +160,9 @@ build: web
 web:
 	@cd web && [ -d node_modules ] || npm ci
 	cd web && npm run build --workspaces --if-present
+	cp web/node_modules/maplibre-gl/dist/maplibre-gl.mjs web/node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs \
+		web/node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs web/node_modules/maplibre-gl/dist/maplibre-gl.css \
+		internal/server/web/assets/maplibre/
 
 web-dev:
 	cd web && npm run dev

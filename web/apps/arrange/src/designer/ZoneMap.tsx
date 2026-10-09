@@ -35,16 +35,18 @@ export function loadMapLibre(): Promise<MapLib> {
   return loading;
 }
 
-// The operator's tile source (ZV_MAP_TILE_URL), set on the page as
-// window.ZV_MAP by /assets/map-config.js; OpenStreetMap without it.
-const mapConfig = (globalThis as { ZV_MAP?: { tile_url?: string; attribution?: string } }).ZV_MAP;
+// The operator's map source, set on the page as window.ZV_MAP by
+// /assets/map-config.js: a vector style (ZV_MAP_STYLE_URL, OpenFreeMap's
+// by default), else raster tiles (ZV_MAP_TILE_URL), else OpenFreeMap's
+// style.
+const mapConfig = (globalThis as { ZV_MAP?: { tile_url?: string; attribution?: string; style_url?: string } }).ZV_MAP;
 
-export const STYLE = {
+const RASTER_STYLE = {
   version: 8 as const,
   sources: {
     osm: {
       type: "raster" as const,
-      tiles: [mapConfig?.tile_url || "https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tiles: [mapConfig?.tile_url ?? ""],
       tileSize: 256,
       maxzoom: 19,
       attribution: mapConfig?.attribution || "© OpenStreetMap contributors",
@@ -52,6 +54,8 @@ export const STYLE = {
   },
   layers: [{ id: "osm", type: "raster" as const, source: "osm" }],
 };
+
+export const STYLE: string | typeof RASTER_STYLE = mapConfig?.style_url || (mapConfig?.tile_url ? RASTER_STYLE : "https://tiles.openfreemap.org/styles/liberty");
 
 export function circleRing(z: Pick<Zone, "lat" | "lng" | "radius_m">): [number, number][] {
   const dLat = z.radius_m / 111320;

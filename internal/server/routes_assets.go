@@ -1,7 +1,7 @@
 // Static asset routes — every URL whose response is "bytes from the
 // embed.FS, plus a content-type and ETag." Split from server.go to
 // keep the route registrations findable. Wired by registerStaticAssetRoutes
-// (favicon / fonts / scripts / leaflet / robots / sitemap) and
+// (favicon / fonts / scripts / maplibre / robots / sitemap) and
 // registerAdventureAssetRoutes (the slash-prefixed media routes that
 // run through admin handlers for permission checks).
 package server
@@ -52,20 +52,17 @@ func registerStaticAssetRoutes(r chi.Router, env *routesEnv) {
 	r.Get("/assets/topbar.js", serveAsset("web/topbar.js", "application/javascript; charset=utf-8"))
 	r.Get("/assets/page-tokens.css", serveAsset("web/page-tokens.css", "text/css; charset=utf-8"))
 	registerFontRoutes(r)
-	// Self-hosted Leaflet (the maps library used by the live board,
-	// recap, and the arrange-side map editor). Vendored so the player
-	// surface never reaches out to unpkg.com mid-event, and so a
-	// hostile CDN swap can't inject script into a logged-in arranger.
-	// Marker images are referenced via relative ./images/* URLs from
-	// inside leaflet.css, which is why the directory layout matches
-	// upstream's dist/ exactly.
-	r.Get("/assets/leaflet/leaflet.js", serveAsset("web/assets/leaflet/leaflet.js", "application/javascript; charset=utf-8"))
-	r.Get("/assets/leaflet/leaflet.css", serveAsset("web/assets/leaflet/leaflet.css", "text/css; charset=utf-8"))
-	r.Get("/assets/leaflet/images/marker-icon.png", serveAsset("web/assets/leaflet/images/marker-icon.png", "image/png"))
-	r.Get("/assets/leaflet/images/marker-icon-2x.png", serveAsset("web/assets/leaflet/images/marker-icon-2x.png", "image/png"))
-	r.Get("/assets/leaflet/images/marker-shadow.png", serveAsset("web/assets/leaflet/images/marker-shadow.png", "image/png"))
-	r.Get("/assets/leaflet/images/layers.png", serveAsset("web/assets/leaflet/images/layers.png", "image/png"))
-	r.Get("/assets/leaflet/images/layers-2x.png", serveAsset("web/assets/leaflet/images/layers-2x.png", "image/png"))
+	// Self-hosted MapLibre for the server-rendered pages' vector maps
+	// (store, recap, live view), copied from web/node_modules by `make
+	// web` so it matches the arrange app's. Vendored so the player
+	// surface never reaches out to a CDN mid-event, and so a hostile CDN
+	// swap can't inject script. The worker imports the shared chunk
+	// from beside itself, hence one directory.
+	for _, f := range []string{"maplibre-gl.mjs", "maplibre-gl-shared.mjs", "maplibre-gl-worker.mjs"} {
+		r.Get("/assets/maplibre/"+f, serveAsset("web/assets/maplibre/"+f, "text/javascript; charset=utf-8"))
+	}
+	r.Get("/assets/maplibre/maplibre-gl.css", serveAsset("web/assets/maplibre/maplibre-gl.css", "text/css; charset=utf-8"))
+	r.Get("/assets/zv-maplibre.js", serveAsset("web/assets/zv-maplibre.js", "text/javascript; charset=utf-8"))
 	// Map tile source for every browser-side map (ZV_MAP_TILE_URL /
 	// ZV_MAP_TILE_ATTRIBUTION). no-cache, so a provider switch reaches
 	// open pages on their next load.

@@ -5,16 +5,18 @@ import (
 	"testing"
 )
 
-// The designer's MapLibre map fetches tiles, so connect-src must name
-// the operator's tile host — and never anything but an https origin.
+// The MapLibre maps fetch raster tiles and a vector style, so
+// connect-src must name both hosts — and never anything but an https
+// origin.
 func TestCSPFor_TileOrigin(t *testing.T) {
-	for _, c := range []struct{ tileURL, want string }{
-		{"", "https://tile.openstreetmap.org;"},
-		{"https://tiles.example.com/{z}/{x}/{y}.png?key=k", "https://tiles.example.com;"},
-		{"http://tiles.example.com/{z}/{x}/{y}.png", "https://tile.openstreetmap.org;"},
-		{"https://evil.example; script-src *", "https://tile.openstreetmap.org;"},
+	for _, c := range []struct{ tileURL, styleURL, want string }{
+		{"", "", "https://tiles.openfreemap.org;"},
+		{"https://tiles.example.com/{z}/{x}/{y}.png?key=k", "", "https://tiles.openfreemap.org https://tiles.example.com;"},
+		{"http://tiles.example.com/{z}/{x}/{y}.png", "", "https://tiles.openfreemap.org;"},
+		{"https://evil.example; script-src *", "https://evil.example; script-src *", "https://tiles.openfreemap.org;"},
+		{"https://maps.example.com/{z}/{x}/{y}.png", "https://maps.example.com/styles/bright.json", "https://maps.example.com;"},
 	} {
-		csp := cspFor(c.tileURL)
+		csp := cspFor(c.tileURL, c.styleURL)
 		if !strings.Contains(csp, "connect-src 'self' wss: ws: https://unpkg.com "+c.want) {
 			t.Errorf("cspFor(%q) connect-src wrong: %s", c.tileURL, csp)
 		}

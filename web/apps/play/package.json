@@ -18,7 +18,8 @@
     "@zonventure/ui": "*",
     "@zonventure/i18n": "*",
     "@zonventure/outbox": "*",
-    "@zonventure/play-ui": "*"
+    "@zonventure/play-ui": "*",
+    "maplibre-gl": "^6.11.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

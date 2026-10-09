@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
+<!-- connect-src https: lets the vector map reach its style host; the server's
+     Content-Security-Policy header narrows it to the configured map hosts. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws: https:; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <!-- Public-but-unguessable token URL. Crawlers must not index it —
      the meta tag is paired with X-Robots-Tag on /live/{token} in
      publicrl.go so a token that surfaces in a chat preview can't
@@ -19,8 +21,6 @@
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
 <link rel="stylesheet" href="/assets/fontface.css">
-<link rel="stylesheet" href="/assets/leaflet/leaflet.css">
-<script defer src="/assets/leaflet/leaflet.js"></script>
 <script src="/assets/map-config.js"></script>
 <script src="/i18n.js"></script>
 <style>
@@ -1008,13 +1008,12 @@ function buildMapSlot() {
   return mapWrapEl;
 }
 
-// mapLayers caches the Leaflet overlays across renders so we can
-// update-in-place instead of wiping everything each snapshot. That
-// makes team marker positions animateable (no flicker from
-// remove→add).
+// mapLayers caches the map's markers across renders so we can update
+// in place instead of wiping everything each snapshot. That makes team
+// marker positions animateable (no flicker from remove→add). The tracks
+// are one GeoJSON source, redrawn whole.
 const mapLayers = {
-  teamMarkers: new Map(),           // team_id -> { marker, lastLL }
-  teamPolylines: new Map(),         // team_id -> polyline
+  teamMarkers: new Map(),           // team_id -> { marker }
   teamTweens: new Map(),            // team_id -> rAF handle
 };
 
@@ -1025,14 +1024,14 @@ const mapLayers = {
 function tweenMarker(teamID, marker, target) {
   const existing = mapLayers.teamTweens.get(teamID);
   if (existing) cancelAnimationFrame(existing);
-  const start = marker.getLatLng();
+  const start = marker.getLngLat();
   // Skip tween for microscopic deltas (subpixel GPS jitter) — also a
   // guard against first-frame positioning since we want the marker to
   // appear at the authoritative location right away.
   const dLat = Math.abs(target.lat - start.lat);
   const dLng = Math.abs(target.lng - start.lng);
   if (dLat < 1e-7 && dLng < 1e-7) {
-    marker.setLatLng(target);
+    marker.setLngLat([target.lng, target.lat]);
     return;
   }
   const duration = 600;
@@ -1043,7 +1042,7 @@ function tweenMarker(teamID, marker, target) {
     const eased = u < 0.5 ? 4*u*u*u : 1 - Math.pow(-2*u + 2, 3) / 2;
     const lat = start.lat + (target.lat - start.lat) * eased;
     const lng = start.lng + (target.lng - start.lng) * eased;
-    marker.setLatLng([lat, lng]);
+    marker.setLngLat([lng, lat]);
     if (u < 1) {
       mapLayers.teamTweens.set(teamID, requestAnimationFrame(step));
     } else {
@@ -1053,38 +1052,51 @@ function tweenMarker(teamID, marker, target) {
   mapLayers.teamTweens.set(teamID, requestAnimationFrame(step));
 }
 
+// metresBetween is the great-circle distance between two {lat, lng}.
+function metresBetween(a, b) {
+  const rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(h));
+}
+
+// liveMapReady makes the vector map once, whichever poll asks first;
+// the MapLibre module rides along so later polls can make markers.
+//
+// MapLibre loading can fail (network outage, blocked by a corporate
+// WiFi). The failure degrades to a clear "map unavailable" message so
+// the leaderboard half of the view still works — the audience seeing
+// the TV doesn't have to wonder if they're staring at a frozen page.
+let liveMapReady = null;
+function makeLiveMap(inner) {
+  liveMapReady ??= (async () => {
+    const zvm = await import('/assets/zv-maplibre.js');
+    const ml = await zvm.loadMapLibre();
+    const map = new ml.Map({ container: inner, style: zvm.mapStyle(), center: [18.0686, 59.3293], zoom: 13, attributionControl: { compact: true } });
+    await new Promise((resolve) => map.once('load', resolve));
+    map.addSource('tracks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'tracks', type: 'line', source: 'tracks', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'colour'], 'line-width': 3, 'line-opacity': 0.85 } });
+    liveMapInstance = map;
+    return { ml, map };
+  })();
+  return liveMapReady;
+}
+
 async function renderLiveMap(inner, hint, data) {
-  if (typeof L === 'undefined') {
-    hint.textContent = t('Map library still loading…');
-    setTimeout(() => renderLiveMap(inner, hint, data), 300);
+  if (!liveMapInstance) hint.textContent = t('Map library still loading…');
+  let ml, map;
+  try {
+    ({ ml, map } = await makeLiveMap(inner));
+  } catch (e) {
+    console.warn('live map init failed', e);
+    hint.textContent = t('Map unavailable — leaderboard still live.');
+    inner.style.display = 'none';
     return;
   }
-  // The map wrapper is memoized across polls — initialise Leaflet on it
-  // exactly once. After reparenting into the new split container Leaflet
-  // needs invalidateSize() to recalculate the viewport.
-  //
-  // The Leaflet CDN occasionally fails (network outage, blocked by a
-  // corporate WiFi). Catch the failure and degrade to a clear "map
-  // unavailable" message so the leaderboard half of the view still
-  // works — the audience seeing the TV doesn't have to wonder if
-  // they're staring at a frozen page.
-  if (!liveMapInstance) {
-    try {
-      liveMapInstance = L.map(inner, { scrollWheelZoom: false }).setView([59.3293, 18.0686], 13);
-      const tiles = window.ZV_MAP || { tile_url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '© OpenStreetMap contributors' };
-      L.tileLayer(tiles.tile_url, {
-        attribution: tiles.attribution,
-        maxZoom: 19,
-      }).addTo(liveMapInstance);
-    } catch (e) {
-      console.warn('live map init failed', e);
-      hint.textContent = t('Map unavailable — leaderboard still live.');
-      inner.style.display = 'none';
-      return;
-    }
-  }
-  const map = liveMapInstance;
-  try { map.invalidateSize(); } catch { /* harmless */ }
+  // The map wrapper is memoized across polls and may have been
+  // reparented into a new split container: let the map remeasure.
+  try { map.resize(); } catch { /* harmless */ }
 
   // Team tracks come from the most recent {kind:"tracks"} WS frame, which
   // the server pushes alongside the snapshot whenever show_map is on.
@@ -1094,22 +1106,14 @@ async function renderLiveMap(inner, hint, data) {
   (data.teams || []).forEach((tm) => teamColourByID.set(tm.id, teamColorFor(tm.id)));
 
   const seenTeamIDs = new Set();
+  const lines = [];
   for (const track of tracks) {
     if (!track.points?.length) continue;
     const colour = teamColourByID.get(track.team_id) || '#e24080';
-    const latlngs = track.points.map((p) => [p.lat, p.lng]);
     const last = track.points[track.points.length - 1];
     seenTeamIDs.add(track.team_id);
-
-    // Polyline: update in place if we've seen this team before so the
-    // stroke doesn't flash; otherwise create one.
-    let poly = mapLayers.teamPolylines.get(track.team_id);
-    if (!poly) {
-      poly = L.polyline(latlngs, { color: colour, weight: 3, opacity: .85 }).addTo(map);
-      mapLayers.teamPolylines.set(track.team_id, poly);
-    } else {
-      poly.setLatLngs(latlngs);
-      poly.setStyle({ color: colour });
+    if (track.points.length >= 2) {
+      lines.push({ type: 'Feature', properties: { colour }, geometry: { type: 'LineString', coordinates: track.points.map((p) => [p.lng, p.lat]) } });
     }
 
     // Team marker: on first sight create it at the latest position; on
@@ -1127,38 +1131,29 @@ async function renderLiveMap(inner, hint, data) {
             + `<span>${esc(initials)}</span></div>`;
       // Privacy: the marker shows team initials only — never the full
       // team_name in a popup. The live page is shareable and often
-       // projected at a public venue; pairing precise GPS coordinates
+      // projected at a public venue; pairing precise GPS coordinates
       // with a child's name (school events sometimes use first names
       // as team names) lets a passerby pinpoint and identify a real
       // person on screen. Arrangers who need full names + positions
       // have the staff /api/admin/positions view, which is gated.
-      const marker = L.marker([last.lat, last.lng], {
-        icon: L.divIcon({
-          className: '',
-          html,
-          iconSize: [size, size], iconAnchor: [size / 2, size / 2],
-        }),
-      }).addTo(map);
+      const holder = document.createElement('div');
+      holder.innerHTML = html;
+      const marker = new ml.Marker({ element: holder.firstElementChild }).setLngLat([last.lng, last.lat]).addTo(map);
       entry = { marker };
       mapLayers.teamMarkers.set(track.team_id, entry);
     } else {
-      tweenMarker(track.team_id, entry.marker, L.latLng(last.lat, last.lng));
+      tweenMarker(track.team_id, entry.marker, { lat: last.lat, lng: last.lng });
     }
   }
+  map.getSource('tracks').setData({ type: 'FeatureCollection', features: lines });
   // Drop teams that fell out of the track set (unlikely mid-run, but
   // keeps the cache honest between adventures).
   for (const [tid, entry] of mapLayers.teamMarkers) {
     if (!seenTeamIDs.has(tid)) {
-      map.removeLayer(entry.marker);
+      entry.marker.remove();
       mapLayers.teamMarkers.delete(tid);
       const t = mapLayers.teamTweens.get(tid);
       if (t) { cancelAnimationFrame(t); mapLayers.teamTweens.delete(tid); }
-    }
-  }
-  for (const [tid, poly] of mapLayers.teamPolylines) {
-    if (!seenTeamIDs.has(tid)) {
-      map.removeLayer(poly);
-      mapLayers.teamPolylines.delete(tid);
     }
   }
 
@@ -1176,33 +1171,29 @@ async function renderLiveMap(inner, hint, data) {
     const last = track.points[track.points.length - 1];
     teamLatLngs.push({
       rank: rankIdx.has(track.team_id) ? rankIdx.get(track.team_id) : Infinity,
-      ll: L.latLng(last.lat, last.lng),
+      ll: { lat: last.lat, lng: last.lng },
     });
   }
   teamLatLngs.sort((a, b) => a.rank - b.rank);
 
+  const boundsOf = (lls) => lls.reduce((b, ll) => b.extend([ll.lng, ll.lat]), new ml.LngLatBounds([lls[0].lng, lls[0].lat], [lls[0].lng, lls[0].lat]));
   let fitTarget = null;
   if (teamLatLngs.length) {
-    const all = L.latLngBounds(teamLatLngs.map((t) => t.ll));
-    const span = all.getNorthEast().distanceTo(all.getSouthWest());
+    const all = boundsOf(teamLatLngs.map((t) => t.ll));
+    const ne = all.getNorthEast();
+    const sw = all.getSouthWest();
+    const span = metresBetween({ lat: ne.lat, lng: ne.lng }, { lat: sw.lat, lng: sw.lng });
     if (span <= MAX_SPAN_METERS || teamLatLngs.length <= 3) {
       fitTarget = all;
     } else {
-      fitTarget = L.latLngBounds(teamLatLngs.slice(0, 3).map((t) => t.ll));
+      fitTarget = boundsOf(teamLatLngs.slice(0, 3).map((t) => t.ll));
     }
   }
 
-  if (fitTarget && fitTarget.isValid()) {
-    // Fast animation duration so the re-fit doesn't feel laggy when
-    // a team's position update drags the viewport — Leaflet's default
-    // (0.25s) already runs inside a longer pan/zoom transition, the
-    // explicit duration here just pins it tight. noMoveStart keeps
-    // other subscribers (marker tweens) from thinking the user
-    // panned manually.
-    map.fitBounds(fitTarget, {
-      padding: [24, 24], maxZoom: 17,
-      animate: true, duration: 0.35, easeLinearity: 0.35, noMoveStart: true,
-    });
+  if (fitTarget) {
+    // A short animation so the re-fit doesn't feel laggy when a team's
+    // position update drags the viewport.
+    map.fitBounds(fitTarget, { padding: 24, maxZoom: 17, duration: 350 });
   }
   // Hide the hint strip entirely once teams have sent at least one
   // position — the count text was noisy and duplicated the leaderboard.

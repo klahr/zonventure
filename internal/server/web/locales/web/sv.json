@@ -1361,6 +1361,8 @@
 "Team name required": "Lagnamn krävs",
 "Team name required.": "Lagnamn krävs.",
 "Team photo": "Lagfoto",
+"Use {{key}} + scroll to zoom the map": "Håll ned {{key}} och scrolla för att zooma kartan",
+"Use two fingers to move the map": "Använd två fingrar för att flytta kartan",
 "Team photo removed": "Lagfotot borttaget",
 "Team photo updated": "Lagfotot uppdaterat",
 "Team removed": "Lag borttaget",

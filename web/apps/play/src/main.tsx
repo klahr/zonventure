@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
 import { I18nProvider } from "./i18n.tsx";
+import "./maplibre.ts";
 import "./index.css";
 
 // The play surface is always light, as play.html's was: outdoor sunlight

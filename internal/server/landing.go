@@ -199,6 +199,8 @@ type landingStrings struct {
 	StoreMeetsAt        string
 	StoreMapLabel       string
 	StorePlaysAnywhere  string
+	StoreMapZoomHint    string
+	StoreMapPanHint     string
 	StoreCardCTA        string
 	StorePerTicket      string
 	StorePerTeam        string
@@ -410,6 +412,8 @@ func storeI18nJSON(s landingStrings) string {
 		"meetsAt":              s.StoreMeetsAt,
 		"mapLabel":             s.StoreMapLabel,
 		"playsAnywhere":        s.StorePlaysAnywhere,
+		"mapZoomHint":          s.StoreMapZoomHint,
+		"mapPanHint":           s.StoreMapPanHint,
 		"cardCTA":              s.StoreCardCTA,
 		"perTicket":            s.StorePerTicket,
 		"perTeam":              s.StorePerTeam,
