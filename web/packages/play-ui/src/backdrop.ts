@@ -26,6 +26,7 @@ export const BACKDROP_KINDS: Record<play.BackdropKind, { color: boolean; angle: 
   waves: { color: true, angle: false, color2: false, motion: true, colors: false },
   zigzag: { color: true, angle: false, color2: false, motion: true, colors: false },
   confetti: { color: true, angle: false, color2: true, motion: true, colors: true },
+  snow: { color: true, angle: false, color2: true, motion: true, colors: true },
   gradient: { color: true, angle: true, color2: true, motion: false, colors: false },
   // Each spot carries its own colour.
   spots: { color: false, angle: false, color2: false, motion: false, colors: false },
@@ -268,6 +269,47 @@ function layers(b: play.Backdrop, ink: string, second: string, palette: string[]
       }
       return [tile(svgURL(`<svg xmlns="http://www.w3.org/2000/svg" width="${t}" height="${t}"><g opacity="${o}">${bits.join("")}</g></svg>`), t, t)];
     }
+    case "snow": {
+      // Snowflakes, stars and specks, at most one to each cell of a 6 × 6
+      // grid so none clump or touch the tile's edge, with a few cells left
+      // empty so it reads as falling snow, not wallpaper. The drift falls
+      // straight down.
+      const n = 6;
+      const t = s * n;
+      const rnd = seeded(11);
+      const list = colourList(b);
+      const colours = list.length ? list : [ink, second];
+      const sw = Math.max(1, s / 16).toFixed(1);
+      const bits: string[] = [];
+      for (let i = 0; i < n * n; i++) {
+        const x = s * ((i % n) + 0.5 + (rnd() - 0.5) * 0.4);
+        const y = s * (Math.floor(i / n) + 0.5 + (rnd() - 0.5) * 0.4);
+        const fill = colours[i % colours.length];
+        const pick = rnd();
+        if (pick > 0.8) continue;
+        const at = (r: number, deg: number) => [x + r * Math.cos((deg * Math.PI) / 180), y + r * Math.sin((deg * Math.PI) / 180)].map((v) => v.toFixed(1));
+        if (pick < 0.4) {
+          const r = s * (0.18 + rnd() * 0.12);
+          const spin = rnd() * 60;
+          const arms: string[] = [];
+          for (let k = 0; k < 6; k++) {
+            const d = spin + k * 60;
+            const [ex, ey] = at(r, d);
+            const [bx, by] = at(r * 0.55, d);
+            const [lx, ly] = at(r * 0.85, d - 25);
+            const [rx, ry] = at(r * 0.85, d + 25);
+            arms.push(`M${x.toFixed(1)} ${y.toFixed(1)}L${ex} ${ey}M${lx} ${ly}L${bx} ${by}L${rx} ${ry}`);
+          }
+          bits.push(`<path d="${arms.join("")}" fill="none" stroke="${fill}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`);
+        } else if (pick < 0.62) {
+          const r = s * (0.14 + rnd() * 0.08);
+          const pts: string[] = [];
+          for (let k = 0; k < 10; k++) pts.push(at(k % 2 ? r * 0.45 : r, -90 + k * 36).join(","));
+          bits.push(`<polygon points="${pts.join(" ")}" fill="${fill}"/>`);
+        } else bits.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(s * (0.05 + rnd() * 0.05)).toFixed(1)}" fill="${fill}"/>`);
+      }
+      return [{ ...tile(svgURL(`<svg xmlns="http://www.w3.org/2000/svg" width="${t}" height="${t}"><g opacity="${o}">${bits.join("")}</g></svg>`), t, t), to: `0px ${px(t)}` }];
+    }
   }
   return [];
 }
@@ -316,7 +358,7 @@ export function backdropVars(b: play.Backdrop | null | undefined, brand: play.Br
   const text = hex(brand?.text) ?? DEFAULT_INK;
   const page = hex(brand?.background) ?? "#fbfbfd";
   const palette = backdropPalette(brand);
-  const colourful = b.kind === "confetti" || b.kind === "gradient";
+  const colourful = b.kind === "confetti" || b.kind === "snow" || b.kind === "gradient";
   // A horizon's grid takes the second palette colour and its sun a warm gold, unless given.
   if (b.kind === "horizon") {
     const ls = layers(b, hex(b.color) ?? palette[1] ?? "#2de2e6", hex(b.color2) ?? "#ffd319", palette);
@@ -324,7 +366,7 @@ export function backdropVars(b: play.Backdrop | null | undefined, brand: play.Br
   }
   const first = hex(b.color) ?? (colourful ? palette[0]! : text);
   // With one colour to go on, confetti pairs it with a lighter shade of itself.
-  const second = hex(b.color2) ?? (b.kind === "gradient" ? (palette[1] ?? page) : b.kind === "confetti" ? (palette[1] ?? mix(first, page, 0.5)) : palette[0]!);
+  const second = hex(b.color2) ?? (b.kind === "gradient" ? (palette[1] ?? page) : (b.kind === "confetti" || b.kind === "snow") ? (palette[1] ?? mix(first, page, 0.5)) : palette[0]!);
   const ls = layers(b, first, second, palette);
   return finish(b, ls);
 }

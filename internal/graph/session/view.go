@@ -622,10 +622,11 @@ func waitsForZone(p cond.Predicate) string {
 }
 
 // tokens are the team's state an author may write into a text:
-// {{score}}, {{counter:<slug>}}, {{item:<slug>}}, and a party host's
-// words, {{host:<slug>}} (graph.HostValues). {{team}} is left for the
-// phone, which knows the team's name.
-var tokens = regexp.MustCompile(`\{\{\s*(score|counter:[\w-]+|item:[\w-]+|host:[\w-]+)\s*\}\}`)
+// {{score}}, {{counter:<slug>}}, {{item:<slug>}}, the answer the team
+// gave at a step, {{answer:<slug>}}, and a party host's words,
+// {{host:<slug>}} (graph.HostValues). {{team}} is left for the phone,
+// which knows the team's name.
+var tokens = regexp.MustCompile(`\{\{\s*(score|counter:[\w-]+|item:[\w-]+|answer:[\w-]+|host:[\w-]+)\s*\}\}`)
 
 func (t *Team) fill(s string) string {
 	if !strings.Contains(s, "{{") {
@@ -641,6 +642,9 @@ func (t *Team) fill(s string) string {
 		case strings.HasPrefix(name, "host:"):
 			v, _ := t.G.HostValue(strings.TrimPrefix(name, "host:"))
 			return v
+		case strings.HasPrefix(name, "answer:"):
+			v, _ := t.AnswerTo(strings.TrimPrefix(name, "answer:"))
+			return strings.TrimSpace(v)
 		default:
 			return strconv.Itoa(t.ItemQty(strings.TrimPrefix(name, "item:")))
 		}

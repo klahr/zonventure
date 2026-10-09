@@ -182,6 +182,7 @@ What players read is Markdown, in text, note, chat (each line), quiz, vote and p
 - # to ### headings, blank lines between paragraphs, - and 1. lists
 - **bold**, *italic*, `+"`code`"+`, [links](https://…)
 - {{team}} is replaced by the team's name: "Well done, {{team}}!"
+- {{answer:<step>}} is the answer the team gave at that step: ask a name once, sign every later letter with it.
 
 Anything else — HTML, tables, images — shows as plain text. Use Markdown to give the story rhythm: a bold clue word, a short list of findings, a heading on a letter. Keep each step short enough to read standing up.
 

@@ -3,7 +3,8 @@ import { LocateFixed } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { ICON } from "./dz/ui.tsx";
 import { isTouch } from "./device.ts";
-import { STYLE, loadMapLibre } from "./ZoneMap.tsx";
+import { STYLE, circleRing, loadMapLibre } from "./ZoneMap.tsx";
+import { conceptColor } from "./dz/concepts.tsx";
 import { DEFAULT_CENTRE, locate } from "./zones.ts";
 import "./pointmap.css";
 
@@ -15,9 +16,10 @@ const round = (n: number) => Math.round(n * 1e6) / 1e6;
 /**
  * Pick one point on a map: click or tap to put the pin there, drag it,
  * or use where the phone is. For a place that is only a point, such as
- * where teams meet; a zone with a size is edited in ZoneMap.
+ * where teams meet; a zone with a size is edited in ZoneMap. `radius`
+ * only shows a circle around the pin.
  */
-export function PointMap({ value, onChange, fallback }: { value: Point | null; onChange: (p: Point) => void; fallback?: Point | null }) {
+export function PointMap({ value, onChange, fallback, radius }: { value: Point | null; onChange: (p: Point) => void; fallback?: Point | null; radius?: number | null }) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("maplibre-gl").Map | null>(null);
@@ -40,7 +42,12 @@ export function PointMap({ value, onChange, fallback }: { value: Point | null; o
         const map = new lib.Map({ container: box.current, style: STYLE, center: [start.lng, start.lat], zoom: value ? 16 : 13, attributionControl: { compact: true }, cooperativeGestures: isTouch() });
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         map.on("click", (e) => changeRef.current({ lat: round(e.lngLat.lat), lng: round(e.lngLat.lng) }));
-        map.on("load", () => setReady(true));
+        map.on("load", () => {
+          map.addSource("radius", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+          map.addLayer({ id: "radius-fill", type: "fill", source: "radius", paint: { "fill-color": conceptColor("place", "#1b6b43"), "fill-opacity": 0.18 } });
+          map.addLayer({ id: "radius-line", type: "line", source: "radius", paint: { "line-color": conceptColor("place", "#1b6b43"), "line-width": 2 } });
+          setReady(true);
+        });
         mapRef.current = map;
       })
       .catch(() => setFailed(true));
@@ -82,6 +89,15 @@ export function PointMap({ value, onChange, fallback }: { value: Point | null; o
       markerRef.current = m;
     } else markerRef.current.setLngLat([value.lng, value.lat]);
   }, [value, ready]);
+
+  // The circle follows the pin and the radius.
+  useEffect(() => {
+    if (!ready) return;
+    const ring = value && radius && radius > 0 ? circleRing({ lat: value.lat, lng: value.lng, radius_m: radius }) : null;
+    (mapRef.current?.getSource("radius") as import("maplibre-gl").GeoJSONSource | undefined)?.setData(
+      ring ? { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring] } } : { type: "FeatureCollection", features: [] },
+    );
+  }, [value?.lat, value?.lng, radius, ready]);
 
   const here = async () => {
     setFinding(true);

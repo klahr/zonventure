@@ -492,7 +492,7 @@ export interface LookStyle {
 }
 
 /** internal/adventure: BackdropKinds. */
-export type BackdropKind = "dots" | "stripes" | "checks" | "grid" | "sunburst" | "waves" | "zigzag" | "confetti" | "gradient" | "spots" | "horizon" | "lined" | "picture";
+export type BackdropKind = "dots" | "stripes" | "checks" | "grid" | "sunburst" | "waves" | "zigzag" | "confetti" | "snow" | "gradient" | "spots" | "horizon" | "lined" | "picture";
 
 /** internal/graph/look: Spot — a colour spot, in percent across and down; no colour follows the palette. */
 export interface BackdropSpot {

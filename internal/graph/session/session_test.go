@@ -1595,3 +1595,35 @@ func TestKitItemHandedOn(t *testing.T) {
 		t.Error("the team as a whole uses every item")
 	}
 }
+
+func TestAnswerToken(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "name", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Blocks:  graph.LegacyBlocks("What is my name?", nil),
+				Outputs: []graph.Output{{Port: "out", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Anything}}}},
+			}},
+			{Slug: "bye", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: graph.LegacyBlocks("Bye! /{{answer:name}}{{answer:none}}", nil)}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "name"},
+			{From: "name", FromPort: "out", To: "bye"},
+			{From: "bye", FromPort: "out", To: "end"},
+		},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	_, next, err := tm.Answer("name", " Tomtebisse ")
+	if err != nil || next == nil {
+		t.Fatalf("answer: step=%v err=%v", next, err)
+	}
+	tm.Apply(*next)
+	if got := tm.View().Blocks[0].Text; got != "Bye! /Tomtebisse" {
+		t.Errorf("text = %q, want the answer filled in and an unknown step empty", got)
+	}
+}

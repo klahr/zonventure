@@ -105,6 +105,13 @@ test("a colour list makes rainbow stripes and party confetti", () => {
   for (const c of ["#ff0000", "#00ff00", "#0000ff"]) assert.ok(svg.includes(c), c);
 });
 
+test("snow takes its colours and falls straight down", () => {
+  const v = backdropVars({ kind: "snow", opacity: 0.4, scale: 20, motion: true, colors: ["#c62828", "#1b7a3d"] }, {});
+  const svg = decodeURIComponent(v["--pv-backdrop"]!);
+  for (const c of ["#c62828", "#1b7a3d"]) assert.ok(svg.includes(c), c);
+  assert.equal(v["--pv-backdrop-to"], "0px 120px");
+});
+
 test("a horizon is one scene: its sky colours, sun and grid, never stretched", () => {
   const v = backdropVars({ kind: "horizon", opacity: 1, scale: 40, color: "#2de2e6", color2: "#ffd319", colors: ["#1c0e31", "#59255b", "#d74789"] }, {});
   assert.equal(layerCount(v), 1);

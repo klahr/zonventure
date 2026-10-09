@@ -53,7 +53,7 @@ export const STYLE = {
   layers: [{ id: "osm", type: "raster" as const, source: "osm" }],
 };
 
-function circleRing(z: Zone): [number, number][] {
+export function circleRing(z: Pick<Zone, "lat" | "lng" | "radius_m">): [number, number][] {
   const dLat = z.radius_m / 111320;
   const dLng = z.radius_m / (111320 * Math.cos((z.lat * Math.PI) / 180));
   const ring: [number, number][] = [];

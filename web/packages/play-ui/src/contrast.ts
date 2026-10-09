@@ -34,7 +34,7 @@ export function lookContrast(b: play.Brand): ContrastIssue[] {
   // The colours the backdrop paints, as backdrop.ts resolves them.
   const bd = b.backdrop;
   const palette = backdropPalette(b);
-  const colourful = bd && (bd.kind === "confetti" || bd.kind === "gradient" || bd.kind === "spots");
+  const colourful = bd && (bd.kind === "confetti" || bd.kind === "snow" || bd.kind === "gradient" || bd.kind === "spots");
   const paints = !bd
     ? []
     : bd.kind === "horizon"
@@ -51,7 +51,7 @@ export function lookContrast(b: play.Brand): ContrastIssue[] {
   // plain, but the top, where titles sit, gets the full pattern.
   // Sparse patterns cover little of the page, so a word mostly sits on
   // the page between them: their paint counts for its share of the area.
-  const cover = bd ? ({ confetti: 0.3, dots: 0.3, grid: 0.3, waves: 0.4, zigzag: 0.4, lined: 0.15 } as Record<string, number>)[bd.kind] ?? 1 : 1;
+  const cover = bd ? ({ confetti: 0.3, snow: 0.2, dots: 0.3, grid: 0.3, waves: 0.4, zigzag: 0.4, lined: 0.15 } as Record<string, number>)[bd.kind] ?? 1 : 1;
   const pages = [page, ...paints.filter(isHex).map((c) => blend(page, c, Math.min(1, bd!.opacity) * cover))];
   const worst = (fg: string, under: string[]) => under.reduce((a, u) => Math.min(a, contrastRatio(fg, u)), Infinity);
   check("text", worst(text, pages), 4.5);

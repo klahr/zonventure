@@ -85,7 +85,7 @@ export interface ThemeLook {
   cards?: "raised" | "flat";
   card_outline?: boolean;
   backdrop?: {
-    kind: "dots" | "stripes" | "checks" | "grid" | "sunburst" | "waves" | "zigzag" | "confetti" | "gradient" | "spots" | "horizon" | "lined" | "picture";
+    kind: "dots" | "stripes" | "checks" | "grid" | "sunburst" | "waves" | "zigzag" | "confetti" | "snow" | "gradient" | "spots" | "horizon" | "lined" | "picture";
     color?: string;
     color2?: string;
     opacity: number;

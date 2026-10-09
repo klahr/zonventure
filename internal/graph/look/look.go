@@ -316,7 +316,7 @@ const MaxSpots = 12
 // BackdropKinds are the patterns a backdrop may be.
 var BackdropKinds = map[string]bool{
 	"dots": true, "stripes": true, "checks": true, "grid": true, "sunburst": true,
-	"waves": true, "zigzag": true, "confetti": true, "gradient": true, "spots": true, "horizon": true, "lined": true, "picture": true,
+	"waves": true, "zigzag": true, "confetti": true, "snow": true, "gradient": true, "spots": true, "horizon": true, "lined": true, "picture": true,
 }
 
 // The ranges a backdrop's numbers must keep to. MaxBackdropOpacity keeps
@@ -352,7 +352,7 @@ func (b Backdrop) Validate() error {
 	case b.Kind != "spots" && len(b.Points) > 0:
 		return errors.New("only spots has points")
 	}
-	if len(b.Colors) > 0 && b.Kind != "confetti" && b.Kind != "stripes" && b.Kind != "horizon" {
+	if len(b.Colors) > 0 && b.Kind != "confetti" && b.Kind != "snow" && b.Kind != "stripes" && b.Kind != "horizon" {
 		return errors.New("only confetti, stripes and horizon take a list of colours")
 	}
 	if len(b.Colors) > MaxBackdropColors {

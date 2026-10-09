@@ -326,6 +326,7 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
             <PointMap
               value={coord(f.lat) != null && coord(f.lng) != null ? { lat: coord(f.lat)!, lng: coord(f.lng)! } : null}
               fallback={place}
+              radius={f.require_start ? coord(f.radius) : null}
               onChange={(p) => setF((x) => (x ? { ...x, lat: String(p.lat), lng: String(p.lng) } : x))}
             />
             <Row gap="sm">

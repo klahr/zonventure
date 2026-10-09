@@ -15,6 +15,7 @@ export const BACKDROP_PRESETS: { id: string; label: string; backdrop: play.Backd
   { id: "waves", label: "Waves", backdrop: { kind: "waves", opacity: 0.14, scale: 32 } },
   { id: "zigzag", label: "Zigzag", backdrop: { kind: "zigzag", opacity: 0.1, scale: 34 } },
   { id: "confetti", label: "Party confetti", backdrop: { kind: "confetti", opacity: 0.5, scale: 30 } },
+  { id: "snow", label: "Falling snow", backdrop: { kind: "snow", opacity: 0.4, scale: 30, motion: true } },
   { id: "gradient", label: "Soft glow", backdrop: { kind: "gradient", opacity: 0.18, scale: 24, angle: 180 } },
   { id: "horizon", label: "Retro horizon", backdrop: { kind: "horizon", opacity: 1, scale: 40, color: "#2de2e6", color2: "#ffd319", fixed: true, colors: ["#1c0e31", "#2e1f56", "#59255b", "#d74789"] } },
   { id: "lined", label: "Lined paper", backdrop: { kind: "lined", color: "#5b8fd4", opacity: 0.22, scale: 30 } },

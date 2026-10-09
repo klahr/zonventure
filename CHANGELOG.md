@@ -11,6 +11,19 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — texts can quote an earlier answer
+
+- **`{{answer:<step>}}` in a text shows what the team answered at that
+  step**, so a name asked once can sign every later letter.
+
+- **A snow backdrop**: snowflakes, stars and specks in the adventure's
+  colours, or ones you pick, falling slowly with motion on. "Falling
+  snow" in the backdrop presets.
+
+### Fixed
+
+- **The start's radius shows on the map** under Edit details.
+
 ## [0.25.1] - 2026-10-09
 
 ### Added — a note to the buyer
