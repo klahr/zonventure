@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.25.9] - 2026-10-10
+
 ### Added
 
 - **Files for an event's players.** Organisers upload up to 10 files
