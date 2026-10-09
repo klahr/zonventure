@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-10-09
+
 ### Added — a note to the buyer
 
 - **An adventure can carry a buyer note**: Markdown added to the
