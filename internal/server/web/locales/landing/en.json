@@ -54,7 +54,7 @@
 "StoreEventFAQ1Q": "What if my friends don't have the link?",
 "StoreEventFAQ2A": "Email the organiser of this event — refunds are at their discretion. If your ticket is refunded in full, your team is withdrawn automatically.",
 "StoreEventFAQ2Q": "Can I refund my ticket?",
-"StoreEventFAQ3A": "Any phone with a browser and GPS. Tested on iOS Safari and Android Chrome. The PWA-style page works offline once loaded — useful in patchy coverage.",
+"StoreEventFAQ3A": "Any phone with a browser and GPS. Tested on iOS Safari and Android Chrome. Answers are checked online, so you need mobile data to play. In patchy coverage the page and its pictures stay up, and answers are sent as soon as you are back online.",
 "StoreEventFAQ3Q": "Do I need a special device?",
 "StoreEventFAQ4A": "Your session stays active for the duration of the event. If the device is lost, use the \"I lost my link\" recovery on the play page with the same email you used at checkout.",
 "StoreEventFAQ4Q": "What happens if I close the tab?",

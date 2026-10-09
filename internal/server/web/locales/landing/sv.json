@@ -54,7 +54,7 @@
 "StoreEventFAQ1Q": "Tänk om mina vänner inte har länken?",
 "StoreEventFAQ2A": "Mejla eventets arrangör — återbetalning sker efter deras bedömning. Återbetalas biljetten i sin helhet dras laget tillbaka automatiskt.",
 "StoreEventFAQ2Q": "Kan jag få återbetalning?",
-"StoreEventFAQ3A": "Vilken telefon som helst med webbläsare och GPS. Testat på iOS Safari och Android Chrome. PWA-sidan fungerar offline efter första laddningen — bra vid dålig täckning.",
+"StoreEventFAQ3A": "Vilken telefon som helst med webbläsare och GPS. Testat på iOS Safari och Android Chrome. Svaren rättas online, så du behöver mobildata för att spela. Vid dålig täckning ligger sidan och bilderna kvar, och svaren skickas så fort du har täckning igen.",
 "StoreEventFAQ3Q": "Behöver jag en särskild enhet?",
 "StoreEventFAQ4A": "Din session är aktiv under hela eventet. Om enheten försvinner, använd \"Jag tappade min länk\"-flödet på spelsidan med samma e-post som vid köpet.",
 "StoreEventFAQ4Q": "Vad händer om jag stänger fliken?",
