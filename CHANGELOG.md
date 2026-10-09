@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.25.4] - 2026-10-09
+
 ### Fixed
 
 - **A new organisation logo shows in emails at once.** Its address now
