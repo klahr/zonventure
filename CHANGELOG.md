@@ -11,6 +11,14 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed
+
+- **A hub's branch pictures load on the phone.** They were never in
+  what a team may fetch, so a tile showed a broken image unless the same
+  picture was also used in a step.
+- **A hidden score stays hidden on the end screen**, which showed the
+  points, deductions and total anyway.
+
 ## [0.25.2] - 2026-10-09
 
 ### Added — texts can quote an earlier answer

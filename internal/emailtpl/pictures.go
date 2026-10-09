@@ -44,7 +44,7 @@ const (
 
 // CoverThemes are the starter themes with an email cover
 // (/assets/email/covers/<id>.jpg, made by `make theme-cover`).
-var CoverThemes = []string{"candy", "detective", "ice-cream", "jungle", "ocean", "office", "party", "pen-and-paper", "pirate", "rainbow", "retro-80s", "space", "sunshine", "unicorn"}
+var CoverThemes = []string{"autumn", "candy", "christmas", "detective", "easter", "halloween", "ice-cream", "jungle", "midsummer", "ocean", "office", "party", "pen-and-paper", "pirate", "rainbow", "retro-80s", "space", "spring", "summer", "sunshine", "unicorn", "valentines", "winter"}
 
 // HouseFiles are the house pictures' files, for the server to serve.
 func HouseFiles() []string {

@@ -1062,8 +1062,8 @@ func (t *Team) view() View {
 	return v
 }
 
-// ownMedia is a step's own media the team may see: its answer's, and its
-// blocks' unless a block is still hidden.
+// ownMedia is a step's own media the team may see: its answer's, a
+// hub's branch pictures, and its blocks' unless a block is still hidden.
 func (t *Team) ownMedia(n graph.Node) []graph.Media {
 	var shown []graph.Block
 	for _, b := range n.Blocks() {
@@ -1074,6 +1074,13 @@ func (t *Team) ownMedia(n graph.Node) []graph.Media {
 	out := graph.MediaOf(shown)
 	if n.PuzzleCfg != nil && n.PuzzleCfg.Answer != nil {
 		out = append(out, n.PuzzleCfg.Answer.Media()...)
+	}
+	if n.HubCfg != nil {
+		for _, br := range n.HubCfg.Branches {
+			if br.Image != nil {
+				out = append(out, *br.Image)
+			}
+		}
 	}
 	return out
 }

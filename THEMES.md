@@ -34,7 +34,7 @@ middle; the join page serves it by the player link
 - No text, letters, logos, watermark or frame. The prompts for desks,
   notes and paper also say "no readable writing": generators like to
   invent text there.
-- Space and Retro 80s ask for a dark left half: their text is light.
+- Space, Retro 80s, Christmas, Halloween and Valentine's Day ask for a dark left half: their text is light.
 
 Gemini pictures carry an invisible SynthID watermark; check Gemini's
 terms for commercial use before shipping.
@@ -57,6 +57,15 @@ terms for commercial use before shipping.
 | Retro 80s | `retro-80s` | done |
 | Office | `office` | done |
 | Pen & paper | `pen-and-paper` | done |
+| Christmas | `christmas` | done |
+| Halloween | `halloween` | done |
+| Easter | `easter` | done |
+| Midsummer | `midsummer` | done |
+| Summer | `summer` | done |
+| Winter | `winter` | done |
+| Spring | `spring` | done |
+| Autumn | `autumn` | done |
+| Valentine's Day | `valentines` | done |
 
 ## Prompts
 
@@ -212,4 +221,103 @@ Background: lined notebook paper with faint blue rules and a red margin line on 
 Palette (keep to these colours): ink blue #1e4fa3, margin red #c62828, light rule blue #5b8fd4, off-white paper background #fdfcf7, dark navy ink for any lines #1f2a44, with a soft pencil grey.
 Style: hand-drawn ink-and-watercolour look, soft paper texture, light from the upper right, playful and tidy, high detail but calm, suitable for children and adults. Keep the left half fairly simple, because titles and buttons may sit on top of it.
 No text, no letters, no readable writing, no logos, no watermark, no frame or border.
+```
+
+### christmas
+
+```
+A cosy, magical children's-book illustration for the cover of a Christmas party game, 16:9 landscape, 1600×900.
+Scene: a decorated Christmas tree in the right third of the image, hung with red baubles and warm fairy lights and topped by a glowing gold star, with wrapped presents tied in red ribbon at its foot and a small red wooden house with a lit window beside it, snow on its roof.
+Background: a deep pine-green winter night with large soft snowflakes falling, snowy fir trees fading into the distance, a gentle glow of warm light around the tree, getting darker, emptier and calmer towards the left.
+Palette (keep to these colours): Christmas red #d62828, warm gold #f2c14e, deep pine green background #0f2a1d, darker green #173826, snow white #fdf6ec for the snow and highlights.
+Style: soft painterly digital illustration, warm glowing light from the tree on the right, rounded cute shapes, festive but calm, high detail, suitable for children and adults. Keep the left half fairly simple and dark, because light-coloured titles and buttons may sit on top of it.
+No text, no letters, no Santa, no logos, no watermark, no frame or border.
+```
+
+### halloween
+
+```
+A spooky-cute children's-book illustration for the cover of a Halloween party game, 16:9 landscape, 1600×900.
+Scene: a cluster of glowing carved jack-o'-lanterns with friendly smiling faces in the right third of the image, on a little hill beside a crooked bare tree, a small cartoon ghost peeking out from behind it and a few bats flying past a big round moon above.
+Background: a deep purple night sky with soft stars and wisps of mist, a warm orange glow around the pumpkins, getting darker, emptier and calmer towards the left.
+Palette (keep to these colours): pumpkin orange #f97316, burnt orange #c2410c, slime green #a3e635 for small accents, deep purple background #1a0f2e, violet #5b21b6, dark plum #3b0764, warm cream #fff4e6 for the moon and highlights.
+Style: soft painterly digital illustration, warm glowing light from the pumpkins on the right, rounded cute shapes, playful not scary, high detail but calm, suitable for children aged 5–10 and adults. Keep the left half fairly simple and dark, because light-coloured titles and buttons may sit on top of it.
+No text, no letters, no blood, no skulls, no logos, no watermark, no frame or border.
+```
+
+### easter
+
+```
+A fresh, cheerful children's-book illustration for the cover of an Easter party game, 16:9 landscape, 1600×900.
+Scene: a woven basket full of painted Easter eggs in pastel pink, yellow, mint and lilac in the right third of the image, with two fluffy yellow chicks beside it, one just hatching from a cracked egg, tulips and daffodils around them and a vase of birch twigs decorated with colourful feathers behind.
+Background: a soft spring morning, a pale yellow sky with light clouds, a fresh green meadow along the bottom with small flowers, getting lighter, emptier and calmer towards the left.
+Palette (keep to these colours): raspberry pink #db2777, fresh green #15803d, pale butter background #fffbea, soft yellow #fde68a, pastel pink #fbcfe8, mint #bbf7d0, lilac #ddd6fe, dark brown for any lines #3b2f12.
+Style: soft painterly digital illustration, gentle morning light from the upper right, rounded cute shapes, high detail but calm, suitable for children aged 5–10 and adults. Keep the left half fairly simple and light, because dark titles and buttons may sit on top of it.
+No text, no letters, no logos, no watermark, no frame or border.
+```
+
+### midsummer
+
+```
+A bright, joyful children's-book illustration for the cover of a Swedish Midsummer party game, 16:9 landscape, 1600×900.
+Scene: a Swedish midsummer maypole (a tall cross-shaped pole with two hanging rings, wrapped in green leaves and wild flowers, with blue and yellow ribbons) in the right third of the image, standing in a flowering meadow beside a small red wooden cottage with white corners, a picnic blanket in front with a bowl of strawberries and a flower crown of daisies, buttercups and cornflowers.
+Background: a soft, light Nordic summer evening sky in pale gold and blue, a calm lake and birch trees in the distance, a meadow full of daisies, clover and buttercups along the bottom, getting lighter, emptier and calmer towards the left.
+Palette (keep to these colours): cornflower blue #1e5aa8, leaf green #3f7d20, pale meadow background #f6fbef, buttercup yellow #fde047, sky blue #93c5fd, clover pink #f9a8d4, lime green #bef264, falu red for the cottage, dark green for any lines #1f2d16.
+Style: soft painterly digital illustration, warm low sunlight from the upper right, rounded cute shapes, high detail but calm, suitable for children aged 5–10 and adults. Keep the left half fairly simple and light, because dark titles and buttons may sit on top of it.
+No people, no text, no letters, no flags, no logos, no watermark, no frame or border.
+```
+
+### summer
+
+```
+A sunny, carefree children's-book illustration for the cover of a summer party game, 16:9 landscape, 1600×900.
+Scene: a beach corner in the right third of the image: a striped turquoise-and-coral beach umbrella, a towel with a sand bucket and spade, a half-built sandcastle, a slice of watermelon and an inflatable ring, with a small wooden jetty reaching into the water behind.
+Background: a clear summer sky over a calm turquoise sea with soft gentle waves, warm golden sand along the bottom, getting lighter, emptier and calmer towards the left.
+Palette (keep to these colours): turquoise #0e7490, coral orange #d9480f, warm sand background #fff7e6, pale aqua #d5f2f3, dark brown for any lines #2b2112, with watermelon pink and green as small accents.
+Style: soft painterly digital illustration, bright warm sunlight from the upper right, rounded cute shapes, high detail but calm, suitable for children aged 5–10 and adults. Keep the left half fairly simple and light, because dark titles and buttons may sit on top of it.
+No people, no text, no letters, no logos, no watermark, no frame or border.
+```
+
+### winter
+
+```
+A crisp, peaceful children's-book illustration for the cover of a winter party game, 16:9 landscape, 1600×900.
+Scene: a cheerful snowman with a knitted scarf and a carrot nose in the right third of the image, beside a wooden sled and a pair of mittens on a snowy hill, snow-covered fir trees behind and a frozen lake glinting below.
+Background: a pale icy-blue winter sky with soft northern lights in gentle violet and blue near the top right, light snowflakes falling, smooth white snow along the bottom, getting lighter, emptier and calmer towards the left.
+Palette (keep to these colours): winter blue #1d6fb8, aurora violet #5b4bc4, icy background #eef6fc, pale blue #93c5fd, lavender #c7d2fe, navy for any lines #12304a, with a small red-and-white accent on the scarf.
+Style: soft painterly digital illustration, cool clear light from the upper right, rounded cute shapes, high detail but calm, suitable for children aged 5–10 and adults. Keep the left half fairly simple and light, because dark titles and buttons may sit on top of it.
+No Christmas decorations, no people, no text, no letters, no logos, no watermark, no frame or border.
+```
+
+### spring
+
+```
+A fresh, hopeful children's-book illustration for the cover of a spring party game, 16:9 landscape, 1600×900.
+Scene: a blossoming cherry tree with pink flowers in the right third of the image, petals drifting in the breeze, a little birdhouse on its trunk with a bird singing, a bumblebee over a patch of crocuses and wood anemones at its foot, a puddle reflecting the sky.
+Background: a pale clear spring sky with soft clouds, fresh light-green hills with new grass along the bottom, a few petals floating across, getting lighter, emptier and calmer towards the left.
+Palette (keep to these colours): fresh green #2f855a, blossom magenta #b83280, pale sky background #f2f8ff, light pink #f9a8d4, blush #fbcfe8, mint #bbf7d0, dark green for any lines #1d2e22.
+Style: soft painterly digital illustration, gentle morning light from the upper right, rounded cute shapes, high detail but calm, suitable for children aged 5–10 and adults. Keep the left half fairly simple and light, because dark titles and buttons may sit on top of it.
+No Easter eggs, no people, no text, no letters, no logos, no watermark, no frame or border.
+```
+
+### autumn
+
+```
+A warm, cosy children's-book illustration for the cover of an autumn party game, 16:9 landscape, 1600×900.
+Scene: a big maple tree in full autumn colour in the right third of the image, leaves falling, a pile of leaves at its foot with a curious hedgehog peeking out, a basket of apples, a few mushrooms and a pair of rubber boots beside it.
+Background: a soft warm autumn sky in pale cream and peach, gentle hills with rust and golden trees in the distance, a forest path covered in leaves along the bottom, a few leaves drifting across, getting lighter, emptier and calmer towards the left.
+Palette (keep to these colours): rust orange #b4441c, deep plum #7a2e3a, warm parchment background #fbf3e8, pumpkin orange #d9480f, golden yellow #e9a23b, chestnut #9a3412, dark brown for any lines #3a2414.
+Style: soft painterly digital illustration, low golden afternoon light from the upper right, rounded cute shapes, high detail but calm, suitable for children aged 5–10 and adults. Keep the left half fairly simple and light, because dark titles and buttons may sit on top of it.
+No pumpkins carved with faces, no people, no text, no letters, no logos, no watermark, no frame or border.
+```
+
+### valentines
+
+```
+A sweet, festive children's-book illustration for the cover of a Valentine's Day party game, 16:9 landscape, 1600×900.
+Scene: a bunch of shiny heart-shaped balloons in red and pink in the right third of the image, tied to a small gift box with a big bow, beside a bouquet of red roses in a glass vase and a heart-shaped box of chocolates, a few envelopes sealed with little hearts.
+Background: a deep wine-red evening backdrop with soft glowing bokeh lights and drifting pink and red confetti, getting darker, emptier and calmer towards the left.
+Palette (keep to these colours): hot pink #ff4d6d, blush pink #ffb3c6, deep wine background #4a0d1f, darker wine #5e1328, soft pink-white #fff0f5 for highlights, with small touches of gold.
+Style: soft painterly digital illustration, warm glowing light from the upper right, rounded cute shapes, romantic but playful, high detail but calm, suitable for children aged 5–10 and adults. Keep the left half fairly simple and dark, because light-coloured titles and buttons may sit on top of it.
+No people, no cupid, no text, no letters, no logos, no watermark, no frame or border.
 ```

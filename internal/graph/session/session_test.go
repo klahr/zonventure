@@ -349,6 +349,31 @@ func TestMediaVisibility(t *testing.T) {
 	}
 }
 
+// A hub's branch pictures come with the hub, as its tiles show them.
+func TestHubBranchImageVisibility(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "hub", Type: graph.Hub, HubCfg: &graph.HubConfig{Policy: graph.PolicyChoice, Required: 1, Branches: []graph.Branch{
+				{Port: "a", Label: "A", Image: &graph.Media{ID: 5, Kind: graph.MediaImage}},
+			}}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "hub"},
+			{From: "hub", FromPort: "a", To: "hub"},
+			{From: "hub", FromPort: graph.PortDone, To: "end"},
+		},
+	}
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tm.CanSeeMedia(5, true) {
+		t.Error("a team at the hub should see its branch picture")
+	}
+}
+
 // A role's picture is everyone's to see, and in the view; a secret
 // role's only its player's.
 func TestRoleImageVisibility(t *testing.T) {

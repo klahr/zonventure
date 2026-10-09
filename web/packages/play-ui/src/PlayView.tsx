@@ -1239,7 +1239,7 @@ function EndStep(props: StepProps) {
           {finish?.provisional === false ? t("The game is finished. See how you did!") : t("Your points and place are revealed when the game is finished.")}
         </p>
       )}
-      {!held && <div className="pv-stats">
+      {!held && !view.hide_score && <div className="pv-stats">
         <div className="pv-stat">
           <div className="pv-stat__v">{round(view.score)}</div>
           <div className="pv-stat__l">{t("Points")}</div>

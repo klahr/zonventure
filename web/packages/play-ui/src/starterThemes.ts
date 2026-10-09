@@ -14,6 +14,7 @@ type ThemeLook = play.Brand;
 export const STARTER_GROUPS = [
   { id: "playful", label: "Playful" },
   { id: "adventure", label: "Adventure" },
+  { id: "seasonal", label: "Seasonal" },
   // Shown without a title, after the others.
   { id: "grownup", label: "" },
 ] as const;
@@ -255,6 +256,114 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       corners: "soft",
       backdrop: { kind: "lined", color: "#5b8fd4", color2: "#e57373", opacity: 0.22, scale: 30 },
       style: { card_opacity: 0.6, transition: "flip", title_style: "underline", button_fill: "flat", confetti_emoji: "✏️⭐" },
+    },
+  },
+  {
+    // A Christmas night: deep pine green, falling snow, red buttons, gold titles.
+    id: "christmas",
+    group: "seasonal",
+    label: "Christmas",
+    look: {
+      background: "#0f2a1d", text: "#fdf6ec", accent: "#d62828", accent_secondary: "#f2c14e", submit_bg: "#173826",
+      font: "fredoka", heading_font: "pacifico",
+      backdrop: { kind: "snow", opacity: 0.5, scale: 30, motion: true, colors: ["#ffffff", "#f2c14e"] },
+      style: { card_opacity: 0.8, card_blur: true, transition: "pop", button_fill: "gradient", confetti_emoji: "🎄🎁⭐" },
+    },
+  },
+  {
+    // Trick or treat: a purple night, a pumpkin-orange glow, slime-green titles.
+    id: "halloween",
+    group: "seasonal",
+    label: "Halloween",
+    look: {
+      background: "#1a0f2e", text: "#fff4e6", accent: "#f97316", accent_secondary: "#a3e635", submit_bg: "#2a1846",
+      font: "fredoka", heading_font: "creepster",
+      backdrop: { kind: "spots", opacity: 0.6, scale: 110, points: [{ x: 88, y: 12, color: "#c2410c" }, { x: 10, y: 55, color: "#5b21b6" }, { x: 45, y: 98, color: "#3b0764" }] },
+      style: { card_opacity: 0.8, card_blur: true, transition: "pop", button_fill: "gradient", confetti_emoji: "🎃👻🦇" },
+    },
+  },
+  {
+    // Spring morning: pale yellow, pastel eggs, pink buttons, fresh-green titles.
+    id: "easter",
+    group: "seasonal",
+    label: "Easter",
+    look: {
+      background: "#fffbea", text: "#3b2f12", accent: "#db2777", accent_secondary: "#15803d", submit_bg: "#fdf0b8",
+      font: "baloo-2", heading_font: "chewy",
+      backdrop: { kind: "spots", opacity: 0.5, scale: 110, points: [{ x: 10, y: 8, color: "#fde68a" }, { x: 90, y: 35, color: "#fbcfe8" }, { x: 15, y: 70, color: "#bbf7d0" }, { x: 80, y: 95, color: "#ddd6fe" }] },
+      style: { card_opacity: 0.85, card_blur: true, transition: "pop", button_fill: "gradient", confetti_emoji: "🐣🥚🌷" },
+    },
+  },
+  {
+    // A light summer night: meadow flowers, cornflower-blue buttons, leaf-green titles.
+    id: "midsummer",
+    group: "seasonal",
+    label: "Midsummer",
+    look: {
+      background: "#f6fbef", text: "#1f2d16", accent: "#1e5aa8", accent_secondary: "#3f7d20", submit_bg: "#e3f0d3",
+      font: "baloo-2", heading_font: "patrick-hand",
+      backdrop: { kind: "spots", opacity: 0.45, scale: 110, points: [{ x: 8, y: 6, color: "#fde047" }, { x: 92, y: 28, color: "#93c5fd" }, { x: 12, y: 65, color: "#f9a8d4" }, { x: 85, y: 92, color: "#bef264" }] },
+      style: { card_opacity: 0.85, card_blur: true, transition: "pop", button_fill: "gradient", confetti_emoji: "🌼🍓🌸" },
+    },
+  },
+  {
+    // A beach holiday: warm sand, gentle waves, turquoise buttons, coral titles.
+    id: "summer",
+    group: "seasonal",
+    label: "Summer",
+    look: {
+      background: "#fff7e6", text: "#2b2112", accent: "#0e7490", accent_secondary: "#d9480f", submit_bg: "#d5f2f3",
+      font: "fredoka", heading_font: "luckiest-guy",
+      backdrop: { kind: "waves", color: "#0e7490", opacity: 0.1, scale: 40 },
+      style: { transition: "pop", dock: "floating", button_fill: "gradient", confetti_emoji: "🏖️🍉⛱️" },
+    },
+  },
+  {
+    // A crisp winter day: icy blue, light snow, a hint of northern lights.
+    id: "winter",
+    group: "seasonal",
+    label: "Winter",
+    look: {
+      background: "#eef6fc", text: "#12304a", accent: "#1d6fb8", accent_secondary: "#5b4bc4", submit_bg: "#dcebf7",
+      font: "nunito", heading_font: "fredoka",
+      backdrop: { kind: "snow", opacity: 0.5, scale: 30, motion: true, colors: ["#93c5fd", "#c7d2fe"] },
+      style: { card_opacity: 0.85, card_blur: true, transition: "fade", button_fill: "gradient", confetti_emoji: "❄️⛄" },
+    },
+  },
+  {
+    // First warm days: a pale sky, drifting blossom petals, green buttons, magenta titles.
+    id: "spring",
+    group: "seasonal",
+    label: "Spring",
+    look: {
+      background: "#f2f8ff", text: "#1d2e22", accent: "#2f855a", accent_secondary: "#b83280", submit_bg: "#e1f2e6",
+      font: "nunito", heading_font: "pacifico",
+      backdrop: { kind: "confetti", opacity: 0.35, scale: 26, motion: true, colors: ["#f9a8d4", "#fbcfe8", "#bbf7d0"] },
+      style: { card_opacity: 0.85, card_blur: true, transition: "pop", button_fill: "gradient", confetti_emoji: "🌸🌱🐝" },
+    },
+  },
+  {
+    // Autumn leaves: warm parchment, falling leaves, rust buttons, deep-plum titles.
+    id: "autumn",
+    group: "seasonal",
+    label: "Autumn",
+    look: {
+      background: "#fbf3e8", text: "#3a2414", accent: "#b4441c", accent_secondary: "#7a2e3a", submit_bg: "#f1dfc6",
+      font: "merriweather", heading_font: "chewy",
+      backdrop: { kind: "confetti", opacity: 0.35, scale: 30, motion: true, colors: ["#d9480f", "#e9a23b", "#9a3412"] },
+      style: { card_opacity: 0.85, card_blur: true, transition: "fade", button_fill: "gradient", confetti_emoji: "🍂🍁🍄" },
+    },
+  },
+  {
+    // A Valentine's party: deep wine red, pink and red confetti, hot-pink buttons, blush titles.
+    id: "valentines",
+    group: "seasonal",
+    label: "Valentine's Day",
+    look: {
+      background: "#4a0d1f", text: "#fff0f5", accent: "#ff4d6d", accent_secondary: "#ffb3c6", submit_bg: "#5e1328",
+      font: "fredoka", heading_font: "luckiest-guy",
+      backdrop: { kind: "confetti", opacity: 0.4, scale: 28, motion: true, colors: ["#ff4d6d", "#ffb3c6", "#ffffff"] },
+      style: { card_opacity: 0.8, card_blur: true, transition: "pop", button_fill: "gradient", confetti_emoji: "💘🌹💝" },
     },
   },
 ];

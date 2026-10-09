@@ -13,7 +13,7 @@ export interface TrailTheme {
   look: play.Brand;
 }
 
-const PICKS = ["party", "sunshine", "candy", "rainbow", "unicorn", "ice-cream", "jungle", "pirate", "ocean", "space", "detective", "retro-80s", "office", "pen-and-paper"];
+const PICKS = ["party", "christmas", "halloween", "easter", "midsummer", "summer", "winter", "spring", "autumn", "valentines", "sunshine", "candy", "rainbow", "unicorn", "ice-cream", "jungle", "pirate", "ocean", "space", "detective", "retro-80s", "office", "pen-and-paper"];
 
 export const TRAIL_THEMES: TrailTheme[] = PICKS.flatMap((id) => {
   const s = STARTER_THEMES.find((x) => x.id === id);
