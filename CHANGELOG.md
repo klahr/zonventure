@@ -11,6 +11,40 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- **Files for an event's players.** Organisers upload up to 10 files
+  of at most 20 MB each on the event page — the rules as a PDF, a map
+  to print, a packing list. Every team of the event downloads them
+  from the lobby and the game's menu, and invitations and tickets link
+  to them under "Files from the organisers". The files belong to the
+  event, never the adventure, so a duplicated or re-run adventure
+  doesn't carry them.
+
+### Changed — party adventure creator
+
+- **The phone beside the card.** The editor shows each card as a
+  team's phone shows it — "Your answer to question 1:", the options,
+  Continue — in the adventure's look, beside the card when there is
+  room and under "See it on a phone" when not. Above the card it says
+  that this is the card you print and hide, and that the right answer
+  isn't printed. The creator's editing page is wider on a computer to
+  make room.
+- **"Start from" comes first** on the start page, with the price, and
+  the looks follow it. A template starts in its own look unless the
+  visitor picks one.
+- **"Get it ready to play"** instead of "Done" while the party
+  adventure is a draft, so it is clear that booking comes next.
+- **A template's cards say they are an example** until the first
+  edit: put in your own names, questions and answers.
+- **The right option keeps its 1, X or 2**, marked green with a
+  "Right" tag, instead of turning into a tick; the hint to tap one
+  sits above the options. The counter reads "Card 2 of 4", so it no
+  longer clashes with "Question 1".
+- **Move earlier, Move later and Delete card keep their words on a
+  phone** instead of bare arrows that read as previous and next card.
+- **"My party adventures"** everywhere instead of "My trails".
+
 ## [0.25.8] - 2026-10-09
 
 ### Fixed
