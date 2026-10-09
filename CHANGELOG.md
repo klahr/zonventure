@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.25.2] - 2026-10-09
+
 ### Added — texts can quote an earlier answer
 
 - **`{{answer:<step>}}` in a text shows what the team answered at that
