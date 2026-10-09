@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.25.3] - 2026-10-09
+
 ### Fixed
 
 - **A hub's branch pictures load on the phone.** They were never in
