@@ -18,6 +18,9 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   picture was also used in a step.
 - **A hidden score stays hidden on the end screen**, which showed the
   points, deductions and total anyway.
+- **An adventure's time limit leaves a team alone once it has reached
+  the step the limit sends it to**, instead of throwing it back there
+  when time runs out, and the countdown goes away.
 
 ## [0.25.2] - 2026-10-09
 

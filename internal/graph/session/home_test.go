@@ -473,6 +473,20 @@ func TestAdventureTimeLimit(t *testing.T) {
 		t.Error("the team can still finish after time is up")
 	}
 
+	// A team that reached the accusation in time keeps going: the limit
+	// would only send it back there, and it shows no countdown.
+	early, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	early.Apply(step)
+	res, st, err = early.Choose("home", "accuse")
+	act(t, early, "accuse", res, st, err)
+	early.Now = t0.Add(3*time.Hour + time.Second)
+	if early.TimeUpDue() || early.View().EndsAt != nil {
+		t.Error("a team already at the limit's step is not moved, nor counted down")
+	}
+
 	bad := mystery()
 	bad.TimeLimit = &graph.TimeLimit{Seconds: 60, To: "start"}
 	codes := map[string]bool{}

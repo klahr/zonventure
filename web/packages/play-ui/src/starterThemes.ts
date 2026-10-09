@@ -366,4 +366,65 @@ export const STARTER_THEMES: { id: string; label: string; group: (typeof STARTER
       style: { card_opacity: 0.8, card_blur: true, transition: "pop", button_fill: "gradient", confetti_emoji: "💘🌹💝" },
     },
   },
+  {
+    // Midnight countdown: a deep night sky, gold and silver confetti, gold titles.
+    id: "new-year",
+    group: "seasonal",
+    label: "New Year's Eve",
+    look: {
+      background: "#0d0b1e", text: "#f7f3e8", accent: "#b8860b", accent_secondary: "#f5d76e", submit_bg: "#1a1733",
+      font: "nunito", heading_font: "pacifico",
+      backdrop: { kind: "confetti", opacity: 0.45, scale: 26, motion: true, colors: ["#f5d76e", "#c0c0c0", "#ffffff"] },
+      style: { card_opacity: 0.8, card_blur: true, transition: "zoom", button_fill: "gradient", confetti_emoji: "🎆✨🎉" },
+    },
+  },
+  {
+    // Lucia morning: dark winter blue, candle glow, a red sash for buttons, candle-gold titles.
+    id: "lucia",
+    group: "seasonal",
+    label: "Lucia",
+    look: {
+      background: "#0f1a33", text: "#fdf8ec", accent: "#c62828", accent_secondary: "#ffd27a", submit_bg: "#18264a",
+      font: "nunito", heading_font: "merriweather",
+      backdrop: { kind: "spots", opacity: 0.55, scale: 110, points: [{ x: 86, y: 10, color: "#b7791f" }, { x: 12, y: 58, color: "#1e3a8a" }, { x: 50, y: 98, color: "#7c2d12" }] },
+      style: { card_opacity: 0.8, card_blur: true, transition: "fade", button_fill: "gradient", confetti_emoji: "🕯️⭐" },
+    },
+  },
+  {
+    // A crayfish party: a warm August evening, crayfish-red buttons, navy titles.
+    id: "crayfish",
+    group: "seasonal",
+    label: "Crayfish party",
+    look: {
+      background: "#fffaf0", text: "#1f2a44", accent: "#d62828", accent_secondary: "#1d4e89", submit_bg: "#fde9c8",
+      font: "fredoka", heading_font: "luckiest-guy",
+      backdrop: { kind: "dots", color: "#f4a261", opacity: 0.18, scale: 30 },
+      style: { transition: "pop", title_style: "ribbon", button_fill: "gradient", confetti_emoji: "🦞🌕🍋" },
+    },
+  },
+  {
+    // Walpurgis Night: a spring evening round the bonfire, fire-orange buttons, flame-yellow titles.
+    id: "walpurgis",
+    group: "seasonal",
+    label: "Walpurgis Night",
+    look: {
+      background: "#1b1420", text: "#fff4e6", accent: "#e8590c", accent_secondary: "#ffd43b", submit_bg: "#2a1f2e",
+      font: "baloo-2", heading_font: "chewy",
+      backdrop: { kind: "spots", opacity: 0.6, scale: 110, points: [{ x: 80, y: 95, color: "#c2410c" }, { x: 20, y: 98, color: "#9a3412" }, { x: 60, y: 10, color: "#3b2a5a" }] },
+      style: { card_opacity: 0.8, card_blur: true, transition: "pop", button_fill: "gradient", confetti_emoji: "🔥🌸" },
+    },
+  },
+  {
+    // A chalkboard: dark green, chalk-white text, pencil-yellow buttons, handwritten titles.
+    id: "back-to-school",
+    group: "seasonal",
+    label: "Back to school",
+    look: {
+      background: "#1f3a2e", text: "#f4f1e8", accent: "#f2a541", accent_secondary: "#ffd166", submit_bg: "#284a3b",
+      font: "patrick-hand", heading_font: "patrick-hand",
+      corners: "soft",
+      backdrop: { kind: "grid", color: "#f4f1e8", opacity: 0.05, scale: 28 },
+      style: { transition: "flip", title_style: "underline", button_fill: "flat", confetti_emoji: "✏️📚🍎" },
+    },
+  },
 ];

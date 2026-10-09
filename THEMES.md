@@ -34,7 +34,7 @@ middle; the join page serves it by the player link
 - No text, letters, logos, watermark or frame. The prompts for desks,
   notes and paper also say "no readable writing": generators like to
   invent text there.
-- Space, Retro 80s, Christmas, Halloween and Valentine's Day ask for a dark left half: their text is light.
+- Space, Retro 80s, Christmas, Halloween, Valentine's Day, New Year's Eve, Lucia, Walpurgis Night and Back to school ask for a dark left half: their text is light.
 
 Gemini pictures carry an invisible SynthID watermark; check Gemini's
 terms for commercial use before shipping.
@@ -66,6 +66,11 @@ terms for commercial use before shipping.
 | Spring | `spring` | done |
 | Autumn | `autumn` | done |
 | Valentine's Day | `valentines` | done |
+| New Year's Eve | `new-year` | done |
+| Lucia | `lucia` | done |
+| Crayfish party | `crayfish` | done |
+| Walpurgis Night | `walpurgis` | done |
+| Back to school | `back-to-school` | done |
 
 ## Prompts
 
@@ -320,4 +325,59 @@ Background: a deep wine-red evening backdrop with soft glowing bokeh lights and 
 Palette (keep to these colours): hot pink #ff4d6d, blush pink #ffb3c6, deep wine background #4a0d1f, darker wine #5e1328, soft pink-white #fff0f5 for highlights, with small touches of gold.
 Style: soft painterly digital illustration, warm glowing light from the upper right, rounded cute shapes, romantic but playful, high detail but calm, suitable for children aged 5–10 and adults. Keep the left half fairly simple and dark, because light-coloured titles and buttons may sit on top of it.
 No people, no cupid, no text, no letters, no logos, no watermark, no frame or border.
+```
+
+### new-year
+
+```
+A sparkling, festive children's-book illustration for the cover of a New Year's Eve party game, 16:9 landscape, 1600×900.
+Scene: colourful fireworks bursting in gold and silver over a small snowy town's rooftops in the right third of the image, a big round clock tower showing almost midnight, party hats, streamers and a few sparklers on a balcony railing in front.
+Background: a deep midnight-blue sky with soft stars and drifting gold and silver confetti, getting darker, emptier and calmer towards the left.
+Palette (keep to these colours): dark gold #b8860b, light gold #f5d76e, silver #c0c0c0, midnight background #0d0b1e, dark indigo #1a1733, warm white #f7f3e8 for highlights.
+Style: soft painterly digital illustration, glowing light from the fireworks on the right, rounded cute shapes, festive but calm, high detail, suitable for children aged 5–10 and adults. Keep the left half fairly simple and dark, because light-coloured titles and buttons may sit on top of it.
+No people, no champagne or alcohol, no numbers, no text, no letters, no logos, no watermark, no frame or border.
+```
+
+### lucia
+
+```
+A calm, glowing children's-book illustration for the cover of a Swedish Lucia party game, 16:9 landscape, 1600×900.
+Scene: a Lucia crown of lingonberry leaves with tall lit white candles resting on a wooden table in the right third of the image, beside a plate of S-shaped saffron buns with raisins and gingerbread hearts, a steaming cup of cocoa and a glowing paper star lantern hanging in a frosted window above.
+Background: a dark winter-blue early morning seen through the window, soft snow falling outside, warm candlelight spreading around the table, getting darker, emptier and calmer towards the left.
+Palette (keep to these colours): candle gold #ffd27a, deep amber #b7791f, Lucia red #c62828 for a red ribbon on the crown, dark winter blue background #0f1a33, navy #18264a, warm white #fdf8ec for candles and highlights, with lingonberry green leaves.
+Style: soft painterly digital illustration, warm glowing candlelight on the right, rounded cute shapes, peaceful and cosy, high detail but calm, suitable for children aged 5–10 and adults. Keep the left half fairly simple and dark, because light-coloured titles and buttons may sit on top of it.
+No people, no text, no letters, no logos, no watermark, no frame or border.
+```
+
+### crayfish
+
+```
+A cheerful children's-book illustration for the cover of a Swedish crayfish party game, 16:9 landscape, 1600×900.
+Scene: a long table by a lake in the right third of the image, covered in a blue-and-white checked tablecloth, a big plate piled with bright red crayfish garnished with dill crowns, lemon wedges, bread and cheese, with round paper lanterns painted like smiling full moons hanging above on a string.
+Background: a warm late-August evening sky in soft peach and pale gold, a calm lake with a wooden jetty and birch trees in the distance, getting lighter, emptier and calmer towards the left.
+Palette (keep to these colours): crayfish red #d62828, navy blue #1d4e89, warm cream background #fffaf0, peach #fde9c8, soft orange #f4a261, dill green and lemon yellow as small accents, dark navy for any lines #1f2a44.
+Style: soft painterly digital illustration, warm low evening light from the upper right, rounded cute shapes, high detail but calm, suitable for children aged 5–10 and adults. Keep the left half fairly simple and light, because dark titles and buttons may sit on top of it.
+No people, no alcohol, no bottles, no glasses, no text, no letters, no logos, no watermark, no frame or border.
+```
+
+### walpurgis
+
+```
+A warm, magical children's-book illustration for the cover of a Swedish Walpurgis Night party game, 16:9 landscape, 1600×900.
+Scene: a big crackling bonfire on a grassy hill in the right third of the image, sparks rising into the sky, early spring flowers (wood anemones and coltsfoot) in the grass around it and a few birch trees with fresh tiny leaves, lit warmly by the fire.
+Background: a deep violet-blue spring evening sky with the last light on the horizon and the first stars, a lake reflecting the glow in the distance, getting darker, emptier and calmer towards the left.
+Palette (keep to these colours): fire orange #e8590c, flame yellow #ffd43b, burnt orange #c2410c, deep plum background #1b1420, dusk violet #3b2a5a, warm cream #fff4e6 for highlights.
+Style: soft painterly digital illustration, glowing firelight from the right, rounded cute shapes, cosy not dangerous, high detail but calm, suitable for children aged 5–10 and adults. Keep the left half fairly simple and dark, because light-coloured titles and buttons may sit on top of it.
+No people, no witches, no text, no letters, no logos, no watermark, no frame or border.
+```
+
+### back-to-school
+
+```
+A cheerful children's-book illustration for the cover of a back-to-school party game, 16:9 landscape, 1600×900.
+Scene: a school desk in the right third of the image with a stack of colourful books, a red apple, a pencil cup with yellow pencils and crayons, a small globe and a backpack leaning against it, in front of a big dark-green chalkboard with simple chalk doodles of stars, a sun and arrows.
+Background: the dark-green chalkboard filling most of the image with faint smudges of chalk dust, getting emptier and calmer towards the left.
+Palette (keep to these colours): chalkboard green background #1f3a2e, lighter board green #284a3b, pencil yellow #f2a541, warm yellow #ffd166, chalk white #f4f1e8, with a red apple and a few bright book colours as small accents.
+Style: soft painterly digital illustration, warm morning light from the upper right, rounded cute shapes, high detail but calm, suitable for children aged 5–10 and adults. Keep the left half fairly simple and dark, because light-coloured titles and buttons may sit on top of it.
+No people, no text, no letters, no numbers, no readable writing, no logos, no watermark, no frame or border.
 ```

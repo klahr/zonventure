@@ -19,6 +19,10 @@ export const THEME_COVERS: Record<string, ThemeCover> = {
     small: new URL("./covers/autumn-800.webp", import.meta.url).href,
     wide: new URL("./covers/autumn-1600.webp", import.meta.url).href,
   },
+  "back-to-school": {
+    small: new URL("./covers/back-to-school-800.webp", import.meta.url).href,
+    wide: new URL("./covers/back-to-school-1600.webp", import.meta.url).href,
+  },
   candy: {
     small: new URL("./covers/candy-800.webp", import.meta.url).href,
     wide: new URL("./covers/candy-1600.webp", import.meta.url).href,
@@ -26,6 +30,10 @@ export const THEME_COVERS: Record<string, ThemeCover> = {
   christmas: {
     small: new URL("./covers/christmas-800.webp", import.meta.url).href,
     wide: new URL("./covers/christmas-1600.webp", import.meta.url).href,
+  },
+  crayfish: {
+    small: new URL("./covers/crayfish-800.webp", import.meta.url).href,
+    wide: new URL("./covers/crayfish-1600.webp", import.meta.url).href,
   },
   detective: {
     small: new URL("./covers/detective-800.webp", import.meta.url).href,
@@ -47,9 +55,17 @@ export const THEME_COVERS: Record<string, ThemeCover> = {
     small: new URL("./covers/jungle-800.webp", import.meta.url).href,
     wide: new URL("./covers/jungle-1600.webp", import.meta.url).href,
   },
+  lucia: {
+    small: new URL("./covers/lucia-800.webp", import.meta.url).href,
+    wide: new URL("./covers/lucia-1600.webp", import.meta.url).href,
+  },
   midsummer: {
     small: new URL("./covers/midsummer-800.webp", import.meta.url).href,
     wide: new URL("./covers/midsummer-1600.webp", import.meta.url).href,
+  },
+  "new-year": {
+    small: new URL("./covers/new-year-800.webp", import.meta.url).href,
+    wide: new URL("./covers/new-year-1600.webp", import.meta.url).href,
   },
   ocean: {
     small: new URL("./covers/ocean-800.webp", import.meta.url).href,
@@ -94,6 +110,10 @@ export const THEME_COVERS: Record<string, ThemeCover> = {
   valentines: {
     small: new URL("./covers/valentines-800.webp", import.meta.url).href,
     wide: new URL("./covers/valentines-1600.webp", import.meta.url).href,
+  },
+  walpurgis: {
+    small: new URL("./covers/walpurgis-800.webp", import.meta.url).href,
+    wide: new URL("./covers/walpurgis-1600.webp", import.meta.url).href,
   },
   winter: {
     small: new URL("./covers/winter-800.webp", import.meta.url).href,

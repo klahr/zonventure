@@ -936,10 +936,13 @@ func (t *Team) ChooseStart(start, code string) (Result, *walk.Step, error) {
 }
 
 // Deadline is when the adventure's time limit falls for this team: a
-// limit's length after it started. None before it has begun.
+// limit's length after it started. None before it has begun, nor once
+// the team has reached the step the limit sends it to: it is already
+// where time-up would put it, and moving it back there would undo its
+// progress since.
 func (t *Team) Deadline() (time.Time, bool) {
 	tl := t.G.TimeLimit
-	if tl == nil || tl.Seconds <= 0 || t.StartedAt.IsZero() || t.Current == "" {
+	if tl == nil || tl.Seconds <= 0 || t.StartedAt.IsZero() || t.Current == "" || t.Nodes[tl.To] != nil {
 		return time.Time{}, false
 	}
 	return t.startClock().Add(time.Duration(tl.Seconds) * time.Second), true
