@@ -562,6 +562,8 @@ export interface PlayState {
     outro_text?: string;
     /** Where the team should meet. radius_m is set when the team can only begin within it. */
     start?: { lat: number; lng: number; label?: string; radius_m?: number };
+    /** What the organisers left for the players to download: rules, a map to print. */
+    files?: EventFile[];
   };
   /** Set once the team has finished. */
   finish?: Finish;
@@ -577,6 +579,19 @@ export interface PlayState {
   /** Set for a dev ticket, playing the draft as it is edited: the draft's steps to jump to. */
   dev?: { steps: { slug: string; title?: string; type: string }[] };
 }
+
+/** eventfile.File — a file the organisers left for the event's players. */
+export interface EventFile {
+  id: number;
+  name: string;
+  mime: string;
+  /** In bytes. */
+  size: number;
+  created_at: string;
+}
+
+/** Where a player downloads one of the event's files. */
+export const fileURL = (id: number) => `/api/player/files/${id}`;
 
 /** player.PlayFinish — what the end screen tells a finished team. */
 export interface Finish {

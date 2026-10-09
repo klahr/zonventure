@@ -2,12 +2,13 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, play } from "@zonventure/api";
 import { RoleCards, type Translate } from "@zonventure/play-ui";
 import type { I18n } from "@zonventure/i18n";
+import { Files } from "./Files.tsx";
 
 const LANG_NAMES: Record<string, string> = { en: "English", sv: "Svenska" };
 
 /**
  * The player's menu: who they are on the team, the team's name, their
- * roles, the app's language, location sharing, and their data — sign out on a
+ * roles, the organisers' files, the app's language, location sharing, and their data — sign out on a
  * shared phone, or erase it all. Beside the game; nothing here moves
  * the team on.
  *
@@ -137,6 +138,8 @@ export function Menu(props: {
               />
               <TeamPicture team={state.team} t={t} onSaved={props.onRenamed} />
               {(state.view?.roles?.length ?? 0) > 0 && <Roles roles={state.view?.roles ?? []} choosing={(state.view?.blocks ?? []).some((b) => b.kind === "roles" && b.choose && !b.locked)} t={t} onChanged={props.onRenamed} />}
+
+              <Files files={state.event.files ?? []} t={t} locale={i18n.current()} />
 
               {langs.length > 1 && (
                 <label className="app-menu__field">

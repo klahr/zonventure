@@ -123,6 +123,28 @@ func TeamLink(lang, teamURL, playURL, voucher, org string) (string, Content) {
 	}
 }
 
+// FileLink is one of the files the organisers left for an event's
+// players, and where to download it.
+type FileLink struct {
+	Name, URL string
+}
+
+// WithFiles lists the event's files under the body, one download link
+// each, for a ticket or an invitation; none leaves c as it is.
+func WithFiles(c Content, files []FileLink) Content {
+	if len(files) == 0 {
+		return c
+	}
+	var b strings.Builder
+	b.WriteString("\n\n**" + T(c.Lang, "Files from the organisers") + "**  \n")
+	b.WriteString(T(c.Lang, "Download them before you set off. They are also in the menu of the game.") + "\n\n")
+	for _, f := range files {
+		b.WriteString("- [" + mdEscape(f.Name) + "](" + f.URL + ")\n")
+	}
+	c.Body += strings.TrimRight(b.String(), "\n")
+	return c
+}
+
 // PartyHost is a hosted event's host link: the page the buyer sets the
 // event up and runs it from. The link is their only key, so the mail
 // says so.

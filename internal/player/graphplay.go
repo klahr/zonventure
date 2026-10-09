@@ -32,6 +32,7 @@ import (
 	"github.com/klahr/zonventure/internal/activity"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/eventfile"
 	"github.com/klahr/zonventure/internal/eventmsg"
 	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/httpx"
@@ -102,6 +103,9 @@ type PlayEvent struct {
 	// Cover is the adventure's own cover picture (a media id the team
 	// may fetch), shown in place of the starter theme's.
 	Cover int64 `json:"cover,omitempty"`
+	// Files are what the organisers left for the players to download
+	// (GET /api/player/files/{id}): rules, a map to print.
+	Files []eventfile.File `json:"files,omitempty"`
 }
 
 // PlayStart is the adventure's meeting point. RadiusM is set when teams
@@ -213,6 +217,10 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	}
 	if out.Messages, err = eventmsg.ForTeam(ctx, h.DB, tc.EventID, tc.TeamID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading messages failed", err)
+		return
+	}
+	if out.Event.Files, err = eventfile.List(ctx, h.DB, tc.EventID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading files failed", err)
 		return
 	}
 	if out.Dev, err = devInfo(ctx, h.DB, tc.EventID); err != nil {

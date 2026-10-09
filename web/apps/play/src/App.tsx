@@ -7,6 +7,7 @@ import { useGame } from "./useGame.ts";
 import { Inbox } from "./Inbox.tsx";
 import { DevBar } from "./DevBar.tsx";
 import { Menu } from "./Menu.tsx";
+import { Files } from "./Files.tsx";
 import { CheatSheet, useSevenTaps } from "./Cheat.tsx";
 import { useGeo, useLiveRefresh } from "./live.ts";
 
@@ -257,7 +258,7 @@ export function App() {
             {...(cheatPassword ? { cheat: cheatPassword } : {})}
           />
         ) : (
-          <Lobby state={s} t={t} />
+          <Lobby state={s} t={t} locale={i18n.current()} />
         )}
       </main>
       {cheatOpen && (
@@ -275,7 +276,7 @@ export function App() {
   );
 }
 
-function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
+function Lobby({ state, t, locale }: { state: play.PlayState; t: Translate; locale: string }) {
   const at = state.event.scheduled_at ? new Date(state.event.scheduled_at) : null;
   const counting = state.event.state === "scheduled" && !!at && !Number.isNaN(at.getTime());
   const now = useEngineClock(state.event.server_now ?? new Date().toISOString(), counting);
@@ -316,6 +317,7 @@ function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
         </p>
       )}
       {state.event.start?.radius_m ? <p className="app-muted">{t("You can only begin once you're there.")}</p> : null}
+      <Files files={state.event.files ?? []} t={t} locale={locale} />
       <p className="app-muted">{t("Keep this page open. It will change by itself.")}</p>
     </div>
   );

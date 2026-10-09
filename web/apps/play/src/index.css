@@ -238,6 +238,45 @@ body {
   color: var(--accent);
   font-weight: 700;
 }
+/* The organisers' files: a list of download links, in the lobby and the menu. */
+.app-files {
+  margin: var(--sp-4) 0;
+  text-align: left;
+}
+.app-files__title {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--text-base);
+}
+.app-files ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.app-files a {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+}
+.app-files__name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.app-files__size {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
 
 /* The player's menu: name fields, language, location sharing, and the
  * account actions, as one column in the shared sheet. */

@@ -15,6 +15,7 @@ import (
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/dbtest"
+	"github.com/klahr/zonventure/internal/eventfile"
 	"github.com/klahr/zonventure/internal/mailer"
 )
 
@@ -279,16 +280,26 @@ func TestSendTeamInvitation_HappyPath(t *testing.T) {
 	`, orgID, userID).Scan(&eventID); err != nil {
 		t.Fatal(err)
 	}
-	var teamID int64
+	var (
+		teamID    int64
+		teamToken string
+	)
 	if err := db.QueryRow(`
 		INSERT INTO teams(event_id, name, email, token, recap_token) VALUES ($1, 'Alpha', 'alpha@acme.com', gen_random_uuid()::text, gen_random_uuid()::text)
-		RETURNING id
-	`, eventID).Scan(&teamID); err != nil {
+		RETURNING id, token
+	`, eventID).Scan(&teamID, &teamToken); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`
 		INSERT INTO player_slots(team_id, name, token) VALUES ($1, 'alice', 'tok-alice')
 	`, teamID); err != nil {
+		t.Fatal(err)
+	}
+
+	// A file the organisers left for the players: the email links it
+	// by the team's token.
+	file, err := eventfile.Add(context.Background(), db, eventID, userID, "Regler.pdf", []byte("%PDF-1.4\n"))
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -319,6 +330,9 @@ func TestSendTeamInvitation_HappyPath(t *testing.T) {
 	}
 	if !strings.Contains(got.Text, "tok-alice") {
 		t.Errorf("body missing slot token; body =\n%s", got.Text)
+	}
+	if want := "https://zv.example.com/team/" + teamToken + "/files/" + itoa64(file.ID); !strings.Contains(got.Text, want) || !strings.Contains(got.Text, "Regler.pdf") {
+		t.Errorf("body missing the file link %s; body =\n%s", want, got.Text)
 	}
 	if len(got.Attachments) != 1 || !strings.HasPrefix(got.Attachments[0].ContentType, "text/calendar") {
 		t.Errorf("expected one text/calendar attachment, got %+v", got.Attachments)

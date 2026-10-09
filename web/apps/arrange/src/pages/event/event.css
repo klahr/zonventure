@@ -83,6 +83,7 @@
 .dz .ev-msgs li > button { grid-row: span 2; align-self: start; }
 .dz .ev-msgs__meta { font-size: var(--dz-text-sm); }
 .dz .ev-msgs__text { overflow-wrap: anywhere; }
+.dz .ev-files__name { display: inline-flex; align-items: center; gap: var(--dz-space-2); font-weight: 600; overflow-wrap: anywhere; }
 .dz .ev-msgs__text > :first-child { margin-top: 0; }
 .dz .ev-msgs__text > :last-child { margin-bottom: 0; }
 .dz .ev-fieldset { display: flex; flex-wrap: wrap; gap: var(--dz-space-2) var(--dz-space-4); margin: 0; padding: 0; border: 0; }

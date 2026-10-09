@@ -68,7 +68,7 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 	// teams without an email are surfaced so we can count them as
 	// `skipped_no_email` rather than silently dropping.
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT t.id, t.name, COALESCE(t.email, ''), ps.name, ps.token
+		SELECT t.id, t.name, COALESCE(t.email, ''), t.token, ps.name, ps.token
 		FROM teams t
 		LEFT JOIN player_slots ps ON ps.team_id = t.id
 		WHERE t.event_id = $1
@@ -84,6 +84,7 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 		ID    int64
 		Name  string
 		Email string
+		Token string
 		Slots []invitationSlot
 	}
 	var (
@@ -95,16 +96,17 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 			tid    int64
 			tname  string
 			temail string
+			ttoken string
 			pname  *string
 			ptoken *string
 		)
-		if err := rows.Scan(&tid, &tname, &temail, &pname, &ptoken); err != nil {
+		if err := rows.Scan(&tid, &tname, &temail, &ttoken, &pname, &ptoken); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "team scan failed")
 			return
 		}
 		t, ok := byID[tid]
 		if !ok {
-			t = &teamInfo{ID: tid, Name: tname, Email: strings.TrimSpace(temail)}
+			t = &teamInfo{ID: tid, Name: tname, Email: strings.TrimSpace(temail), Token: ttoken}
 			byID[tid] = t
 			teams = append(teams, t)
 		}
@@ -133,7 +135,7 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 			skippedNoEmail++
 			continue
 		}
-		if err := sendOneInvitation(r.Context(), h.Mailer, l, t.Name, t.Email, publicURL, t.Slots, icsAttach); err != nil {
+		if err := sendOneInvitation(r.Context(), h.Mailer, l, t.Name, t.Email, publicURL, t.Slots, h.fileLinks(r.Context(), eventID, publicURL, t.Token), icsAttach); err != nil {
 			logx.Warn("admin.invitations.send", "event", eventID, "team", t.ID, "err", err.Error())
 			failed++
 			continue
@@ -176,10 +178,11 @@ func (h *Handlers) SendTeamInvitation(w http.ResponseWriter, r *http.Request) {
 		eventID  int64
 		teamName string
 		teamMail string
+		teamTok  string
 	)
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT event_id, name, COALESCE(email, '') FROM teams WHERE id = $1`, teamID).
-		Scan(&eventID, &teamName, &teamMail); err != nil {
+		`SELECT event_id, name, COALESCE(email, ''), token FROM teams WHERE id = $1`, teamID).
+		Scan(&eventID, &teamName, &teamMail, &teamTok); err != nil {
 		httpx.Error(w, http.StatusNotFound, "team not found")
 		return
 	}
@@ -234,7 +237,7 @@ func (h *Handlers) SendTeamInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
-	if err := sendOneInvitation(r.Context(), h.Mailer, h.eventLook(r.Context(), eventID), teamName, teamMail, publicURL, slots, icsAttach); err != nil {
+	if err := sendOneInvitation(r.Context(), h.Mailer, h.eventLook(r.Context(), eventID), teamName, teamMail, publicURL, slots, h.fileLinks(r.Context(), eventID, publicURL, teamTok), icsAttach); err != nil {
 		logx.Warn("admin.invitations.team.send", "event", eventID, "team", teamID, "err", err.Error())
 		httpx.ServerErr(w, http.StatusBadGateway, "send failed", err)
 		return
@@ -259,6 +262,7 @@ func sendOneInvitation(
 	l look,
 	teamName, teamEmail, publicURL string,
 	slots []invitationSlot,
+	files []emailtpl.FileLink,
 	atts []mailer.Attachment,
 ) error {
 	players := make([]emailtpl.PlayerLink, len(slots))
@@ -266,6 +270,7 @@ func sendOneInvitation(
 		players[i] = emailtpl.PlayerLink{Team: teamName, Player: s.Player, URL: publicURL + "/play?t=" + s.Token}
 	}
 	subject, c := emailtpl.TeamInvitation(l.Lang, teamName, l.Event, l.Brand.Name, players, len(atts) > 0)
+	c = emailtpl.WithFiles(c, files)
 	c.Picture = l.Cover
 	msg := l.message([]string{teamEmail}, subject, c)
 	msg.Attachments = atts

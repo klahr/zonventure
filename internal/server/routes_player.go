@@ -38,6 +38,8 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 		// Checks a cheat password before the phone turns cheating on.
 		r.Post("/play/unlock", playerH.PostPlayUnlock)
 		r.Get("/play/photo/{photoID}", playerH.GetPlayPhoto)
+		// A file the organisers left for the event's players.
+		r.Get("/files/{fileID}", playerH.GetEventFile)
 		// Takes or gives up one of the adventure's roles.
 		r.Post("/role", playerH.PostRole)
 		// Hands a role's kit item to a teammate: a code to show, and to scan.

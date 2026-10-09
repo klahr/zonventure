@@ -120,3 +120,16 @@ func TestSwedishEmail(t *testing.T) {
 		t.Error("Lang does not map tags to email languages")
 	}
 }
+
+func TestWithFiles(t *testing.T) {
+	_, c := TeamLink("sv", "https://x/team/t", "", "", "Org")
+	if got := WithFiles(c, nil); got.Body != c.Body {
+		t.Errorf("no files changed the body: %q", got.Body)
+	}
+	got := WithFiles(c, []FileLink{{Name: "Karta [v2].pdf", URL: "https://x/team/t/files/7"}})
+	for _, want := range []string{"**Filer från arrangörerna**", `- [Karta \[v2\].pdf](https://x/team/t/files/7)`} {
+		if !strings.Contains(got.Body, want) {
+			t.Errorf("body lacks %q:\n%s", want, got.Body)
+		}
+	}
+}

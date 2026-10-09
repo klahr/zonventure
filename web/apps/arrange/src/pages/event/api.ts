@@ -98,6 +98,16 @@ export interface Adventure {
 }
 
 /** internal/eventmsg/eventmsg.go: Message. */
+/** eventfile.File — a file the organisers left for the event's players. */
+export interface EventFile {
+  id: number;
+  name: string;
+  mime: string;
+  /** In bytes. */
+  size: number;
+  created_at: string;
+}
+
 export interface Message {
   id: number;
   text: string;
@@ -204,6 +214,15 @@ export const topUp = (body: { adventure_slug: string; max_players: number; top_u
 
 export const sendMessage = (id: number, text: string, teamIds?: number[]) =>
   post<void>(E(id) + "/messages", { text, ...(teamIds ? { team_ids: teamIds } : {}) });
+export const getFiles = (id: number, signal?: AbortSignal) =>
+  get<{ files: EventFile[] | null; max_files: number; max_size: number }>(E(id) + "/files", signal ? { signal } : {});
+export const uploadFile = (id: number, file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  return request<EventFile>(E(id) + "/files", { method: "POST", form });
+};
+export const fileURL = (id: number, fileId: number) => `${E(id)}/files/${fileId}`;
+export const deleteFile = (id: number, fileId: number) => request<void>(`${E(id)}/files/${fileId}`, { method: "DELETE" });
 export const deleteMessage = (id: number, messageId: number) => request<void>(`${E(id)}/messages/${messageId}`, { method: "DELETE" });
 export const photoSrc = (id: number, photoId: number) => `${E(id)}/photos/${photoId}/image`;
 export const reviewPhoto = (id: number, photoId: number, status: string) => post<void>(`${E(id)}/photos/${photoId}/review`, { status });

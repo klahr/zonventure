@@ -114,5 +114,17 @@
   "Let them start": "Låt dem börja",
   "{{name}} can start anywhere": "{{name}} kan börja var som helst",
   "Let start anywhere": "Låt börja var som helst",
-  " may start away from the starting point": " får börja utanför startplatsen"
+  " may start away from the starting point": " får börja utanför startplatsen",
+  "Files for players": "Filer till spelarna",
+  "Add files": "Lägg till filer",
+  "An event can have at most {{n}} files.": "Ett event kan ha högst {{n}} filer.",
+  "{{name}} is too large. A file can be at most {{mb}} MB.": "{{name}} är för stor. En fil får vara högst {{mb}} MB.",
+  "File added. Players can download it now.": "Filen är tillagd. Spelarna kan ladda ner den nu.",
+  "{{n}} files added. Players can download them now.": "{{n}} filer tillagda. Spelarna kan ladda ner dem nu.",
+  "Delete this file?": "Ta bort filen?",
+  "Players can no longer download it. Copies they already saved stay theirs.": "Spelarna kan inte längre ladda ner den. Kopior de redan sparat har de kvar.",
+  "File deleted.": "Filen är borttagen.",
+  "Delete file": "Ta bort fil",
+  "Nothing yet. Add a PDF with the rules, a map to print or a packing list: players download it from the app before the start, and keep it at hand in the menu during the game.": "Inget än. Lägg till en PDF med reglerna, en karta att skriva ut eller en packlista: spelarna laddar ner den i appen före starten och har den nära till hands i menyn under spelet.",
+  "PDF, pictures, text or Office documents, up to {{mb}} MB each.": "PDF, bilder, text eller Office-dokument, högst {{mb}} MB styck."
 }

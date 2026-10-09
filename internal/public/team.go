@@ -7,10 +7,14 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/emailtpl"
+	"github.com/klahr/zonventure/internal/eventfile"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/play"
@@ -26,6 +30,9 @@ const maxTeamAvatarBytes = 5 * 1024 * 1024
 
 // teamShareView is the data passed to the share-page template.
 type teamShareView struct {
+	// Lang is the page's language, as the event's emails are written:
+	// the adventure's, else its organisation's ("en", "sv").
+	Lang           string
 	SiteName       string
 	TeamName       string
 	AdventureTitle string
@@ -50,6 +57,30 @@ type teamShareView struct {
 	// Solo is true for a one-seat team: the self-guided view then shows a
 	// single "Start" button instead of a name picker.
 	Solo bool
+	// Files are what the organisers left for the players, linked by the
+	// team's token (TeamFile).
+	Files []teamShareFile
+}
+
+type teamShareFile struct {
+	Name, URL, Size string
+}
+
+// fileSize is a file's size for the page: "340 kB", "2.4 MB" ("2,4 MB"
+// in Swedish).
+func fileSize(n int64, lang string) string {
+	switch {
+	case n >= 10_000_000:
+		return fmt.Sprintf("%d MB", (n+500_000)/1_000_000)
+	case n >= 1_000_000:
+		mb := fmt.Sprintf("%.1f MB", float64(n)/1_000_000)
+		if lang == "sv" {
+			mb = strings.Replace(mb, ".", ",", 1)
+		}
+		return mb
+	default:
+		return fmt.Sprintf("%d kB", max(1, (n+500)/1000))
+	}
 }
 
 type teamShareSlot struct {
@@ -74,22 +105,26 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 	)
 	var (
 		teamID    int64
+		eventID   int64
 		hasAvatar int
 	)
 	var (
 		schedAt sql.NullString
 		startAt sql.NullString
 		forSale bool
+		lang    sql.NullString
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT t.id, t.name, a.title, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       ar.state, ar.scheduled_at, ar.started_at, ar.public_for_sale
+		SELECT t.id, t.event_id, t.name, a.title, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
+		       ar.state, ar.scheduled_at, ar.started_at, ar.public_for_sale,
+		       COALESCE(a.language, o.language)
 		FROM teams t
 		JOIN events ar ON ar.id = t.event_id
 		LEFT JOIN adventures a ON a.slug = ar.adventure_slug
+		LEFT JOIN organizations o ON o.id = ar.org_id
 		WHERE t.token = $1
-	`, token).Scan(&teamID, &view.TeamName, &title, &hasAvatar,
-		&view.State, &schedAt, &startAt, &forSale)
+	`, token).Scan(&teamID, &eventID, &view.TeamName, &title, &hasAvatar,
+		&view.State, &schedAt, &startAt, &forSale, &lang)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "team not found — ask your arranger for a fresh link", http.StatusNotFound)
 		return
@@ -99,6 +134,7 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view.AdventureTitle = title.String
+	view.Lang = emailtpl.Lang(lang.String)
 	view.Token = token
 	view.ScheduledAt = schedAt.String
 	view.StartedAt = startAt.String
@@ -134,6 +170,18 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	view.Solo = len(view.Members) == 1
+
+	files, err := eventfile.List(r.Context(), h.DB, eventID)
+	if err != nil {
+		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		return
+	}
+	for _, f := range files {
+		view.Files = append(view.Files, teamShareFile{
+			Name: f.Name, Size: fileSize(f.Size, view.Lang),
+			URL: "/team/" + url.PathEscape(token) + "/files/" + strconv.FormatInt(f.ID, 10),
+		})
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -347,12 +395,72 @@ func (h *Handlers) DeleteTeamAvatarByToken(w http.ResponseWriter, r *http.Reques
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
+// teamSV is the team page in Swedish, by its English words.
+var teamSV = map[string]string{
+	"Skip to start":      "Hoppa till start",
+	"Your adventure":     "Ditt äventyr",
+	"Ready when you are": "Redo när du är",
+	"Walk, look around, and solve your way through — at your own pace. Tap below when you're ready to begin.": "Gå, titta dig omkring och lös dig fram – i din egen takt. Tryck nedan när du är redo att börja.",
+	"Start the adventure →":                            "Starta äventyret →",
+	"Playing as a group? Get everyone in, then begin.": "Spelar ni i grupp? Få med alla först, börja sedan.",
+	"Everyone joins":                                   "Alla går med",
+	"Each person opens the camera on their phone and points it at this square:": "Var och en öppnar kameran i sin telefon och riktar den mot den här rutan:",
+	"QR code to join this team": "QR-kod för att gå med i laget",
+	"Tap Start":                 "Tryck på Starta",
+	"On every phone — including yours — tap the button below. That's it, you're playing together.": "Tryck på knappen nedan i varje telefon – även din. Klart, ni spelar tillsammans.",
+	"Start playing →":                              "Börja spela →",
+	"Playing on your own? Just tap Start playing.": "Spelar du ensam? Tryck bara på Börja spela.",
+	"This adventure has no player spots yet.":      "Äventyret har inga spelarplatser än.",
+	"Add a team photo":                             "Lägg till ett lagfoto",
+	"change":                                       "ändra",
+	"+ photo":                                      "+ foto",
+	"Remove photo":                                 "Ta bort foto",
+	"Starts in":                                    "Börjar om",
+	"Tap your name to open your link":              "Tryck på ditt namn för att öppna din länk",
+	"Each link is for one person. Don't pass yours on — your teammates have their own below.": "Varje länk är till en person. Skicka inte vidare din – dina lagkamrater har sina egna nedan.",
+	"Open →": "Öppna →",
+	"No members on this team yet. Ask your arranger to add you.": "Laget har inga medlemmar än. Be arrangören lägga till dig.",
+	"Share this team page": "Dela lagsidan",
+	"Team page link":       "Länk till lagsidan",
+	"Copy":                 "Kopiera",
+	"QR code to this page": "QR-kod till den här sidan",
+	"Teammates who scan this land here and tap their own name.":                "Lagkamrater som skannar den hamnar här och trycker på sitt eget namn.",
+	"If your name isn't listed, ask the arranger to add you.":                  "Står inte ditt namn med? Be arrangören lägga till dig.",
+	"Files from the organisers":                                                "Filer från arrangörerna",
+	"Download them before you set off. They are also in the menu of the game.": "Ladda ner dem innan ni ger er av. De finns också i spelets meny.",
+	"Everyone's already joined this team. Ask whoever's hosting.":              "Alla har redan gått med i laget. Fråga den som håller i spelet.",
+	"Couldn't join — please try again.":                                        "Det gick inte att gå med – försök igen.",
+	"Couldn't reach the server. Check your connection.":                        "Når inte servern. Kontrollera din anslutning.",
+	"upload failed":            "uppladdningen misslyckades",
+	"remove failed":            "det gick inte att ta bort",
+	"Link copied":              "Länken är kopierad",
+	"Press Ctrl/Cmd+C to copy": "Tryck Ctrl/Cmd+C för att kopiera",
+	"Event":                    "Eventet",
+	"Completed":                "Avslutat",
+	"Paused":                   "Pausat",
+	"Live now":                 "Pågår nu",
+	"Started ":                 "Startade ",
+	"Starting…":                "Startar…",
+	"Awaiting start":           "Väntar på start",
+}
+
+// teamT is the team page's words in lang: Swedish where there are
+// any, else as written.
+func teamT(lang, s string) string {
+	if lang == "sv" {
+		if v, ok := teamSV[s]; ok {
+			return v
+		}
+	}
+	return s
+}
+
 // teamShareTmpl renders a tiny standalone page — no app-wide shell.
 // The target audience is the team captain on a phone, so touch
 // targets are generous and nothing requires JS. Escaping goes through
 // html/template so team + member names can't break out of attributes.
-var teamShareTmpl = template.Must(template.New("team").Parse(`<!doctype html>
-<html lang="en"><head>
+var teamShareTmpl = template.Must(template.New("team").Funcs(template.FuncMap{"t": teamT}).Parse(`<!doctype html>
+<html lang="{{.Lang}}"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>{{.TeamName}} · {{.SiteName}}</title>
 <meta name="robots" content="noindex">
@@ -431,6 +539,7 @@ var teamShareTmpl = template.Must(template.New("team").Parse(`<!doctype html>
   .slot:active{transform:translateY(1px);}
   .slot .name{font-weight:700;font-size:1.05rem;}
   .slot .go-sm{color:var(--gold);font-weight:700;font-size:.9rem;white-space:nowrap;}
+  .file .name{overflow-wrap:anywhere;min-width:0;}
 
   details.share{margin:.2rem 0 0;border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden;}
   details.share summary{cursor:pointer;list-style:none;padding:.85rem 1.1rem;font-weight:600;color:var(--ink-soft);font-size:.9rem;}
@@ -493,7 +602,7 @@ var teamShareTmpl = template.Must(template.New("team").Parse(`<!doctype html>
   }
 </style></head>
 <body>
-<a class="skip-link" href="#main">Skip to start</a>
+<a class="skip-link" href="#main">{{t $.Lang "Skip to start"}}</a>
 <div class="sky" aria-hidden="true"><div class="aurora a1"></div><div class="aurora a2"></div><div class="aurora a3"></div></div>
 <div class="stars" id="stars" aria-hidden="true"></div>
 <div class="blackout" id="blackout" aria-hidden="true"></div>
@@ -517,41 +626,43 @@ var teamShareTmpl = template.Must(template.New("team").Parse(`<!doctype html>
 
 {{if .SelfGuided}}
     {{/* ---------- Self-guided: casual, start-first ---------- */}}
-    <h1>{{if .AdventureTitle}}{{.AdventureTitle}}{{else}}Your adventure{{end}}</h1>
+    <h1>{{if .AdventureTitle}}{{.AdventureTitle}}{{else}}{{t $.Lang "Your adventure"}}{{end}}</h1>
 
     {{if .Solo}}
-    <p class="sub">Ready when you are</p>
+    <p class="sub">{{t $.Lang "Ready when you are"}}</p>
     <div class="card">
-      <p class="lead">Walk, look around, and solve your way through — at your own pace. Tap below when you're ready to begin.</p>
-      <a class="go slot-go" href="{{(index .Members 0).MagicURL}}">Start the adventure →</a>
+      <p class="lead">{{t $.Lang "Walk, look around, and solve your way through — at your own pace. Tap below when you're ready to begin."}}</p>
+      <a class="go slot-go" href="{{(index .Members 0).MagicURL}}">{{t $.Lang "Start the adventure →"}}</a>
     </div>
+    {{template "files" .}}
     {{else if .Members}}
-    <p class="sub">Playing as a group? Get everyone in, then begin.</p>
+    <p class="sub">{{t $.Lang "Playing as a group? Get everyone in, then begin."}}</p>
     <div class="card">
       <ol class="steps">
         <li>
           <span class="snum" aria-hidden="true">1</span>
           <div class="sbody">
-            <p class="shead">Everyone joins</p>
-            <p class="stext">Each person opens the camera on their phone and points it at this square:</p>
-            <div class="qrbox"><img class="qr-big" src="/qr/team/{{.Token}}" alt="QR code to join this team"></div>
+            <p class="shead">{{t $.Lang "Everyone joins"}}</p>
+            <p class="stext">{{t $.Lang "Each person opens the camera on their phone and points it at this square:"}}</p>
+            <div class="qrbox"><img class="qr-big" src="/qr/team/{{.Token}}" alt="{{t $.Lang "QR code to join this team"}}"></div>
           </div>
         </li>
         <li>
           <span class="snum" aria-hidden="true">2</span>
           <div class="sbody">
-            <p class="shead">Tap Start</p>
-            <p class="stext">On every phone — including yours — tap the button below. That's it, you're playing together.</p>
+            <p class="shead">{{t $.Lang "Tap Start"}}</p>
+            <p class="stext">{{t $.Lang "On every phone — including yours — tap the button below. That's it, you're playing together."}}</p>
           </div>
         </li>
       </ol>
-      <button type="button" class="go join-btn" id="join-btn" data-token="{{.Token}}">Start playing →</button>
+      <button type="button" class="go join-btn" id="join-btn" data-token="{{.Token}}">{{t $.Lang "Start playing →"}}</button>
       <p class="joinmsg" id="join-msg" role="status" aria-live="polite"></p>
     </div>
-    <p class="hint">Playing on your own? Just tap Start playing.</p>
+    <p class="hint">{{t $.Lang "Playing on your own? Just tap Start playing."}}</p>
+    {{template "files" .}}
     {{else}}
-    <p class="sub">Ready when you are</p>
-    <div class="card"><p class="empty">This adventure has no player spots yet.</p></div>
+    <p class="sub">{{t $.Lang "Ready when you are"}}</p>
+    <div class="card"><p class="empty">{{t $.Lang "This adventure has no player spots yet."}}</p></div>
     {{end}}
 
 {{else}}
@@ -560,48 +671,49 @@ var teamShareTmpl = template.Must(template.New("team").Parse(`<!doctype html>
     {{if .AdventureTitle}}<p class="sub">{{.AdventureTitle}}</p>{{end}}
 
     <div class="avatar-wrap">
-      <button type="button" id="avatar-btn" class="avatar-btn" aria-label="Add a team photo">
+      <button type="button" id="avatar-btn" class="avatar-btn" aria-label="{{t $.Lang "Add a team photo"}}">
         {{if .AvatarURL}}<img id="avatar-img" src="{{.AvatarURL}}" alt="">{{else}}<span id="avatar-ini"></span>{{end}}
-        <span class="hint-pill">{{if .AvatarURL}}change{{else}}+ photo{{end}}</span>
+        <span class="hint-pill">{{if .AvatarURL}}{{t $.Lang "change"}}{{else}}{{t $.Lang "+ photo"}}{{end}}</span>
       </button>
-      <button type="button" id="avatar-remove" class="avatar-remove"{{if not .AvatarURL}} hidden{{end}}>Remove photo</button>
+      <button type="button" id="avatar-remove" class="avatar-remove"{{if not .AvatarURL}} hidden{{end}}>{{t $.Lang "Remove photo"}}</button>
       <p id="avatar-err" class="avatar-err"></p>
       <input type="file" id="avatar-file" accept="image/*" style="display:none">
     </div>
 
     <div id="cd" class="cd" hidden>
-      <p class="cd-label" id="cd-label">Starts in</p>
+      <p class="cd-label" id="cd-label">{{t $.Lang "Starts in"}}</p>
       <p class="cd-value" id="cd-value">—</p>
       <p class="cd-when" id="cd-when"></p>
     </div>
 
     <div class="card">
-      <p class="label">Tap your name to open your link</p>
-      <p class="note">Each link is for one person. Don't pass yours on — your teammates have their own below.</p>
+      <p class="label">{{t $.Lang "Tap your name to open your link"}}</p>
+      <p class="note">{{t $.Lang "Each link is for one person. Don't pass yours on — your teammates have their own below."}}</p>
       {{if .Members}}
         {{range .Members}}
-        <a class="slot slot-go" href="{{.MagicURL}}"><span class="name">{{.Name}}</span><span class="go-sm">Open →</span></a>
+        <a class="slot slot-go" href="{{.MagicURL}}"><span class="name">{{.Name}}</span><span class="go-sm">{{t $.Lang "Open →"}}</span></a>
         {{end}}
       {{else}}
-        <p class="empty">No members on this team yet. Ask your arranger to add you.</p>
+        <p class="empty">{{t $.Lang "No members on this team yet. Ask your arranger to add you."}}</p>
       {{end}}
     </div>
+    {{template "files" .}}
 
     <details class="share">
-      <summary>Share this team page</summary>
+      <summary>{{t $.Lang "Share this team page"}}</summary>
       <div class="share-body">
         <div class="copy-row">
-          <input id="team-url" type="text" readonly aria-label="Team page link">
-          <button type="button" id="copy-team-url">Copy</button>
+          <input id="team-url" type="text" readonly aria-label="{{t $.Lang "Team page link"}}">
+          <button type="button" id="copy-team-url">{{t $.Lang "Copy"}}</button>
         </div>
         <div class="qr-body">
-          <img src="/qr/team/{{.Token}}" alt="QR code to this page" loading="lazy">
-          <p>Teammates who scan this land here and tap their own name.</p>
+          <img src="/qr/team/{{.Token}}" alt="{{t $.Lang "QR code to this page"}}" loading="lazy">
+          <p>{{t $.Lang "Teammates who scan this land here and tap their own name."}}</p>
         </div>
       </div>
     </details>
 
-    <p class="footer">If your name isn't listed, ask the arranger to add you.</p>
+    <p class="footer">{{t $.Lang "If your name isn't listed, ask the arranger to add you."}}</p>
 {{end}}
   </div>
 </main>
@@ -658,10 +770,10 @@ var teamShareTmpl = template.Must(template.New("team").Parse(`<!doctype html>
       .then(function(res){
         if(res.s===200 && res.b && res.b.redirect){ handoff(res.b.redirect); return; }
         joining=false; joinBtn.disabled=false;
-        if(res.s===409){ if(joinMsg) joinMsg.textContent="Everyone's already joined this team. Ask whoever's hosting."; }
-        else { if(joinMsg) joinMsg.textContent=(res.b&&res.b.error)||"Couldn't join — please try again."; }
+        if(res.s===409){ if(joinMsg) joinMsg.textContent={{t $.Lang "Everyone's already joined this team. Ask whoever's hosting."}}; }
+        else { if(joinMsg) joinMsg.textContent=(res.b&&res.b.error)||{{t $.Lang "Couldn't join — please try again."}}; }
       })
-      .catch(function(){ joining=false; joinBtn.disabled=false; if(joinMsg) joinMsg.textContent="Couldn't reach the server. Check your connection."; });
+      .catch(function(){ joining=false; joinBtn.disabled=false; if(joinMsg) joinMsg.textContent={{t $.Lang "Couldn't reach the server. Check your connection."}}; });
     });
   }
 
@@ -680,7 +792,7 @@ var teamShareTmpl = template.Must(template.New("team").Parse(`<!doctype html>
       fetch("/api/public/team/"+encodeURIComponent(token)+"/avatar",{method:"POST",body:fd,credentials:"same-origin"})
       .then(function(res){if(!res.ok)return res.text().then(function(t){throw new Error(t||("error "+res.status));});return res.json();})
       .then(function(body){var url=(body.url||("/adventure-assets/team-avatar/"+Date.now()))+"?v="+Date.now();paintPhoto(url);if(removeBtn)removeBtn.hidden=false;})
-      .catch(function(e){errEl.textContent=e.message||"upload failed";})
+      .catch(function(e){errEl.textContent=e.message||{{t $.Lang "upload failed"}};})
       .then(function(){file.value="";});
     });
   }
@@ -689,11 +801,11 @@ var teamShareTmpl = template.Must(template.New("team").Parse(`<!doctype html>
       errEl.textContent="";
       fetch("/api/public/team/"+encodeURIComponent(token)+"/avatar",{method:"DELETE",credentials:"same-origin"})
       .then(function(res){if(res.status!==204&&!res.ok)throw new Error("error "+res.status);paintInitials();removeBtn.hidden=true;})
-      .catch(function(e){errEl.textContent=e.message||"remove failed";});
+      .catch(function(e){errEl.textContent=e.message||{{t $.Lang "remove failed"}};});
     });
   }
-  function paintPhoto(url){if(!btn)return;btn.innerHTML="";var img=new Image();img.id="avatar-img";img.alt="";img.src=url;btn.appendChild(img);var pill=document.createElement("span");pill.className="hint-pill";pill.textContent="change";btn.appendChild(pill);}
-  function paintInitials(){if(!btn)return;btn.innerHTML="";var span=document.createElement("span");span.id="avatar-ini";span.textContent=initials(teamName);btn.appendChild(span);var pill=document.createElement("span");pill.className="hint-pill";pill.textContent="+ photo";btn.appendChild(pill);}
+  function paintPhoto(url){if(!btn)return;btn.innerHTML="";var img=new Image();img.id="avatar-img";img.alt="";img.src=url;btn.appendChild(img);var pill=document.createElement("span");pill.className="hint-pill";pill.textContent={{t $.Lang "change"}};btn.appendChild(pill);}
+  function paintInitials(){if(!btn)return;btn.innerHTML="";var span=document.createElement("span");span.id="avatar-ini";span.textContent=initials(teamName);btn.appendChild(span);var pill=document.createElement("span");pill.className="hint-pill";pill.textContent={{t $.Lang "+ photo"}};btn.appendChild(pill);}
   function initials(name){var p=(name||"").trim().split(/\s+/).filter(Boolean);if(p.length===0)return "?";if(p.length===1)return p[0].slice(0,2).toUpperCase();return (p[0][0]+p[p.length-1][0]).toUpperCase();}
 
   // Copy team link.
@@ -702,7 +814,7 @@ var teamShareTmpl = template.Must(template.New("team").Parse(`<!doctype html>
   var toast=document.getElementById("copy-toast");
   if(urlEl) urlEl.value=location.href;
   function flashToast(m){if(!toast)return;toast.textContent=m;toast.classList.add("show");setTimeout(function(){toast.classList.remove("show");},1800);}
-  if(copyBtn&&urlEl){copyBtn.addEventListener("click",function(){var u=urlEl.value;var ok=function(){flashToast("Link copied");};var fail=function(){urlEl.select();flashToast("Press Ctrl/Cmd+C to copy");};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(u).then(ok,fail);}else{fail();}});}
+  if(copyBtn&&urlEl){copyBtn.addEventListener("click",function(){var u=urlEl.value;var ok=function(){flashToast({{t $.Lang "Link copied"}});};var fail=function(){urlEl.select();flashToast({{t $.Lang "Press Ctrl/Cmd+C to copy"}});};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(u).then(ok,fail);}else{fail();}});}
 
   // Countdown (hosted view only; the element isn't rendered otherwise).
   var cd=document.getElementById("cd");
@@ -711,11 +823,48 @@ var teamShareTmpl = template.Must(template.New("team").Parse(`<!doctype html>
     function parseUTC(s){if(!s)return null;var iso=s.indexOf("T")>=0?s:s.replace(" ","T")+"Z";var d=new Date(iso);return isNaN(d.getTime())?null:d;}
     function pad(n){return n<10?"0"+n:""+n;}
     function fmtCountdown(sec){if(sec<=0)return "00:00";var d=Math.floor(sec/86400),h=Math.floor((sec%86400)/3600),m=Math.floor((sec%3600)/60),s=sec%60;if(d>0)return d+"d "+pad(h)+":"+pad(m)+":"+pad(s);if(h>0)return pad(h)+":"+pad(m)+":"+pad(s);return pad(m)+":"+pad(s);}
-    function fmtClock(d){return d.toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short",hour12:false});}
-    if(eventState==="completed"){cd.hidden=false;cdLabel.textContent="Event";cdValue.textContent="Completed";}
-    else if(eventState==="running"||eventState==="paused"){cd.hidden=false;cd.classList.add("live");cdLabel.textContent="Event";cdValue.textContent=eventState==="paused"?"Paused":"Live now";var sd=parseUTC(startedAt);cdWhen.textContent=sd?"Started "+fmtClock(sd):"";}
-    else{var when=parseUTC(scheduledAt);if(when){cd.hidden=false;cdLabel.textContent="Starts in";cdWhen.textContent=fmtClock(when);var tick=function(){var sec=Math.round((when.getTime()-Date.now())/1000);if(sec<=0){cd.classList.add("live");cdLabel.textContent="Event";cdValue.textContent="Starting…";cdWhen.textContent="";return false;}cdValue.textContent=fmtCountdown(sec);return true;};if(tick()){var iv=setInterval(function(){if(!tick())clearInterval(iv);},1000);}}else{cd.hidden=false;cdLabel.textContent="Event";cdValue.textContent="Awaiting start";}}
+    function fmtClock(d){return d.toLocaleString(document.documentElement.lang||undefined,{dateStyle:"medium",timeStyle:"short",hour12:false});}
+    if(eventState==="completed"){cd.hidden=false;cdLabel.textContent={{t $.Lang "Event"}};cdValue.textContent={{t $.Lang "Completed"}};}
+    else if(eventState==="running"||eventState==="paused"){cd.hidden=false;cd.classList.add("live");cdLabel.textContent={{t $.Lang "Event"}};cdValue.textContent=eventState==="paused"?{{t $.Lang "Paused"}}:{{t $.Lang "Live now"}};var sd=parseUTC(startedAt);cdWhen.textContent=sd?{{t $.Lang "Started "}}+fmtClock(sd):"";}
+    else{var when=parseUTC(scheduledAt);if(when){cd.hidden=false;cdLabel.textContent={{t $.Lang "Starts in"}};cdWhen.textContent=fmtClock(when);var tick=function(){var sec=Math.round((when.getTime()-Date.now())/1000);if(sec<=0){cd.classList.add("live");cdLabel.textContent={{t $.Lang "Event"}};cdValue.textContent={{t $.Lang "Starting…"}};cdWhen.textContent="";return false;}cdValue.textContent=fmtCountdown(sec);return true;};if(tick()){var iv=setInterval(function(){if(!tick())clearInterval(iv);},1000);}}else{cd.hidden=false;cdLabel.textContent={{t $.Lang "Event"}};cdValue.textContent={{t $.Lang "Awaiting start"}};}}
   }
 })();
 </script>
-</body></html>`))
+</body></html>
+{{define "files"}}{{if .Files}}
+    <div class="card">
+      <p class="label">{{t .Lang "Files from the organisers"}}</p>
+      <p class="note">{{t .Lang "Download them before you set off. They are also in the menu of the game."}}</p>
+      {{range .Files}}
+      <a class="slot file" href="{{.URL}}" download="{{.Name}}"><span class="name">{{.Name}}</span><span class="go-sm">{{.Size}} ↓</span></a>
+      {{end}}
+    </div>
+{{end}}{{end}}`))
+
+// TeamFile downloads one of the files the organisers left for the
+// team's event, by the team's share token: the links in the ticket and
+// invitation emails, for a player not yet signed in to the game.
+//
+// GET /team/{token}/files/{fileID}
+func (h *Handlers) TeamFile(w http.ResponseWriter, r *http.Request) {
+	_, eventID, ok := h.teamByToken(w, r, chi.URLParam(r, "token"))
+	if !ok {
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "fileID"), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.Error(w, http.StatusNotFound, "no such file")
+		return
+	}
+	f, content, err := eventfile.Get(r.Context(), h.DB, eventID, id)
+	switch {
+	case errors.Is(err, eventfile.ErrNotFound):
+		httpx.Error(w, http.StatusNotFound, "no such file")
+		return
+	case err != nil:
+		httpx.ServerErr(w, http.StatusInternalServerError, "reading file failed", err)
+		return
+	}
+	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+	eventfile.Serve(w, f, content)
+}

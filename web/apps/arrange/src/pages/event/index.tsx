@@ -11,6 +11,7 @@ import type { Activity, EventDetail } from "./api.ts";
 import { ActivityFeed } from "./Activity.tsx";
 import { LifecycleActions, RenameDialog } from "./Lifecycle.tsx";
 import { MessagesCard, PhotosCard } from "./Messages.tsx";
+import { FilesCard } from "./Files.tsx";
 import { NewTeamsDialog } from "./NewTeams.tsx";
 import { ConnectBanner, QuickStats, ResultsCard, SecretRolesCard, StoreCard } from "./Overview.tsx";
 import { TeamDetailDialog } from "./TeamDetail.tsx";
@@ -36,6 +37,7 @@ export function EventPage({ id }: { id: number }) {
   const detail = useLoad((s) => api.getDetail(id, s), [id]);
   const activity = useLoad((s) => api.getActivity(id, undefined, s), [id]);
   const messages = useLoad((s) => api.getMessages(id, s), [id]);
+  const files = useLoad((s) => api.getFiles(id, s), [id]);
   const photos = useLoad((s) => api.getPhotos(id, s), [id]);
   // Statistics come from play, once it has begun.
   const played = !!detail.data?.event.started_at;
@@ -175,6 +177,7 @@ export function EventPage({ id }: { id: number }) {
         <div className="ev-col">
           <EmailsCard event={event} teams={teams} from={orgName} />
           {messages.data && <MessagesCard event={event} teams={teams} messages={messages.data.messages ?? []} reload={messages.reload} />}
+          {files.data && <FilesCard event={event} files={files.data.files ?? []} maxFiles={files.data.max_files} maxSize={files.data.max_size} reload={files.reload} />}
           {photos.data && <PhotosCard event={event} graph={graph} photos={photos.data.photos ?? []} challenges={photos.data.challenges ?? 0} reload={() => { photos.reload(); reload(); }} />}
           <Card title={t.t("Event log")}>
             <div className="ev-scroll">
