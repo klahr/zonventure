@@ -17,13 +17,30 @@ import { locate } from "./zones.ts";
  * every player, never downloads it.
  */
 type MapLib = typeof import("maplibre-gl");
+
+/**
+ * The worker's address, naming the map host. The worker downloads the
+ * tiles under the Content-Security-Policy it was served with, and the
+ * file is cached as immutable: without the host in its address, a
+ * browser keeps a copy whose policy allows only the old map host.
+ */
+function workerURL(file: string): string {
+  const url = new URL(file, location.href);
+  const source = mapConfig?.style_url || mapConfig?.tile_url || "";
+  try {
+    url.searchParams.set("map", new URL(source).host);
+  } catch {
+    /* no map source: the plain address */
+  }
+  return url.href;
+}
 let loading: Promise<MapLib> | null = null;
 export function loadMapLibre(): Promise<MapLib> {
   // MapLibre looks for its worker beside its own module, which bundling
   // moves; point it at the worker Vite builds instead.
   loading ??= Promise.all([import("maplibre-gl"), import("maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url"), import("maplibre-gl/dist/maplibre-gl.css")]).then(
     ([m, worker]) => {
-      m.setWorkerUrl(new URL(worker.default, location.href).href);
+      m.setWorkerUrl(workerURL(worker.default));
       return m;
     },
     (e: unknown) => {
