@@ -11,6 +11,15 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.25.5] - 2026-10-09
+
+### Added — where an adventure is played
+
+- **An adventure has an area**: a few words on where it is played,
+  such as "Göteborg · Slottsskogen" or "Hemma". Set it under Edit
+  details or with `update_adventure_meta` (`area`); the store API
+  returns it, and the store shows it on each card and on its map.
+
 ## [0.25.4] - 2026-10-09
 
 ### Fixed
