@@ -9,8 +9,18 @@ import (
 )
 
 // decorate adds to a view what the session cannot know on its own:
-// standings, which need the other teams.
+// standings, which need the other teams. In a party game that holds its
+// results (ResultsHeld) it takes out what would give them away.
 func (e *Engine) decorate(ctx context.Context, q Querier, g *graph.Graph, eventID, teamID int64, v *View) error {
+	held, err := ResultsHeld(ctx, q, teamID)
+	if err != nil {
+		return err
+	}
+	if held {
+		v.ResultsHeld, v.HideScore = true, true
+		v.Score, v.PenaltyScore, v.Quiz = 0, 0, nil
+		return nil
+	}
 	var standings bool
 	for _, b := range v.Blocks {
 		standings = standings || b.Kind == graph.BlockStandings && !b.Locked

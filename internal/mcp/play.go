@@ -780,7 +780,11 @@ func (ps *playSession) block(b *strings.Builder, v session.View, bl session.Bloc
 	case graph.BlockTitle, graph.BlockDivider, graph.BlockBulletin:
 	case graph.BlockPoints:
 		if !v.HideScore && bl.Points != 0 {
-			fmt.Fprintf(b, "Worth %g points.\n", bl.Points)
+			if bl.Points == 1 {
+				b.WriteString("Worth 1 point.\n")
+			} else {
+				fmt.Fprintf(b, "Worth %g points.\n", bl.Points)
+			}
 		}
 	case graph.BlockText:
 		if bl.Text != "" {

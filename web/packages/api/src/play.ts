@@ -174,7 +174,7 @@ export interface QuizResult {
   right: number;
   total: number;
   points: number;
-  items: { node: string; block: string; question: string; options: string[]; picked?: string; answer: string }[];
+  items: { node: string; block: string; question: string; options: string[]; picked?: string; answer: string; right: boolean; typed?: boolean }[];
   tiebreak?: { question: string; guess?: number; answer: number };
 }
 
@@ -328,6 +328,8 @@ export interface View {
   penalty_score: number;
   /** The adventure keeps the running score off the phone. */
   hide_score?: boolean;
+  /** The game keeps its results until the host finishes it: no score, quiz walk or standings. */
+  results_held?: boolean;
   penalty_seconds: number;
   finished?: boolean;
   outcome?: "complete" | "fail";

@@ -31,6 +31,9 @@ export function feedbackForResult(kind: play.PlayAction["kind"], r: play.Result,
     case "cheat":
       return { tone: "good", text: t("Solved.") };
     case "answer":
+      // A game that keeps its results secret says neither right nor wrong
+      // of an answer the team moves on from.
+      if (r.view?.results_held && (r.accepted || r.port)) return { tone: "info", text: t("Answer saved.") };
       if (r.waiting) {
         return { tone: "info", text: t("Right — but everyone must give the answer. {{done}} of {{of}} have.", { done: r.waiting.done, of: r.waiting.of }) };
       }

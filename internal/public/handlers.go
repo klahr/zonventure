@@ -101,8 +101,15 @@ type LiveDTO struct {
 	PausedAt      string `json:"paused_at,omitempty"`
 	ServerNow     string `json:"server_now"`
 	ShowMap       bool   `json:"show_map"`
-	// Teams are ranked by points (see play.Ahead).
-	Teams  []teamDTO         `json:"teams"`
+	// Teams are ranked by points (see play.Ahead). ResultsHeld is set
+	// while a party game keeps its results for the host's reveal: its
+	// teams come first, in the order they joined, with no points or rank.
+	Teams       []teamDTO `json:"teams"`
+	ResultsHeld bool      `json:"results_held,omitempty"`
+	// Round is the party game the board shows, alone: its teams, its
+	// clock, and completed once the host finishes it. 0 for an event
+	// that is not a party.
+	Round  int               `json:"round,omitempty"`
 	Colors *adventure.Colors `json:"colors,omitempty"`
 	// Look is the adventure's cover picture and title typeface.
 	Look *PageLook `json:"look,omitempty"`
@@ -142,13 +149,35 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 	if adv == nil {
 		return LiveDTO{}, id, http.StatusInternalServerError, "adventure not loaded"
 	}
+	// A party plays game after game: the board shows the latest alone.
+	var (
+		round                   int
+		held                    bool
+		roundStart, roundEnd    sql.NullTime
+		pausedFrom, roundPaused sql.NullInt64
+	)
+	if err := h.DB.QueryRowContext(ctx, `
+		SELECT CASE WHEN e.party THEN COALESCE(e.current_round, 0) ELSE 0 END,
+		       e.party AND e.party_hold_results AND r.round IS NOT NULL AND r.finished_at IS NULL,
+		       r.started_at, r.finished_at, r.paused_from, r.paused_seconds
+		FROM events e LEFT JOIN event_rounds r ON e.party AND r.event_id = e.id AND r.round = e.current_round
+		WHERE e.id = $1
+	`, id).Scan(&round, &held, &roundStart, &roundEnd, &pausedFrom, &roundPaused); err != nil {
+		return LiveDTO{}, id, http.StatusInternalServerError, "event lookup failed"
+	}
+	if round > 0 && roundStart.Valid {
+		startedAt = roundStart.Time.UTC().Format(time.DateTime)
+		if roundEnd.Valid && state != "cancelled" {
+			state, completedAt = "completed", roundEnd.Time.UTC().Format(time.DateTime)
+		}
+	}
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name, COALESCE(t.completed_at, ''),
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       (t.withdrawn_at IS NOT NULL)::int AS withdrawn
 		FROM teams t
-		WHERE t.event_id = $1
-	`, id)
+		WHERE t.event_id = $1 AND ($2 = 0 OR t.round = $2)
+	`, id, round)
 	if err != nil {
 		return LiveDTO{}, id, http.StatusInternalServerError, "query failed"
 	}
@@ -205,7 +234,21 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 	sort.SliceStable(teams, func(i, j int) bool {
 		return !teams[i].Withdrawn && teams[j].Withdrawn
 	})
+	playing := func(t teamDTO) bool { return held && !t.Withdrawn }
+	if held {
+		sort.SliceStable(teams, func(i, j int) bool {
+			pi, pj := playing(teams[i]), playing(teams[j])
+			if pi != pj {
+				return pi
+			}
+			return pi && teams[i].ID < teams[j].ID
+		})
+	}
 	for i := range teams {
+		if playing(teams[i]) {
+			teams[i].Score, teams[i].TiebreakGuess = nil, nil
+			continue
+		}
 		teams[i].Rank = i + 1
 	}
 	var (
@@ -215,6 +258,19 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 	if err := h.DB.QueryRowContext(ctx,
 		`SELECT paused_seconds, paused_at FROM events WHERE id = $1`, id).Scan(&pausedSeconds, &pausedAt); err != nil {
 		return LiveDTO{}, id, http.StatusInternalServerError, "event lookup failed"
+	}
+	// A game's clock counts its own pauses: a finished one's as it
+	// ended, an open one's since it opened. A game opened before they
+	// were kept counts none.
+	if round > 0 && roundStart.Valid {
+		switch {
+		case roundEnd.Valid:
+			pausedSeconds, pausedAt = int(roundPaused.Int64), sql.NullString{}
+		case pausedFrom.Valid:
+			pausedSeconds = max(0, pausedSeconds-int(pausedFrom.Int64))
+		default:
+			pausedSeconds = 0
+		}
 	}
 	dto := LiveDTO{
 		EventID:        id,
@@ -229,6 +285,8 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		ServerNow:      time.Now().UTC().Format(time.RFC3339),
 		ShowMap:        showMap != 0,
 		Teams:          teams,
+		ResultsHeld:    held,
+		Round:          round,
 	}
 	if !adv.Colors.Empty() {
 		c := adv.Colors

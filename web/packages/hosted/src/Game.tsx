@@ -65,7 +65,7 @@ export function Game({ event }: { event: HostedEvent }) {
                   <div>
                     <strong>{tm.name}</strong>
                     <span className="hosted-muted">
-                      {t("{{n}} players", { n: tm.headcount })}
+                      {tm.headcount === 1 ? t("1 player") : t("{{n}} players", { n: tm.headcount })}
                       {" · "}
                       {tm.finished
                         ? t("Finished · {{score}} points", { score: tm.score })
@@ -127,10 +127,15 @@ export function Game({ event }: { event: HostedEvent }) {
               onClick={async () => {
                 if (
                   await ask({
-                    message: t(
-                      "Finish game {{n}}? The teams' phones stop, and you get the results by email.",
-                      { n: event.round },
-                    ),
+                    message: event.hold_results
+                      ? t(
+                          "Finish game {{n}}? The teams' phones stop, the results are revealed on the phones and the live scoreboard, and you get them by email.",
+                          { n: event.round },
+                        )
+                      : t(
+                          "Finish game {{n}}? The teams' phones stop, and you get the results by email.",
+                          { n: event.round },
+                        ),
                     confirmLabel: t("Finish game"),
                     cancelLabel: t("Cancel"),
                   })
@@ -160,6 +165,28 @@ export function Game({ event }: { event: HostedEvent }) {
                 { n: event.round + 1 },
               )}
         </p>
+      )}
+
+      {!over && (
+        <label className="hosted-check">
+          <input
+            type="checkbox"
+            checked={event.hold_results}
+            disabled={busy}
+            onChange={(e) => {
+              const hold = e.target.checked;
+              void run(() => api.holdResults(hold));
+            }}
+          />
+          <span>
+            {t("Keep the results secret until I finish the game")}
+            <small className="hosted-muted">
+              {t(
+                "The phones and the live scoreboard show no points or places while the teams play. Finish the game to reveal them.",
+              )}
+            </small>
+          </span>
+        </label>
       )}
 
       {canAdd && (

@@ -16,12 +16,17 @@ import (
 
 type liveSnap struct {
 	State         string `json:"state"`
+	StartedAt     string `json:"started_at"`
+	CompletedAt   string `json:"completed_at"`
 	PausedSeconds int    `json:"paused_seconds"`
 	PausedAt      string `json:"paused_at"`
+	Round         int    `json:"round"`
+	ResultsHeld   bool   `json:"results_held"`
 	Teams         []struct {
-		Name      string `json:"name"`
-		Rank      int    `json:"rank"`
-		Withdrawn bool   `json:"withdrawn"`
+		Name      string   `json:"name"`
+		Rank      int      `json:"rank"`
+		Score     *float64 `json:"score"`
+		Withdrawn bool     `json:"withdrawn"`
 	} `json:"teams"`
 }
 
@@ -98,6 +103,62 @@ func TestLive_ReportsPauses(t *testing.T) {
 	s := getLive(t, db, eventID)
 	if s.State != "paused" || s.PausedSeconds != 90 || s.PausedAt != "2026-09-28 10:00:00" {
 		t.Errorf("paused: %+v, want paused_seconds 90 and paused_at set", s)
+	}
+}
+
+// A party's board shows its latest game alone: that game's teams, timed
+// from its start less its own pauses, and completed once the host
+// finishes it — while the party itself runs on. A game that holds its
+// results lists its teams unranked.
+func TestLive_PartyShowsItsGame(t *testing.T) {
+	t.Parallel()
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+	eventID := seedEvent(t, db)
+	if _, err := db.Exec(`
+		UPDATE events SET party = TRUE, party_hold_results = FALSE, current_round = 2,
+		       started_at = '2026-09-28 09:00:00', paused_seconds = 100 WHERE id = $1
+	`, eventID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO event_rounds(event_id, round, started_at, finished_at, paused_from)
+		VALUES ($1, 1, '2026-09-28 09:00:00Z', '2026-09-28 10:00:00Z', 0),
+		       ($1, 2, '2026-09-28 11:00:00Z', NULL, 60)
+	`, eventID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO teams(event_id, name, token, round)
+		VALUES ($1, 'Old', 'tok-o', 1), ($1, 'New', 'tok-n', 2), ($1, 'Newer', 'tok-m', 2)
+	`, eventID); err != nil {
+		t.Fatal(err)
+	}
+
+	s := getLive(t, db, eventID)
+	if s.Round != 2 || s.State != "running" || s.StartedAt != "2026-09-28 11:00:00" || s.PausedSeconds != 40 {
+		t.Errorf("open game: %+v", s)
+	}
+	if len(s.Teams) != 2 || s.Teams[0].Rank == 0 {
+		t.Errorf("open game's teams: %+v", s.Teams)
+	}
+
+	if _, err := db.Exec(`UPDATE events SET party_hold_results = TRUE WHERE id = $1`, eventID); err != nil {
+		t.Fatal(err)
+	}
+	s = getLive(t, db, eventID)
+	if !s.ResultsHeld || s.Teams[0].Name != "New" || s.Teams[0].Rank != 0 || s.Teams[0].Score != nil {
+		t.Errorf("held game: %+v", s)
+	}
+
+	if _, err := db.Exec(`
+		UPDATE event_rounds SET finished_at = '2026-09-28 11:30:00Z', paused_seconds = 30 WHERE event_id = $1 AND round = 2
+	`, eventID); err != nil {
+		t.Fatal(err)
+	}
+	s = getLive(t, db, eventID)
+	if s.State != "completed" || s.CompletedAt != "2026-09-28 11:30:00" || s.PausedSeconds != 30 || s.ResultsHeld || s.Teams[0].Rank != 1 {
+		t.Errorf("finished game: %+v", s)
 	}
 }
 

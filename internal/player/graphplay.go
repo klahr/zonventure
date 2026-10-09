@@ -266,6 +266,10 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 				httpx.ServerErr(w, http.StatusInternalServerError, "loading result failed", err)
 				return
 			}
+			if view.ResultsHeld {
+				// The place comes with the results, when the host finishes the game.
+				out.Finish.Rank, out.Finish.Teams = 0, 0
+			}
 		}
 	}
 	httpx.JSON(w, http.StatusOK, out)

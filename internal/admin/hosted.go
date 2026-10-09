@@ -309,7 +309,8 @@ func openRound(ctx context.Context, tx *sql.Tx, p hostParty) (int, error) {
 	}
 	round := p.Round + 1
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO event_rounds (event_id, round, graph_id) VALUES ($1, $2, $3)
+		INSERT INTO event_rounds (event_id, round, graph_id, paused_from)
+		VALUES ($1, $2, $3, (SELECT paused_seconds FROM events WHERE id = $1))
 	`, p.EventID, round, graphID); err != nil {
 		return 0, err
 	}
@@ -351,6 +352,30 @@ func (h *Handlers) FinishHostedGame(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// PutHoldResults says whether the party keeps each game's results secret
+// until the host finishes it. Turned off mid-game, the phones and the
+// live board show them at once.
+//
+// PUT /api/party/{token}/hold-results
+func (h *Handlers) PutHoldResults(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.hostedParty(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Hold bool `json:"hold"`
+	}
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(), `UPDATE events SET party_hold_results = $1 WHERE id = $2`, req.Hold, p.EventID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "save failed", err)
+		return
+	}
+	h.Hub.Publish(ws.EventTopic(p.EventID), "changed", nil)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // finishRound closes the event's open game, if it has one: its teams'
 // phones are signed out, a paused event runs again for the next game,
 // and the host gets the summary. by says who finished it, for the log.
@@ -379,6 +404,13 @@ func (h *Handlers) finishRound(ctx context.Context, eventID int64, by string) (b
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE events SET state = 'running', `+activity.ClosePause+` WHERE id = $1 AND state = 'paused'
 	`, eventID); err != nil {
+		return false, err
+	}
+	// What the game spent paused, for the live board's clock.
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE event_rounds r SET paused_seconds = GREATEST(0, e.paused_seconds - r.paused_from)
+		FROM events e WHERE e.id = r.event_id AND r.event_id = $1 AND r.round = $2 AND r.paused_from IS NOT NULL
+	`, eventID, round); err != nil {
 		return false, err
 	}
 	activity.Record(ctx, tx, eventID, nil, activity.Actor{}, "round.finished", map[string]any{"round": round, "by": by})

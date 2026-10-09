@@ -2,6 +2,7 @@ package admin_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"github.com/klahr/zonventure/internal/settings"
 	"net/http"
@@ -94,6 +95,7 @@ func newPartyFixture(t *testing.T) (*partyFixture, func()) {
 	public.Get("/api/party/{token}", f.h.GetHostParty)
 	public.Delete("/api/party/{token}/teams/{teamID}", f.h.RemoveHostTeam)
 	public.Post("/api/party/{token}/finish-game", f.h.FinishHostedGame)
+	public.Put("/api/party/{token}/hold-results", f.h.PutHoldResults)
 	public.Post("/api/party/{token}/send-player-link", f.h.SendHostedPlayerLink)
 	public.Post("/api/party/{token}/blocks", f.h.AddHostedBlocks)
 	public.Get("/api/join/{token}", f.h.GetJoin)
@@ -165,13 +167,14 @@ func (f *partyFixture) book(t *testing.T, kids int) (int64, string) {
 }
 
 type hostView struct {
-	Name      string `json:"name"`
-	State     string `json:"state"`
-	Kids      int    `json:"kids"`
-	PlayerURL string `json:"player_url"`
-	Round     int    `json:"round"`
-	RoundOpen bool   `json:"round_open"`
-	Stations  []struct {
+	Name        string `json:"name"`
+	State       string `json:"state"`
+	Kids        int    `json:"kids"`
+	PlayerURL   string `json:"player_url"`
+	Round       int    `json:"round"`
+	RoundOpen   bool   `json:"round_open"`
+	HoldResults bool   `json:"hold_results"`
+	Stations    []struct {
 		Zone, Name, Code, URL string
 	} `json:"stations"`
 	Teams []struct {
@@ -622,5 +625,68 @@ func TestParty_PersonaliseAndPark(t *testing.T) {
 		"values": map[string]string{"name": "Alva"}, "answers": map[string][]string{"q": {"horse"}},
 	}); w.Code != http.StatusNoContent {
 		t.Errorf("personalise between games: %d %s", w.Code, w.Body)
+	}
+}
+
+// TestParty_HoldResults: a new party keeps each game's results off the
+// phones until its host finishes the game, and the host can let them
+// show as the teams play instead.
+func TestParty_HoldResults(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newPartyFixture(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	_, token := f.book(t, 5)
+	v := f.host(t, token)
+	if !v.HoldResults {
+		t.Fatal("a new party should hold its results")
+	}
+	if w := f.join(t, v.playerToken(), "Owls", 3); w.Code != http.StatusCreated {
+		t.Fatalf("join: %d %s", w.Code, w.Body)
+	}
+	v = f.host(t, token)
+	team := v.Teams[0].ID
+	e := play.New(f.h.DB)
+	if _, err := e.Station(ctx, team, v.Stations[0].Code); err != nil {
+		t.Fatal(err)
+	}
+	res, err := e.Answer(ctx, team, "q", "acorns")
+	if err != nil || !res.Accepted {
+		t.Fatalf("answer: %+v %v", res, err)
+	}
+	if !res.View.ResultsHeld || !res.View.HideScore {
+		t.Errorf("while the game is on: held %v, score hidden %v", res.View.ResultsHeld, res.View.HideScore)
+	}
+
+	if w := call(t, f.public, "POST", "/api/party/"+token+"/finish-game", nil); w.Code != http.StatusNoContent {
+		t.Fatalf("finish game: %d %s", w.Code, w.Body)
+	}
+	view, err := e.Snapshot(ctx, team)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.ResultsHeld || view.HideScore {
+		t.Errorf("after the game: held %v, score hidden %v", view.ResultsHeld, view.HideScore)
+	}
+	// The game keeps what it spent paused, for the live board's clock.
+	var paused sql.NullInt64
+	if err := f.h.DB.QueryRow(`SELECT paused_seconds FROM event_rounds WHERE round = 1`).Scan(&paused); err != nil || !paused.Valid {
+		t.Errorf("game 1 paused_seconds = %+v, %v", paused, err)
+	}
+
+	// Turned off, the next game shows its results as it goes.
+	if w := call(t, f.public, "PUT", "/api/party/"+token+"/hold-results", map[string]bool{"hold": false}); w.Code != http.StatusNoContent {
+		t.Fatalf("hold off: %d %s", w.Code, w.Body)
+	}
+	if f.host(t, token).HoldResults {
+		t.Error("still holding")
+	}
+	if w := f.join(t, v.playerToken(), "Foxes", 1); w.Code != http.StatusCreated {
+		t.Fatalf("join game 2: %d %s", w.Code, w.Body)
+	}
+	fox := f.host(t, token).Teams[0].ID
+	if view, err := e.Snapshot(ctx, fox); err != nil || view.ResultsHeld {
+		t.Errorf("game 2 with results shown: held %v, %v", view.ResultsHeld, err)
 	}
 }

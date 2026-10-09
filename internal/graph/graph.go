@@ -80,6 +80,11 @@ type Graph struct {
 	// still count: the end, the standings and the recap show them.
 	HideScore bool `json:"hide_score,omitempty"`
 
+	// QuizPuzzles lists every puzzle a team answers by typing on the end
+	// screen's quiz walk, after its 1-X-2 questions in graph order: a
+	// party trail's answer cards. The points stay the puzzle's own.
+	QuizPuzzles bool `json:"quiz_puzzles,omitempty"`
+
 	// TimeLimit ends the free play of an adventure: see TimeLimit.
 	TimeLimit *TimeLimit `json:"time_limit,omitempty"`
 
@@ -675,6 +680,20 @@ func (p *PuzzleConfig) Kind() AnswerKind {
 		return ""
 	}
 	return p.Answer.Kind
+}
+
+// QuizAnswer is the first accepted answer of a puzzle the quiz walk
+// lists (see Graph.QuizPuzzles); false for any other node.
+func (g *Graph) QuizAnswer(n Node) (string, bool) {
+	if !g.QuizPuzzles || n.PuzzleCfg == nil || !n.PuzzleCfg.UsesMatchers() {
+		return "", false
+	}
+	for _, o := range n.PuzzleCfg.Outputs {
+		if o.Trigger == OnAnswer && len(o.Matchers) > 0 {
+			return o.Matchers[0].Value, true
+		}
+	}
+	return "", false
 }
 
 // UsesMatchers reports whether the puzzle's answer outputs decide by

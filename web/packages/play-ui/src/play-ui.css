@@ -1124,6 +1124,12 @@
   font-size: 0.6em;
   color: var(--muted);
 }
+/* Results kept for the host's reveal: said plainly where the scores would be. */
+.pv-summary__held {
+  margin: 0;
+  font-weight: 600;
+  font-size: var(--text-lg);
+}
 .pv-summary__recap {
   width: 100%;
   margin-top: var(--sp-2);

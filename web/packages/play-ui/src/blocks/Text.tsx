@@ -8,4 +8,4 @@ export const TitleBlock: Renderer<"title"> = ({ block }) => (block.text ? <h2 cl
 
 /** What the puzzle is worth; nothing for a puzzle worth nothing. */
 export const PointsBlock: Renderer<"points"> = ({ block, ctx }) =>
-  block.points ? <p className="pv-points">{ctx.t("Worth {{n}} points", { n: Number.isInteger(block.points) ? block.points : block.points.toFixed(1) })}</p> : null;
+  block.points ? <p className="pv-points">{block.points === 1 ? ctx.t("Worth 1 point") : ctx.t("Worth {{n}} points", { n: Number.isInteger(block.points) ? block.points : block.points.toFixed(1) })}</p> : null;

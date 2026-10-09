@@ -232,6 +232,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Get("/events/{eventID}/hosted/cards.pdf", adminH.HostedTrailPDF)
 			r.Put("/events/{eventID}/hosted/personalise", adminH.PutHostPersonalise)
 			r.Put("/events/{eventID}/hosted/mode", adminH.PutHostMode)
+			r.Put("/events/{eventID}/hosted/hold-results", adminH.PutHoldResults)
 			r.Put("/events/{eventID}/hosted/places/{slug}", adminH.PutHostPlace)
 			r.Post("/events/{eventID}/hosted/places/shift", adminH.PostHostShift)
 

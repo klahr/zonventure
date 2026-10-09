@@ -1222,6 +1222,8 @@ function Reveal({ reveal, t }: { reveal: play.RevealView[]; t: Translate }) {
 function EndStep(props: StepProps) {
   const { view, t, outro, finish } = props;
   const failed = view.outcome === "fail";
+  // A game that keeps its results secret shows them on the recap, once the host finishes it.
+  const held = !!view.results_held;
   return (
     <div className={"pv-summary" + (failed ? " is-fail" : "")}>
       <div className="pv-summary__badge" aria-hidden>
@@ -1232,7 +1234,12 @@ function EndStep(props: StepProps) {
       {view.quiz && <QuizResult quiz={view.quiz} t={t} />}
       {view.reveal?.some((r) => r.dealt) && <Reveal reveal={view.reveal} t={t} />}
       {outro && <Markdown className="pv-text" text={outro} />}
-      <div className="pv-stats">
+      {held && (
+        <p className="pv-summary__held">
+          {finish?.provisional === false ? t("The game is finished. See how you did!") : t("Your points and place are revealed when the game is finished.")}
+        </p>
+      )}
+      {!held && <div className="pv-stats">
         <div className="pv-stat">
           <div className="pv-stat__v">{round(view.score)}</div>
           <div className="pv-stat__l">{t("Points")}</div>
@@ -1245,7 +1252,7 @@ function EndStep(props: StepProps) {
           <div className="pv-stat__v">{round(view.score - view.penalty_score)}</div>
           <div className="pv-stat__l">{t("Total")}</div>
         </div>
-      </div>
+      </div>}
       {finish && (finish.rank || finish.seconds) ? (
         <div className="pv-stats">
           {finish.rank ? (
@@ -1268,9 +1275,9 @@ function EndStep(props: StepProps) {
       {finish?.recap_url && (
         <div className="pv-summary__recap">
           <a className="pv-btn pv-btn--primary pv-btn--wide" href={finish.recap_url}>
-            {t("See your team's recap")}
+            {held ? t("See your results") : t("See your team's recap")}
           </a>
-          {finish.provisional && <p className="pv-summary__note">{t("It opens when the event ends.")}</p>}
+          {finish.provisional && <p className="pv-summary__note">{held ? t("It opens when the game is finished.") : t("It opens when the event ends.")}</p>}
         </div>
       )}
       <Bag view={view} t={t} />

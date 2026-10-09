@@ -125,7 +125,10 @@ type View struct {
 	Score        float64 `json:"score"`
 	PenaltyScore float64 `json:"penalty_score"`
 	// HideScore is graph.HideScore: the phone leaves the score out of its header.
-	HideScore      bool          `json:"hide_score,omitempty"`
+	HideScore bool `json:"hide_score,omitempty"`
+	// ResultsHeld says the game keeps its results until the host finishes
+	// it: the play engine leaves out the score, quiz walk and standings.
+	ResultsHeld    bool          `json:"results_held,omitempty"`
 	PenaltySeconds int           `json:"penalty_seconds"`
 	Finished       bool          `json:"finished,omitempty"`
 	Outcome        graph.Outcome `json:"outcome,omitempty"`

@@ -665,6 +665,9 @@ type hostParty struct {
 	Round       int
 	// RoundOpen is whether game Round is being played.
 	RoundOpen bool
+	// HoldResults keeps each game's results secret until the host
+	// finishes it (play.ResultsHeld).
+	HoldResults bool
 }
 
 // hostedParty resolves the hosted event a request is about, writing a
@@ -711,9 +714,10 @@ func (h *Handlers) loadParty(ctx context.Context, q graphstore.Querier, cond str
 	err := q.QueryRowContext(ctx, `
 		SELECT e.id, e.org_id, e.adventure_slug, e.state, e.party_kids, e.valid_until, e.graph_id, e.party_mode,
 		       e.party_overrides, e.player_token, e.hosted_blocks, e.current_round,
-		       EXISTS (SELECT 1 FROM event_rounds r WHERE r.event_id = e.id AND r.round = e.current_round AND r.finished_at IS NULL)
+		       EXISTS (SELECT 1 FROM event_rounds r WHERE r.event_id = e.id AND r.round = e.current_round AND r.finished_at IS NULL),
+		       e.party_hold_results
 		FROM events e WHERE e.party AND `+cond, arg).Scan(&p.EventID, &p.OrgID, &p.AdvSlug, &p.State, &p.Kids, &p.ValidUntil,
-		&p.GraphID, &p.Mode, &overrides, &player, &p.Blocks, &p.Round, &p.RoundOpen)
+		&p.GraphID, &p.Mode, &overrides, &player, &p.Blocks, &p.Round, &p.RoundOpen, &p.HoldResults)
 	if err != nil {
 		return p, err
 	}
@@ -773,6 +777,9 @@ type hostPartyDTO struct {
 	Round      int    `json:"round"`
 	RoundOpen  bool   `json:"round_open"`
 	TeamsLimit int    `json:"teams_limit"`
+	// HoldResults keeps a game's results off the phones and the live
+	// board until the host finishes it.
+	HoldResults bool `json:"hold_results"`
 	// MaxTeams is the most teams a game can be bought up to, and Price
 	// what each block more costs (0 where hosting is free).
 	MaxTeams int            `json:"max_teams"`
@@ -818,7 +825,7 @@ func (h *Handlers) GetHostParty(w http.ResponseWriter, r *http.Request) {
 	base := strings.TrimRight(h.PublicURL, "/")
 	out := hostPartyDTO{State: p.State, Kids: p.Kids, ValidUntil: p.ValidUntil,
 		Expired: partyLapsed(p), PlayURL: base + "/play",
-		PlayerURL: base + "/j/" + p.PlayerToken, Round: p.Round, RoundOpen: p.RoundOpen,
+		PlayerURL: base + "/j/" + p.PlayerToken, Round: p.Round, RoundOpen: p.RoundOpen, HoldResults: p.HoldResults,
 		TeamsLimit: teamsLimit(p.Blocks), MaxTeams: maxBlocks * TeamsPerBlock, Price: h.hostedPrice()}
 	var liveToken string
 	if err := h.DB.QueryRowContext(ctx, `

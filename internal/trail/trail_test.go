@@ -3,9 +3,12 @@ package trail
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/graph/valid"
+	"github.com/klahr/zonventure/internal/graph/walk"
 )
 
 func sample() []Card {
@@ -32,7 +35,7 @@ func TestCompileValid(t *testing.T) {
 		t.Error("a trail has no places")
 	}
 	q := g.Nodes[2]
-	if q.Type != graph.Story || q.StoryCfg.Blocks[0].Kind != graph.BlockQuiz || q.Title != "Fråga 1" || q.StoryCfg.Blocks[0].Text != "Välj svaret på frågan." {
+	if q.Type != graph.Story || q.StoryCfg.Blocks[0].Kind != graph.BlockQuiz || q.Title != "Fråga 1" || q.StoryCfg.Blocks[0].Text != "Ert svar på fråga 1:" {
 		t.Errorf("quiz card: %+v", q)
 	}
 	if strings.Contains(q.StoryCfg.Blocks[0].Text, "How old") {
@@ -135,5 +138,47 @@ func TestCover(t *testing.T) {
 		if Cover(id) != nil {
 			t.Errorf("cover for %q", id)
 		}
+	}
+}
+
+// The end screen's quiz walk lists the answer card with the quiz card,
+// right when the team typed an accepted answer.
+func TestQuizListsAnswerCards(t *testing.T) {
+	play := func(guess string) session.QuizResult {
+		t.Helper()
+		g := Compile(sample(), "en")
+		tm, step, err := session.Start(g, time.Unix(0, 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tm.Apply(step)
+		do := func(_ session.Result, step *walk.Step, err error) {
+			t.Helper()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if step != nil {
+				tm.Apply(*step)
+			}
+		}
+		do(tm.Continue("card-a"))
+		do(tm.Pick("card-b", "q", "X"))
+		do(tm.Continue("card-b"))
+		do(tm.Answer("card-c", guess))
+		if !tm.Completed {
+			t.Fatal("not finished")
+		}
+		return tm.Quiz()
+	}
+
+	q := play("mons")
+	if q.Right != 2 || q.Total != 2 || len(q.Items) != 2 || q.Points != 1 {
+		t.Fatalf("quiz = %+v", q)
+	}
+	if r := q.Items[1]; !r.Typed || !r.Right || r.Picked != "mons" || r.Question != "Your answer to question 2:" || r.Answer != "Måns" {
+		t.Errorf("typed row = %+v", r)
+	}
+	if q := play("Tiger"); q.Right != 1 || q.Total != 2 || q.Items[1].Right || q.Items[1].Picked != "" {
+		t.Errorf("a wrong answer = %+v", q)
 	}
 }

@@ -107,7 +107,7 @@ export function Host({ token }: { token: string }) {
       <div className="party-screen">
         <section className={"party-card party-head" + (cover ? " party-card--cover" : "")}>
           {cover && <div className="party-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
-          <p className="party-eyebrow">{party.adventure_title}</p>
+          {party.adventure_title !== party.name && <p className="party-eyebrow">{party.adventure_title}</p>}
           <h1>{party.name}</h1>
           <p className="party-muted">
             <StatePill state={party.state} />{" "}

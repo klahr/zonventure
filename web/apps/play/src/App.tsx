@@ -231,7 +231,7 @@ export function App() {
             t={t}
             brand={look}
             {...(s.event.outro_text ? { outro: s.event.outro_text } : {})}
-            {...(s.finish ? { finish: { ...s.finish, provisional: s.event.state !== "completed" && s.event.state !== "cancelled" } } : {})}
+            {...(s.finish ? { finish: { ...s.finish, provisional: game.status !== "ended" && s.event.state !== "completed" && s.event.state !== "cancelled" } } : {})}
             {...(zoneNote ? { zoneNote } : {})}
             placeNote={placeNote}
             {...(geo.pos ? { position: { lat: geo.pos.coords.latitude, lng: geo.pos.coords.longitude } } : {})}
@@ -290,7 +290,7 @@ function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
   return (
     <div className={"app-lobby" + (cover ? " app-lobby--cover" : "")}>
       {cover && <div className="app-lobby__cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
-      <h1>{t("You're on team {{team}}", { team: state.team.name })}</h1>
+      <h1>{t("Your team: {{team}}", { team: state.team.name })}</h1>
       <p>
         {at && !Number.isNaN(at.getTime())
           ? t("The game starts {{when}}.", { when: at.toLocaleString([], { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) })
@@ -333,7 +333,7 @@ function Intro({ state, t, usesLocation, onDone }: { state: play.PlayState; t: T
       <p>
         {name
           ? t("You're playing as {{name}} on team {{team}}.", { name, team: state.team.name })
-          : t("You're on team {{team}}", { team: state.team.name })}
+          : t("Your team: {{team}}", { team: state.team.name })}
       </p>
       {state.event.intro_text && <Markdown className="app-lobby__intro" text={state.event.intro_text} />}
       {usesLocation && (

@@ -150,6 +150,7 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		r.Get("/api/party/{token}", adminH.GetHostParty)
 		r.Delete("/api/party/{token}/teams/{teamID}", adminH.RemoveHostTeam)
 		r.Post("/api/party/{token}/finish-game", adminH.FinishHostedGame)
+		r.Put("/api/party/{token}/hold-results", adminH.PutHoldResults)
 		r.Post("/api/party/{token}/send-player-link", adminH.SendHostedPlayerLink)
 		r.Post("/api/party/{token}/blocks", adminH.AddHostedBlocks)
 		r.Get("/api/party/{token}/cards.pdf", adminH.HostedTrailPDF)

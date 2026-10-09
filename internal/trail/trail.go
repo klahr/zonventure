@@ -140,13 +140,16 @@ func Problems(cards []Card) []Problem {
 // graph the validator refuses.
 //
 // Each card is a step without a place. A quiz card is a story with a
-// quiz block whose question is "Card N" — the question is on paper — and
-// whose answer counts at the end, as a tipspromenad's does. An answer
-// card is a puzzle the team answers once: right scores a point, wrong
-// goes on all the same. An info card is a story with its text.
+// quiz block whose question is "Your answer to question N:" — the
+// question itself is on paper, and the number names it on the result
+// screen — and whose answer counts at the end, as a tipspromenad's
+// does. An answer card is a puzzle the team answers once, asked the
+// same way: right scores a point, wrong goes on all the same, and the
+// end screen lists it with the quiz cards (graph.QuizPuzzles). An info
+// card is a story with its text.
 func Compile(cards []Card, lang string) *graph.Graph {
 	w := words(lang)
-	g := &graph.Graph{}
+	g := &graph.Graph{QuizPuzzles: true}
 	add := func(n graph.Node) { g.Nodes = append(g.Nodes, n) }
 	link := func(from, port, to string) {
 		g.Edges = append(g.Edges, graph.Edge{From: from, FromPort: port, To: to})
@@ -161,7 +164,7 @@ func Compile(cards []Card, lang string) *graph.Graph {
 		case Quiz:
 			n++
 			node = graph.Node{Slug: slug, Type: graph.Story, Title: fmt.Sprintf(w.card, n), StoryCfg: &graph.StoryConfig{
-				Blocks: []graph.Block{{ID: "q", Kind: graph.BlockQuiz, Text: w.pickIt, Options: trimmed(c.Options), Answer: c.Correct}},
+				Blocks: []graph.Block{{ID: "q", Kind: graph.BlockQuiz, Text: fmt.Sprintf(w.ask, n), Options: trimmed(c.Options), Answer: c.Correct}},
 			}}
 		case Answer:
 			n++
@@ -172,7 +175,7 @@ func Compile(cards []Card, lang string) *graph.Graph {
 				}
 			}
 			node = graph.Node{Slug: slug, Type: graph.Puzzle, Title: fmt.Sprintf(w.card, n), PuzzleCfg: &graph.PuzzleConfig{
-				Blocks: []graph.Block{{ID: "t", Kind: graph.BlockText, Text: w.typeIt}},
+				Blocks: []graph.Block{{ID: "t", Kind: graph.BlockText, Text: fmt.Sprintf(w.ask, n)}},
 				Outputs: []graph.Output{
 					{Port: "right", Trigger: graph.OnAnswer, Matchers: ms, Points: 1},
 					{Port: "wrong", Trigger: graph.OnAttempts, AfterAttempts: 1},
@@ -225,11 +228,11 @@ func Number(cards []Card) []int {
 	return out
 }
 
-type wording struct{ card, info, pickIt, typeIt, done string }
+type wording struct{ card, info, ask, done string }
 
 func words(lang string) wording {
 	if lang == "sv" {
-		return wording{card: "Fråga %d", info: "Information", pickIt: "Välj svaret på frågan.", typeIt: "Skriv svaret på frågan.", done: "Det var sista kortet. Bra jobbat!"}
+		return wording{card: "Fråga %d", info: "Information", ask: "Ert svar på fråga %d:", done: "Det var sista kortet. Bra jobbat!"}
 	}
-	return wording{card: "Question %d", info: "Information", pickIt: "Pick the answer to the question.", typeIt: "Type the answer to the question.", done: "That was the last card. Well done!"}
+	return wording{card: "Question %d", info: "Information", ask: "Your answer to question %d:", done: "That was the last card. Well done!"}
 }

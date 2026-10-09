@@ -323,6 +323,9 @@ func (e *Engine) act(ctx context.Context, teamID int64, fn func(*session.Team) (
 	if err := e.decorate(ctx, e.DB, s.G, s.eventID, teamID, &res.View); err != nil {
 		return Result{}, err
 	}
+	if res.View.ResultsHeld {
+		res.Points = 0
+	}
 	return res, nil
 }
 

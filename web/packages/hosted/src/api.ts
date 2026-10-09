@@ -81,6 +81,8 @@ export interface HostedEvent {
   player_url: string;
   round: number;
   round_open: boolean;
+  /** Each game's results stay off the phones and the live board until the host finishes it. */
+  hold_results: boolean;
   teams_limit: number;
   /** The most teams a game can be bought up to. */
   max_teams: number;
@@ -128,6 +130,7 @@ export interface HostedApi {
   /** Buys blocks more blocks of teams per game. */
   addBlocks(blocks: number): Promise<Checkout>;
   finishGame(): Promise<void>;
+  holdResults(hold: boolean): Promise<void>;
   sendPlayerLink(email: string): Promise<void>;
   personalise(body: Personalisation): Promise<void>;
   setMode(mode: "qr" | "park"): Promise<void>;
@@ -151,6 +154,7 @@ export function hostedApi(base: string, extra: Pick<HostedApi, "removeTeam" | "a
     get: () => request<HostedEvent>(base),
     addBlocks: (blocks) => request<Checkout>(`${base}/blocks`, { method: "POST", body: { blocks } }),
     finishGame: () => request<void>(`${base}/finish-game`, { method: "POST" }),
+    holdResults: (hold) => request<void>(`${base}/hold-results`, { method: "PUT", body: { hold } }),
     sendPlayerLink: (email) => request<void>(`${base}/send-player-link`, { method: "POST", body: { email } }),
     personalise: (body) => request<void>(`${base}/personalise`, { method: "PUT", body }),
     setMode: (mode) => request<void>(`${base}/mode`, { method: "PUT", body: { mode } }),

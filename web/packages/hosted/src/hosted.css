@@ -50,6 +50,19 @@
   width: 100%;
 }
 
+/* A setting of the game: the box, then what it does with a line of help under it. */
+.hosted-check {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: flex-start;
+  margin: var(--sp-3) 0;
+}
+.hosted-check input {
+  margin-top: 0.2em;
+}
+.hosted-check small {
+  display: block;
+}
 .hosted-link-btn {
   padding: 0;
   border: 0;

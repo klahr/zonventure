@@ -16,6 +16,20 @@ import (
 // station cards. Map to 404.
 var ErrUnknownStation = errors.New("no such station")
 
+// ResultsHeld reports whether the team's game keeps its results secret:
+// a party whose host holds them (events.party_hold_results), in a game
+// the host has not finished yet.
+func ResultsHeld(ctx context.Context, q Querier, teamID int64) (bool, error) {
+	var held bool
+	err := q.QueryRowContext(ctx, `
+		SELECT e.party AND e.party_hold_results AND EXISTS (
+		         SELECT 1 FROM event_rounds r
+		         WHERE r.event_id = e.id AND r.round = t.round AND r.finished_at IS NULL)
+		FROM teams t JOIN events e ON e.id = t.event_id WHERE t.id = $1
+	`, teamID).Scan(&held)
+	return held, err
+}
+
 // pinParty stores the graph a game of a party event plays, made from
 // its adventure's published version g, and returns its id: g with what
 // the host changed (graph.PartyOverrides). In QR mode the zones become

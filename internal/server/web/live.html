@@ -149,7 +149,8 @@ html, body {
 .state-pill.paused  { color: var(--gold);    background: rgba(245,196,82,.14); border-color: rgba(245,196,82,.3); }
 .state-pill.completed, .state-pill.scheduled { color: var(--muted); }
 .state-pill.cancelled { color: var(--danger, #f47171); background: rgba(244,113,113,.12); border-color: rgba(244,113,113,.3); }
-.cancelled-banner, .paused-banner { padding: 1rem 1.4rem; text-align: center; font-size: 1.4rem; }
+.state-pill.held    { color: var(--text); }
+.cancelled-banner, .paused-banner, .held-banner { padding: 1rem 1.4rem; text-align: center; font-size: 1.4rem; }
 .state-pill .dot { width: .6rem; height: .6rem; border-radius: 50%; background: currentColor; }
 .state-pill.running .dot { animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .4; } }
@@ -828,7 +829,9 @@ function render() {
     if (Number.isFinite(completedAt) && dwell > COMPLETION_DWELL_MS) {
       root.append(buildCompletionFrame(data));
       root.append(h('div', { class: 'footer' },
-        t('Event complete · press B to show the leaderboard again · '),
+        data.round
+          ? t('Game complete · press B to show the leaderboard again · ')
+          : t('Event complete · press B to show the leaderboard again · '),
         footerTime(data)));
       return;
     }
@@ -836,6 +839,10 @@ function render() {
   if (data.state === 'paused') {
     root.append(h('div', { class: 'paused-banner' },
       h('span', { class: 'state-pill paused' }, '⏸ ' + tEventState('paused'))));
+  }
+  if (data.results_held) {
+    root.append(h('div', { class: 'held-banner' },
+      h('span', { class: 'state-pill held' }, t('The results are revealed when the game is finished'))));
   }
   if (showMapEffective(data)) {
     const split = h('div', { class: 'split' });
@@ -1228,7 +1235,8 @@ function buildHeader(data) {
             : data.state === 'scheduled' ? '⏰ '
             : ''),
           tEventState(data.state)),
-        ' · ', data.adventure_slug),
+        // A party's board shows one game: which, rather than the slug.
+        ' · ', data.round ? t('Game {{n}}', { n: data.round }) : data.adventure_slug),
     ),
     h('div', { class: 'clockwrap' },
       h('div', { class: 'clock' },
@@ -1282,7 +1290,7 @@ function buildCompletionFrame(data) {
   const card = h('div', { class: 'prestart' });
   const cover = lookCover(data);
   if (cover) card.append(cover);
-  card.append(h('div', { class: 'banner' }, t('Event complete')));
+  card.append(h('div', { class: 'banner' }, data.round ? t('Game {{n}} complete', { n: data.round }) : t('Event complete')));
   if (data.adventure_title) {
     card.append(h('div', { class: 'whenline' }, data.adventure_title));
   }
@@ -1481,14 +1489,17 @@ function buildBoard(data, existing) {
 function renderRow(team, idx, data) {
   const colour = teamColorFor(team.id);
   const finished = !!team.completed_at;
-  const rankCls = team.rank <= 3 ? ` rank-${team.rank}` : ' rank-tail';
+  // A party game that keeps its results for the host's reveal sends its
+  // teams with no rank and no points: no trophy, no order to read.
+  const unranked = !team.rank;
+  const rankCls = unranked ? '' : team.rank <= 3 ? ` rank-${team.rank}` : ' rank-tail';
   const row = h('div', {
-    class: `row rank-${team.rank}${rankCls}${finished ? ' finished' : ''}${team.withdrawn ? ' withdrawn' : ''}`,
+    class: `row${unranked ? '' : ` rank-${team.rank}`}${rankCls}${finished ? ' finished' : ''}${team.withdrawn ? ' withdrawn' : ''}`,
     style: `--team-color:${colour}`,
     'data-team-id': String(team.id),
   });
 
-  row.append(h('div', { class: 'rank' }, team.rank));
+  row.append(h('div', { class: 'rank' }, unranked ? '' : team.rank));
 
   // Avatar is its own row-level cell now so it can stretch to the full
   // row height (square-ish block on the left). Uploaded picture when
@@ -1532,7 +1543,7 @@ function renderRow(team, idx, data) {
   // Points are what the board ranks by, finished or not.
   const pts = team.score ?? 0;
   row.append(h('div', { class: 'stat' + (finished ? ' finished' : '') },
-    h('div', { class: 'value' }, Number.isInteger(pts) ? String(pts) : pts.toFixed(1)),
+    h('div', { class: 'value' }, team.score == null && data.results_held ? '?' : Number.isInteger(pts) ? String(pts) : pts.toFixed(1)),
     h('div', { class: 'unit' }, t('Points')),
   ));
   return row;

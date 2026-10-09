@@ -122,6 +122,8 @@ type QuizResult struct {
 }
 
 // QuizRow is one question: what the team picked and what was right.
+// A typed one (see graph.QuizPuzzles) has no Options: Answer is the
+// first accepted answer, and Picked what the team typed when right.
 type QuizRow struct {
 	Node     string   `json:"node"`
 	Block    string   `json:"block"`
@@ -129,6 +131,8 @@ type QuizRow struct {
 	Options  []string `json:"options"`
 	Picked   string   `json:"picked,omitempty"`
 	Answer   string   `json:"answer"`
+	Right    bool     `json:"right"`
+	Typed    bool     `json:"typed,omitempty"`
 }
 
 type TiebreakRow struct {
@@ -147,13 +151,21 @@ func (t *Team) Quiz() QuizResult {
 		if !t.Visited(n.Slug) {
 			continue
 		}
+		if row, ok := t.typedRow(n); ok {
+			q.Total++
+			q.Items = append(q.Items, row)
+			if row.Right {
+				q.Right++
+			}
+		}
 		for _, b := range n.Blocks() {
 			picked := t.Picks[PickKey(n.Slug, b.ID)]
 			switch b.Kind {
 			case graph.BlockQuiz:
+				right := picked != "" && picked == b.Answer
 				q.Total++
-				q.Items = append(q.Items, QuizRow{Node: n.Slug, Block: b.ID, Question: b.Text, Options: b.Options, Picked: picked, Answer: b.Answer})
-				if picked != "" && picked == b.Answer {
+				q.Items = append(q.Items, QuizRow{Node: n.Slug, Block: b.ID, Question: b.Text, Options: b.Options, Picked: picked, Answer: b.Answer, Right: right})
+				if right {
 					q.Right++
 					q.Points += float64(max(1, b.Worth))
 				}
@@ -170,6 +182,23 @@ func (t *Team) Quiz() QuizResult {
 		}
 	}
 	return q
+}
+
+// typedRow is a puzzle answered by typing, as a quiz walk row, when the
+// graph lists those (graph.QuizPuzzles). Its question is its first text,
+// and it is right when the team left it by an accepted answer.
+func (t *Team) typedRow(n graph.Node) (QuizRow, bool) {
+	answer, ok := t.G.QuizAnswer(n)
+	if !ok {
+		return QuizRow{}, false
+	}
+	row := QuizRow{Node: n.Slug, Question: n.Title, Answer: answer, Typed: true}
+	if i := slices.IndexFunc(n.Blocks(), func(b graph.Block) bool { return b.Kind == graph.BlockText && b.Text != "" }); i >= 0 {
+		b := n.Blocks()[i]
+		row.Block, row.Question = b.ID, b.Text
+	}
+	row.Picked, row.Right = t.AnswerTo(n.Slug)
+	return row, true
 }
 
 // TiebreakMiss is how far the team's tie-breaker guess is from the

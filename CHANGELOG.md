@@ -11,6 +11,38 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — a surprise reveal for parties
+
+- **A party keeps each game's results secret until the host finishes
+  it.** While the teams play, the phones show no points, place or quiz
+  answers, and a typed answer is "saved" rather than right or wrong.
+  The live scoreboard lists the teams with "?" for points. "Finish
+  game" reveals everything at once: the scoreboard ranks the teams, and
+  each phone's "See your results" opens the team's recap.
+- **On for new parties**, with a checkbox on the host page to show the
+  results as the teams play instead. Parties made before keep showing
+  them.
+
+### Fixed
+
+- **A party adventure's result screen names each question**: "Your
+  answer to question 1:" instead of "Pick the answer to the question."
+  on every row. The phone asks the same way while playing. Parties
+  made before this keep the old wording.
+- **A party adventure's result screen lists the typed-answer cards
+  too**, with what the team typed or the right answer, so "2 of 3
+  right" adds up with the points. The recap counts them the same way.
+- **"Your team: Team Ponies"** instead of "You're on team Team
+  Ponies", **"Worth 1 point"** instead of "Worth 1 points", and
+  **"1 player"** instead of "1 players" on the host page.
+- **A party's host page shows its name once** when it is the same as
+  the adventure's title.
+- **A party's live scoreboard shows the current game alone**: only its
+  teams, "Game 2" where the internal code was, and a clock from that
+  game's start less its own pauses. Once the host finishes the game the
+  board says it is complete and stops the clock, instead of running on;
+  the next game starts it again.
+
 ## [0.24.5] - 2026-10-09
 
 ### Changed — self-guided events sell in SEK

@@ -362,10 +362,11 @@ func (h *Handlers) recapGraph(ctx context.Context, eventID, teamID int64, resp *
 		firstSeen time.Time
 		solved    sql.NullTime
 		attempts  int
+		answer    string
 	}
 	visited := map[string]nodeState{}
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT node, first_seen_at, solved_at, attempts
+		SELECT node, first_seen_at, solved_at, attempts, answer
 		FROM team_node_state WHERE team_id = $1
 	`, teamID)
 	if err != nil {
@@ -374,7 +375,7 @@ func (h *Handlers) recapGraph(ctx context.Context, eventID, teamID int64, resp *
 	for rows.Next() {
 		var slug string
 		var ns nodeState
-		if err := rows.Scan(&slug, &ns.firstSeen, &ns.solved, &ns.attempts); err != nil {
+		if err := rows.Scan(&slug, &ns.firstSeen, &ns.solved, &ns.attempts, &ns.answer); err != nil {
 			rows.Close()
 			return err
 		}
@@ -416,6 +417,12 @@ func (h *Handlers) recapGraph(ctx context.Context, eventID, teamID int64, resp *
 		ns, ok := visited[n.Slug]
 		if !ok {
 			continue
+		}
+		if _, ok := g.QuizAnswer(n); ok {
+			quiz.Total++
+			if ns.answer != "" {
+				quiz.Right++
+			}
 		}
 		for _, b := range n.Blocks() {
 			if b.Kind != graph.BlockQuiz {

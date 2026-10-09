@@ -401,6 +401,17 @@ same admin and player pages. Listed under Hosted.
   sets `first_game_at` and `valid_until = first_game_at + 14 d`.
 - **Finishing:** "Finish game" or 3 hours without player activity →
   round finished → summary email to the buyer's email.
+- **Surprise reveal:** `events.party_hold_results` (on for new parties,
+  a checkbox on the host page) keeps a round's results secret while it
+  is open: phones show no score, place or quiz walk and say "Answer
+  saved." instead of right or wrong; the live board lists the round's
+  teams in join order with "?" for points. Finishing the round reveals
+  them: the board ranks the teams, and each phone's "See your results"
+  opens the team's recap (play.ResultsHeld).
+- **Live board:** shows the current round alone — its teams, "Game N",
+  its clock (`event_rounds.started_at`, less the round's own pauses:
+  `paused_from` / `paused_seconds`) — and reports `completed` once the
+  round is finished, while the event itself keeps running.
 - **Limits:** `hosted_blocks × 15` teams per round; one open round.
 - **Expiry:** at `valid_until` an open round is finished first (summary
   sent), then the event ends.

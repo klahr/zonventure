@@ -94,21 +94,28 @@ export const TiebreakBlock: Renderer<"tiebreak"> = ({ block, ctx }) => {
 export function QuizResult({ quiz, t }: { quiz: play.QuizResult; t: Translate }) {
   const mark = ["1", "X", "2"];
   const option = (item: play.QuizResult["items"][number], c: string | undefined) => (c ? `${c} · ${item.options[mark.indexOf(c)] ?? ""}` : t("no answer"));
+  // A typed answer is kept only when right, so a wrong one shows the right answer alone.
+  const verdict = (item: play.QuizResult["items"][number]) =>
+    item.typed
+      ? item.right
+        ? item.picked
+        : t("Right answer: {{answer}}", { answer: item.answer })
+      : item.right
+        ? option(item, item.answer)
+        : t("You: {{picked}} — right: {{answer}}", { picked: option(item, item.picked), answer: option(item, item.answer) });
   return (
     <section className="pv-quiz pv-quiz-result">
       <h3 className="pv-quiz-result__head">{t("Quiz walk: {{right}} of {{total}} right", { right: quiz.right, total: quiz.total })}</h3>
       <ol>
         {quiz.items.map((item) => {
-          const right = item.picked === item.answer;
+          const right = item.right;
           return (
             <li key={`${item.node}/${item.block}`} className={right ? "is-right" : "is-wrong"}>
               <span className="pv-quiz-result__verdict" aria-label={right ? t("Right") : t("Wrong")}>
                 {right ? "✓" : "✗"}
               </span>
               <span className="pv-quiz-result__q">{item.question}</span>
-              <span className="pv-quiz-result__a">
-                {right ? option(item, item.answer) : t("You: {{picked}} — right: {{answer}}", { picked: option(item, item.picked), answer: option(item, item.answer) })}
-              </span>
+              <span className="pv-quiz-result__a">{verdict(item)}</span>
             </li>
           );
         })}
