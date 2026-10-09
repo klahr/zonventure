@@ -336,6 +336,7 @@ body {
 /* The quiz trail creator: the editor fills the column, its timeline
    sticking to the foot of the screen. */
 .party--wide .party-main {
+  max-width: 64rem;
   padding-bottom: 0;
 }
 .party-trail {

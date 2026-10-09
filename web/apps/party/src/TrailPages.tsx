@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ApiError, request } from "@zonventure/api";
 import { money } from "@zonventure/hosted";
 import { coverOf } from "@zonventure/play-ui";
-import { TRAIL_THEMES, TemplatePicker, ThemeShowcase, themeById } from "@zonventure/trail";
+import { TEMPLATE_THEMES, TRAIL_THEMES, TemplatePicker, ThemeShowcase, themeById } from "@zonventure/trail";
 import { SPOTS, useConfirm } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import {
@@ -38,7 +38,7 @@ function MyTrailsLink() {
   return (
     <p className="party-right">
       <a href={MINE} target={outside}>
-        {t("My trails")}
+        {t("My party adventures")}
       </a>
     </p>
   );
@@ -54,6 +54,7 @@ export function TrailStart({ org }: { org: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState(TRAIL_THEMES[0]!.id);
+  const [picked, setPicked] = useState(false);
 
   useEffect(() => {
     getStart(org, lang).then(setStart, () => setMissing(true));
@@ -75,8 +76,8 @@ export function TrailStart({ org }: { org: string }) {
     try {
       const d = await createDraft(org, template, lang);
       holdTrail({ id: d.id, secret: d.secret });
-      // The look on show when they picked is the one they get.
-      const th = themeById(theme);
+      // A look they chose is the one they get; otherwise the template's own.
+      const th = themeById(picked ? theme : (TEMPLATE_THEMES[template] ?? theme));
       if (th) await setTrailTheme({ id: d.id }, { id: th.id, look: th.look }).catch(() => {});
       location.href = editURL(d.id);
     } catch (e) {
@@ -105,14 +106,6 @@ export function TrailStart({ org }: { org: string }) {
         </section>
       )}
       <section className="party-card">
-        <ThemeShowcase
-          i18n={i18n}
-          value={theme}
-          onChange={setTheme}
-          sample={{ text: t("How many legs does a spider have?"), options: ["6", "8", "10"], correct: "X" }}
-        />
-      </section>
-      <section className="party-card">
         <h2>{t("Start from")}</h2>
         {embedded && priceLine}
         {error && (
@@ -121,6 +114,16 @@ export function TrailStart({ org }: { org: string }) {
           </p>
         )}
         <TemplatePicker i18n={i18n} templates={start.templates} busy={busy} onPick={(n) => void pick(n)} />
+      </section>
+      <section className="party-card">
+        <h2>{t("Pick a look")}</h2>
+        <ThemeShowcase
+          i18n={i18n}
+          value={theme}
+          onChange={setTheme}
+          onPicked={() => setPicked(true)}
+          sample={{ text: t("How many legs does a spider have?"), options: ["6", "8", "10"], correct: "X" }}
+        />
       </section>
     </>
   );
@@ -174,7 +177,7 @@ export function TrailMine() {
     <>
       {confirmDialog}
       <section className="party-card">
-        <h1>{t("My trails")}</h1>
+        <h1>{t("My party adventures")}</h1>
         {email ? (
           <p className="party-muted">
             {t("Signed in as {{email}}.", { email })}{" "}
@@ -339,7 +342,7 @@ export function TrailVerify() {
       <h1>{t("That didn't work")}</h1>
       <p>{error}</p>
       <a className="party-btn" href={MINE}>
-        {t("My trails")}
+        {t("My party adventures")}
       </a>
     </section>
   );
@@ -410,7 +413,7 @@ export function TrailPaid() {
       )}
       <p className="party-muted">{t("It can take a minute or two. Check your spam folder if it doesn't arrive.")}</p>
       <a className="party-btn" href={MINE}>
-        {t("My trails")}
+        {t("My party adventures")}
       </a>
     </section>
   );

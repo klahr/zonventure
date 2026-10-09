@@ -92,14 +92,14 @@
   "Finish the marked cards first.": "Gör klart de markerade korten först.",
   "Free to make and to play for {{days}} days": "Gratis att göra och att spela i {{days}} dagar",
   "Get a link by email": "Få en länk via mejl",
-  "Get it ready to play": "Gör den redo att spela",
-  "It may have been deleted, or it was made in another browser. Open it from the link in your email, or from My trails.": "Det kan ha raderats, eller så gjordes det i en annan webbläsare. Öppna det från länken i ditt mejl eller från Mina partyäventyr.",
+  "Get it ready to play": "Gör det redo att spela",
+  "It may have been deleted, or it was made in another browser. Open it from the link in your email, or from My party adventures.": "Det kan ha raderats, eller så gjordes det i en annan webbläsare. Öppna det från länken i ditt mejl eller från Mina partyäventyr.",
   "Keep it": "Behåll den",
   "Link copied. Anyone with it can edit this party adventure.": "Länken är kopierad. Den som har den kan redigera partyäventyret.",
   "Made a party adventure somewhere else?": "Gjort ett partyäventyr någon annanstans?",
   "Make your own party adventure": "Gör ditt eget partyäventyr",
   "More than {{n}} teams in one game?": "Fler än {{n}} lag i samma omgång?",
-  "My trails": "Mina partyäventyr",
+  "My party adventures": "Mina partyäventyr",
   "No party adventures here yet.": "Inga partyäventyr här än.",
   "Not available": "Inte tillgängligt",
   "Pay {{total}}": "Betala {{total}}",
@@ -142,5 +142,7 @@
   "How many legs does a spider have?": "Hur många ben har en spindel?",
   "Free": "Gratis",
   "You go straight to the page you run it from. Sign in with this email to find it again.": "Du kommer direkt till sidan du kör den från. Logga in med den här e-postadressen för att hitta den igen.",
-  "Free for up to {{free}} teams · {{price}} for up to {{n}}": "Gratis för upp till {{free}} lag · {{price}} för upp till {{n}}"
+  "Free for up to {{free}} teams · {{price}} for up to {{n}}": "Gratis för upp till {{free}} lag · {{price}} för upp till {{n}}",
+  "The cards are filled in as an example. Tap any text and write your own: names, questions and answers.": "Korten är ifyllda som exempel. Tryck på en text och skriv ditt eget: namn, frågor och svar.",
+  "Pick a look": "Välj utseende"
 }

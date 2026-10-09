@@ -84,5 +84,15 @@
   "Write the text.": "Skriv texten.",
   "Write what the teams read here…": "Skriv det lagen ska läsa här …",
   "{{n}} example cards": "{{n}} exempelkort",
-  "{{n}} of {{count}}": "{{n}} av {{count}}"
+  "Card {{n}} of {{count}}": "Kort {{n}} av {{count}}",
+  "On the teams' phones": "I lagens mobiler",
+  "You print this card and hide it.": "Det här kortet skriver du ut och gömmer.",
+  "You print this card and hide it. The right answer isn't printed.": "Det här kortet skriver du ut och gömmer. Rätt svar skrivs inte ut.",
+  "Your answer to question {{n}}:": "Ert svar på fråga {{n}}:",
+  "Pick one. It locks when you continue.": "Välj ett. Det låses när du går vidare.",
+  "Your answer": "Ditt svar",
+  "Answer": "Svara",
+  "Continue": "Fortsätt",
+  "See it on a phone": "Se det i en mobil",
+  "Hide the phone": "Dölj mobilen"
 }

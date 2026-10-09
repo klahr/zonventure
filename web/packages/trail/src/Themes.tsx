@@ -59,7 +59,7 @@ export function PaperPreview({ i18n, text, options, correct, number }: { i18n: I
       <div className="trail-options">
         {CHOICES.map((mark, i) => (
           <div className={"trail-option" + (mark === correct ? " is-right" : "")} key={mark}>
-            <span className={"trail-mark" + (mark === correct ? " is-right" : "")}>{mark === correct ? <Icon name="check" size={18} /> : mark}</span>
+            <span className={"trail-mark" + (mark === correct ? " is-right" : "")}>{mark}</span>
             <span className="trail-option__text">{options[i]}</span>
           </div>
         ))}
@@ -73,9 +73,10 @@ const SHOW_MS = 2600;
 /**
  * A sample card that tries the looks on, one after another, until the
  * visitor does anything on the page — then the look on show, or the one
- * they pick below it, is theirs. onChange reports it either way.
+ * they pick below it, is theirs. onChange reports it either way, and
+ * onPicked says the visitor chose one.
  */
-export function ThemeShowcase({ i18n, value, onChange, sample }: { i18n: I18n; value: string; onChange: (id: string) => void; sample: { text: string; options: string[]; correct: string } }) {
+export function ThemeShowcase({ i18n, value, onChange, onPicked, sample }: { i18n: I18n; value: string; onChange: (id: string) => void; onPicked?: () => void; sample: { text: string; options: string[]; correct: string } }) {
   const t = i18n.t;
   const [still, setStill] = useState(false);
   const latest = useRef(value);
@@ -116,7 +117,15 @@ export function ThemeShowcase({ i18n, value, onChange, sample }: { i18n: I18n; v
         </span>
       </div>
       <p className="trail-muted">{still ? t("Pick a look. You can change it any time.") : t("Trying on looks… tap one to keep it.")}</p>
-      <ThemePicker i18n={i18n} selected={theme.id} onPick={(th) => onChange(th.id)} compact />
+      <ThemePicker
+        i18n={i18n}
+        selected={theme.id}
+        onPick={(th) => {
+          onChange(th.id);
+          onPicked?.();
+        }}
+        compact
+      />
     </section>
   );
 }

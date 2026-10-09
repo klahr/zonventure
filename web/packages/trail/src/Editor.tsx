@@ -50,6 +50,7 @@ export function Editor(props: EditorProps) {
   const [selected, setSelected] = useState(() => cards[0]?.id ?? "");
   const [undo, setUndo] = useState<{ cards: Card[]; selected: string; label: string } | null>(null);
   const [looks, setLooks] = useState(false);
+  const [peek, setPeek] = useState(false);
   const theme = themeById(props.theme);
   const index = Math.max(0, cards.findIndex((c) => c.id === selected));
   const card = cards[index];
@@ -143,22 +144,38 @@ export function Editor(props: EditorProps) {
             )}
           </div>
         ) : (
-          <CardEditor
-            key={card.id}
-            t={t}
-            card={card}
-            position={index + 1}
-            count={cards.length}
-            number={nums[index]!}
-            problems={props.showProblems ? cardProblems : []}
-            readOnly={readOnly}
-            onChange={update}
-            canEarlier={index > 0}
-            canLater={index < cards.length - 1}
-            onEarlier={() => reorder(index, index - 1)}
-            onLater={() => reorder(index, index + 1)}
-            onDelete={remove}
-          />
+          <div className="trail-stage">
+            <div>
+              <p className="trail-muted trail-stage__hint">
+                {card.kind === "info" ? t("You print this card and hide it.") : t("You print this card and hide it. The right answer isn't printed.")}
+              </p>
+              <CardEditor
+                key={card.id}
+                t={t}
+                card={card}
+                position={index + 1}
+                count={cards.length}
+                number={nums[index]!}
+                problems={props.showProblems ? cardProblems : []}
+                readOnly={readOnly}
+                onChange={update}
+                canEarlier={index > 0}
+                canLater={index < cards.length - 1}
+                onEarlier={() => reorder(index, index - 1)}
+                onLater={() => reorder(index, index + 1)}
+                onDelete={remove}
+              />
+            </div>
+            {/* Beside the card when there is room; behind a link when not. */}
+            <aside className={"trail-stage__phone" + (peek ? " is-open" : "")} aria-label={t("On the teams' phones")}>
+              <button type="button" className="trail-link trail-stage__peek" aria-expanded={peek} onClick={() => setPeek((v) => !v)}>
+                <Icon name="phone" size={16} />
+                {peek ? t("Hide the phone") : t("See it on a phone")}
+              </button>
+              <p className="trail-stage__caption">{t("On the teams' phones")}</p>
+              <PhonePreview t={t} title={props.title} card={card} number={nums[index]!} />
+            </aside>
+          </div>
         )}
       </div>
 
@@ -242,7 +259,7 @@ function CardEditor(props: {
   return (
     <section className="trail-card" aria-label={props.number ? t("Question {{n}}", { n: props.number }) : t("Information card")}>
       <div className="trail-card__top">
-        <span className="trail-card__pos">{t("{{n}} of {{count}}", { n: props.position, count: props.count })}</span>
+        <span className="trail-card__pos">{t("Card {{n}} of {{count}}", { n: props.position, count: props.count })}</span>
         <div className="trail-kinds" role="radiogroup" aria-label={t("Kind of card")}>
           {KINDS.map((k) => (
             <button
@@ -284,6 +301,7 @@ function CardEditor(props: {
 
         {card.kind === "quiz" && (
           <div className="trail-options">
+            <p className="trail-muted">{t("Tap 1, X or 2 to mark the right option.")}</p>
             {CHOICES.map((mark, i) => {
               const right = card.correct === mark;
               return (
@@ -297,7 +315,7 @@ function CardEditor(props: {
                     disabled={readOnly}
                     onClick={() => onChange({ ...card, correct: mark })}
                   >
-                    {right ? <Icon name="check" size={18} /> : mark}
+                    {mark}
                   </button>
                   <input
                     value={card.options?.[i] ?? ""}
@@ -307,11 +325,15 @@ function CardEditor(props: {
                     aria-label={t("Option {{c}}", { c: mark })}
                     onChange={(e) => onChange({ ...card, options: (card.options ?? ["", "", ""]).map((o, j) => (j === i ? e.target.value : o)) })}
                   />
-                  {right && <span className="trail-right">{t("Right")}</span>}
+                  {right && (
+                    <span className="trail-right">
+                      <Icon name="check" size={14} />
+                      {t("Right")}
+                    </span>
+                  )}
                 </div>
               );
             })}
-            <p className="trail-muted">{t("Tap 1, X or 2 to mark the right option.")}</p>
           </div>
         )}
 
@@ -375,6 +397,39 @@ function CardEditor(props: {
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * A card as a team's phone shows it, worded as internal/trail's Compile
+ * makes it: a question stays on paper, and the phone asks for the
+ * answer to it by number; an information card's text is on both. Not to
+ * edit: the card is edited in one place, the paper.
+ */
+function PhonePreview({ t, title, card, number }: { t: T; title: string; card: Card; number: number }) {
+  return (
+    <div className="trail-phone" aria-hidden="true">
+      <div className="trail-phone__screen">
+        <p className="trail-phone__name">{title}</p>
+        <h3 className="trail-phone__title">{number ? t("Question {{n}}", { n: number }) : t("Information")}</h3>
+        <p className="trail-phone__text">{card.kind === "info" ? card.text.trim() || t("Write the text.") : t("Your answer to question {{n}}:", { n: number })}</p>
+        {card.kind === "quiz" && (
+          <>
+            <div className="trail-phone__options">
+              {CHOICES.map((mark, i) => (
+                <span className="trail-phone__option" key={mark}>
+                  <span className="trail-phone__mark">{mark}</span>
+                  {card.options?.[i]?.trim() || "…"}
+                </span>
+              ))}
+            </div>
+            <p className="trail-phone__note">{t("Pick one. It locks when you continue.")}</p>
+          </>
+        )}
+        {card.kind === "answer" && <span className="trail-phone__input">{t("Your answer")}</span>}
+        <span className="trail-phone__btn">{card.kind === "answer" ? t("Answer") : t("Continue")}</span>
+      </div>
+    </div>
   );
 }
 

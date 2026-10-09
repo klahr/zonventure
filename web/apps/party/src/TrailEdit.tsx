@@ -77,11 +77,11 @@ export function TrailEdit({ host }: { host: boolean }) {
         <h1>{t("This party adventure can't be found")}</h1>
         <p>
           {t(
-            "It may have been deleted, or it was made in another browser. Open it from the link in your email, or from My trails.",
+            "It may have been deleted, or it was made in another browser. Open it from the link in your email, or from My party adventures.",
           )}
         </p>
         <a className="party-btn" href={MINE} target={outside}>
-          {t("My trails")}
+          {t("My party adventures")}
         </a>
       </section>
     );
@@ -243,6 +243,19 @@ function Creator({
       {ended && (
         <p className="party-note">{t("This party adventure has ended.")}</p>
       )}
+      {/* A template's cards are filled in as an example; until the
+          first edit, say they are there to be made one's own. */}
+      {!byHost &&
+        live.state === "draft" &&
+        live.template !== "blank" &&
+        live.revision === 0 &&
+        s.state === "saved" && (
+          <p className="party-note">
+            {t(
+              "The cards are filled in as an example. Tap any text and write your own: names, questions and answers.",
+            )}
+          </p>
+        )}
       {note && (
         <p className="party-note" role="status">
           {note}
@@ -283,7 +296,7 @@ function Creator({
                     </button>
                   )}
                   <a href={MINE} target={outside}>
-                    {t("My trails")}
+                    {t("My party adventures")}
                   </a>
                   {live.state === "draft" && (
                     <button
@@ -304,7 +317,9 @@ function Creator({
                 disabled={busy}
                 onClick={() => void done()}
               >
-                {t("Done")}
+                {!byHost && live.state === "draft"
+                  ? t("Get it ready to play")
+                  : t("Done")}
               </button>
             )}
           </>

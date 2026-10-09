@@ -22,6 +22,7 @@ const PATHS: Record<string, string> = {
   cloud: "M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9a4.5 4.5 0 0 0 1 9Z",
   palette: "M12 21a9 9 0 1 1 9-9c0 2-1.5 3-3 3h-2a2 2 0 0 0-1 3.7c.6.5.4 2.3-3 2.3ZM7.5 11.5h.01M10.5 7.5h.01M15 8h.01",
   close: "M6 6l12 12M18 6 6 18",
+  phone: "M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2ZM11 18.5h2",
 };
 
 export function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; size?: number }) {
