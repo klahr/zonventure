@@ -1101,14 +1101,20 @@ func TestHomeScreenLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	v = f.view(team)
-	if v.Node != "home" || len(v.Offer) != 2 || !v.Offer[0].Visited || v.Offer[1].Visited {
-		t.Fatalf("back home, Carl visited and still offered: %+v", v.Offer)
+	if v.Node != "home" || len(v.Offer) != 2 || v.Offer[0].Visited || v.Offer[1].Visited {
+		t.Fatalf("back home halfway, Carl still offered and not yet visited: %+v", v.Offer)
 	}
 	if _, err := f.eng.Choose(ctx, team, "home", "carl"); err != nil {
 		t.Fatalf("a home branch can be entered again: %v", err)
 	}
 	if v := f.view(team); v.Node != "carl-q" {
 		t.Errorf("the second visit skips the introduction read once, got %q", v.Node)
+	}
+	if _, err := f.eng.Answer(ctx, team, "carl-q", "1997"); err != nil {
+		t.Fatal(err)
+	}
+	if v := f.view(team); v.Node != "home" || !v.Offer[0].Visited {
+		t.Errorf("back home through Carl's end, Carl is visited: %+v", v.Offer)
 	}
 }
 

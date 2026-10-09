@@ -598,7 +598,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
     case "search":
       how = {
         title: t.t("Search by place"),
-        hint: t.t("No typing: the team presses Search here, and the route below whose zone it stands in is taken. Anywhere else, the wrong-answer replies say what it found."),
+        hint: t.t("No typing: the team presses We're here, and the route below whose zone it stands in is taken. Anywhere else, the wrong-answer replies say what it found."),
         summary: (
           <>
             <SumRow label={t.t("Names")}>{answer.group ?? t.t("the zones of the routes")}</SumRow>
@@ -1862,7 +1862,7 @@ function BarForm({ cfg, onChange, scan }: { cfg: PuzzleConfig; onChange: (c: Puz
 }
 
 /**
- * A search: the team presses "Search here" and the route whose zone it
+ * A search: the team presses "We're here" and the route whose zone it
  * stands in is taken. The group decides which zones the phone names —
  * "You are in sector C3" — including cells with nothing to find.
  */

@@ -117,6 +117,59 @@ func TestQuest_CreateWithoutAssignment(t *testing.T) {
 	}
 }
 
+// postEvent creates an event with the given body.
+func postEvent(r chi.Router, body map[string]any) *httptest.ResponseRecorder {
+	b, _ := json.Marshal(body)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/admin/events", strings.NewReader(string(b)))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	return w
+}
+
+// A self-guided adventure asks no under-13 attestation: its players buy
+// their own tickets, so the arranger cannot know who they are. It is
+// tied to the version published when it is created.
+func TestQuest_NoMinorAttestationAndPinnedVersion(t *testing.T) {
+	t.Parallel()
+	db, _, _, r := questFixture(t)
+
+	w := postEvent(r, map[string]any{"adventure_slug": "treasure", "name": "Always on", "public_for_sale": true})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: status=%d body=%s, want 201 without an attestation", w.Code, w.Body.String())
+	}
+	var ev struct{ ID int64 }
+	_ = json.Unmarshal(w.Body.Bytes(), &ev)
+	var attested sql.NullString
+	var pinned, published sql.NullInt64
+	if err := db.QueryRow(`
+		SELECT e.attested_no_minors_at, e.graph_id, a.published_graph_id
+		FROM events e JOIN adventures a ON a.slug = e.adventure_slug WHERE e.id = $1
+	`, ev.ID).Scan(&attested, &pinned, &published); err != nil {
+		t.Fatal(err)
+	}
+	if attested.Valid {
+		t.Errorf("no attestation is recorded for a self-guided event, got %q", attested.String)
+	}
+	if !pinned.Valid || pinned != published {
+		t.Errorf("the event is tied to the published version: graph_id=%v published=%v", pinned, published)
+	}
+}
+
+// No event, of any kind, for an adventure that has nothing published:
+// it could never start.
+func TestEvent_UnpublishedRefused(t *testing.T) {
+	t.Parallel()
+	db, _, _, r := questFixture(t)
+	if _, err := db.Exec(`UPDATE adventures SET published_graph_id = NULL WHERE slug = 'treasure'`); err != nil {
+		t.Fatal(err)
+	}
+	w := postEvent(r, map[string]any{"adventure_slug": "treasure", "name": "Too soon", "public_for_sale": true})
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "adventure_not_published") {
+		t.Errorf("create: status=%d body=%s, want 409 adventure_not_published", w.Code, w.Body.String())
+	}
+}
+
 // TestEvent_SlugOnlyOwnedStillBlocked is the inverse: a regular
 // event on an org-owned adventure must still hit the buy-an-
 // assignment 409 — the relaxation is conditioned on public_for_sale,

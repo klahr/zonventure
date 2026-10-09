@@ -369,6 +369,8 @@ type createEventRequest struct {
 	// arranger confirms either "no minors will participate" or "I
 	// have parental consent for any under-13 players". Stored as a
 	// timestamp on the event row so the consent moment is auditable.
+	// A self-guided event (PublicForSale) needs none: its players buy
+	// their own tickets, so the arranger cannot know who they are.
 	AttestNoMinors bool `json:"attest_no_minors,omitempty"`
 	// PublicForSale marks the event as a Quest at creation time —
 	// listed on /store, ticket-purchased, always-on. The flag is
@@ -512,8 +514,25 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded: "+slug)
 		return
 	}
+	// An event is tied to the version published when it is created, and
+	// keeps it until moved to a newer one in its settings. Without a
+	// published version there is nothing to play: refuse it here rather
+	// than leave an event that can never start.
+	var graphID sql.NullInt64
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT published_graph_id FROM adventures WHERE slug = $1`, slug).Scan(&graphID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if !graphID.Valid {
+		httpx.JSON(w, http.StatusConflict, map[string]string{
+			"error": "publish the adventure before creating an event for it",
+			"code":  "adventure_not_published",
+		})
+		return
+	}
 
-	if !req.AttestNoMinors {
+	if !req.AttestNoMinors && !req.PublicForSale {
 		httpx.JSON(w, http.StatusBadRequest, map[string]string{
 			"error": "you must confirm there are no under-13 players (or that you have parental consent) before creating an event",
 			"code":  "minor_attestation_required",
@@ -551,10 +570,10 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	// who want a closed-room spectator screen flip it on per-event
 	// from the dashboard. DO NOT add show_map=1 to this INSERT.
 	err = h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO events(adventure_slug, org_id, created_by_user_id, state, scheduled_at, assignment_id, live_token, name, attested_no_minors_at, public_for_sale)
-		VALUES ($1, $2, $3, 'scheduled', $4, $5, $6, $7, now_text(), $8)
+		INSERT INTO events(adventure_slug, org_id, created_by_user_id, state, scheduled_at, assignment_id, live_token, name, attested_no_minors_at, public_for_sale, graph_id)
+		VALUES ($1, $2, $3, 'scheduled', $4, $5, $6, $7, CASE WHEN $8 THEN NULL ELSE now_text() END, $8, $9)
 		RETURNING id
-	`, slug, *me.OrgID, me.ID, schedAt, assignmentArg, liveToken, eventName, req.PublicForSale).Scan(&id)
+	`, slug, *me.OrgID, me.ID, schedAt, assignmentArg, liveToken, eventName, req.PublicForSale, graphID.Int64).Scan(&id)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusConflict, "could not create run", err)
 		return

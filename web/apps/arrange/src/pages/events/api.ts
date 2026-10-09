@@ -92,7 +92,8 @@ export const listAssignments = (signal?: AbortSignal) =>
 
 export interface CreateEventBody {
   name: string;
-  attest_no_minors: true;
+  /** Not asked for a self-guided event: its players buy their own tickets. */
+  attest_no_minors?: true;
   assignment_id?: number;
   adventure_slug?: string;
   scheduled_at?: string;

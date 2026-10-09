@@ -27,7 +27,9 @@ export function AdventureMap({ pins, accent, faint, label, height = 300 }: { pin
         m.scrollZoom.disable();
         m.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         m.on("load", () => {
-          const zones = [...new Set(pins.flatMap((p) => (p.zone ? [p.zone] : [])))];
+          // A pin's zone, or the circle of its radius where it has no zone:
+          // the start, which teams must be within to begin.
+          const zones = [...new Set(pins.flatMap((p) => (p.zone ? [p.zone] : p.radius_m ? [{ slug: "", lat: p.lat, lng: p.lng, radius_m: p.radius_m }] : [])))];
           if (zones.length && !faint) {
             m.addSource("zones", { type: "geojson", data: { type: "FeatureCollection", features: zones.map((z) => shape(z)) } });
             m.addLayer({ id: "zones-fill", type: "fill", source: "zones", paint: { "fill-color": color, "fill-opacity": 0.12 } });
@@ -54,9 +56,18 @@ export function AdventureMap({ pins, accent, faint, label, height = 300 }: { pin
             new lib.Marker({ element: el }).setLngLat([p.lng, p.lat]).addTo(m);
           });
         }
-        if (pins.length > 1) {
+        if (pins.length > 1 || (first?.radius_m && !faint)) {
           const b = new lib.LngLatBounds();
-          for (const p of pins) b.extend([p.lng, p.lat]);
+          for (const p of pins) {
+            b.extend([p.lng, p.lat]);
+            // Show the whole circle, not just its centre.
+            if (p.radius_m && !faint) {
+              const dLat = p.radius_m / 111320;
+              const dLng = p.radius_m / (111320 * Math.cos((p.lat * Math.PI) / 180));
+              b.extend([p.lng - dLng, p.lat - dLat]);
+              b.extend([p.lng + dLng, p.lat + dLat]);
+            }
+          }
           m.fitBounds(b, { padding: 32, maxZoom: 16, animate: false });
         } else if (first) {
           m.setZoom(16);

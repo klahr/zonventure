@@ -303,6 +303,43 @@ func (g *Graph) OwnerHubs() map[string]string {
 	return owner
 }
 
+// BranchReturns are the edges by which a hub's branch leads back to that
+// hub: from the steps the branch reaches without passing through a hub.
+// Taking one is finishing the branch, which on a home screen is not the
+// same as having entered it — a team may go back from halfway.
+func (g *Graph) BranchReturns(hub, port string) []Edge {
+	next := make(map[string][]Edge, len(g.Edges))
+	for _, e := range g.Edges {
+		next[e.From] = append(next[e.From], e)
+	}
+	start, ok := g.Target(hub, port)
+	if !ok {
+		return nil
+	}
+	var back []Edge
+	seen := map[string]bool{hub: true}
+	queue := []string{start}
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		if node, ok := g.Node(n); !ok || node.Type == Hub {
+			continue
+		}
+		for _, e := range next[n] {
+			if e.To == hub {
+				back = append(back, e)
+			} else {
+				queue = append(queue, e.To)
+			}
+		}
+	}
+	return back
+}
+
 // Edge connects one output port to one node. A port may have at most
 // one edge; a node may be the target of many, which is how paths
 // reconverge after a branch.

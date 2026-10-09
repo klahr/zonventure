@@ -108,7 +108,7 @@ func TestEverySwedishStringIsThere(t *testing.T) {
 func TestSwedishEmail(t *testing.T) {
 	subject, c := TeamInvitation("sv", "Måsarna", "Hamnnatten", "Äventyr AB", []PlayerLink{{Player: "Anna", URL: "https://e.org/p"}}, true)
 	h, text := Render(Classic, Brand{Name: "Äventyr AB"}, subject, c)
-	for _, want := range []string{`lang="sv"`, "Era laglänkar till Zonventure", "Ni är med: Hamnnatten", "Ditt lag", "kalenderinbjudan", "skickat med Zonventure", "Du får det här eftersom ditt lag spelar Hamnnatten med Äventyr AB."} {
+	for _, want := range []string{`lang="sv"`, "Dina laglänkar till Zonventure", "Du är med: Hamnnatten", "Ditt lag", "kalenderinbjudan", "skickat med Zonventure", "Du får det här eftersom ditt lag spelar Hamnnatten med Äventyr AB."} {
 		if !strings.Contains(h+subject, want) {
 			t.Errorf("Swedish invitation lacks %q", want)
 		}

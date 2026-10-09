@@ -1,5 +1,5 @@
 {
-  "Commissioned for you": "Beställt åt er",
+  "Commissioned for you": "Beställt åt dig",
   "Continue to payment": "Fortsätt till betalning",
   "Event pass for {{n}} players": "Eventpass för {{n}} spelare",
   "Filter adventures": "Filtrera äventyr",
@@ -8,7 +8,7 @@
   "No events in this state.": "Inga event med den statusen.",
   "Open event": "Öppna eventet",
   "Payment is being confirmed. The event pass will appear under Settings → Purchases shortly.": "Betalningen bekräftas. Eventpasset dyker snart upp under Inställningar → Köphistorik.",
-  "Uses your unused event pass for {{n}} players.": "Använder ert oanvända eventpass för {{n}} spelare.",
+  "Uses your unused event pass for {{n}} players.": "Använder ditt oanvända eventpass för {{n}} spelare.",
   "You'll pay on Stripe, then come back here to finish the event.": "Du betalar hos Stripe och kommer sedan tillbaka hit för att slutföra eventet.",
   "not published yet": "inte publicerat än",
   "{{n}} team could not be added — add it on the event page.": "{{n}} lag kunde inte läggas till — lägg till det på eventsidan.",

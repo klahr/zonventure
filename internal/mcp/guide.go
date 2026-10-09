@@ -169,7 +169,7 @@ put_zone with here: true centres the zone where the author stands, sized from th
 ## Other answer kinds (puzzle.answer.kind)
 
 Leave answer out for a typed answer. Otherwise:
-- search: the team presses Search where they stand; the first answer output whose zone they are in fires. Good for "find the place" steps.
+- search: the team presses "We're here" where they stand; the first answer output whose zone they are in fires. Good for "find the place" steps.
 - choice: fields [{label, options [{value, label}], answer}]. With answer set on every field it is graded on submit.
 - lock: a combination lock, wheels × symbols [{value, label}]; outputs' matchers check the values joined by "|".
 - scan: the answer is a QR code (value in an exact matcher).

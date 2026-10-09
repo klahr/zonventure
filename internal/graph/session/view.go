@@ -1045,7 +1045,11 @@ func (t *Team) view() View {
 				if !open && n.HubCfg.HideLocked {
 					continue
 				}
-				v.Offer = append(v.Offer, OfferEntry{Port: b.Port, Label: b.Label, Locked: !open, Visited: t.BranchDone(n.Slug, b.Port), Note: b.Note, Image: b.Image})
+				visited := t.BranchDone(n.Slug, b.Port)
+				if n.HubCfg.Home {
+					visited = t.BranchFinished(n.Slug, b.Port)
+				}
+				v.Offer = append(v.Offer, OfferEntry{Port: b.Port, Label: b.Label, Locked: !open, Visited: visited, Note: b.Note, Image: b.Image})
 			}
 			v.Text = n.HubCfg.Text
 			v.CanFinish = !n.HubCfg.Home && t.CompletedBranches(n.Slug) >= n.HubCfg.RequiredBranches()

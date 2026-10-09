@@ -390,7 +390,7 @@ export interface AnswerBar {
  * kind, and only that kind's fields.
  *
  * - tiles: a picture cut into a grid and shuffled; solved when whole.
- * - search: answered by where the team stands ("Search here"). Group names
+ * - search: answered by where the team stands ("We're here"). Group names
  *   the zones the phone reports the team as in; empty is the outputs' own.
  * - choice: options to pick. Ungraded (no answers), the picked value goes
  *   through the outputs' matchers; graded (every question has an answer),

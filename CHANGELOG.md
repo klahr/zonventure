@@ -43,6 +43,43 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   board says it is complete and stops the clock, instead of running on;
   the next game starts it again.
 
+### Changed — arriving instead of searching
+
+- **A search step reads as arriving.** Its button says "Vi är framme"
+  (We're here) instead of "Sök här", and away from every place it says
+  "Du är inte framme än." instead of "Du är inte på någon av platserna
+  att söka på.". At a place it says "Du är vid …", as a zone card does.
+
+### Changed — the player speaks to one person
+
+- **Swedish texts say "du", not "ni"**: in the player, the party and
+  hosted pages, the console, the landing pages and the emails ("Du är
+  framme", "Ditt svar", "Dina laglänkar till …").
+
+### Changed — events need a published adventure, and keep its version
+
+- **An event can only be created for a published adventure**, and is
+  tied to the version published at that moment until moved to a newer
+  one in its settings. Before, an event of an unpublished adventure
+  could be created but never started.
+- **A self-guided adventure asks no under-13 attestation**: its players
+  buy their own tickets, so the arranger cannot know who they are.
+- **Creating a self-guided adventure** marks unpublished adventures in
+  the picker, refuses them before creating anything, and says why when
+  it cannot start.
+
+### Fixed — the start's radius on the adventure page
+
+- **The "Start here" map draws the start's radius** and zooms to show
+  all of it, when teams must be within it to begin.
+
+### Fixed — home screen marks a branch visited when it is finished
+
+- **A home screen's branch is "Visited" once the team has come back
+  through its end**, not as soon as it went in: a team that goes back
+  halfway sees it still open. A branch with no way back to the screen,
+  such as a suspect's own topics, is visited once entered, as before.
+
 ## [0.24.5] - 2026-10-09
 
 ### Changed — self-guided events sell in SEK

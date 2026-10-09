@@ -602,6 +602,27 @@ func (t *Team) BranchDone(hub, port string) bool { return t.Entered[hub][port] }
 
 func (t *Team) CompletedBranches(hub string) int { return len(t.Entered[hub]) }
 
+// BranchFinished reports whether the team has come back to a home
+// screen through the end of one of its branches, rather than only gone
+// into it: there BranchDone holds from the first step, since a team may
+// go back from anywhere. A branch with no way back to the hub, which the
+// team only ever leaves by going back, is finished once entered.
+func (t *Team) BranchFinished(hub, port string) bool {
+	if !t.BranchDone(hub, port) {
+		return false
+	}
+	back := t.G.BranchReturns(hub, port)
+	if len(back) == 0 {
+		return true
+	}
+	for _, e := range back {
+		if out, ok := t.Outcome(e.From); ok && out == e.FromPort {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *Team) Occupancy(hub, port string) int { return t.Occ[hub+"\x00"+port] }
 
 // ApplyEffect folds an effect into memory as the walk passes it.

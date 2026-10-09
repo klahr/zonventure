@@ -31,7 +31,6 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
     setCoverSrc(url);
     return () => URL.revokeObjectURL(url);
   }, [cover]);
-  const [attest, setAttest] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -54,12 +53,14 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
     if (!priceN || priceN <= 0) return setError(t.t("Ticket price must be greater than zero"));
     const teamN = parseInt(teamSize, 10);
     if (!teamN || teamN < 1) return setError(t.t("Players per ticket must be at least 1"));
-    if (!attest) return setError(t.t("Confirm the no-minors attestation"));
+    // A self-guided adventure goes on sale at once, and only a published
+    // one can start: say so before creating anything.
+    if (!advs.data?.find((a) => a.slug === picked)?.playable) return setError(t.t("Publish the adventure before selling it in your store."));
 
     setBusy(true);
     let id: number;
     try {
-      id = (await createEvent({ adventure_slug: picked, name: name.trim(), attest_no_minors: true, public_for_sale: true })).id;
+      id = (await createEvent({ adventure_slug: picked, name: name.trim(), public_for_sale: true })).id;
     } catch (e) {
       setError(errorText(e) || t.t("Could not create the self-guided adventure"));
       setBusy(false);
@@ -84,8 +85,8 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
     }
     try {
       await startEvent(id);
-    } catch {
-      toast.err(t.t("Self-guided adventure created, but it could not start"));
+    } catch (e) {
+      toast.err(t.t("Self-guided adventure created, but it could not start: {{reason}}", { reason: errorText(e) }));
       onClose();
       navigate({ name: "event", id });
       return;
@@ -131,7 +132,10 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
                 <AdventureCover title={a.title} src={iconOrCover(a)} />
                 <span className="evs-stack">
                   <strong className="evs-ellipsis">{a.title}</strong>
-                  <span className="evs-muted evs-small">{a.mine_to_edit ? t.t("yours") : CATALOG_ENABLED ? t.t("catalog") : t.t("shared")}</span>
+                  <span className="evs-muted evs-small">
+                    {a.mine_to_edit ? t.t("yours") : CATALOG_ENABLED ? t.t("catalog") : t.t("shared")}
+                    {!a.playable && ` · ${t.t("not published")}`}
+                  </span>
                 </span>
               </label>
             ))}
@@ -165,10 +169,6 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
         />
         <span className="cs-field__hint">{t.t("Shown in your store. JPEG / PNG / WebP / SVG, max 5 MB.")}</span>
       </div>
-      <label className="evs-check evs-attest">
-        <input type="checkbox" checked={attest} onChange={(e) => setAttest(e.target.checked)} />
-        <span>{t.t("I confirm there are no under-13 players (or that I have parental consent for any).")}</span>
-      </label>
       {error && <ErrorBox message={error} />}
     </Dialog>
   );

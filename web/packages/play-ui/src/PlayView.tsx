@@ -708,7 +708,7 @@ function PuzzleStep(props: StepProps) {
             {input.at ? "⌖" : "?"}
           </span>
           <div className="pv-zone__body">
-            <strong>{input.at ? t("You are in {{place}}.", { place: input.at }) : t("You are not in any of the places to search.")}</strong>
+            <strong>{input.at ? t("You are at {{place}}.", { place: input.at }) : t("You're not there yet.")}</strong>
             {!input.at && props.zoneNote && <span className="pv-zone__note">{props.zoneNote}</span>}
           </div>
         </div>
@@ -766,7 +766,7 @@ function PuzzleStep(props: StepProps) {
             disabled={locked}
             onClick={() => answer("")}
           >
-            {blockedFor > 0 ? formatSeconds(blockedFor) : t("Search here")}
+            {blockedFor > 0 ? formatSeconds(blockedFor) : t("We're here")}
           </button>
         ) : scan && !timeUp ? (
           <>

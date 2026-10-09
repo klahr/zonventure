@@ -76,6 +76,8 @@ export interface AdventureDetail {
   start_lat?: number;
   start_lng?: number;
   start_label?: string;
+  /** How near the start a team must be to begin; absent when anywhere. */
+  start_radius_m?: number;
   graph?: GraphSummary;
 }
 

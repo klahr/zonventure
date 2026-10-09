@@ -999,7 +999,7 @@ func (ps *playSession) input(b *strings.Builder, v session.View) {
 		n := in.Rows * in.Cols
 		fmt.Fprintf(b, "→ A picture cut into %d×%d tiles to put in order. Once you have it, answer \"0,1,…,%d\".\n", in.Rows, in.Cols, n-1)
 	case "search":
-		b.WriteString("→ Search where you stand (answer with an empty guess). Walk to places to search there.")
+		b.WriteString("→ Say \"We're here\" where you stand (answer with an empty guess). Walk to the place first.")
 		if in.At != "" {
 			fmt.Fprintf(b, " You are at %s.", in.At)
 		}

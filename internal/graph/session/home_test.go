@@ -182,6 +182,51 @@ func TestHomeScreen(t *testing.T) {
 	}
 }
 
+// A stop on a home screen is visited once the team has come back through
+// its end, not as soon as it went in: going back halfway leaves it open.
+func TestHomeBranchVisitedWhenFinished(t *testing.T) {
+	answer := []graph.Output{{Port: "right", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "12"}}}}
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "home", Type: graph.Hub, Title: "Stops", HubCfg: &graph.HubConfig{Policy: graph.PolicyChoice, Home: true, Branches: []graph.Branch{
+				{Port: "temple", Label: "Stop 1"}, {Port: "end", Label: "Finish"},
+			}}},
+			{Slug: "temple-q", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Blocks: graph.LegacyBlocks("How many?", nil), Outputs: answer}},
+			{Slug: "temple-done", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: graph.LegacyBlocks("Well done.", nil)}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "home"},
+			{From: "home", FromPort: "temple", To: "temple-q"},
+			{From: "temple-q", FromPort: "right", To: "temple-done"},
+			{From: "temple-done", FromPort: "out", To: "home"},
+			{From: "home", FromPort: "end", To: "end"},
+		},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	res, st, err := tm.Choose("home", "temple")
+	act(t, tm, "temple", res, st, err)
+	res, st, err = tm.Back("temple-q")
+	act(t, tm, "back", res, st, err)
+	if o := offered(tm.View()); o["temple"].Visited {
+		t.Fatalf("going back halfway does not mark the stop visited: %+v", o)
+	}
+	res, st, err = tm.Choose("home", "temple")
+	act(t, tm, "temple again", res, st, err)
+	res, st, err = tm.Answer("temple-q", "12")
+	act(t, tm, "answer", res, st, err)
+	res, st, err = tm.Continue("temple-done")
+	act(t, tm, "done", res, st, err)
+	if o := offered(tm.View()); !o["temple"].Visited {
+		t.Errorf("back home through the stop's end, it is visited: %+v", o)
+	}
+}
+
 // Back needs a home hub in front of the step.
 func TestBackNeedsAHomeHub(t *testing.T) {
 	tm := started(t) // the hunt has no hubs at all

@@ -276,6 +276,9 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	if adv.Start.HasCoords() {
 		out["start_lat"] = *adv.Start.Lat
 		out["start_lng"] = *adv.Start.Lng
+		if adv.Start.RadiusM != nil {
+			out["start_radius_m"] = *adv.Start.RadiusM
+		}
 	}
 	if adv.Start.Label != "" {
 		out["start_label"] = adv.Start.Label

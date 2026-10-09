@@ -40,6 +40,9 @@ type StartLocation struct {
 	Lat   *float64
 	Lng   *float64
 	Label string
+	// RadiusM is how near the start a team must be to begin; nil when
+	// it may begin anywhere.
+	RadiusM *float64
 }
 
 // HasCoords reports whether the start location is fully specified —
@@ -105,19 +108,19 @@ func (l *Library) GetContext(ctx context.Context, slug string) (*Adventure, erro
 	var (
 		adv                                Adventure
 		accent, accent2, bg, ink, submitBG sql.NullString
-		startLat, startLng                 sql.NullFloat64
+		startLat, startLng, startRadius    sql.NullFloat64
 	)
 	err := l.db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		       strict_assets,
-		       start_lat, start_lng, start_label
+		       start_lat, start_lng, start_label, start_radius_m
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&adv.ID, &adv.Slug, &adv.Meta.Title, &adv.Meta.Description, &adv.Meta.Author,
 		&adv.Meta.IntroText, &adv.Meta.OutroText,
 		&accent, &accent2, &bg, &ink, &submitBG,
 		&adv.StrictAssets,
-		&startLat, &startLng, &adv.Start.Label)
+		&startLat, &startLng, &adv.Start.Label, &startRadius)
 	if startLat.Valid {
 		v := startLat.Float64
 		adv.Start.Lat = &v
@@ -125,6 +128,10 @@ func (l *Library) GetContext(ctx context.Context, slug string) (*Adventure, erro
 	if startLng.Valid {
 		v := startLng.Float64
 		adv.Start.Lng = &v
+	}
+	if startRadius.Valid {
+		v := startRadius.Float64
+		adv.Start.RadiusM = &v
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -154,7 +161,7 @@ func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		       strict_assets,
-		       start_lat, start_lng, start_label
+		       start_lat, start_lng, start_label, start_radius_m
 		FROM adventures ORDER BY slug
 	`)
 	if err != nil {
@@ -166,13 +173,13 @@ func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 		a := &Adventure{}
 		var (
 			accent, accent2, bg, ink, submitBG sql.NullString
-			startLat, startLng                 sql.NullFloat64
+			startLat, startLng, startRadius    sql.NullFloat64
 		)
 		if err := rows.Scan(&a.ID, &a.Slug, &a.Meta.Title, &a.Meta.Description, &a.Meta.Author,
 			&a.Meta.IntroText, &a.Meta.OutroText,
 			&accent, &accent2, &bg, &ink, &submitBG,
 			&a.StrictAssets,
-			&startLat, &startLng, &a.Start.Label); err != nil {
+			&startLat, &startLng, &a.Start.Label, &startRadius); err != nil {
 			return nil, err
 		}
 		a.Colors = Colors{
@@ -189,6 +196,10 @@ func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 		if startLng.Valid {
 			v := startLng.Float64
 			a.Start.Lng = &v
+		}
+		if startRadius.Valid {
+			v := startRadius.Float64
+			a.Start.RadiusM = &v
 		}
 		out = append(out, a)
 	}

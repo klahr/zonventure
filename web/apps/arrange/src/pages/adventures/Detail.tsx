@@ -75,7 +75,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
   const km = extentKm(pins);
 
   const start = a.start_lat != null && a.start_lng != null
-    ? { lat: a.start_lat, lng: a.start_lng, label: a.start_label || "" }
+    ? { lat: a.start_lat, lng: a.start_lng, label: a.start_label || "", radius_m: a.start_radius_m }
     : null;
   const firstPlace = g ? firstPlaceOf(g) : null;
 
@@ -289,7 +289,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
       ) : start && (
         <Card title={t.t("Start here")} actions={openInMaps}>
           {startLine}
-          <AdventureMap pins={[{ title: start.label || t.t("Start here"), lat: start.lat, lng: start.lng, gated: false }]} accent={accent} label={t.t("Start here")} height={200} />
+          <AdventureMap pins={[{ title: start.label || t.t("Start here"), lat: start.lat, lng: start.lng, ...(start.radius_m ? { radius_m: start.radius_m } : {}), gated: false }]} accent={accent} label={t.t("Start here")} height={200} />
         </Card>
       )}
 
