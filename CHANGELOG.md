@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.25.7] - 2026-10-09
+
 ### Changed — vector maps
 
 - **Every map is a vector map** from OpenFreeMap, free and open to
