@@ -11,6 +11,14 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed
+
+- **The arrange app's and player's maps load their tiles after a map
+  host change.** A browser kept MapLibre's worker, cached as immutable,
+  with the old Content-Security-Policy, and the worker's tile downloads
+  failed with "NetworkError" (seen in Firefox). The worker's address now
+  names the map host, so a new host fetches a fresh copy.
+
 ## [0.25.7] - 2026-10-09
 
 ### Changed — vector maps
@@ -37,11 +45,6 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   still scrolls the page, and a hint says how. The live view's map,
   which fills its panel, zooms with the plain wheel.
 - **Scripts and styles are served gzipped** to browsers that take it.
-- **The arrange app's and player's maps load their tiles after a map
-  host change.** A browser kept MapLibre's worker, cached as immutable,
-  with the old Content-Security-Policy, and the worker's tile downloads
-  failed with "NetworkError" (seen in Firefox). The worker's address now
-  names the map host, so a new host fetches a fresh copy.
 
 ## [0.25.6] - 2026-10-09
 
