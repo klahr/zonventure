@@ -962,6 +962,7 @@
 "Outbound HTTP callbacks for event / team / purchase lifecycle. Each delivery is signed with HMAC-SHA256; verify the X-Zv-Signature header against your endpoint's secret.": "Outbound HTTP callbacks for event / team / purchase lifecycle. Each delivery is signed with HMAC-SHA256; verify the X-Zv-Signature header against your endpoint's secret.",
 "Outro on completion": "Outro on completion",
 "Outro — shown on the completion screen": "Outro — shown on the completion screen",
+"Buyer note — added to the purchase email": "Buyer note — added to the purchase email",
 "Override the default colours for white-labelled events. You can change these later.": "Override the default colours for white-labelled events. You can change these later.",
 "Ownership transferred.": "Ownership transferred.",
 "Password": "Password",

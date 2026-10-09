@@ -11,6 +11,13 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — a note to the buyer
+
+- **An adventure can carry a buyer note**: Markdown added to the
+  ticket and party-host emails, never shown to players. Use it for
+  parent instructions or printables the players must not see. Set it
+  under Edit details or with `update_adventure_meta` (`buyer_note`).
+
 ## [0.25.0] - 2026-10-09
 
 ### Added — a surprise reveal for parties

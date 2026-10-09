@@ -55,6 +55,8 @@ type adventureEditDTO struct {
 	Author      string `json:"author"`
 	IntroText   string `json:"intro_text"`
 	OutroText   string `json:"outro_text"`
+	// BuyerNote goes to the buyer in the ticket or host email, not to players.
+	BuyerNote string `json:"buyer_note"`
 	// IntroHTML / OutroHTML are the goldmark-rendered siblings of
 	// IntroText / OutroText — same shape pageView uses for prompt_html.
 	// The arranger UI (and any future read surface) renders the HTML
@@ -311,6 +313,7 @@ type updateAdventureRequest struct {
 	Slug                 *string `json:"slug,omitempty"`
 	IntroText            *string `json:"intro_text,omitempty"`
 	OutroText            *string `json:"outro_text,omitempty"`
+	BuyerNote            *string `json:"buyer_note,omitempty"`
 	AccentColor          *string `json:"accent_color,omitempty"`
 	AccentSecondaryColor *string `json:"accent_secondary_color,omitempty"`
 	BackgroundColor      *string `json:"background_color,omitempty"`
@@ -478,6 +481,12 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 			return badRequestf("outro_text %s", err.Error())
 		}
 		add("outro_text", *req.OutroText)
+	}
+	if req.BuyerNote != nil {
+		if _, err := validateBlurb(*req.BuyerNote, MaxBlurbLen); err != nil {
+			return badRequestf("buyer_note %s", err.Error())
+		}
+		add("buyer_note", *req.BuyerNote)
 	}
 	if req.Slug != nil {
 		newSlug := strings.TrimSpace(*req.Slug)
@@ -781,7 +790,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		brief, backdrop, style             []byte
 	)
 	if err := db.QueryRowContext(ctx, `
-		SELECT id, slug, title, description, author, intro_text, outro_text,
+		SELECT id, slug, title, description, author, intro_text, outro_text, buyer_note,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font,
 		       heading_font, corners, cards, card_outline, backdrop, look_style,
 		       language,
@@ -790,7 +799,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		       start_lat, start_lng, start_label, start_radius_m, brief
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
-		&a.IntroText, &a.OutroText,
+		&a.IntroText, &a.OutroText, &a.BuyerNote,
 		&accent, &accent2, &bg, &ink, &submitBG, &a.Font, &a.HeadingFont, &a.Corners, &a.Cards, &a.CardOutline, &backdrop, &style, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets, &a.CheatPassword,
 		&startLat, &startLng, &a.StartLabel, &startRadius, &brief); err != nil {
 		return nil, err

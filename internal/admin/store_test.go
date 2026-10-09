@@ -141,7 +141,7 @@ func TestHandleTicketCheckoutCompleted_HappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`
-		INSERT INTO adventures(slug, title, org_id) VALUES ('demo', 'Demo Adv', $1)
+		INSERT INTO adventures(slug, title, org_id, buyer_note) VALUES ('demo', 'Demo Adv', $1, 'Print the [cards](https://example.com/cards.pdf) first.')
 	`, orgID); err != nil {
 		t.Fatal(err)
 	}
@@ -227,6 +227,10 @@ func TestHandleTicketCheckoutCompleted_HappyPath(t *testing.T) {
 	// A sale's mail names the seller (e-handelslagen).
 	if !strings.Contains(msg.Text, "Sold by Zonventure AB · Org. no. 559000-0000") {
 		t.Errorf("ticket email has no seller line: %s", msg.Text)
+	}
+	// The adventure's buyer note rides along.
+	if !strings.Contains(msg.Text, "https://example.com/cards.pdf") {
+		t.Errorf("ticket email has no buyer note: %s", msg.Text)
 	}
 
 	// Idempotency: a second invocation must not create a second team

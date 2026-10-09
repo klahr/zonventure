@@ -118,7 +118,7 @@ export function PickPassDialog({ title, passes, onPick, onClose }: { title: stri
   );
 }
 
-type Form = { slug: string; title: string; description: string; author: string; intro_text: string; outro_text: string; strict_assets: boolean; lat: string; lng: string; start_label: string; require_start: boolean; radius: string; cheat_password: string };
+type Form = { slug: string; title: string; description: string; author: string; intro_text: string; outro_text: string; buyer_note: string; strict_assets: boolean; lat: string; lng: string; start_label: string; require_start: boolean; radius: string; cheat_password: string };
 
 function formOf(a: AdventureEdit): Form {
   return {
@@ -128,6 +128,7 @@ function formOf(a: AdventureEdit): Form {
     author: a.author || "",
     intro_text: a.intro_text || "",
     outro_text: a.outro_text || "",
+    buyer_note: a.buyer_note || "",
     strict_assets: !!a.strict_assets,
     lat: a.start_lat == null ? "" : String(a.start_lat),
     lng: a.start_lng == null ? "" : String(a.start_lng),
@@ -201,6 +202,7 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
     if (f.author.trim() !== initial.author) p.author = f.author.trim();
     if (f.intro_text !== initial.intro_text) p.intro_text = f.intro_text;
     if (f.outro_text !== initial.outro_text) p.outro_text = f.outro_text;
+    if (f.buyer_note !== initial.buyer_note) p.buyer_note = f.buyer_note;
     if (f.strict_assets !== initial.strict_assets) p.strict_assets = f.strict_assets;
     if (coord(f.lat) !== coord(initial.lat)) p.start_lat = coord(f.lat);
     if (coord(f.lng) !== coord(initial.lng)) p.start_lng = coord(f.lng);
@@ -289,6 +291,9 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
           </Field>
           <Field label={t.t("Outro — shown on the completion screen")} hint={t.t("Markdown. Leave empty for the default celebratory line.")}>
             <MarkdownArea rows={3} value={f.outro_text} onChange={(e) => set("outro_text", e.target.value)} />
+          </Field>
+          <Field label={t.t("Buyer note — added to the purchase email")} hint={t.t("Markdown. Sent to whoever buys the adventure, never shown to players. Use it for instructions or printables the players must not see.")}>
+            <MarkdownArea rows={3} value={f.buyer_note} onChange={(e) => set("buyer_note", e.target.value)} />
           </Field>
           <fieldset className="adv-fieldset">
             <legend className="cs-field__label">

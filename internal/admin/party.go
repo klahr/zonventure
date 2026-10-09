@@ -631,6 +631,7 @@ func (h *Handlers) sendPartyHostLink(ctx context.Context, eventID int64, to, hos
 	var name string
 	_ = h.DB.QueryRowContext(ctx, `SELECT party_name FROM events WHERE id = $1`, eventID).Scan(&name)
 	subject, c := emailtpl.PartyHost(l.Lang, publicURL+"/party/"+hostToken, name, l.Brand.Name)
+	c = l.withBuyerNote(c)
 	c.Picture = l.Cover
 	if h.SellerIdentity != nil {
 		if seller := h.SellerIdentity(l.Lang); seller != "" {

@@ -84,6 +84,7 @@ type exportAdventureDTO struct {
 	Author               string          `json:"author,omitempty"`
 	IntroText            string          `json:"intro_text,omitempty"`
 	OutroText            string          `json:"outro_text,omitempty"`
+	BuyerNote            string          `json:"buyer_note,omitempty"`
 	Language             string          `json:"language,omitempty"`
 	StrictAssets         bool            `json:"strict_assets,omitempty"`
 	StartLat             *float64        `json:"start_lat,omitempty"`
@@ -185,14 +186,14 @@ func (h *Handlers) buildExport(ctx context.Context, advID int64) (exportEnvelope
 		avatarContent                      []byte
 	)
 	err := h.DB.QueryRowContext(ctx, `
-		SELECT slug, title, description, author, intro_text, outro_text,
+		SELECT slug, title, description, author, intro_text, outro_text, buyer_note,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		       language, strict_assets,
 		       start_lat, start_lng, start_label, start_radius_m,
 		       avatar_mime_type, avatar_content
 		FROM adventures WHERE id = $1
 	`, advID).Scan(&adv.Slug, &adv.Title, &adv.Description, &adv.Author,
-		&adv.IntroText, &adv.OutroText,
+		&adv.IntroText, &adv.OutroText, &adv.BuyerNote,
 		&accent, &accent2, &bg, &ink, &submitBG,
 		&adv.Language, &adv.StrictAssets,
 		&startLat, &startLng, &adv.StartLabel, &startRadius,
@@ -565,15 +566,15 @@ func importAdventureRow(ctx context.Context, tx *sql.Tx, slug string, adv export
 		                       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		                       language, strict_assets,
 		                       start_lat, start_lng, start_label, start_radius_m,
-		                       org_id, created_by_user_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		                       org_id, created_by_user_id, buyer_note)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 		RETURNING id
 	`, slug, adv.Title, adv.Description, adv.Author, adv.IntroText, adv.OutroText,
 		nullIfEmpty(adv.AccentColor), nullIfEmpty(adv.AccentSecondaryColor),
 		nullIfEmpty(adv.BackgroundColor), nullIfEmpty(adv.TextColor), nullIfEmpty(adv.SubmitBgColor),
 		lang, adv.StrictAssets,
 		startLat, startLng, adv.StartLabel, startRadius,
-		orgArg, userID).Scan(&id)
+		orgArg, userID, adv.BuyerNote).Scan(&id)
 	return id, err
 }
 

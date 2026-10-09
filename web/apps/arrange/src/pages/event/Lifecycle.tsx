@@ -99,7 +99,7 @@ export function LifecycleActions({ event, teams, adventure, user, reload }: { ev
   // A hosted event starts when its first team joins from the player link.
   if (event.state === "scheduled" && !event.party) {
     buttons.push(
-      <Button key="start" variant="primary" icon={<Play size={ICON.md} aria-hidden />} onClick={() => setOpen(event.teams_count > 0 || teams.length > 0 ? "start" : "no-teams")}>
+      <Button key="start" variant="primary" icon={<Play size={ICON.md} aria-hidden />} onClick={() => setOpen(quest || event.teams_count > 0 || teams.length > 0 ? "start" : "no-teams")}>
         {t.t("Start now")}
       </Button>,
     );
@@ -255,7 +255,7 @@ function StartDialog({ event, teams, onClose, onStart }: { event: EventInfo; tea
           t.t("You can pause it later if needed.")
         )}
       </p>
-      {nobody && <Callout variant="warning">{t.t("No player has opened their link yet. Make sure the links have gone out before you start.")}</Callout>}
+      {nobody && !isQuest(event) && <Callout variant="warning">{t.t("No player has opened their link yet. Make sure the links have gone out before you start.")}</Callout>}
     </Dialog>
   );
 }

@@ -42,16 +42,26 @@ type look struct {
 	Lang string
 	// Cover is the event's adventure's picture for its players' emails.
 	Cover emailtpl.Picture
+	// BuyerNote is the adventure author's word to its buyer.
+	BuyerNote string
 }
 
 // eventLook is an event's: its theme, else its organisation's.
 func (h *Handlers) eventLook(ctx context.Context, eventID int64) look {
 	lk := emailtpl.Lookup(ctx, h.DB, h.PublicURL, 0, eventID)
-	var name string
+	var name, note string
 	_ = h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE(NULLIF(e.name, ''), a.title, e.adventure_slug) FROM events e LEFT JOIN adventures a ON a.slug = e.adventure_slug WHERE e.id = $1
-	`, eventID).Scan(&name)
-	return look{Theme: lk.Theme, Brand: lk.Brand, Event: name, Lang: lk.Lang, Cover: lk.Cover}
+		SELECT COALESCE(NULLIF(e.name, ''), a.title, e.adventure_slug), COALESCE(a.buyer_note, '') FROM events e LEFT JOIN adventures a ON a.slug = e.adventure_slug WHERE e.id = $1
+	`, eventID).Scan(&name, &note)
+	return look{Theme: lk.Theme, Brand: lk.Brand, Event: name, Lang: lk.Lang, Cover: lk.Cover, BuyerNote: note}
+}
+
+// withBuyerNote adds the adventure's note to a buyer's email body.
+func (l look) withBuyerNote(c emailtpl.Content) emailtpl.Content {
+	if strings.TrimSpace(l.BuyerNote) != "" {
+		c.Body += "\n\n" + emailtpl.Lines(l.BuyerNote)
+	}
+	return c
 }
 
 // orgLook is an organisation's, for what no event sends.

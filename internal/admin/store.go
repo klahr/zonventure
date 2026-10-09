@@ -629,6 +629,7 @@ func (h *Handlers) sendTicketTeamLink(ctx context.Context, eventID int64, buyerE
 	}
 	l := h.eventLook(ctx, eventID)
 	subject, c := emailtpl.TeamLink(l.Lang, publicURL+"/team/"+teamToken, publicURL+"/play", auth.FormatVoucherCode(voucher), l.Brand.Name)
+	c = l.withBuyerNote(c)
 	c.Picture = l.Cover
 	if h.SellerIdentity != nil {
 		if seller := h.SellerIdentity(l.Lang); seller != "" {

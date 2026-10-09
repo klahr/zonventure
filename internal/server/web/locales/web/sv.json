@@ -962,6 +962,7 @@
 "Outbound HTTP callbacks for event / team / purchase lifecycle. Each delivery is signed with HMAC-SHA256; verify the X-Zv-Signature header against your endpoint's secret.": "Utgående HTTP-anrop för event, lag och köphändelser. Varje leverans signeras med HMAC-SHA256; verifiera X-Zv-Signature mot slutpunktens nyckel.",
 "Outro on completion": "Outro vid avslut",
 "Outro — shown on the completion screen": "Outro — visas när äventyret är klart",
+"Buyer note — added to the purchase email": "Köparinfo — läggs till i köpmejlet",
 "Override the default colours for white-labelled events. You can change these later.": "Ersätt standardfärgerna för white label-event. Du kan ändra dem senare.",
 "Ownership transferred.": "Ägarskap överlåtet.",
 "Password": "Lösenord",

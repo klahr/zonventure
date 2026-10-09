@@ -20,6 +20,7 @@
   "Used in links. Renaming breaks links already shared.": "Används i länkar. Byter du namn slutar redan delade länkar att fungera.",
   "Markdown. Leave empty for the default welcome + tips.": "Markdown. Lämna tomt för standardvälkomsten och tipsen.",
   "Markdown. Leave empty for the default celebratory line.": "Markdown. Lämna tomt för standardraden vid målgång.",
+  "Markdown. Sent to whoever buys the adventure, never shown to players. Use it for instructions or printables the players must not see.": "Markdown. Skickas till den som köper äventyret, visas aldrig för spelarna. Använd det för instruktioner eller utskrifter som spelarna inte ska se.",
   "Not a number.": "Inte ett tal.",
   "Set both coordinates, or clear both.": "Ange båda koordinaterna, eller töm båda.",
   "About strict assets": "Om strikta resurser",
