@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.25.8] - 2026-10-09
+
 ### Fixed
 
 - **The arrange app's and player's maps load their tiles after a map
