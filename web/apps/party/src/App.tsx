@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { siteName } from "@zonventure/api";
 import { SPOTS } from "@zonventure/ui";
-import { Book } from "./Book.tsx";
+import { Book, Resend } from "./Book.tsx";
 import { Host } from "./Host.tsx";
 import { Join } from "./Join.tsx";
 import { TrailEdit } from "./TrailEdit.tsx";
@@ -12,7 +12,8 @@ import { embedded, fitFrame } from "./embed.ts";
 
 /**
  * The pages, by path: /app/party/book/{org}/{offer}, /app/party/host/{token},
- * /app/party/join/{token}, and /app/party/paid, where a payment made from
+ * /app/party/host/ (no token: a game summary mail's button, to send the
+ * host link again), /app/party/join/{token}, and /app/party/paid, where a payment made from
  * the host page lands. The quiz trail's pages are under /app/party/trail/:
  * start/{org}, edit (#id), host (#hostToken), mine, verify (#token), paid.
  */
@@ -20,7 +21,7 @@ type Route =
   | { page: "book"; org: string; offer: string }
   | { page: "host" | "join"; token: string }
   | { page: "trail-start"; org: string }
-  | { page: "paid" | "none" | "trail-edit" | "trail-host" | "trail-mine" | "trail-verify" | "trail-paid" };
+  | { page: "paid" | "host-find" | "none" | "trail-edit" | "trail-host" | "trail-mine" | "trail-verify" | "trail-paid" };
 
 export function route(path: string): Route {
   const parts = path.replace(/^\/app\/party\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
@@ -32,6 +33,7 @@ export function route(path: string): Route {
   }
   if (parts[0] === "book" && parts.length === 3) return { page: "book", org: parts[1]!, offer: parts[2]! };
   if (parts[0] === "host" && parts.length === 2) return { page: "host", token: parts[1]! };
+  if (parts[0] === "host" && parts.length === 1) return { page: "host-find" };
   if (parts[0] === "join" && parts.length === 2) return { page: "join", token: parts[1]! };
   if (parts[0] === "paid" && parts.length === 1) return { page: "paid" };
   return { page: "none" };
@@ -69,6 +71,12 @@ export function App() {
           <TrailVerify />
         ) : r.page === "trail-paid" ? (
           <TrailPaid />
+        ) : r.page === "host-find" ? (
+          <section className="party-card">
+            <h1>{t("Open your host page")}</h1>
+            <p>{t("Use the link in your booking email. Can't find it? We'll send a new one to the email you booked with.")}</p>
+            <Resend />
+          </section>
         ) : r.page === "paid" ? (
           <section className="party-card party-card--cover">
             <ThankYouBanner />
