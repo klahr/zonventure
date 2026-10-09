@@ -569,6 +569,10 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .look__label { font-size: var(--text-sm); font-weight: 700; }
 .look__hex { font-family: var(--font-mono); font-size: var(--text-xs); padding: var(--sp-2); }
 .look__actions { display: flex; gap: var(--sp-2); }
+/* The main look in adventure settings: a swatch of it, its name, and the gallery to change it. */
+.look__main { display: flex; align-items: center; gap: var(--sp-2); }
+.look__main .look__main-thumb { flex: none; display: flex; align-items: flex-end; justify-content: space-between; width: 4.5rem; padding: 0.3rem 0.4rem; border: 1px solid var(--border-soft); }
+.look__main-name { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A preset picker: the options side by side, the chosen one filled. */
 .look__check { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--text-sm); cursor: pointer; }
 .look__contrast { margin: 0; }

@@ -30,3 +30,10 @@
 .starters__group-title { margin: var(--sp-2) 0 0; font-size: var(--text-sm); font-weight: 700; color: var(--ink); }
 .starters__name { font-size: var(--text-sm); font-weight: 700; }
 .starters .starters__pick.is-on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+/* Chips narrowing the gallery to one group. */
+.starters__chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.starters .starters__chip { min-height: 2rem; padding: 0.25rem 0.8rem; border: 1px solid var(--border-soft); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer; }
+.starters .starters__chip:hover, .starters .starters__chip:focus-visible { border-color: var(--accent); }
+.starters .starters__chip.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); }
+/* A look's cover picture across the top of its page, as the players' welcome shows it. */
+.starters__cover { align-self: stretch; margin: -0.9rem -0.9rem 0; aspect-ratio: 16 / 9; background-size: cover; background-position: 70% center; background-repeat: no-repeat; border-radius: calc(var(--radius, 12px) - 2px) calc(var(--radius, 12px) - 2px) 0 0; }

@@ -1,6 +1,6 @@
 import type { play } from "@zonventure/api";
 import type { Theme } from "@zonventure/graph";
-import { FONTS, STARTER_GROUPS, STARTER_THEMES, isHex, lookContrast, type ContrastIssue } from "@zonventure/play-ui";
+import { DEFAULT_LOOK, FONTS, STARTER_THEMES, brandVars, isHex, loadFont, lookContrast, type ContrastIssue } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
 import { X } from "lucide-react";
 import { BackdropPicker, Check, ColourList, Slider } from "./BackdropPicker.tsx";
@@ -8,9 +8,11 @@ import { CoverPicker } from "./CoverPicker.tsx";
 import { demoAnswer } from "./blocks/Animation.tsx";
 import { AdventureSlug } from "./MediaEditor.tsx";
 import { adventures, play as playApi } from "@zonventure/api";
-import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { ICON } from "./dz/ui.tsx";
+import { PanelModal } from "./dz/dialogs.tsx";
+import { StarterGallery, canon } from "./StarterGallery.tsx";
 
 /** What each typeface is for, in the author's words. */
 const FONT_LABELS: Record<string, string> = {
@@ -75,16 +77,9 @@ interface Props {
   onEditThemes?: () => void;
 }
 
-/** A look as JSON with its keys in order, so two can be compared however they were built. */
-function canon(v: unknown): string {
-  return JSON.stringify(v, (_, x: unknown) =>
-    x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x as Record<string, unknown>).sort(([p], [q]) => (p < q ? -1 : 1))) : x,
-  );
-}
-
 /**
  * The adventure's main look: one of its saved themes, the organisation's,
- * or a starter, saved at once. One not yet among the adventure's themes is
+ * or a starter, browsed in a gallery and saved at once. One not yet among the adventure's themes is
  * added to them as a copy, to change in the theme editor. A main look that
  * matches no theme (one set before themes, or through the API) shows as
  * custom, and can be saved as a theme to edit.
@@ -92,6 +87,7 @@ function canon(v: unknown): string {
 export function Look({ brand, saving, error, savedThemes, onApply, onAddTheme, onSaveAsTheme, onEditThemes }: Props) {
   const t = useT();
   const [library, setLibrary] = useState<adventures.OrgTheme[]>([]);
+  const [browsing, setBrowsing] = useState(false);
   useEffect(() => {
     const ac = new AbortController();
     // Without the library the starters and the adventure's own remain.
@@ -113,40 +109,26 @@ export function Look({ brand, saving, error, savedThemes, onApply, onAddTheme, o
     onApply(structuredClone(picked.look));
     if (!savedThemes.some((th) => canon(th.look) === canon(picked.look))) onAddTheme?.(picked.name, picked.look);
   };
+  loadFont(brand.heading_font ?? brand.font);
   return (
     <section className="look insp__section">
       <h3>
         <ConceptIcon {...RESOURCE.look} />
         {t.t("Look")}
       </h3>
-      <label className="field">
+      <div className="field">
         <span className="field__label">{t.t("Main look")}</span>
-        <select className="field__input" value={value} disabled={saving} onChange={(e) => choose(e.target.value)}>
-          <option value="standard">{t.t("Standard look")}</option>
-          {value === "custom" && <option value="custom" disabled>{t.t("Custom look (not a saved theme)")}</option>}
-          {savedThemes.length > 0 && (
-            <optgroup label={t.t("This adventure")}>
-              {savedThemes.map((th) => (
-                <option key={th.slug} value={`saved:${th.slug}`}>{th.name || t.t("Untitled theme")}</option>
-              ))}
-            </optgroup>
-          )}
-          {library.length > 0 && (
-            <optgroup label={t.t("Your organisation")}>
-              {library.map((th) => (
-                <option key={th.id} value={`org:${th.id}`}>{th.name}</option>
-              ))}
-            </optgroup>
-          )}
-          {STARTER_GROUPS.map((g) => (
-            <optgroup key={g.id} label={g.label ? t.t(g.label) : t.t("More looks")}>
-              {STARTER_THEMES.filter((s) => s.group === g.id).map((s) => (
-                <option key={s.id} value={`starter:${s.id}`}>{t.t(s.label)}</option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-      </label>
+        <div className="look__main">
+          <span className="look__main-thumb look__thumb" style={brandVars(standard ? (DEFAULT_LOOK as play.Brand) : brand) as CSSProperties} aria-hidden>
+            <span className="theme-strip__aa">Aa</span>
+            <span className="theme-strip__dot" />
+          </span>
+          <span className="look__main-name">
+            {standard ? t.t("Standard look") : matched ? matched.name || t.t("Untitled theme") : t.t("Custom look (not a saved theme)")}
+          </span>
+          <button type="button" className="btn btn--sm" disabled={saving} onClick={() => setBrowsing(true)}>{t.t("Browse looks…")}</button>
+        </div>
+      </div>
       {error && <div className="alert alert--danger">{error}</div>}
       <div className="look__actions">
         {onEditThemes && <button type="button" className="btn btn--ghost btn--sm" onClick={onEditThemes}>{t.t("Edit themes…")}</button>}
@@ -155,6 +137,20 @@ export function Look({ brand, saving, error, savedThemes, onApply, onAddTheme, o
       <p className="field__hint">
         {t.t("Choosing a look applies it at once, also to running events. Changing a theme later does not change the main look: choose it again to apply the changes.")}
       </p>
+      {browsing && (
+        <PanelModal title={t.t("Choose a look")} wide onClose={() => setBrowsing(false)}>
+          <StarterGallery
+            heading=""
+            ownLookHint={false}
+            saved={savedThemes}
+            selected={standard ? "default" : matched ? `saved-${matched.slug}` : undefined}
+            onPick={(_name, _look, id) => {
+              choose(id === "default" ? "standard" : id.startsWith("saved-") ? `saved:${id.slice(6)}` : id.startsWith("org-") ? `org:${id.slice(4)}` : `starter:${id}`);
+              setBrowsing(false);
+            }}
+          />
+        </PanelModal>
+      )}
     </section>
   );
 }
