@@ -34,6 +34,8 @@ export interface Organization {
   trusted: boolean;
   is_publisher: boolean;
   party_adventures: boolean;
+  /** Listings skip review and the store shows a badge (listing_review.go). */
+  verified_creator: boolean;
 }
 
 /** internal/admin/handlers.go eventDTO, the fields the operator view reads. */
@@ -121,6 +123,7 @@ export const createOrganization = (name: string) => post<Organization>("/api/adm
 export const renameOrganization = (id: number, name: string) => patch<void>(org(id), { name });
 export const setTrusted = (id: number, trusted: boolean) => post<unknown>(`${org(id)}/trusted`, { trusted });
 export const setPartyAdventures = (id: number, enabled: boolean) => post<unknown>(`${org(id)}/party-adventures`, { enabled });
+export const setVerifiedCreator = (id: number, verified: boolean) => post<unknown>(`${org(id)}/verified-creator`, { verified });
 export const setPublisher = (id: number, isPublisher: boolean, password?: string) =>
   put<void>(`${org(id)}/publisher`, { is_publisher: isPublisher }, password ? pw(password) : {});
 export const deleteOrganization = (id: number, password: string) => request<void>(org(id), { method: "DELETE", ...pw(password) });
@@ -172,3 +175,38 @@ export interface LogEntry {
 export const listLogs = (signal?: AbortSignal, since = 0) =>
   get<{ level: string; entries: LogEntry[] | null }>(since > 0 ? `/api/admin/logs?since=${since}` : "/api/admin/logs", signal ? { signal } : {});
 export const setLogLevel = (level: string) => put<{ level: string }>("/api/admin/logs/level", { level });
+
+/** internal/admin/listing_review.go listingFieldsDTO: what a listing shows the public. */
+export interface ListingFields {
+  name?: string;
+  blurb: string;
+  /** An event's ticket price, or a party's base price. */
+  price_cents: number;
+  per_kid_cents?: number;
+  currency: string;
+  team_size?: number;
+  max_kids?: number;
+  cover_url?: string;
+}
+
+/** internal/admin/listing_review.go listingReviewDTO: a listing waiting for review. */
+export interface ListingReview {
+  kind: "event" | "party";
+  id: number;
+  revision: string;
+  submitted_at: string;
+  org_id: number;
+  org_name: string;
+  org_slug?: string;
+  adventure_slug: string;
+  adventure_title: string;
+  draft: ListingFields;
+  /** What the public sees now, when the review is of an edit. */
+  live?: ListingFields;
+}
+
+const review = (r: ListingReview) => `/api/admin/listing-reviews/${r.kind}/${r.id}`;
+export const listListingReviews = (signal?: AbortSignal) =>
+  get<{ reviews: ListingReview[] | null }>("/api/admin/listing-reviews", signal ? { signal } : {}).then((r) => r.reviews ?? []);
+export const approveListing = (r: ListingReview) => post<unknown>(`${review(r)}/approve`, { revision: r.revision });
+export const rejectListing = (r: ListingReview, reason: string) => post<unknown>(`${review(r)}/reject`, { revision: r.revision, reason });

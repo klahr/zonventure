@@ -27,6 +27,8 @@ type orgProfile struct {
 	Accent2  sql.NullString
 	Bg       sql.NullString
 	Ink      sql.NullString
+	// Verified is a verified creator (listing review).
+	Verified bool
 }
 
 // loadOrgProfile looks an organisation up by slug. sql.ErrNoRows means
@@ -37,11 +39,11 @@ func loadOrgProfile(ctx context.Context, db *sql.DB, slug string) (orgProfile, e
 		SELECT id, name, tagline, public_website,
 		       (logo_content IS NOT NULL AND length(logo_content) > 0),
 		       (cover_image_content IS NOT NULL AND length(cover_image_content) > 0),
-		       accent_color, accent_secondary_color, background_color, text_color
+		       accent_color, accent_secondary_color, background_color, text_color, verified_creator
 		FROM organizations
 		WHERE slug = $1
 	`, slug).Scan(&p.ID, &p.Name, &p.Tagline, &p.Website, &p.HasLogo, &p.HasCover,
-		&p.Accent, &p.Accent2, &p.Bg, &p.Ink)
+		&p.Accent, &p.Accent2, &p.Bg, &p.Ink, &p.Verified)
 	return p, err
 }
 
@@ -134,6 +136,7 @@ func buildOrgSitemapURLs(ctx context.Context, db *sql.DB, host string) string {
 		SELECT DISTINCT o.slug
 		FROM organizations o
 		JOIN events e ON e.org_id = o.id
+		JOIN event_listings l ON l.event_id = e.id
 		WHERE e.public_for_sale
 		  AND e.ticket_price_cents IS NOT NULL
 		  AND e.state IN ('running', 'paused')
@@ -202,6 +205,7 @@ func redirectLegacyStoreEvent(w http.ResponseWriter, r *http.Request, db *sql.DB
 	err = db.QueryRowContext(r.Context(), `
 		SELECT o.slug
 		FROM events e
+		JOIN event_listings l ON l.event_id = e.id
 		JOIN organizations o ON o.id = e.org_id
 		WHERE e.id = $1
 		  AND e.public_for_sale

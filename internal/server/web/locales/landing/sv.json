@@ -144,5 +144,7 @@
 "LandingFeaturedHeading": "Utvalda äventyr",
 "LandingFeaturedEmpty": "Inga äventyr till salu just nu — titta in igen snart.",
 "LandingSeeAll": "Se alla äventyr",
-"LandingVisitWebsite": "Besök vår webbplats"
+"LandingVisitWebsite": "Besök vår webbplats",
+"VerifiedCreator": "Verifierad skapare",
+"VerifiedCreatorHint": "{{SITE_NAME}} har kontrollerat vem som står bakom arrangören."
 }

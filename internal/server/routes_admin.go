@@ -433,6 +433,11 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Patch("/organizations/{orgID}", adminH.UpdateOrganization)
 			r.Post("/organizations/{orgID}/trusted", adminH.SetOrgTrusted)
 			r.Post("/organizations/{orgID}/party-adventures", adminH.SetOrgPartyAdventures)
+			r.Post("/organizations/{orgID}/verified-creator", adminH.SetOrgVerifiedCreator)
+			// Listing review: what orgs put up for sale waits here.
+			r.Get("/listing-reviews", adminH.ListListingReviews)
+			r.Post("/listing-reviews/{kind}/{id}/approve", adminH.ApproveListing)
+			r.Post("/listing-reviews/{kind}/{id}/reject", adminH.RejectListing)
 			r.Delete("/organizations/{orgID}", adminH.DeleteOrganization)
 			// Brand logo upload — surfaced on the recap PDF cover and
 			// (later) on the play / arrange chrome. PNG/JPEG/WebP only,

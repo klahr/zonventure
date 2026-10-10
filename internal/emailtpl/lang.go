@@ -171,6 +171,14 @@ var catalog = map[string]map[string]string{
 		"A box redemption is waiting for review":                                                                   "En lådinlösen väntar på granskning",
 		"Someone has redeemed a partner box. Check the code in the partner's portal, then approve or reject it.":   "Någon har löst in en partnerlåda. Kontrollera koden i partnerns portal och godkänn eller avvisa den sedan.",
 		"Review the redemption":                                                                                    "Granska inlösen",
+		"A listing is waiting for review":                                                                          "En annons väntar på granskning",
+		"%s has put something up for sale. It goes public once it is approved.":                                    "%s har lagt ut något till försäljning. Det blir publikt när det har godkänts.",
+		"Review listings":  "Granska annonser",
+		"“%s” is approved": "”%s” är godkänd",
+		"Your listing for “%s” is approved and now public.": "Din annons för ”%s” är godkänd och nu publik.",
+		"Open it":               "Öppna den",
+		"“%s” was not approved": "”%s” godkändes inte",
+		"Your changes to the listing for “%s” were not approved. Anything already public stays as it was. Change the listing and save it to send it for review again.": "Dina ändringar i annonsen för ”%s” godkändes inte. Det som redan är publikt ligger kvar som det var. Ändra annonsen och spara den för att skicka den på granskning igen.",
 
 		// Designers.
 		"You get this because you work on %s.":                      "Du får det här eftersom du arbetar med %s.",

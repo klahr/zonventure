@@ -351,6 +351,43 @@ func BoxWaiting(lang, link string) (string, Content) {
 	return subject, c
 }
 
+// ListingWaiting tells the platform's admins an organisation's listing
+// waits for review before it goes public.
+func ListingWaiting(lang, org, link string) (string, Content) {
+	subject := T(lang, "A listing is waiting for review")
+	c := Content{Lang: lang, Heading: subject, Body: T(lang, "%s has put something up for sale. It goes public once it is approved.", mdEscape(org))}
+	if link != "" {
+		c.Buttons = []Button{{T(lang, "Review listings"), link}}
+	}
+	return subject, c
+}
+
+// ListingApproved tells an organisation's admins their listing is public.
+func ListingApproved(lang, what, link string) (string, Content) {
+	subject := T(lang, "“%s” is approved", what)
+	c := Content{Lang: lang, Heading: subject, Body: T(lang, "Your listing for “%s” is approved and now public.", mdEscape(what))}
+	if link != "" {
+		c.Buttons = []Button{{T(lang, "Open it"), link}}
+	}
+	return subject, c
+}
+
+// ListingRejected tells an organisation's admins their listing was
+// turned down, and why. What was public before stays up.
+func ListingRejected(lang, what, reason, link string) (string, Content) {
+	subject := T(lang, "“%s” was not approved", what)
+	c := Content{
+		Lang:    lang,
+		Heading: subject,
+		Body:    T(lang, "Your changes to the listing for “%s” were not approved. Anything already public stays as it was. Change the listing and save it to send it for review again.", mdEscape(what)),
+		Quote:   reason,
+	}
+	if link != "" {
+		c.Buttons = []Button{{T(lang, "Open it"), link}}
+	}
+	return subject, c
+}
+
 // PlayLinks is every link an address has, sent when it asks.
 func PlayLinks(lang string, links []PlayerLink, org string) (string, Content) {
 	var b strings.Builder

@@ -232,3 +232,20 @@ func PublisherOrg(t *testing.T, db *sql.DB) int64 {
 	}
 	return id
 }
+
+// ApproveListings approves every self-guided event's store listing as
+// it stands, as a platform admin would (listing review): fixtures that
+// insert events straight into the table call it before reading the
+// store, which shows approved listings only.
+func ApproveListings(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec(`
+		INSERT INTO event_listings (event_id, name, blurb, price_cents, currency, team_size, cover_mime_type, cover_content)
+		SELECT id, name, public_blurb, ticket_price_cents, ticket_currency, ticket_team_size, cover_image_mime_type, cover_image_content
+		FROM events WHERE public_for_sale AND ticket_price_cents IS NOT NULL
+		ON CONFLICT (event_id) DO NOTHING;
+		UPDATE events SET listing_review = 'approved' WHERE public_for_sale AND ticket_price_cents IS NOT NULL;
+	`); err != nil {
+		t.Fatalf("approve listings: %v", err)
+	}
+}

@@ -30,6 +30,14 @@ export interface EventInfo {
   ticket_team_size?: number;
   public_blurb?: string;
   has_cover_image?: boolean;
+  /**
+   * Listing review, for a self-guided event: where its last store
+   * changes are ("", pending, approved, rejected with
+   * listing_reject_reason), and whether an approved version is up.
+   */
+  listing_review?: "" | "pending" | "approved" | "rejected";
+  listing_reject_reason?: string;
+  listed?: boolean;
   /** A hosted event: run from its host page, whose views the event page shows too. */
   party?: boolean;
 }

@@ -4,7 +4,7 @@ import { ApiError, request } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { href, navigate } from "../../router.ts";
-import { Button, Callout, Card, Dialog, Empty, ErrorBox, Field, HelpPopover, ICON, Loading, Page, PageHeader, Pill, Table, fmtMoney, useLoad, useToast, type Column } from "../../ui/index.ts";
+import { Button, Callout, Card, Dialog, Empty, ErrorBox, Field, HelpPopover, ICON, ListingStatus, Loading, Page, PageHeader, Pill, Table, fmtMoney, useLoad, useToast, type Column } from "../../ui/index.ts";
 import { SPOTS } from "@zonventure/ui";
 import { iconOrCover } from "../adventures/parts.tsx";
 import { listAdventures, listEvents } from "../events/api.ts";
@@ -26,6 +26,10 @@ interface PartyOffer {
   stations: number;
   problems?: string[];
   book_url?: string;
+  /** Listing review: where the offer's last changes are, and whether an approved version is up. */
+  listing_review?: "" | "pending" | "approved" | "rejected";
+  reject_reason?: string;
+  listed?: boolean;
 }
 
 /** An offer with its adventure's cover, which the offers list leaves out. */
@@ -124,7 +128,7 @@ function Offers({ slug }: { slug?: string | undefined }) {
     { key: "kids", header: t.t("Most children"), wide: true, align: "end", cell: (o) => String(o.max_kids) },
     { key: "state", header: t.t("State"), align: "end", cell: (o) => <StatePill offer={o} /> },
     { key: "link", header: <span className="cs-sr">{t.t("Booking page")}</span>, align: "end", width: "1%", cell: (o) =>
-      o.enabled && o.book_url ? (
+      o.enabled && o.listed && o.book_url ? (
         <span className="pt-actions">
           <Button size="icon" variant="ghost" onClick={() => void copyLink(o)} aria-label={t.t("Copy booking link") + " — " + o.title} title={t.t("Copy booking link")}>
             <Copy size={ICON.sm} aria-hidden />
@@ -197,7 +201,11 @@ function StatePill({ offer }: { offer: Row }) {
   const t = useT();
   const problem = offer.problems?.[0];
   if (problem) return <Pill tone="warn" title={sentence(problem)}>{t.t("Can't be booked")}</Pill>;
-  return offer.enabled ? <Pill tone="good">{t.t("Bookable")}</Pill> : <Pill>{t.t("Paused")}</Pill>;
+  if (!offer.enabled) return <Pill>{t.t("Paused")}</Pill>;
+  // Listing review: an edit waits behind the approved version, which stays bookable.
+  if (offer.listing_review === "rejected") return <Pill tone="bad" title={offer.reject_reason ?? ""}>{t.t("Not approved")}</Pill>;
+  if (offer.listing_review === "pending") return <Pill tone="info">{offer.listed ? t.t("Bookable · changes in review") : t.t("In review")}</Pill>;
+  return <Pill tone="good">{t.t("Bookable")}</Pill>;
 }
 
 /** The server's reasons are lowercase clauses; shown alone, they read as sentences. */
@@ -238,11 +246,13 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
     if (enabled && exampleCents <= 0) return setError(t.t("Set a price before the party can be booked"));
     setBusy(true);
     try {
-      await request(`/api/admin/party-offers/${encodeURIComponent(target.adventure_slug)}`, {
+      const saved = await request<{ listing_review?: string }>(`/api/admin/party-offers/${encodeURIComponent(target.adventure_slug)}`, {
         method: "PUT",
         body: { enabled: enabled && !blocked, base_cents: minor(base), per_kid_cents: minor(perKid), currency: "sek", max_kids: kidsN, blurb },
       });
-      toast.ok(isNew ? t.t("Party offer created") : t.t("Saved"));
+      toast.ok(saved?.listing_review === "pending"
+        ? t.t("Saved. It goes on your page once it is approved.")
+        : isNew ? t.t("Party offer created") : t.t("Saved"));
       props.onSaved();
       props.onClose();
     } catch (e) {
@@ -291,6 +301,7 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
           </div>
         )
       )}
+      {props.offer && <ListingStatus kind="page" review={props.offer.listing_review} reason={props.offer.reject_reason} listed={props.offer.listed} />}
       {blocked && <Callout variant="warning">{t.t("Can't be offered as a party: {{reason}}", { reason: target!.problems![0]! })}</Callout>}
       <div className="pt-terms">
         <Field label={t.t("Base price (kr)")}>

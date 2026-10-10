@@ -68,6 +68,9 @@
   }
   .card .adv-icon { width: 48px; height: 48px; margin-bottom: .5rem; border-radius: 12px; object-fit: cover; }
   .card .org { color: var(--muted); font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; }
+  /* Verified creator (listing review): shown when the org is one. */
+  .verified-badge { display: inline-flex; align-items: center; gap: .3rem; margin-left: .5rem; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--success, #1b6b43); background: color-mix(in srgb, var(--success, #1b6b43) 12%, transparent); vertical-align: middle; }
+  .verified-badge[data-verified="false"] { display: none; }
   .card h2 { margin: .25rem 0 .5rem; font-size: 1.2rem; }
   .card .blurb { color: var(--ink-soft); margin: 0 0 1rem; flex: 1; }
   .card .meta { color: var(--muted); font-size: .85rem; margin-bottom: 1rem; }
@@ -139,6 +142,7 @@
   <div class="wrap">
     <h1>{{STORE_SECTION_HEADING}}</h1>
     <p class="lede">{{STORE_HERO_LEDE}}</p>
+    <p><span class="verified-badge" data-verified="{{ORG_VERIFIED}}" title="{{VERIFIED_CREATOR_HINT}}">✓ {{VERIFIED_CREATOR}}</span></p>
 
     <div id="status"></div>
     <div id="grid" class="grid" aria-busy="true">
@@ -342,7 +346,9 @@
         '"></div>'
       : '';
     card.innerHTML = cover +
-      '<div class="org">' + escapeHTML(item.org_name) + '</div>' +
+      '<div class="org">' + escapeHTML(item.org_name) +
+        (item.org_verified ? '<span class="verified-badge" title="' + escapeHTML(t('verifiedCreatorHint')) + '">✓ ' + escapeHTML(t('verifiedCreator')) + '</span>' : '') +
+      '</div>' +
       '<h2>' + escapeHTML(item.adventure_title || item.adventure_slug) +
         (item.event_name ? ' <small style="color:var(--muted);font-size:.85rem">— ' + escapeHTML(item.event_name) + '</small>' : '') +
       '</h2>' +

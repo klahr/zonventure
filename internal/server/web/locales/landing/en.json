@@ -144,5 +144,7 @@
 "LandingFeaturedHeading": "Featured adventures",
 "LandingFeaturedEmpty": "No adventures on sale right now — check back soon.",
 "LandingSeeAll": "See all adventures",
-"LandingVisitWebsite": "Visit our website"
+"LandingVisitWebsite": "Visit our website",
+"VerifiedCreator": "Verified creator",
+"VerifiedCreatorHint": "{{SITE_NAME}} has checked who is behind this organiser."
 }

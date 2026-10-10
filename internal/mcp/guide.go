@@ -49,7 +49,7 @@ Content:
 - Pictures and sounds: get_upload_link and write the link in the chat; the user taps it and picks the file (with a shell, curl it yourself). For a step's picture, list_adventure_media then gives its id. for: icon sets the adventure's icon. Never paste large base64.
 
 Events (the adventure must be published first, with publish_adventure_graph — only when the user asks):
-- Self-guided, sold in the store: create_event {adventure_slug, public_for_sale: true, attest_no_minors: true}, update_event with ticket_price_cents, ticket_currency, ticket_team_size and public_blurb, then start_event. give_free_ticket sends someone a ticket.
+- Self-guided, sold in the store: create_event {adventure_slug, public_for_sale: true, attest_no_minors: true}, update_event with ticket_price_cents, ticket_currency, ticket_team_size and public_blurb, then start_event. It shows in the store once a platform admin approves the listing (at once for a verified creator); get_event's listing_review tells. give_free_ticket sends someone a ticket.
 - Scheduled, for invited teams: create_event needs an event pass; if it says so, pass on its link. Then create_team per team (with their email) and send_event_invitations, or give_free_ticket per person; start_event when it begins.
 - An event's cover: get_upload_link {for: event_cover, event_id}.`
 

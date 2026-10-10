@@ -11,6 +11,33 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- **Listing review.** What an organisation puts up for sale — a
+  self-guided event in its store, a party offer on its page — goes
+  public once a platform admin approves it, under Admin → Listing
+  reviews. Each listing shows as the public will see it, with what
+  changed since the approved version; reject it with a reason and the
+  organisation is told by email. An edit to a live listing (name,
+  price, team size, blurb, cover) goes back to review while the
+  approved version stays up, and that is also what buyers pay.
+  Clearing the price, pausing the event or turning the offer off still
+  takes it down at once. A decision names the version the reviewer
+  saw, so a change made meanwhile is never approved unseen.
+- **Verified creators.** A platform admin marks an organisation as a
+  verified creator on its admin page: its listings go up as saved,
+  without review, and its page, store cards and ticket pages show a
+  "Verified creator" badge. Marking one approves what of theirs waits.
+
+### Changed
+
+- Everything for sale when this version is installed stays for sale,
+  approved as it is. Store listings in an imported organisation bundle
+  wait for review.
+- `/store-cover/event/{id}` serves the approved listing's cover;
+  `?draft=1` serves the uploaded one to the event's organisation and
+  platform admins.
+
 ## [0.25.9] - 2026-10-10
 
 ### Added

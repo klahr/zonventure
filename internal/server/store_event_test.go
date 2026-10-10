@@ -46,6 +46,7 @@ func TestStorePages(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		dbtest.ApproveListings(t, db)
 		r := chi.NewRouter()
 		r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
 			renderStoreEventPage(w, req, db, "https://zv.example.com")
@@ -144,6 +145,7 @@ func TestStorePages(t *testing.T) {
 			ids[slug] = id
 		}
 
+		dbtest.ApproveListings(t, db)
 		r := chi.NewRouter()
 		r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
 			renderStoreEventPage(w, req, db, "https://zv.example.com")

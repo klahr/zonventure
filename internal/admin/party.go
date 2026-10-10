@@ -77,6 +77,12 @@ type partyOfferDTO struct {
 	// BookURL is the public booking page, once the offer is saved and the
 	// org has a page of its own (a slug).
 	BookURL string `json:"book_url,omitempty"`
+	// ListingReview is where the offer's last changes are in review:
+	// "", pending, approved or rejected (with RejectReason). Listed is
+	// whether an approved version is up on the page.
+	ListingReview string `json:"listing_review,omitempty"`
+	RejectReason  string `json:"reject_reason,omitempty"`
+	Listed        bool   `json:"listed"`
 }
 
 // ListPartyOffers lists the adventures the caller's org may sell as
@@ -93,7 +99,8 @@ func (h *Handlers) ListPartyOffers(w http.ResponseWriter, r *http.Request) {
 		SELECT a.id, a.slug, COALESCE(NULLIF(a.title, ''), a.slug),
 		       COALESCE(o.id, 0), COALESCE(o.enabled, FALSE), COALESCE(o.base_cents, 0),
 		       COALESCE(o.per_kid_cents, 0), COALESCE(o.currency, 'sek'), COALESCE(o.max_kids, 20),
-		       COALESCE(o.blurb, '')
+		       COALESCE(o.blurb, ''), COALESCE(o.listing_review, ''), COALESCE(o.listing_reject_reason, ''),
+		       EXISTS (SELECT 1 FROM party_offer_listings l WHERE l.offer_id = o.id)
 		FROM adventures a
 		LEFT JOIN party_offers o ON o.org_id = $1 AND o.adventure_slug = a.slug
 		WHERE NOT a.trail_hidden
@@ -114,7 +121,7 @@ func (h *Handlers) ListPartyOffers(w http.ResponseWriter, r *http.Request) {
 		var x row
 		d := &x.dto
 		if err := rows.Scan(&x.advID, &d.AdventureSlug, &d.Title, &d.OfferID, &d.Enabled, &d.BaseCents,
-			&d.PerKidCents, &d.Currency, &d.MaxKids, &d.Blurb); err != nil {
+			&d.PerKidCents, &d.Currency, &d.MaxKids, &d.Blurb, &d.ListingReview, &d.RejectReason, &d.Listed); err != nil {
 			rows.Close()
 			httpx.ServerErr(w, http.StatusInternalServerError, "offers lookup failed", err)
 			return
@@ -274,7 +281,14 @@ func (h *Handlers) PutPartyOffer(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "offer save failed", err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]int64{"offer_id": id})
+	// What the page shows changed: it waits for review before it is up.
+	if err := h.submitPartyOffer(r.Context(), id); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
+		return
+	}
+	var review string
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT COALESCE(listing_review, '') FROM party_offers WHERE id = $1`, id).Scan(&review)
+	httpx.JSON(w, http.StatusOK, map[string]any{"offer_id": id, "listing_review": review})
 }
 
 /* ---------------- offers: the public page ---------------- */
@@ -291,6 +305,8 @@ type PublicPartyOfferDTO struct {
 	MaxKids       int    `json:"max_kids"`
 	OrgName       string `json:"org_name"`
 	OrgSlug       string `json:"org_slug"`
+	// OrgVerified is a verified creator: the page shows a badge.
+	OrgVerified bool `json:"org_verified"`
 	// PaymentsOpen is false when the org can't take the money yet: the
 	// page then shows the party without a way to book it.
 	PaymentsOpen bool `json:"payments_open"`
@@ -301,11 +317,15 @@ type PublicPartyOfferDTO struct {
 	CoverURL string            `json:"cover_url,omitempty"`
 }
 
+// publicPartyOffersSQL reads an offer's approved listing (listing
+// review): an offer without one is not on the page, and an edit waiting
+// for review shows, and charges, what was approved before.
 const publicPartyOffersSQL = `
-	SELECT o.id, o.adventure_slug, COALESCE(NULLIF(a.title, ''), a.slug), o.blurb, o.base_cents,
-	       o.per_kid_cents, o.currency, o.max_kids, g.name, COALESCE(g.slug, ''),
+	SELECT o.id, o.adventure_slug, COALESCE(NULLIF(a.title, ''), a.slug), l.blurb, l.base_cents,
+	       l.per_kid_cents, l.currency, l.max_kids, g.name, COALESCE(g.slug, ''), g.verified_creator,
 	       g.stripe_connect_account_id IS NOT NULL AND g.stripe_connect_charges_enabled
 	FROM party_offers o
+	JOIN party_offer_listings l ON l.offer_id = o.id
 	JOIN organizations g ON g.id = o.org_id
 	JOIN adventures a ON a.slug = o.adventure_slug
 	WHERE o.enabled AND a.published_graph_id IS NOT NULL AND NOT a.trail_hidden AND g.slug = $1`
@@ -316,7 +336,7 @@ func (h *Handlers) scanPublicOffer(row interface{ Scan(...any) error }) (PublicP
 		connectOK bool
 	)
 	err := row.Scan(&d.ID, &d.AdventureSlug, &d.Title, &d.Blurb, &d.BaseCents, &d.PerKidCents,
-		&d.Currency, &d.MaxKids, &d.OrgName, &d.OrgSlug, &connectOK)
+		&d.Currency, &d.MaxKids, &d.OrgName, &d.OrgSlug, &d.OrgVerified, &connectOK)
 	// With a platform fee the money goes through the org's connected
 	// account, which must be able to take charges.
 	d.PaymentsOpen = h.paymentsEnabled() && (!h.platformFee().Enabled() || connectOK)

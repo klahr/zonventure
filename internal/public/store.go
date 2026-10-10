@@ -19,11 +19,13 @@ import (
 // deliberately narrow: nothing leaks that a buyer doesn't need to
 // decide whether to buy. No live_token, no team list, no GPS.
 type StoreItemDTO struct {
-	EventID        int64   `json:"event_id"`
-	EventName      string  `json:"event_name,omitempty"`
-	AdventureSlug  string  `json:"adventure_slug"`
-	AdventureTitle string  `json:"adventure_title"`
-	OrgName        string  `json:"org_name"`
+	EventID        int64  `json:"event_id"`
+	EventName      string `json:"event_name,omitempty"`
+	AdventureSlug  string `json:"adventure_slug"`
+	AdventureTitle string `json:"adventure_title"`
+	OrgName        string `json:"org_name"`
+	// OrgVerified is a verified creator: the store shows a badge.
+	OrgVerified    bool    `json:"org_verified"`
 	Blurb          string  `json:"blurb,omitempty"`
 	PriceCents     int     `json:"price_cents"`
 	Currency       string  `json:"currency"`
@@ -229,17 +231,18 @@ func (h *Handlers) resolveOrgSlug(ctx context.Context, slug string) (int64, stri
 }
 
 const storeItemSelect = `
-	SELECT e.id, e.name, e.adventure_slug,
+	SELECT e.id, l.name, e.adventure_slug,
 	       COALESCE(a.title, e.adventure_slug) AS adv_title,
-	       o.name AS org_name,
-	       e.public_blurb,
-	       e.ticket_price_cents,
-	       e.ticket_currency,
-	       e.ticket_team_size,
+	       o.name AS org_name, o.verified_creator,
+	       l.blurb,
+	       l.price_cents,
+	       l.currency,
+	       l.team_size,
 	       a.start_label, a.start_lat, a.start_lng, COALESCE(a.area, ''),
-	       (e.cover_image_mime_type IS NOT NULL) AS has_cover,
+	       (l.cover_mime_type IS NOT NULL) AS has_cover,
 	       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,` + pageLookColumns + `
 	FROM events e
+	JOIN event_listings l ON l.event_id = e.id
 	JOIN organizations o ON o.id = e.org_id
 	LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
 `
@@ -249,6 +252,11 @@ const storeItemSelect = `
 // publicly listed, has a non-NULL price, and is in a state where
 // fresh tickets make sense — running or paused. 'pending',
 // 'scheduled', 'completed', 'cancelled' are deliberately excluded.
+// storeItemSelect's join on event_listings adds the last condition: a
+// platform admin approved it (listing review). What the card shows and
+// what a ticket costs come from that approved copy; the draft's price
+// only says whether it is for sale at all, so clearing it takes the
+// listing down at once.
 const storeItemRowFilterBase = `
 	WHERE e.public_for_sale
 	  AND e.ticket_price_cents IS NOT NULL
@@ -334,7 +342,7 @@ func (h *Handlers) scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 	)
 	if err := s.Scan(
 		&item.EventID, &eventName, &item.AdventureSlug, &item.AdventureTitle,
-		&item.OrgName, &blurb, &priceCents, &item.Currency, &item.TeamSize,
+		&item.OrgName, &item.OrgVerified, &blurb, &priceCents, &item.Currency, &item.TeamSize,
 		&startLabel, &startLat, &startLng, &item.Area, &hasCover, &hasIcon,
 		&lookFont, &lookTheme, &ownCover,
 	); err != nil {

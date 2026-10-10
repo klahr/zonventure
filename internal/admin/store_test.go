@@ -54,6 +54,7 @@ func TestStoreList_Filtering(t *testing.T) {
 	mintEvent("Priced but private", "running", false, intp(2500))
 	mintEvent("Listed but completed", "completed", true, intp(2500))
 	mintEvent("Listed but cancelled", "cancelled", true, intp(2500))
+	dbtest.ApproveListings(t, db)
 
 	publicH := &public.Handlers{DB: db, Lib: adventure.New(db)}
 	r := chi.NewRouter()

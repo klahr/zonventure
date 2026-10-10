@@ -66,6 +66,9 @@ type organizationDTO struct {
 	// PartyAdventures = the org's public party adventure creator is
 	// open (quiz_trail_enabled). Toggled by global admins only.
 	PartyAdventures bool `json:"party_adventures"`
+	// VerifiedCreator = the org's listings skip review and the store
+	// shows a badge (listing_review.go). Toggled by global admins only.
+	VerifiedCreator bool `json:"verified_creator"`
 }
 
 /* ---------------- Admin-only: organizations CRUD ---------------- */
@@ -83,7 +86,7 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
 		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo,
 		       (o.trusted <> 0) AS trusted,
-		       o.is_publisher, o.quiz_trail_enabled
+		       o.is_publisher, o.quiz_trail_enabled, o.verified_creator
 		FROM organizations o
 		ORDER BY LOWER(o.name)
 	`)
@@ -95,7 +98,7 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	out := []organizationDTO{}
 	for rows.Next() {
 		o := organizationDTO{Members: []orgMemberDTO{}, Assignments: []assignmentDTO{}}
-		if err := rows.Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted, &o.IsPublisher, &o.PartyAdventures); err != nil {
+		if err := rows.Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted, &o.IsPublisher, &o.PartyAdventures, &o.VerifiedCreator); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -141,9 +144,9 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
 		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo,
 		       (o.trusted <> 0) AS trusted,
-		       o.is_publisher, o.quiz_trail_enabled
+		       o.is_publisher, o.quiz_trail_enabled, o.verified_creator
 		FROM organizations o WHERE o.id = $1
-	`, id).Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted, &o.IsPublisher, &o.PartyAdventures)
+	`, id).Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted, &o.IsPublisher, &o.PartyAdventures, &o.VerifiedCreator)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "organization not found")
 		return

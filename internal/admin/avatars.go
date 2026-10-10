@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"database/sql"
 	"errors"
 	"io"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/storage"
@@ -181,8 +183,12 @@ func (h *Handlers) SetEventCover(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "store failed", err)
 		return
 	}
+	if err := h.submitEventListing(r.Context(), eventID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
+		return
+	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
-		"url":  eventCoverURL(eventID),
+		"url":  eventCoverURL(eventID) + "?draft=1",
 		"mime": mime,
 		"size": int64(len(data)),
 	})
@@ -203,18 +209,36 @@ func (h *Handlers) DeleteEventCover(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "clear failed")
 		return
 	}
+	if err := h.submitEventListing(r.Context(), eventID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
+		return
+	}
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
-// ServeEventCover writes the stored cover blob. No auth: the store
+// ServeEventCover writes an event's store cover. No auth: the store
 // is a public surface and the buyer needs to see the image before
 // committing to a purchase. The numeric event id is a tiny leak (it
 // reveals event-creation order) which is the same posture every
 // other public-by-id route in this file already takes.
+//
+// The public gets the approved listing's cover (listing review). With
+// ?draft=1 the event's own staff, and platform admins reviewing it,
+// get the cover as uploaded.
 func (h *Handlers) ServeEventCover(w http.ResponseWriter, r *http.Request) {
 	eventID, err := strconv.ParseInt(chi.URLParam(r, "eventID"), 10, 64)
 	if err != nil || eventID <= 0 {
 		httpx.Error(w, http.StatusBadRequest, "bad event id")
+		return
+	}
+	if r.URL.Query().Get("draft") == "" {
+		h.serveListedEventCover(w, r, eventID)
+		return
+	}
+	me, ok := auth.FromContext(r.Context())
+	orgID, oerr := h.eventOrg(r.Context(), eventID)
+	if !ok || oerr != nil || !(me.IsAdmin || sameOrg(me, orgID)) {
+		http.NotFound(w, r)
 		return
 	}
 	content, mime, err := h.Storage.GetEventCover(r.Context(), eventID)
@@ -230,6 +254,32 @@ func (h *Handlers) ServeEventCover(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(content)))
 	// public, since /store hits this with no cookie. 5-minute window
 	// matches how often arrangers tweak a cover during setup.
+	w.Header().Set("Cache-Control", "private, no-cache")
+	_, _ = w.Write(content)
+}
+
+// serveListedEventCover writes the cover of an event's approved store
+// listing: what the public may see.
+func (h *Handlers) serveListedEventCover(w http.ResponseWriter, r *http.Request, eventID int64) {
+	var (
+		mime    string
+		content []byte
+	)
+	err := h.DB.QueryRowContext(r.Context(), `
+		SELECT cover_mime_type, cover_content FROM event_listings
+		WHERE event_id = $1 AND cover_mime_type IS NOT NULL AND cover_content IS NOT NULL`, eventID).Scan(&mime, &content)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Content-Length", strconv.Itoa(len(content)))
+	// public, since /store hits this with no cookie. 5-minute window
+	// matches how often a cover changes once it is approved.
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	_, _ = w.Write(content)
 }

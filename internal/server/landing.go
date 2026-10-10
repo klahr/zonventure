@@ -152,6 +152,10 @@ type landingStrings struct {
 	// Step*, Toast*) are shared.
 	NavStore string
 
+	// Verified creator badge (listing review), on the org page, its
+	// cards and the ticket page.
+	VerifiedCreator     string
+	VerifiedCreatorHint string
 	// Listing page (store.html).
 	StoreTitle          string
 	StoreMetaDesc       string
@@ -424,6 +428,8 @@ func storeI18nJSON(s landingStrings) string {
 		"handoffPreparing":     s.StoreHandoffPreparing,
 		"handoffEmailFallback": s.StoreHandoffEmailFallback,
 		"handoffFailed":        s.StoreHandoffFailed,
+		"verifiedCreator":      s.VerifiedCreator,
+		"verifiedCreatorHint":  s.VerifiedCreatorHint,
 	}
 	return marshalJSONForScript(m)
 }
@@ -490,6 +496,8 @@ func marshalJSONForScript(v any) string {
 func storeSubs(s landingStrings) [][2]string {
 	return [][2]string{
 		{"{{STORE_TITLE}}", s.StoreTitle},
+		{"{{VERIFIED_CREATOR}}", s.VerifiedCreator},
+		{"{{VERIFIED_CREATOR_HINT}}", s.VerifiedCreatorHint},
 		{"{{STORE_META_DESC}}", s.StoreMetaDesc},
 		{"{{STORE_OG_DESC}}", s.StoreOGDesc},
 		{"{{STORE_HERO_EYEBROW}}", s.StoreHeroEyebrow},
@@ -601,6 +609,7 @@ func renderOrgPage(w http.ResponseWriter, r *http.Request, org orgProfile) {
 		{"{{LOGO_BLOCK}}", org.logoBlock()},
 		{"{{HERO_BG_STYLE}}", org.heroBgStyle()},
 		{"{{ORG_BRAND_OVERRIDES}}", org.brandStyle()},
+		{"{{ORG_VERIFIED}}", boolAttr(org.Verified)},
 	}
 	for _, sub := range orgSubs {
 		out = strings.ReplaceAll(out, sub[0], sub[1])

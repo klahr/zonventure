@@ -3,7 +3,7 @@ import { Copy, Eye } from "lucide-react";
 import type { Whoami } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
-import { Button, Callout, Card, Field, fmtDateTime, ICON, ImageDrop, relTime, Row, Stat, Stats, toDate, useToast } from "../../ui/index.ts";
+import { Button, Callout, Card, Field, fmtDateTime, ICON, ImageDrop, ListingStatus, relTime, Row, Stat, Stats, toDate, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
 import type { ConnectStatus, EventInfo, Team } from "./api.ts";
 import { copyText, fmtElapsedShort, fmtPoints, members, recapURL, teamStuck } from "./util.ts";
@@ -217,6 +217,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
       await api.uploadCover(event.id, f);
       toast.ok(t.t("Cover updated"));
       setCover({ has: true, bust: Date.now() });
+      onSaved();
     } catch (e) {
       toast.err(e);
     }
@@ -226,6 +227,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
       await api.deleteCover(event.id);
       toast.ok(t.t("Cover removed"));
       setCover({ has: false, bust: 0 });
+      onSaved();
     } catch (e) {
       toast.err(e);
     }
@@ -235,12 +237,13 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
       title={t.t("Self-guided adventure details")}
       subtitle={saved ? t.t("{{price}} {{cur}} per ticket", { price: saved, cur: (event.ticket_currency || "sek").toUpperCase() }) : t.t("No ticket price set yet — players can't buy until you save one.")}
     >
+      <ListingStatus kind="store" review={event.listing_review} reason={event.listing_reject_reason} listed={event.listed} />
       <Row>
         <div className="ev-stack">
           <span className="ev-muted">{t.t("Cover image (16:9 looks best)")}</span>
           <ImageDrop
             shape="cover"
-            src={cover.has ? `/store-cover/event/${event.id}${cover.bust ? "?v=" + cover.bust : ""}` : undefined}
+            src={cover.has ? `/store-cover/event/${event.id}?draft=1${cover.bust ? "&v=" + cover.bust : ""}` : undefined}
             label={t.t("Upload cover")}
             title={t.t("Click to upload a cover")}
             accept="image/*"

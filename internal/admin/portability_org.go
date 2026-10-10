@@ -835,6 +835,15 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 			cleanupOrg()
 			return summary, fmt.Errorf("create event idx %d: %w", ev.Idx, err)
 		}
+		// An imported store listing goes public on this instance only once
+		// it is reviewed here (listing review).
+		if ev.PublicForSale && ev.TicketPriceCents > 0 {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE events SET listing_review = 'pending', listing_submitted_at = now() WHERE id = $1`, newEventID); err != nil {
+				cleanupOrg()
+				return summary, fmt.Errorf("event idx %d listing review: %w", ev.Idx, err)
+			}
+		}
 		summary.Events++
 
 		teamIDByIdx := map[int]int64{}

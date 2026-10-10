@@ -63,6 +63,8 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		startLabel sql.NullString
 		hasCover   bool
 		hasIcon    bool
+		// orgVerified is a verified creator: the page shows a badge.
+		orgVerified bool
 	)
 	var (
 		brandAccent          sql.NullString
@@ -71,26 +73,27 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		brandText            sql.NullString
 	)
 	err = db.QueryRowContext(r.Context(), `
-		SELECT e.name, e.adventure_slug,
+		SELECT l.name, e.adventure_slug,
 		       a.title AS adv_title,
 		       o.name AS org_name,
-		       o.slug AS org_slug,
-		       e.public_blurb,
-		       e.ticket_price_cents,
-		       e.ticket_currency,
-		       e.ticket_team_size,
+		       o.slug AS org_slug, o.verified_creator,
+		       l.blurb,
+		       l.price_cents,
+		       l.currency,
+		       l.team_size,
 		       a.start_label,
-		       (e.cover_image_mime_type IS NOT NULL) AS has_cover,
+		       (l.cover_mime_type IS NOT NULL) AS has_cover,
 		       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,
 		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color
 		FROM events e
+		JOIN event_listings l ON l.event_id = e.id
 		JOIN organizations o ON o.id = e.org_id
 		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
 		WHERE e.id = $1
 		  AND e.public_for_sale
 		  AND e.ticket_price_cents IS NOT NULL
 		  AND e.state IN ('running', 'paused')
-	`, id).Scan(&eventName, &advSlug, &advTitle, &orgName, &orgSlug, &blurb, &priceCents,
+	`, id).Scan(&eventName, &advSlug, &advTitle, &orgName, &orgSlug, &orgVerified, &blurb, &priceCents,
 		&currency, &teamSize, &startLabel, &hasCover, &hasIcon,
 		&brandAccent, &brandAccentSecondary, &brandBackground, &brandText)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -213,6 +216,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		// nested-context decode chain.
 		[2]string{"{{COVER_URL}}", html.EscapeString(cssURLQuote(coverURL))},
 		[2]string{"{{HAS_COVER}}", boolAttr(hasCover)},
+		[2]string{"{{ORG_VERIFIED}}", boolAttr(orgVerified)},
 		[2]string{"{{LOOK_FONT}}", lookFont},
 		// The adventure's icon, beside the title; also what a link
 		// preview shows when the event has no cover of its own.

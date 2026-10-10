@@ -59,7 +59,9 @@ func newPartyFixture(t *testing.T) (*partyFixture, func()) {
 	t.Helper()
 	db, cleanup := dbtest.Open(t)
 	f := &partyFixture{mail: &fakeMailer{}}
-	if err := db.QueryRow(`INSERT INTO organizations(name, slug) VALUES ('Acme', 'acme') RETURNING id`).Scan(&f.orgID); err != nil {
+	// A verified creator, so its offers go up as saved: these tests are
+	// about parties, not listing review (listing_review_test.go).
+	if err := db.QueryRow(`INSERT INTO organizations(name, slug, verified_creator) VALUES ('Acme', 'acme', TRUE) RETURNING id`).Scan(&f.orgID); err != nil {
 		t.Fatal(err)
 	}
 	var userID, advID int64

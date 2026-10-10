@@ -90,7 +90,7 @@ The MCP surface has no streaming. To watch a live event, poll:
 
 A self-guided adventure (a Quest) is an event with ` + "`public_for_sale: true`" + ` — set once at create_event, immutable thereafter. update_event refuses to flip the flag with a 409. Practical consequences for the LLM:
 
-- A quest is listed at /store as soon as it's in ` + "`running`" + ` or ` + "`paused`" + ` state and has a ticket price set (use update_event to set ` + "`ticket_price_cents`" + `, ` + "`ticket_currency`" + `, ` + "`ticket_team_size`" + `, ` + "`public_blurb`" + ` after create_event).
+- A quest is listed at /store once it's in ` + "`running`" + ` or ` + "`paused`" + ` state, has a ticket price set and its listing is approved by a platform admin (` + "`listing_review`" + ` on get_event; a verified creator's are approved as saved, and an edit waits for review while the approved version stays up) (use update_event to set ` + "`ticket_price_cents`" + `, ` + "`ticket_currency`" + `, ` + "`ticket_team_size`" + `, ` + "`public_blurb`" + ` after create_event).
 - Quests start with no teams. start_event won't 409 the way it does for regular events.
 - To "delist" a quest temporarily, pause_event it. To kill it, cancel_event.
 `

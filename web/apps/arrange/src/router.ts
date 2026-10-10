@@ -36,6 +36,7 @@ export type Route =
   | { name: "organizations" }
   | { name: "organization"; id: number }
   | { name: "logs" }
+  | { name: "listing-reviews" }
   | { name: "settings"; tab?: string }
   | { name: "webhook-log"; endpoint: number }
   | { name: "not-found" };
@@ -104,6 +105,9 @@ export function parseRoute(hash: string): Route {
     }
     case "logs":
       return { name: "logs" };
+    // Platform admins: listings waiting for review before they go public.
+    case "listing-reviews":
+      return { name: "listing-reviews" };
     case "settings":
       // Parties was a Settings tab before it became its own section.
       if (arg === "parties") return { name: "parties" };
@@ -167,6 +171,8 @@ export function href(r: Route): string {
       return `#/organizations/${r.id}`;
     case "logs":
       return "#/logs";
+    case "listing-reviews":
+      return "#/listing-reviews";
     case "settings":
       return r.tab ? `#/settings/${e(r.tab)}` : "#/settings";
     case "webhook-log":

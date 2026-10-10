@@ -67,3 +67,15 @@
 }
 
 .dz .cs-title .cs-avatar { font-family: var(--dz-font-sans); }
+
+/* Listing reviews: a listing as the public would see it, edits marked. */
+.dz .ad-listing { display: flex; flex-wrap: wrap; gap: var(--dz-space-4); align-items: flex-start; }
+.dz .ad-listing__cover { width: min(100%, 20rem); aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--dz-r-2); background: var(--dz-surface-2); border: 2px solid transparent; }
+.dz .ad-listing__none { display: grid; place-items: center; margin: 0; color: var(--dz-muted); font-size: var(--dz-text-sm); }
+.dz .ad-listing__cover.is-changed { border-color: var(--dz-warning, #b87503); }
+.dz .ad-listing__facts { flex: 1; min-width: 14rem; margin: 0; display: flex; flex-direction: column; gap: var(--dz-space-3); }
+.dz .ad-listing__fact { padding-left: var(--dz-space-3); border-left: 3px solid transparent; }
+.dz .ad-listing__fact.is-changed { border-left-color: var(--dz-warning, #b87503); }
+.dz .ad-listing__fact dt { display: flex; align-items: center; gap: var(--dz-space-2); color: var(--dz-muted); font-size: var(--dz-text-sm); }
+.dz .ad-listing__fact dd { margin: 2px 0 0; white-space: pre-wrap; }
+.dz .ad-listing__was { display: block; margin-top: 2px; text-decoration: line-through; }

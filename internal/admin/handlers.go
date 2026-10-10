@@ -358,6 +358,13 @@ type eventDTO struct {
 	// upload-or-replace affordance. The bytes themselves are served
 	// out-of-band at /store-cover/event/{id}.
 	HasCoverImage bool `json:"has_cover_image,omitempty"`
+	// Listing review, for a self-guided event on detail responses:
+	// where its last store changes are ("", pending, approved,
+	// rejected with ListingRejectReason), and whether an approved
+	// version is up (Listed).
+	ListingReview       string `json:"listing_review,omitempty"`
+	ListingRejectReason string `json:"listing_reject_reason,omitempty"`
+	Listed              bool   `json:"listed,omitempty"`
 }
 
 type createEventRequest struct {
@@ -1182,6 +1189,13 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		if _, err := h.DB.ExecContext(r.Context(),
 			`UPDATE events SET public_blurb = $1 WHERE id = $2`, blurb, eventID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
+	}
+	// What the store shows changed: it waits for review before it is up.
+	if req.Name != nil || req.TicketPriceCents != nil || req.TicketTeamSize != nil || req.PublicBlurb != nil {
+		if err := h.submitEventListing(r.Context(), eventID); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
 			return
 		}
 	}

@@ -73,7 +73,7 @@ func (s *Server) registerEventTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "update_event",
 		Scope:       scopeWrite,
-		Description: "Change an event's settings: name, scheduled_at (only while scheduled), show_map, secret_roles, and for a self-guided event (public_for_sale) its store listing — ticket_price_cents, ticket_currency, ticket_team_size, public_blurb. A self-guided event is sold in the store once it is running and has a price. Only the keys you pass change.",
+		Description: "Change an event's settings: name, scheduled_at (only while scheduled), show_map, secret_roles, and for a self-guided event (public_for_sale) its store listing — ticket_price_cents, ticket_currency, ticket_team_size, public_blurb. A self-guided event is sold in the store once it is running, has a price and its listing is approved: a platform admin reviews each new or changed listing (name, price, team size, blurb, cover) unless the organisation is a verified creator, and until then the store keeps showing the last approved version. get_event's listing_review says where it is (pending, approved, rejected with listing_reject_reason). Only the keys you pass change.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},

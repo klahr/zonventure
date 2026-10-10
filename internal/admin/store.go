@@ -81,13 +81,14 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 	)
 	if err := h.DB.QueryRowContext(r.Context(), `
 		SELECT e.adventure_slug,
-		       e.name,
+		       l.name,
 		       a.title AS adv_title,
-		       e.ticket_price_cents,
-		       e.ticket_currency,
-		       e.ticket_team_size,
+		       l.price_cents,
+		       l.currency,
+		       l.team_size,
 		       e.state
 		FROM events e
+		JOIN event_listings l ON l.event_id = e.id
 		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
 		WHERE e.id = $1
 		  AND e.public_for_sale
@@ -233,13 +234,14 @@ func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
 	)
 	if err := h.DB.QueryRowContext(r.Context(), `
 		SELECT e.adventure_slug,
-		       e.name,
+		       l.name,
 		       a.title AS adv_title,
-		       e.ticket_price_cents,
-		       e.ticket_currency,
-		       e.ticket_team_size,
+		       l.price_cents,
+		       l.currency,
+		       l.team_size,
 		       e.state
 		FROM events e
+		JOIN event_listings l ON l.event_id = e.id
 		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
 		WHERE e.id = $1
 		  AND e.org_id = $2

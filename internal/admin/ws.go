@@ -464,7 +464,9 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		       ar.ticket_currency, ar.ticket_team_size, ar.public_blurb,
 		       (ar.cover_image_mime_type IS NOT NULL) AS has_cover_image,
 		       ar.paused_seconds, COALESCE(ar.paused_at, ''),
-		       ar.secret_roles, COALESCE(ar.graph_id, 0), ar.party
+		       ar.secret_roles, COALESCE(ar.graph_id, 0), ar.party,
+		       COALESCE(ar.listing_review, ''), ar.listing_reject_reason,
+		       EXISTS (SELECT 1 FROM event_listings l WHERE l.event_id = ar.id)
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		WHERE ar.id = $1
@@ -473,7 +475,8 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
 		&d.LiveToken, &showMap, &d.TeamsCount, &d.PlayerSlotsCount,
 		&d.PublicForSale, &priceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.PublicBlurb,
-		&d.HasCoverImage, &d.PausedSeconds, &d.PausedAt, &secretRoles, &graphID, &d.Party); err != nil {
+		&d.HasCoverImage, &d.PausedSeconds, &d.PausedAt, &secretRoles, &graphID, &d.Party,
+		&d.ListingReview, &d.ListingRejectReason, &d.Listed); err != nil {
 		return eventDetailDTO{}, err
 	}
 	// Only an adventure with a saboteur has the setting to show.

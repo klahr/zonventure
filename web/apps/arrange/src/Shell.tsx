@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from "react";
 import { createPortal } from "react-dom";
-import { Menu as MenuIcon, X, Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, Gift, LogOut, Map as MapIcon, Monitor, Moon, PartyPopper, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
+import { Menu as MenuIcon, X, Building2, CalendarDays, ClipboardCheck, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, Gift, LogOut, Map as MapIcon, Monitor, Moon, PartyPopper, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
 import { auth, emails, siteName, siteWordmark, type Whoami } from "@zonventure/api";
 import { readTheme, setTheme, type Theme } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
@@ -60,6 +60,7 @@ const FieldPage = page(() => import("./pages/adventures/index.tsx"), "FieldPage"
 const AuthorizePage = page(() => import("./pages/authorize/index.tsx"), "AuthorizePage");
 const SettingsPage = page(() => import("./pages/settings/index.tsx"), "SettingsPage");
 const LogsPage = page(() => import("./pages/admin/index.tsx"), "LogsPage");
+const ListingReviewsPage = page(() => import("./pages/admin/index.tsx"), "ListingReviewsPage");
 const OrganizationsPage = page(() => import("./pages/admin/index.tsx"), "OrganizationsPage");
 const OrganizationPage = page(() => import("./pages/admin/index.tsx"), "OrganizationPage");
 const WebhookLogPage = page(() => import("./pages/admin/index.tsx"), "WebhookLogPage");
@@ -92,7 +93,7 @@ const ROLE: Record<Whoami["role"], string> = { admin: "Administrator", org_admin
  * before joining an organisation — only the way out. `adventures`
  * marks the section the designer belongs to.
  */
-type Section = "dashboard" | "organizations" | "logs" | "settings" | "adventures" | "events" | "quests" | "parties" | "redemptions";
+type Section = "dashboard" | "organizations" | "listing-reviews" | "logs" | "settings" | "adventures" | "events" | "quests" | "parties" | "redemptions";
 
 // Settings is not listed here: the account menu at the foot of the
 // sidebar leads there, on every screen.
@@ -102,6 +103,7 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
     return [
       item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"),
       item("Organizations", Building2, { name: "organizations" }, "organizations"),
+      item("Listing reviews", ClipboardCheck, { name: "listing-reviews" }, "listing-reviews"),
       item("Logs", Terminal, { name: "logs" }, "logs"),
     ];
   }
@@ -143,6 +145,8 @@ function sectionOf(r: Route): { section: Section; label: string } {
       return { section: "organizations", label: "Organizations" };
     case "logs":
       return { section: "logs", label: "Logs" };
+    case "listing-reviews":
+      return { section: "listing-reviews", label: "Listing reviews" };
     case "settings":
     case "webhook-log":
       return { section: "settings", label: "Settings" };
@@ -158,10 +162,10 @@ function sectionOf(r: Route): { section: Section; label: string } {
  */
 function allowed(r: Route, user: Whoami): boolean {
   const s = sectionOf(r).section;
-  if (user.role === "admin") return s === "dashboard" || s === "organizations" || s === "logs" || s === "settings";
+  if (user.role === "admin") return s === "dashboard" || s === "organizations" || s === "listing-reviews" || s === "logs" || s === "settings";
   if (!user.memberships.length) return s === "dashboard" || s === "settings";
   if (s === "parties") return user.role === "org_admin";
-  return s !== "organizations" && s !== "logs";
+  return s !== "organizations" && s !== "listing-reviews" && s !== "logs";
 }
 
 export function Shell({ user }: { user: Whoami }) {
@@ -552,6 +556,8 @@ function Page({ route }: { route: Route }) {
       return <OrganizationPage key={route.id} id={route.id} />;
     case "logs":
       return <LogsPage />;
+    case "listing-reviews":
+      return <ListingReviewsPage />;
     case "settings":
       return <SettingsPage tab={route.tab} />;
     case "webhook-log":
