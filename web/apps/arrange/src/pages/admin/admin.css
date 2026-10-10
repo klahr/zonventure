@@ -79,3 +79,27 @@
 .dz .ad-listing__fact dt { display: flex; align-items: center; gap: var(--dz-space-2); color: var(--dz-muted); font-size: var(--dz-text-sm); }
 .dz .ad-listing__fact dd { margin: 2px 0 0; white-space: pre-wrap; }
 .dz .ad-listing__was { display: block; margin-top: 2px; text-decoration: line-through; }
+
+/* Listing review: the queue's helpers and one listing in full. */
+.dz .ad-stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dz .ad-pad { padding: var(--dz-space-3) var(--dz-space-4); margin: 0; }
+.dz .ad-row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: var(--dz-space-3); }
+.dz .ad-review__head { display: grid; grid-template-columns: max-content 1fr; gap: var(--dz-space-1) var(--dz-space-4); margin: 0; }
+.dz .ad-review__head dt { color: var(--dz-muted); font-size: var(--dz-text-sm); }
+.dz .ad-review__head dd { margin: 0; }
+.dz .ad-texts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.dz .ad-texts li { display: grid; grid-template-columns: minmax(10rem, 18rem) 1fr; gap: var(--dz-space-3); padding: var(--dz-space-2) var(--dz-space-4); border-top: 1px solid var(--dz-border); }
+.dz .ad-texts__where { color: var(--dz-muted); font-size: var(--dz-text-sm); font-family: var(--dz-font-mono, monospace); overflow-wrap: anywhere; }
+.dz .ad-texts__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.dz .ad-media { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: var(--dz-space-3); padding: var(--dz-space-3) var(--dz-space-4); }
+.dz .ad-media figure { margin: 0; display: flex; flex-direction: column; gap: var(--dz-space-1); }
+.dz .ad-media img, .dz .ad-media video { width: 100%; max-height: 18rem; object-fit: contain; background: var(--dz-surface-2); border-radius: var(--dz-r-2, 6px); }
+.dz .ad-media audio { width: 100%; }
+.dz .ad-media figcaption { color: var(--dz-muted); font-size: var(--dz-text-sm); overflow-wrap: anywhere; }
+.dz .ad-filter { width: 100%; max-width: 24rem; }
+@media (max-width: 640px) {
+  .dz .ad-texts li { grid-template-columns: 1fr; gap: 2px; }
+}
+
+/* A hash from the listing review log, to compare by eye. */
+.ad-hash { font-family: ui-monospace, monospace; font-size: .8rem; word-break: break-all; }

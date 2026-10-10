@@ -4,7 +4,7 @@ import { ApiError, request } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { href, navigate } from "../../router.ts";
-import { Button, Callout, Card, Dialog, Empty, ErrorBox, Field, HelpPopover, ICON, ListingStatus, Loading, Page, PageHeader, Pill, Table, fmtMoney, useLoad, useToast, type Column } from "../../ui/index.ts";
+import { Button, Callout, Card, Dialog, Empty, ErrorBox, Field, HelpPopover, ICON, ListingStatus, Loading, Page, PageHeader, Pill, SubmitListingDialog, Table, canSubmitListing, fmtMoney, useLoad, useToast, type Column } from "../../ui/index.ts";
 import { SPOTS } from "@zonventure/ui";
 import { iconOrCover } from "../adventures/parts.tsx";
 import { listAdventures, listEvents } from "../events/api.ts";
@@ -26,11 +26,18 @@ interface PartyOffer {
   stations: number;
   problems?: string[];
   book_url?: string;
-  /** Listing review: where the offer's last changes are, and whether an approved version is up. */
-  listing_review?: "" | "pending" | "approved" | "rejected";
+  /**
+   * Listing review: where the offer's draft is (draft = not submitted),
+   * and whether an approved version is up. newer_version: its adventure
+   * has a newer published version than the approved one booked parties play.
+   */
+  listing_review?: "" | "draft" | "pending" | "approved" | "rejected";
   reject_reason?: string;
   listed?: boolean;
+  newer_version?: boolean;
 }
+
+const submitURL = (slug: string) => `/api/admin/party-offers/${encodeURIComponent(slug)}/submit`;
 
 /** An offer with its adventure's cover, which the offers list leaves out. */
 type Row = PartyOffer & { cover?: string | undefined };
@@ -83,6 +90,12 @@ function Offers({ slug }: { slug?: string | undefined }) {
     return offers.map((o): Row => ({ ...o, cover: covers.get(o.adventure_slug) }));
   }, []);
   const [creating, setCreating] = useState(false);
+  // An offer to submit for review: picked in the list, or just saved.
+  const [submitting, setSubmitting] = useState<{ slug: string; title: string } | null>(null);
+  const saved = (o: { slug: string; title: string }, review?: string) => {
+    load.reload();
+    if (review === "draft") setSubmitting(o);
+  };
 
   const rows = load.data ?? [];
   const offered = rows.filter((o) => o.offer_id);
@@ -126,7 +139,16 @@ function Offers({ slug }: { slug?: string | undefined }) {
     ) },
     { key: "price", header: t.t("Price"), align: "end", cell: (o) => <PriceCell offer={o} locale={loc} /> },
     { key: "kids", header: t.t("Most children"), wide: true, align: "end", cell: (o) => String(o.max_kids) },
-    { key: "state", header: t.t("State"), align: "end", cell: (o) => <StatePill offer={o} /> },
+    { key: "state", header: t.t("State"), align: "end", cell: (o) => (
+      <span className="pt-actions">
+        <StatePill offer={o} />
+        {o.enabled && canSubmitListing(o.listing_review, o.newer_version) && (
+          <Button size="sm" variant="primary" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSubmitting({ slug: o.adventure_slug, title: o.title }); }}>
+            {t.t("Submit for review")}
+          </Button>
+        )}
+      </span>
+    ) },
     { key: "link", header: <span className="cs-sr">{t.t("Booking page")}</span>, align: "end", width: "1%", cell: (o) =>
       o.enabled && o.listed && o.book_url ? (
         <span className="pt-actions">
@@ -178,8 +200,11 @@ function Offers({ slug }: { slug?: string | undefined }) {
           </ul>
         </details>
       )}
-      {creating && <OfferDialog choices={available} onClose={() => setCreating(false)} onSaved={load.reload} />}
-      {editing && <OfferDialog key={editing.adventure_slug} offer={editing} onClose={closeEdit} onSaved={load.reload} />}
+      {creating && <OfferDialog choices={available} onClose={() => setCreating(false)} onSaved={saved} />}
+      {editing && <OfferDialog key={editing.adventure_slug} offer={editing} onClose={closeEdit} onSaved={saved} />}
+      {submitting && (
+        <SubmitListingDialog url={submitURL(submitting.slug)} title={submitting.title} onClose={() => setSubmitting(null)} onDone={load.reload} />
+      )}
     </>
   );
 }
@@ -205,6 +230,9 @@ function StatePill({ offer }: { offer: Row }) {
   // Listing review: an edit waits behind the approved version, which stays bookable.
   if (offer.listing_review === "rejected") return <Pill tone="bad" title={offer.reject_reason ?? ""}>{t.t("Not approved")}</Pill>;
   if (offer.listing_review === "pending") return <Pill tone="info">{offer.listed ? t.t("Bookable · changes in review") : t.t("In review")}</Pill>;
+  if (offer.listing_review === "draft") return <Pill tone="warn">{offer.listed ? t.t("Bookable · changes not submitted") : t.t("Not submitted")}</Pill>;
+  if (offer.newer_version) return <Pill tone="warn">{t.t("Bookable · newer version not submitted")}</Pill>;
+  if (!offer.listed) return <Pill>{t.t("Not submitted")}</Pill>;
   return <Pill tone="good">{t.t("Bookable")}</Pill>;
 }
 
@@ -218,7 +246,7 @@ const minor = (s: string) => Math.round(Number(s.replace(",", ".")) * 100) || 0;
  * One offer's terms. Given an offer it edits that one; given choices it
  * makes a new offer for one of them.
  */
-function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void; onSaved: () => void }) {
+function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void; onSaved: (o: { slug: string; title: string }, review?: string) => void }) {
   const t = useT();
   const loc = t.current();
   const toast = useToast();
@@ -250,11 +278,10 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
         method: "PUT",
         body: { enabled: enabled && !blocked, base_cents: minor(base), per_kid_cents: minor(perKid), currency: "sek", max_kids: kidsN, blurb },
       });
-      toast.ok(saved?.listing_review === "pending"
-        ? t.t("Saved. It goes on your page once it is approved.")
-        : isNew ? t.t("Party offer created") : t.t("Saved"));
-      props.onSaved();
+      toast.ok(isNew ? t.t("Party offer created") : t.t("Saved"));
+      // A draft waits to be submitted for review: the list opens that next.
       props.onClose();
+      props.onSaved({ slug: target.adventure_slug, title: target.title }, saved?.listing_review);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
       setBusy(false);
@@ -301,7 +328,7 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
           </div>
         )
       )}
-      {props.offer && <ListingStatus kind="page" review={props.offer.listing_review} reason={props.offer.reject_reason} listed={props.offer.listed} />}
+      {props.offer && <ListingStatus kind="page" review={props.offer.listing_review} reason={props.offer.reject_reason} listed={props.offer.listed} newerVersion={props.offer.newer_version} />}
       {blocked && <Callout variant="warning">{t.t("Can't be offered as a party: {{reason}}", { reason: target!.problems![0]! })}</Callout>}
       <div className="pt-terms">
         <Field label={t.t("Base price (kr)")}>

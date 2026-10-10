@@ -64,6 +64,8 @@ func audienceAllows(u auth.User, aud string) bool {
 		return true
 	case audienceAdmin:
 		return u.Role == auth.RoleAdmin
+	case audienceReviewer:
+		return u.ListingReviewer
 	default:
 		// Org-side tools: org users only — never the platform admin,
 		// and never a lobby user. The handlers assume a non-nil OrgID,
@@ -146,6 +148,9 @@ func (s *Server) registerTools() {
 	// reference doc the model can fetch as a one-shot orientation.
 	s.registerResultsTools()
 	s.registerLifecycleTool()
+	// Listing review: platform admins' assistants review what goes
+	// public; orgs' assistants submit it. listing_review.go.
+	s.registerListingReviewTools()
 
 	s.tools.register(ToolDescriptor{
 		Name:        "list_adventures",

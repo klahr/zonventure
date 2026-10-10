@@ -180,6 +180,16 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// call /mcp on their behalf. Plaintext is returned once at
 		// creation; subsequent reads only surface name + prefix.
 		r.With(auth.RequireSession).Post("/me/mcp-tokens", adminH.CreateMCPToken)
+		// Listing review: what organisations put up for sale waits here
+		// for a listing reviewer — any account a platform admin made one,
+		// in an organisation or none. The handlers check the flag.
+		r.Get("/listing-reviews", adminH.ListListingReviews)
+		r.Get("/listing-reviews/log", adminH.ListListingLog)
+		r.Get("/listing-reviews/log/verify", adminH.VerifyListingLog)
+		r.Get("/listing-reviews/{kind}/{id}", adminH.GetListingReview)
+		r.Get("/listing-reviews/{kind}/{id}/media/{ref}", adminH.GetListingReviewMedia)
+		r.Post("/listing-reviews/{kind}/{id}/approve", adminH.ApproveListing)
+		r.Post("/listing-reviews/{kind}/{id}/reject", adminH.RejectListing)
 		r.With(auth.RequireSession).Get("/me/mcp-tokens", adminH.ListMCPTokens)
 		r.With(auth.RequireSession).Delete("/me/mcp-tokens/{id}", adminH.RevokeMCPToken)
 		// TOTP 2FA: status, enrol (setup → confirm), disable, and
@@ -205,6 +215,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// (checked in the handler).
 			r.Get("/party-offers", adminH.ListPartyOffers)
 			r.Put("/party-offers/{slug}", adminH.PutPartyOffer)
+			r.Post("/party-offers/{slug}/submit", adminH.SubmitPartyOffer)
 			// A hosted event's host page, in the console: the same
 			// handlers as /api/party/{token}/…, the event authorised by
 			// org instead of by host link.
@@ -241,6 +252,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Get("/events/{eventID}", adminH.EventDetail)
 			r.Patch("/events/{eventID}", adminH.UpdateEvent)
 			r.Post("/events/{eventID}/cover", adminH.SetEventCover)
+			r.Post("/events/{eventID}/listing/submit", adminH.SubmitEventListing)
 			r.Delete("/events/{eventID}/cover", adminH.DeleteEventCover)
 			// Files the players can download before the start (and after).
 			r.Get("/events/{eventID}/files", adminH.ListEventFiles)
@@ -434,10 +446,9 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Post("/organizations/{orgID}/trusted", adminH.SetOrgTrusted)
 			r.Post("/organizations/{orgID}/party-adventures", adminH.SetOrgPartyAdventures)
 			r.Post("/organizations/{orgID}/verified-creator", adminH.SetOrgVerifiedCreator)
-			// Listing review: what orgs put up for sale waits here.
-			r.Get("/listing-reviews", adminH.ListListingReviews)
-			r.Post("/listing-reviews/{kind}/{id}/approve", adminH.ApproveListing)
-			r.Post("/listing-reviews/{kind}/{id}/reject", adminH.RejectListing)
+			// Who may review listings (the review itself is below).
+			r.Get("/listing-reviewers", adminH.ListListingReviewers)
+			r.Post("/listing-reviewers", adminH.SetListingReviewer)
 			r.Delete("/organizations/{orgID}", adminH.DeleteOrganization)
 			// Brand logo upload — surfaced on the recap PDF cover and
 			// (later) on the play / arrange chrome. PNG/JPEG/WebP only,

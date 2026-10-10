@@ -43,10 +43,11 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 		pausedAt  sql.NullString
 		party     bool
 		partyMode string
+		base      sql.NullInt64
 	)
 	if err := tx.QueryRowContext(ctx,
-		`SELECT adventure_slug, graph_id, paused_seconds, paused_at, party, party_mode FROM events WHERE id = $1 FOR UPDATE`, eventID,
-	).Scan(&slug, &pinned, &paused, &pausedAt, &party, &partyMode); err != nil {
+		`SELECT adventure_slug, graph_id, paused_seconds, paused_at, party, party_mode, base_graph_id FROM events WHERE id = $1 FOR UPDATE`, eventID,
+	).Scan(&slug, &pinned, &paused, &pausedAt, &party, &partyMode, &base); err != nil {
 		return fmt.Errorf("loading event %d: %w", eventID, err)
 	}
 
@@ -57,7 +58,7 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 		if err := tx.QueryRowContext(ctx, `SELECT id FROM adventures WHERE slug = $1`, slug).Scan(&adventureID); err != nil {
 			return fmt.Errorf("loading adventure %q: %w", slug, err)
 		}
-		stored, err := graphstore.Published(ctx, tx, adventureID)
+		stored, err := baseGraph(ctx, tx, adventureID, base)
 		if errors.Is(err, graphstore.ErrNotFound) {
 			return ErrNoGraph
 		}

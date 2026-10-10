@@ -75,13 +75,14 @@ func PinRound(ctx context.Context, tx *sql.Tx, eventID int64) (int64, error) {
 	var (
 		adventureID int64
 		mode        string
+		base        sql.NullInt64
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT a.id, e.party_mode FROM events e JOIN adventures a ON a.slug = e.adventure_slug WHERE e.id = $1
-	`, eventID).Scan(&adventureID, &mode); err != nil {
+		SELECT a.id, e.party_mode, e.base_graph_id FROM events e JOIN adventures a ON a.slug = e.adventure_slug WHERE e.id = $1
+	`, eventID).Scan(&adventureID, &mode, &base); err != nil {
 		return 0, fmt.Errorf("loading event %d: %w", eventID, err)
 	}
-	stored, err := graphstore.Published(ctx, tx, adventureID)
+	stored, err := baseGraph(ctx, tx, adventureID, base)
 	if errors.Is(err, graphstore.ErrNotFound) {
 		return 0, ErrNoGraph
 	}
@@ -158,4 +159,14 @@ func EnsureStations(ctx context.Context, q Querier, eventID int64, zones []graph
 		}
 	}
 	return nil
+}
+
+// baseGraph is what an event's games are adapted from: the adventure
+// version its listing was approved with when it has one (a booked
+// party, see listing review), else the adventure's published version.
+func baseGraph(ctx context.Context, tx *sql.Tx, adventureID int64, base sql.NullInt64) (graphstore.Stored, error) {
+	if base.Valid {
+		return graphstore.ByID(ctx, tx, base.Int64)
+	}
+	return graphstore.Published(ctx, tx, adventureID)
 }

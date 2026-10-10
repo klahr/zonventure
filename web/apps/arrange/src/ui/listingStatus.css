@@ -1,0 +1,4 @@
+/* Submitting a listing for review: the creator's word, as a checkbox. */
+.dz .ls-attest { display: flex; align-items: flex-start; gap: var(--dz-space-2); margin: var(--dz-space-3) 0; font-size: var(--dz-text-md); color: var(--dz-ink); cursor: pointer; }
+.dz .ls-attest > input { margin-top: 3px; flex: none; width: auto; }
+.dz .ls-note { color: var(--dz-muted); font-size: var(--dz-text-sm); }

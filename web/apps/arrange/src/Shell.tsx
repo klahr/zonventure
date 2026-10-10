@@ -61,6 +61,7 @@ const AuthorizePage = page(() => import("./pages/authorize/index.tsx"), "Authori
 const SettingsPage = page(() => import("./pages/settings/index.tsx"), "SettingsPage");
 const LogsPage = page(() => import("./pages/admin/index.tsx"), "LogsPage");
 const ListingReviewsPage = page(() => import("./pages/admin/index.tsx"), "ListingReviewsPage");
+const ListingReviewPage = page(() => import("./pages/admin/index.tsx"), "ListingReviewPage");
 const OrganizationsPage = page(() => import("./pages/admin/index.tsx"), "OrganizationsPage");
 const OrganizationPage = page(() => import("./pages/admin/index.tsx"), "OrganizationPage");
 const WebhookLogPage = page(() => import("./pages/admin/index.tsx"), "WebhookLogPage");
@@ -107,7 +108,9 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
       item("Logs", Terminal, { name: "logs" }, "logs"),
     ];
   }
-  if (!user.memberships.length) return [item("Dashboard", Gauge, { name: "dashboard" }, "dashboard")];
+  // A listing reviewer, in an organisation or none, also has the queue.
+  const review = user.listing_reviewer ? [item("Listing reviews", ClipboardCheck, { name: "listing-reviews" }, "listing-reviews")] : [];
+  if (!user.memberships.length) return [item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"), ...review];
   return [
     item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"),
     item("Adventures", MapIcon, { name: "adventures" }, "adventures"),
@@ -115,6 +118,7 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
     item("Self-guided", Compass, { name: "quests" }, "quests"),
     item("Hosted", PartyPopper, { name: "parties" }, "parties"),
     item("Box redemptions", Gift, { name: "redemptions" }, "redemptions"),
+    ...review,
   ];
 }
 
@@ -146,6 +150,7 @@ function sectionOf(r: Route): { section: Section; label: string } {
     case "logs":
       return { section: "logs", label: "Logs" };
     case "listing-reviews":
+    case "listing-review":
       return { section: "listing-reviews", label: "Listing reviews" };
     case "settings":
     case "webhook-log":
@@ -162,10 +167,13 @@ function sectionOf(r: Route): { section: Section; label: string } {
  */
 function allowed(r: Route, user: Whoami): boolean {
   const s = sectionOf(r).section;
-  if (user.role === "admin") return s === "dashboard" || s === "organizations" || s === "listing-reviews" || s === "logs" || s === "settings";
+  // The review queue is a listing reviewer's, whatever else they are;
+  // a platform admin has it too, to choose the reviewers.
+  if (s === "listing-reviews") return !!user.listing_reviewer || user.role === "admin";
+  if (user.role === "admin") return s === "dashboard" || s === "organizations" || s === "logs" || s === "settings";
   if (!user.memberships.length) return s === "dashboard" || s === "settings";
   if (s === "parties") return user.role === "org_admin";
-  return s !== "organizations" && s !== "listing-reviews" && s !== "logs";
+  return s !== "organizations" && s !== "logs";
 }
 
 export function Shell({ user }: { user: Whoami }) {
@@ -324,7 +332,7 @@ export function Shell({ user }: { user: Whoami }) {
             <ToastProvider>
               <DialogProvider>
                 <Suspense fallback={<Loading label={t.t("Loading…")} />}>
-                  {permitted ? <Page route={route} /> : <DashboardPage />}
+                  {permitted ? <Page route={route} user={user} /> : <DashboardPage />}
                 </Suspense>
               </DialogProvider>
             </ToastProvider>
@@ -516,7 +524,7 @@ function AccountMenu({ user, orgName, collapsed, onLogout }: { user: Whoami; org
 const LANGUAGE: Record<string, string> = { en: "English", sv: "Svenska" };
 
 /** The page for a route. Each area's pages live under pages/<area>/. */
-function Page({ route }: { route: Route }) {
+function Page({ route, user }: { route: Route; user: Whoami }) {
   switch (route.name) {
     case "dashboard":
       return <DashboardPage />;
@@ -557,7 +565,9 @@ function Page({ route }: { route: Route }) {
     case "logs":
       return <LogsPage />;
     case "listing-reviews":
-      return <ListingReviewsPage />;
+      return <ListingReviewsPage tab={route.tab} reviewer={!!user.listing_reviewer} admin={user.role === "admin"} />;
+    case "listing-review":
+      return <ListingReviewPage key={`${route.kind}-${route.id}`} kind={route.kind} id={route.id} />;
     case "settings":
       return <SettingsPage tab={route.tab} />;
     case "webhook-log":

@@ -2,6 +2,7 @@ package admin_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -17,16 +18,20 @@ import (
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/public"
 	"github.com/klahr/zonventure/internal/storage/dbblob"
 )
 
 // listingFixture is the party fixture's organisation, unverified, with a
-// self-guided event to sell, a platform admin to review it and the
+// self-guided event to sell, a platform admin to review it — in the
+// console, and through an API token as an AI assistant would — and the
 // public store to read it from.
 type listingFixture struct {
 	*partyFixture
 	reviewer   chi.Router
+	assistant  chi.Router
 	store      chi.Router
 	eventID    int64
 	adminEmail string
@@ -53,22 +58,39 @@ func newListingFixture(t *testing.T) (*listingFixture, func()) {
 		t.Fatal(err)
 	}
 	if err := db.QueryRow(`
-		INSERT INTO events(adventure_slug, org_id, state, live_token, name, public_for_sale)
-		VALUES ('treasure', $1, 'running', 'lt-' || md5(random()::text), 'Treasure', TRUE)
+		INSERT INTO events(adventure_slug, org_id, state, live_token, name, public_for_sale, graph_id)
+		SELECT 'treasure', $1, 'running', 'lt-' || md5(random()::text), 'Treasure', TRUE, published_graph_id
+		FROM adventures WHERE slug = 'treasure'
 		RETURNING id`, f.orgID).Scan(&f.eventID); err != nil {
 		t.Fatal(err)
 	}
 
 	f.console.Patch("/api/admin/events/{eventID}", f.h.UpdateEvent)
 	f.console.Post("/api/admin/events/{eventID}/cover", f.h.SetEventCover)
+	f.console.Post("/api/admin/events/{eventID}/listing/submit", f.h.SubmitEventListing)
 	f.console.Get("/store-cover/event/{eventID}", f.h.ServeEventCover)
 
+	routes := func(r chi.Router) {
+		r.Get("/api/admin/listing-reviews", f.h.ListListingReviews)
+		r.Get("/api/admin/listing-reviews/log", f.h.ListListingLog)
+		r.Get("/api/admin/listing-reviews/log/verify", f.h.VerifyListingLog)
+		r.Get("/api/admin/listing-reviews/{kind}/{id}", f.h.GetListingReview)
+		r.Get("/api/admin/listing-reviews/{kind}/{id}/media/{ref}", f.h.GetListingReviewMedia)
+		r.Post("/api/admin/listing-reviews/{kind}/{id}/approve", f.h.ApproveListing)
+		r.Post("/api/admin/listing-reviews/{kind}/{id}/reject", f.h.RejectListing)
+		r.Post("/api/admin/organizations/{orgID}/verified-creator", f.h.SetOrgVerifiedCreator)
+	}
+	root := auth.User{ID: adminID, Username: "root", Role: auth.RoleAdmin, IsAdmin: true, ListingReviewer: true}
 	f.reviewer = chi.NewRouter()
-	f.reviewer.Use(injectUser(auth.User{ID: adminID, Role: auth.RoleAdmin, IsAdmin: true}))
-	f.reviewer.Get("/api/admin/listing-reviews", f.h.ListListingReviews)
-	f.reviewer.Post("/api/admin/listing-reviews/{kind}/{id}/approve", f.h.ApproveListing)
-	f.reviewer.Post("/api/admin/listing-reviews/{kind}/{id}/reject", f.h.RejectListing)
-	f.reviewer.Post("/api/admin/organizations/{orgID}/verified-creator", f.h.SetOrgVerifiedCreator)
+	f.reviewer.Use(injectUser(root))
+	routes(f.reviewer)
+	f.assistant = chi.NewRouter()
+	f.assistant.Use(injectUser(root), func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(auth.WithAPIToken(r.Context())))
+		})
+	})
+	routes(f.assistant)
 
 	publicH := &public.Handlers{DB: db, Lib: adventure.New(db)}
 	f.store = chi.NewRouter()
@@ -82,6 +104,12 @@ func (f *listingFixture) patchEvent(t *testing.T, body map[string]any) {
 	if w := call(t, f.console, "PATCH", fmt.Sprintf("/api/admin/events/%d", f.eventID), body); w.Code != http.StatusNoContent {
 		t.Fatalf("patch %v: %d %s", body, w.Code, w.Body)
 	}
+}
+
+// submitEvent submits the event's listing, confirming its content.
+func (f *listingFixture) submitEvent(t *testing.T) *httptest.ResponseRecorder {
+	t.Helper()
+	return call(t, f.console, "POST", fmt.Sprintf("/api/admin/events/%d/listing/submit", f.eventID), map[string]bool{"attest": true})
 }
 
 // storeItems is what the public store lists.
@@ -112,6 +140,7 @@ type pendingListing struct {
 	Live *struct {
 		PriceCents int `json:"price_cents"`
 	} `json:"live"`
+	AttestedBy string `json:"attested_by"`
 }
 
 func (f *listingFixture) queue(t *testing.T) []pendingListing {
@@ -131,7 +160,12 @@ func (f *listingFixture) queue(t *testing.T) []pendingListing {
 
 func (f *listingFixture) decide(t *testing.T, kind string, id int64, action, revision, reason string) *httptest.ResponseRecorder {
 	t.Helper()
-	return call(t, f.reviewer, "POST", fmt.Sprintf("/api/admin/listing-reviews/%s/%d/%s", kind, id, action),
+	return f.decideAs(t, f.reviewer, kind, id, action, revision, reason)
+}
+
+func (f *listingFixture) decideAs(t *testing.T, as http.Handler, kind string, id int64, action, revision, reason string) *httptest.ResponseRecorder {
+	t.Helper()
+	return call(t, as, "POST", fmt.Sprintf("/api/admin/listing-reviews/%s/%d/%s", kind, id, action),
 		map[string]string{"revision": revision, "reason": reason})
 }
 
@@ -159,17 +193,36 @@ func (f *listingFixture) mailTo(addr string) []string {
 	return out
 }
 
-// An unverified organisation's listing goes public only once approved;
-// an edit to it waits for review behind what was approved, and a
-// rejection leaves that up.
+func code(w *httptest.ResponseRecorder) string {
+	var body struct {
+		Code string `json:"code"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	return body.Code
+}
+
+// An unverified organisation's listing is a draft until its creator
+// submits it, confirming its content; it goes public once approved. An
+// edit waits for review behind what was approved, and a rejection leaves
+// that up.
 func TestListingReview_Event(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newListingFixture(t)
 	defer cleanup()
 
 	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "public_blurb": "Find it"})
-	if got := f.eventState(t); got != "pending" {
-		t.Fatalf("state after first save = %q, want pending", got)
+	if got := f.eventState(t); got != "draft" {
+		t.Fatalf("state after first save = %q, want draft", got)
+	}
+	if q := f.queue(t); len(q) != 0 {
+		t.Fatalf("queue holds an unsubmitted draft: %+v", q)
+	}
+	w := call(t, f.console, "POST", fmt.Sprintf("/api/admin/events/%d/listing/submit", f.eventID), map[string]bool{"attest": false})
+	if w.Code != http.StatusBadRequest || code(w) != "attest_required" {
+		t.Fatalf("submit without confirming: %d %s", w.Code, w.Body)
+	}
+	if w := f.submitEvent(t); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"pending"`) {
+		t.Fatalf("submit: %d %s", w.Code, w.Body)
 	}
 	if items := f.storeItems(t); len(items) != 0 {
 		t.Fatalf("store lists an unreviewed listing: %+v", items)
@@ -179,10 +232,10 @@ func TestListingReview_Event(t *testing.T) {
 	}
 
 	q := f.queue(t)
-	if len(q) != 1 || q[0].Kind != "event" || q[0].ID != f.eventID || q[0].Draft.PriceCents != 9900 || q[0].Live != nil {
+	if len(q) != 1 || q[0].Kind != "event" || q[0].ID != f.eventID || q[0].Draft.PriceCents != 9900 || q[0].Live != nil || q[0].AttestedBy != "boss" {
 		t.Fatalf("queue = %+v", q)
 	}
-	if w := f.decide(t, "event", f.eventID, "approve", "stale", ""); w.Code != http.StatusConflict {
+	if w := f.decide(t, "event", f.eventID, "approve", "stale", ""); w.Code != http.StatusConflict || code(w) != "changed" {
 		t.Fatalf("approve with a stale revision: %d %s", w.Code, w.Body)
 	}
 	if w := f.decide(t, "event", f.eventID, "approve", q[0].Revision, ""); w.Code != http.StatusOK {
@@ -195,11 +248,17 @@ func TestListingReview_Event(t *testing.T) {
 	if got := f.mailTo("boss@acme.com"); len(got) != 1 || !strings.Contains(got[0], "approved") {
 		t.Fatalf("org admin mail = %v, want an approval", got)
 	}
+	if w := f.submitEvent(t); w.Code != http.StatusConflict || code(w) != "unchanged" {
+		t.Fatalf("submitting what is approved: %d %s", w.Code, w.Body)
+	}
 
 	// An edit waits; the approved price stays up.
 	f.patchEvent(t, map[string]any{"ticket_price_cents": 12900})
-	if got := f.eventState(t); got != "pending" {
-		t.Fatalf("state after edit = %q, want pending", got)
+	if got := f.eventState(t); got != "draft" {
+		t.Fatalf("state after edit = %q, want draft", got)
+	}
+	if w := f.submitEvent(t); w.Code != http.StatusOK {
+		t.Fatalf("submit edit: %d %s", w.Code, w.Body)
 	}
 	if items := f.storeItems(t); len(items) != 1 || items[0].PriceCents != 9900 {
 		t.Fatalf("store during review = %+v, want the approved 9900", items)
@@ -223,8 +282,8 @@ func TestListingReview_Event(t *testing.T) {
 	if got := f.mailTo("boss@acme.com"); len(got) != 2 || !strings.Contains(got[1], "not approved") {
 		t.Fatalf("org admin mail = %v, want a rejection", got)
 	}
-	if w := f.decide(t, "event", f.eventID, "approve", q[0].Revision, ""); w.Code != http.StatusConflict {
-		t.Fatalf("approving a decided listing: %d", w.Code)
+	if w := f.submitEvent(t); w.Code != http.StatusConflict || code(w) != "unchanged_since_rejected" {
+		t.Fatalf("resubmitting what was rejected: %d %s", w.Code, w.Body)
 	}
 
 	// Undoing the edit needs no review.
@@ -232,16 +291,22 @@ func TestListingReview_Event(t *testing.T) {
 	if got := f.eventState(t); got != "approved" {
 		t.Fatalf("state after undoing the edit = %q, want approved", got)
 	}
-	if q := f.queue(t); len(q) != 0 {
-		t.Fatalf("queue after undo = %+v", q)
-	}
 
-	// An edit made while the reviewer looked can't be approved unseen.
+	// An edit made after submitting withdraws the submission: what the
+	// reviewer saw is not what it would approve.
 	f.patchEvent(t, map[string]any{"public_blurb": "Seen"})
+	f.submitEvent(t)
 	seen := f.queue(t)[0].Revision
 	f.patchEvent(t, map[string]any{"public_blurb": "Not seen"})
+	if got := f.eventState(t); got != "draft" {
+		t.Fatalf("state after editing a submitted draft = %q, want draft", got)
+	}
 	if w := f.decide(t, "event", f.eventID, "approve", seen, ""); w.Code != http.StatusConflict {
 		t.Fatalf("approve after a later edit: %d %s", w.Code, w.Body)
+	}
+	f.submitEvent(t)
+	if w := f.decide(t, "event", f.eventID, "approve", seen, ""); w.Code != http.StatusConflict || code(w) != "changed" {
+		t.Fatalf("approve an older revision: %d %s", w.Code, w.Body)
 	}
 	if items := f.storeItems(t); items[0].Blurb != "Find it" {
 		t.Fatalf("blurb = %q, want the approved one", items[0].Blurb)
@@ -254,14 +319,15 @@ func TestListingReview_Event(t *testing.T) {
 	}
 }
 
-// A verified creator's listings go up as saved, and verifying an
-// organisation approves what of theirs waits.
+// A verified creator's submissions are approved at once, and verifying
+// an organisation approves what of theirs waits. Both are logged.
 func TestListingReview_VerifiedCreator(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newListingFixture(t)
 	defer cleanup()
 
 	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900})
+	f.submitEvent(t)
 	if len(f.storeItems(t)) != 0 {
 		t.Fatal("listed before review")
 	}
@@ -274,17 +340,82 @@ func TestListingReview_VerifiedCreator(t *testing.T) {
 		t.Fatalf("store after verifying = %+v", items)
 	}
 	f.patchEvent(t, map[string]any{"ticket_price_cents": 14900})
-	if got := f.eventState(t); got != "approved" {
-		t.Fatalf("verified edit state = %q, want approved", got)
+	if got := f.eventState(t); got != "draft" {
+		t.Fatalf("verified edit before submitting = %q, want draft", got)
+	}
+	if w := f.submitEvent(t); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"approved"`) {
+		t.Fatalf("verified submit: %d %s", w.Code, w.Body)
 	}
 	if items := f.storeItems(t); items[0].PriceCents != 14900 {
 		t.Fatalf("verified edit price = %d, want 14900", items[0].PriceCents)
 	}
-	if q := f.queue(t); len(q) != 0 {
-		t.Fatalf("queue = %+v, want none", q)
-	}
 	if got := f.mailTo(f.adminEmail); len(got) != 1 {
 		t.Fatalf("platform admin mail = %v, want only the first submission's", got)
+	}
+	log := f.log(t, "auto")
+	if len(log) != 2 || log[0].Action != "approved" || log[1].Action != "approved" {
+		t.Fatalf("automatic approvals logged = %+v", log)
+	}
+}
+
+type logEntry struct {
+	Action string `json:"action"`
+	Via    string `json:"via"`
+	By     string `json:"by"`
+	Reason string `json:"reason"`
+}
+
+func (f *listingFixture) log(t *testing.T, via string) []logEntry {
+	t.Helper()
+	w := call(t, f.reviewer, "GET", "/api/admin/listing-reviews/log?via="+via, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("log: %d %s", w.Code, w.Body)
+	}
+	var resp struct {
+		Log []logEntry `json:"log"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	return resp.Log
+}
+
+// A reviewer sees every text of the adventure version a listing plays,
+// and decisions made through an API token are logged as an assistant's.
+func TestListingReview_ContentAndAssistant(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newListingFixture(t)
+	defer cleanup()
+
+	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "public_blurb": "Find it"})
+	f.submitEvent(t)
+	w := call(t, f.reviewer, "GET", fmt.Sprintf("/api/admin/listing-reviews/event/%d", f.eventID), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("content: %d %s", w.Code, w.Body)
+	}
+	var c admin.ReviewContent
+	if err := json.Unmarshal(w.Body.Bytes(), &c); err != nil {
+		t.Fatal(err)
+	}
+	all := map[string]string{}
+	for _, x := range c.Texts {
+		all[x.Text] = x.Where
+	}
+	for _, want := range []string{"What grows on the oak?", "acorns", "The old oak", "Find it", "Acme", "Treasure Hunt"} {
+		if _, ok := all[want]; !ok {
+			t.Errorf("texts lack %q: %+v", want, c.Texts)
+		}
+	}
+	if c.State != "pending" || c.AttestedBy != "boss" || c.GraphID == 0 || c.Version != 1 {
+		t.Errorf("content header = state %q attested by %q graph %d v%d", c.State, c.AttestedBy, c.GraphID, c.Version)
+	}
+
+	if w := f.decideAs(t, f.assistant, "event", f.eventID, "reject", c.Revision, "Mentions a slur in step 2"); w.Code != http.StatusOK {
+		t.Fatalf("assistant reject: %d %s", w.Code, w.Body)
+	}
+	log := f.log(t, "mcp")
+	if len(log) != 1 || log[0].Action != "rejected" || log[0].By != "root" || log[0].Reason != "Mentions a slur in step 2" {
+		t.Fatalf("assistant decisions logged = %+v", log)
 	}
 }
 
@@ -296,6 +427,7 @@ func TestListingReview_Cover(t *testing.T) {
 	defer cleanup()
 
 	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900})
+	f.submitEvent(t)
 	if w := f.decide(t, "event", f.eventID, "approve", f.queue(t)[0].Revision, ""); w.Code != http.StatusOK {
 		t.Fatalf("approve: %d %s", w.Code, w.Body)
 	}
@@ -315,9 +447,10 @@ func TestListingReview_Cover(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("cover upload: %d %s", w.Code, w.Body)
 	}
-	if got := f.eventState(t); got != "pending" {
-		t.Fatalf("state after a new cover = %q, want pending", got)
+	if got := f.eventState(t); got != "draft" {
+		t.Fatalf("state after a new cover = %q, want draft", got)
 	}
+	f.submitEvent(t)
 	coverPath := fmt.Sprintf("/store-cover/event/%d", f.eventID)
 	if w := call(t, f.store, "GET", coverPath, nil); w.Code != http.StatusNotFound {
 		t.Fatalf("public cover before review: %d, want 404", w.Code)
@@ -332,6 +465,9 @@ func TestListingReview_Cover(t *testing.T) {
 	if len(q) != 1 || q[0].Draft.CoverURL == "" {
 		t.Fatalf("queue = %+v, want the new cover", q)
 	}
+	if w := call(t, f.reviewer, "GET", q[0].Draft.CoverURL, nil); w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/png" {
+		t.Fatalf("reviewer's cover: %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
 	if w := f.decide(t, "event", f.eventID, "approve", q[0].Revision, ""); w.Code != http.StatusOK {
 		t.Fatalf("approve cover: %d %s", w.Code, w.Body)
 	}
@@ -340,6 +476,25 @@ func TestListingReview_Cover(t *testing.T) {
 	}
 	if items := f.storeItems(t); items[0].CoverImageURL != coverPath {
 		t.Fatalf("store cover = %q", items[0].CoverImageURL)
+	}
+}
+
+func (f *listingFixture) parties(t *testing.T) []admin.PublicPartyOfferDTO {
+	t.Helper()
+	w := call(t, f.public, "GET", "/api/o/acme/parties", nil)
+	var resp struct {
+		Parties []admin.PublicPartyOfferDTO `json:"parties"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	return resp.Parties
+}
+
+func (f *listingFixture) submitOffer(t *testing.T) {
+	t.Helper()
+	if w := call(t, f.console, "POST", "/api/admin/party-offers/treasure/submit", map[string]bool{"attest": true}); w.Code != http.StatusOK {
+		t.Fatalf("submit offer: %d %s", w.Code, w.Body)
 	}
 }
 
@@ -352,21 +507,11 @@ func TestListingReview_PartyOffer(t *testing.T) {
 
 	offer := map[string]any{"enabled": true, "base_cents": 19900, "per_kid_cents": 2900, "currency": "sek", "max_kids": 12, "blurb": "Find the treasure"}
 	w := call(t, f.console, "PUT", "/api/admin/party-offers/treasure", offer)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"listing_review":"pending"`) {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"listing_review":"draft"`) {
 		t.Fatalf("offer: %d %s", w.Code, w.Body)
 	}
-	parties := func() []admin.PublicPartyOfferDTO {
-		t.Helper()
-		w := call(t, f.public, "GET", "/api/o/acme/parties", nil)
-		var resp struct {
-			Parties []admin.PublicPartyOfferDTO `json:"parties"`
-		}
-		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-			t.Fatal(err)
-		}
-		return resp.Parties
-	}
-	if p := parties(); len(p) != 0 {
+	f.submitOffer(t)
+	if p := f.parties(t); len(p) != 0 {
 		t.Fatalf("page lists an unreviewed offer: %+v", p)
 	}
 	q := f.queue(t)
@@ -376,7 +521,7 @@ func TestListingReview_PartyOffer(t *testing.T) {
 	if w := f.decide(t, "party", q[0].ID, "approve", q[0].Revision, ""); w.Code != http.StatusOK {
 		t.Fatalf("approve: %d %s", w.Code, w.Body)
 	}
-	if p := parties(); len(p) != 1 || p[0].BaseCents != 19900 {
+	if p := f.parties(t); len(p) != 1 || p[0].BaseCents != 19900 {
 		t.Fatalf("page after approval = %+v", p)
 	}
 
@@ -384,7 +529,8 @@ func TestListingReview_PartyOffer(t *testing.T) {
 	if w := call(t, f.console, "PUT", "/api/admin/party-offers/treasure", offer); w.Code != http.StatusOK {
 		t.Fatalf("edit: %d %s", w.Code, w.Body)
 	}
-	if p := parties(); len(p) != 1 || p[0].BaseCents != 19900 {
+	f.submitOffer(t)
+	if p := f.parties(t); len(p) != 1 || p[0].BaseCents != 19900 {
 		t.Fatalf("page during review = %+v, want the approved 19900", p)
 	}
 
@@ -393,10 +539,217 @@ func TestListingReview_PartyOffer(t *testing.T) {
 	if w := call(t, f.console, "PUT", "/api/admin/party-offers/treasure", offer); w.Code != http.StatusOK {
 		t.Fatalf("disable: %d %s", w.Code, w.Body)
 	}
-	if p := parties(); len(p) != 0 {
+	if p := f.parties(t); len(p) != 0 {
 		t.Fatalf("page after disabling = %+v", p)
 	}
 	if q := f.queue(t); len(q) != 0 {
 		t.Fatalf("queue after disabling = %+v", q)
+	}
+}
+
+// A booked party plays the adventure version its offer was approved
+// with, not one published since that nobody reviewed.
+func TestListingReview_PartyPlaysApprovedVersion(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newListingFixture(t)
+	defer cleanup()
+
+	offer := map[string]any{"enabled": true, "base_cents": 19900, "per_kid_cents": 2900, "currency": "sek", "max_kids": 12, "blurb": "Find the treasure"}
+	call(t, f.console, "PUT", "/api/admin/party-offers/treasure", offer)
+	f.submitOffer(t)
+	q := f.queue(t)
+	if w := f.decide(t, "party", q[0].ID, "approve", q[0].Revision, ""); w.Code != http.StatusOK {
+		t.Fatalf("approve: %d %s", w.Code, w.Body)
+	}
+	var advID, approved int64
+	if err := f.h.DB.QueryRow(`SELECT id, published_graph_id FROM adventures WHERE slug = 'treasure'`).Scan(&advID, &approved); err != nil {
+		t.Fatal(err)
+	}
+
+	g := partyGraph()
+	g.Nodes[1].PuzzleCfg.Blocks = append(graph.LegacyBlocks("Something nobody reviewed", nil), g.Nodes[1].PuzzleCfg.Blocks[1:]...)
+	if _, _, err := graphstore.Publish(context.Background(), f.h.DB, advID, 0, g, ""); err != nil {
+		t.Fatal(err)
+	}
+	if w := call(t, f.console, "GET", "/api/admin/party-offers", nil); !strings.Contains(w.Body.String(), `"newer_version":true`) {
+		t.Errorf("offers list does not tell of the newer version: %s", w.Body)
+	}
+
+	f.book(t, 3)
+	var base int64
+	if err := f.h.DB.QueryRow(`SELECT base_graph_id FROM events WHERE party ORDER BY id DESC LIMIT 1`).Scan(&base); err != nil {
+		t.Fatal(err)
+	}
+	if base != approved {
+		t.Fatalf("booked party plays graph %d, want the approved %d", base, approved)
+	}
+}
+
+// Only users a platform admin made listing reviewers review, and no one
+// reviews their own organisation's listings.
+func TestListingReview_Reviewers(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newListingFixture(t)
+	defer cleanup()
+	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900})
+	f.submitEvent(t)
+	rev := f.queue(t)[0].Revision
+
+	var bossID, rootID int64
+	if err := f.h.DB.QueryRow(`SELECT id FROM users WHERE username = 'boss'`).Scan(&bossID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.h.DB.QueryRow(`SELECT id FROM users WHERE username = 'root'`).Scan(&rootID); err != nil {
+		t.Fatal(err)
+	}
+	as := func(u auth.User) chi.Router {
+		r := chi.NewRouter()
+		r.Use(injectUser(u))
+		r.Get("/api/admin/listing-reviews", f.h.ListListingReviews)
+		r.Get("/api/admin/listing-reviews/{kind}/{id}", f.h.GetListingReview)
+		r.Post("/api/admin/listing-reviews/{kind}/{id}/{action}", func(w http.ResponseWriter, r *http.Request) {
+			if chi.URLParam(r, "action") == "approve" {
+				f.h.ApproveListing(w, r)
+			} else {
+				f.h.RejectListing(w, r)
+			}
+		})
+		return r
+	}
+
+	// A platform admin who isn't a reviewer can't.
+	notReviewer := as(auth.User{ID: rootID, Username: "root", Role: auth.RoleAdmin, IsAdmin: true})
+	if w := call(t, notReviewer, "GET", "/api/admin/listing-reviews", nil); w.Code != http.StatusForbidden || code(w) != "not_reviewer" {
+		t.Fatalf("admin without the flag lists: %d %s", w.Code, w.Body)
+	}
+	if w := f.decideAs(t, notReviewer, "event", f.eventID, "approve", rev, ""); w.Code != http.StatusForbidden {
+		t.Fatalf("admin without the flag approves: %d %s", w.Code, w.Body)
+	}
+
+	// A reviewer in the listing's organisation neither sees nor decides it.
+	orgID := f.orgID
+	insider := as(auth.User{ID: bossID, Username: "boss", Role: auth.RoleOrgAdmin, OrgID: &orgID, ListingReviewer: true})
+	if w := call(t, insider, "GET", "/api/admin/listing-reviews", nil); w.Code != http.StatusOK || strings.Contains(w.Body.String(), `"kind":"event"`) {
+		t.Fatalf("insider's queue: %d %s", w.Code, w.Body)
+	}
+	if w := call(t, insider, "GET", fmt.Sprintf("/api/admin/listing-reviews/event/%d", f.eventID), nil); w.Code != http.StatusForbidden || code(w) != "own_org" {
+		t.Fatalf("insider reads its own listing: %d %s", w.Code, w.Body)
+	}
+	if w := f.decideAs(t, insider, "event", f.eventID, "approve", rev, ""); w.Code != http.StatusForbidden || code(w) != "own_org" {
+		t.Fatalf("insider approves its own listing: %d %s", w.Code, w.Body)
+	}
+	if got := f.eventState(t); got != "pending" {
+		t.Fatalf("state = %q, want still pending", got)
+	}
+
+	// A platform admin grants the flag.
+	grant := chi.NewRouter()
+	grant.Use(injectUser(auth.User{ID: rootID, Role: auth.RoleAdmin, IsAdmin: true}))
+	grant.Post("/api/admin/listing-reviewers", f.h.SetListingReviewer)
+	grant.Get("/api/admin/listing-reviewers", f.h.ListListingReviewers)
+	if w := call(t, grant, "POST", "/api/admin/listing-reviewers", map[string]any{"username": "root", "reviewer": true}); w.Code != http.StatusOK {
+		t.Fatalf("grant: %d %s", w.Code, w.Body)
+	}
+	if w := call(t, grant, "GET", "/api/admin/listing-reviewers", nil); !strings.Contains(w.Body.String(), `"username":"root"`) {
+		t.Fatalf("reviewers: %s", w.Body)
+	}
+}
+
+// The review log is a hash chain: each entry names the one before it and
+// fingerprints what was reviewed. The database refuses edits, and an
+// edit made anyway (with the guard turned off) shows when the chain is
+// recomputed. The head is mailed out once until it moves.
+func TestListingReview_HashChain(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newListingFixture(t)
+	defer cleanup()
+	db := f.h.DB
+
+	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "public_blurb": "Find it"})
+	f.submitEvent(t)
+	if w := f.decide(t, "event", f.eventID, "reject", f.queue(t)[0].Revision, "Too vague"); w.Code != http.StatusOK {
+		t.Fatalf("reject: %d %s", w.Code, w.Body)
+	}
+	f.patchEvent(t, map[string]any{"public_blurb": "Find the acorns"})
+	f.submitEvent(t)
+	if w := f.decide(t, "event", f.eventID, "approve", f.queue(t)[0].Revision, ""); w.Code != http.StatusOK {
+		t.Fatalf("approve: %d %s", w.Code, w.Body)
+	}
+
+	verify := func() (ok bool, entries int, head string, problems []string) {
+		t.Helper()
+		w := call(t, f.reviewer, "GET", "/api/admin/listing-reviews/log/verify", nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("verify: %d %s", w.Code, w.Body)
+		}
+		var rep struct {
+			OK       bool   `json:"ok"`
+			Entries  int    `json:"entries"`
+			HeadHash string `json:"head_hash"`
+			Problems []struct {
+				Problem string `json:"problem"`
+			} `json:"problems"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range rep.Problems {
+			problems = append(problems, p.Problem)
+		}
+		return rep.OK, rep.Entries, rep.HeadHash, problems
+	}
+	ok, entries, head, problems := verify()
+	if !ok || entries != 4 || len(head) != 64 {
+		t.Fatalf("verify = ok %v, %d entries, head %q, %v", ok, entries, head, problems)
+	}
+
+	// The approval fingerprints the blurb it approved.
+	var snapshot string
+	if err := db.QueryRow(`
+		SELECT s.content::text FROM listing_review_log l JOIN listing_review_snapshots s ON s.content_hash = l.content_hash
+		WHERE l.action = 'approved'`).Scan(&snapshot); err != nil || !strings.Contains(snapshot, "Find the acorns") || !strings.Contains(snapshot, "What grows on the oak?") {
+		t.Fatalf("approved snapshot = %q (%v)", snapshot, err)
+	}
+
+	// Mailed once, and not again until it moves.
+	f.h.AnchorListingLog(context.Background())
+	f.h.AnchorListingLog(context.Background())
+	if got := f.mailTo(f.adminEmail); len(got) != 3 || !strings.Contains(got[2], "fingerprint") {
+		t.Fatalf("platform admin mail = %v, want two review notices and one fingerprint", got)
+	}
+
+	if _, err := db.Exec(`UPDATE listing_review_log SET reason = 'Fine' WHERE action = 'rejected'`); err == nil {
+		t.Fatal("the log took an edit")
+	}
+	if _, err := db.Exec(`DELETE FROM listing_review_log WHERE action = 'rejected'`); err == nil {
+		t.Fatal("the log took a delete")
+	}
+
+	// Someone with the database turns the guard off and rewrites history.
+	if _, err := db.Exec(`
+		ALTER TABLE listing_review_log DISABLE TRIGGER listing_review_log_append_only;
+		UPDATE listing_review_log SET reason = 'Fine' WHERE action = 'rejected';
+		UPDATE listing_review_snapshots SET content = jsonb_set(content, '{draft,blurb}', '"Something else"')
+		WHERE content_hash = (SELECT content_hash FROM listing_review_log WHERE action = 'approved');
+		ALTER TABLE listing_review_log ENABLE TRIGGER listing_review_log_append_only;`); err != nil {
+		t.Fatal(err)
+	}
+	// The rejection's fields, and the snapshot the submission and the
+	// approval of that content share.
+	ok, _, _, problems = verify()
+	all := strings.Join(problems, "; ")
+	if ok || len(problems) != 3 || strings.Count(all, "fields were changed") != 1 || strings.Count(all, "content it reviewed was changed") != 2 {
+		t.Fatalf("verify after tampering = ok %v, %v", ok, problems)
+	}
+
+	// Removing an entry breaks the link to it.
+	if _, err := db.Exec(`
+		ALTER TABLE listing_review_log DISABLE TRIGGER listing_review_log_append_only;
+		DELETE FROM listing_review_log WHERE id = (SELECT min(id) FROM listing_review_log);
+		ALTER TABLE listing_review_log ENABLE TRIGGER listing_review_log_append_only;`); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, problems = verify(); !strings.Contains(strings.Join(problems, "; "), "does not follow the entry before it") {
+		t.Fatalf("verify after a removal = %v", problems)
 	}
 }

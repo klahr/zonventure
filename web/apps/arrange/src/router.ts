@@ -36,7 +36,8 @@ export type Route =
   | { name: "organizations" }
   | { name: "organization"; id: number }
   | { name: "logs" }
-  | { name: "listing-reviews" }
+  | { name: "listing-reviews"; tab?: string }
+  | { name: "listing-review"; kind: "event" | "party"; id: number }
   | { name: "settings"; tab?: string }
   | { name: "webhook-log"; endpoint: number }
   | { name: "not-found" };
@@ -105,9 +106,14 @@ export function parseRoute(hash: string): Route {
     }
     case "logs":
       return { name: "logs" };
-    // Platform admins: listings waiting for review before they go public.
-    case "listing-reviews":
-      return { name: "listing-reviews" };
+    // Listing reviewers: listings waiting for review before they go
+    // public; "#/listing-reviews/event/5" is one listing in full,
+    // "#/listing-reviews/log" the recent decisions, "/reviewers" who reviews.
+    case "listing-reviews": {
+      const id = num(sub);
+      if ((arg === "event" || arg === "party") && id) return { name: "listing-review", kind: arg, id };
+      return arg === "log" || arg === "reviewers" ? { name: "listing-reviews", tab: arg } : { name: "listing-reviews" };
+    }
     case "settings":
       // Parties was a Settings tab before it became its own section.
       if (arg === "parties") return { name: "parties" };
@@ -172,7 +178,9 @@ export function href(r: Route): string {
     case "logs":
       return "#/logs";
     case "listing-reviews":
-      return "#/listing-reviews";
+      return r.tab ? `#/listing-reviews/${e(r.tab)}` : "#/listing-reviews";
+    case "listing-review":
+      return `#/listing-reviews/${r.kind}/${r.id}`;
     case "settings":
       return r.tab ? `#/settings/${e(r.tab)}` : "#/settings";
     case "webhook-log":

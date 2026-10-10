@@ -13,27 +13,56 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ### Added
 
-- **Listing review.** What an organisation puts up for sale — a
-  self-guided event in its store, a party offer on its page — goes
-  public once a platform admin approves it, under Admin → Listing
-  reviews. Each listing shows as the public will see it, with what
-  changed since the approved version; reject it with a reason and the
-  organisation is told by email. An edit to a live listing (name,
-  price, team size, blurb, cover) goes back to review while the
-  approved version stays up, and that is also what buyers pay.
-  Clearing the price, pausing the event or turning the offer off still
-  takes it down at once. A decision names the version the reviewer
-  saw, so a change made meanwhile is never approved unseen.
+- **Content review before anything goes public.** What an organisation
+  puts up for sale — a self-guided event in its store, a party offer on
+  its page — goes public once a listing reviewer approves it. The point
+  is to keep offensive content off the platform, so a review shows
+  everything the listing puts in front of people on one page, raw: the
+  listing, the organisation's page, the adventure's title, icon, cover
+  and description, and every text, picture, sound, film and file of the
+  adventure version it plays. Reject with a reason and the organisation
+  is told by email; what was public before stays up.
+- **Submitting confirms the content.** Edits leave a listing a draft;
+  its creator submits it for review, confirming it contains nothing
+  offensive, hateful or illegal and follows the terms. Who confirmed,
+  and when, is shown to the reviewer. An edit after submitting needs
+  submitting again, and a reviewer's decision names the version they
+  saw, so nothing is approved unseen.
+- **Approval pins the adventure version.** Players get the version that
+  was reviewed: a self-guided event plays the one it was created with,
+  and a booked party plays its offer's approved one even when a newer
+  version is published. Submitting the offer again sends the newer one
+  for review.
+- **Listing reviewers.** A platform admin chooses who reviews, person by
+  person — platform admins included, and an AI assistant's own account.
+  No one reviews their own organisation's listings.
+- **AI review over MCP.** A reviewer's assistant uses
+  `list_listing_reviews`, `get_listing_review` (every text, then the
+  pictures as images), `approve_listing` and `reject_listing`; an
+  organisation's assistant uses `submit_listing_for_review`, with the
+  user's confirmation. Every submission and decision is logged with how
+  it was made (console, assistant, or automatic for a verified
+  creator), for spot-checks under Listing reviews → Recent decisions.
+- **A tamper-evident review log.** Every submission and decision is an
+  entry in a hash chain: each one's SHA-256 covers the entry before it
+  and a fingerprint of exactly what was reviewed, which is kept as the
+  reviewer saw it. The database refuses edits and deletes, and Listing
+  reviews → Recent decisions → "Check the log" recomputes the chain and
+  says which entry was changed, removed or no longer matches its content.
+  The chain's latest hash is mailed to platform admins once a day when
+  it has moved, so even a rewritten log shows against an earlier mail.
 - **Verified creators.** A platform admin marks an organisation as a
-  verified creator on its admin page: its listings go up as saved,
-  without review, and its page, store cards and ticket pages show a
-  "Verified creator" badge. Marking one approves what of theirs waits.
+  verified creator: its submissions are approved at once, and its page,
+  store cards and ticket pages show a "Verified creator" badge.
 
 ### Changed
 
 - Everything for sale when this version is installed stays for sale,
-  approved as it is. Store listings in an imported organisation bundle
-  wait for review.
+  approved as it is, with the adventure version it plays now. Store
+  listings in an imported organisation bundle wait for review.
+- What the store shows, and what a buyer pays, is the approved listing:
+  clearing the price, pausing the event or turning the offer off still
+  takes it down at once.
 - `/store-cover/event/{id}` serves the approved listing's cover;
   `?draft=1` serves the uploaded one to the event's organisation and
   platform admins.

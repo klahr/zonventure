@@ -183,7 +183,7 @@ func (h *Handlers) SetEventCover(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "store failed", err)
 		return
 	}
-	if err := h.submitEventListing(r.Context(), eventID); err != nil {
+	if err := h.settleEventListing(r.Context(), eventID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
 		return
 	}
@@ -209,7 +209,7 @@ func (h *Handlers) DeleteEventCover(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "clear failed")
 		return
 	}
-	if err := h.submitEventListing(r.Context(), eventID); err != nil {
+	if err := h.settleEventListing(r.Context(), eventID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
 		return
 	}

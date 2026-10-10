@@ -31,11 +31,11 @@ export interface EventInfo {
   public_blurb?: string;
   has_cover_image?: boolean;
   /**
-   * Listing review, for a self-guided event: where its last store
-   * changes are ("", pending, approved, rejected with
-   * listing_reject_reason), and whether an approved version is up.
+   * Listing review, for a self-guided event: where its store listing's
+   * draft is ("", draft — not submitted —, pending, approved, rejected
+   * with listing_reject_reason), and whether an approved version is up.
    */
-  listing_review?: "" | "pending" | "approved" | "rejected";
+  listing_review?: "" | "draft" | "pending" | "approved" | "rejected";
   listing_reject_reason?: string;
   listed?: boolean;
   /** A hosted event: run from its host page, whose views the event page shows too. */
@@ -217,6 +217,8 @@ export const uploadCover = (id: number, file: File) => {
   return request<void>(E(id) + "/cover", { method: "POST", form });
 };
 export const deleteCover = (id: number) => request<void>(E(id) + "/cover", { method: "DELETE" });
+/** Where a self-guided event's store listing is submitted for review (SubmitListingDialog). */
+export const submitListingURL = (id: number) => E(id) + "/listing/submit";
 export const topUp = (body: { adventure_slug: string; max_players: number; top_up_assignment_id: number; provider?: string }) =>
   post<{ state: string; checkout_url?: string }>("/api/admin/purchases", body);
 

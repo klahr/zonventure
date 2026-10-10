@@ -314,9 +314,9 @@ func tokenUser(ctx context.Context, db *sql.DB, uid int64, pinned sql.NullInt64)
 	)
 	err := db.QueryRowContext(ctx, `
 		SELECT id, username, is_admin, COALESCE(email, ''),
-		       (email_verified <> 0), scheduled_deletion_at
+		       (email_verified <> 0), scheduled_deletion_at, listing_reviewer
 		FROM users WHERE id = $1
-	`, uid).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified, &scheduledDeletion)
+	`, uid).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified, &scheduledDeletion, &u.ListingReviewer)
 	if err != nil {
 		return auth.User{}, err
 	}

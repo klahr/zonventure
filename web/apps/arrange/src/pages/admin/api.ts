@@ -187,6 +187,8 @@ export interface ListingFields {
   team_size?: number;
   max_kids?: number;
   cover_url?: string;
+  /** The adventure version it plays. */
+  graph_id?: number;
 }
 
 /** internal/admin/listing_review.go listingReviewDTO: a listing waiting for review. */
@@ -200,13 +202,107 @@ export interface ListingReview {
   org_slug?: string;
   adventure_slug: string;
   adventure_title: string;
+  /** Who submitted it, confirming its content follows the terms. */
+  attested_by?: string;
   draft: ListingFields;
   /** What the public sees now, when the review is of an edit. */
   live?: ListingFields;
 }
 
-const review = (r: ListingReview) => `/api/admin/listing-reviews/${r.kind}/${r.id}`;
+/** internal/admin/listing_content.go ReviewText: a text people read, and where. */
+export interface ReviewText {
+  where: string;
+  text: string;
+}
+
+/** internal/admin/listing_content.go ReviewMedia: a picture, sound, film or file. */
+export interface ReviewMedia {
+  ref: string;
+  kind: "image" | "audio" | "video" | "file";
+  mime: string;
+  where: string;
+  size: number;
+  url: string;
+}
+
+/** internal/admin/listing_content.go ReviewContent: everything a listing puts in front of people. */
+export interface ReviewContent {
+  kind: "event" | "party";
+  id: number;
+  state: "" | "draft" | "pending" | "approved" | "rejected";
+  revision: string;
+  submitted_at?: string;
+  attested_at?: string;
+  attested_by?: string;
+  reject_reason?: string;
+  org_id: number;
+  org_name: string;
+  org_slug?: string;
+  org_verified: boolean;
+  adventure_slug: string;
+  adventure_title: string;
+  graph_id: number;
+  version: number;
+  /** The version approved before, 0 when none. */
+  live_graph_id?: number;
+  draft: ListingFields;
+  live?: ListingFields;
+  texts: ReviewText[];
+  media: ReviewMedia[];
+}
+
+/** internal/admin/listing_review.go listingLogDTO: a submission or decision. */
+export interface ListingLogEntry {
+  kind: "event" | "party";
+  id: number;
+  org_id: number;
+  org_name: string;
+  title: string;
+  action: "submitted" | "approved" | "rejected";
+  /** console, mcp (an AI assistant through an API token) or auto (a verified creator). */
+  via: "console" | "mcp" | "auto";
+  by?: string;
+  reason?: string;
+  graph_id?: number;
+  created_at: string;
+  /** Fingerprint of what was reviewed, and the entry's link in the hash chain. */
+  content_hash: string;
+  entry_hash: string;
+}
+
+/** internal/admin/listing_review_chain.go chainReport: the log's hash chain, recomputed. */
+export interface ChainReport {
+  ok: boolean;
+  entries: number;
+  /** Compare with the latest one mailed to platform admins. */
+  head_hash: string;
+  problems: { id: number; problem: string }[];
+}
+
+/** internal/admin/listing_review.go listingReviewerDTO */
+export interface ListingReviewer {
+  id: number;
+  username: string;
+  email?: string;
+  is_admin: boolean;
+  /** Organisations whose listings they never see. */
+  orgs: string[];
+}
+
+/** A listing a decision names: which one, and the revision reviewed. */
+export type ListingRef = Pick<ListingReview, "kind" | "id" | "revision">;
+
+const review = (r: Pick<ListingReview, "kind" | "id">) => `/api/admin/listing-reviews/${r.kind}/${r.id}`;
 export const listListingReviews = (signal?: AbortSignal) =>
   get<{ reviews: ListingReview[] | null }>("/api/admin/listing-reviews", signal ? { signal } : {}).then((r) => r.reviews ?? []);
-export const approveListing = (r: ListingReview) => post<unknown>(`${review(r)}/approve`, { revision: r.revision });
-export const rejectListing = (r: ListingReview, reason: string) => post<unknown>(`${review(r)}/reject`, { revision: r.revision, reason });
+export const getListingReview = (kind: "event" | "party", id: number, signal?: AbortSignal) =>
+  get<ReviewContent>(review({ kind, id }), signal ? { signal } : {});
+export const approveListing = (r: ListingRef) => post<unknown>(`${review(r)}/approve`, { revision: r.revision });
+export const rejectListing = (r: ListingRef, reason: string) => post<unknown>(`${review(r)}/reject`, { revision: r.revision, reason });
+export const listListingLog = (via: string, signal?: AbortSignal) =>
+  get<{ log: ListingLogEntry[] | null }>("/api/admin/listing-reviews/log" + (via ? `?via=${encodeURIComponent(via)}` : ""), signal ? { signal } : {}).then((r) => r.log ?? []);
+export const verifyListingLog = () => get<ChainReport>("/api/admin/listing-reviews/log/verify");
+export const listListingReviewers = (signal?: AbortSignal) =>
+  get<{ reviewers: ListingReviewer[] | null }>("/api/admin/listing-reviewers", signal ? { signal } : {}).then((r) => r.reviewers ?? []);
+export const setListingReviewer = (username: string, reviewer: boolean) =>
+  post<unknown>("/api/admin/listing-reviewers", { username, reviewer });

@@ -94,7 +94,10 @@ type User struct {
 	Username string
 	IsAdmin  bool
 	Role     string
-	OrgID    *int64
+	// ListingReviewer may review what organisations put up for sale
+	// (listing review): granted per user by a platform admin.
+	ListingReviewer bool
+	OrgID           *int64
 	// EmailVerified is true when the user has either confirmed their
 	// signup email OR was grandfathered (admin-seeded users without
 	// email default to true). Money-touching actions (CreateEvent,
@@ -504,13 +507,13 @@ func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 		SELECT u.id, u.username, u.is_admin, m.role, s.active_org_id,
 		       COALESCE(u.email,''), (u.email_verified <> 0),
 		       u.scheduled_deletion_at, u.totp_enabled, u.password_is_default,
-		       s.expires_at, s.last_used_at
+		       s.expires_at, s.last_used_at, u.listing_reviewer
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		LEFT JOIN org_memberships m ON m.user_id = u.id AND m.org_id = s.active_org_id
 		WHERE s.token = $1
 	`, token).Scan(&u.ID, &u.Username, &u.IsAdmin, &membRole, &activeOrgID,
 		&u.Email, &u.EmailVerified, &schedDel, &u.TOTPEnabled, &pwIsDefault,
-		&expires, &lastUsedRaw)
+		&expires, &lastUsedRaw, &u.ListingReviewer)
 	u.PasswordIsDefault = pwIsDefault != 0
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, false, nil

@@ -389,6 +389,9 @@ func New(cfg Config) http.Handler {
 	// Public quiz trails: delete old drafts and ended trails, offer
 	// Keep it a week into play. See admin/trails_public.go.
 	periodic.Start(bgCtx, time.Hour, adminH.SweepTrails)
+	// The listing review log's head, mailed to platform admins daily
+	// when it moved: a copy outside the database.
+	periodic.Start(bgCtx, time.Hour, adminH.AnchorListingLog)
 	publicH := &public.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL, Engine: playerH.Engine,
 		SecureCookie: cfg.SecureCookie,

@@ -3,7 +3,7 @@ import { Copy, Eye } from "lucide-react";
 import type { Whoami } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
-import { Button, Callout, Card, Field, fmtDateTime, ICON, ImageDrop, ListingStatus, relTime, Row, Stat, Stats, toDate, useToast } from "../../ui/index.ts";
+import { Button, Callout, Card, Field, fmtDateTime, ICON, ImageDrop, ListingStatus, SubmitListingDialog, canSubmitListing, relTime, Row, Stat, Stats, toDate, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
 import type { ConnectStatus, EventInfo, Team } from "./api.ts";
 import { copyText, fmtElapsedShort, fmtPoints, members, recapURL, teamStuck } from "./util.ts";
@@ -194,6 +194,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
   const [blurb, setBlurb] = useState(event.public_blurb || "");
   const [busy, setBusy] = useState(false);
   const [cover, setCover] = useState<{ has: boolean; bust: number }>({ has: !!event.has_cover_image, bust: 0 });
+  const [submitting, setSubmitting] = useState(false);
 
   const save = async () => {
     const major = price.trim();
@@ -238,6 +239,15 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
       subtitle={saved ? t.t("{{price}} {{cur}} per ticket", { price: saved, cur: (event.ticket_currency || "sek").toUpperCase() }) : t.t("No ticket price set yet — players can't buy until you save one.")}
     >
       <ListingStatus kind="store" review={event.listing_review} reason={event.listing_reject_reason} listed={event.listed} />
+      {canSubmitListing(event.listing_review) && (
+        <Row>
+          <Button variant="primary" size="sm" onClick={() => setSubmitting(true)}>{t.t("Submit for review")}</Button>
+          <span className="ev-muted">{t.t("Save your changes first: what is saved is what is submitted.")}</span>
+        </Row>
+      )}
+      {submitting && (
+        <SubmitListingDialog url={api.submitListingURL(event.id)} title={event.name} onClose={() => setSubmitting(false)} onDone={onSaved} />
+      )}
       <Row>
         <div className="ev-stack">
           <span className="ev-muted">{t.t("Cover image (16:9 looks best)")}</span>

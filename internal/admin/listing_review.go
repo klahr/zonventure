@@ -1,24 +1,44 @@
 package admin
 
 // Listing review: what an organisation puts up for sale goes public
-// only once a platform admin approves it (migration 0123).
+// only once a listing reviewer approves it (migrations 0123, 0124): a
+// person, or an AI assistant's account, a platform admin made one. No
+// one reviews their own organisation's listings. Its
+// point is to keep offensive content off the platform, so a review
+// covers the listing, the adventure version it plays and the
+// organisation's page (listing_content.go).
 //
-//	GET  /api/admin/listing-reviews                           what waits for review
+//	POST /api/admin/events/{eventID}/listing/submit           {attest}  the event's org
+//	POST /api/admin/party-offers/{slug}/submit                {attest}  an org admin
+//	GET  /api/admin/listing-reviewers                         who may review       platform admins
+//	POST /api/admin/listing-reviewers                         {username, reviewer} platform admins
+//	GET  /api/admin/listing-reviews                           what waits for review  (listing reviewers from here)
+//	GET  /api/admin/listing-reviews/log                       recent submissions and decisions
+//	GET  /api/admin/listing-reviews/log/verify                recompute its hash chain
+//	GET  /api/admin/listing-reviews/{kind}/{id}               everything it puts in front of people
+//	GET  /api/admin/listing-reviews/{kind}/{id}/media/{ref}   one picture, sound or file of it
 //	POST /api/admin/listing-reviews/{kind}/{id}/approve       {revision}
 //	POST /api/admin/listing-reviews/{kind}/{id}/reject        {revision, reason}
 //	POST /api/admin/organizations/{orgID}/verified-creator    {verified}
 //
 // kind is "event" (a self-guided event's store listing) or "party" (a
 // party offer). The organisation edits the draft; the public sees the
-// approved copy (event_listings, party_offer_listings). After every
-// change to a draft's public fields the handler calls
-// submitEventListing / submitPartyOffer, which decides what happens:
-// nothing to review, approved as it is (a verified creator, or an edit
-// undone), or pending.
+// approved copy (event_listings, party_offer_listings), which also pins
+// the adventure version players get.
 //
-// A decision names the revision the reviewer saw, a hash of the draft's
-// public fields: when the draft has changed since, it is refused, so
-// nothing goes public that nobody looked at.
+// A draft's state (listing_review): NULL when there is nothing to sell,
+// draft when it differs from what is approved, pending once submitted,
+// approved when it is what is up, rejected after a reviewer turned it
+// down. After every change to a draft the handler calls
+// settleEventListing / settlePartyOffer; submitting takes the creator's
+// word that the content follows the terms. A verified creator's
+// submission is approved at once.
+//
+// A decision names the revision the reviewer saw, a hash of the draft
+// and the adventure version: when either changed since, it is refused,
+// so nothing goes public that nobody looked at. Every submission and
+// decision is logged (listing_review_log), with whether an AI reviewer
+// made it through an API token.
 
 import (
 	"context"
@@ -43,107 +63,263 @@ const (
 // MaxRejectReasonLen caps what a reviewer writes back.
 const MaxRejectReasonLen = 1000
 
-// eventListingRevision and partyListingRevision hash a draft's public
-// fields: what a reviewer approves.
+// eventListingRevision and partyListingRevision hash a draft and the
+// adventure version it plays: what a reviewer approves. They read from
+// events e, or party_offers o joined to adventures a.
 const eventListingRevision = `md5(row(e.name, e.public_blurb, e.ticket_price_cents, e.ticket_currency, e.ticket_team_size,
-	e.cover_image_mime_type, md5(e.cover_image_content))::text)`
+	e.cover_image_mime_type, md5(e.cover_image_content), e.graph_id)::text)`
 
-const partyListingRevision = `md5(row(o.blurb, o.base_cents, o.per_kid_cents, o.currency, o.max_kids)::text)`
+const partyListingRevision = `md5(row(o.blurb, o.base_cents, o.per_kid_cents, o.currency, o.max_kids,
+	a.published_graph_id)::text)`
 
-/* ---------------- submitting ---------------- */
+// eventUnchanged and partyUnchanged say a draft is what is approved.
+const eventUnchanged = `COALESCE(l.event_id IS NOT NULL
+	AND l.name = e.name AND l.blurb = e.public_blurb
+	AND l.price_cents = e.ticket_price_cents AND l.currency = e.ticket_currency
+	AND l.team_size = e.ticket_team_size
+	AND l.cover_mime_type IS NOT DISTINCT FROM e.cover_image_mime_type
+	AND l.cover_content IS NOT DISTINCT FROM e.cover_image_content
+	AND l.graph_id IS NOT DISTINCT FROM e.graph_id, FALSE)`
 
-// submitEventListing settles an event's listing after its public fields
+const partyUnchanged = `COALESCE(l.offer_id IS NOT NULL
+	AND l.blurb = o.blurb AND l.base_cents = o.base_cents
+	AND l.per_kid_cents = o.per_kid_cents AND l.currency = o.currency
+	AND l.max_kids = o.max_kids
+	AND l.graph_id IS NOT DISTINCT FROM a.published_graph_id, FALSE)`
+
+var (
+	errNothingToSubmit = errors.New("nothing has changed since it was approved")
+	errNotForSale      = errors.New("set a price, or turn the offer on, before submitting it")
+	errStillRejected   = errors.New("change what was rejected before submitting it again")
+	errNoAttestation   = errors.New("confirm the content follows the terms to submit it")
+)
+
+/* ---------------- drafts ---------------- */
+
+// settleEventListing sets an event's listing state after its draft
 // changed. Only a self-guided event (public_for_sale) has one.
-func (h *Handlers) submitEventListing(ctx context.Context, eventID int64) error {
-	var (
-		orgID               int64
-		forSale, priced     bool
-		verified, unchanged bool
-		state               string
-	)
+func (h *Handlers) settleEventListing(ctx context.Context, eventID int64) error {
+	return h.settleEvent(ctx, eventID, true)
+}
+
+// settleEvent sets the state; edited says the draft was just changed,
+// which withdraws a submission and lifts a rejection.
+func (h *Handlers) settleEvent(ctx context.Context, eventID int64, edited bool) error {
+	var forSale, priced, unchanged bool
 	err := h.DB.QueryRowContext(ctx, `
-		SELECT e.org_id, e.public_for_sale, e.ticket_price_cents IS NOT NULL, g.verified_creator,
-		       COALESCE(e.listing_review, ''),
-		       COALESCE(l.event_id IS NOT NULL
-		         AND l.name = e.name AND l.blurb = e.public_blurb
-		         AND l.price_cents = e.ticket_price_cents AND l.currency = e.ticket_currency
-		         AND l.team_size = e.ticket_team_size
-		         AND l.cover_mime_type IS NOT DISTINCT FROM e.cover_image_mime_type
-		         AND l.cover_content IS NOT DISTINCT FROM e.cover_image_content, FALSE)
-		FROM events e
-		JOIN organizations g ON g.id = e.org_id
-		LEFT JOIN event_listings l ON l.event_id = e.id
-		WHERE e.id = $1
-	`, eventID).Scan(&orgID, &forSale, &priced, &verified, &state, &unchanged)
+		SELECT e.public_for_sale, e.ticket_price_cents IS NOT NULL, `+eventUnchanged+`
+		FROM events e LEFT JOIN event_listings l ON l.event_id = e.id
+		WHERE e.id = $1`, eventID).Scan(&forSale, &priced, &unchanged)
 	if err != nil || !forSale {
 		return err
 	}
-	switch {
-	case unchanged:
-		// Nothing new to look at: the draft is what is up.
-		_, err = h.DB.ExecContext(ctx, `
-			UPDATE events SET listing_review = 'approved', listing_reject_reason = ''
-			WHERE id = $1 AND listing_review IS DISTINCT FROM 'approved'`, eventID)
-	case !priced:
-		// No price, nothing to sell: the store hides it already.
-		_, err = h.DB.ExecContext(ctx, `
-			UPDATE events SET listing_review = NULL, listing_reject_reason = '' WHERE id = $1`, eventID)
-	case verified:
-		err = h.approveEventListing(ctx, h.DB, eventID, 0)
-	default:
-		_, err = h.DB.ExecContext(ctx, `
-			UPDATE events SET listing_review = 'pending', listing_submitted_at = now(), listing_reject_reason = ''
-			WHERE id = $1`, eventID)
-		if err == nil && state != "pending" {
-			h.notifyListingSubmitted(ctx, orgID)
-		}
-	}
+	_, err = h.DB.ExecContext(ctx, settleSQL("events", unchanged, priced, edited), eventID)
 	return err
 }
 
-// submitPartyOffer settles a party offer's listing after it was saved.
-// A disabled offer is off the page already and needs no review until it
-// is turned on.
-func (h *Handlers) submitPartyOffer(ctx context.Context, offerID int64) error {
-	var (
-		orgID                        int64
-		enabled, verified, unchanged bool
-		state                        string
-	)
+// settlePartyOffer sets a party offer's listing state after it was
+// saved. A disabled offer is off the page and has nothing to review.
+func (h *Handlers) settlePartyOffer(ctx context.Context, offerID int64) error {
+	return h.settleParty(ctx, offerID, true)
+}
+
+func (h *Handlers) settleParty(ctx context.Context, offerID int64, edited bool) error {
+	var enabled, unchanged bool
 	err := h.DB.QueryRowContext(ctx, `
-		SELECT o.org_id, o.enabled, g.verified_creator, COALESCE(o.listing_review, ''),
-		       COALESCE(l.offer_id IS NOT NULL
-		         AND l.blurb = o.blurb AND l.base_cents = o.base_cents
-		         AND l.per_kid_cents = o.per_kid_cents AND l.currency = o.currency
-		         AND l.max_kids = o.max_kids, FALSE)
+		SELECT o.enabled, `+partyUnchanged+`
 		FROM party_offers o
-		JOIN organizations g ON g.id = o.org_id
+		JOIN adventures a ON a.slug = o.adventure_slug
 		LEFT JOIN party_offer_listings l ON l.offer_id = o.id
-		WHERE o.id = $1
-	`, offerID).Scan(&orgID, &enabled, &verified, &state, &unchanged)
+		WHERE o.id = $1`, offerID).Scan(&enabled, &unchanged)
 	if err != nil {
 		return err
 	}
+	_, err = h.DB.ExecContext(ctx, settleSQL("party_offers", unchanged, enabled, edited), offerID)
+	return err
+}
+
+// settleSQL is the state a draft lands in: approved when it is what is
+// up (an edit undone), nothing to review when it can't be sold, else a
+// draft. After an edit that holds even for one pending, since what was
+// submitted changed, and one rejected. Otherwise (submitting) a pending
+// or rejected draft keeps its state: a rejection stands until the draft
+// changes.
+func settleSQL(table string, unchanged, sellable, edited bool) string {
 	switch {
 	case unchanged:
-		_, err = h.DB.ExecContext(ctx, `
-			UPDATE party_offers SET listing_review = 'approved', listing_reject_reason = ''
-			WHERE id = $1 AND listing_review IS DISTINCT FROM 'approved'`, offerID)
-	case !enabled:
-		// Changes to a disabled offer wait until it is turned on.
-		_, err = h.DB.ExecContext(ctx, `
-			UPDATE party_offers SET listing_review = NULL, listing_reject_reason = '' WHERE id = $1`, offerID)
-	case verified:
-		err = h.approvePartyListing(ctx, h.DB, offerID, 0)
-	default:
-		_, err = h.DB.ExecContext(ctx, `
-			UPDATE party_offers SET listing_review = 'pending', listing_submitted_at = now(), listing_reject_reason = ''
-			WHERE id = $1`, offerID)
-		if err == nil && state != "pending" {
-			h.notifyListingSubmitted(ctx, orgID)
-		}
+		return `UPDATE ` + table + ` SET listing_review = 'approved', listing_reject_reason = ''
+			WHERE id = $1 AND listing_review IS DISTINCT FROM 'approved'`
+	case !sellable:
+		return `UPDATE ` + table + ` SET listing_review = NULL WHERE id = $1`
+	case edited:
+		return `UPDATE ` + table + ` SET listing_review = 'draft' WHERE id = $1`
 	}
-	return err
+	return `UPDATE ` + table + ` SET listing_review = 'draft'
+		WHERE id = $1 AND (listing_review IS NULL OR listing_review = 'approved')`
+}
+
+/* ---------------- submitting ---------------- */
+
+type submitListingRequest struct {
+	// Attest is the creator's word that the listing and the adventure it
+	// plays contain nothing offensive, hateful or illegal and follow the
+	// terms.
+	Attest bool `json:"attest"`
+}
+
+// SubmitEventListing sends a self-guided event's listing for review.
+//
+// POST /api/admin/events/{eventID}/listing/submit
+func (h *Handlers) SubmitEventListing(w http.ResponseWriter, r *http.Request) {
+	eventID, ok := eventIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad event id")
+		return
+	}
+	if _, ok := h.authorizeEvent(w, r, eventID); !ok {
+		return
+	}
+	h.submitListing(w, r, listingEvent, eventID)
+}
+
+// SubmitPartyOffer sends a party offer for review. Org admins only, as
+// for saving one.
+//
+// POST /api/admin/party-offers/{slug}/submit
+func (h *Handlers) SubmitPartyOffer(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	if me.OrgID == nil || me.Role != auth.RoleOrgAdmin {
+		httpx.Error(w, http.StatusForbidden, "org admins submit party offers")
+		return
+	}
+	var offerID int64
+	err := h.DB.QueryRowContext(r.Context(), `SELECT id FROM party_offers WHERE org_id = $1 AND adventure_slug = $2`,
+		*me.OrgID, strings.TrimSpace(chi.URLParam(r, "slug"))).Scan(&offerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "save the offer first")
+		return
+	}
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "offer lookup failed", err)
+		return
+	}
+	h.submitListing(w, r, listingParty, offerID)
+}
+
+func (h *Handlers) submitListing(w http.ResponseWriter, r *http.Request, kind string, id int64) {
+	ctx := r.Context()
+	me, _ := auth.FromContext(ctx)
+	var req submitListingRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if !req.Attest {
+		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": errNoAttestation.Error(), "code": "attest_required"})
+		return
+	}
+	state, err := h.submit(ctx, kind, id, me.ID, viaOf(ctx))
+	if err != nil {
+		code := map[error]string{errNothingToSubmit: "unchanged", errNotForSale: "not_for_sale", errStillRejected: "unchanged_since_rejected"}[err]
+		if code == "" {
+			httpx.ServerErr(w, http.StatusInternalServerError, "submit failed", err)
+			return
+		}
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": err.Error(), "code": code})
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]string{"listing_review": state})
+}
+
+// submit records the creator's word and sends the draft for review, or
+// approves it for a verified creator. It returns the state it lands in.
+func (h *Handlers) submit(ctx context.Context, kind string, id, userID int64, via string) (string, error) {
+	t := listingTables(kind)
+	var err error
+	if kind == listingEvent {
+		err = h.settleEvent(ctx, id, false)
+	} else {
+		err = h.settleParty(ctx, id, false)
+	}
+	if err != nil {
+		return "", err
+	}
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	var (
+		orgID           int64
+		verified        bool
+		state, revision string
+		graphID         sql.NullInt64
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT `+t.alias+`.org_id, g.verified_creator, COALESCE(`+t.alias+`.listing_review, ''), `+t.revision+`, `+t.graph+`
+		FROM `+t.from+` JOIN organizations g ON g.id = `+t.alias+`.org_id
+		WHERE `+t.alias+`.id = $1 FOR UPDATE OF `+t.lock, id).Scan(&orgID, &verified, &state, &revision, &graphID); err != nil {
+		return "", err
+	}
+	switch state {
+	case "approved":
+		return "", errNothingToSubmit
+	case "":
+		return "", errNotForSale
+	case "rejected":
+		return "", errStillRejected
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE `+t.table+` SET listing_review = 'pending', listing_submitted_at = now(), listing_reject_reason = '',
+		       listing_attested_at = now(), listing_attested_by = $2
+		WHERE id = $1`, id, userID); err != nil {
+		return "", err
+	}
+	if err := h.logListing(ctx, tx, kind, id, orgID, "submitted", via, userID, revision, graphID, ""); err != nil {
+		return "", err
+	}
+	state = "pending"
+	if verified {
+		if err := h.approve(ctx, tx, kind, id, 0); err != nil {
+			return "", err
+		}
+		if err := h.logListing(ctx, tx, kind, id, orgID, "approved", "auto", 0, revision, graphID, ""); err != nil {
+			return "", err
+		}
+		state = "approved"
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	if !verified {
+		h.notifyListingSubmitted(ctx, orgID)
+	}
+	return state, nil
+}
+
+// listingTable is how the SQL of one kind reads its draft.
+type listingTable struct {
+	table, alias, from, revision, graph string
+	// lock is what a decision locks: the draft, and for a party the
+	// adventure, whose published version it approves.
+	lock string
+}
+
+func listingTables(kind string) listingTable {
+	if kind == listingParty {
+		return listingTable{table: "party_offers", alias: "o",
+			from:     "party_offers o JOIN adventures a ON a.slug = o.adventure_slug",
+			revision: partyListingRevision, graph: "a.published_graph_id", lock: "o, a"}
+	}
+	return listingTable{table: "events", alias: "e", from: "events e", revision: eventListingRevision, graph: "e.graph_id", lock: "e"}
+}
+
+// viaOf is how a request reached the platform: through an API token
+// (an AI assistant over MCP) or the console.
+func viaOf(ctx context.Context) string {
+	if auth.ViaAPIToken(ctx) {
+		return "mcp"
+	}
+	return "console"
 }
 
 // execer is what the approve helpers write through: the pool or a tx.
@@ -151,20 +327,28 @@ type execer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
-// approveEventListing copies an event's draft over its public listing.
-// reviewer 0 is an automatic approval (a verified creator).
+func (h *Handlers) approve(ctx context.Context, q execer, kind string, id, reviewer int64) error {
+	if kind == listingEvent {
+		return h.approveEventListing(ctx, q, id, reviewer)
+	}
+	return h.approvePartyListing(ctx, q, id, reviewer)
+}
+
+// approveEventListing copies an event's draft over its public listing,
+// with the adventure version it plays. reviewer 0 is an automatic
+// approval (a verified creator).
 func (h *Handlers) approveEventListing(ctx context.Context, q execer, eventID, reviewer int64) error {
 	by := sql.NullInt64{Int64: reviewer, Valid: reviewer > 0}
 	if _, err := q.ExecContext(ctx, `
-		INSERT INTO event_listings (event_id, name, blurb, price_cents, currency, team_size, cover_mime_type, cover_content, approved_at, approved_by)
+		INSERT INTO event_listings (event_id, name, blurb, price_cents, currency, team_size, cover_mime_type, cover_content, graph_id, approved_at, approved_by)
 		SELECT id, name, public_blurb, ticket_price_cents, ticket_currency, ticket_team_size,
-		       cover_image_mime_type, cover_image_content, now(), $2
+		       cover_image_mime_type, cover_image_content, graph_id, now(), $2
 		FROM events WHERE id = $1 AND ticket_price_cents IS NOT NULL
 		ON CONFLICT (event_id) DO UPDATE SET
 		    name = EXCLUDED.name, blurb = EXCLUDED.blurb, price_cents = EXCLUDED.price_cents,
 		    currency = EXCLUDED.currency, team_size = EXCLUDED.team_size,
 		    cover_mime_type = EXCLUDED.cover_mime_type, cover_content = EXCLUDED.cover_content,
-		    approved_at = EXCLUDED.approved_at, approved_by = EXCLUDED.approved_by
+		    graph_id = EXCLUDED.graph_id, approved_at = EXCLUDED.approved_at, approved_by = EXCLUDED.approved_by
 	`, eventID, by); err != nil {
 		return err
 	}
@@ -175,16 +359,17 @@ func (h *Handlers) approveEventListing(ctx context.Context, q execer, eventID, r
 	return err
 }
 
-// approvePartyListing copies a party offer's draft over its listing.
+// approvePartyListing copies a party offer's draft over its listing,
+// pinning its adventure's published version: what booked parties play.
 func (h *Handlers) approvePartyListing(ctx context.Context, q execer, offerID, reviewer int64) error {
 	by := sql.NullInt64{Int64: reviewer, Valid: reviewer > 0}
 	if _, err := q.ExecContext(ctx, `
-		INSERT INTO party_offer_listings (offer_id, blurb, base_cents, per_kid_cents, currency, max_kids, approved_at, approved_by)
-		SELECT id, blurb, base_cents, per_kid_cents, currency, max_kids, now(), $2
-		FROM party_offers WHERE id = $1
+		INSERT INTO party_offer_listings (offer_id, blurb, base_cents, per_kid_cents, currency, max_kids, graph_id, approved_at, approved_by)
+		SELECT o.id, o.blurb, o.base_cents, o.per_kid_cents, o.currency, o.max_kids, a.published_graph_id, now(), $2
+		FROM party_offers o JOIN adventures a ON a.slug = o.adventure_slug WHERE o.id = $1
 		ON CONFLICT (offer_id) DO UPDATE SET
 		    blurb = EXCLUDED.blurb, base_cents = EXCLUDED.base_cents, per_kid_cents = EXCLUDED.per_kid_cents,
-		    currency = EXCLUDED.currency, max_kids = EXCLUDED.max_kids,
+		    currency = EXCLUDED.currency, max_kids = EXCLUDED.max_kids, graph_id = EXCLUDED.graph_id,
 		    approved_at = EXCLUDED.approved_at, approved_by = EXCLUDED.approved_by
 	`, offerID, by); err != nil {
 		return err
@@ -209,6 +394,8 @@ type listingFieldsDTO struct {
 	TeamSize    int    `json:"team_size,omitempty"`
 	MaxKids     int    `json:"max_kids,omitempty"`
 	CoverURL    string `json:"cover_url,omitempty"`
+	// GraphID is the adventure version it plays.
+	GraphID int64 `json:"graph_id,omitempty"`
 }
 
 // listingReviewDTO is one listing waiting for review. Live is what the
@@ -223,32 +410,48 @@ type listingReviewDTO struct {
 	OrgSlug        string            `json:"org_slug,omitempty"`
 	AdventureSlug  string            `json:"adventure_slug"`
 	AdventureTitle string            `json:"adventure_title"`
+	AttestedBy     string            `json:"attested_by,omitempty"`
 	Draft          listingFieldsDTO  `json:"draft"`
 	Live           *listingFieldsDTO `json:"live,omitempty"`
 }
 
-// ListListingReviews lists what waits for review, oldest first.
-// Global admin only (route group).
+const isoTime = `'YYYY-MM-DD"T"HH24:MI:SS"Z"'`
+
+// ListListingReviews lists what waits for review, oldest first, but
+// for the reviewer's own organisations'. Listing reviewers only.
 func (h *Handlers) ListListingReviews(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	me, ok := reviewer(w, r)
+	if !ok {
+		return
+	}
+	out, err := h.pendingListings(r.Context(), me.ID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "review list failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"reviews": out})
+}
+
+func (h *Handlers) pendingListings(ctx context.Context, reviewerID int64) ([]listingReviewDTO, error) {
 	out := []listingReviewDTO{}
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT e.id, `+eventListingRevision+`, to_char(e.listing_submitted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+		SELECT e.id, `+eventListingRevision+`, to_char(e.listing_submitted_at AT TIME ZONE 'UTC', `+isoTime+`),
 		       g.id, g.name, COALESCE(g.slug, ''), e.adventure_slug, COALESCE(NULLIF(a.title, ''), e.adventure_slug),
+		       COALESCE(u.username, ''),
 		       e.name, e.public_blurb, COALESCE(e.ticket_price_cents, 0), e.ticket_currency, e.ticket_team_size,
-		       e.cover_image_mime_type IS NOT NULL,
+		       e.cover_image_mime_type IS NOT NULL, COALESCE(e.graph_id, 0),
 		       l.event_id IS NOT NULL, COALESCE(l.name, ''), COALESCE(l.blurb, ''), COALESCE(l.price_cents, 0),
-		       COALESCE(l.currency, ''), COALESCE(l.team_size, 0), l.cover_mime_type IS NOT NULL
+		       COALESCE(l.currency, ''), COALESCE(l.team_size, 0), l.cover_mime_type IS NOT NULL, COALESCE(l.graph_id, 0)
 		FROM events e
 		JOIN organizations g ON g.id = e.org_id
 		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
 		LEFT JOIN event_listings l ON l.event_id = e.id
-		WHERE e.listing_review = 'pending'
+		LEFT JOIN users u ON u.id = e.listing_attested_by
+		WHERE e.listing_review = 'pending' AND NOT EXISTS (SELECT 1 FROM org_memberships m WHERE m.user_id = $1 AND m.org_id = g.id)
 		ORDER BY e.listing_submitted_at, e.id
-	`)
+	`, reviewerID)
 	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "review list failed", err)
-		return
+		return nil, err
 	}
 	for rows.Next() {
 		var (
@@ -258,21 +461,19 @@ func (h *Handlers) ListListingReviews(w http.ResponseWriter, r *http.Request) {
 			liveCover          bool
 		)
 		if err := rows.Scan(&d.ID, &d.Revision, &d.SubmittedAt, &d.OrgID, &d.OrgName, &d.OrgSlug,
-			&d.AdventureSlug, &d.AdventureTitle,
-			&d.Draft.Name, &d.Draft.Blurb, &d.Draft.PriceCents, &d.Draft.Currency, &d.Draft.TeamSize, &draftCover,
-			&isLive, &live.Name, &live.Blurb, &live.PriceCents, &live.Currency, &live.TeamSize, &liveCover); err != nil {
+			&d.AdventureSlug, &d.AdventureTitle, &d.AttestedBy,
+			&d.Draft.Name, &d.Draft.Blurb, &d.Draft.PriceCents, &d.Draft.Currency, &d.Draft.TeamSize, &draftCover, &d.Draft.GraphID,
+			&isLive, &live.Name, &live.Blurb, &live.PriceCents, &live.Currency, &live.TeamSize, &liveCover, &live.GraphID); err != nil {
 			rows.Close()
-			httpx.ServerErr(w, http.StatusInternalServerError, "review list failed", err)
-			return
+			return nil, err
 		}
 		d.Kind = listingEvent
-		cover := eventCoverURL(d.ID)
 		if draftCover {
-			d.Draft.CoverURL = cover + "?draft=1"
+			d.Draft.CoverURL = reviewMediaURL(listingEvent, d.ID, "event-cover")
 		}
 		if isLive {
 			if liveCover {
-				live.CoverURL = cover
+				live.CoverURL = reviewMediaURL(listingEvent, d.ID, "event-cover-live")
 			}
 			d.Live = &live
 		}
@@ -280,27 +481,27 @@ func (h *Handlers) ListListingReviews(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		httpx.ServerErr(w, http.StatusInternalServerError, "review list failed", err)
-		return
+		return nil, err
 	}
 	rows.Close()
 
 	rows, err = h.DB.QueryContext(ctx, `
-		SELECT o.id, `+partyListingRevision+`, to_char(o.listing_submitted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+		SELECT o.id, `+partyListingRevision+`, to_char(o.listing_submitted_at AT TIME ZONE 'UTC', `+isoTime+`),
 		       g.id, g.name, COALESCE(g.slug, ''), o.adventure_slug, COALESCE(NULLIF(a.title, ''), o.adventure_slug),
-		       o.blurb, o.base_cents, o.per_kid_cents, o.currency, o.max_kids,
+		       COALESCE(u.username, ''),
+		       o.blurb, o.base_cents, o.per_kid_cents, o.currency, o.max_kids, COALESCE(a.published_graph_id, 0),
 		       l.offer_id IS NOT NULL, COALESCE(l.blurb, ''), COALESCE(l.base_cents, 0), COALESCE(l.per_kid_cents, 0),
-		       COALESCE(l.currency, ''), COALESCE(l.max_kids, 0)
+		       COALESCE(l.currency, ''), COALESCE(l.max_kids, 0), COALESCE(l.graph_id, 0)
 		FROM party_offers o
 		JOIN organizations g ON g.id = o.org_id
-		LEFT JOIN adventures a ON a.slug = o.adventure_slug
+		JOIN adventures a ON a.slug = o.adventure_slug
 		LEFT JOIN party_offer_listings l ON l.offer_id = o.id
-		WHERE o.listing_review = 'pending'
+		LEFT JOIN users u ON u.id = o.listing_attested_by
+		WHERE o.listing_review = 'pending' AND NOT EXISTS (SELECT 1 FROM org_memberships m WHERE m.user_id = $1 AND m.org_id = g.id)
 		ORDER BY o.listing_submitted_at, o.id
-	`)
+	`, reviewerID)
 	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "review list failed", err)
-		return
+		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -310,11 +511,10 @@ func (h *Handlers) ListListingReviews(w http.ResponseWriter, r *http.Request) {
 			isLive bool
 		)
 		if err := rows.Scan(&d.ID, &d.Revision, &d.SubmittedAt, &d.OrgID, &d.OrgName, &d.OrgSlug,
-			&d.AdventureSlug, &d.AdventureTitle,
-			&d.Draft.Blurb, &d.Draft.PriceCents, &d.Draft.PerKidCents, &d.Draft.Currency, &d.Draft.MaxKids,
-			&isLive, &live.Blurb, &live.PriceCents, &live.PerKidCents, &live.Currency, &live.MaxKids); err != nil {
-			httpx.ServerErr(w, http.StatusInternalServerError, "review list failed", err)
-			return
+			&d.AdventureSlug, &d.AdventureTitle, &d.AttestedBy,
+			&d.Draft.Blurb, &d.Draft.PriceCents, &d.Draft.PerKidCents, &d.Draft.Currency, &d.Draft.MaxKids, &d.Draft.GraphID,
+			&isLive, &live.Blurb, &live.PriceCents, &live.PerKidCents, &live.Currency, &live.MaxKids, &live.GraphID); err != nil {
+			return nil, err
 		}
 		d.Kind = listingParty
 		if isLive {
@@ -322,11 +522,71 @@ func (h *Handlers) ListListingReviews(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, d)
 	}
-	if err := rows.Err(); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "review list failed", err)
+	return out, rows.Err()
+}
+
+// listingLogDTO is one submission or decision.
+type listingLogDTO struct {
+	Kind      string `json:"kind"`
+	ID        int64  `json:"id"`
+	OrgID     int64  `json:"org_id"`
+	OrgName   string `json:"org_name"`
+	Title     string `json:"title"`
+	Action    string `json:"action"`
+	Via       string `json:"via"`
+	By        string `json:"by,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	GraphID   int64  `json:"graph_id,omitempty"`
+	CreatedAt string `json:"created_at"`
+	// ContentHash fingerprints what was reviewed; EntryHash is the
+	// entry's link in the hash chain (listing_review_chain.go).
+	ContentHash string `json:"content_hash"`
+	EntryHash   string `json:"entry_hash"`
+}
+
+// ListListingLog lists recent submissions and decisions, newest first:
+// for spot-checks of what an AI reviewer or a verified creator let
+// through. ?via=mcp narrows it to decisions made through API tokens.
+// Listing reviewers only.
+func (h *Handlers) ListListingLog(w http.ResponseWriter, r *http.Request) {
+	if _, ok := reviewer(w, r); !ok {
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"reviews": out})
+	via := r.URL.Query().Get("via")
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT l.kind, l.item_id, COALESCE(l.org_id, 0), l.org_name,
+		       COALESCE(CASE l.kind
+		         WHEN 'event' THEN (SELECT COALESCE(NULLIF(e.name, ''), e.adventure_slug) FROM events e WHERE e.id = l.item_id)
+		         ELSE (SELECT COALESCE(NULLIF(a.title, ''), o.adventure_slug) FROM party_offers o
+		               LEFT JOIN adventures a ON a.slug = o.adventure_slug WHERE o.id = l.item_id)
+		       END, ''),
+		       l.action, l.via, l.username, l.reason, COALESCE(l.graph_id, 0),
+		       to_char(l.created_at AT TIME ZONE 'UTC', `+isoTime+`), l.content_hash, l.entry_hash
+		FROM listing_review_log l
+		WHERE $1 = '' OR l.via = $1
+		ORDER BY l.created_at DESC, l.id DESC
+		LIMIT 200
+	`, via)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "review log failed", err)
+		return
+	}
+	defer rows.Close()
+	out := []listingLogDTO{}
+	for rows.Next() {
+		var d listingLogDTO
+		if err := rows.Scan(&d.Kind, &d.ID, &d.OrgID, &d.OrgName, &d.Title, &d.Action, &d.Via, &d.By,
+			&d.Reason, &d.GraphID, &d.CreatedAt, &d.ContentHash, &d.EntryHash); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "review log failed", err)
+			return
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "review log failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"log": out})
 }
 
 /* ---------------- decisions ---------------- */
@@ -336,24 +596,56 @@ type listingDecisionRequest struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
-// ApproveListing makes a pending draft public. Global admin only.
+// ApproveListing makes a pending draft public. Listing reviewers only.
 func (h *Handlers) ApproveListing(w http.ResponseWriter, r *http.Request) {
 	h.decideListing(w, r, true)
 }
 
 // RejectListing turns a pending draft down with a reason the
-// organisation is told. What is public stays up. Global admin only.
+// organisation is told. What is public stays up. Listing reviewers only.
 func (h *Handlers) RejectListing(w http.ResponseWriter, r *http.Request) {
 	h.decideListing(w, r, false)
 }
 
-func (h *Handlers) decideListing(w http.ResponseWriter, r *http.Request, approve bool) {
-	ctx := r.Context()
-	me, _ := auth.FromContext(ctx)
+// reviewer is the caller when a platform admin made them a listing
+// reviewer; otherwise it answers 403.
+func reviewer(w http.ResponseWriter, r *http.Request) (auth.User, bool) {
+	me, ok := auth.FromContext(r.Context())
+	if !ok || !me.ListingReviewer {
+		httpx.JSON(w, http.StatusForbidden, map[string]string{"error": "only listing reviewers review listings", "code": "not_reviewer"})
+		return me, false
+	}
+	return me, true
+}
+
+// ownOrg reports whether the reviewer belongs to the organisation: no
+// one reviews their own organisation's listings.
+func (h *Handlers) ownOrg(ctx context.Context, userID, orgID int64) (bool, error) {
+	var own bool
+	err := h.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM org_memberships WHERE user_id = $1 AND org_id = $2)`, userID, orgID).Scan(&own)
+	return own, err
+}
+
+// listingParams reads {kind} and {id}, answering 404 when they name no
+// kind of listing.
+func listingParams(w http.ResponseWriter, r *http.Request) (string, int64, bool) {
 	kind := chi.URLParam(r, "kind")
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || id <= 0 || (kind != listingEvent && kind != listingParty) {
 		httpx.Error(w, http.StatusNotFound, "no such listing")
+		return "", 0, false
+	}
+	return kind, id, true
+}
+
+func (h *Handlers) decideListing(w http.ResponseWriter, r *http.Request, approve bool) {
+	ctx := r.Context()
+	me, ok := reviewer(w, r)
+	if !ok {
+		return
+	}
+	kind, id, ok := listingParams(w, r)
+	if !ok {
 		return
 	}
 	var req listingDecisionRequest
@@ -372,12 +664,7 @@ func (h *Handlers) decideListing(w http.ResponseWriter, r *http.Request, approve
 		}
 	}
 
-	table, revision := "events e", eventListingRevision
-	if kind == listingParty {
-		table, revision = "party_offers o", partyListingRevision
-	}
-	alias := table[len(table)-1:]
-
+	t := listingTables(kind)
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "review failed", err)
@@ -387,16 +674,25 @@ func (h *Handlers) decideListing(w http.ResponseWriter, r *http.Request, approve
 	var (
 		orgID      int64
 		state, rev string
+		graphID    sql.NullInt64
 	)
 	err = tx.QueryRowContext(ctx, `
-		SELECT `+alias+`.org_id, COALESCE(`+alias+`.listing_review, ''), `+revision+`
-		FROM `+table+` WHERE `+alias+`.id = $1 FOR UPDATE`, id).Scan(&orgID, &state, &rev)
+		SELECT `+t.alias+`.org_id, COALESCE(`+t.alias+`.listing_review, ''), `+t.revision+`, `+t.graph+`
+		FROM `+t.from+` WHERE `+t.alias+`.id = $1 FOR UPDATE OF `+t.lock, id).Scan(&orgID, &state, &rev, &graphID)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "no such listing")
 		return
 	}
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "review failed", err)
+		return
+	}
+	if own, err := h.ownOrg(ctx, me.ID, orgID); err != nil || own {
+		if err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "review failed", err)
+			return
+		}
+		httpx.JSON(w, http.StatusForbidden, map[string]string{"error": "someone outside your organisation has to review its listings", "code": "own_org"})
 		return
 	}
 	if state != "pending" {
@@ -407,20 +703,18 @@ func (h *Handlers) decideListing(w http.ResponseWriter, r *http.Request, approve
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the listing changed while you looked: reload and review it again", "code": "changed"})
 		return
 	}
-	switch {
-	case approve && kind == listingEvent:
-		err = h.approveEventListing(ctx, tx, id, me.ID)
-	case approve:
-		err = h.approvePartyListing(ctx, tx, id, me.ID)
-	default:
-		col := "events"
-		if kind == listingParty {
-			col = "party_offers"
-		}
+	action := "approved"
+	if approve {
+		err = h.approve(ctx, tx, kind, id, me.ID)
+	} else {
+		action = "rejected"
 		_, err = tx.ExecContext(ctx, `
-			UPDATE `+col+` SET listing_review = 'rejected', listing_reviewed_at = now(),
+			UPDATE `+t.table+` SET listing_review = 'rejected', listing_reviewed_at = now(),
 			       listing_reviewed_by = $2, listing_reject_reason = $3
 			WHERE id = $1`, id, me.ID, reason)
+	}
+	if err == nil {
+		err = h.logListing(ctx, tx, kind, id, orgID, action, viaOf(ctx), me.ID, rev, graphID, reason)
 	}
 	if err == nil {
 		err = tx.Commit()
@@ -429,16 +723,95 @@ func (h *Handlers) decideListing(w http.ResponseWriter, r *http.Request, approve
 		httpx.ServerErr(w, http.StatusInternalServerError, "review failed", err)
 		return
 	}
-	logx.Info("admin.listing.reviewed", "kind", kind, "id", id, "approved", approve, "by", me.ID)
+	logx.Info("admin.listing.reviewed", "kind", kind, "id", id, "action", action, "by", me.ID, "via", viaOf(ctx))
 	h.notifyListingDecided(ctx, kind, id, orgID, approve, reason)
-	httpx.JSON(w, http.StatusOK, map[string]any{"state": map[bool]string{true: "approved", false: "rejected"}[approve]})
+	httpx.JSON(w, http.StatusOK, map[string]any{"state": action})
+}
+
+/* ---------------- reviewers ---------------- */
+
+// listingReviewerDTO is a user who may review listings.
+type listingReviewerDTO struct {
+	ID       int64    `json:"id"`
+	Username string   `json:"username"`
+	Email    string   `json:"email,omitempty"`
+	IsAdmin  bool     `json:"is_admin"`
+	Orgs     []string `json:"orgs"`
+}
+
+// ListListingReviewers lists who may review listings, with the
+// organisations whose listings each can't review. Global admin only.
+//
+// GET /api/admin/listing-reviewers
+func (h *Handlers) ListListingReviewers(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT u.id, u.username, COALESCE(u.email, ''), u.is_admin,
+		       COALESCE(array_to_string(ARRAY(
+		         SELECT g.name FROM org_memberships m JOIN organizations g ON g.id = m.org_id
+		         WHERE m.user_id = u.id ORDER BY g.name), E'\x1f'), '')
+		FROM users u WHERE u.listing_reviewer ORDER BY LOWER(u.username)`)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "reviewers lookup failed", err)
+		return
+	}
+	defer rows.Close()
+	out := []listingReviewerDTO{}
+	for rows.Next() {
+		var (
+			d    listingReviewerDTO
+			orgs string
+		)
+		if err := rows.Scan(&d.ID, &d.Username, &d.Email, &d.IsAdmin, &orgs); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "reviewers lookup failed", err)
+			return
+		}
+		d.Orgs = []string{}
+		if orgs != "" {
+			d.Orgs = strings.Split(orgs, "\x1f")
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "reviewers lookup failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"reviewers": out})
+}
+
+// SetListingReviewer makes a user a listing reviewer, or no longer one.
+// Global admin only.
+//
+// POST /api/admin/listing-reviewers  {username, reviewer}
+func (h *Handlers) SetListingReviewer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username string `json:"username"`
+		Reviewer bool   `json:"reviewer"`
+	}
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	var id int64
+	err := h.DB.QueryRowContext(r.Context(), `
+		UPDATE users SET listing_reviewer = $2 WHERE username = $1 RETURNING id`,
+		strings.TrimSpace(req.Username), req.Reviewer).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "no such user")
+		return
+	}
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	logx.Info("admin.listing.reviewer", "user_id", id, "reviewer", req.Reviewer, "by", me.ID)
+	httpx.JSON(w, http.StatusOK, map[string]any{"id": id, "reviewer": req.Reviewer})
 }
 
 /* ---------------- verified creators ---------------- */
 
 // SetOrgVerifiedCreator marks an organisation as a verified creator:
-// its listings skip review, and the store says so. Turning it on
-// approves what of theirs is waiting. Global admin only.
+// its submissions are approved at once, and the store says so. Turning
+// it on approves what of theirs is waiting. Global admin only.
 func (h *Handlers) SetOrgVerifiedCreator(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id, ok := orgIDFromURL(r)
@@ -472,39 +845,49 @@ func (h *Handlers) SetOrgVerifiedCreator(w http.ResponseWriter, r *http.Request)
 }
 
 // approveWaitingListings approves an organisation's pending listings,
-// as its saves would have been had it been verified then.
+// as their submissions would have been had it been verified then.
 func (h *Handlers) approveWaitingListings(ctx context.Context, orgID int64) error {
-	ids := func(q string) ([]int64, error) {
-		rows, err := h.DB.QueryContext(ctx, q, orgID)
+	for _, kind := range []string{listingEvent, listingParty} {
+		t := listingTables(kind)
+		tx, err := h.DB.BeginTx(ctx, nil)
 		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-		var out []int64
-		for rows.Next() {
-			var id int64
-			if err := rows.Scan(&id); err != nil {
-				return nil, err
-			}
-			out = append(out, id)
-		}
-		return out, rows.Err()
-	}
-	events, err := ids(`SELECT id FROM events WHERE org_id = $1 AND listing_review = 'pending'`)
-	if err != nil {
-		return err
-	}
-	for _, id := range events {
-		if err := h.approveEventListing(ctx, h.DB, id, 0); err != nil {
 			return err
 		}
-	}
-	offers, err := ids(`SELECT id FROM party_offers WHERE org_id = $1 AND listing_review = 'pending'`)
-	if err != nil {
-		return err
-	}
-	for _, id := range offers {
-		if err := h.approvePartyListing(ctx, h.DB, id, 0); err != nil {
+		rows, err := tx.QueryContext(ctx, `
+			SELECT `+t.alias+`.id, `+t.revision+`, `+t.graph+` FROM `+t.from+`
+			WHERE `+t.alias+`.org_id = $1 AND `+t.alias+`.listing_review = 'pending'
+			FOR UPDATE OF `+t.lock, orgID)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+		type waiting struct {
+			id      int64
+			rev     string
+			graphID sql.NullInt64
+		}
+		var list []waiting
+		for rows.Next() {
+			var x waiting
+			if err := rows.Scan(&x.id, &x.rev, &x.graphID); err != nil {
+				rows.Close()
+				tx.Rollback()
+				return err
+			}
+			list = append(list, x)
+		}
+		rows.Close()
+		for _, x := range list {
+			if err := h.approve(ctx, tx, kind, x.id, 0); err != nil {
+				tx.Rollback()
+				return err
+			}
+			if err := h.logListing(ctx, tx, kind, x.id, orgID, "approved", "auto", 0, x.rev, x.graphID, ""); err != nil {
+				tx.Rollback()
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
 			return err
 		}
 	}

@@ -78,12 +78,14 @@ The MCP surface has no streaming. To watch a live event, poll:
 | Event passes     | list_purchases · get_purchase · create_purchase (simulated only) · confirm_purchase · grant_slots_to_event (admin) |
 | Invitations      | send_event_invitations · send_team_invitation · get_event_invite_ics |
 | Results          | export_event_results_csv · describe_event_lifecycle (this tool) |
+| Listing review   | submit_listing_for_review · list_listing_reviews (admin) · get_listing_review (admin) · approve_listing (admin) · reject_listing (admin) |
 
 ## Security boundaries
 
 - ` + "`end_event`" + `, ` + "`cancel_event`" + ` and ` + "`delete_team`" + ` require the caller's password (passed as ` + "`password`" + `, forwarded as X-Confirm-Password). The API token alone cannot cancel or destroy.
 - ` + "`grant_slots_to_event`" + ` is admin-only and refused at the MCP layer when the token's user isn't a global admin.
-- A global admin's token reaches only the operator tools (` + "`grant_slots_to_event`" + `, the purchase reads, this reference): authoring and running events belong to org users.
+- A global admin's token reaches only the operator tools (` + "`grant_slots_to_event`" + `, the purchase reads, listing review, this reference): authoring and running events belong to org users.
+- ` + "`submit_listing_for_review`" + ` needs ` + "`attest: true`" + `, the user's own confirmation that the content follows the terms: ask them first. Decisions made through ` + "`approve_listing`" + ` / ` + "`reject_listing`" + ` are logged as an assistant's, for the console's spot-checks.
 - ` + "`create_purchase`" + ` is hard-coded to provider="simulated" and refuses on Stripe-enabled deployments — real-money buys go through the web checkout.
 
 ## Self-guided adventures vs scheduled events

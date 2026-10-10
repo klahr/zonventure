@@ -127,6 +127,9 @@ type whoamiResponse struct {
 	// self-host operators who skim the docs need a louder nudge
 	// than a footnote in SELFHOSTING.md.
 	PasswordIsDefault bool `json:"password_is_default,omitempty"`
+	// ListingReviewer: a platform admin made the user a listing
+	// reviewer, so the console shows the review queue.
+	ListingReviewer bool `json:"listing_reviewer,omitempty"`
 	// MCPEnabled mirrors the server-side ZV_MCP_ENABLED gate so
 	// the UI knows whether to surface the MCP tokens settings card.
 	// Instance-wide, not per-user, but bootstrapped here so the
@@ -143,6 +146,7 @@ func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
 		Pricing:           currentPricing(),
 		Memberships:       []membershipDTO{},
 		PasswordIsDefault: u.PasswordIsDefault,
+		ListingReviewer:   u.ListingReviewer,
 		MCPEnabled:        h.MCPEnabled,
 		AvatarURL:         AvatarURLs(ctx, h.DB, []int64{u.ID})[u.ID],
 	}

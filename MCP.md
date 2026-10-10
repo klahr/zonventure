@@ -59,6 +59,16 @@ Org tools refuse it in-band with `forbidden_audience`. Catalog
 listing (`published`) is the operator's call, so
 `update_adventure_meta` refuses it too.
 
+Listing review has its own audience: the tools `list_listing_reviews`,
+`get_listing_review`, `approve_listing` and `reject_listing` answer
+only users a platform admin made listing reviewers (Admin → Listing
+reviews), whatever their role. Give an AI reviewer an account of its
+own with only that flag, and mint its token there: it can review and
+nothing else, never its own organisation's listings, and every decision
+it makes is logged as an assistant's for spot-checks. Organisation
+users submit with `submit_listing_for_review`, passing `attest: true`
+only once the user has confirmed the content follows the terms.
+
 The same tokens also authenticate the REST API under
 `/api/admin`, whether or not `ZV_MCP_ENABLED` is set. Send
 `Authorization: Bearer zvmcp_…`; no session cookie or CSRF header is

@@ -1192,9 +1192,9 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// What the store shows changed: it waits for review before it is up.
+	// What the store shows changed: a draft until it is submitted for review.
 	if req.Name != nil || req.TicketPriceCents != nil || req.TicketTeamSize != nil || req.PublicBlurb != nil {
-		if err := h.submitEventListing(r.Context(), eventID); err != nil {
+		if err := h.settleEventListing(r.Context(), eventID); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
 			return
 		}

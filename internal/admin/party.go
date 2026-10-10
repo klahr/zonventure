@@ -83,6 +83,10 @@ type partyOfferDTO struct {
 	ListingReview string `json:"listing_review,omitempty"`
 	RejectReason  string `json:"reject_reason,omitempty"`
 	Listed        bool   `json:"listed"`
+	// NewerVersion: the adventure has a newer published version than
+	// the one approved, which booked parties play. Saving and
+	// submitting the offer sends the newer one for review.
+	NewerVersion bool `json:"newer_version,omitempty"`
 }
 
 // ListPartyOffers lists the adventures the caller's org may sell as
@@ -100,7 +104,8 @@ func (h *Handlers) ListPartyOffers(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(o.id, 0), COALESCE(o.enabled, FALSE), COALESCE(o.base_cents, 0),
 		       COALESCE(o.per_kid_cents, 0), COALESCE(o.currency, 'sek'), COALESCE(o.max_kids, 20),
 		       COALESCE(o.blurb, ''), COALESCE(o.listing_review, ''), COALESCE(o.listing_reject_reason, ''),
-		       EXISTS (SELECT 1 FROM party_offer_listings l WHERE l.offer_id = o.id)
+		       EXISTS (SELECT 1 FROM party_offer_listings l WHERE l.offer_id = o.id),
+		       EXISTS (SELECT 1 FROM party_offer_listings l WHERE l.offer_id = o.id AND l.graph_id IS DISTINCT FROM a.published_graph_id)
 		FROM adventures a
 		LEFT JOIN party_offers o ON o.org_id = $1 AND o.adventure_slug = a.slug
 		WHERE NOT a.trail_hidden
@@ -121,7 +126,7 @@ func (h *Handlers) ListPartyOffers(w http.ResponseWriter, r *http.Request) {
 		var x row
 		d := &x.dto
 		if err := rows.Scan(&x.advID, &d.AdventureSlug, &d.Title, &d.OfferID, &d.Enabled, &d.BaseCents,
-			&d.PerKidCents, &d.Currency, &d.MaxKids, &d.Blurb, &d.ListingReview, &d.RejectReason, &d.Listed); err != nil {
+			&d.PerKidCents, &d.Currency, &d.MaxKids, &d.Blurb, &d.ListingReview, &d.RejectReason, &d.Listed, &d.NewerVersion); err != nil {
 			rows.Close()
 			httpx.ServerErr(w, http.StatusInternalServerError, "offers lookup failed", err)
 			return
@@ -281,8 +286,8 @@ func (h *Handlers) PutPartyOffer(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "offer save failed", err)
 		return
 	}
-	// What the page shows changed: it waits for review before it is up.
-	if err := h.submitPartyOffer(r.Context(), id); err != nil {
+	// What the page shows changed: a draft until it is submitted for review.
+	if err := h.settlePartyOffer(r.Context(), id); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
 		return
 	}
@@ -553,12 +558,16 @@ func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, par
 		orgID   int64
 		advSlug string
 		title   string
+		// approved is the adventure version the offer was approved with
+		// (listing review): what the party plays.
+		approved sql.NullInt64
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT o.org_id, o.adventure_slug, COALESCE(NULLIF(a.title, ''), a.slug)
+		SELECT o.org_id, o.adventure_slug, COALESCE(NULLIF(a.title, ''), a.slug), l.graph_id
 		FROM party_offers o JOIN adventures a ON a.slug = o.adventure_slug
+		LEFT JOIN party_offer_listings l ON l.offer_id = o.id
 		WHERE o.id = $1
-	`, offerID).Scan(&orgID, &advSlug, &title); err != nil {
+	`, offerID).Scan(&orgID, &advSlug, &title, &approved); err != nil {
 		return 0, "", fmt.Errorf("party offer %d: %w", offerID, err)
 	}
 	if strings.TrimSpace(partyName) == "" {
@@ -567,6 +576,11 @@ func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, par
 	eventID, hostToken, err = createHostedEvent(ctx, tx, orgID, advSlug, partyName, kids, 1, "")
 	if err != nil {
 		return 0, "", err
+	}
+	if approved.Valid {
+		if _, err := tx.ExecContext(ctx, `UPDATE events SET base_graph_id = $1 WHERE id = $2`, approved.Int64, eventID); err != nil {
+			return 0, "", err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE ticket_purchases SET event_id = $1 WHERE id = $2`, eventID, purchaseID); err != nil {
 		return 0, "", err

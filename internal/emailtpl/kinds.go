@@ -362,6 +362,20 @@ func ListingWaiting(lang, org, link string) (string, Content) {
 	return subject, c
 }
 
+// ListingLogHead gives the platform's admins the listing review log's
+// latest hash, to keep: should the log be rewritten, its head no longer
+// matches the one they were sent.
+func ListingLogHead(lang, head string, entries int64, link string) (string, Content) {
+	subject := T(lang, "Listing review log: today's fingerprint")
+	c := Content{Lang: lang, Heading: subject,
+		Body: T(lang, "The listing review log holds %d entries. Its latest hash is:", entries) + "\n\n`" + head + "`\n\n" +
+			T(lang, "Keep this email. Checking the log recomputes every hash; if its latest no longer matches one sent here, the log was changed.")}
+	if link != "" {
+		c.Buttons = []Button{{T(lang, "Check the log"), link}}
+	}
+	return subject, c
+}
+
 // ListingApproved tells an organisation's admins their listing is public.
 func ListingApproved(lang, what, link string) (string, Content) {
 	subject := T(lang, "“%s” is approved", what)

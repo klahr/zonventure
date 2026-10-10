@@ -38,6 +38,11 @@ export interface Whoami {
    * leaving this on a publicly reachable box is a takeover.
    */
   password_is_default?: boolean;
+  /**
+   * A platform admin made the user a listing reviewer: they review what
+   * organisations put up for sale (not their own organisations').
+   */
+  listing_reviewer?: boolean;
   /** Mirrors the instance-wide ZV_MCP_ENABLED gate. */
   mcp_enabled?: boolean;
   pricing?: unknown;

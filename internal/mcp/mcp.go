@@ -113,6 +113,8 @@ const (
 	audienceOrg   = ""
 	audienceAdmin = "admin"
 	audienceAny   = "any"
+	// audienceReviewer: users a platform admin made listing reviewers.
+	audienceReviewer = "reviewer"
 )
 
 // Scope identifiers — kept in sync with admin.MCPScope* constants.

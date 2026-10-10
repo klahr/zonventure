@@ -86,6 +86,7 @@ func newPartyFixture(t *testing.T) (*partyFixture, func()) {
 	console.Use(injectUser(user))
 	console.Get("/api/admin/party-offers", f.h.ListPartyOffers)
 	console.Put("/api/admin/party-offers/{slug}", f.h.PutPartyOffer)
+	console.Post("/api/admin/party-offers/{slug}/submit", f.h.SubmitPartyOffer)
 	console.Get("/api/admin/events/{eventID}/hosted", f.h.GetHostParty)
 	console.Post("/api/admin/events/{eventID}/hosted/finish-game", f.h.FinishHostedGame)
 	f.console = console
@@ -130,18 +131,12 @@ func call(t *testing.T, h http.Handler, method, path string, body any) *httptest
 // secret from the booker's mail.
 func (f *partyFixture) book(t *testing.T, kids int) (int64, string) {
 	t.Helper()
-	w := call(t, f.console, "PUT", "/api/admin/party-offers/treasure", map[string]any{
+	offerID := f.offer(t, map[string]any{
 		"enabled": true, "base_cents": 19900, "per_kid_cents": 2900, "currency": "sek", "max_kids": 12, "blurb": "Find the treasure",
 	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("offer: %d %s", w.Code, w.Body)
-	}
-	var offer struct {
-		ID int64 `json:"offer_id"`
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &offer)
+	offer := struct{ ID int64 }{offerID}
 
-	w = call(t, f.public, "POST", "/api/o/acme/parties/"+strconv.FormatInt(offer.ID, 10)+"/book", map[string]any{
+	w := call(t, f.public, "POST", "/api/o/acme/parties/"+strconv.FormatInt(offer.ID, 10)+"/book", map[string]any{
 		"email": "Parent@Example.com", "kids": kids, "party_name": "Elsa turns 8", "consent": true,
 	})
 	if w.Code != http.StatusOK {
@@ -460,13 +455,9 @@ func TestParty_BookingValidation(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
-	w := call(t, f.console, "PUT", "/api/admin/party-offers/treasure", map[string]any{
+	offer := struct{ ID int64 }{f.offer(t, map[string]any{
 		"enabled": true, "base_cents": 100, "per_kid_cents": 10, "currency": "sek", "max_kids": 4,
-	})
-	var offer struct {
-		ID int64 `json:"offer_id"`
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &offer)
+	})}
 	path := "/api/o/acme/parties/" + strconv.FormatInt(offer.ID, 10) + "/book"
 	for name, body := range map[string]map[string]any{
 		"no consent":    {"email": "p@example.com", "kids": 3},
@@ -691,4 +682,23 @@ func TestParty_HoldResults(t *testing.T) {
 	if view, err := e.Snapshot(ctx, fox); err != nil || view.ResultsHeld {
 		t.Errorf("game 2 with results shown: held %v, %v", view.ResultsHeld, err)
 	}
+}
+
+// offer saves the treasure hunt's party offer and submits it, as its
+// org admin confirming the content: the fixture's org is a verified
+// creator, so it is up at once. It returns the offer's id.
+func (f *partyFixture) offer(t *testing.T, body map[string]any) int64 {
+	t.Helper()
+	w := call(t, f.console, "PUT", "/api/admin/party-offers/treasure", body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("offer: %d %s", w.Code, w.Body)
+	}
+	var offer struct {
+		ID int64 `json:"offer_id"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &offer)
+	if w := call(t, f.console, "POST", "/api/admin/party-offers/treasure/submit", map[string]bool{"attest": true}); w.Code != http.StatusOK && w.Code != http.StatusConflict {
+		t.Fatalf("submit offer: %d %s", w.Code, w.Body)
+	}
+	return offer.ID
 }
