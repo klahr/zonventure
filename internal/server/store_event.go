@@ -153,8 +153,10 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		coverURL, hasCover = look.CoverURL, true
 	}
 	if look != nil && look.FontCSS != "" {
+		// [data-look-title] lets an override template (ZV_WEB_OVERRIDE_DIR)
+		// with its own markup mark the title it wants in the look's font.
 		lookFont = `<link rel="stylesheet" href="` + html.EscapeString(look.FontCSS) + `">` +
-			`<style>.hero h1 { font-family: "` + html.EscapeString(look.HeadingFont) + `", var(--font-brand); }</style>`
+			`<style>.hero h1, [data-look-title] { font-family: "` + html.EscapeString(look.HeadingFont) + `", var(--font-brand); }</style>`
 	}
 	iconURL, ogImage := "", coverURL
 	if hasIcon {
