@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Copy, ExternalLink } from "lucide-react";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
-import { Button, Card, ErrorBox, Field, HelpPopover, ICON, ImageDrop, Loading, Row, errorText, useDialogs, useLoad } from "../../ui/index.ts";
+import { Button, Card, ErrorBox, Field, HelpPopover, ICON, ImageDrop, Loading, ProposalPanel, Row, errorText, getProposal, proposedText, useDialogs, useLoad, useToast, type Proposal } from "../../ui/index.ts";
 import { deleteImage, getProfile, putProfile, putSlug, uploadImage, type OrgProfile, type ProfileEdit } from "./organization-api.ts";
 import { EmailLookCard } from "./organization-email.tsx";
 import "./organization-branding.css";
@@ -27,10 +27,13 @@ function rgba(hex: string, a: number): string {
   return `rgba(${parseInt(v.slice(1, 3), 16)}, ${parseInt(v.slice(3, 5), 16)}, ${parseInt(v.slice(5, 7), 16)}, ${a})`;
 }
 
-function editOf(p: OrgProfile): ProfileEdit {
+/** The org page's held-back changes (internal/admin/presentation.go). */
+const PROPOSAL = "/api/admin/orgs/me/proposal";
+
+function editOf(p: OrgProfile, prop?: Proposal | null): ProfileEdit {
   return {
-    tagline: p.tagline || "",
-    public_website: p.public_website || "",
+    tagline: proposedText(prop, "tagline") ?? (p.tagline || ""),
+    public_website: proposedText(prop, "public_website") ?? (p.public_website || ""),
     accent_color: (p.accent_color || "").trim(),
     accent_secondary_color: (p.accent_secondary_color || "").trim(),
     background_color: (p.background_color || "").trim(),
@@ -50,6 +53,8 @@ export function OrganizationTab() {
   const { state, refresh: refreshSession } = useSession();
   const dialogs = useDialogs();
   const load = useLoad((signal) => getProfile(signal), []);
+  const prop = useLoad((signal) => getProposal(PROPOSAL, signal).catch(() => null), []);
+  const toast = useToast();
   const user = state.status === "authenticated" ? state.user : null;
   const orgID = user?.org_id ?? 0;
   const orgName = user?.memberships.find((m) => m.org_id === orgID)?.org_name || t.t("Your organization");
@@ -67,11 +72,13 @@ export function OrganizationTab() {
   const saving = useRef<Promise<void> | null>(null);
 
   const profile = load.data;
+  // Waits for the proposal too, so a held-back tagline shows as written.
+  const propReady = prop.data !== undefined || !!prop.error;
   useEffect(() => {
-    if (!profile) return;
-    setEdit((e) => e ?? editOf(profile));
+    if (!profile || !propReady) return;
+    setEdit((e) => e ?? editOf(profile, prop.data));
     setSlug((s) => s || profile.slug);
-  }, [profile]);
+  }, [profile, propReady, prop.data]);
   useEffect(() => () => { clearTimeout(chipTimer.current); clearTimeout(colorTimer.current); }, []);
 
   const flash = (key: string) => {
@@ -99,6 +106,7 @@ export function OrganizationTab() {
           text_color: body.text_color.trim(),
         });
         if (p) load.set(p);
+        prop.reload();
         if (chipKey) flash(chipKey);
       } catch (e) {
         setErr(errorText(e));
@@ -164,8 +172,10 @@ export function OrganizationTab() {
   const upload = async (kind: "logo" | "cover", f: File) => {
     setErr("");
     try {
-      await uploadImage(kind, f);
+      const r = await uploadImage(kind, f);
+      if ((r as { proposed?: boolean } | undefined)?.proposed) toast.ok(t.t("Saved — waits for review"));
       await reread();
+      prop.reload();
       if (kind === "logo") void refreshSession();
     } catch (x) {
       setErr(t.t(kind === "logo" ? "Logo upload failed: {{err}}" : "Cover upload failed: {{err}}", { err: errorText(x) }));
@@ -184,6 +194,7 @@ export function OrganizationTab() {
     try {
       await deleteImage(kind);
       await reread();
+      prop.reload();
       if (kind === "logo") void refreshSession();
     } catch (x) {
       setErr(errorText(x));
@@ -206,8 +217,11 @@ export function OrganizationTab() {
   const color = (k: ColorKey) => (HEX.test(edit[k].trim()) ? fullHex(edit[k].trim()) : DEFAULTS[k]);
   const accent = color("accent_color");
   const accent2 = color("accent_secondary_color");
-  const logoSrc = profile.has_logo && orgID ? `/org-logo/${orgID}?t=${imgVersion}` : "";
-  const coverSrc = profile.has_cover && orgID ? `/org-cover/${orgID}?t=${imgVersion}` : "";
+  // A held-back picture shows as it would be; it is public once approved.
+  const logoSrc = prop.data?.has_image ? `${PROPOSAL}/image?t=${imgVersion}` : profile.has_logo && orgID ? `/org-logo/${orgID}?t=${imgVersion}` : "";
+  const coverSrc = prop.data?.has_cover ? `${PROPOSAL}/cover?t=${imgVersion}` : profile.has_cover && orgID ? `/org-cover/${orgID}?t=${imgVersion}` : "";
+  const waits = (key: string, live: string) =>
+    proposedText(prop.data, key) !== undefined ? t.t("Waits for review. Public now: “{{live}}”", { live: live || t.t("(empty)") }) : undefined;
   const heroBg = coverSrc
     ? `linear-gradient(135deg, ${rgba(accent, 0.6)}, ${rgba(accent2, 0.5)}), url('${coverSrc}') center / cover`
     : `linear-gradient(135deg, ${accent}, ${accent2})`;
@@ -239,6 +253,14 @@ export function OrganizationTab() {
   return (
     <>
       <Card title={t.t("Branding")} subtitle={t.t("How your organization appears to customers: its public page, its store and their address. Everyone in the organization shares these.")}>
+        <ProposalPanel
+          kind="org"
+          base={PROPOSAL}
+          proposal={prop.data}
+          labels={{ tagline: t.t("Tagline"), public_website: t.t("Website") }}
+          pictures={[{ key: "image", label: t.t("Logo") }, { key: "cover", label: t.t("Cover") }]}
+          onChanged={() => { prop.reload(); setImgVersion(Date.now()); }}
+        />
         <div className="og-grid">
           <div className="og-controls">
             <section className="og-section">
@@ -314,7 +336,7 @@ export function OrganizationTab() {
 
             <section className="og-section">
               <h3>{t.t("Copy")}</h3>
-              <Field label={<>{t.t("Tagline")} {saved("tagline")}</>} hint={`${edit.tagline.length} / 140`}>
+              <Field label={<>{t.t("Tagline")} {saved("tagline")}</>} hint={[`${edit.tagline.length} / 140`, waits("tagline", profile.tagline)].filter(Boolean).join(" · ")}>
                 <input
                   type="text"
                   maxLength={140}
@@ -324,7 +346,7 @@ export function OrganizationTab() {
                   onBlur={() => void save("tagline")}
                 />
               </Field>
-              <Field label={<>{t.t("Website")} {saved("website")}</>}>
+              <Field label={<>{t.t("Website")} {saved("website")}</>} {...(waits("public_website", profile.public_website) ? { hint: waits("public_website", profile.public_website) } : {})}>
                 <input
                   type="url"
                   placeholder="https://example.com"

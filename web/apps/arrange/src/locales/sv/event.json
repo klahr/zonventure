@@ -126,5 +126,12 @@
   "File deleted.": "Filen är borttagen.",
   "Delete file": "Ta bort fil",
   "Nothing yet. Add a PDF with the rules, a map to print or a packing list: players download it from the app before the start, and keep it at hand in the menu during the game.": "Inget än. Lägg till en PDF med reglerna, en karta att skriva ut eller en packlista: spelarna laddar ner den i appen före starten och har den nära till hands i menyn under spelet.",
-  "PDF, pictures, text or Office documents, up to {{mb}} MB each.": "PDF, bilder, text eller Office-dokument, högst {{mb}} MB styck."
+  "PDF, pictures, text or Office documents, up to {{mb}} MB each.": "PDF, bilder, text eller Office-dokument, högst {{mb}} MB styck.",
+  "Results record": "Resultatlogg",
+  "Every answer, hint, score change and finish is recorded as it happens, each entry sealed with the one before it. Teams get a receipt when they finish.": "Varje svar, ledtråd, poängändring och målgång loggas när det händer, och varje post förseglas med den före. Lagen får ett kvitto när de går i mål.",
+  "Check results": "Kontrollera resultaten",
+  "All {{n}} entries add up, and every team's result is the one recorded.": "Alla {{n}} poster stämmer, och varje lags resultat är det som loggades.",
+  "The results were changed outside the game:": "Resultaten har ändrats utanför spelet:",
+  "The event's results fingerprint:": "Eventets fingeravtryck för resultaten:",
+  "The record so far (the event hasn't ended):": "Loggen hittills (eventet har inte slutat):"
 }

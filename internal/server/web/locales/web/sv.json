@@ -2376,5 +2376,10 @@
   "No player has opened their link yet. Make sure the links have gone out before you start.": "Ingen spelare har öppnat sin länk än. Se till att länkarna har skickats ut innan du startar.",
   " was moved past {{step}}": " flyttades förbi {{step}}",
   "Get it listed in the catalog": "Få det listat i katalogen",
-  "The platform admin lists published adventures for other organizations to run.": "Plattformens administratör listar publicerade äventyr så att andra organisationer kan köra dem."
+  "The platform admin lists published adventures for other organizations to run.": "Plattformens administratör listar publicerade äventyr så att andra organisationer kan köra dem.",
+  "Results receipt": "Resultatkvitto",
+  "Keep this: it is the fingerprint of your results when you finished. If anyone changes them afterwards, it won't match any more.": "Spara det här: det är fingeravtrycket av era resultat när ni gick i mål. Om någon ändrar dem i efterhand stämmer det inte längre.",
+  "Matches the event's results record.": "Stämmer med eventets resultatlogg.",
+  "Doesn't match the event's results record: the results were changed after you finished.": "Stämmer inte med eventets resultatlogg: resultaten har ändrats efter att ni gick i mål.",
+  "Event results fingerprint": "Eventets fingeravtryck för resultaten"
 }

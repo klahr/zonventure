@@ -1,12 +1,14 @@
 import { useState, type ReactNode } from "react";
-import { Bot, Check, ExternalLink, FileSearch, Trash2, UserPlus, X, Zap } from "lucide-react";
+import { Bot, Check, ExternalLink, FileSearch, KeyRound, Trash2, UserPlus, X, Zap } from "lucide-react";
 import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
-import { href } from "../../router.ts";
-import { Button, Card, Dialog, Empty, ErrorBox, Field, ICON, Loading, Page, PageHeader, Pill, Table, Tabs, fmtDateTime, fmtMoney, relTime, useLoad, useToast, type Column } from "../../ui/index.ts";
+import { href, navigate } from "../../router.ts";
+import { Button, Card, Dialog, Empty, ErrorBox, Field, ICON, Loading, Page, PageHeader, Pill, Table, Tabs, fmtDateTime, fmtMoney, relTime, useDialogs, useLoad, useToast, type Column } from "../../ui/index.ts";
+import { createPasskey, isCancelled, passkeysSupported, signWithPasskey } from "../../ui/webauthn.ts";
 import {
-  approveListing, listListingLog, listListingReviewers, listListingReviews, rejectListing, setListingReviewer, verifyListingLog,
-  type ChainReport, type ListingFields, type ListingLogEntry, type ListingRef, type ListingReview, type ListingReviewer,
+  approveListing, beginReviewerPasskey, finishReviewerPasskey, listListingLog, listListingReviewers, listListingReviews, listReviewerPasskeys,
+  rejectListing, revokeReviewerPasskey, setListingReviewer, signListingDecision, verifyListingLog,
+  type ChainReport, type ListingKind, type ServedFinding, type ServedReport, type DecisionSignature, type ListingFields, type ReviewerPasskey, type ListingLogEntry, type ListingRef, type ListingReview, type ListingReviewer,
 } from "./api.ts";
 import "./admin.css";
 
@@ -23,7 +25,7 @@ type Translator = ReturnType<typeof useT>;
  */
 export function ListingReviewsPage({ tab, reviewer, admin }: { tab?: string | undefined; reviewer: boolean; admin: boolean }) {
   const t = useT();
-  const current = tab === "log" || (tab === "reviewers" && admin) ? tab : "queue";
+  const current = tab === "log" || (tab === "reviewers" && admin) || (tab === "passkeys" && reviewer) ? tab : "queue";
   return (
     <Page>
       <PageHeader
@@ -36,11 +38,13 @@ export function ListingReviewsPage({ tab, reviewer, admin }: { tab?: string | un
         tabs={[
           { id: "queue", label: t.t("Waiting"), href: href({ name: "listing-reviews" }) },
           { id: "log", label: t.t("Recent decisions"), href: href({ name: "listing-reviews", tab: "log" }) },
+          { id: "passkeys", label: t.t("Your passkeys"), href: href({ name: "listing-reviews", tab: "passkeys" }), hidden: !reviewer },
           { id: "reviewers", label: t.t("Reviewers"), href: href({ name: "listing-reviews", tab: "reviewers" }), hidden: !admin },
         ]}
       />
       {current === "queue" && (reviewer ? <Queue /> : <NotReviewer />)}
       {current === "log" && (reviewer ? <Log /> : <NotReviewer />)}
+      {current === "passkeys" && <Passkeys />}
       {current === "reviewers" && <Reviewers />}
     </Page>
   );
@@ -67,49 +71,110 @@ export function reviewError(e: unknown, t: Translator): string {
         return t.t("The listing changed while you looked. Review it again.");
       case "not_pending":
         return t.t("This listing isn't waiting for review any more: someone has decided it, or it was changed.");
+      case "passkey_required":
+        return t.t("Add a passkey under “Your passkeys” first: every decision you make here is signed with it.");
+      case "signature_required":
+        return t.t("The decision wasn't signed. Try again and confirm with your passkey.");
+      case "bad_signature":
+        return t.t("Your passkey's signature didn't check out, so nothing was decided. Try again.");
+      case "passkeys_unavailable":
+        return t.t("Passkeys aren't set up on this server (it needs its public URL), so decisions can't be signed.");
+      case "browser_only":
+        return t.t("Passkeys work in the browser, not through an API token.");
     }
     return e.message;
   }
   return e instanceof Error ? e.message : String(e);
 }
 
-/** Runs a decision; a refused one is said in words and the list reloaded. */
+/**
+ * Makes a decision, signed: the server turns the decision into a
+ * challenge, the reviewer's passkey signs it, and the decision goes in
+ * with the signature (internal/admin/reviewer_passkeys.go). The reason
+ * is trimmed once, so the one signed is the one sent. A refused decision
+ * is said in words and the list reloaded.
+ */
 export function useDecide(onDone: () => void) {
   const t = useT();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
-  const decide = async (run: () => Promise<unknown>, done: string) => {
+  const sign = async (ref: ListingRef, action: "approve" | "reject", reason: string): Promise<DecisionSignature> => {
+    const c = await signListingDecision(ref, action, reason);
+    return { session_id: c.session_id, credential: await signWithPasskey(c.options) };
+  };
+  const run = async (action: "approve" | "reject", ref: ListingRef, rawReason: string, after?: () => void) => {
+    const reason = action === "reject" ? rawReason.trim() : "";
     setBusy(true);
     try {
-      await run();
-      toast.ok(done);
+      const signature = await sign(ref, action, reason);
+      if (action === "approve") await approveListing(ref, signature);
+      else await rejectListing(ref, reason, signature);
+      toast.ok(
+        (action === "approve" ? t.t("Approved: it is public now") : t.t("Rejected: the organisation has been told why")) +
+          " " + t.t("Signed with your passkey."),
+      );
+      after?.();
       onDone();
     } catch (e) {
+      if (isCancelled(e)) {
+        toast.err(t.t("Signing was cancelled: nothing was decided."));
+        return;
+      }
       toast.err(reviewError(e, t));
-      if (e instanceof ApiError && e.status === 409) onDone();
+      if (e instanceof ApiError && e.code === "passkey_required") navigate({ name: "listing-reviews", tab: "passkeys" });
+      else if (e instanceof ApiError && e.status === 409) onDone();
     } finally {
       setBusy(false);
     }
   };
-  return { busy, decide };
+  return {
+    busy,
+    approve: (ref: ListingRef, after?: () => void) => run("approve", ref, "", after),
+    reject: (ref: ListingRef, reason: string, after?: () => void) => run("reject", ref, reason, after),
+  };
 }
 
 function Queue() {
   const t = useT();
   const reviews = useLoad((s) => listListingReviews(s), []);
+  const keys = useLoad((s) => listReviewerPasskeys(s), []);
+  const needKey = keys.data?.length === 0 && (
+    <Card title={t.t("Add a passkey to decide")} subtitle={t.t("Every decision you make here is signed with your passkey, so no one can make or change one in your name.")}>
+      <a className="btn primary sm" href={href({ name: "listing-reviews", tab: "passkeys" })}>
+        <KeyRound size={ICON.sm} aria-hidden /> {t.t("Add a passkey")}
+      </a>
+    </Card>
+  );
   const list = reviews.data ?? [];
   if (reviews.error && !reviews.data) {
     return <ErrorBox message={t.t("Couldn't load listings ({{err}}).", { err: reviews.error })} retry={reviews.reload} retryLabel={t.t("Retry")} />;
   }
   if (!reviews.data) return <Loading label={t.t("Loading…")} />;
-  if (list.length === 0) return <Empty title={t.t("Nothing is waiting for review.")} />;
-  return <>{list.map((r) => <ReviewCard key={`${r.kind}-${r.id}-${r.revision}`} review={r} onDone={reviews.reload} />)}</>;
+  if (list.length === 0) return <>{needKey}<Empty title={t.t("Nothing is waiting for review.")} /></>;
+  return <>{needKey}{list.map((r) => <ReviewCard key={`${r.kind}-${r.id}-${r.revision}`} review={r} onDone={reviews.reload} />)}</>;
 }
+
+/** What kind of thing waits for review, in words. */
+export function kindLabel(t: Translator, kind: ListingKind): string {
+  switch (kind) {
+    case "event":
+      return t.t("Self-guided");
+    case "party":
+      return t.t("Party");
+    case "org":
+      return t.t("Organisation page");
+    default:
+      return t.t("Adventure presentation");
+  }
+}
+
+/** An organisation page or adventure presentation change, not a listing. */
+export const isProposal = (kind: ListingKind) => kind === "org" || kind === "adventure";
 
 function ReviewCard({ review: r, onDone }: { review: ListingReview; onDone: () => void }) {
   const t = useT();
   const [rejecting, setRejecting] = useState(false);
-  const { busy, decide } = useDecide(onDone);
+  const { busy, approve, reject } = useDecide(onDone);
   const d = r.draft;
   const live = r.live;
   const ref: ListingRef = r;
@@ -120,9 +185,9 @@ function ReviewCard({ review: r, onDone }: { review: ListingReview; onDone: () =
     <Card
       title={
         <span className="ad-inline">
-          {d.name || r.adventure_title}
-          <Pill tone="info">{r.kind === "event" ? t.t("Self-guided") : t.t("Party")}</Pill>
-          <Pill tone={live ? "warn" : "accent"}>{live ? t.t("Edit of a live listing") : t.t("New listing")}</Pill>
+          {r.kind === "org" ? r.org_name : d.name || r.adventure_title}
+          <Pill tone="info">{kindLabel(t, r.kind)}</Pill>
+          {!isProposal(r.kind) && <Pill tone={live ? "warn" : "accent"}>{live ? t.t("Edit of a live listing") : t.t("New listing")}</Pill>}
           {live && live.graph_id !== d.graph_id && <Pill tone="warn">{t.t("New adventure version")}</Pill>}
         </span>
       }
@@ -130,8 +195,7 @@ function ReviewCard({ review: r, onDone }: { review: ListingReview; onDone: () =
         <>
           <a href={orgLink}>{r.org_name}</a>
           {" · "}
-          {r.adventure_title}
-          {" · "}
+          {r.adventure_title && <>{r.adventure_title}{" · "}</>}
           <span title={fmtDateTime(r.submitted_at, t.current())}>{t.t("submitted {{when}}", { when: relTime(r.submitted_at, t.current()) })}</span>
           {r.attested_by && <>{" · "}{t.t("by {{name}}", { name: r.attested_by })}</>}
         </>
@@ -147,18 +211,24 @@ function ReviewCard({ review: r, onDone }: { review: ListingReview; onDone: () =
             <FileSearch size={ICON.sm} aria-hidden /> {t.t("Review in full")}
           </a>
           <Button size="sm" variant="danger" icon={<X size={ICON.sm} aria-hidden />} disabled={busy} onClick={() => setRejecting(true)}>{t.t("Reject")}</Button>
-          <Button size="sm" variant="primary" icon={<Check size={ICON.sm} aria-hidden />} loading={busy} onClick={() => void decide(() => approveListing(ref), t.t("Approved: it is public now"))}>{t.t("Approve")}</Button>
+          <Button size="sm" variant="primary" icon={<Check size={ICON.sm} aria-hidden />} loading={busy} onClick={() => void approve(ref)}>{t.t("Approve")}</Button>
         </span>
       }
     >
-      <ListingFacts kind={r.kind} draft={d} live={live} />
+      {isProposal(r.kind) ? (
+        <p>{r.kind === "org"
+          ? t.t("A change to the organisation's page. Open “Review in full” to compare it with what is public now.")
+          : t.t("A change to the adventure's title, texts, icon or cover. Open “Review in full” to compare it with what is public now.")}</p>
+      ) : (
+        <ListingFacts kind={r.kind} draft={d} live={live} />
+      )}
       <p className="ad-sub">{t.t("Approve only once you have looked at all of it: open “Review in full” for every text and picture of the adventure.")}</p>
       {rejecting && (
         <RejectDialog
           onClose={() => setRejecting(false)}
           onReject={(reason) => {
             setRejecting(false);
-            void decide(() => rejectListing(ref, reason), t.t("Rejected: the organisation has been told why"));
+            void reject(ref, reason);
           }}
         />
       )}
@@ -167,7 +237,7 @@ function ReviewCard({ review: r, onDone }: { review: ListingReview; onDone: () =
 }
 
 /** The listing as the public sees it, with what an edit changed. */
-export function ListingFacts({ kind, draft: d, live }: { kind: "event" | "party"; draft: ListingFields; live?: ListingFields | undefined }) {
+export function ListingFacts({ kind, draft: d, live }: { kind: ListingKind; draft: ListingFields; live?: ListingFields | undefined }) {
   const t = useT();
   const changed = (k: keyof ListingFields) => !!live && (live[k] ?? "") !== (d[k] ?? "");
   const money = (cents: number) => fmtMoney(cents, d.currency || "SEK", t.current());
@@ -273,13 +343,13 @@ function Log() {
     { key: "when", header: t.t("When"), cell: (e) => <span title={fmtDateTime(e.created_at, loc)}>{relTime(e.created_at, loc)}</span> },
     { key: "what", header: t.t("Listing"), cell: (e) => (
       <span className="ad-stack">
-        <strong>{e.title || (e.kind === "event" ? t.t("Self-guided") : t.t("Party"))}</strong>
+        <strong>{e.title || kindLabel(t, e.kind)}</strong>
         <span className="ad-sub">{e.org_name}</span>
       </span>
     ) },
     { key: "action", header: t.t("Action"), cell: (e) => action(e.action) },
     { key: "via", header: t.t("By"), cell: (e) => (
-      <span className="ad-inline"><ViaPill via={e.via} />{e.by && <span className="ad-sub">{e.by}</span>}</span>
+      <span className="ad-inline"><ViaPill via={e.via} />{e.signed && <Pill tone="good">{t.t("Signed")}</Pill>}{e.by && <span className="ad-sub">{e.by}</span>}</span>
     ) },
     { key: "reason", header: t.t("Reason"), wide: true, cell: (e) => e.reason ? <span className="ad-sub">{e.reason}</span> : null },
   ];
@@ -303,7 +373,7 @@ function Log() {
       {checkError && <ErrorBox message={checkError} />}
       {check && (
         <div className="ad-pad" role="status">
-          {check.ok ? (
+          {check.problems.length === 0 ? (
             <p><Pill tone="good">{t.t("Intact")}</Pill> {t.t("Every hash of the {{n}} entries adds up. The latest:", { n: check.entries })}</p>
           ) : (
             <>
@@ -313,7 +383,9 @@ function Log() {
             </>
           )}
           <p><code className="ad-hash">{check.head_hash || "—"}</code></p>
+          <p>{t.t("{{signed}} decisions signed with a reviewer's passkey, each checked again; {{unsigned}} unsigned (an AI assistant or an automatic approval).", { signed: check.signed ?? 0, unsigned: check.unsigned ?? 0 })}</p>
           <p className="ad-sub">{t.t("Compare it with the fingerprint mailed to platform admins each day: if one mailed earlier can't be found in the log, it was rewritten.")}</p>
+          {check.served && <ServedResult served={check.served} />}
         </div>
       )}
       {log.error && !log.data ? (
@@ -393,5 +465,133 @@ function Reviewers() {
         <Table columns={columns} rows={list.data} rowKey={(r) => String(r.id)} caption={t.t("Reviewers")} />
       )}
     </Card>
+  );
+}
+
+/**
+ * The reviewer's passkeys, which sign every decision they make in the
+ * console. The private key stays on their device (or in their passkey
+ * manager); the server keeps only the public key.
+ */
+function Passkeys() {
+  const t = useT();
+  const toast = useToast();
+  const dialogs = useDialogs();
+  const keys = useLoad((s) => listReviewerPasskeys(s), []);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const loc = t.current();
+
+  const add = async () => {
+    setBusy(true);
+    try {
+      const c = await beginReviewerPasskey();
+      const credential = await createPasskey(c.options);
+      await finishReviewerPasskey(c.session_id, name.trim() || t.t("Passkey"), credential);
+      setName("");
+      toast.ok(t.t("Passkey added: your decisions are signed with it now."));
+      keys.reload();
+    } catch (e) {
+      toast.err(isCancelled(e) ? t.t("No passkey was added.") : reviewError(e, t));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const revoke = async (k: ReviewerPasskey) => {
+    const ok = await dialogs.confirm({
+      title: t.t("Remove “{{name}}”?", { name: k.name }),
+      message: t.t("It can't sign decisions any more. Decisions it signed stay checkable: the log keeps its public key."),
+      confirmLabel: t.t("Remove"),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await revokeReviewerPasskey(k.id);
+      keys.reload();
+    } catch (e) {
+      toast.err(reviewError(e, t));
+    }
+  };
+
+  return (
+    <Card
+      title={t.t("Your passkeys")}
+      subtitle={t.t("Every decision you make in the console is signed with a passkey: your face, fingerprint or PIN unlocks it, and its private key never leaves your device or passkey manager. The server keeps only the public key, so no one can make or change a decision in your name.")}
+    >
+      {!passkeysSupported() && <ErrorBox message={t.t("This browser can't use passkeys. Use a recent browser on a device with a screen lock.")} />}
+      {keys.error && !keys.data ? (
+        <ErrorBox message={reviewError(new Error(keys.error), t)} retry={keys.reload} retryLabel={t.t("Retry")} />
+      ) : !keys.data ? (
+        <Loading label={t.t("Loading…")} />
+      ) : keys.data.length === 0 ? (
+        <p className="ad-sub">{t.t("You have no passkey yet: add one to approve or reject listings.")}</p>
+      ) : (
+        <ul className="ad-passkeys">
+          {keys.data.map((k) => (
+            <li key={k.id} className="ad-inline">
+              <KeyRound size={ICON.sm} aria-hidden />
+              <strong>{k.name}</strong>
+              <span className="ad-sub" title={fmtDateTime(k.created_at, loc)}>{t.t("added {{when}}", { when: relTime(k.created_at, loc) })}</span>
+              {k.last_used_at && (
+                <span className="ad-sub" title={fmtDateTime(k.last_used_at, loc)}>{t.t("last signed {{when}}", { when: relTime(k.last_used_at, loc) })}</span>
+              )}
+              <Button size="sm" variant="danger" icon={<Trash2 size={ICON.sm} aria-hidden />} onClick={() => void revoke(k)}>{t.t("Remove")}</Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form className="ad-inline" onSubmit={(e) => { e.preventDefault(); void add(); }}>
+        <Field label={t.t("Name it (the device or manager it's in)")}>
+          <input value={name} maxLength={100} placeholder={t.t("e.g. Work laptop")} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Button type="submit" variant="primary" icon={<KeyRound size={ICON.sm} aria-hidden />} loading={busy} disabled={!passkeysSupported()}>{t.t("Add a passkey")}</Button>
+      </form>
+    </Card>
+  );
+}
+
+/** What approved listings serve now, against what was approved: from "Check the log". */
+function ServedResult({ served }: { served: ServedReport }) {
+  const t = useT();
+  const part = (p: string) => ({
+    "listing": t.t("the listing"),
+    "adventure version": t.t("the adventure version"),
+    "adventure content": t.t("the adventure's content"),
+    "organisation page": t.t("the organisation's page"),
+    "adventure presentation": t.t("the adventure's title, icon or description"),
+    "event files": t.t("files for players"),
+    "approval record": t.t("the approval record"),
+    "the event plays another adventure version": t.t("the event plays another adventure version"),
+  } as Record<string, string>)[p] ?? p;
+  const changed = served.findings.filter((f) => f.severity === "changed");
+  const unreviewed = served.findings.filter((f) => f.severity === "unreviewed");
+  const unrecorded = served.findings.filter((f) => f.severity === "unrecorded");
+  const row = (f: ServedFinding) => (
+    <li key={`${f.kind}-${f.id}`}>
+      <a href={href({ name: "listing-review", kind: f.kind, id: f.id })}>{f.title}</a> <span className="ad-sub">({f.org_name})</span>
+      {f.parts && f.parts.length > 0 && <>: {f.parts.map(part).join(", ")}</>}
+    </li>
+  );
+  return (
+    <>
+      <h3>{t.t("What approved listings serve")}</h3>
+      {changed.length === 0 ? (
+        <p><Pill tone="good">{t.t("As approved")}</Pill> {t.t("{{m}} of {{n}} approved listings serve exactly what was approved.", { m: served.matching, n: served.checked })}</p>
+      ) : (
+        <>
+          <p><Pill tone="bad">{t.t("Changed outside review")}</Pill> {t.t("These serve something other than what was approved, though only an approval may change it:")}</p>
+          <ul>{changed.map(row)}</ul>
+        </>
+      )}
+      {unreviewed.length > 0 && (
+        <>
+          <p><Pill>{t.t("Edited since approval")}</Pill> {t.t("Organisations edit these live, and review doesn't hold them back yet. Have a look:")}</p>
+          <ul>{unreviewed.map(row)}</ul>
+        </>
+      )}
+      {unrecorded.length > 0 && (
+        <p className="ad-sub">{t.t("{{n}} listings were for sale before review was logged, so there is no approval to compare them with.", { n: unrecorded.length })}</p>
+      )}
+    </>
   );
 }

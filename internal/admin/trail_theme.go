@@ -71,7 +71,7 @@ func (h *Handlers) applyTrailTheme(w http.ResponseWriter, ctx context.Context, s
 		}
 		style.Cover = cover
 	}
-	err := applyAdventureMetaUpdate(ctx, h.DB, slug, updateAdventureRequest{
+	_, err := applyAdventureMetaUpdate(ctx, h.DB, slug, updateAdventureRequest{
 		AccentColor: &l.Accent, AccentSecondaryColor: &l.AccentSecondary, BackgroundColor: &l.Background,
 		TextColor: &l.Text, SubmitBgColor: &l.SubmitBg, Font: &l.Font, HeadingFont: &l.HeadingFont,
 		Corners: &l.Corners, Cards: &l.Cards, CardOutline: &l.CardOutline, Backdrop: backdrop, Style: style,

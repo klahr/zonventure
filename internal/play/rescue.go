@@ -11,5 +11,5 @@ import (
 // See session.Team.Rescue; node guards against a team that moved on
 // while the arranger was deciding.
 func (e *Engine) Rescue(ctx context.Context, teamID int64, node string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Rescue(node) })
+	return e.act(ctx, teamID, action{"rescue", node, ""}, func(t *session.Team) (Result, *walk.Step, error) { return t.Rescue(node) })
 }

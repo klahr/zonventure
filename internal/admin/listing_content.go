@@ -67,6 +67,20 @@ type ReviewContent struct {
 	Live           *listingFieldsDTO `json:"live,omitempty"`
 	Texts          []ReviewText      `json:"texts"`
 	Media          []ReviewMedia     `json:"media"`
+	// Changes is what a proposal (an organisation's page, an
+	// adventure's presentation) changes: each field as it is and as
+	// proposed. Texts and Media are the page as it would be.
+	Changes []ReviewChange `json:"changes,omitempty"`
+}
+
+// ReviewChange is one field a proposal changes. A picture's URLs show
+// it as it is and as proposed.
+type ReviewChange struct {
+	Field       string `json:"field"`
+	Live        string `json:"live,omitempty"`
+	Proposed    string `json:"proposed,omitempty"`
+	LiveURL     string `json:"live_url,omitempty"`
+	ProposedURL string `json:"proposed_url,omitempty"`
 }
 
 // reviewMediaURL is where a reviewer gets one media item of a listing.
@@ -111,6 +125,29 @@ func (h *Handlers) GetListingReview(w http.ResponseWriter, r *http.Request) {
 
 // ReviewContentOf gathers what a listing puts in front of people.
 func (h *Handlers) ReviewContentOf(ctx context.Context, kind string, id int64) (ReviewContent, error) {
+	return h.contentOf(ctx, kind, id, false)
+}
+
+// servedRevision is the revision of what a listing's approved copy
+// serves, hashed as eventListingRevision / partyListingRevision hash a
+// draft: equal to the revision approved while the copy is untouched.
+var servedRevision = map[string]string{
+	listingEvent: `SELECT md5(row(l.name, l.blurb, l.price_cents, l.currency, l.team_size,
+		l.cover_mime_type, md5(l.cover_content), l.graph_id,
+		(SELECT string_agg(f.id::text || ':' || md5(f.content), ',' ORDER BY f.id) FROM event_files f
+		 WHERE f.event_id = l.event_id AND f.approved_at IS NOT NULL))::text) FROM event_listings l WHERE l.event_id = $1`,
+	listingParty: `SELECT md5(row(l.blurb, l.base_cents, l.per_kid_cents, l.currency, l.max_kids,
+		l.graph_id)::text) FROM party_offer_listings l WHERE l.offer_id = $1`,
+}
+
+// contentOf gathers a listing's content: its draft, or with served what
+// its approved copy serves the public and players now (the copy's
+// fields, cover and adventure version). The organisation's page and the
+// adventure's presentation are as they are now either way.
+func (h *Handlers) contentOf(ctx context.Context, kind string, id int64, served bool) (ReviewContent, error) {
+	if kind == listingOrg || kind == listingAdventure {
+		return h.proposalContent(ctx, kind, id)
+	}
 	c := ReviewContent{Kind: kind, ID: id, Texts: []ReviewText{}, Media: []ReviewMedia{}}
 	t := listingTables(kind)
 	var (
@@ -172,6 +209,16 @@ func (h *Handlers) ReviewContentOf(ctx context.Context, kind string, id int64) (
 	if isLive {
 		live.GraphID = liveGraphID.Int64
 		c.Live, c.LiveGraphID = &live, liveGraphID.Int64
+	}
+	if served {
+		if !isLive {
+			return c, sql.ErrNoRows
+		}
+		c.Draft, graphID, draftCover = live, liveGraphID, liveCover
+		c.GraphID = graphID.Int64
+		if err := h.DB.QueryRowContext(ctx, servedRevision[kind], id).Scan(&c.Revision); err != nil {
+			return c, err
+		}
 	}
 
 	text := func(where, s string) {
@@ -267,7 +314,12 @@ func (h *Handlers) ReviewContentOf(ctx context.Context, kind string, id int64) (
 	}
 	// Files the event's players download.
 	if kind == listingEvent {
-		rows, err := h.DB.QueryContext(ctx, `SELECT id, name, mime_type, size_bytes FROM event_files WHERE event_id = $1 ORDER BY id`, id)
+		// Served: what players get, the approved files.
+		cond := ""
+		if served {
+			cond = " AND approved_at IS NOT NULL"
+		}
+		rows, err := h.DB.QueryContext(ctx, `SELECT id, name, mime_type, size_bytes FROM event_files WHERE event_id = $1`+cond+` ORDER BY id`, id)
 		if err != nil {
 			return c, err
 		}
@@ -399,6 +451,9 @@ func (h *Handlers) reviewMedia(ctx context.Context, kind string, id int64, ref s
 	if kind == listingParty {
 		orgOf = `(SELECT org_id FROM party_offers WHERE id = $1)`
 		advOf = `(SELECT a.id FROM party_offers o JOIN adventures a ON a.slug = o.adventure_slug WHERE o.id = $1)`
+	}
+	if kind == listingOrg || kind == listingAdventure {
+		return h.proposalMedia(ctx, kind, id, ref)
 	}
 	switch {
 	case ref == "event-cover" && kind == listingEvent:

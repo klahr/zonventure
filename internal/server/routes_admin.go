@@ -180,6 +180,11 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// call /mcp on their behalf. Plaintext is returned once at
 		// creation; subsequent reads only surface name + prefix.
 		r.With(auth.RequireSession).Post("/me/mcp-tokens", adminH.CreateMCPToken)
+		// A listing reviewer's passkeys, which sign their decisions.
+		r.With(auth.RequireSession).Get("/me/reviewer-passkeys", adminH.ListReviewerPasskeys)
+		r.With(auth.RequireSession).Post("/me/reviewer-passkeys/begin", adminH.BeginReviewerPasskey)
+		r.With(auth.RequireSession).Post("/me/reviewer-passkeys/finish", adminH.FinishReviewerPasskey)
+		r.With(auth.RequireSession).Delete("/me/reviewer-passkeys/{id}", adminH.RevokeReviewerPasskey)
 		// Listing review: what organisations put up for sale waits here
 		// for a listing reviewer — any account a platform admin made one,
 		// in an organisation or none. The handlers check the flag.
@@ -188,6 +193,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.Get("/listing-reviews/log/verify", adminH.VerifyListingLog)
 		r.Get("/listing-reviews/{kind}/{id}", adminH.GetListingReview)
 		r.Get("/listing-reviews/{kind}/{id}/media/{ref}", adminH.GetListingReviewMedia)
+		r.Post("/listing-reviews/{kind}/{id}/sign", adminH.SignListingDecision)
 		r.Post("/listing-reviews/{kind}/{id}/approve", adminH.ApproveListing)
 		r.Post("/listing-reviews/{kind}/{id}/reject", adminH.RejectListing)
 		r.With(auth.RequireSession).Get("/me/mcp-tokens", adminH.ListMCPTokens)
@@ -216,6 +222,15 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Get("/party-offers", adminH.ListPartyOffers)
 			r.Put("/party-offers/{slug}", adminH.PutPartyOffer)
 			r.Post("/party-offers/{slug}/submit", adminH.SubmitPartyOffer)
+			// Held-back changes to the org page and adventures (presentation.go).
+			r.Get("/orgs/me/proposal", adminH.GetMyOrgProposal)
+			r.Post("/orgs/me/proposal/submit", adminH.SubmitMyOrgProposal)
+			r.Delete("/orgs/me/proposal", adminH.DiscardMyOrgProposal)
+			r.Get("/orgs/me/proposal/{which}", adminH.GetMyOrgProposalPicture)
+			r.Get("/adventures/{slug}/proposal", adminH.GetAdventureProposal)
+			r.Post("/adventures/{slug}/proposal/submit", adminH.SubmitAdventureProposal)
+			r.Delete("/adventures/{slug}/proposal", adminH.DiscardAdventureProposal)
+			r.Get("/adventures/{slug}/proposal/image", adminH.GetAdventureProposalPicture)
 			// A hosted event's host page, in the console: the same
 			// handlers as /api/party/{token}/…, the event authorised by
 			// org instead of by host link.
@@ -252,6 +267,8 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Get("/events/{eventID}", adminH.EventDetail)
 			r.Patch("/events/{eventID}", adminH.UpdateEvent)
 			r.Post("/events/{eventID}/cover", adminH.SetEventCover)
+			// The event's tamper-evident results record, recomputed.
+			r.Get("/events/{eventID}/results/verify", adminH.VerifyEventResults)
 			r.Post("/events/{eventID}/listing/submit", adminH.SubmitEventListing)
 			r.Delete("/events/{eventID}/cover", adminH.DeleteEventCover)
 			// Files the players can download before the start (and after).

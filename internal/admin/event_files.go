@@ -15,6 +15,7 @@ import (
 	"github.com/klahr/zonventure/internal/eventfile"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/ws"
 )
 
 // ListEventFiles lists the files the event's players can download.
@@ -80,7 +81,13 @@ func (h *Handlers) AddEventFile(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "storing file failed", err)
 		return
 	}
+	// On an event sold in the store a new file waits for review.
+	if err := h.settleEventListing(r.Context(), eventID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
+		return
+	}
 	h.publishMessages(eventID)
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusCreated, file)
 }
 
@@ -121,6 +128,10 @@ func (h *Handlers) DeleteEventFile(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "deleting file failed", err)
 		return
 	}
+	if err := h.settleEventListing(r.Context(), eventID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
+		return
+	}
 	h.publishMessages(eventID)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -146,7 +157,7 @@ func (h *Handlers) fileLinks(ctx context.Context, eventID int64, publicURL, team
 	if publicURL == "" || teamToken == "" {
 		return nil
 	}
-	files, err := eventfile.List(ctx, h.DB, eventID)
+	files, err := eventfile.ListForPlayers(ctx, h.DB, eventID)
 	if err != nil {
 		logx.Warn("admin.event_files.links", "event", eventID, "err", err.Error())
 		return nil

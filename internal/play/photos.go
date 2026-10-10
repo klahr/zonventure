@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/klahr/zonventure/internal/results"
 
 	"github.com/klahr/zonventure/internal/graph"
 )
@@ -39,5 +40,6 @@ func AdjustScore(ctx context.Context, tx *sql.Tx, teamID int64, delta float64) e
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNoGraph
 	}
-	return nil
+	_, err = results.AppendTeam(ctx, tx, teamID, results.ScoreAdjusted, map[string]any{"delta": delta, "reason": "photo verdict"})
+	return err
 }

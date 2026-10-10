@@ -91,6 +91,12 @@ body { border-top: 4px solid var(--accent); border-image: linear-gradient(90deg,
 .head .who {
   color: var(--muted); font-size: .95rem; margin-bottom: 1rem;
 }
+.receipt { margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--line, #ddd); border-radius: 12px; }
+.receipt h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
+.receipt code { display: block; font-family: ui-monospace, monospace; font-size: .8rem; word-break: break-all; margin: .3rem 0; }
+.receipt .ok { color: #1b6b43; font-weight: 600; }
+.receipt .bad { color: #b3261e; font-weight: 600; }
+.receipt .fp { color: var(--muted); font-size: .85rem; margin-bottom: 0; }
 .outro {
   background: var(--surface);
   border: 1px solid var(--border-soft);
@@ -370,6 +376,23 @@ function statBox(value, label) {
     el('div', { class: 'l' }, label));
 }
 
+// The team's receipt from the event's results record: the hash of its
+// finish, which no one can change the results under without it showing.
+function renderReceipt(d) {
+  if (!d.receipt) return;
+  const r = d.receipt;
+  const box = el('div', { class: 'receipt' },
+    el('h2', {}, t('Results receipt')),
+    el('p', {}, t('Keep this: it is the fingerprint of your results when you finished. If anyone changes them afterwards, it won\'t match any more.')),
+    el('code', {}, r.receipt),
+    el('p', { class: r.matches ? 'ok' : 'bad' },
+      r.matches ? t("Matches the event's results record.") : t("Doesn't match the event's results record: the results were changed after you finished.")));
+  if (d.results_fingerprint) {
+    box.append(el('p', { class: 'fp' }, t('Event results fingerprint') + ': '), el('code', {}, d.results_fingerprint));
+  }
+  root.append(box);
+}
+
 function render(d) {
   applyColors(d.colors);
   root.replaceChildren();
@@ -390,6 +413,7 @@ function render(d) {
 
   renderGraphStats(d);
   renderPhotos(d);
+  renderReceipt(d);
 
   const mapHost = el('div', { id: 'map' });
   root.append(mapHost);

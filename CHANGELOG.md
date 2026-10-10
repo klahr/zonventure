@@ -51,6 +51,51 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   says which entry was changed, removed or no longer matches its content.
   The chain's latest hash is mailed to platform admins once a day when
   it has moved, so even a rewritten log shows against an earlier mail.
+- **Tamper-evident results.** Every event keeps a hash chain of what
+  happened in it — each answer as typed, hints, skips, organisers'
+  rescues and withdrawals, score changes, each team's finish — with the
+  server's time and each team's standing after it. Once recorded,
+  nothing can be edited or removed without breaking the chain. A team's
+  finish is its receipt, shown on its recap page to keep, and the
+  event's end seals it with a fingerprint. "Check results" on the event
+  page recomputes the record and compares it with the scores now shown,
+  so a result changed afterwards — by anyone — shows.
+- **Organisation pages, adventure presentation and player files are
+  reviewed too.** Once an unverified organisation has something for
+  sale, a change to its page (tagline, website, logo, cover) or to an
+  adventure's presentation (title, description, author, intro, outro,
+  meeting point, area, note to buyers, icon, cover) is held back as a
+  proposal. It is submitted with the creator's word and goes live only
+  when a reviewer approves it, so every page, the player app and every
+  email show approved content only. Colours apply at once, and taking a
+  picture or text down still applies at once. On an event sold in the
+  store, a new file reaches players once the listing is approved with
+  it. AI assistants submit these with `submit_listing_for_review`.
+- **What is served is checked against what was approved.** "Check the
+  log" — and a daily check mailed with the log's fingerprint — compares
+  every approved listing's served content (its fields and cover, the
+  adventure version, every text and media item) with the fingerprint of
+  its approval. An edit made around review, straight in the database,
+  shows as "changed outside review" — the organisation's page, the
+  adventure's presentation and players' files included, measured
+  against their latest approval; a platform admin's rename of an
+  organisation shows as "edited since approval". A day's check that
+  finds a problem is mailed to platform admins even when the log hasn't
+  moved.
+- **Saved adventure versions and uploaded media are locked.** The
+  database refuses changes to a saved version's content (only its label
+  changes) and to uploaded media: a change is a new version or a new
+  upload, as the app has always made it.
+- **Reviewers sign their decisions with a passkey.** A listing reviewer
+  adds a passkey under Listing reviews → Your passkeys; every approval
+  and rejection they make in the console is then signed with it, over
+  the decision itself — the action, the listing, the revision reviewed
+  and the reason. The private key never leaves their device (or their
+  passkey provider), so the server can't make a signed decision on its
+  own, and the device must verify the person. The signature goes into
+  the hash-chained log with a copy of the public key, and checking the
+  log checks every signature again. Decisions an AI assistant makes
+  through an API token are not signed, and the log says so.
 - **Verified creators.** A platform admin marks an organisation as a
   verified creator: its submissions are approved at once, and its page,
   store cards and ticket pages show a "Verified creator" badge.

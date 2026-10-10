@@ -166,7 +166,12 @@ export function firstPlaceOf(g: GraphSummary | Graph | null | undefined): { lat:
 export const createAdventure = (body: { slug: string; title: string; description: string; author: string }) =>
   post<{ slug: string }>("/api/admin/adventures", body);
 
-export const updateAdventure = (slug: string, body: AdventurePatch) => patch<void>(adv(slug), body);
+/**
+ * held_for_review names the fields held back for review (presentation
+ * changes of an adventure that is for sale); absent when all applied.
+ */
+export const updateAdventure = (slug: string, body: AdventurePatch) =>
+  patch<{ held_for_review?: string[] } | undefined>(adv(slug), body);
 
 export const deleteAdventure = (slug: string, password: string) =>
   request<void>(adv(slug), { method: "DELETE", headers: { "X-Confirm-Password": password } });
@@ -187,7 +192,8 @@ export function importAdventure(file: File, slug?: string) {
 export function uploadCover(slug: string, file: Blob) {
   const form = new FormData();
   form.append("file", file);
-  return request<{ url: string }>(adv(slug) + "/avatar", { method: "POST", form });
+  // proposed: held back for review (the adventure is for sale).
+  return request<{ url?: string; proposed?: boolean }>(adv(slug) + "/avatar", { method: "POST", form });
 }
 
 export const removeCover = (slug: string) => request<void>(adv(slug) + "/avatar", { method: "DELETE" });

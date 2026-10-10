@@ -71,6 +71,14 @@ type chainEntry struct {
 	Reason      string `json:"reason"`
 	ContentHash string `json:"content_hash"`
 	CreatedAt   string `json:"created_at"`
+	// A human reviewer's passkey signature over the decision
+	// (reviewer_passkeys.go); empty when unsigned.
+	SigCredentialID      string `json:"sig_credential_id"`
+	SigPublicKey         string `json:"sig_public_key"`
+	SigNonce             string `json:"sig_nonce"`
+	SigAuthenticatorData string `json:"sig_authenticator_data"`
+	SigClientData        string `json:"sig_client_data"`
+	SigSignature         string `json:"sig_signature"`
 }
 
 func hashJSON(v any) (string, []byte, error) {
@@ -88,25 +96,39 @@ func (h *Handlers) snapshotOf(ctx context.Context, kind string, id int64) (strin
 	if err != nil {
 		return "", nil, err
 	}
+	s, err := h.snapshotFrom(ctx, c, false)
+	if err != nil {
+		return "", nil, err
+	}
+	return hashJSON(s)
+}
+
+// snapshotFrom fingerprints gathered content: each media item by the
+// SHA-256 of its bytes, the cover from the approved copy when served.
+func (h *Handlers) snapshotFrom(ctx context.Context, c ReviewContent, served bool) (reviewSnapshot, error) {
 	s := reviewSnapshot{Kind: c.Kind, ID: c.ID, Revision: c.Revision, OrgID: c.OrgID, OrgName: c.OrgName,
 		AdventureSlug: c.AdventureSlug, GraphID: c.GraphID, Version: c.Version, Draft: c.Draft,
 		Texts: c.Texts, Media: make([]snapshotMedia, 0, len(c.Media))}
 	for _, m := range c.Media {
-		_, content, err := h.reviewMedia(ctx, kind, id, m.Ref)
+		ref := m.Ref
+		if served && ref == "event-cover" {
+			ref = "event-cover-live"
+		}
+		_, content, err := h.reviewMedia(ctx, c.Kind, c.ID, ref)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return "", nil, err
+			return s, err
 		}
 		sum := sha256.Sum256(content)
 		s.Media = append(s.Media, snapshotMedia{Ref: m.Ref, Kind: m.Kind, Mime: m.Mime, Where: m.Where, SHA256: hex.EncodeToString(sum[:])})
 	}
-	return hashJSON(s)
+	return s, nil
 }
 
 // logListing appends a submission or decision to the chain, in the
 // transaction that makes it: no decision stands unlogged. A
 // transaction-scoped advisory lock keeps two appends from naming the
 // same entry as their predecessor.
-func (h *Handlers) logListing(ctx context.Context, tx *sql.Tx, kind string, id, orgID int64, action, via string, userID int64, revision string, graphID sql.NullInt64, reason string) error {
+func (h *Handlers) logListing(ctx context.Context, tx *sql.Tx, kind string, id, orgID int64, action, via string, userID int64, revision string, graphID sql.NullInt64, reason string, sig decisionSignature) error {
 	contentHash, content, err := h.snapshotOf(ctx, kind, id)
 	if err != nil {
 		return fmt.Errorf("review snapshot: %w", err)
@@ -121,7 +143,9 @@ func (h *Handlers) logListing(ctx context.Context, tx *sql.Tx, kind string, id, 
 	}
 	e := chainEntry{Kind: kind, ItemID: id, OrgID: orgID, Action: action, Via: via, UserID: userID,
 		Revision: revision, GraphID: graphID.Int64, Reason: reason, ContentHash: contentHash,
-		CreatedAt: time.Now().UTC().Truncate(time.Microsecond).Format(time.RFC3339Nano)}
+		CreatedAt:       time.Now().UTC().Truncate(time.Microsecond).Format(time.RFC3339Nano),
+		SigCredentialID: sig.CredentialID, SigPublicKey: sig.PublicKey, SigNonce: sig.Nonce,
+		SigAuthenticatorData: sig.AuthenticatorData, SigClientData: sig.ClientData, SigSignature: sig.Signature}
 	if err := tx.QueryRowContext(ctx, `SELECT entry_hash FROM listing_review_log ORDER BY id DESC LIMIT 1`).Scan(&e.PrevHash); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
@@ -135,10 +159,12 @@ func (h *Handlers) logListing(ctx context.Context, tx *sql.Tx, kind string, id, 
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO listing_review_log (kind, item_id, org_id, org_name, action, via, user_id, username,
-		       revision, graph_id, reason, content_hash, prev_hash, entry_hash, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		       revision, graph_id, reason, content_hash, prev_hash, entry_hash, created_at,
+		       sig_credential_id, sig_public_key, sig_nonce, sig_authenticator_data, sig_client_data, sig_signature)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
 		kind, id, orgID, e.OrgName, action, via, sql.NullInt64{Int64: userID, Valid: userID > 0}, e.Username,
-		revision, graphID, reason, contentHash, e.PrevHash, entryHash, e.CreatedAt)
+		revision, graphID, reason, contentHash, e.PrevHash, entryHash, e.CreatedAt,
+		sig.CredentialID, sig.PublicKey, sig.Nonce, sig.AuthenticatorData, sig.ClientData, sig.Signature)
 	return err
 }
 
@@ -150,8 +176,16 @@ type chainProblem struct {
 
 // chainReport is the outcome of recomputing the chain.
 type chainReport struct {
-	OK       bool           `json:"ok"`
-	Entries  int64          `json:"entries"`
+	OK      bool  `json:"ok"`
+	Entries int64 `json:"entries"`
+	// Signed counts decisions signed with a reviewer's passkey, each
+	// checked; Unsigned those made through an API token or by a
+	// verified creator's automatic approval.
+	Signed   int64 `json:"signed"`
+	Unsigned int64 `json:"unsigned"`
+	// Served compares what approved listings serve now with what was
+	// approved (listing_review_served.go).
+	Served   servedReport   `json:"served"`
 	HeadHash string         `json:"head_hash"`
 	Problems []chainProblem `json:"problems"`
 }
@@ -162,7 +196,8 @@ func (h *Handlers) verifyChain(ctx context.Context) (chainReport, error) {
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT l.id, l.kind, l.item_id, COALESCE(l.org_id, 0), l.org_name, l.action, l.via, COALESCE(l.user_id, 0),
 		       l.username, l.revision, COALESCE(l.graph_id, 0), l.reason, l.content_hash, l.prev_hash, l.entry_hash,
-		       l.created_at, s.content
+		       l.created_at, s.content,
+		       l.sig_credential_id, l.sig_public_key, l.sig_nonce, l.sig_authenticator_data, l.sig_client_data, l.sig_signature
 		FROM listing_review_log l
 		LEFT JOIN listing_review_snapshots s ON s.content_hash = l.content_hash
 		ORDER BY l.id`)
@@ -181,7 +216,8 @@ func (h *Handlers) verifyChain(ctx context.Context) (chainReport, error) {
 		)
 		if err := rows.Scan(&id, &e.Kind, &e.ItemID, &e.OrgID, &e.OrgName, &e.Action, &e.Via, &e.UserID,
 			&e.Username, &e.Revision, &e.GraphID, &e.Reason, &e.ContentHash, &e.PrevHash, &stored,
-			&createdAt, &content); err != nil {
+			&createdAt, &content,
+			&e.SigCredentialID, &e.SigPublicKey, &e.SigNonce, &e.SigAuthenticatorData, &e.SigClientData, &e.SigSignature); err != nil {
 			return rep, err
 		}
 		rep.Entries++
@@ -203,12 +239,38 @@ func (h *Handlers) verifyChain(ctx context.Context) (chainReport, error) {
 				rep.Problems = append(rep.Problems, chainProblem{id, "the content it reviewed was changed"})
 			}
 		}
+		if e.Action != "submitted" {
+			switch {
+			case e.SigSignature != "":
+				rep.Signed++
+				if err := verifyDecisionSignature(e); err != nil {
+					rep.Problems = append(rep.Problems, chainProblem{id, err.Error()})
+				}
+			case e.Via == "console":
+				// The console signs every decision when passkeys are
+				// configured (ZV_PUBLIC_URL).
+				rep.Unsigned++
+				if h.webAuthn() != nil {
+					rep.Problems = append(rep.Problems, chainProblem{id, "a console decision without a signature"})
+				}
+			default:
+				rep.Unsigned++
+			}
+		}
 		prev, rep.HeadHash = stored, stored
 	}
 	if err := rows.Err(); err != nil {
 		return rep, err
 	}
+	if rep.Served, err = h.checkServed(ctx); err != nil {
+		return rep, err
+	}
 	rep.OK = len(rep.Problems) == 0
+	for _, f := range rep.Served.Findings {
+		if f.Severity == "changed" {
+			rep.OK = false
+		}
+	}
 	return rep, nil
 }
 
@@ -231,7 +293,9 @@ func (h *Handlers) VerifyListingLog(w http.ResponseWriter, r *http.Request) {
 const listingAnchorEvery = 24 * time.Hour
 
 // AnchorListingLog mails the review log's head to the platform's admins
-// once a day when it has moved: run it periodically. A copy outside the
+// once a day when it has moved, with the day's check of the log and of
+// what approved listings serve — and when the check finds a problem
+// even if it hasn't moved: run it periodically. A copy outside the
 // database makes even a rewritten log show, when its head no longer
 // matches the mail.
 func (h *Handlers) AnchorListingLog(ctx context.Context) {
@@ -258,7 +322,22 @@ func (h *Handlers) AnchorListingLog(ctx context.Context) {
 		logx.Warn("admin.listing.anchor", "err", err.Error())
 		return
 	}
-	if lastHead == head || (err == nil && time.Since(lastAt) < listingAnchorEvery) {
+	if err == nil && time.Since(lastAt) < listingAnchorEvery {
+		return
+	}
+	// The daily check: the chain, its signatures, and what approved
+	// listings serve against what was approved.
+	rep, verr := h.verifyChain(ctx)
+	if verr != nil {
+		logx.Warn("admin.listing.anchor", "err", verr.Error())
+	}
+	problems := len(rep.Problems)
+	for _, f := range rep.Served.Findings {
+		if f.Severity == "changed" {
+			problems++
+		}
+	}
+	if lastHead == head && problems == 0 {
 		return
 	}
 	to, err := h.emailsOf(ctx, `SELECT email FROM users WHERE is_admin AND COALESCE(email, '') <> ''`)
@@ -266,7 +345,7 @@ func (h *Handlers) AnchorListingLog(ctx context.Context) {
 		return
 	}
 	l := h.orgLook(ctx, 0)
-	subject, c := emailtpl.ListingLogHead(l.Lang, head, entries, h.arrangeLink("#/listing-reviews/log"))
+	subject, c := emailtpl.ListingLogHead(l.Lang, head, entries, problems, h.arrangeLink("#/listing-reviews/log"))
 	if err := h.send(ctx, "listing_log_head", l.message(to, subject, c)); err != nil {
 		logx.Warn("admin.listing.anchor", "err", err.Error())
 		return

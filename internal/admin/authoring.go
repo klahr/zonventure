@@ -423,7 +423,8 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	}
 	var advID int64
 	_ = h.DB.QueryRowContext(r.Context(), `SELECT id FROM adventures WHERE slug = $1`, slug).Scan(&advID)
-	if err := applyAdventureMetaUpdate(r.Context(), h.DB, slug, req); err != nil {
+	held, err := applyAdventureMetaUpdate(r.Context(), h.DB, slug, req)
+	if err != nil {
 		var ie *importError
 		if errors.As(err, &ie) {
 			httpx.Error(w, ie.status, ie.Error())
@@ -434,6 +435,11 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	}
 	// Dev phones show the adventure's look and texts as they change.
 	h.pokeDevTeams(r.Context(), advID)
+	if len(held) > 0 {
+		// Held back for review: the console shows them as proposed.
+		httpx.JSON(w, http.StatusOK, map[string]any{"held_for_review": held})
+		return
+	}
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
@@ -447,10 +453,29 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 // "nothing to update" reads as 400 — empty patches are caller bugs,
 // not no-ops. Slug uniqueness violations bubble up as 409 via the
 // generic conflict mapping.
-func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req updateAdventureRequest) error {
+//
+// Once the adventure is played by something for sale, an unverified
+// organisation's change to its presentation — title, description,
+// author, intro, outro, meeting point, area, note to buyers, cover — is
+// held back for review (presentation.go) instead of applied; the names
+// of the fields held back are returned. Clearing a field still applies.
+func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req updateAdventureRequest) ([]string, error) {
+	var held []string
+	err := applyAdventureMeta(ctx, db, slug, req, &held)
+	return held, err
+}
+
+func applyAdventureMeta(ctx context.Context, db *sql.DB, slug string, req updateAdventureRequest, held *[]string) error {
 	sets := []string{"updated_at = now_text()"}
 	args := []any{}
+	gate, err := presentationGate(ctx, db, slug)
+	if err != nil {
+		return err
+	}
 	add := func(col string, val any) {
+		if gate.hold(col, val) {
+			return
+		}
 		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)+1))
 		args = append(args, val)
 	}
@@ -604,6 +629,13 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 				return badRequestf("style cover is not one of this adventure's pictures")
 			}
 		}
+		// A new cover waits for review; the rest of the look applies.
+		if gate.on && req.Style.Cover > 0 && req.Style.Cover != gate.liveCover {
+			gate.held["look_cover"] = req.Style.Cover
+			req.Style.Cover = gate.liveCover
+		} else if gate.on && req.Style.Cover == gate.liveCover {
+			gate.unset = append(gate.unset, "look_cover")
+		}
 		if b, _ := json.Marshal(req.Style); string(b) == "{}" {
 			add("look_style", nil)
 		} else {
@@ -680,7 +712,16 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 		}
 		add("brief", string(b))
 	}
+	if gate.on && (len(gate.held) > 0 || len(gate.unset) > 0) {
+		if err := propose(ctx, db, listingAdventure, gate.advID, gate.orgID, gate.held, gate.unset, nil, nil); err != nil {
+			return err
+		}
+	}
+	*held = gate.names()
 	if len(sets) == 1 {
+		if gate.on && (len(gate.held) > 0 || len(gate.unset) > 0) {
+			return nil
+		}
 		return badRequestf("nothing to update")
 	}
 	args = append(args, slug)
@@ -705,10 +746,11 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 // (AuthorizeAdventureEdit). Returns *importError carrying the
 // HTTP status equivalent of any validation failure, or a wrapped
 // DB error for infrastructure problems.
-func UpdateAdventureMetaJSON(ctx context.Context, db *sql.DB, slug string, patchJSON []byte) error {
+// It returns the fields held back for review (see applyAdventureMetaUpdate).
+func UpdateAdventureMetaJSON(ctx context.Context, db *sql.DB, slug string, patchJSON []byte) ([]string, error) {
 	var req updateAdventureRequest
 	if err := json.Unmarshal(patchJSON, &req); err != nil {
-		return badRequestf("patch parse: %s", err.Error())
+		return nil, badRequestf("patch parse: %s", err.Error())
 	}
 	return applyAdventureMetaUpdate(ctx, db, slug, req)
 }

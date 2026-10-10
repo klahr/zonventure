@@ -1789,7 +1789,15 @@ export function Designer({ slug }: { slug: string }) {
                 setBrandSaving(true);
                 setBrandError(null);
                 try {
-                  await adventures.saveBrand(slug, b);
+                  const r = await adventures.saveBrand(slug, b);
+                  if (r?.held_for_review?.includes("look_cover")) {
+                    // Live stays the approved cover until the new one is approved.
+                    const style = { ...(b.style ?? {}) } as NonNullable<typeof b.style>;
+                    if (before.style?.cover) style.cover = before.style.cover;
+                    else delete style.cover;
+                    setBrand({ ...b, style });
+                    setBrandError(t.t("The new cover picture waits for review before players see it: submit it under Edit details."));
+                  }
                 } catch (e) {
                   setBrand(before);
                   setBrandError(e instanceof ApiError ? e.message : t.t("Could not reach the server. Check your connection."));

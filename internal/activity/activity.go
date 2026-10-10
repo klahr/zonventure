@@ -7,6 +7,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/results"
 )
 
 // Execer is the read+write subset of *sql.DB that Record and
@@ -162,6 +164,16 @@ func CompleteEvent(ctx context.Context, db Execer, eventID int64, actor Actor, p
 		return false, nil
 	}
 	Record(ctx, db, eventID, nil, actor, EventCompleted, payload)
+	// The event's result record closes: this entry's hash is its
+	// fingerprint (internal/results).
+	// In a transaction it commits with the completion or not at all;
+	// outside one the event is complete already, so a failure is logged.
+	if _, err := results.Append(ctx, db, eventID, 0, results.EventCompleted, nil); err != nil {
+		if _, inTx := db.(*sql.Tx); inTx {
+			return false, err
+		}
+		logx.Warn("results.append", "kind", results.EventCompleted, "event_id", eventID, "err", err.Error())
+	}
 	// Best-effort slot-session sweep — see ExpireEventSlotSessions.
 	// A failure here does not unwind the state transition: the event
 	// is genuinely complete, we just kept some now-useless cookies

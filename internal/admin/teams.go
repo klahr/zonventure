@@ -16,6 +16,8 @@ import (
 	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
+	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/results"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/webhooks"
 	"github.com/klahr/zonventure/internal/ws"
@@ -380,6 +382,10 @@ func (h *Handlers) LetTeamStartAnywhere(w http.ResponseWriter, r *http.Request) 
 	}
 	me, _ := auth.FromContext(r.Context())
 	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamStartAnywhere, map[string]any{"by_arranger": true})
+	if _, err := results.Append(r.Context(), h.DB, eventID, teamID, results.StartAnywhere, map[string]any{"by": me.Username}); err != nil {
+		logx.Warn("results.append", "kind", results.StartAnywhere, "team_id", teamID, "err", err.Error())
+	}
+
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	h.Hub.Publish(ws.TeamTopic(teamID), "changed", nil)
 	httpx.JSON(w, http.StatusOK, map[string]any{"start_anywhere": true})
@@ -482,6 +488,10 @@ func (h *Handlers) WithdrawTeam(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamWithdrawn,
 		map[string]any{"by_arranger": true})
+	if _, err := results.Append(r.Context(), h.DB, eventID, teamID, results.TeamWithdrawn, map[string]any{"by": me.Username}); err != nil {
+		logx.Warn("results.append", "kind", results.TeamWithdrawn, "team_id", teamID, "err", err.Error())
+	}
+
 	orgID, _ := h.eventOrg(r.Context(), eventID)
 	webhooks.TryPublish(r.Context(), h.DB, orgID, webhooks.KindTeamWithdrawn, map[string]any{
 		"event_id":     eventID,
@@ -535,6 +545,10 @@ func (h *Handlers) UnwithdrawTeam(w http.ResponseWriter, r *http.Request) {
 		me, _ := auth.FromContext(r.Context())
 		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamReturned,
 			map[string]any{"by_arranger": true})
+		if _, err := results.Append(r.Context(), h.DB, eventID, teamID, results.TeamReturned, map[string]any{"by": me.Username}); err != nil {
+			logx.Warn("results.append", "kind", results.TeamReturned, "team_id", teamID, "err", err.Error())
+		}
+
 		h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"withdrawn_at": ""})

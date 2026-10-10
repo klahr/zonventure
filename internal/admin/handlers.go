@@ -32,9 +32,11 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/components"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/payments"
 	"github.com/klahr/zonventure/internal/play"
+	"github.com/klahr/zonventure/internal/results"
 	"github.com/klahr/zonventure/internal/roster"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/teamimport"
@@ -950,6 +952,9 @@ func (h *Handlers) cancelEvent(w http.ResponseWriter, r *http.Request, eventID i
 	_ = activity.ExpireEventSlotSessions(r.Context(), h.DB, eventID)
 	me, _ := auth.FromContext(r.Context())
 	activity.Record(r.Context(), h.DB, eventID, nil, activity.UserActor(me.ID), activity.EventCancelled, nil)
+	if _, err := results.Append(r.Context(), h.DB, eventID, 0, results.EventCancelled, map[string]any{"by": me.Username}); err != nil {
+		logx.Warn("results.append", "kind", results.EventCancelled, "event_id", eventID, "err", err.Error())
+	}
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }

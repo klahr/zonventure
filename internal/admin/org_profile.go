@@ -167,6 +167,35 @@ func (h *Handlers) SetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Once something of theirs is for sale, the tagline and website wait
+	// for review (presentation.go); the colours apply at once.
+	gated, err := orgGated(r.Context(), h.DB, orgID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
+		return
+	}
+	if gated {
+		var liveTagline, liveWebsite string
+		if err := h.DB.QueryRowContext(r.Context(), `
+			SELECT COALESCE(tagline, ''), COALESCE(public_website, '') FROM organizations WHERE id = $1`, orgID).
+			Scan(&liveTagline, &liveWebsite); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
+			return
+		}
+		fields, unset := map[string]any{}, []string{}
+		for col, v := range map[string][2]string{"tagline": {tagline, liveTagline}, "public_website": {website, liveWebsite}} {
+			if v[0] == v[1] {
+				unset = append(unset, col)
+			} else {
+				fields[col] = v[0]
+			}
+		}
+		if err := propose(r.Context(), h.DB, listingOrg, orgID, orgID, fields, unset, nil, nil); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
+			return
+		}
+		tagline, website = liveTagline, liveWebsite
+	}
 	if _, err := h.DB.ExecContext(r.Context(), `
 		UPDATE organizations
 		   SET tagline = NULLIF($1, ''),
@@ -266,6 +295,14 @@ func (h *Handlers) SetMyOrgLogo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, mime = normalized, newMIME
+	if held, err := h.holdOrgPicture(r.Context(), orgID, &picture{mime: mime, content: data}, nil); err != nil || held {
+		if err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "store failed", err)
+			return
+		}
+		httpx.JSON(w, http.StatusAccepted, map[string]any{"proposed": true, "mime": mime, "size": int64(len(data))})
+		return
+	}
 	if err := h.Storage.PutOrgLogo(r.Context(), orgID, data, mime); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			httpx.Error(w, http.StatusNotFound, "organisation not found")
@@ -295,6 +332,10 @@ func (h *Handlers) DeleteMyOrgLogo(w http.ResponseWriter, r *http.Request) {
 	}
 	orgID := *me.OrgID
 	if err := h.Storage.DeleteOrgLogo(r.Context(), orgID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "clear failed")
+		return
+	}
+	if err := dropProposedPicture(r.Context(), h.DB, listingOrg, orgID, "image"); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "clear failed")
 		return
 	}
@@ -352,6 +393,14 @@ func (h *Handlers) SetMyOrgCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, mime = normalized, newMIME
+	if held, err := h.holdOrgPicture(r.Context(), orgID, nil, &picture{mime: mime, content: data}); err != nil || held {
+		if err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "store failed", err)
+			return
+		}
+		httpx.JSON(w, http.StatusAccepted, map[string]any{"proposed": true, "mime": mime, "size": int64(len(data))})
+		return
+	}
 	if err := h.Storage.PutOrgCover(r.Context(), orgID, data, mime); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			httpx.Error(w, http.StatusNotFound, "organisation not found")
@@ -382,6 +431,10 @@ func (h *Handlers) DeleteMyOrgCover(w http.ResponseWriter, r *http.Request) {
 	}
 	orgID := *me.OrgID
 	if err := h.Storage.DeleteOrgCover(r.Context(), orgID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "clear failed")
+		return
+	}
+	if err := dropProposedPicture(r.Context(), h.DB, listingOrg, orgID, "cover"); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "clear failed")
 		return
 	}

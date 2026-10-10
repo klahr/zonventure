@@ -20,6 +20,7 @@ import { TeamsCard } from "./Teams.tsx";
 import { EmailsCard } from "./Emails.tsx";
 import { HostedCards } from "./Hosted.tsx";
 import { StatisticsCard } from "./Statistics.tsx";
+import { ResultsRecordCard } from "./ResultsRecord.tsx";
 import { isQuest, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
 import "./event.css";
 
@@ -160,6 +161,7 @@ export function EventPage({ id }: { id: number }) {
       {event.has_secret_roles && <SecretRolesCard key={`secret-${event.id}`} event={event} onSaved={detail.reload} />}
       <ResultsCard event={event} teams={teams} />
       {played && <StatisticsCard stats={stats.data} error={stats.error} retry={stats.reload} />}
+      {played && <ResultsRecordCard eventId={id} />}
 
       <div className="ev-cols">
         <div className="ev-col">

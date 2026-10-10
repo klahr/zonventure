@@ -14,6 +14,7 @@ import (
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/mdx"
 	"github.com/klahr/zonventure/internal/play"
+	"github.com/klahr/zonventure/internal/results"
 )
 
 /* ---------------- Post-event recap (public-by-token) ----------------
@@ -68,6 +69,12 @@ type recapResponse struct {
 	// retention prunes them; each is served at
 	// /api/public/recap/{token}/photos/{id}.
 	Photos []recapPhoto `json:"photos,omitempty"`
+	// Receipt is the team's receipt from the event's result record
+	// (internal/results), once it finished: the hash its finish entry
+	// has, with whether the record still bears it out. ResultsFingerprint
+	// is the event's.
+	Receipt            *results.Receipt `json:"receipt,omitempty"`
+	ResultsFingerprint string           `json:"results_fingerprint,omitempty"`
 }
 
 // recapPhoto is one approved team picture: what it was of, and where.
@@ -274,6 +281,12 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 	// Cache hint: 5 minutes is short enough that a recap viewed
 	// before the player's /forget call refreshes promptly,
 	// long enough to absorb a paste-and-discuss burst on a chat app.
+	if rc, err := results.ReceiptOf(r.Context(), h.DB, teamID); err == nil {
+		resp.Receipt, resp.ResultsFingerprint = &rc, rc.Fingerprint
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		httpx.ServerErr(w, http.StatusInternalServerError, "receipt failed", err)
+		return
+	}
 	w.Header().Set("Cache-Control", "private, max-age=300")
 	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 	httpx.JSON(w, http.StatusOK, resp)

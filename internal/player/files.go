@@ -23,7 +23,7 @@ func (h *Handlers) GetEventFile(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusNotFound, "no such file")
 		return
 	}
-	f, content, err := eventfile.Get(r.Context(), h.DB, slot.EventID, id)
+	f, content, err := eventfile.GetForPlayers(r.Context(), h.DB, slot.EventID, id)
 	switch {
 	case errors.Is(err, eventfile.ErrNotFound):
 		httpx.Error(w, http.StatusNotFound, "no such file")

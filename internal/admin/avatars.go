@@ -67,6 +67,14 @@ func (h *Handlers) SetAdventureAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, mime = normalized, newMIME
+	if held, err := HoldAdventureIcon(r.Context(), h.DB, slug, data, mime); err != nil || held {
+		if err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "store failed", err)
+			return
+		}
+		httpx.JSON(w, http.StatusAccepted, map[string]any{"proposed": true, "mime": mime, "size": int64(len(data))})
+		return
+	}
 	if err := h.Storage.PutAdventureAvatar(r.Context(), slug, data, mime); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			httpx.Error(w, http.StatusNotFound, "adventure not found")
@@ -90,6 +98,10 @@ func (h *Handlers) DeleteAdventureAvatar(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := h.Storage.DeleteAdventureAvatar(r.Context(), slug); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "clear failed")
+		return
+	}
+	if err := DropAdventureIconProposal(r.Context(), h.DB, slug); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "clear failed")
 		return
 	}

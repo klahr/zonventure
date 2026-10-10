@@ -161,9 +161,13 @@ export interface Look {
 export const saveLanguage = (slug: string, language: string) =>
   patch<void>(adventure(slug), { language });
 
-/** Save the palette. A missing colour is cleared back to the default. */
+/**
+ * Save the palette. A missing colour is cleared back to the default.
+ * held_for_review names what waits for review instead of applying — a
+ * new cover picture ("look_cover") when the adventure is for sale.
+ */
 export const saveBrand = (slug: string, b: Brand) =>
-  patch<void>(adventure(slug), {
+  patch<{ held_for_review?: string[] } | undefined>(adventure(slug), {
     accent_color: b.accent ?? "",
     accent_secondary_color: b.accent_secondary ?? "",
     background_color: b.background ?? "",

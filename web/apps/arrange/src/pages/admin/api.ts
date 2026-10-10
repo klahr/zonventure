@@ -1,6 +1,13 @@
 import { get, post, put, patch, request } from "@zonventure/api";
 
 /** internal/admin/organizations.go orgMemberDTO */
+/**
+ * What listing review reviews (internal/admin/listing_review.go): a
+ * self-guided event's store listing, a party offer, or a held-back change
+ * to an organisation's page or an adventure's presentation (presentation.go).
+ */
+export type ListingKind = "event" | "party" | "org" | "adventure";
+
 export interface OrgMember {
   id: number;
   username: string;
@@ -193,7 +200,7 @@ export interface ListingFields {
 
 /** internal/admin/listing_review.go listingReviewDTO: a listing waiting for review. */
 export interface ListingReview {
-  kind: "event" | "party";
+  kind: ListingKind;
   id: number;
   revision: string;
   submitted_at: string;
@@ -227,7 +234,7 @@ export interface ReviewMedia {
 
 /** internal/admin/listing_content.go ReviewContent: everything a listing puts in front of people. */
 export interface ReviewContent {
-  kind: "event" | "party";
+  kind: ListingKind;
   id: number;
   state: "" | "draft" | "pending" | "approved" | "rejected";
   revision: string;
@@ -249,11 +256,22 @@ export interface ReviewContent {
   live?: ListingFields;
   texts: ReviewText[];
   media: ReviewMedia[];
+  /** For an organisation page or adventure presentation: what the proposal changes. */
+  changes?: ReviewChange[];
+}
+
+/** internal/admin/listing_content.go ReviewChange: one field a proposal changes. */
+export interface ReviewChange {
+  field: string;
+  live?: string;
+  proposed?: string;
+  live_url?: string;
+  proposed_url?: string;
 }
 
 /** internal/admin/listing_review.go listingLogDTO: a submission or decision. */
 export interface ListingLogEntry {
-  kind: "event" | "party";
+  kind: ListingKind;
   id: number;
   org_id: number;
   org_name: string;
@@ -268,15 +286,40 @@ export interface ListingLogEntry {
   /** Fingerprint of what was reviewed, and the entry's link in the hash chain. */
   content_hash: string;
   entry_hash: string;
+  /** A reviewer's passkey signed the decision. */
+  signed?: boolean;
 }
 
 /** internal/admin/listing_review_chain.go chainReport: the log's hash chain, recomputed. */
 export interface ChainReport {
   ok: boolean;
   entries: number;
+  /** Decisions signed with a reviewer's passkey, each checked again. */
+  signed: number;
+  /** Decisions made through an API token or approved automatically. */
+  unsigned: number;
   /** Compare with the latest one mailed to platform admins. */
   head_hash: string;
   problems: { id: number; problem: string }[];
+  /** What approved listings serve now, against what was approved. */
+  served?: ServedReport;
+}
+
+/** internal/admin/listing_review_served.go servedReport */
+export interface ServedReport {
+  checked: number;
+  matching: number;
+  findings: ServedFinding[];
+}
+
+export interface ServedFinding {
+  kind: ListingKind;
+  id: number;
+  org_name: string;
+  title: string;
+  /** changed: edited outside review. unreviewed: edited live, review doesn't cover it. unrecorded: approved before review was logged. */
+  severity: "changed" | "unreviewed" | "unrecorded";
+  parts?: string[];
 }
 
 /** internal/admin/listing_review.go listingReviewerDTO */
@@ -295,10 +338,39 @@ export type ListingRef = Pick<ListingReview, "kind" | "id" | "revision">;
 const review = (r: Pick<ListingReview, "kind" | "id">) => `/api/admin/listing-reviews/${r.kind}/${r.id}`;
 export const listListingReviews = (signal?: AbortSignal) =>
   get<{ reviews: ListingReview[] | null }>("/api/admin/listing-reviews", signal ? { signal } : {}).then((r) => r.reviews ?? []);
-export const getListingReview = (kind: "event" | "party", id: number, signal?: AbortSignal) =>
+export const getListingReview = (kind: ListingKind, id: number, signal?: AbortSignal) =>
   get<ReviewContent>(review({ kind, id }), signal ? { signal } : {});
-export const approveListing = (r: ListingRef) => post<unknown>(`${review(r)}/approve`, { revision: r.revision });
-export const rejectListing = (r: ListingRef, reason: string) => post<unknown>(`${review(r)}/reject`, { revision: r.revision, reason });
+/** A decision's passkey signature, as approve and reject take it. */
+export interface DecisionSignature {
+  session_id: string;
+  credential: Record<string, unknown>;
+}
+/** What the browser's passkey is asked to sign (go-webauthn's options, JSON). */
+export interface PasskeyCeremony {
+  session_id: string;
+  options: Record<string, unknown>;
+}
+/** Starts signing a decision: its hash is the challenge (reviewer_passkeys.go). */
+export const signListingDecision = (r: ListingRef, action: "approve" | "reject", reason: string) =>
+  post<PasskeyCeremony>(`${review(r)}/sign`, { action, revision: r.revision, reason });
+export const approveListing = (r: ListingRef, signature?: DecisionSignature) =>
+  post<unknown>(`${review(r)}/approve`, { revision: r.revision, ...(signature ? { signature } : {}) });
+export const rejectListing = (r: ListingRef, reason: string, signature?: DecisionSignature) =>
+  post<unknown>(`${review(r)}/reject`, { revision: r.revision, reason, ...(signature ? { signature } : {}) });
+
+/** internal/admin/reviewer_passkeys.go reviewerPasskeyDTO */
+export interface ReviewerPasskey {
+  id: number;
+  name: string;
+  created_at: string;
+  last_used_at?: string;
+}
+export const listReviewerPasskeys = (signal?: AbortSignal) =>
+  get<{ passkeys: ReviewerPasskey[] | null }>("/api/admin/me/reviewer-passkeys", signal ? { signal } : {}).then((r) => r.passkeys ?? []);
+export const beginReviewerPasskey = () => post<PasskeyCeremony>("/api/admin/me/reviewer-passkeys/begin", {});
+export const finishReviewerPasskey = (session_id: string, name: string, credential: Record<string, unknown>) =>
+  post<{ id: number; name: string }>("/api/admin/me/reviewer-passkeys/finish", { session_id, name, credential });
+export const revokeReviewerPasskey = (id: number) => request<void>(`/api/admin/me/reviewer-passkeys/${id}`, { method: "DELETE" });
 export const listListingLog = (via: string, signal?: AbortSignal) =>
   get<{ log: ListingLogEntry[] | null }>("/api/admin/listing-reviews/log" + (via ? `?via=${encodeURIComponent(via)}` : ""), signal ? { signal } : {}).then((r) => r.log ?? []);
 export const verifyListingLog = () => get<ChainReport>("/api/admin/listing-reviews/log/verify");

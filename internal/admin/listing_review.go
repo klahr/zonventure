@@ -67,7 +67,8 @@ const MaxRejectReasonLen = 1000
 // adventure version it plays: what a reviewer approves. They read from
 // events e, or party_offers o joined to adventures a.
 const eventListingRevision = `md5(row(e.name, e.public_blurb, e.ticket_price_cents, e.ticket_currency, e.ticket_team_size,
-	e.cover_image_mime_type, md5(e.cover_image_content), e.graph_id)::text)`
+	e.cover_image_mime_type, md5(e.cover_image_content), e.graph_id,
+	(SELECT string_agg(f.id::text || ':' || md5(f.content), ',' ORDER BY f.id) FROM event_files f WHERE f.event_id = e.id))::text)`
 
 const partyListingRevision = `md5(row(o.blurb, o.base_cents, o.per_kid_cents, o.currency, o.max_kids,
 	a.published_graph_id)::text)`
@@ -79,7 +80,8 @@ const eventUnchanged = `COALESCE(l.event_id IS NOT NULL
 	AND l.team_size = e.ticket_team_size
 	AND l.cover_mime_type IS NOT DISTINCT FROM e.cover_image_mime_type
 	AND l.cover_content IS NOT DISTINCT FROM e.cover_image_content
-	AND l.graph_id IS NOT DISTINCT FROM e.graph_id, FALSE)`
+	AND l.graph_id IS NOT DISTINCT FROM e.graph_id
+	AND NOT EXISTS (SELECT 1 FROM event_files f WHERE f.event_id = e.id AND f.approved_at IS NULL), FALSE)`
 
 const partyUnchanged = `COALESCE(l.offer_id IS NOT NULL
 	AND l.blurb = o.blurb AND l.base_cents = o.base_cents
@@ -235,9 +237,10 @@ func (h *Handlers) submitListing(w http.ResponseWriter, r *http.Request, kind st
 func (h *Handlers) submit(ctx context.Context, kind string, id, userID int64, via string) (string, error) {
 	t := listingTables(kind)
 	var err error
-	if kind == listingEvent {
+	switch kind {
+	case listingEvent:
 		err = h.settleEvent(ctx, id, false)
-	} else {
+	case listingParty:
 		err = h.settleParty(ctx, id, false)
 	}
 	if err != nil {
@@ -274,7 +277,7 @@ func (h *Handlers) submit(ctx context.Context, kind string, id, userID int64, vi
 		WHERE id = $1`, id, userID); err != nil {
 		return "", err
 	}
-	if err := h.logListing(ctx, tx, kind, id, orgID, "submitted", via, userID, revision, graphID, ""); err != nil {
+	if err := h.logListing(ctx, tx, kind, id, orgID, "submitted", via, userID, revision, graphID, "", decisionSignature{}); err != nil {
 		return "", err
 	}
 	state = "pending"
@@ -282,7 +285,7 @@ func (h *Handlers) submit(ctx context.Context, kind string, id, userID int64, vi
 		if err := h.approve(ctx, tx, kind, id, 0); err != nil {
 			return "", err
 		}
-		if err := h.logListing(ctx, tx, kind, id, orgID, "approved", "auto", 0, revision, graphID, ""); err != nil {
+		if err := h.logListing(ctx, tx, kind, id, orgID, "approved", "auto", 0, revision, graphID, "", decisionSignature{}); err != nil {
 			return "", err
 		}
 		state = "approved"
@@ -305,6 +308,10 @@ type listingTable struct {
 }
 
 func listingTables(kind string) listingTable {
+	if kind == listingOrg || kind == listingAdventure {
+		return listingTable{table: "presentation_proposals", alias: "p", from: "presentation_proposals p",
+			revision: presentationRevision, graph: "NULL::bigint", lock: "p"}
+	}
 	if kind == listingParty {
 		return listingTable{table: "party_offers", alias: "o",
 			from:     "party_offers o JOIN adventures a ON a.slug = o.adventure_slug",
@@ -328,6 +335,9 @@ type execer interface {
 }
 
 func (h *Handlers) approve(ctx context.Context, q execer, kind string, id, reviewer int64) error {
+	if kind == listingOrg || kind == listingAdventure {
+		return h.approveProposal(ctx, q, id, reviewer)
+	}
 	if kind == listingEvent {
 		return h.approveEventListing(ctx, q, id, reviewer)
 	}
@@ -350,6 +360,11 @@ func (h *Handlers) approveEventListing(ctx context.Context, q execer, eventID, r
 		    cover_mime_type = EXCLUDED.cover_mime_type, cover_content = EXCLUDED.cover_content,
 		    graph_id = EXCLUDED.graph_id, approved_at = EXCLUDED.approved_at, approved_by = EXCLUDED.approved_by
 	`, eventID, by); err != nil {
+		return err
+	}
+	// The files reviewed with it reach players.
+	if _, err := q.ExecContext(ctx, `
+		UPDATE event_files SET approved_at = now() WHERE event_id = $1 AND approved_at IS NULL`, eventID); err != nil {
 		return err
 	}
 	_, err := q.ExecContext(ctx, `
@@ -522,6 +537,37 @@ func (h *Handlers) pendingListings(ctx context.Context, reviewerID int64) ([]lis
 		}
 		out = append(out, d)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return h.pendingProposals(ctx, reviewerID, out)
+}
+
+// pendingProposals adds the organisation pages and adventure
+// presentations waiting for review.
+func (h *Handlers) pendingProposals(ctx context.Context, reviewerID int64, out []listingReviewDTO) ([]listingReviewDTO, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT p.kind, p.id, `+presentationRevision+`, to_char(p.listing_submitted_at AT TIME ZONE 'UTC', `+isoTime+`),
+		       g.id, g.name, COALESCE(g.slug, ''), COALESCE(a.slug, ''), COALESCE(NULLIF(a.title, ''), a.slug, ''),
+		       COALESCE(u.username, '')
+		FROM presentation_proposals p
+		JOIN organizations g ON g.id = p.org_id
+		LEFT JOIN adventures a ON p.kind = 'adventure' AND a.id = p.target_id
+		LEFT JOIN users u ON u.id = p.listing_attested_by
+		WHERE p.listing_review = 'pending' AND NOT EXISTS (SELECT 1 FROM org_memberships m WHERE m.user_id = $1 AND m.org_id = g.id)
+		ORDER BY p.listing_submitted_at, p.id`, reviewerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d listingReviewDTO
+		if err := rows.Scan(&d.Kind, &d.ID, &d.Revision, &d.SubmittedAt, &d.OrgID, &d.OrgName, &d.OrgSlug,
+			&d.AdventureSlug, &d.AdventureTitle, &d.AttestedBy); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
 	return out, rows.Err()
 }
 
@@ -542,6 +588,8 @@ type listingLogDTO struct {
 	// entry's link in the hash chain (listing_review_chain.go).
 	ContentHash string `json:"content_hash"`
 	EntryHash   string `json:"entry_hash"`
+	// Signed: a reviewer's passkey signed the decision.
+	Signed bool `json:"signed"`
 }
 
 // ListListingLog lists recent submissions and decisions, newest first:
@@ -556,12 +604,16 @@ func (h *Handlers) ListListingLog(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT l.kind, l.item_id, COALESCE(l.org_id, 0), l.org_name,
 		       COALESCE(CASE l.kind
+		         WHEN 'org' THEN l.org_name
+		         WHEN 'adventure' THEN (SELECT COALESCE(NULLIF(a.title, ''), a.slug) FROM presentation_proposals p
+		               JOIN adventures a ON a.id = p.target_id WHERE p.id = l.item_id)
 		         WHEN 'event' THEN (SELECT COALESCE(NULLIF(e.name, ''), e.adventure_slug) FROM events e WHERE e.id = l.item_id)
 		         ELSE (SELECT COALESCE(NULLIF(a.title, ''), o.adventure_slug) FROM party_offers o
 		               LEFT JOIN adventures a ON a.slug = o.adventure_slug WHERE o.id = l.item_id)
 		       END, ''),
 		       l.action, l.via, l.username, l.reason, COALESCE(l.graph_id, 0),
-		       to_char(l.created_at AT TIME ZONE 'UTC', `+isoTime+`), l.content_hash, l.entry_hash
+		       to_char(l.created_at AT TIME ZONE 'UTC', `+isoTime+`), l.content_hash, l.entry_hash,
+		       l.sig_signature <> ''
 		FROM listing_review_log l
 		WHERE $1 = '' OR l.via = $1
 		ORDER BY l.created_at DESC, l.id DESC
@@ -576,7 +628,7 @@ func (h *Handlers) ListListingLog(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var d listingLogDTO
 		if err := rows.Scan(&d.Kind, &d.ID, &d.OrgID, &d.OrgName, &d.Title, &d.Action, &d.Via, &d.By,
-			&d.Reason, &d.GraphID, &d.CreatedAt, &d.ContentHash, &d.EntryHash); err != nil {
+			&d.Reason, &d.GraphID, &d.CreatedAt, &d.ContentHash, &d.EntryHash, &d.Signed); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "review log failed", err)
 			return
 		}
@@ -594,6 +646,10 @@ func (h *Handlers) ListListingLog(w http.ResponseWriter, r *http.Request) {
 type listingDecisionRequest struct {
 	Revision string `json:"revision"`
 	Reason   string `json:"reason,omitempty"`
+	// Signature is the reviewer's passkey signature over this decision
+	// (reviewer_passkeys.go): required in the console, absent through
+	// an API token.
+	Signature *signatureInput `json:"signature,omitempty"`
 }
 
 // ApproveListing makes a pending draft public. Listing reviewers only.
@@ -631,7 +687,7 @@ func (h *Handlers) ownOrg(ctx context.Context, userID, orgID int64) (bool, error
 func listingParams(w http.ResponseWriter, r *http.Request) (string, int64, bool) {
 	kind := chi.URLParam(r, "kind")
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 || (kind != listingEvent && kind != listingParty) {
+	if err != nil || id <= 0 || (kind != listingEvent && kind != listingParty && kind != listingOrg && kind != listingAdventure) {
 		httpx.Error(w, http.StatusNotFound, "no such listing")
 		return "", 0, false
 	}
@@ -703,6 +759,24 @@ func (h *Handlers) decideListing(w http.ResponseWriter, r *http.Request, approve
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the listing changed while you looked: reload and review it again", "code": "changed"})
 		return
 	}
+	// A person in the console signs what they decide with their passkey;
+	// an assistant through an API token can't, and is logged as one.
+	var sig decisionSignature
+	if !auth.ViaAPIToken(ctx) && h.webAuthn() != nil {
+		if req.Signature == nil {
+			httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "sign the decision with your passkey", "code": "signature_required"})
+			return
+		}
+		verb := map[bool]string{true: "approve", false: "reject"}[approve]
+		if sig, err = h.checkDecisionSignature(ctx, tx, me, req.Signature, verb, kind, id, req.Revision, reason); err != nil {
+			if errors.Is(err, errBadSignature) {
+				httpx.JSON(w, http.StatusForbidden, map[string]string{"error": err.Error(), "code": "bad_signature"})
+				return
+			}
+			httpx.ServerErr(w, http.StatusInternalServerError, "review failed", err)
+			return
+		}
+	}
 	action := "approved"
 	if approve {
 		err = h.approve(ctx, tx, kind, id, me.ID)
@@ -714,7 +788,7 @@ func (h *Handlers) decideListing(w http.ResponseWriter, r *http.Request, approve
 			WHERE id = $1`, id, me.ID, reason)
 	}
 	if err == nil {
-		err = h.logListing(ctx, tx, kind, id, orgID, action, viaOf(ctx), me.ID, rev, graphID, reason)
+		err = h.logListing(ctx, tx, kind, id, orgID, action, viaOf(ctx), me.ID, rev, graphID, reason, sig)
 	}
 	if err == nil {
 		err = tx.Commit()
@@ -847,7 +921,7 @@ func (h *Handlers) SetOrgVerifiedCreator(w http.ResponseWriter, r *http.Request)
 // approveWaitingListings approves an organisation's pending listings,
 // as their submissions would have been had it been verified then.
 func (h *Handlers) approveWaitingListings(ctx context.Context, orgID int64) error {
-	for _, kind := range []string{listingEvent, listingParty} {
+	for _, kind := range []string{listingEvent, listingParty, listingOrg, listingAdventure} {
 		t := listingTables(kind)
 		tx, err := h.DB.BeginTx(ctx, nil)
 		if err != nil {
@@ -882,7 +956,7 @@ func (h *Handlers) approveWaitingListings(ctx context.Context, orgID int64) erro
 				tx.Rollback()
 				return err
 			}
-			if err := h.logListing(ctx, tx, kind, x.id, orgID, "approved", "auto", 0, x.rev, x.graphID, ""); err != nil {
+			if err := h.logListing(ctx, tx, kind, x.id, orgID, "approved", "auto", 0, x.rev, x.graphID, "", decisionSignature{}); err != nil {
 				tx.Rollback()
 				return err
 			}
@@ -929,13 +1003,23 @@ func (h *Handlers) notifyListingDecided(ctx context.Context, kind string, id, or
 		return
 	}
 	var what, link string
-	if kind == listingEvent {
+	switch kind {
+	case listingOrg:
+		_ = h.DB.QueryRowContext(ctx, `SELECT name FROM organizations WHERE id = $1`, orgID).Scan(&what)
+		link = h.arrangeLink("")
+	case listingAdventure:
+		var slug string
+		_ = h.DB.QueryRowContext(ctx, `
+			SELECT COALESCE(NULLIF(a.title, ''), a.slug), a.slug FROM presentation_proposals p JOIN adventures a ON a.id = p.target_id
+			WHERE p.id = $1`, id).Scan(&what, &slug)
+		link = h.arrangeLink("#/adventures/" + slug)
+	case listingEvent:
 		_ = h.DB.QueryRowContext(ctx, `
 			SELECT COALESCE(NULLIF(e.name, ''), a.title, e.adventure_slug)
 			FROM events e LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
 			WHERE e.id = $1`, id).Scan(&what)
 		link = h.arrangeLink("#/events/" + strconv.FormatInt(id, 10))
-	} else {
+	default:
 		_ = h.DB.QueryRowContext(ctx, `
 			SELECT COALESCE(NULLIF(a.title, ''), o.adventure_slug)
 			FROM party_offers o LEFT JOIN adventures a ON a.slug = o.adventure_slug

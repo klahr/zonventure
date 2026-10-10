@@ -219,7 +219,7 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading messages failed", err)
 		return
 	}
-	if out.Event.Files, err = eventfile.List(ctx, h.DB, tc.EventID); err != nil {
+	if out.Event.Files, err = eventfile.ListForPlayers(ctx, h.DB, tc.EventID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading files failed", err)
 		return
 	}

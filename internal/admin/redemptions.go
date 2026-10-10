@@ -17,6 +17,7 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/results"
 )
 
 // Partner box redemptions. Experience partners (Live it, TrueStory) sell
@@ -1036,6 +1037,10 @@ func (h *Handlers) CancelRedemption(w http.ResponseWriter, r *http.Request) {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE teams SET withdrawn_at = now_text() WHERE id = $1 AND withdrawn_at IS NULL
 		`, teamID.Int64); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "cancel failed", err)
+			return
+		}
+		if _, err := results.AppendTeam(ctx, tx, teamID.Int64, results.TeamWithdrawn, map[string]any{"reason": "gift box redemption cancelled"}); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "cancel failed", err)
 			return
 		}

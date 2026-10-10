@@ -155,9 +155,13 @@ func Delete(ctx context.Context, q Querier, eventID, id int64) error {
 // List is every file of the event, oldest first: the order they were
 // added in, which is usually the order to read them in.
 func List(ctx context.Context, q Querier, eventID int64) ([]File, error) {
+	return list(ctx, q, eventID, "")
+}
+
+func list(ctx context.Context, q Querier, eventID int64, cond string) ([]File, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT id, name, mime_type, size_bytes, created_at
-		FROM event_files WHERE event_id = $1 ORDER BY created_at, id`, eventID)
+		FROM event_files WHERE event_id = $1`+cond+` ORDER BY created_at, id`, eventID)
 	if err != nil {
 		return nil, err
 	}
@@ -173,15 +177,36 @@ func List(ctx context.Context, q Querier, eventID int64) ([]File, error) {
 	return out, rows.Err()
 }
 
+// playerVisible limits what players get to files a reviewer approved,
+// for an event sold in the store (listing review): its organisers may
+// add a file at any time, and it reaches players once approved.
+const playerVisible = `
+	AND (approved_at IS NOT NULL OR NOT (SELECT public_for_sale FROM events WHERE id = event_files.event_id))`
+
+// ListForPlayers is List for the event's players: the files they may
+// download.
+func ListForPlayers(ctx context.Context, q Querier, eventID int64) ([]File, error) {
+	return list(ctx, q, eventID, playerVisible)
+}
+
+// GetForPlayers is Get for the event's players.
+func GetForPlayers(ctx context.Context, q Querier, eventID, id int64) (File, []byte, error) {
+	return get(ctx, q, eventID, id, playerVisible)
+}
+
 // Get is one of the event's files with its bytes.
 func Get(ctx context.Context, q Querier, eventID, id int64) (File, []byte, error) {
+	return get(ctx, q, eventID, id, "")
+}
+
+func get(ctx context.Context, q Querier, eventID, id int64, cond string) (File, []byte, error) {
 	var (
 		f       File
 		content []byte
 	)
 	err := q.QueryRowContext(ctx, `
 		SELECT id, name, mime_type, size_bytes, created_at, content
-		FROM event_files WHERE event_id = $1 AND id = $2`, eventID, id).
+		FROM event_files WHERE event_id = $1 AND id = $2`+cond, eventID, id).
 		Scan(&f.ID, &f.Name, &f.Mime, &f.Size, &f.CreatedAt, &content)
 	if errors.Is(err, sql.ErrNoRows) {
 		return File{}, nil, ErrNotFound

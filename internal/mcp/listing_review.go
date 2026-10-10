@@ -28,7 +28,7 @@ const (
 
 func (s *Server) registerListingReviewTools() {
 	kindID := map[string]any{
-		"kind": map[string]any{"type": "string", "enum": []string{"event", "party"}, "description": "event: a self-guided event's store listing; party: a party offer."},
+		"kind": map[string]any{"type": "string", "enum": []string{"event", "party", "org", "adventure"}, "description": "event: a self-guided event's store listing; party: a party offer; org: a change to an organisation's page; adventure: a change to an adventure's title, texts, icon or cover."},
 		"id":   map[string]any{"type": "integer", "description": "The listing's id, from list_listing_reviews."},
 	}
 	s.tools.register(ToolDescriptor{
@@ -90,7 +90,8 @@ func (s *Server) registerListingReviewTools() {
 	s.tools.register(ToolDescriptor{
 		Name:  "submit_listing_for_review",
 		Scope: scopeWrite,
-		Description: "Send a self-guided event's store listing (event_id) or a party offer (adventure_slug) for review before it goes public; " +
+		Description: "Send for review before it goes public: a self-guided event's store listing (event_id), a party offer (adventure_slug), " +
+			"the organisation page's held-back changes (org_page: true), or an adventure's held-back title, texts, icon or cover (adventure_presentation: its slug); " +
 			"a verified creator's is approved at once. Submitting is the user's confirmation that the listing and the adventure it plays contain nothing " +
 			"offensive, hateful or illegal and follow the terms: ask the user and pass attest: true only when they have confirmed it. " +
 			"Changes after submitting need submitting again.",
@@ -98,9 +99,11 @@ func (s *Server) registerListingReviewTools() {
 			"type":     "object",
 			"required": []string{"attest"},
 			"properties": map[string]any{
-				"event_id":       map[string]any{"type": "integer", "description": "A self-guided event, to submit its store listing."},
-				"adventure_slug": map[string]any{"type": "string", "description": "An adventure the organisation offers as a party, to submit its offer."},
-				"attest":         map[string]any{"type": "boolean", "description": "true once the user has confirmed the content follows the terms."},
+				"event_id":               map[string]any{"type": "integer", "description": "A self-guided event, to submit its store listing."},
+				"adventure_slug":         map[string]any{"type": "string", "description": "An adventure the organisation offers as a party, to submit its offer."},
+				"org_page":               map[string]any{"type": "boolean", "description": "true to submit the organisation page's held-back changes."},
+				"adventure_presentation": map[string]any{"type": "string", "description": "An adventure's slug, to submit its held-back presentation changes."},
+				"attest":                 map[string]any{"type": "boolean", "description": "true once the user has confirmed the content follows the terms."},
 			},
 		},
 	}, submitListingForReview)
@@ -137,8 +140,8 @@ type listingArgs struct {
 }
 
 func (a listingArgs) check() *ToolCallResult {
-	if a.Kind != "event" && a.Kind != "party" {
-		r := errorResult(`kind must be "event" or "party"`)
+	if a.Kind != "event" && a.Kind != "party" && a.Kind != "org" && a.Kind != "adventure" {
+		r := errorResult(`kind must be "event", "party", "org" or "adventure"`)
 		return &r
 	}
 	if a.ID <= 0 {
@@ -262,9 +265,11 @@ func decideListing(action string) func(context.Context, *Server, json.RawMessage
 }
 
 type submitListingArgs struct {
-	EventID       int64  `json:"event_id,omitempty"`
-	AdventureSlug string `json:"adventure_slug,omitempty"`
-	Attest        bool   `json:"attest"`
+	EventID               int64  `json:"event_id,omitempty"`
+	AdventureSlug         string `json:"adventure_slug,omitempty"`
+	OrgPage               bool   `json:"org_page,omitempty"`
+	AdventurePresentation string `json:"adventure_presentation,omitempty"`
+	Attest                bool   `json:"attest"`
 }
 
 func submitListingForReview(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
@@ -272,8 +277,14 @@ func submitListingForReview(ctx context.Context, s *Server, raw json.RawMessage)
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return errorResult("bad args: " + err.Error()), nil
 	}
-	if (a.EventID > 0) == (strings.TrimSpace(a.AdventureSlug) != "") {
-		return errorResult("pass either event_id or adventure_slug"), nil
+	n := 0
+	for _, set := range []bool{a.EventID > 0, strings.TrimSpace(a.AdventureSlug) != "", a.OrgPage, strings.TrimSpace(a.AdventurePresentation) != ""} {
+		if set {
+			n++
+		}
+	}
+	if n != 1 {
+		return errorResult("pass one of event_id, adventure_slug, org_page or adventure_presentation"), nil
 	}
 	if !a.Attest {
 		return errorResult("the user must confirm the content follows the terms: ask them, then pass attest: true"), nil
@@ -287,11 +298,18 @@ func submitListingForReview(ctx context.Context, s *Server, raw json.RawMessage)
 		resp   []byte
 		err    error
 	)
-	if a.EventID > 0 {
+	switch {
+	case a.OrgPage:
+		status, resp, err = callAdmin(ctx, s.Admin.SubmitMyOrgProposal, "POST", "/api/admin/orgs/me/proposal/submit", nil, nil, body)
+	case a.AdventurePresentation != "":
+		slug := strings.TrimSpace(a.AdventurePresentation)
+		status, resp, err = callAdmin(ctx, s.Admin.SubmitAdventureProposal, "POST", "/api/admin/adventures/"+slug+"/proposal/submit",
+			map[string]string{"slug": slug}, nil, body)
+	case a.EventID > 0:
 		id := strconv.FormatInt(a.EventID, 10)
 		status, resp, err = callAdmin(ctx, s.Admin.SubmitEventListing, "POST", "/api/admin/events/"+id+"/listing/submit",
 			map[string]string{"eventID": id}, nil, body)
-	} else {
+	default:
 		slug := strings.TrimSpace(a.AdventureSlug)
 		status, resp, err = callAdmin(ctx, s.Admin.SubmitPartyOffer, "POST", "/api/admin/party-offers/"+slug+"/submit",
 			map[string]string{"slug": slug}, nil, body)

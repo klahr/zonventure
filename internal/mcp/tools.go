@@ -306,11 +306,18 @@ func updateAdventureMeta(ctx context.Context, s *Server, args json.RawMessage) (
 		}
 		return errorResult("lookup: " + err.Error()), nil
 	}
-	if err := admin.UpdateAdventureMetaJSON(ctx, s.DB, p.Slug, p.Patch); err != nil {
+	held, err := admin.UpdateAdventureMetaJSON(ctx, s.DB, p.Slug, p.Patch)
+	if err != nil {
 		return errorResult(err.Error()), nil
 	}
 	if s.Admin != nil {
 		s.Admin.AdventureChanged(ctx, advID)
+	}
+	if len(held) > 0 {
+		body, _ := json.Marshal(map[string]any{"ok": true, "held_for_review": held,
+			"note": "Something of this adventure's is for sale, so these presentation changes wait for review: " +
+				"they reach players once a reviewer approves them. Ask the user to confirm the content follows the terms, then call submit_listing_for_review with adventure_presentation."})
+		return textResult(string(body)), nil
 	}
 	return textResult(`{"ok":true}`), nil
 }
@@ -424,6 +431,13 @@ func setAdventureIcon(ctx context.Context, s *Server, args json.RawMessage) (Too
 		if s.Storage == nil {
 			return errorResult("storage backend not configured on this server"), nil
 		}
+		held, herr := admin.HoldAdventureIcon(ctx, s.DB, p.Slug, normalized, mime)
+		if herr != nil {
+			return errorResult("store failed: " + herr.Error()), nil
+		}
+		if held {
+			return textResult(`{"ok":true,"held_for_review":["icon"],"note":"The new icon waits for review before players see it: submit it with submit_listing_for_review (adventure_presentation), with the user's confirmation."}`), nil
+		}
 		if err := s.Storage.PutAdventureAvatar(ctx, p.Slug, normalized, mime); err != nil {
 			return errorResult("store failed: " + err.Error()), nil
 		}
@@ -456,6 +470,9 @@ func removeAdventureIcon(ctx context.Context, s *Server, args json.RawMessage) (
 		return errorResult("storage backend not configured on this server"), nil
 	}
 	if err := s.Storage.DeleteAdventureAvatar(ctx, p.Slug); err != nil {
+		return errorResult("clear failed: " + err.Error()), nil
+	}
+	if err := admin.DropAdventureIconProposal(ctx, s.DB, p.Slug); err != nil {
 		return errorResult("clear failed: " + err.Error()), nil
 	}
 	return textResult(fmt.Sprintf(`{"slug":%q,"icon_removed":true}`, p.Slug)), nil

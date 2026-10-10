@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
-import { Button, Dialog, Field, HelpPopover, ICON, ImageDrop, MarkdownArea, Row, fmtDateTime, useDialogs, useLoad, useToast } from "../../ui/index.ts";
+import { Button, Dialog, Field, HelpPopover, ICON, ImageDrop, MarkdownArea, ProposalPanel, Row, fmtDateTime, getProposal, proposedText, useDialogs, useLoad, useToast, type Proposal } from "../../ui/index.ts";
 import { downscaleImage, firstPlaceOf, getEdit, getGraphState, importAdventure, removeCover, updateAdventure, uploadCover, type AdventurePatch, type AdventureEdit, type Assignment } from "./api.ts";
 import { PointMap } from "../../designer/PointMap.tsx";
 
@@ -120,6 +120,19 @@ export function PickPassDialog({ title, passes, onPick, onClose }: { title: stri
 
 type Form = { slug: string; title: string; description: string; author: string; intro_text: string; outro_text: string; buyer_note: string; area: string; strict_assets: boolean; lat: string; lng: string; start_label: string; require_start: boolean; radius: string; cheat_password: string };
 
+/** The presentation fields review may hold back (internal/admin/presentation.go). */
+const HELD = ["title", "description", "author", "intro_text", "outro_text", "buyer_note", "area", "start_label"] as const;
+
+/** The adventure as its held-back changes would leave it. */
+function withProposal(a: AdventureEdit, p: Proposal | null | undefined): AdventureEdit {
+  const out = { ...a } as AdventureEdit & Record<string, unknown>;
+  for (const k of HELD) {
+    const v = proposedText(p, k);
+    if (v !== undefined) out[k] = v;
+  }
+  return out;
+}
+
 function formOf(a: AdventureEdit): Form {
   return {
     slug: a.slug,
@@ -163,7 +176,17 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
 }) {
   const t = useT();
   const toast = useToast();
-  const load = useLoad((signal) => getEdit(slug, signal), [slug]);
+  const proposalURL = `/api/admin/adventures/${encodeURIComponent(slug)}/proposal`;
+  const prop = useLoad((signal) => getProposal(proposalURL, signal).catch(() => null), [slug]);
+  const edit = useLoad((signal) => getEdit(slug, signal), [slug]);
+  const propReady = prop.data !== undefined || !!prop.error;
+  // The form shows held-back changes as written.
+  const merged = useMemo(() => (edit.data && propReady ? withProposal(edit.data, prop.data) : undefined), [edit.data, propReady, prop.data]);
+  const load = { error: edit.error, data: merged };
+  const heldLabels: Record<string, string> = {
+    title: t.t("Title"), description: t.t("Description"), author: t.t("Author"), intro_text: t.t("Intro"),
+    outro_text: t.t("Outro"), buyer_note: t.t("Buyer note"), area: t.t("Area"), start_label: t.t("Meeting point"), look_cover: t.t("Cover picture in the look"),
+  };
   // Nothing published to copy a start from: the draft's first place instead.
   const draft = useLoad((signal) => (firstPlace ? Promise.resolve(null) : getGraphState(slug, signal).catch(() => null)), [slug, !!firstPlace]);
   const place = firstPlace ?? firstPlaceOf(draft.data?.envelope?.graph);
@@ -175,9 +198,9 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
 
   useEffect(() => {
     if (!base) return;
-    setF(formOf(base));
-    setCover(base.avatar_url);
-  }, [base]);
+    setF((x) => x ?? formOf(base));
+    setCover((c) => c ?? (prop.data?.has_image ? `${proposalURL}/image?v=${Date.now()}` : base.avatar_url));
+  }, [base, prop.data, proposalURL]);
 
   const initial = base ? formOf(base) : null;
   const dirty = !!(f && initial && (Object.keys(f) as (keyof Form)[]).some((k) => (typeof f[k] === "string" ? (f[k] as string).trim() !== (initial[k] as string).trim() : f[k] !== initial[k])));
@@ -214,8 +237,11 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
     if (Object.keys(p).length === 0) return onClose();
     setBusy(true);
     try {
-      await updateAdventure(slug, p);
-      toast.ok(t.t("Saved"));
+      const r = await updateAdventure(slug, p);
+      const held = r?.held_for_review ?? [];
+      toast.ok(held.length
+        ? t.t("Saved. Waiting for review before it is public: {{fields}}", { fields: held.map((k) => heldLabels[k] ?? k).join(", ") })
+        : t.t("Saved"));
       onSaved(p.slug ?? slug);
     } catch (e) {
       toast.err(e);
@@ -226,7 +252,13 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
   const onFile = async (picked: File) => {
     try {
       const r = await uploadCover(slug, await downscaleImage(picked));
-      const url = (r.url || `/adventure-assets/avatar/${encodeURIComponent(slug)}`) + "?v=" + Date.now();
+      if (r?.proposed) {
+        setCover(`${proposalURL}/image?v=${Date.now()}`);
+        prop.reload();
+        toast.ok(t.t("Saved — waits for review"));
+        return;
+      }
+      const url = (r?.url || `/adventure-assets/avatar/${encodeURIComponent(slug)}`) + "?v=" + Date.now();
       setCover(url);
       onCover(url);
       toast.ok(t.t("Cover updated"));
@@ -238,6 +270,7 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
   const dropCover = async () => {
     try {
       await removeCover(slug);
+      prop.reload();
       setCover(undefined);
       onCover("");
       toast.ok(t.t("Cover removed"));
@@ -263,6 +296,17 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
       {!f && !err && <p className="cs-loading">{t.t("Loading…")}</p>}
       {f && (
         <>
+          <ProposalPanel
+            kind="adventure"
+            base={proposalURL}
+            proposal={prop.data}
+            labels={heldLabels}
+            pictures={[{ key: "image", label: t.t("Cover picture") }]}
+            onChanged={() => {
+              prop.reload();
+              onSaved(slug);
+            }}
+          />
           <div className="adv-cover-row__text">
             <span className="cs-field__label">{t.t("Cover picture")}</span>
             <ImageDrop

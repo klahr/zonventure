@@ -171,7 +171,7 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 
 	view.Solo = len(view.Members) == 1
 
-	files, err := eventfile.List(r.Context(), h.DB, eventID)
+	files, err := eventfile.ListForPlayers(r.Context(), h.DB, eventID)
 	if err != nil {
 		http.Error(w, "lookup failed", http.StatusInternalServerError)
 		return
@@ -856,7 +856,7 @@ func (h *Handlers) TeamFile(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusNotFound, "no such file")
 		return
 	}
-	f, content, err := eventfile.Get(r.Context(), h.DB, eventID, id)
+	f, content, err := eventfile.GetForPlayers(r.Context(), h.DB, eventID, id)
 	switch {
 	case errors.Is(err, eventfile.ErrNotFound):
 		httpx.Error(w, http.StatusNotFound, "no such file")

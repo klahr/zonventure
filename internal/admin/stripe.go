@@ -19,6 +19,7 @@ import (
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/metrics"
 	"github.com/klahr/zonventure/internal/payments"
+	"github.com/klahr/zonventure/internal/results"
 	"github.com/klahr/zonventure/internal/webhooks"
 
 	"github.com/go-chi/chi/v5"
@@ -661,6 +662,8 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event payments.Even
 		`, rr.teamID); werr != nil {
 			logx.Warn("payments.ticket.refund.withdraw",
 				"purchase_id", rr.purchaseID, "team_id", rr.teamID, "err", werr.Error())
+		} else if _, err := results.AppendTeam(ctx, h.DB, rr.teamID, results.TeamWithdrawn, map[string]any{"reason": "ticket refunded"}); err != nil {
+			logx.Warn("results.append", "kind", results.TeamWithdrawn, "team_id", rr.teamID, "err", err.Error())
 		}
 	}
 

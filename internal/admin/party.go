@@ -28,6 +28,7 @@ import (
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/payments"
 	"github.com/klahr/zonventure/internal/play"
+	"github.com/klahr/zonventure/internal/results"
 	"github.com/klahr/zonventure/internal/tokenx"
 	"github.com/klahr/zonventure/internal/ws"
 	qrcode "github.com/skip2/go-qrcode"
@@ -1106,6 +1107,9 @@ func (h *Handlers) RemoveHostTeam(w http.ResponseWriter, r *http.Request) {
 	if n, _ := res.RowsAffected(); n == 0 {
 		httpx.Error(w, http.StatusNotFound, "no such team")
 		return
+	}
+	if _, err := results.Append(ctx, h.DB, p.EventID, teamID, results.TeamWithdrawn, map[string]any{"by": "host"}); err != nil {
+		logx.Warn("results.append", "kind", results.TeamWithdrawn, "team_id", teamID, "err", err.Error())
 	}
 	if err := endTeamSessions(ctx, h.DB, "t.id = $1", teamID); err != nil {
 		logx.Warn("admin.party.team.signout", "team_id", teamID, "err", err.Error())

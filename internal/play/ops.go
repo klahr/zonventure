@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	effectq "github.com/klahr/zonventure/internal/effects"
@@ -15,6 +16,7 @@ import (
 	"github.com/klahr/zonventure/internal/graph/valid"
 	"github.com/klahr/zonventure/internal/graph/walk"
 	"github.com/klahr/zonventure/internal/graphstore"
+	"github.com/klahr/zonventure/internal/results"
 )
 
 // StartEvent pins the adventure's published graph to the event and places
@@ -152,71 +154,71 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 // Answer submits a guess at the puzzle the team is on. See
 // session.Team.Answer for the rules; this makes the outcome durable.
 func (e *Engine) Answer(ctx context.Context, teamID int64, node, guess string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Answer(node, guess) })
+	return e.act(ctx, teamID, action{"answer", node, guess}, func(t *session.Team) (Result, *walk.Step, error) { return t.Answer(node, guess) })
 }
 
 // ChooseStart begins the team's adventure at one of its starts. code is
 // the start-code the player typed (empty when the adventure has no gate);
 // session.ChooseStart validates it before the clock starts.
 func (e *Engine) ChooseStart(ctx context.Context, teamID int64, start, code string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.ChooseStart(start, code) })
+	return e.act(ctx, teamID, action{"choose_start", start, ""}, func(t *session.Team) (Result, *walk.Step, error) { return t.ChooseStart(start, code) })
 }
 
 // Continue moves the team past a story node.
 func (e *Engine) Continue(ctx context.Context, teamID int64, node string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Continue(node) })
+	return e.act(ctx, teamID, action{"continue", node, ""}, func(t *session.Team) (Result, *walk.Step, error) { return t.Continue(node) })
 }
 
 // SetLanguage switches the language the team plays in.
 func (e *Engine) SetLanguage(ctx context.Context, teamID int64, lang string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return Result{}, nil, t.SetLanguage(lang) })
+	return e.act(ctx, teamID, action{"language", "", lang}, func(t *session.Team) (Result, *walk.Step, error) { return Result{}, nil, t.SetLanguage(lang) })
 }
 
 // TimeUp applies the adventure's time limit once it has passed. The
 // client calls it when its countdown ends; the engine re-checks.
 func (e *Engine) TimeUp(ctx context.Context, teamID int64) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.TimeUp() })
+	return e.act(ctx, teamID, action{"time_up", "", ""}, func(t *session.Team) (Result, *walk.Step, error) { return t.TimeUp() })
 }
 
 // Back returns the team from inside a home screen's branch to that home
 // screen. See session.Team.Back.
 func (e *Engine) Back(ctx context.Context, teamID int64, node string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Back(node) })
+	return e.act(ctx, teamID, action{"back", node, ""}, func(t *session.Team) (Result, *walk.Step, error) { return t.Back(node) })
 }
 
 // Choose enters a hub branch, or moves on from a satisfied hub when port
 // is graph.PortDone.
 func (e *Engine) Choose(ctx context.Context, teamID int64, hub, port string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Choose(hub, port) })
+	return e.act(ctx, teamID, action{"choose", hub, port}, func(t *session.Team) (Result, *walk.Step, error) { return t.Choose(hub, port) })
 }
 
 // Skip takes a puzzle's skip output once both thresholds are met.
 func (e *Engine) Skip(ctx context.Context, teamID int64, node string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Skip(node) })
+	return e.act(ctx, teamID, action{"skip", node, ""}, func(t *session.Team) (Result, *walk.Step, error) { return t.Skip(node) })
 }
 
 // Cheat solves a puzzle for a tester. See session.Team.Cheat; the
 // caller has checked the adventure's cheat password.
 func (e *Engine) Cheat(ctx context.Context, teamID int64, node string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Cheat(node) })
+	return e.act(ctx, teamID, action{"cheat", node, ""}, func(t *session.Team) (Result, *walk.Step, error) { return t.Cheat(node) })
 }
 
 // Leave takes an item puzzle's route for a team without the items. See
 // session.Team.Leave.
 func (e *Engine) Leave(ctx context.Context, teamID int64, node string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Leave(node) })
+	return e.act(ctx, teamID, action{"leave", node, ""}, func(t *session.Team) (Result, *walk.Step, error) { return t.Leave(node) })
 }
 
 // Timeout takes a puzzle's timeout output once its limit has passed.
 // The client calls it when its countdown reaches zero; the engine
 // re-checks the time rather than trusting the client.
 func (e *Engine) Timeout(ctx context.Context, teamID int64, node string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Timeout(node) })
+	return e.act(ctx, teamID, action{"timeout", node, ""}, func(t *session.Team) (Result, *walk.Step, error) { return t.Timeout(node) })
 }
 
 // Pick answers a quiz question or the tie-breaker on the team's step.
 func (e *Engine) Pick(ctx context.Context, teamID int64, node, block, choice string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Pick(node, block, choice) })
+	return e.act(ctx, teamID, action{"pick", node, block + "=" + choice}, func(t *session.Team) (Result, *walk.Step, error) { return t.Pick(node, block, choice) })
 }
 
 // savePicks writes the team's quiz answers. Session.Pick refuses a change
@@ -238,7 +240,7 @@ func savePicks(ctx context.Context, tx *sql.Tx, s *teamState) error {
 
 // RevealHint reveals the next hint on the current puzzle.
 func (e *Engine) RevealHint(ctx context.Context, teamID int64, node string, index int) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.RevealHint(node, index) })
+	return e.act(ctx, teamID, action{"hint", node, strconv.Itoa(index)}, func(t *session.Team) (Result, *walk.Step, error) { return t.RevealHint(node, index) })
 }
 
 // Snapshot returns the team's current view without changing anything.
@@ -268,9 +270,16 @@ func (e *Engine) Snapshot(ctx context.Context, teamID int64) (View, error) {
 
 // --- the shared action skeleton ---------------------------------------
 
+// action names a player action for the event's result record
+// (internal/results): what was done, on which step, with what input.
+type action struct {
+	name, node, input string
+}
+
 // act runs one player action: lock and load the team, run the action's
-// rules, persist whatever changed, and commit — or roll everything back.
-func (e *Engine) act(ctx context.Context, teamID int64, fn func(*session.Team) (Result, *walk.Step, error)) (Result, error) {
+// rules, persist whatever changed, record it in the event's result
+// chain, and commit — or roll everything back.
+func (e *Engine) act(ctx context.Context, teamID int64, a action, fn func(*session.Team) (Result, *walk.Step, error)) (Result, error) {
 	tx, err := e.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return Result{}, err
@@ -313,6 +322,9 @@ func (e *Engine) act(ctx context.Context, teamID int64, fn func(*session.Team) (
 		err = e.stay(ctx, tx, s)
 	}
 	if err != nil {
+		return Result{}, err
+	}
+	if err := recordAction(ctx, tx, s, a, step); err != nil {
 		return Result{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -383,13 +395,13 @@ func savePress(ctx context.Context, tx *sql.Tx, s *teamState) error {
 // Sabotage presses a sabotage block for the saboteur asking (see
 // session.Team.Sabotage); the request must be ForPhone.
 func (e *Engine) Sabotage(ctx context.Context, teamID int64, node, block string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Sabotage(node, block) })
+	return e.act(ctx, teamID, action{"sabotage", node, block}, func(t *session.Team) (Result, *walk.Step, error) { return t.Sabotage(node, block) })
 }
 
 // Turn turns the asking player's key in a two-key launch (see
 // session.Team.Turn); the request must be ForPhone.
 func (e *Engine) Turn(ctx context.Context, teamID int64, node string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Turn(node) })
+	return e.act(ctx, teamID, action{"turn", node, ""}, func(t *session.Team) (Result, *walk.Step, error) { return t.Turn(node) })
 }
 
 // stay persists an action that left the team where it was: a wrong
@@ -668,4 +680,36 @@ func (e *Engine) CanSeeMedia(ctx context.Context, teamID, mediaID int64) (bool, 
 		}
 	}
 	return false, nil
+}
+
+// recordAction appends a player action to the event's result chain, in
+// the action's transaction: the step acted on as it stands after (tries,
+// solved, hints, the answer kept), where the team went, and its standing
+// (results.Append adds it). A finish appends the team's finish entry,
+// whose hash is its receipt.
+func recordAction(ctx context.Context, tx *sql.Tx, s *teamState, a action, step *walk.Step) error {
+	fields := map[string]any{"action": a.name}
+	if a.node != "" {
+		fields["node"] = a.node
+		r := s.Row(a.node)
+		fields["step"] = map[string]any{"attempts": r.Attempts, "solved": r.Solved, "hints": r.HintsRevealed, "answer": r.Answer}
+	}
+	if a.input != "" {
+		fields["input"] = a.input
+	}
+	if step != nil {
+		fields["to"] = step.To
+		if step.Finished {
+			fields["finished"] = string(step.Outcome)
+		}
+	}
+	if _, err := results.Append(ctx, tx, s.eventID, s.teamID, "play."+a.name, fields); err != nil {
+		return err
+	}
+	if step != nil && step.Finished {
+		if _, err := results.Append(ctx, tx, s.eventID, s.teamID, results.TeamFinished, map[string]any{"outcome": string(step.Outcome)}); err != nil {
+			return err
+		}
+	}
+	return nil
 }

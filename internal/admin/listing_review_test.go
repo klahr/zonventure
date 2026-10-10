@@ -35,6 +35,8 @@ type listingFixture struct {
 	store      chi.Router
 	eventID    int64
 	adminEmail string
+	// passkey signs the reviewer's console decisions.
+	passkey *virtualPasskey
 }
 
 func newListingFixture(t *testing.T) (*listingFixture, func()) {
@@ -76,7 +78,11 @@ func newListingFixture(t *testing.T) (*listingFixture, func()) {
 		r.Get("/api/admin/listing-reviews/log/verify", f.h.VerifyListingLog)
 		r.Get("/api/admin/listing-reviews/{kind}/{id}", f.h.GetListingReview)
 		r.Get("/api/admin/listing-reviews/{kind}/{id}/media/{ref}", f.h.GetListingReviewMedia)
+		r.Post("/api/admin/listing-reviews/{kind}/{id}/sign", f.h.SignListingDecision)
 		r.Post("/api/admin/listing-reviews/{kind}/{id}/approve", f.h.ApproveListing)
+		r.Get("/api/admin/me/reviewer-passkeys", f.h.ListReviewerPasskeys)
+		r.Post("/api/admin/me/reviewer-passkeys/begin", f.h.BeginReviewerPasskey)
+		r.Post("/api/admin/me/reviewer-passkeys/finish", f.h.FinishReviewerPasskey)
 		r.Post("/api/admin/listing-reviews/{kind}/{id}/reject", f.h.RejectListing)
 		r.Post("/api/admin/organizations/{orgID}/verified-creator", f.h.SetOrgVerifiedCreator)
 	}
@@ -96,6 +102,7 @@ func newListingFixture(t *testing.T) (*listingFixture, func()) {
 	f.store = chi.NewRouter()
 	f.store.Get("/api/o/{slug}/store/items", publicH.StoreListByOrg)
 	f.store.Get("/store-cover/event/{eventID}", f.h.ServeEventCover)
+	f.addPasskey(t)
 	return f, cleanup
 }
 
@@ -158,9 +165,12 @@ func (f *listingFixture) queue(t *testing.T) []pendingListing {
 	return resp.Reviews
 }
 
+// decide is the reviewer's decision in the console, signed with their
+// passkey.
 func (f *listingFixture) decide(t *testing.T, kind string, id int64, action, revision, reason string) *httptest.ResponseRecorder {
 	t.Helper()
-	return f.decideAs(t, f.reviewer, kind, id, action, revision, reason)
+	return call(t, f.reviewer, "POST", fmt.Sprintf("/api/admin/listing-reviews/%s/%d/%s", kind, id, action),
+		map[string]any{"revision": revision, "reason": reason, "signature": f.signed(t, kind, id, action, revision, reason)})
 }
 
 func (f *listingFixture) decideAs(t *testing.T, as http.Handler, kind string, id int64, action, revision, reason string) *httptest.ResponseRecorder {
@@ -734,11 +744,13 @@ func TestListingReview_HashChain(t *testing.T) {
 		ALTER TABLE listing_review_log ENABLE TRIGGER listing_review_log_append_only;`); err != nil {
 		t.Fatal(err)
 	}
-	// The rejection's fields, and the snapshot the submission and the
+	// The rejection's fields, and its signature, which was over the
+	// reason as written; and the snapshot the submission and the
 	// approval of that content share.
 	ok, _, _, problems = verify()
 	all := strings.Join(problems, "; ")
-	if ok || len(problems) != 3 || strings.Count(all, "fields were changed") != 1 || strings.Count(all, "content it reviewed was changed") != 2 {
+	if ok || len(problems) != 4 || strings.Count(all, "fields were changed") != 1 || strings.Count(all, "signature is over a different decision") != 1 ||
+		strings.Count(all, "content it reviewed was changed") != 2 {
 		t.Fatalf("verify after tampering = ok %v, %v", ok, problems)
 	}
 
@@ -751,5 +763,152 @@ func TestListingReview_HashChain(t *testing.T) {
 	}
 	if _, _, _, problems = verify(); !strings.Contains(strings.Join(problems, "; "), "does not follow the entry before it") {
 		t.Fatalf("verify after a removal = %v", problems)
+	}
+}
+
+// A decision in the console is signed with the reviewer's passkey over
+// exactly that decision; one unsigned, signed for another decision, or
+// signed once already is refused. The log checks every signature again.
+func TestListingReview_PasskeySigning(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newListingFixture(t)
+	defer cleanup()
+	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900})
+	f.submitEvent(t)
+	rev := f.queue(t)[0].Revision
+	path := fmt.Sprintf("/api/admin/listing-reviews/event/%d/", f.eventID)
+
+	if w := call(t, f.reviewer, "POST", path+"approve", map[string]any{"revision": rev}); w.Code != http.StatusBadRequest || code(w) != "signature_required" {
+		t.Fatalf("unsigned: %d %s", w.Code, w.Body)
+	}
+	forReject := f.signed(t, "event", f.eventID, "reject", rev, "Nope")
+	if w := call(t, f.reviewer, "POST", path+"approve", map[string]any{"revision": rev, "signature": forReject}); w.Code != http.StatusForbidden || code(w) != "bad_signature" {
+		t.Fatalf("signed for another decision: %d %s", w.Code, w.Body)
+	}
+	sig := f.signed(t, "event", f.eventID, "approve", rev, "")
+	if w := call(t, f.reviewer, "POST", path+"approve", map[string]any{"revision": rev, "signature": sig}); w.Code != http.StatusOK {
+		t.Fatalf("signed: %d %s", w.Code, w.Body)
+	}
+	if got := f.eventState(t); got != "approved" {
+		t.Fatalf("state = %q", got)
+	}
+
+	// Replaying the signature for the next decision fails.
+	f.patchEvent(t, map[string]any{"ticket_price_cents": 12900})
+	f.submitEvent(t)
+	if w := call(t, f.reviewer, "POST", path+"approve", map[string]any{"revision": f.queue(t)[0].Revision, "signature": sig}); w.Code != http.StatusForbidden {
+		t.Fatalf("replayed signature: %d %s", w.Code, w.Body)
+	}
+
+	w := call(t, f.reviewer, "GET", "/api/admin/listing-reviews/log/verify", nil)
+	var rep struct {
+		OK       bool `json:"ok"`
+		Signed   int  `json:"signed"`
+		Unsigned int  `json:"unsigned"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil || !rep.OK || rep.Signed != 1 || rep.Unsigned != 0 {
+		t.Fatalf("verify = %+v (%v) %s", rep, err, w.Body)
+	}
+	if w := call(t, f.reviewer, "GET", "/api/admin/me/reviewer-passkeys", nil); !strings.Contains(w.Body.String(), `"name":"Test key"`) || !strings.Contains(w.Body.String(), "last_used_at") {
+		t.Fatalf("passkeys: %s", w.Body)
+	}
+}
+
+// A saved adventure version and uploaded media can't be changed in the
+// database; and when someone goes around that, the check compares what
+// approved listings serve with what was approved and says what moved.
+func TestListingReview_ServedMatchesApproved(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newListingFixture(t)
+	defer cleanup()
+	db := f.h.DB
+
+	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "public_blurb": "Find it"})
+	f.submitEvent(t)
+	if w := f.decide(t, "event", f.eventID, "approve", f.queue(t)[0].Revision, ""); w.Code != http.StatusOK {
+		t.Fatalf("approve: %d %s", w.Code, w.Body)
+	}
+	var graphID int64
+	if err := db.QueryRow(`SELECT graph_id FROM events WHERE id = $1`, f.eventID).Scan(&graphID); err != nil {
+		t.Fatal(err)
+	}
+
+	// The database holds saved versions and media to append-only.
+	if _, err := db.Exec(`UPDATE adventure_graphs SET graph = jsonb_set(graph, '{zones,0,name}', '"Somewhere else"') WHERE id = $1`, graphID); err == nil {
+		t.Fatal("a saved version took an edit")
+	}
+	if _, err := db.Exec(`UPDATE adventure_graphs SET label = 'Launch' WHERE id = $1`, graphID); err != nil {
+		t.Fatalf("labelling a version: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO adventure_media (adventure_id, kind, mime_type, size_bytes, sha256, content)
+		SELECT id, 'image', 'image/png', 1, 'abc', '\x89'::bytea FROM adventures WHERE slug = 'treasure'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE adventure_media SET content = '\x00'::bytea WHERE sha256 = 'abc'`); err == nil {
+		t.Fatal("uploaded media took an edit")
+	}
+
+	type report struct {
+		OK     bool `json:"ok"`
+		Served struct {
+			Checked  int `json:"checked"`
+			Matching int `json:"matching"`
+			Findings []struct {
+				ID       int64    `json:"id"`
+				Severity string   `json:"severity"`
+				Parts    []string `json:"parts"`
+			} `json:"findings"`
+		} `json:"served"`
+	}
+	check := func() report {
+		t.Helper()
+		w := call(t, f.reviewer, "GET", "/api/admin/listing-reviews/log/verify", nil)
+		var r report
+		if err := json.Unmarshal(w.Body.Bytes(), &r); err != nil {
+			t.Fatalf("verify: %v %s", err, w.Body)
+		}
+		return r
+	}
+	if r := check(); !r.OK || r.Served.Checked != 1 || r.Served.Matching != 1 {
+		t.Fatalf("check after approval = %+v", r)
+	}
+
+	// A platform admin renames the organisation: shown, not tampering.
+	if _, err := db.Exec(`UPDATE organizations SET name = 'Acme AB' WHERE id = $1`, f.orgID); err != nil {
+		t.Fatal(err)
+	}
+	r := check()
+	if !r.OK || len(r.Served.Findings) != 1 || r.Served.Findings[0].Severity != "unreviewed" ||
+		strings.Join(r.Served.Findings[0].Parts, ",") != "organisation name" {
+		t.Fatalf("check after a rename = %+v", r)
+	}
+	// The page's tagline is held back for review: one written straight
+	// to the database is tampering.
+	if _, err := db.Exec(`UPDATE organizations SET tagline = 'New words' WHERE id = $1`, f.orgID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Someone with the database edits the approved version and price.
+	for _, q := range []string{
+		`ALTER TABLE adventure_graphs DISABLE TRIGGER adventure_graphs_frozen`,
+		`UPDATE adventure_graphs SET graph = jsonb_set(graph, '{zones,0,name}', '"Somewhere else"') WHERE id = ` + fmt.Sprint(graphID),
+		`ALTER TABLE adventure_graphs ENABLE TRIGGER adventure_graphs_frozen`,
+		`UPDATE event_listings SET price_cents = 100 WHERE event_id = ` + fmt.Sprint(f.eventID),
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	r = check()
+	if r.OK || len(r.Served.Findings) != 1 || r.Served.Findings[0].Severity != "changed" ||
+		strings.Join(r.Served.Findings[0].Parts, ",") != "adventure content,listing,organisation page,organisation name" {
+		t.Fatalf("check after tampering = %+v", r)
+	}
+
+	// The day's mail says so.
+	f.h.AnchorListingLog(context.Background())
+	if got := f.mailTo(f.adminEmail); !strings.Contains(got[len(got)-1], "1 problems") {
+		t.Fatalf("platform admin mail = %v", got)
 	}
 }

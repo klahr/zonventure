@@ -87,9 +87,13 @@ export function canSubmitListing(review?: ListingReviewState | undefined, newerV
  * content follows the terms. url is the submit endpoint; done gets the
  * state it landed in: pending, or approved for a verified creator.
  */
-export function SubmitListingDialog({ url, title, onClose, onDone }: {
+export function SubmitListingDialog({ url, title, note, attestText, onClose, onDone }: {
   url: string;
   title?: string | undefined;
+  /** What a reviewer checks, when it isn't a listing. */
+  note?: string | undefined;
+  /** The creator's word, when it isn't for a listing. */
+  attestText?: string | undefined;
   onClose: () => void;
   onDone: (state: string) => void;
 }) {
@@ -143,12 +147,12 @@ export function SubmitListingDialog({ url, title, onClose, onDone }: {
     >
       {title && <p><strong>{title}</strong></p>}
       <p className="ls-note">
-        {t.t("A reviewer checks the listing, the whole adventure it plays and your organisation's page before it goes public. What is public now stays up meanwhile.")}
+        {note ?? t.t("A reviewer checks the listing, the whole adventure it plays and your organisation's page before it goes public. What is public now stays up meanwhile.")}
       </p>
       <label className="ls-attest">
         <input type="checkbox" checked={attest} onChange={(e) => setAttest(e.target.checked)} />
         <span>
-          {t.t("I confirm this listing and the adventure it plays contain nothing offensive, hateful, sexual, violent or otherwise illegal or unsuitable, and follow the terms.")}{" "}
+          {attestText ?? t.t("I confirm this listing and the adventure it plays contain nothing offensive, hateful, sexual, violent or otherwise illegal or unsuitable, and follow the terms.")}{" "}
           <a href="/terms" target="_blank" rel="noopener">{t.t("Read the terms")}</a>
         </span>
       </label>

@@ -203,6 +203,18 @@ export const getMessages = (id: number, signal?: AbortSignal) =>
   get<{ messages: Message[] | null }>(E(id) + "/messages", signal ? { signal } : {});
 export const getPhotos = (id: number, signal?: AbortSignal) =>
   get<{ photos: Photo[] | null; challenges?: number }>(E(id) + "/photos", signal ? { signal } : {});
+/** internal/results Report: the event's results record, recomputed. */
+export interface ResultsReport {
+  ok: boolean;
+  entries: number;
+  head: string;
+  /** The event's fingerprint once it is over; the latest entry's before. */
+  fingerprint?: string;
+  sealed: boolean;
+  problems: { seq?: number; team_id?: number; problem: string }[];
+  teams: { team_id: number; name: string; receipt?: string; matches: boolean }[];
+}
+export const verifyResults = (id: number) => get<ResultsReport>(E(id) + "/results/verify");
 export const getStatistics = (id: number, signal?: AbortSignal) => get<EventStats>(E(id) + "/statistics", signal ? { signal } : {});
 
 export const transition = (id: number, action: "start" | "pause" | "resume") => post<void>(`${E(id)}/${action}`);

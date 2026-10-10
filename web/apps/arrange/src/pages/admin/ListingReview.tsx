@@ -3,8 +3,8 @@ import { Check, Download, X } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { href, navigate } from "../../router.ts";
 import { Button, Card, ErrorBox, ICON, Loading, Page, PageHeader, Pill, fmtDateTime, relTime, useLoad } from "../../ui/index.ts";
-import { approveListing, getListingReview, rejectListing, type ReviewContent, type ReviewMedia } from "./api.ts";
-import { ListingFacts, RejectDialog, reviewError, useDecide } from "./ListingReviews.tsx";
+import { getListingReview, type ListingKind, type ReviewChange, type ReviewContent, type ReviewMedia } from "./api.ts";
+import { ListingFacts, RejectDialog, isProposal, kindLabel, reviewError, useDecide } from "./ListingReviews.tsx";
 import "./admin.css";
 
 /**
@@ -15,7 +15,7 @@ import "./admin.css";
  * (internal/admin/listing_content.go). Texts are shown as written, never
  * rendered, so nothing hides in formatting.
  */
-export function ListingReviewPage({ kind, id }: { kind: "event" | "party"; id: number }) {
+export function ListingReviewPage({ kind, id }: { kind: ListingKind; id: number }) {
   const t = useT();
   const load = useLoad(async (s) => {
     try {
@@ -42,7 +42,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
   const loc = t.current();
   const [rejecting, setRejecting] = useState(false);
   const [filter, setFilter] = useState("");
-  const { busy, decide } = useDecide(reload);
+  const { busy, approve, reject } = useDecide(reload);
   const pending = c.state === "pending";
   const ref = { kind: c.kind, id: c.id, revision: c.revision };
   const after = () => navigate({ name: "listing-reviews" });
@@ -53,7 +53,8 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
   }, [c.texts, filter]);
 
   const newVersion = !!c.live_graph_id && c.live_graph_id !== c.graph_id;
-  const title = c.draft.name || c.adventure_title;
+  const proposal = isProposal(c.kind);
+  const title = c.kind === "org" ? c.org_name : c.draft.name || c.adventure_title;
   return (
     <Page>
       {back}
@@ -61,7 +62,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
         title={
           <span className="ad-inline">
             {title}
-            <Pill tone="info">{c.kind === "event" ? t.t("Self-guided") : t.t("Party")}</Pill>
+            <Pill tone="info">{kindLabel(t, c.kind)}</Pill>
             <StatePill state={c.state} />
           </span>
         }
@@ -73,7 +74,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
                 variant="primary"
                 icon={<Check size={ICON.sm} aria-hidden />}
                 loading={busy}
-                onClick={() => void decide(async () => { await approveListing(ref); after(); }, t.t("Approved: it is public now"))}
+                onClick={() => void approve(ref, after)}
               >
                 {t.t("Approve")}
               </Button>
@@ -89,11 +90,16 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
             <a href={href({ name: "organization", id: c.org_id })}>{c.org_name}</a>
             {c.org_verified && <Pill tone="good">{t.t("Verified creator")}</Pill>}
           </dd>
-          <dt>{t.t("Adventure")}</dt>
-          <dd className="ad-inline">
-            {c.adventure_title} · {t.t("version {{n}}", { n: c.version })}
-            {newVersion && <Pill tone="warn">{t.t("A different version from the one approved before")}</Pill>}
-          </dd>
+          {c.kind !== "org" && (
+            <>
+              <dt>{t.t("Adventure")}</dt>
+              <dd className="ad-inline">
+                {c.adventure_title}
+                {!proposal && <> · {t.t("version {{n}}", { n: c.version })}</>}
+                {newVersion && <Pill tone="warn">{t.t("A different version from the one approved before")}</Pill>}
+              </dd>
+            </>
+          )}
           {c.submitted_at && (
             <>
               <dt>{t.t("Submitted")}</dt>
@@ -115,9 +121,15 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
         </dl>
       </Card>
 
-      <Card title={t.t("The listing")} subtitle={c.live ? t.t("Marked: what changed since the approved version.") : undefined}>
-        <ListingFacts kind={c.kind} draft={c.draft} live={c.live} />
-      </Card>
+      {proposal ? (
+        <Card title={t.t("What changes")} subtitle={t.t("Each field as it is public now, and as proposed. Below: the page as it would be.")}>
+          <Changes changes={c.changes ?? []} />
+        </Card>
+      ) : (
+        <Card title={t.t("The listing")} subtitle={c.live ? t.t("Marked: what changed since the approved version.") : undefined}>
+          <ListingFacts kind={c.kind} draft={c.draft} live={c.live} />
+        </Card>
+      )}
 
       <Card
         title={t.t("Pictures, sounds, films and files ({{n}})", { n: c.media.length })}
@@ -167,7 +179,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
           onClose={() => setRejecting(false)}
           onReject={(reason) => {
             setRejecting(false);
-            void decide(async () => { await rejectListing(ref, reason); after(); }, t.t("Rejected: the organisation has been told why"));
+            void reject(ref, reason, after);
           }}
         />
       )}
@@ -230,3 +242,32 @@ function formatSize(n: number): string {
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} kB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
+
+/** What a proposal changes, field by field: public now, and proposed. */
+function Changes({ changes }: { changes: ReviewChange[] }) {
+  const t = useT();
+  if (changes.length === 0) return <p className="ad-sub">{t.t("Nothing.")}</p>;
+  const side = (text: string | undefined, url: string | undefined, empty: string) =>
+    url ? <img className="ad-change__img" src={url} alt="" /> : text ? <span className="ad-texts__text">{text}</span> : <span className="ad-sub">{empty}</span>;
+  return (
+    <table className="ad-changes">
+      <thead>
+        <tr>
+          <th scope="col">{t.t("Field")}</th>
+          <th scope="col">{t.t("Public now")}</th>
+          <th scope="col">{t.t("Proposed")}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {changes.map((ch) => (
+          <tr key={ch.field}>
+            <th scope="row">{ch.field}</th>
+            <td>{side(ch.live, ch.live_url, t.t("(empty)"))}</td>
+            <td>{side(ch.proposed, ch.proposed_url, t.t("(empty)"))}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
