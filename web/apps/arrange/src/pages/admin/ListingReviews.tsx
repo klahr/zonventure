@@ -184,7 +184,7 @@ function ReviewCard({ review: r, onDone }: { review: ListingReview; onDone: () =
   return (
     <Card
       title={
-        <span className="ad-inline">
+        <span className="adm-inline">
           {r.kind === "org" ? r.org_name : d.name || r.adventure_title}
           <Pill tone="info">{kindLabel(t, r.kind)}</Pill>
           {!isProposal(r.kind) && <Pill tone={live ? "warn" : "accent"}>{live ? t.t("Edit of a live listing") : t.t("New listing")}</Pill>}
@@ -201,9 +201,9 @@ function ReviewCard({ review: r, onDone }: { review: ListingReview; onDone: () =
         </>
       }
       actions={
-        <span className="ad-actions">
+        <span className="adm-actions">
           {publicLink && (
-            <a className="ad-inline" href={publicLink} target="_blank" rel="noopener">
+            <a className="adm-inline" href={publicLink} target="_blank" rel="noopener">
               {t.t("Public page")} <ExternalLink size={ICON.sm} aria-hidden />
             </a>
           )}
@@ -222,7 +222,7 @@ function ReviewCard({ review: r, onDone }: { review: ListingReview; onDone: () =
       ) : (
         <ListingFacts kind={r.kind} draft={d} live={live} />
       )}
-      <p className="ad-sub">{t.t("Approve only once you have looked at all of it: open “Review in full” for every text and picture of the adventure.")}</p>
+      <p className="adm-sub">{t.t("Approve only once you have looked at all of it: open “Review in full” for every text and picture of the adventure.")}</p>
       {rejecting && (
         <RejectDialog
           onClose={() => setRejecting(false)}
@@ -242,17 +242,17 @@ export function ListingFacts({ kind, draft: d, live }: { kind: ListingKind; draf
   const changed = (k: keyof ListingFields) => !!live && (live[k] ?? "") !== (d[k] ?? "");
   const money = (cents: number) => fmtMoney(cents, d.currency || "SEK", t.current());
   return (
-    <div className="ad-listing">
+    <div className="adm-listing">
       {d.cover_url ? (
-        <img className={"ad-listing__cover" + (changed("cover_url") ? " is-changed" : "")} src={d.cover_url} alt={t.t("Cover image")} />
+        <img className={"adm-listing__cover" + (changed("cover_url") ? " is-changed" : "")} src={d.cover_url} alt={t.t("Cover image")} />
       ) : live?.cover_url ? (
-        <p className="ad-listing__cover ad-listing__none is-changed">{t.t("Cover removed")}</p>
+        <p className="adm-listing__cover adm-listing__none is-changed">{t.t("Cover removed")}</p>
       ) : null}
-      <dl className="ad-listing__facts">
+      <dl className="adm-listing__facts">
         {kind === "event" && (
-          <Fact label={t.t("Name")} changed={changed("name")} was={live?.name}>{d.name || <span className="ad-sub">{t.t("(none)")}</span>}</Fact>
+          <Fact label={t.t("Name")} changed={changed("name")} was={live?.name}>{d.name || <span className="adm-sub">{t.t("(none)")}</span>}</Fact>
         )}
-        <Fact label={t.t("Blurb")} changed={changed("blurb")} was={live?.blurb}>{d.blurb || <span className="ad-sub">{t.t("(none)")}</span>}</Fact>
+        <Fact label={t.t("Blurb")} changed={changed("blurb")} was={live?.blurb}>{d.blurb || <span className="adm-sub">{t.t("(none)")}</span>}</Fact>
         <Fact label={kind === "event" ? t.t("Price per ticket") : t.t("Base price")} changed={changed("price_cents")} was={live ? money(live.price_cents) : undefined}>{money(d.price_cents)}</Fact>
         {kind === "party" && (
           <Fact label={t.t("Price per child")} changed={changed("per_kid_cents")} was={live ? money(live.per_kid_cents ?? 0) : undefined}>{money(d.per_kid_cents ?? 0)}</Fact>
@@ -271,14 +271,14 @@ export function ListingFacts({ kind, draft: d, live }: { kind: ListingKind; draf
 function Fact({ label, changed, was, children }: { label: string; changed: boolean; was?: ReactNode; children: ReactNode }) {
   const t = useT();
   return (
-    <div className={"ad-listing__fact" + (changed ? " is-changed" : "")}>
+    <div className={"adm-listing__fact" + (changed ? " is-changed" : "")}>
       <dt>
         {label}
         {changed && <Pill tone="warn">{t.t("Changed")}</Pill>}
       </dt>
       <dd>
         {children}
-        {changed && was !== undefined && was !== "" && <span className="ad-sub ad-listing__was">{t.t("Was: {{v}}", { v: String(was) })}</span>}
+        {changed && was !== undefined && was !== "" && <span className="adm-sub adm-listing__was">{t.t("Was: {{v}}", { v: String(was) })}</span>}
       </dd>
     </div>
   );
@@ -303,7 +303,7 @@ export function RejectDialog({ onClose, onReject }: { onClose: () => void; onRej
       <Field label={t.t("Why? The organisation's admins get this by email.")}>
         <textarea autoFocus rows={4} maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>
-      <p className="ad-sub">{t.t("Say what to change and where. Whatever of theirs is public now stays up.")}</p>
+      <p className="adm-sub">{t.t("Say what to change and where. Whatever of theirs is public now stays up.")}</p>
     </Dialog>
   );
 }
@@ -342,23 +342,23 @@ function Log() {
   const columns: Column<ListingLogEntry>[] = [
     { key: "when", header: t.t("When"), cell: (e) => <span title={fmtDateTime(e.created_at, loc)}>{relTime(e.created_at, loc)}</span> },
     { key: "what", header: t.t("Listing"), cell: (e) => (
-      <span className="ad-stack">
+      <span className="adm-stack">
         <strong>{e.title || kindLabel(t, e.kind)}</strong>
-        <span className="ad-sub">{e.org_name}</span>
+        <span className="adm-sub">{e.org_name}</span>
       </span>
     ) },
     { key: "action", header: t.t("Action"), cell: (e) => action(e.action) },
     { key: "via", header: t.t("By"), cell: (e) => (
-      <span className="ad-inline"><ViaPill via={e.via} />{e.signed && <Pill tone="good">{t.t("Signed")}</Pill>}{e.by && <span className="ad-sub">{e.by}</span>}</span>
+      <span className="adm-inline"><ViaPill via={e.via} />{e.signed && <Pill tone="good">{t.t("Signed")}</Pill>}{e.by && <span className="adm-sub">{e.by}</span>}</span>
     ) },
-    { key: "reason", header: t.t("Reason"), wide: true, cell: (e) => e.reason ? <span className="ad-sub">{e.reason}</span> : null },
+    { key: "reason", header: t.t("Reason"), wide: true, cell: (e) => e.reason ? <span className="adm-sub">{e.reason}</span> : null },
   ];
   return (
     <Card
       title={t.t("Recent decisions")}
       subtitle={t.t("Spot-check what AI assistants approved and what verified creators put up without review.")}
       actions={
-        <span className="ad-inline">
+        <span className="adm-inline">
           <Button onClick={verify} disabled={checking}>{checking ? t.t("Checking…") : t.t("Check the log")}</Button>
           <select aria-label={t.t("Show")} value={via} onChange={(e) => setVia(e.target.value)}>
             <option value="">{t.t("All")}</option>
@@ -372,7 +372,7 @@ function Log() {
     >
       {checkError && <ErrorBox message={checkError} />}
       {check && (
-        <div className="ad-pad" role="status">
+        <div className="adm-pad" role="status">
           {check.problems.length === 0 ? (
             <p><Pill tone="good">{t.t("Intact")}</Pill> {t.t("Every hash of the {{n}} entries adds up. The latest:", { n: check.entries })}</p>
           ) : (
@@ -382,9 +382,9 @@ function Log() {
               <p>{t.t("The latest hash now:")}</p>
             </>
           )}
-          <p><code className="ad-hash">{check.head_hash || "—"}</code></p>
+          <p><code className="adm-hash">{check.head_hash || "—"}</code></p>
           <p>{t.t("{{signed}} decisions signed with a reviewer's passkey, each checked again; {{unsigned}} unsigned (an AI assistant or an automatic approval).", { signed: check.signed ?? 0, unsigned: check.unsigned ?? 0 })}</p>
-          <p className="ad-sub">{t.t("Compare it with the fingerprint mailed to platform admins each day: if one mailed earlier can't be found in the log, it was rewritten.")}</p>
+          <p className="adm-sub">{t.t("Compare it with the fingerprint mailed to platform admins each day: if one mailed earlier can't be found in the log, it was rewritten.")}</p>
           {check.served && <ServedResult served={check.served} />}
         </div>
       )}
@@ -393,7 +393,7 @@ function Log() {
       ) : !log.data ? (
         <Loading label={t.t("Loading…")} />
       ) : log.data.length === 0 ? (
-        <p className="ad-sub ad-pad">{t.t("Nothing yet.")}</p>
+        <p className="adm-sub adm-pad">{t.t("Nothing yet.")}</p>
       ) : (
         <Table
           columns={columns}
@@ -431,12 +431,12 @@ function Reviewers() {
   };
   const columns: Column<ListingReviewer>[] = [
     { key: "name", header: t.t("Reviewer"), cell: (r) => (
-      <span className="ad-stack">
-        <strong className="ad-inline">{r.username}{r.is_admin && <Pill tone="accent">{t.t("Platform admin")}</Pill>}</strong>
-        {r.email && <span className="ad-sub">{r.email}</span>}
+      <span className="adm-stack">
+        <strong className="adm-inline">{r.username}{r.is_admin && <Pill tone="accent">{t.t("Platform admin")}</Pill>}</strong>
+        {r.email && <span className="adm-sub">{r.email}</span>}
       </span>
     ) },
-    { key: "orgs", header: t.t("Never reviews"), wide: true, cell: (r) => r.orgs.length ? <span className="ad-sub">{r.orgs.join(", ")}</span> : <span className="ad-sub">{t.t("(no organisation)")}</span> },
+    { key: "orgs", header: t.t("Never reviews"), wide: true, cell: (r) => r.orgs.length ? <span className="adm-sub">{r.orgs.join(", ")}</span> : <span className="adm-sub">{t.t("(no organisation)")}</span> },
     { key: "remove", header: <span className="cs-sr">{t.t("Remove")}</span>, align: "end", width: "1%", cell: (r) => (
       <Button size="icon" variant="ghost" disabled={busy} onClick={() => void set(r.username, false)} aria-label={t.t("Remove {{name}} as reviewer", { name: r.username })} title={t.t("Remove as reviewer")}>
         <Trash2 size={ICON.sm} aria-hidden />
@@ -449,7 +449,7 @@ function Reviewers() {
       subtitle={t.t("Who may review listings. A reviewer never sees their own organisations' listings. Give an AI assistant an account of its own, make it a reviewer, and its API token can review and nothing else.")}
       flush={(list.data?.length ?? 0) > 0}
     >
-      <form className="ad-row ad-pad" onSubmit={(e) => { e.preventDefault(); if (username.trim()) void set(username.trim(), true); }}>
+      <form className="adm-row adm-pad" onSubmit={(e) => { e.preventDefault(); if (username.trim()) void set(username.trim(), true); }}>
         <Field label={t.t("Username")}>
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" />
         </Field>
@@ -460,7 +460,7 @@ function Reviewers() {
       ) : !list.data ? (
         <Loading label={t.t("Loading…")} />
       ) : list.data.length === 0 ? (
-        <p className="ad-sub ad-pad">{t.t("No one reviews listings yet.")}</p>
+        <p className="adm-sub adm-pad">{t.t("No one reviews listings yet.")}</p>
       ) : (
         <Table columns={columns} rows={list.data} rowKey={(r) => String(r.id)} caption={t.t("Reviewers")} />
       )}
@@ -524,23 +524,23 @@ function Passkeys() {
       ) : !keys.data ? (
         <Loading label={t.t("Loading…")} />
       ) : keys.data.length === 0 ? (
-        <p className="ad-sub">{t.t("You have no passkey yet: add one to approve or reject listings.")}</p>
+        <p className="adm-sub">{t.t("You have no passkey yet: add one to approve or reject listings.")}</p>
       ) : (
-        <ul className="ad-passkeys">
+        <ul className="adm-passkeys">
           {keys.data.map((k) => (
-            <li key={k.id} className="ad-inline">
+            <li key={k.id} className="adm-inline">
               <KeyRound size={ICON.sm} aria-hidden />
               <strong>{k.name}</strong>
-              <span className="ad-sub" title={fmtDateTime(k.created_at, loc)}>{t.t("added {{when}}", { when: relTime(k.created_at, loc) })}</span>
+              <span className="adm-sub" title={fmtDateTime(k.created_at, loc)}>{t.t("added {{when}}", { when: relTime(k.created_at, loc) })}</span>
               {k.last_used_at && (
-                <span className="ad-sub" title={fmtDateTime(k.last_used_at, loc)}>{t.t("last signed {{when}}", { when: relTime(k.last_used_at, loc) })}</span>
+                <span className="adm-sub" title={fmtDateTime(k.last_used_at, loc)}>{t.t("last signed {{when}}", { when: relTime(k.last_used_at, loc) })}</span>
               )}
               <Button size="sm" variant="danger" icon={<Trash2 size={ICON.sm} aria-hidden />} onClick={() => void revoke(k)}>{t.t("Remove")}</Button>
             </li>
           ))}
         </ul>
       )}
-      <form className="ad-inline" onSubmit={(e) => { e.preventDefault(); void add(); }}>
+      <form className="adm-inline" onSubmit={(e) => { e.preventDefault(); void add(); }}>
         <Field label={t.t("Name it (the device or manager it's in)")}>
           <input value={name} maxLength={100} placeholder={t.t("e.g. Work laptop")} onChange={(e) => setName(e.target.value)} />
         </Field>
@@ -568,7 +568,7 @@ function ServedResult({ served }: { served: ServedReport }) {
   const unrecorded = served.findings.filter((f) => f.severity === "unrecorded");
   const row = (f: ServedFinding) => (
     <li key={`${f.kind}-${f.id}`}>
-      <a href={href({ name: "listing-review", kind: f.kind, id: f.id })}>{f.title}</a> <span className="ad-sub">({f.org_name})</span>
+      <a href={href({ name: "listing-review", kind: f.kind, id: f.id })}>{f.title}</a> <span className="adm-sub">({f.org_name})</span>
       {f.parts && f.parts.length > 0 && <>: {f.parts.map(part).join(", ")}</>}
     </li>
   );
@@ -590,7 +590,7 @@ function ServedResult({ served }: { served: ServedReport }) {
         </>
       )}
       {unrecorded.length > 0 && (
-        <p className="ad-sub">{t.t("{{n}} listings were for sale before review was logged, so there is no approval to compare them with.", { n: unrecorded.length })}</p>
+        <p className="adm-sub">{t.t("{{n}} listings were for sale before review was logged, so there is no approval to compare them with.", { n: unrecorded.length })}</p>
       )}
     </>
   );

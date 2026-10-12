@@ -11,6 +11,10 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed
+
+- Ad blockers no longer hide parts of the platform admin's pages, such as the form for adding a listing reviewer.
+
 ## [0.29.0] - 2026-10-12
 
 ### Added

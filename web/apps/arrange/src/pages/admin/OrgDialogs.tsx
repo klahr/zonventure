@@ -143,7 +143,7 @@ export function AddMemberDialog({ org, onClose, onDone }: Done & { org: Organiza
       onSubmit={submit}
       footer={<><Button onClick={onClose}>{t.t("Cancel")}</Button><Button type="submit" variant="primary" loading={busy} disabled={!username.trim()}>{t.t("Add")}</Button></>}
     >
-      <div className="ad-combo">
+      <div className="adm-combo">
         <Field label={t.t("Username")}>
           <input
             value={username}
@@ -178,7 +178,7 @@ export function AddMemberDialog({ org, onClose, onDone }: Done & { org: Organiza
           />
         </Field>
         {open && (
-          <ul className="ad-combo__list" id={listId} role="listbox">
+          <ul className="adm-combo__list" id={listId} role="listbox">
             {matches.map((m, i) => (
               <li
                 key={m.id}
@@ -194,7 +194,7 @@ export function AddMemberDialog({ org, onClose, onDone }: Done & { org: Organiza
           </ul>
         )}
       </div>
-      <p className={"ad-status" + (picked ? " is-ok" : "")} aria-live="polite">{status}</p>
+      <p className={"adm-status" + (picked ? " is-ok" : "")} aria-live="polite">{status}</p>
       {!picked && (
         <>
           <Field label={t.t("Email (optional)")} hint={t.t("Lets the user log in with either their username or email, and gives them a contact address for password reset.")}>
@@ -300,7 +300,7 @@ export function EditPassDialog({ org, pass, adventures, onClose, onDone }: Done 
       onSubmit={submit}
       footer={
         <>
-          {!used && <Button variant="danger" icon={<Trash2 size={ICON.md} aria-hidden />} onClick={revoke} disabled={busy} className="ad-foot-start">{t.t("Revoke")}</Button>}
+          {!used && <Button variant="danger" icon={<Trash2 size={ICON.md} aria-hidden />} onClick={revoke} disabled={busy} className="adm-foot-start">{t.t("Revoke")}</Button>}
           <Button onClick={onClose}>{t.t("Cancel")}</Button>
           <Button type="submit" variant="primary" loading={busy}>{t.t("Save")}</Button>
         </>
@@ -389,8 +389,8 @@ export function PickDialog<T>({ title, items, label, onPick, onClose }: { title:
   const t = useT();
   return (
     <Dialog title={title} onClose={onClose} footer={<Button onClick={onClose}>{t.t("Cancel")}</Button>}>
-      <p className="ad-muted">{t.t("Pick one. The organization can schedule events of this adventure without buying event passes.")}</p>
-      <div className="ad-picklist">
+      <p className="adm-muted">{t.t("Pick one. The organization can schedule events of this adventure without buying event passes.")}</p>
+      <div className="adm-picklist">
         {items.map((x, i) => (
           <Button key={i} block autoFocus={i === 0} onClick={() => onPick(x)}>{label(x)}</Button>
         ))}

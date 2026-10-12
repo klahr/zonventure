@@ -259,15 +259,15 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           rows={org.members}
           rowKey={(m) => m.id}
           caption={t.t("Users")}
-          empty={<p className="ad-muted">{t.t("No users yet — add one to get started.")}</p>}
+          empty={<p className="adm-muted">{t.t("No users yet — add one to get started.")}</p>}
           columns={[
             { key: "name", header: t.t("Username"), cell: (m) => <strong>{m.username}</strong> },
             { key: "role", header: t.t("Role"), cell: (m) => (m.role === "org_admin" ? t.t("Admin") : t.t("Event host")) },
             {
               key: "email", header: t.t("Email"), cell: (m) => m.email_verified
-                ? <span className="ad-sub">{t.t("Verified")}</span>
+                ? <span className="adm-sub">{t.t("Verified")}</span>
                 : (
-                  <span className="ad-inline">
+                  <span className="adm-inline">
                     <Pill tone="warn">{t.t("Unverified")}</Pill>
                     <Button size="sm" variant="ghost" title={t.t("Manually verify email (use only after confirming the user out-of-band)")} onClick={() => verify(m)}>{t.t("verify")}</Button>
                   </span>
@@ -287,7 +287,7 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           rows={events}
           rowKey={(e) => e.id}
           caption={t.t("Events")}
-          empty={<p className="ad-muted">{t.t("No events yet.")}</p>}
+          empty={<p className="adm-muted">{t.t("No events yet.")}</p>}
           columns={eventColumns(t, {
             add: (e) => setOpen({ kind: "grant-slots", event: e }),
             cancel: cancelEvent,
@@ -300,7 +300,7 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
       {org.is_publisher ? (
         <Card
           title={
-            <span className="ad-inline">
+            <span className="adm-inline">
               {t.t("Catalog")}
               <HelpPopover label={t.t("About the catalog")} body={t.t("This organization authors the catalog. Listed adventures are open to every organization; commission one to give a specific organization free access without listing it.")} />
             </span>
@@ -312,16 +312,16 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
             rows={adventures}
             rowKey={(a) => a.slug}
             caption={t.t("Catalog")}
-            empty={<p className="ad-muted">{t.t("No adventures yet — this organization’s authors create them.")}</p>}
+            empty={<p className="adm-muted">{t.t("No adventures yet — this organization’s authors create them.")}</p>}
             columns={[
               {
                 key: "title", header: t.t("Adventure"), cell: (a) => (
                   <>
-                    <div className="ad-inline">{a.title}{a.published && <Pill tone="good">{t.t("Listed")}</Pill>}</div>
-                    <div className="ad-sub ad-mono">{a.slug}</div>
+                    <div className="adm-inline">{a.title}{a.published && <Pill tone="good">{t.t("Listed")}</Pill>}</div>
+                    <div className="adm-sub adm-mono">{a.slug}</div>
                     {(a.shares ?? []).length > 0 && (
-                      <div className="ad-chips ad-shares">
-                        <span className="ad-sub">{t.t("Commissioned for")}</span>
+                      <div className="adm-chips adm-shares">
+                        <span className="adm-sub">{t.t("Commissioned for")}</span>
                         {(a.shares ?? []).map((s) => (
                           <Chip key={s.org_id} onRemove={() => revoke(a, s.org_id, s.org_name)} removeLabel={t.t("Revoke share")}>{s.org_name}</Chip>
                         ))}
@@ -332,7 +332,7 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
               },
               {
                 key: "x", header: <span className="cs-sr">{t.t("Actions")}</span>, align: "end", cell: (a) => (
-                  <span className="ad-actions">
+                  <span className="adm-actions">
                     <Button size="sm" onClick={() => act(() => setPublished(a.slug, !a.published), a.published ? t.t("Removed from the catalog") : t.t("Listed in the catalog"))}>
                       {a.published ? t.t("Unlist") : t.t("List in catalog")}
                     </Button>
@@ -349,9 +349,9 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           actions={candidates.length > 0 && <Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={() => setOpen({ kind: "commission", candidates })}>{t.t("Commission adventure")}</Button>}
         >
           {commissioned.length === 0 ? (
-            <p className="ad-muted">{t.t("None — commission a catalog adventure to let them run it without buying event passes.")}</p>
+            <p className="adm-muted">{t.t("None — commission a catalog adventure to let them run it without buying event passes.")}</p>
           ) : (
-            <div className="ad-chips">
+            <div className="adm-chips">
               {commissioned.map((a) => (
                 <Chip key={a.slug} onRemove={() => revoke(a, org.id, org.name)} removeLabel={t.t("Revoke share")}>{a.title}</Chip>
               ))}
@@ -367,13 +367,13 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           rows={purchases}
           rowKey={(p) => p.id}
           caption={t.t("Purchases")}
-          empty={<p className="ad-muted">{t.t("No purchases.")}</p>}
+          empty={<p className="adm-muted">{t.t("No purchases.")}</p>}
           columns={[
             { key: "adv", header: t.t("Adventure"), cell: (p) => p.adventure_title || p.adventure_slug },
-            { key: "players", header: t.t("Players"), cell: (p) => <span className="ad-mono">{p.max_players}</span>, wide: true },
-            { key: "total", header: t.t("Total"), cell: (p) => <span className="ad-mono">{fmtMoney(p.amount_cents, p.currency || "SEK", t.current())}</span> },
+            { key: "players", header: t.t("Players"), cell: (p) => <span className="adm-mono">{p.max_players}</span>, wide: true },
+            { key: "total", header: t.t("Total"), cell: (p) => <span className="adm-mono">{fmtMoney(p.amount_cents, p.currency || "SEK", t.current())}</span> },
             { key: "state", header: t.t("State"), cell: (p) => <PurchaseState p={p} /> },
-            { key: "date", header: t.t("Date"), wide: true, cell: (p) => <span className="ad-sub" title={fmtDateTime(p.created_at, t.current())}>{relTime(p.created_at, t.current())}</span> },
+            { key: "date", header: t.t("Date"), wide: true, cell: (p) => <span className="adm-sub" title={fmtDateTime(p.created_at, t.current())}>{relTime(p.created_at, t.current())}</span> },
             { key: "x", header: <span className="cs-sr">{t.t("Actions")}</span>, align: "end", cell: (p) => <PurchaseActions p={p} reload={reload} /> },
           ]}
         />
@@ -435,19 +435,19 @@ function eventColumns(t: T, on: EventActions): Column<OrgEvent>[] {
           <>
             <strong>{e.name || `Event #${e.id}`}</strong>
             {e.public_for_sale && <> <Pill>{t.t("Self-guided")}</Pill></>}
-            <div className="ad-sub">{e.adventure_title || e.adventure_slug}{when && <> · {when}</>}</div>
+            <div className="adm-sub">{e.adventure_title || e.adventure_slug}{when && <> · {when}</>}</div>
           </>
         );
       },
     },
     { key: "state", header: t.t("State"), cell: (e) => <Pill tone={STATE_TONE[e.state] ?? "neutral"}>{t.t(e.state)}</Pill> },
-    { key: "players", header: t.t("Players"), wide: true, cell: (e) => <span className="ad-mono">{e.max_players ? `${e.player_slots_count || 0} / ${e.max_players}` : e.player_slots_count || 0}</span> },
+    { key: "players", header: t.t("Players"), wide: true, cell: (e) => <span className="adm-mono">{e.max_players ? `${e.player_slots_count || 0} / ${e.max_players}` : e.player_slots_count || 0}</span> },
     {
       key: "x", header: <span className="cs-sr">{t.t("Actions")}</span>, align: "end", cell: (e) => {
         const pass = on.pass(e);
         const name = e.name || `Event #${e.id}`;
         return (
-          <span className="ad-actions ad-actions--icons">
+          <span className="adm-actions adm-actions--icons">
             {/* Self-guided adventures grow per ticket, not from a pass. */}
             {live(e) && e.assignment_id > 0 && !e.public_for_sale && (
               <Button size="icon" variant="ghost" icon={<Coins size={ICON.sm} aria-hidden />} aria-label={`${t.t("Add players")} · ${name}`} title={t.t("Add players to this event's pass on the org's behalf")} onClick={() => on.add(e)} />
@@ -498,8 +498,8 @@ function SetupCard({ org, connect, onTrusted, onParty, onVerified, onPublisher, 
 
   return (
     <Card title={t.t("Settings")}>
-      <div className="ad-setting">
-        <div className="ad-setting__text">
+      <div className="adm-setting">
+        <div className="adm-setting__text">
           <strong>{t.t("Logo")}</strong>
           <ImageDrop
             shape="logo"
@@ -526,7 +526,7 @@ function SetupCard({ org, connect, onTrusted, onParty, onVerified, onPublisher, 
 function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: () => unknown; label: string; hint: string }) {
   const [busy, setBusy] = useState(false);
   return (
-    <label className="ad-toggle">
+    <label className="adm-toggle">
       <input
         type="checkbox"
         role="switch"
@@ -534,9 +534,9 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
         disabled={busy}
         onChange={async () => { setBusy(true); try { await onChange(); } finally { setBusy(false); } }}
       />
-      <span className="ad-setting__text">
+      <span className="adm-setting__text">
         <strong>{label}</strong>
-        <span className="ad-sub">{hint}</span>
+        <span className="adm-sub">{hint}</span>
       </span>
     </label>
   );
@@ -563,21 +563,21 @@ function ConnectRow({ org, status, reload }: { org: Organization; status: Connec
       ? <Pill tone="good">{t.t("Connected — accepting charges")}</Pill>
       : <Pill tone="warn">{t.t("Setup not complete")}</Pill>;
   return (
-    <div className="ad-setting">
-      <div className="ad-setting__text">
+    <div className="adm-setting">
+      <div className="adm-setting__text">
         <strong>{t.t("Stripe Connect")}</strong>
-        <span className="ad-inline">
+        <span className="adm-inline">
           {state}
-          {status.account_id && <code className="ad-mono">{status.account_id}</code>}
+          {status.account_id && <code className="adm-mono">{status.account_id}</code>}
         </span>
         {status.charges_enabled && (
-          <span className="ad-sub">
+          <span className="adm-sub">
             {status.payouts_enabled
               ? t.t("Payouts enabled — money flows to your bank on Stripe's standard schedule.")
               : t.t("Charges accepted but payouts are paused — usually means a missing bank account. Visit your Stripe dashboard to fix.")}
           </span>
         )}
-        {status.synced_at && <span className="ad-sub">{t.t("Last verified {{when}}", { when: fmtDateTime(status.synced_at, t.current()) })}</span>}
+        {status.synced_at && <span className="adm-sub">{t.t("Last verified {{when}}", { when: fmtDateTime(status.synced_at, t.current()) })}</span>}
       </div>
       {status.account_id && <Button size="sm" icon={<RefreshCw size={ICON.sm} aria-hidden />} loading={busy} onClick={refresh}>{t.t("Refresh status")}</Button>}
     </div>
@@ -603,16 +603,16 @@ function PassesCard({ org, hidden, onGrant, onEdit }: { org: Organization; hidde
       actions={<Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={onGrant}>{t.t("Grant event pass")}</Button>}
     >
       {empty ? (
-        <p className="ad-muted">{inUseText ?? t.t("None — assign an adventure to let them schedule an event.")}</p>
+        <p className="adm-muted">{inUseText ?? t.t("None — assign an adventure to let them schedule an event.")}</p>
       ) : (
-        <div className="ad-chips">
+        <div className="adm-chips">
           {unused.map((x) => (
-            <button key={x.id} type="button" className="ad-chip ad-chip--button" title={t.t("Click to edit")} onClick={() => onEdit(x)}>
+            <button key={x.id} type="button" className="adm-chip adm-chip--button" title={t.t("Click to edit")} onClick={() => onEdit(x)}>
               {t.t(x.max_players === 1 ? "{{slug}} · {{n}} player" : "{{slug}} · {{n}} players", { slug: x.adventure_title || x.adventure_slug, n: x.max_players })}
             </button>
           ))}
           {used.map((x) => (
-            <button key={x.id} type="button" className="ad-chip ad-chip--button ad-chip--used" title={t.t("Click to edit player cap")} onClick={() => onEdit(x)}>
+            <button key={x.id} type="button" className="adm-chip adm-chip--button adm-chip--used" title={t.t("Click to edit player cap")} onClick={() => onEdit(x)}>
               {t.t("{{slug}} · event #{{event}} · max {{max}}", { slug: x.adventure_title || x.adventure_slug, event: x.event_id!, max: x.max_players })}
             </button>
           ))}
@@ -624,9 +624,9 @@ function PassesCard({ org, hidden, onGrant, onEdit }: { org: Organization; hidde
 
 function Chip({ children, onRemove, removeLabel }: { children: ReactNode; onRemove: () => void; removeLabel: string }) {
   return (
-    <span className="ad-chip">
+    <span className="adm-chip">
       {children}
-      <button type="button" className="ad-chip__x" onClick={onRemove} aria-label={removeLabel} title={removeLabel}>
+      <button type="button" className="adm-chip__x" onClick={onRemove} aria-label={removeLabel} title={removeLabel}>
         <Trash2 size={ICON.xs} aria-hidden />
       </button>
     </span>
@@ -720,7 +720,7 @@ function PurchaseActions({ p, reload }: { p: Purchase; reload: () => void }) {
 
   const invoiceOpen = p.provider === "invoice" && p.state === "paid" && !p.voided_at;
   return (
-    <span className="ad-actions">
+    <span className="adm-actions">
       {p.invoice_url && <a className="btn sm ghost" href={p.invoice_url} target="_blank" rel="noopener">{t.t("Receipt")}</a>}
       {invoiceOpen && (
         <Button size="sm" disabled={busy} onClick={() => run(() => setBilled(p.id, !p.billed_at), p.billed_at ? t.t("Marked unbilled") : t.t("Marked billed"))}>

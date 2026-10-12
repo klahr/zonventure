@@ -182,13 +182,13 @@ export function LogsPage() {
   };
 
   return (
-    <div className="ad-logs">
+    <div className="adm-logs">
       <Page wide>
         <PageHeader
           title={t.t("Logs")}
           badges={live ? <Pill tone="good">{t.t("Streaming")}</Pill> : <Pill tone="warn">{t.t("Reconnecting…")}</Pill>}
           actions={
-            <label className="ad-logbar__sel">
+            <label className="adm-logbar__sel">
               <span>{t.t("Server level")}</span>
               <select value={serverLevel} onChange={(e) => void changeServerLevel(e.target.value)} title={t.t("Server log level")}>
                 {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
@@ -197,14 +197,14 @@ export function LogsPage() {
           }
         />
         {error && <ErrorBox message={error} />}
-        <div className="ad-logbar" role="toolbar" aria-label={t.t("Logs")}>
-          <label className="ad-logbar__sel">
+        <div className="adm-logbar" role="toolbar" aria-label={t.t("Logs")}>
+          <label className="adm-logbar__sel">
             <span>{t.t("Show")}</span>
             <select value={minLevel} onChange={(e) => setMinLevel(e.target.value)} title={t.t("Client-side minimum level")}>
               {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
           </label>
-          <label className="ad-search ad-logbar__filter">
+          <label className="adm-search adm-logbar__filter">
             <Search size={ICON.md} aria-hidden />
             <input type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t.t("Filter (substring)")} aria-label={t.t("Filter (substring)")} />
           </label>
@@ -218,23 +218,23 @@ export function LogsPage() {
           </Button>
           {all.length > 0 && <Button size="sm" icon={<Trash2 size={ICON.sm} aria-hidden />} onClick={clear}>{t.t("Clear")}</Button>}
         </div>
-        <div className="ad-term-wrap">
-          <div className="ad-term" ref={scroller} onScroll={onScroll} role="log" aria-live="off" aria-label={t.t("Logs")} tabIndex={0}>
+        <div className="adm-term-wrap">
+          <div className="adm-term" ref={scroller} onScroll={onScroll} role="log" aria-live="off" aria-label={t.t("Logs")} tabIndex={0}>
             {shown.length === 0 ? (
-              <div className="ad-term__empty">{all.length === 0 ? t.t("Waiting for log entries…") : t.t("No entries match.")}</div>
+              <div className="adm-term__empty">{all.length === 0 ? t.t("Waiting for log entries…") : t.t("No entries match.")}</div>
             ) : (
               shown.map((e) => (
-                <div key={e.key} className={`ad-term__line is-${String(e.level || "INFO").toLowerCase()}`}>
-                  <span className="ad-term__ts">{stamp(e.ts)}</span> <span className="ad-term__lvl">{String(e.level || "INFO").padEnd(5)}</span> {e.msg}
+                <div key={e.key} className={`adm-term__line is-${String(e.level || "INFO").toLowerCase()}`}>
+                  <span className="adm-term__ts">{stamp(e.ts)}</span> <span className="adm-term__lvl">{String(e.level || "INFO").padEnd(5)}</span> {e.msg}
                   {(e.attrs ?? []).map((a, j) => (
-                    <span key={j}> <span className="ad-term__k">{a.k}</span>=<span className="ad-term__v">{attrText(a.v)}</span></span>
+                    <span key={j}> <span className="adm-term__k">{a.k}</span>=<span className="adm-term__v">{attrText(a.v)}</span></span>
                   ))}
                 </div>
               ))
             )}
           </div>
           {!atBottom && (
-            <Button size="sm" variant="primary" className="ad-term__jump" icon={<ArrowDown size={ICON.sm} aria-hidden />} onClick={jump}>{t.t("Jump to latest")}</Button>
+            <Button size="sm" variant="primary" className="adm-term__jump" icon={<ArrowDown size={ICON.sm} aria-hidden />} onClick={jump}>{t.t("Jump to latest")}</Button>
           )}
         </div>
       </Page>

@@ -41,7 +41,7 @@ export function OrganizationsPage() {
       ) : (
         <>
           {all.length >= SEARCH_FROM && (
-            <label className="ad-search">
+            <label className="adm-search">
               <Search size={ICON.md} aria-hidden />
               <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.t("Search organizations…")} aria-label={t.t("Search organizations")} autoComplete="off" />
             </label>
@@ -77,7 +77,7 @@ function OrgTile({ org }: { org: Organization }) {
       }
     >
       {(org.events_running > 0 || org.trusted || org.verified_creator || org.party_adventures || org.is_publisher) && (
-        <span className="ad-inline">
+        <span className="adm-inline">
           {org.events_running > 0 && <Pill tone="good">{t.t("{{n}} running", { n: org.events_running })}</Pill>}
           {org.trusted && <Pill tone="good">{t.t("Invoice billing")}</Pill>}
           {org.verified_creator && <Pill tone="good">{t.t("Verified creator")}</Pill>}

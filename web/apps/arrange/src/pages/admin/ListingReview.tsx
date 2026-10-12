@@ -60,7 +60,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
       {back}
       <PageHeader
         title={
-          <span className="ad-inline">
+          <span className="adm-inline">
             {title}
             <Pill tone="info">{kindLabel(t, c.kind)}</Pill>
             <StatePill state={c.state} />
@@ -68,7 +68,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
         }
         actions={
           pending && (
-            <span className="ad-actions">
+            <span className="adm-actions">
               <Button variant="danger" icon={<X size={ICON.sm} aria-hidden />} disabled={busy} onClick={() => setRejecting(true)}>{t.t("Reject")}</Button>
               <Button
                 variant="primary"
@@ -84,16 +84,16 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
       />
 
       <Card title={t.t("About this listing")}>
-        <dl className="ad-review__head">
+        <dl className="adm-review__head">
           <dt>{t.t("Organisation")}</dt>
-          <dd className="ad-inline">
+          <dd className="adm-inline">
             <a href={href({ name: "organization", id: c.org_id })}>{c.org_name}</a>
             {c.org_verified && <Pill tone="good">{t.t("Verified creator")}</Pill>}
           </dd>
           {c.kind !== "org" && (
             <>
               <dt>{t.t("Adventure")}</dt>
-              <dd className="ad-inline">
+              <dd className="adm-inline">
                 {c.adventure_title}
                 {!proposal && <> · {t.t("version {{n}}", { n: c.version })}</>}
                 {newVersion && <Pill tone="warn">{t.t("A different version from the one approved before")}</Pill>}
@@ -115,7 +115,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
           {c.reject_reason && (
             <>
               <dt>{t.t("Rejected because")}</dt>
-              <dd className="ad-texts__text">{c.reject_reason}</dd>
+              <dd className="adm-texts__text">{c.reject_reason}</dd>
             </>
           )}
         </dl>
@@ -137,9 +137,9 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
         flush
       >
         {c.media.length === 0 ? (
-          <p className="ad-sub ad-pad">{t.t("None.")}</p>
+          <p className="adm-sub adm-pad">{t.t("None.")}</p>
         ) : (
-          <div className="ad-media">
+          <div className="adm-media">
             {c.media.map((m) => <MediaItem key={m.ref} m={m} />)}
           </div>
         )}
@@ -150,7 +150,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
         subtitle={t.t("As written, with where each one is: titles, puzzles, hints, answers, emails, roles, translations.")}
         actions={
           <input
-            className="ad-filter"
+            className="adm-filter"
             type="search"
             placeholder={t.t("Find in the texts")}
             aria-label={t.t("Find in the texts")}
@@ -161,13 +161,13 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
         flush
       >
         {texts.length === 0 ? (
-          <p className="ad-sub ad-pad">{filter ? t.t("No text matches.") : t.t("None.")}</p>
+          <p className="adm-sub adm-pad">{filter ? t.t("No text matches.") : t.t("None.")}</p>
         ) : (
-          <ul className="ad-texts">
+          <ul className="adm-texts">
             {texts.map((x, i) => (
               <li key={i}>
-                <span className="ad-texts__where">{x.where}</span>
-                <span className="ad-texts__text">{x.text}</span>
+                <span className="adm-texts__where">{x.where}</span>
+                <span className="adm-texts__text">{x.text}</span>
               </li>
             ))}
           </ul>
@@ -246,11 +246,11 @@ function formatSize(n: number): string {
 /** What a proposal changes, field by field: public now, and proposed. */
 function Changes({ changes }: { changes: ReviewChange[] }) {
   const t = useT();
-  if (changes.length === 0) return <p className="ad-sub">{t.t("Nothing.")}</p>;
+  if (changes.length === 0) return <p className="adm-sub">{t.t("Nothing.")}</p>;
   const side = (text: string | undefined, url: string | undefined, empty: string) =>
-    url ? <img className="ad-change__img" src={url} alt="" /> : text ? <span className="ad-texts__text">{text}</span> : <span className="ad-sub">{empty}</span>;
+    url ? <img className="adm-change__img" src={url} alt="" /> : text ? <span className="adm-texts__text">{text}</span> : <span className="adm-sub">{empty}</span>;
   return (
-    <table className="ad-changes">
+    <table className="adm-changes">
       <thead>
         <tr>
           <th scope="col">{t.t("Field")}</th>
