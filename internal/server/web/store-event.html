@@ -161,6 +161,14 @@
   }
   .toast.cancelled { border-left-color: var(--muted); color: var(--ink-soft); }
 
+  .letter-lang { border: 0; margin: .75rem 0 0; padding: 0; display: grid; gap: .5rem; min-width: 0; }
+  .letter-lang legend { padding: 0; margin-bottom: .35rem; font-size: .85rem; color: var(--ink-soft); font-weight: 600; }
+  .letter-lang .hint { color: var(--muted); font-size: .85rem; margin: 0; }
+  .seg { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .seg label { display: flex; align-items: center; gap: .45rem; padding: .6rem 1rem; border: 1px solid var(--border-soft);
+               border-radius: var(--radius-sm); background: var(--bg); color: var(--ink); font-size: 1rem; font-weight: 600; cursor: pointer; }
+  .seg label:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .seg input { margin: 0; accent-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -246,6 +254,11 @@
       <form id="buy-form" data-event-id="{{EVENT_ID}}" novalidate>
         <label for="buyer-email">{{STORE_EVENT_EMAIL_LABEL}}</label>
         <input id="buyer-email" type="email" required autocomplete="email" placeholder="{{STORE_EVENT_EMAIL_PLACEHOLDER}}">
+        <fieldset class="letter-lang" id="letter-lang" data-langs="{{LETTER_LANGS}}" hidden>
+          <legend>{{STORE_EVENT_LETTER_LANG_LABEL}}</legend>
+          <div class="seg" id="letter-lang-options"></div>
+          <p class="hint">{{STORE_EVENT_LETTER_LANG_HINT}}</p>
+        </fieldset>
         <div class="err" id="buy-err" role="alert"></div>
         <button type="submit" class="btn primary" id="buy-submit">{{STORE_EVENT_BUY_CTA}}</button>
         <p class="terms-note">{{STORE_EVENT_TERMS_HTML}}</p>
@@ -304,6 +317,40 @@
   var err = document.getElementById('buy-err');
   var submit = document.getElementById('buy-submit');
   var originalSubmitText = submit.textContent;
+
+  // The letter the event posts: its language, chosen here because
+  // checkout can't ask it. One language needs no choosing.
+  var letterBox = document.getElementById('letter-lang');
+  var letterLangs = [];
+  try { letterLangs = JSON.parse(letterBox.dataset.langs || '[]'); } catch (_) {}
+  function langName(code) {
+    try {
+      var n = new Intl.DisplayNames([code], { type: 'language' }).of(code);
+      return n.charAt(0).toUpperCase() + n.slice(1);
+    } catch (_) { return code.toUpperCase(); }
+  }
+  if (letterLangs.length) {
+    var pageLang = document.documentElement.lang;
+    var pick = letterLangs.indexOf(pageLang) >= 0 ? pageLang : letterLangs[0];
+    var options = document.getElementById('letter-lang-options');
+    letterLangs.forEach(function (code) {
+      var label = document.createElement('label'), radio = document.createElement('input'), span = document.createElement('span');
+      radio.type = 'radio';
+      radio.name = 'letter-lang';
+      radio.value = code;
+      radio.checked = code === pick;
+      span.lang = code;
+      span.textContent = langName(code);
+      label.append(radio, span);
+      options.append(label);
+    });
+    options.hidden = letterLangs.length < 2;
+    letterBox.hidden = false;
+  }
+  function letterLang() {
+    var checked = document.querySelector('input[name="letter-lang"]:checked');
+    return checked ? checked.value : (letterLangs[0] || '');
+  }
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     err.textContent = '';
@@ -322,7 +369,7 @@
     fetch('{{STORE_API_BASE}}/buy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event_id: eventID, buyer_email: email }),
+      body: JSON.stringify({ event_id: eventID, buyer_email: email, letter_lang: letterLang() }),
     })
       .then(function (r) {
         if (!r.ok) {

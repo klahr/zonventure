@@ -110,6 +110,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.Get("/redemptions", adminH.ListRedemptions)
 		r.Post("/redemptions", adminH.CreateRedemption)
 		r.Patch("/redemptions/{redemptionID}", adminH.UpdateRedemption)
+		r.Patch("/ticket-purchases/{purchaseID}", adminH.UpdatePurchaseOrder)
 		r.Post("/redemptions/{redemptionID}/approve", adminH.ApproveRedemption)
 		r.Post("/redemptions/{redemptionID}/reject", adminH.RejectRedemption)
 		r.Post("/redemptions/{redemptionID}/cancel", adminH.CancelRedemption)
@@ -280,6 +281,10 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Post("/events/{eventID}/files", adminH.AddEventFile)
 			r.Get("/events/{eventID}/files/{fileID}", adminH.GetEventFile)
 			r.Delete("/events/{eventID}/files/{fileID}", adminH.DeleteEventFile)
+			// Which adventure version a self-guided event plays, and moving
+			// it to the latest (through listing review when it is for sale).
+			r.Get("/events/{eventID}/version", adminH.EventVersion)
+			r.Post("/events/{eventID}/version/update", adminH.UpdateEventVersion)
 			// How the event delivers its adventure's print materials.
 			r.Get("/events/{eventID}/print-delivery", adminH.EventPrintDelivery)
 			r.Put("/events/{eventID}/print-delivery", adminH.SetEventPrintDelivery)
@@ -427,6 +432,9 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// Public-profile read/write (tagline, website, cover image)
 			// surfaced on /o/{slug}. Read is org-user, writes are
 			// gated to RoleOrgAdmin inside each handler.
+			// Where the organisation posts printed letters to buyers.
+			r.Get("/orgs/me/ship-countries", adminH.GetMyShipCountries)
+			r.Put("/orgs/me/ship-countries", adminH.SetMyShipCountries)
 			r.Get("/orgs/me/email-theme", adminH.GetOrgEmailTheme)
 			r.Put("/orgs/me/email-theme", adminH.SetOrgEmailTheme)
 			r.Get("/orgs/me/profile", adminH.GetMyOrgProfile)

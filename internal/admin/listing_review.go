@@ -67,7 +67,7 @@ const MaxRejectReasonLen = 1000
 // adventure version it plays: what a reviewer approves. They read from
 // events e, or party_offers o joined to adventures a.
 const eventListingRevision = `md5(row(e.name, e.public_blurb, e.ticket_price_cents, e.ticket_currency, e.ticket_team_size,
-	e.cover_image_mime_type, md5(e.cover_image_content), e.graph_id,
+	e.cover_image_mime_type, md5(e.cover_image_content), COALESCE(e.next_graph_id, e.graph_id),
 	(SELECT string_agg(f.id::text || ':' || md5(f.content), ',' ORDER BY f.id) FROM event_files f WHERE f.event_id = e.id))::text)`
 
 const partyListingRevision = `md5(row(o.blurb, o.base_cents, o.per_kid_cents, o.currency, o.max_kids,
@@ -80,7 +80,7 @@ const eventUnchanged = `COALESCE(l.event_id IS NOT NULL
 	AND l.team_size = e.ticket_team_size
 	AND l.cover_mime_type IS NOT DISTINCT FROM e.cover_image_mime_type
 	AND l.cover_content IS NOT DISTINCT FROM e.cover_image_content
-	AND l.graph_id IS NOT DISTINCT FROM e.graph_id
+	AND l.graph_id IS NOT DISTINCT FROM COALESCE(e.next_graph_id, e.graph_id)
 	AND NOT EXISTS (SELECT 1 FROM event_files f WHERE f.event_id = e.id AND f.approved_at IS NULL), FALSE)`
 
 const partyUnchanged = `COALESCE(l.offer_id IS NOT NULL
@@ -317,7 +317,7 @@ func listingTables(kind string) listingTable {
 			from:     "party_offers o JOIN adventures a ON a.slug = o.adventure_slug",
 			revision: partyListingRevision, graph: "a.published_graph_id", lock: "o, a"}
 	}
-	return listingTable{table: "events", alias: "e", from: "events e", revision: eventListingRevision, graph: "e.graph_id", lock: "e"}
+	return listingTable{table: "events", alias: "e", from: "events e", revision: eventListingRevision, graph: "COALESCE(e.next_graph_id, e.graph_id)", lock: "e"}
 }
 
 // viaOf is how a request reached the platform: through an API token
@@ -345,14 +345,15 @@ func (h *Handlers) approve(ctx context.Context, q execer, kind string, id, revie
 }
 
 // approveEventListing copies an event's draft over its public listing,
-// with the adventure version it plays. reviewer 0 is an automatic
+// with the adventure version it plays: the one it asked to move to, when
+// it asked, which teams then start on. reviewer 0 is an automatic
 // approval (a verified creator).
 func (h *Handlers) approveEventListing(ctx context.Context, q execer, eventID, reviewer int64) error {
 	by := sql.NullInt64{Int64: reviewer, Valid: reviewer > 0}
 	if _, err := q.ExecContext(ctx, `
 		INSERT INTO event_listings (event_id, name, blurb, price_cents, currency, team_size, cover_mime_type, cover_content, graph_id, approved_at, approved_by)
 		SELECT id, name, public_blurb, ticket_price_cents, ticket_currency, ticket_team_size,
-		       cover_image_mime_type, cover_image_content, graph_id, now(), $2
+		       cover_image_mime_type, cover_image_content, COALESCE(next_graph_id, graph_id), now(), $2
 		FROM events WHERE id = $1 AND ticket_price_cents IS NOT NULL
 		ON CONFLICT (event_id) DO UPDATE SET
 		    name = EXCLUDED.name, blurb = EXCLUDED.blurb, price_cents = EXCLUDED.price_cents,
@@ -369,7 +370,8 @@ func (h *Handlers) approveEventListing(ctx context.Context, q execer, eventID, r
 	}
 	_, err := q.ExecContext(ctx, `
 		UPDATE events SET listing_review = 'approved', listing_reviewed_at = now(),
-		       listing_reviewed_by = $2, listing_reject_reason = ''
+		       listing_reviewed_by = $2, listing_reject_reason = '',
+		       graph_id = COALESCE(next_graph_id, graph_id), next_graph_id = NULL
 		WHERE id = $1`, eventID, by)
 	return err
 }
@@ -454,7 +456,7 @@ func (h *Handlers) pendingListings(ctx context.Context, reviewerID int64) ([]lis
 		       g.id, g.name, COALESCE(g.slug, ''), e.adventure_slug, COALESCE(NULLIF(a.title, ''), e.adventure_slug),
 		       COALESCE(u.username, ''),
 		       e.name, e.public_blurb, COALESCE(e.ticket_price_cents, 0), e.ticket_currency, e.ticket_team_size,
-		       e.cover_image_mime_type IS NOT NULL, COALESCE(e.graph_id, 0),
+		       e.cover_image_mime_type IS NOT NULL, COALESCE(e.next_graph_id, e.graph_id, 0),
 		       l.event_id IS NOT NULL, COALESCE(l.name, ''), COALESCE(l.blurb, ''), COALESCE(l.price_cents, 0),
 		       COALESCE(l.currency, ''), COALESCE(l.team_size, 0), l.cover_mime_type IS NOT NULL, COALESCE(l.graph_id, 0)
 		FROM events e

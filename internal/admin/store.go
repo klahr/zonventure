@@ -15,6 +15,7 @@ import (
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/payments"
+	"github.com/klahr/zonventure/internal/printmat"
 )
 
 // BuyTicketRequest is the body of POST /api/store/buy. The buyer
@@ -24,6 +25,51 @@ import (
 type BuyTicketRequest struct {
 	EventID    int64  `json:"event_id"`
 	BuyerEmail string `json:"buyer_email"`
+	// LetterLang is the language of the letter the event posts, when
+	// it posts one; checkout then asks where to post it.
+	LetterLang string `json:"letter_lang"`
+}
+
+// eventLetter is what a buyer of the event chooses for the letter it
+// posts: the language, among those its version is played in, and the
+// country, among those the organisation posts to. nil when the event
+// posts nothing, and then the buyer is asked neither, nor an address.
+func (h *Handlers) eventLetter(ctx context.Context, eventID int64) (*redeemLetter, error) {
+	g, o, err := printmat.ForEvent(ctx, h.DB, eventID)
+	if err != nil || !printmat.Posts(g, o) {
+		return nil, err
+	}
+	countries, err := h.eventShipCountries(ctx, eventID)
+	if err != nil {
+		return nil, err
+	}
+	return &redeemLetter{Languages: graphLanguages(g), Countries: countries}, nil
+}
+
+// ticketLetter is what a ticket's checkout asks for the event's posted
+// letter: lang among those offered, and the countries for the address.
+// ok is false for a language not offered.
+func (h *Handlers) ticketLetter(ctx context.Context, eventID int64, want string) (lang string, countries []string, ok bool, err error) {
+	l, err := h.eventLetter(ctx, eventID)
+	if err != nil || l == nil {
+		return "", nil, err == nil, err
+	}
+	if lang, ok = pickLetterLang(l.Languages, want); !ok {
+		return "", nil, false, nil
+	}
+	return lang, l.Countries, true, nil
+}
+
+// eventShipCountries are the countries the event's organisation posts
+// letters to.
+func (h *Handlers) eventShipCountries(ctx context.Context, eventID int64) ([]string, error) {
+	var list string
+	if err := h.DB.QueryRowContext(ctx, `
+		SELECT array_to_string(o.ship_countries, ',') FROM events e JOIN organizations o ON o.id = e.org_id WHERE e.id = $1
+	`, eventID).Scan(&list); err != nil {
+		return nil, err
+	}
+	return strings.Split(list, ","), nil
 }
 
 // BuyTicketResponse carries the hosted Checkout URL the buyer's
@@ -141,17 +187,27 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 		applicationFee = h.platformFee().Compute(priceCents.Int64)
 	}
 
+	letterLang, shipTo, ok, err := h.ticketLetter(r.Context(), req.EventID, req.LetterLang)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "event lookup failed", err)
+		return
+	}
+	if !ok {
+		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "the letter can't be posted in that language", "reason": "invalid_language"})
+		return
+	}
+
 	var purchaseID int64
 	if err := h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, application_fee_cents)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
-	`, req.EventID, email, teamSize, priceCents.Int64, currency, applicationFee).Scan(&purchaseID); err != nil {
+		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, application_fee_cents, letter_lang)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
+	`, req.EventID, email, teamSize, priceCents.Int64, currency, applicationFee, letterLang).Scan(&purchaseID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "purchase create failed", err)
 		return
 	}
 
 	productName := storeProductName(eventName, advTitle, advSlug, teamSize)
-	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, productName, currency, priceCents.Int64, email, connectedAccountID, applicationFee, "/store")
+	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, productName, currency, priceCents.Int64, email, connectedAccountID, applicationFee, "/store", shipTo)
 	if err != nil {
 		// Mark the orphan as failed so the listing pages don't see a
 		// stale 'pending' that's already dead provider-side.
@@ -282,18 +338,28 @@ func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
 		applicationFee = h.platformFee().Compute(priceCents.Int64)
 	}
 
+	letterLang, shipTo, ok, err := h.ticketLetter(r.Context(), req.EventID, req.LetterLang)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "event lookup failed", err)
+		return
+	}
+	if !ok {
+		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "the letter can't be posted in that language", "reason": "invalid_language"})
+		return
+	}
+
 	var purchaseID int64
 	if err := h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, application_fee_cents)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
-	`, req.EventID, email, teamSize, priceCents.Int64, currency, applicationFee).Scan(&purchaseID); err != nil {
+		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, application_fee_cents, letter_lang)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
+	`, req.EventID, email, teamSize, priceCents.Int64, currency, applicationFee, letterLang).Scan(&purchaseID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "purchase create failed", err)
 		return
 	}
 
 	productName := storeProductName(eventName, advTitle, advSlug, teamSize)
 	storeBase := "/o/" + slug
-	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, productName, currency, priceCents.Int64, email, connectedAccountID, applicationFee, storeBase)
+	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, productName, currency, priceCents.Int64, email, connectedAccountID, applicationFee, storeBase, shipTo)
 	if err != nil {
 		_, _ = h.DB.ExecContext(r.Context(),
 			`UPDATE ticket_purchases SET state = 'failed' WHERE id = $1 AND state = 'pending'`, purchaseID)
@@ -346,6 +412,7 @@ func (h *Handlers) createTicketCheckoutSession(
 	connectedAccountID string,
 	applicationFeeCents int64,
 	storeBasePath string,
+	shipCountries []string,
 ) (string, string, error) {
 	publicURL := strings.TrimRight(h.PublicURL, "/")
 	if publicURL == "" {
@@ -388,6 +455,8 @@ func (h *Handlers) createTicketCheckoutSession(
 		// (transport timeout) receives the same Stripe session back
 		// instead of an orphan duplicate.
 		IdempotencyKey: fmt.Sprintf("checkout-ticket-%d", purchaseID),
+		// A posted letter needs somewhere to go.
+		ShipCountries: shipCountries,
 	})
 	if err != nil {
 		return "", "", err
@@ -435,11 +504,12 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 		kind       string
 		offerID    sql.NullInt64
 		partyName  string
+		letterLang string
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT COALESCE(event_id, 0), buyer_email, team_size, state, kind, party_offer_id, party_name
+		SELECT COALESCE(event_id, 0), buyer_email, team_size, state, kind, party_offer_id, party_name, letter_lang
 		FROM ticket_purchases WHERE id = $1 FOR UPDATE
-	`, purchaseID).Scan(&eventID, &buyerEmail, &teamSize, &state, &kind, &offerID, &partyName); err != nil {
+	`, purchaseID).Scan(&eventID, &buyerEmail, &teamSize, &state, &kind, &offerID, &partyName, &letterLang); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -470,6 +540,21 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 	if err != nil {
 		return fmt.Errorf("ticket team create: %w", err)
 	}
+	// The team starts in the posted letter's language; it can switch.
+	if _, err := tx.ExecContext(ctx, `UPDATE teams SET lang = $1 WHERE id = $2`, letterLang, teamID); err != nil {
+		return fmt.Errorf("team language: %w", err)
+	}
+	var address []string
+	if sh := event.Checkout.Shipping; sh != nil {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE ticket_purchases
+			   SET ship_name = $1, street_address = $2, address_2 = $3, postal_code = $4, city = $5, country = $6
+			 WHERE id = $7
+		`, sh.Name, sh.Line1, sh.Line2, sh.PostalCode, sh.City, sh.Country, purchaseID); err != nil {
+			return fmt.Errorf("purchase address: %w", err)
+		}
+		address = addressLines(sh.Name, sh.Line1, sh.Line2, sh.PostalCode, sh.City)
+	}
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE ticket_purchases
@@ -491,7 +576,7 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 	// Email the team link. Best-effort: a send failure leaves the
 	// purchase in a paid-but-not-emailed state, which the operator
 	// can re-send via the existing per-team SendTeamInvitation route.
-	if err := h.sendTicketTeamLink(ctx, eventID, buyerEmail, teamToken, voucher); err != nil {
+	if err := h.sendTicketTeamLink(ctx, eventID, buyerEmail, teamToken, voucher, letterLang, address); err != nil {
 		logx.Warn("admin.store.ticket.mail",
 			"purchase_id", purchaseID, "team_id", teamID, "err", err.Error())
 	}
@@ -624,16 +709,23 @@ func uniqueTicketTeamName(ctx context.Context, tx *sql.Tx, eventID int64, buyerE
 // backoff. Falls back to a direct Mailer.Send when the outbox is
 // not configured (early dev setups) so a fresh checkout still
 // behaves the same way.
-func (h *Handlers) sendTicketTeamLink(ctx context.Context, eventID int64, buyerEmail, teamToken, voucher string) error {
+//
+// lang, when set, is the language of the buyer's posted letter, which
+// their email is written in too; address is where it is posted.
+func (h *Handlers) sendTicketTeamLink(ctx context.Context, eventID int64, buyerEmail, teamToken, voucher, lang string, address []string) error {
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	if publicURL == "" {
 		return errors.New("ticket email requires PublicURL")
 	}
 	l := h.eventLook(ctx, eventID)
+	if lang != "" {
+		l.Lang = lang
+	}
 	subject, c := emailtpl.TeamLink(l.Lang, publicURL+"/team/"+teamToken, publicURL+"/play", auth.FormatVoucherCode(voucher), l.Brand.Name)
 	c = l.withBuyerNote(c)
 	c = emailtpl.WithFiles(c, h.fileLinks(ctx, eventID, publicURL, teamToken))
 	c = emailtpl.WithPrints(c, h.printEmailLinks(ctx, eventID, publicURL, teamToken))
+	c = emailtpl.WithEnvelope(c, address)
 	c.Picture = l.Cover
 	if h.SellerIdentity != nil {
 		if seller := h.SellerIdentity(l.Lang); seller != "" {

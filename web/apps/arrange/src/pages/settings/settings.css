@@ -21,3 +21,9 @@
 .dz .st-intro { margin: 0 0 var(--dz-space-4); }
 .dz .st-flush { margin: 0; }
 .dz .st-example { margin: var(--dz-space-2) 0 0; }
+
+.dz .ship-countries { display: grid; gap: var(--dz-space-3); }
+.dz .ship-countries ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--dz-space-2); }
+.dz .ship-countries li { display: inline-flex; align-items: center; gap: var(--dz-space-1); padding: var(--dz-space-1) var(--dz-space-2); border: 1px solid var(--dz-border); border-radius: 999px; }
+.dz .ship-countries li button { display: inline-flex; border: 0; background: none; padding: 0; color: var(--dz-muted); cursor: pointer; }
+.dz .ship-countries select { max-width: 18rem; }

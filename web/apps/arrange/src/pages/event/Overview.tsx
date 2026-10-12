@@ -3,7 +3,7 @@ import { Copy, Eye } from "lucide-react";
 import type { Whoami } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
-import { Button, Callout, Card, Field, fmtDateTime, ICON, ImageDrop, ListingStatus, SubmitListingDialog, canSubmitListing, relTime, Row, Stat, Stats, toDate, useToast } from "../../ui/index.ts";
+import { Button, Callout, Card, Field, fmtDateTime, ICON, ImageDrop, ListingStatus, SubmitListingDialog, canSubmitListing, relTime, Row, Stat, Stats, toDate, useLoad, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
 import type { ConnectStatus, EventInfo, Team } from "./api.ts";
 import { copyText, fmtElapsedShort, fmtPoints, members, recapURL, teamStuck } from "./util.ts";
@@ -195,6 +195,22 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
   const [busy, setBusy] = useState(false);
   const [cover, setCover] = useState<{ has: boolean; bust: number }>({ has: !!event.has_cover_image, bust: 0 });
   const [submitting, setSubmitting] = useState(false);
+  const version = useLoad((s) => api.getEventVersion(event.id, s), [event.id, event.listing_review]);
+  const [moving, setMoving] = useState(false);
+  const update = async () => {
+    setMoving(true);
+    try {
+      const v = await api.updateEventVersion(event.id);
+      toast.ok(v.next ? t.t("Submit the listing for review to move to version {{n}}", { n: v.next }) : t.t("New teams now start on version {{n}}", { n: v.version }));
+      version.reload();
+      onSaved();
+    } catch (e) {
+      toast.err(e);
+    } finally {
+      setMoving(false);
+    }
+  };
+  const v = version.data;
 
   const save = async () => {
     const major = price.trim();
@@ -239,6 +255,20 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
       subtitle={saved ? t.t("{{price}} {{cur}} per ticket", { price: saved, cur: (event.ticket_currency || "sek").toUpperCase() }) : t.t("No ticket price set yet — players can't buy until you save one.")}
     >
       <ListingStatus kind="store" review={event.listing_review} reason={event.listing_reject_reason} listed={event.listed} />
+      {v?.can_update && (
+        <Callout variant="info">
+          <Row>
+            <span>{t.t("Version {{latest}} of the adventure is published; new teams of this event start on version {{version}}.", { latest: v.latest, version: v.version })}</span>
+            <Button size="sm" loading={moving} onClick={() => void update()}>{t.t("Update to version {{n}}", { n: v.latest })}</Button>
+          </Row>
+          {v.reviewed && <span className="ev-muted">{t.t("It goes through review like any change to the listing: new teams move once it is approved. Teams already playing keep their version.")}</span>}
+        </Callout>
+      )}
+      {v?.next ? (
+        <Callout variant="info">
+          {t.t("Moves to version {{n}} once the listing is approved. Until then new teams start on version {{version}}.", { n: v.next, version: v.version })}
+        </Callout>
+      ) : null}
       {canSubmitListing(event.listing_review) && (
         <Row>
           <Button variant="primary" size="sm" onClick={() => setSubmitting(true)}>{t.t("Submit for review")}</Button>

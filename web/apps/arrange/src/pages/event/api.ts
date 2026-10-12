@@ -258,6 +258,17 @@ export const getPrintDelivery = (id: number, signal?: AbortSignal) =>
 /** "" goes back to the adventure's delivery. */
 export const setPrintDelivery = (id: number, deliveries: Record<string, Delivery | "">) =>
   put<{ materials: EventPrintMaterial[] | null }>(E(id) + "/print-delivery", { deliveries });
+/** internal/admin/event_version.go eventVersion */
+export interface EventVersion {
+  version: number;
+  next?: number;
+  latest: number;
+  can_update: boolean;
+  reviewed: boolean;
+  listing_review: string;
+}
+export const getEventVersion = (id: number, signal?: AbortSignal) => get<EventVersion>(E(id) + "/version", signal ? { signal } : {});
+export const updateEventVersion = (id: number) => post<EventVersion>(E(id) + "/version/update");
 export const deleteMessage = (id: number, messageId: number) => request<void>(`${E(id)}/messages/${messageId}`, { method: "DELETE" });
 export const photoSrc = (id: number, photoId: number) => `${E(id)}/photos/${photoId}/image`;
 export const reviewPhoto = (id: number, photoId: number, status: string) => post<void>(`${E(id)}/photos/${photoId}/review`, { status });

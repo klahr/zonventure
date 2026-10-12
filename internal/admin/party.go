@@ -515,7 +515,7 @@ func (h *Handlers) BookParty(w http.ResponseWriter, r *http.Request) {
 	product := fmt.Sprintf("%s — party for %d", offer.Title, req.Kids)
 	back := fmt.Sprintf("/app/party/book/%s/%d", offer.OrgSlug, offer.ID)
 	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, product, offer.Currency, amount,
-		email, connectedAccountID, applicationFee, back)
+		email, connectedAccountID, applicationFee, back, nil)
 	if err != nil {
 		_, _ = h.DB.ExecContext(r.Context(),
 			`UPDATE ticket_purchases SET state = 'failed' WHERE id = $1 AND state = 'pending'`, purchaseID)

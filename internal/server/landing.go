@@ -221,6 +221,8 @@ type landingStrings struct {
 	StoreEventMetaMeetingPoint string
 	StoreEventBuyHeading       string
 	StoreEventEmailLabel       string
+	StoreEventLetterLangLabel  string
+	StoreEventLetterLangHint   string
 	StoreEventEmailPlaceholder string
 	StoreEventBuyCTA           string // {{PRICE_DISPLAY}} placeholder is substituted per-event
 	StoreEventTermsHTML        string // contains <a href="/terms">…</a>
@@ -270,6 +272,7 @@ type landingStrings struct {
 	RedeemAddress2Label       string
 	RedeemPostalCodeLabel     string
 	RedeemCityLabel           string
+	RedeemCountryLabel        string
 	RedeemTermsHTML           string
 	RedeemSubmit              string
 	RedeemSending             string
@@ -548,6 +551,8 @@ func storeSubs(s landingStrings) [][2]string {
 		{"{{STORE_EVENT_META_MEETING_POINT}}", s.StoreEventMetaMeetingPoint},
 		{"{{STORE_EVENT_BUY_HEADING}}", s.StoreEventBuyHeading},
 		{"{{STORE_EVENT_EMAIL_LABEL}}", s.StoreEventEmailLabel},
+		{"{{STORE_EVENT_LETTER_LANG_LABEL}}", s.StoreEventLetterLangLabel},
+		{"{{STORE_EVENT_LETTER_LANG_HINT}}", s.StoreEventLetterLangHint},
 		{"{{STORE_EVENT_EMAIL_PLACEHOLDER}}", s.StoreEventEmailPlaceholder},
 		{"{{STORE_EVENT_BUY_CTA}}", s.StoreEventBuyCTA},
 		{"{{STORE_EVENT_TERMS_HTML}}", s.StoreEventTermsHTML},
@@ -648,6 +653,7 @@ func redeemSubs(s landingStrings) [][2]string {
 		{"{{REDEEM_ADDRESS2_LABEL}}", s.RedeemAddress2Label},
 		{"{{REDEEM_POSTAL_CODE_LABEL}}", s.RedeemPostalCodeLabel},
 		{"{{REDEEM_CITY_LABEL}}", s.RedeemCityLabel},
+		{"{{REDEEM_COUNTRY_LABEL}}", s.RedeemCountryLabel},
 		{"{{REDEEM_TERMS_HTML}}", s.RedeemTermsHTML},
 		{"{{REDEEM_SUBMIT}}", s.RedeemSubmit},
 		{"{{REDEEM_I18N_JSON}}", marshalJSONForScript(map[string]string{

@@ -11,5 +11,14 @@
   "To post": "Att posta",
   "All languages": "Alla språk",
   "Nothing left to post.": "Inget kvar att posta.",
-  "Open the PDF to print it": "Öppna PDF:en för att skriva ut den"
+  "Open the PDF to print it": "Öppna PDF:en för att skriva ut den",
+  "About orders": "Om beställningar",
+  "Gift box codes redeemed on your public redeem page, and store purchases whose adventure posts a letter. Check each box code in the partner's portal, then approve it to create a team and email its link, or reject it. Print each letter, post it and mark it posted.": "Koder från presentaskar som lösts in på er inlösensida, och köp i butiken där äventyret postar ett brev. Kontrollera varje kod i partnerns portal och godkänn den för att skapa ett lag och mejla länken, eller avvisa den. Skriv ut varje brev, posta det och markera det som postat.",
+  "Gift boxes redeemed on your redeem page, and store purchases with a letter to post.": "Presentaskar som lösts in på er inlösensida, och köp i butiken med ett brev att posta.",
+  "Order": "Beställning",
+  "Store purchase": "Köp i butiken",
+  "Paid {{when}}": "Betald {{when}}",
+  "Paid": "Betald",
+  "Country": "Land",
+  "Letters aren't posted to that country.": "Brev postas inte till det landet."
 }

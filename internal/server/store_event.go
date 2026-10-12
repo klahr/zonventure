@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -11,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/printmat"
 	"github.com/klahr/zonventure/internal/public"
 )
 
@@ -224,6 +227,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{HAS_ICON}}", boolAttr(hasIcon)},
 		[2]string{"{{OG_IMAGE_URL}}", html.EscapeString(ogImage)},
 		[2]string{"{{EVENT_ID}}", strconv.FormatInt(id, 10)},
+		[2]string{"{{LETTER_LANGS}}", html.EscapeString(letterLangsJSON(r.Context(), db, id))},
 		// The organisation's page: where the breadcrumb leads back to.
 		[2]string{"{{ORG_PATH}}", "/o/" + url.PathEscape(orgSlug)},
 		[2]string{"{{ADVENTURE_SLUG}}", html.EscapeString(advSlug)},
@@ -329,4 +333,19 @@ func boolAttr(b bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+// letterLangsJSON lists, as a JSON array, the languages a buyer chooses
+// the event's posted letter in: [] when it posts none, and then checkout
+// asks for no address either.
+func letterLangsJSON(ctx context.Context, db *sql.DB, eventID int64) string {
+	g, o, err := printmat.ForEvent(ctx, db, eventID)
+	langs := []string{}
+	if err == nil && printmat.Posts(g, o) {
+		if langs = g.Languages(); langs == nil {
+			langs = []string{g.Language}
+		}
+	}
+	b, _ := json.Marshal(langs)
+	return string(b)
 }

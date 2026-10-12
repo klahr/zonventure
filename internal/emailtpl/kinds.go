@@ -341,6 +341,35 @@ func BoxConfirmed(lang, partner, teamURL, playURL, voucher, org string) (string,
 	return T(lang, "Your %s adventure — team link inside", sitename.Name()), c
 }
 
+// BoxReceived tells a box buyer their code has arrived and is being
+// checked, and where their envelope goes: a wrong address is caught
+// before anything is posted. address is the postal address, a line each.
+func BoxReceived(lang, partner string, address []string) (string, Content) {
+	subject := T(lang, "We've got your %s code", partner)
+	return subject, WithEnvelope(Content{
+		Lang:      lang,
+		Preheader: T(lang, "We're checking it and will email your team link soon."),
+		Heading:   subject,
+		Body:      T(lang, "We're checking it with %s now. Once it checks out, we email your team link to this address, usually within a working day.", partner),
+	}, address)
+}
+
+// WithEnvelope says where the buyer's envelope is posted, a line each of
+// address, so a wrong address is caught before it goes out; none leaves
+// c as it is.
+func WithEnvelope(c Content, address []string) Content {
+	if len(address) == 0 {
+		return c
+	}
+	lines := make([]string, len(address))
+	for i, l := range address {
+		lines[i] = mdEscape(l)
+	}
+	c.Body += "\n\n" + T(c.Lang, "Your envelope goes to:") + "  \n" + strings.Join(lines, "  \n")
+	c.Body += "\n\n" + T(c.Lang, "Something wrong? Reply to this email and we'll sort it out.")
+	return c
+}
+
 // BoxRejected tells a buyer their box's code did not check out.
 func BoxRejected(lang, partner string) (string, Content) {
 	subject := T(lang, "About your %s box", partner)

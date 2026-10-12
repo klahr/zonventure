@@ -104,6 +104,12 @@ type CheckoutParams struct {
 	AutoTax         bool
 	InvoiceCreation bool
 
+	// ShipCountries asks for a postal address to post something to,
+	// in one of these ISO 3166-1 alpha-2 countries; none asks for
+	// none. CheckoutDetail.Shipping carries it back. CollectAddress
+	// is the billing address for an invoice, a different thing.
+	ShipCountries []string
+
 	// Marketplace fields — set together when the charge should be
 	// destination-charged: money lands in the connected account
 	// (ConnectedAccountID) first, with ApplicationFeeCents captured
@@ -196,6 +202,14 @@ type CheckoutDetail struct {
 	ChargeID       string
 	InvoiceURL     string
 	PaymentStatus  PaymentStatus
+	// Shipping is the postal address the buyer gave, when the checkout
+	// asked for one (CheckoutParams.ShipCountries).
+	Shipping *Shipping
+}
+
+// Shipping is a postal address collected at checkout.
+type Shipping struct {
+	Name, Line1, Line2, PostalCode, City, Country string
 }
 
 // PaymentStatus mirrors Stripe's `payment_status` on a Checkout

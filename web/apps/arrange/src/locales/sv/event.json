@@ -140,5 +140,11 @@
   "{{delivery}} (as in the adventure)": "{{delivery}} (som i äventyret)",
   "Posted by you": "Postas av er",
   "Emailed to the buyer": "Mejlas till köparen",
-  "For organisers only": "Bara för arrangörer"
+  "For organisers only": "Bara för arrangörer",
+  "Submit the listing for review to move to version {{n}}": "Skicka listningen för granskning för att byta till version {{n}}",
+  "New teams now start on version {{n}}": "Nya lag börjar nu på version {{n}}",
+  "Version {{latest}} of the adventure is published; new teams of this event start on version {{version}}.": "Version {{latest}} av äventyret är publicerad; nya lag i det här eventet börjar på version {{version}}.",
+  "Update to version {{n}}": "Byt till version {{n}}",
+  "It goes through review like any change to the listing: new teams move once it is approved. Teams already playing keep their version.": "Det granskas som alla ändringar i listningen: nya lag byter när den är godkänd. Lag som redan spelar behåller sin version.",
+  "Moves to version {{n}} once the listing is approved. Until then new teams start on version {{version}}.": "Byter till version {{n}} när listningen är godkänd. Tills dess börjar nya lag på version {{version}}."
 }

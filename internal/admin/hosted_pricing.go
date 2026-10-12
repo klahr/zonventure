@@ -193,7 +193,7 @@ func (h *Handlers) hostFree(ctx context.Context, orgID int64, slug, name string,
 // the purchase opens once paid.
 func (h *Handlers) startHostedCheckout(w http.ResponseWriter, r *http.Request, purchaseID int64, product string, amount int64, email, back, hostURL string) {
 	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, product, h.hosted().Currency, amount,
-		email, "", 0, back)
+		email, "", 0, back, nil)
 	if err != nil {
 		_, _ = h.DB.ExecContext(r.Context(),
 			`UPDATE ticket_purchases SET state = 'failed' WHERE id = $1 AND state = 'pending'`, purchaseID)

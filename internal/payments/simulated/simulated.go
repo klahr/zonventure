@@ -256,6 +256,12 @@ func (p *Provider) devConfirm(w http.ResponseWriter, r *http.Request) {
 			PaymentStatus:  payments.PaymentStatusPaid,
 		},
 	}
+	// A checkout that posts something gets a fixed test address, as if
+	// the buyer had typed it into Stripe's form.
+	if c := s.params.ShipCountries; len(c) > 0 {
+		ev.Checkout.Shipping = &payments.Shipping{Name: "Test Buyer", Line1: "Testgatan 1",
+			PostalCode: "111 22", City: "Stockholm", Country: c[0]}
+	}
 	if err := p.deliver(r.Context(), ev); err != nil {
 		http.Error(w, "simulated webhook delivery failed: "+err.Error(), http.StatusBadGateway)
 		return

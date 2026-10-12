@@ -34,3 +34,9 @@ export function uploadImage(kind: "logo" | "cover", file: File) {
 }
 
 export const deleteImage = (kind: "logo" | "cover") => request<void>(`/api/admin/orgs/me/${kind}`, { method: "DELETE" });
+
+/** GET/PUT /api/admin/orgs/me/ship-countries — internal/admin/ship_countries.go. */
+export const getShipCountries = (signal?: AbortSignal) =>
+  get<{ countries: string[] }>("/api/admin/orgs/me/ship-countries", signal ? { signal } : {}).then((r) => r.countries);
+export const putShipCountries = (countries: string[]) =>
+  put<{ countries: string[] }>("/api/admin/orgs/me/ship-countries", { countries }).then((r) => r.countries);

@@ -61,6 +61,17 @@ func Effective(g *graph.Graph, o Overrides) []graph.PrintMaterial {
 	return out
 }
 
+// Posts reports whether the event posts any of g's print materials: then
+// a buyer chooses the letter's language and gives a postal address.
+func Posts(g *graph.Graph, o Overrides) bool {
+	for _, pm := range Effective(g, o) {
+		if pm.Delivery == graph.DeliveryPosted {
+			return true
+		}
+	}
+	return false
+}
+
 // File picks pm's file for a team in lang: lang's, else the adventure's
 // main language's, else the first it has. It returns the language picked
 // and the media id, or "" and 0 when pm has no file.

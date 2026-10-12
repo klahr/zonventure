@@ -42,7 +42,7 @@
   }
   .card h2 { margin: 1rem 0 0; font-size: 1.1rem; }
   .card .hint { color: var(--muted); font-size: .85rem; margin: -.3rem 0 0; }
-  form, #fields { display: grid; gap: .65rem; }
+  form, #fields, #postal, #country-field { display: grid; gap: .65rem; }
   label { font-size: .85rem; color: var(--ink-soft); font-weight: 600; }
   input[type=text], input[type=email], select {
     width: 100%;
@@ -147,8 +147,8 @@
           <label for="product">{{REDEEM_PRODUCT_LABEL}}</label>
           <select id="product" required></select>
 
-          <h2>{{REDEEM_ADDRESS_HEADING}}</h2>
-          <p class="hint">{{REDEEM_ADDRESS_HINT}}</p>
+          <h2 id="address-heading">{{REDEEM_ADDRESS_HEADING}}</h2>
+          <p class="hint" id="address-hint">{{REDEEM_ADDRESS_HINT}}</p>
           <fieldset class="letter-lang" id="letter-lang" hidden>
             <legend>{{REDEEM_LETTER_LANG_LABEL}}</legend>
             <div class="seg" id="letter-lang-options"></div>
@@ -158,6 +158,7 @@
           <input id="name" type="text" required autocomplete="name" maxlength="200">
           <label for="email">{{REDEEM_EMAIL_LABEL}}</label>
           <input id="email" type="email" required autocomplete="email" maxlength="200">
+          <div id="postal">
           <label for="street">{{REDEEM_STREET_LABEL}}</label>
           <input id="street" type="text" required autocomplete="address-line1" maxlength="200">
           <label for="address2">{{REDEEM_ADDRESS2_LABEL}}</label>
@@ -171,6 +172,11 @@
               <label for="city">{{REDEEM_CITY_LABEL}}</label>
               <input id="city" type="text" required autocomplete="address-level2" maxlength="200">
             </div>
+          </div>
+          <div id="country-field" hidden>
+            <label for="country">{{REDEEM_COUNTRY_LABEL}}</label>
+            <select id="country" autocomplete="country"></select>
+          </div>
           </div>
 
           <label class="terms"><input id="terms" type="checkbox" required> <span>{{REDEEM_TERMS_HTML}}</span></label>
@@ -230,7 +236,24 @@
       return inLang ? n : n.charAt(0).toUpperCase() + n.slice(1);
     } catch (e) { return code.toUpperCase(); }
   }
+  function letter() {
+    var p = partners.find(function (x) { return x.kind === partnerSel.value; });
+    var pr = p && p.products.find(function (x) { return String(x.id) === productSel.value; });
+    return (pr && pr.letter) || null;
+  }
   function showLetter() {
+    // An adventure that posts nothing needs no address, nor its language.
+    var l = letter();
+    ['address-heading', 'address-hint', 'postal'].forEach(function (id) { $(id).hidden = !l; });
+    var countries = (l && l.countries) || [], sel = $('country');
+    sel.replaceChildren();
+    countries.forEach(function (c) {
+      var o = document.createElement('option');
+      o.value = c;
+      try { o.textContent = new Intl.DisplayNames([document.documentElement.lang || 'en'], { type: 'region' }).of(c); } catch (e) { o.textContent = c; }
+      sel.append(o);
+    });
+    $('country-field').hidden = countries.length < 2;
     var langs = letterLangs(), box = $('letter-lang-options');
     var pick = langs.indexOf(document.documentElement.lang) >= 0 ? document.documentElement.lang : langs[0];
     box.replaceChildren();
@@ -302,7 +325,8 @@
   productSel.addEventListener('change', showLetter);
 
   var reasons = { missing_field: 'errMissing', invalid_email: 'errEmail', invalid_code: 'errCode',
-                  code_used: 'errUsed', unknown_product: 'errProduct', rate_limited: 'errRateLimited' };
+                  code_used: 'errUsed', unknown_product: 'errProduct', rate_limited: 'errRateLimited',
+                  invalid_country: 'errMissing' };
 
   form.addEventListener('submit', function (ev) {
     ev.preventDefault();
@@ -319,11 +343,13 @@
       address_2: $('address2').value.trim(),
       postal_code: $('postal-code').value.trim(),
       city: $('city').value.trim(),
+      country: $('country').value,
       letter_lang: letterLang(),
       accepted_terms: $('terms').checked,
     };
+    var posted = !!letter();
     if (!body.product_id || !body.security_code || (liveit && !body.box_number) || !body.name ||
-        !body.email || !body.street_address || !body.postal_code || !body.city) {
+        !body.email || (posted && (!body.street_address || !body.postal_code || !body.city))) {
       err.textContent = t('errMissing');
       return;
     }
@@ -344,7 +370,7 @@
         form.hidden = true;
         $('done-heading').textContent = t('doneHeading');
         $('done-body').textContent = t('doneBody').replace('{email}', body.email);
-        if (body.letter_lang) {
+        if (posted && body.letter_lang) {
           var address = [body.name, body.street_address, body.address_2, body.postal_code + ' ' + body.city]
             .filter(function (x) { return x.trim(); }).join(', ');
           $('done-letter').textContent = t('doneLetter')

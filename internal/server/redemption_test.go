@@ -151,6 +151,30 @@ func TestRedemption_TrueStoryLifecycle(t *testing.T) {
 	if n := outboxCount(t, db, "redemption_new", "boss@org.test"); n != 1 {
 		t.Errorf("org admin notified %d times, want 1", n)
 	}
+	// The buyer is told the code arrived, and where the envelope goes.
+	var received string
+	if err := db.QueryRow(`SELECT body_text FROM mail_outbox WHERE kind = 'redemption_received' AND to_addr = 'ada@buyer.test'`).Scan(&received); err != nil {
+		t.Fatalf("receipt: %v", err)
+	}
+	if !strings.Contains(received, "Storgatan 1") || !strings.Contains(received, "TrueStory") {
+		t.Errorf("receipt lacks the address or partner:\n%s", received)
+	}
+	// Nothing is posted for this adventure, so no address is needed.
+	// (Through the organisers' form: the public one is rate limited.)
+	noAddress := form("XYZXYZ999")
+	delete(noAddress, "street_address")
+	delete(noAddress, "postal_code")
+	delete(noAddress, "city")
+	if s, e := doErr(boss, "POST", "/api/admin/redemptions", noAddress); s != 201 {
+		t.Fatalf("redeem without an address = %d %+v, want 201", s, e)
+	}
+	if _, err := db.Exec(`DELETE FROM partner_redemptions WHERE security_code = 'XYZXYZ999'`); err != nil {
+		t.Fatal(err)
+	}
+	// The author's note to buyers goes with the team link.
+	if _, err := db.Exec(`UPDATE adventures SET buyer_note = 'Start by the big oak.' WHERE slug = 'demo'`); err != nil {
+		t.Fatal(err)
+	}
 
 	var list struct {
 		Redemptions []redemptionView `json:"redemptions"`
@@ -187,6 +211,10 @@ func TestRedemption_TrueStoryLifecycle(t *testing.T) {
 	}
 	if n := outboxCount(t, db, "redemption_team_link", "ada@buyer.test"); n != 1 {
 		t.Errorf("team link mailed %d times, want 1", n)
+	}
+	var link string
+	if err := db.QueryRow(`SELECT body_text FROM mail_outbox WHERE kind = 'redemption_team_link'`).Scan(&link); err != nil || !strings.Contains(link, "Start by the big oak.") {
+		t.Errorf("team link email lacks the note to buyers (%v):\n%s", err, link)
 	}
 	if s, e := doErr(boss, "POST", "/api/admin/redemptions/"+itoa(r.ID)+"/approve", nil); s != 409 || e.Reason != "not_pending" {
 		t.Errorf("second approve = %d %+v, want 409 not_pending", s, e)
@@ -397,6 +425,32 @@ func TestRedemption_LetterLanguage(t *testing.T) {
 			"street_address": "Storgatan 1", "postal_code": "111 22", "city": "Stockholm",
 			"letter_lang": lang, "accepted_terms": true,
 		}
+	}
+	noAddress := form("ABCDEF129", "sv")
+	delete(noAddress, "street_address")
+	if s, e := doErr(boss, "POST", "/api/admin/redemptions", noAddress); s != 400 || e.Reason != "missing_field" {
+		t.Errorf("a posted letter without an address = %d %+v, want 400 missing_field", s, e)
+	}
+	// Posting to more than one country, the buyer says which.
+	if s := boss.do("PUT", "/api/admin/orgs/me/ship-countries", map[string]any{"countries": []string{"se", "NO"}}, nil); s != 200 {
+		t.Fatalf("ship countries = %d", s)
+	}
+	if s, e := doErr(boss, "POST", "/api/admin/redemptions", form("ABCDEF128", "sv")); s != 400 || e.Reason != "invalid_country" {
+		t.Errorf("no country of two = %d %+v, want 400 invalid_country", s, e)
+	}
+	withCountry := form("ABCDEF128", "sv")
+	withCountry["country"] = "NO"
+	if s, e := doErr(boss, "POST", "/api/admin/redemptions", withCountry); s != 201 {
+		t.Errorf("redeem to Norway = %d %+v", s, e)
+	}
+	if s := boss.do("PUT", "/api/admin/orgs/me/ship-countries", map[string]any{"countries": []string{"SE"}}, nil); s != 200 {
+		t.Fatalf("ship countries back = %d", s)
+	}
+	if s, e := doErr(boss, "PUT", "/api/admin/orgs/me/ship-countries", map[string]any{"countries": []string{}}); s != 400 {
+		t.Errorf("no countries = %d %+v, want 400", s, e)
+	}
+	if _, err := db.Exec(`DELETE FROM partner_redemptions WHERE security_code = 'ABCDEF128'`); err != nil {
+		t.Fatal(err)
 	}
 	if s, e := doErr(buyer, "POST", "/api/redeem", form("ABCDEF123", "de")); s != 400 || e.Reason != "invalid_language" {
 		t.Fatalf("German letter = %d %+v, want 400 invalid_language", s, e)

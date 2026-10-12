@@ -16,6 +16,15 @@ export function langName(code: string, locale: string): string {
   }
 }
 
+/** A country code by its name in locale, e.g. "SE" as "Sweden". */
+export function regionName(code: string, locale: string): string {
+  try {
+    return new Intl.DisplayNames([locale], { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
 export const partnerLabel = (kind: string, name?: string) => name || PARTNER_KINDS.find((p) => p.kind === kind)?.label || kind;
 
 const REASONS: Record<string, string> = {
@@ -28,6 +37,7 @@ const REASONS: Record<string, string> = {
   missing_field: "Fill in every required field.",
   unknown_product: "Pick a product.",
   invalid_language: "The envelope can't be printed in that language.",
+  invalid_country: "Letters aren't posted to that country.",
   exists: "That partner is already added.",
   in_use: "It has redemptions, so it can't be deleted. Disable it instead.",
 };

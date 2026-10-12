@@ -8,16 +8,19 @@ import {
 } from "../../ui/index.ts";
 import { SPOTS } from "@zonventure/ui";
 import { play } from "@zonventure/api";
-import { decide, listPartners, listRedemptions, updateRedemption, type Redemption } from "./api.ts";
+import { decide, listPartners, listRedemptions, updatePurchase, updateRedemption, type Redemption } from "./api.ts";
 import { AddRedemptionDialog, PostDialog } from "./dialogs.tsx";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
 import { PartnersCard } from "./Partners.tsx";
-import { langName, partnerLabel, useRedemptionError } from "./shared.ts";
+import { langName, partnerLabel, regionName, useRedemptionError } from "./shared.ts";
 import "./redemptions.css";
 
 const STATES = ["pending", "to_post", "approved", "rejected", "cancelled", "all"] as const;
 const LABEL: Record<(typeof STATES)[number], string> = { pending: "Pending", to_post: "To post", approved: "Approved", rejected: "Rejected", cancelled: "Cancelled", all: "All" };
-const TONE: Record<string, Tone> = { pending: "warn", approved: "good", rejected: "bad", cancelled: "neutral" };
+const TONE: Record<string, Tone> = { pending: "warn", approved: "good", rejected: "bad", cancelled: "neutral", paid: "good" };
+const stateLabel = (s: string) => (s === "paid" ? "Paid" : LABEL[s as (typeof STATES)[number]] ?? s);
+
+
 
 /**
  * Gift box codes redeemed on the organisation's public page. Someone
@@ -47,20 +50,20 @@ export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
       <PageHeader
         title={
           <>
-            {t.t("Box redemptions")}
+            {t.t("Orders")}
             <HelpPopover
-              label={t.t("About box redemptions")}
-              body={t.t("Gift box codes redeemed on your public redeem page. Check each code in the partner's portal, then approve it to create a team and email its link, or reject it.")}
+              label={t.t("About orders")}
+              body={t.t("Gift box codes redeemed on your public redeem page, and store purchases whose adventure posts a letter. Check each box code in the partner's portal, then approve it to create a team and email its link, or reject it. Print each letter, post it and mark it posted.")}
             />
           </>
         }
         subtitle={list.data && (counts.pending ?? 0) > 0
           ? t.plural(counts.pending ?? 0, { one: t.t("{{n}} code waiting for review"), other: t.t("{{n}} codes waiting for review") })
-          : t.t("Gift box codes redeemed on your public redeem page.")}
+          : t.t("Gift boxes redeemed on your redeem page, and store purchases with a letter to post.")}
         actions={canAdd && <Button variant="primary" icon={<Plus size={ICON.md} aria-hidden />} onClick={() => setAdding(true)}>{t.t("Add redemption")}</Button>}
       />
       {(total > 0 || st !== "pending") && <Tabs
-        label={t.t("Box redemptions")}
+        label={t.t("Orders")}
         current={st}
         tabs={STATES.map((s) => {
           const n = s === "all" ? 0 : counts[s] ?? 0;
@@ -84,7 +87,7 @@ export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
         <Empty title={total === 0 ? t.t("No redemptions yet.") : st === "pending" ? t.t("No redemptions waiting for review.") : st === "to_post" ? t.t("Nothing left to post.") : t.t("No redemptions here.")} {...(total === 0 ? { illustration: SPOTS.noRedemptions } : {})} />
       ) : (
         <ul className="rd-list">
-          {rows.map((rd) => <RedemptionItem key={rd.id} rd={rd} showState={st === "all"} reload={list.reload} />)}
+          {rows.map((rd) => <RedemptionItem key={`${rd.kind}-${rd.id}`} rd={rd} showState={st === "all"} reload={list.reload} />)}
         </ul>
       )}
       {partners.error && !partners.data ? (
@@ -116,7 +119,11 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const locale = t.current();
-  const address = [rd.street_address, rd.address_2, [rd.postal_code, rd.city].filter(Boolean).join(" ")].filter(Boolean);
+  const purchase = rd.kind === "purchase";
+  const country = rd.country ? regionName(rd.country, locale) : "";
+  const address = [rd.street_address, rd.address_2, [rd.postal_code, rd.city].filter(Boolean).join(" "), country].filter(Boolean);
+  const save = (body: { posted?: boolean; post_at?: string; note?: string; letter_lang?: string }) =>
+    purchase ? updatePurchase(rd.id, body) : updateRedemption(rd.id, body);
 
   const run = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true);
@@ -176,7 +183,7 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
     </span>
   );
   const postItem: MenuItem = { label: t.t("Post date and note"), icon: <Pencil size={ICON.sm} aria-hidden />, onClick: () => setEditing(true) };
-  const togglePosted = () => run(() => updateRedemption(rd.id, { posted: !rd.posted_at }), t.t("Saved"));
+  const togglePosted = () => run(() => save({ posted: !rd.posted_at }), t.t("Saved"));
   const postedIcon = rd.posted_at ? <MailCheck size={ICON.sm} aria-hidden /> : <Mail size={ICON.sm} aria-hidden />;
   const postedLabel = rd.posted_at ? t.t("Mark as not posted") : t.t("Mark as posted");
   const postedItem: MenuItem = { label: postedLabel, icon: postedIcon, onClick: () => void togglePosted() };
@@ -191,6 +198,13 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
   return (
     <li className="rd-item">
       <div className="rd-item__main">
+        {purchase ? (
+        <div className="rd-item__col">
+          <span className="rd-label">{t.t("Order")}</span>
+          <strong>{t.t("Store purchase")}</strong>
+          <span className="rd-sub" title={fmtDateTime(rd.created_at, locale)}>{t.t("Paid {{when}}", { when: relTime(rd.created_at, locale) })}</span>
+        </div>
+        ) : (
         <div className="rd-item__col">
           <span className="rd-label">{t.t("Code")}</span>
           <strong>{partnerLabel(rd.partner_kind, rd.partner_name)}</strong>
@@ -206,6 +220,7 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
           </span>
           <span className="rd-sub" title={fmtDateTime(rd.created_at, locale)}>{t.t("Received {{when}}", { when: relTime(rd.created_at, locale) })}</span>
         </div>
+        )}
         <div className="rd-item__col">
           <span className="rd-label">{t.t("Product")}</span>
           <span>{rd.product_name || "—"}</span>
@@ -230,12 +245,12 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
             {rd.note && <span className="rd-sub rd-note">{rd.note}</span>}
           </div>
         )}
-        {(showState || decided || (rd.state === "approved" && rd.team_id)) && (
+        {(showState || decided || ((rd.state === "approved" || purchase) && rd.team_id)) && (
           <div className="rd-item__col">
-            <span className="rd-label">{showState ? t.t("State") : t.t(LABEL[rd.state] ?? rd.state)}</span>
-            {showState && <span><Pill tone={TONE[rd.state] ?? "neutral"}>{t.t(LABEL[rd.state] ?? rd.state)}</Pill></span>}
+            <span className="rd-label">{showState ? t.t("State") : t.t(stateLabel(rd.state))}</span>
+            {showState && <span><Pill tone={TONE[rd.state] ?? "neutral"}>{t.t(stateLabel(rd.state))}</Pill></span>}
             {decided}
-            {rd.state === "approved" && rd.team_id && (
+            {(rd.state === "approved" || purchase) && rd.team_id && (
               <a className="rd-sub" href={href({ name: "event", id: rd.event_id })}>{t.t("Team: {{name}}", { name: rd.team_name || `#${rd.team_id}` })}</a>
             )}
           </div>
@@ -259,6 +274,14 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
             <MoreMenu size="sm" label={t.t("More")} items={[postItem, { separator: true }, cancelItem]} />
           </>
         )}
+        {purchase && (
+          <>
+            {prints}
+            <Button size="sm" disabled={busy} icon={postedIcon} onClick={() => void togglePosted()}>{postedLabel}</Button>
+            <span className="rd-spacer" />
+            <MoreMenu size="sm" label={t.t("More")} items={[postItem]} />
+          </>
+        )}
         {closed && (
           <Button size="sm" variant="ghost" disabled={busy} icon={<Pencil size={ICON.sm} aria-hidden />} onClick={() => setEditing(true)}>{t.t("Post date and note")}</Button>
         )}
@@ -267,7 +290,7 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
         <PostDialog
           rd={rd}
           onClose={() => setEditing(false)}
-          onSave={async (body) => { setEditing(false); await run(() => updateRedemption(rd.id, body), t.t("Saved")); }}
+          onSave={async (body) => { setEditing(false); await run(() => save(body), t.t("Saved")); }}
         />
       )}
     </li>

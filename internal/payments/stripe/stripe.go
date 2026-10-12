@@ -127,6 +127,11 @@ func (p *Provider) CreateCheckout(ctx context.Context, params payments.CheckoutP
 		csParams.BillingAddressCollection = stripego.String(
 			string(stripego.CheckoutSessionBillingAddressCollectionRequired))
 	}
+	if len(params.ShipCountries) > 0 {
+		csParams.ShippingAddressCollection = &stripego.CheckoutSessionShippingAddressCollectionParams{
+			AllowedCountries: stripego.StringSlice(params.ShipCountries),
+		}
+	}
 	if params.CollectTaxID {
 		csParams.TaxIDCollection = &stripego.CheckoutSessionTaxIDCollectionParams{
 			Enabled: stripego.Bool(true),
@@ -230,6 +235,11 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 		}
 		if sess.Invoice != nil {
 			detail.InvoiceURL = sess.Invoice.HostedInvoiceURL
+		}
+		if ci := sess.CollectedInformation; ci != nil && ci.ShippingDetails != nil && ci.ShippingDetails.Address != nil {
+			a := ci.ShippingDetails.Address
+			detail.Shipping = &payments.Shipping{Name: ci.ShippingDetails.Name, Line1: a.Line1, Line2: a.Line2,
+				PostalCode: a.PostalCode, City: a.City, Country: a.Country}
 		}
 		out.Checkout = &detail
 

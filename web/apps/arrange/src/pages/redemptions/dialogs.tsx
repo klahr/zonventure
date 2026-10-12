@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useT } from "../../i18n.tsx";
 import { Button, Dialog, Field, useToast } from "../../ui/index.ts";
 import { addProduct, createRedemption, updateProduct, type Partner, type PartnerProduct, type Redemption, type SelfGuidedEvent } from "./api.ts";
-import { langName, partnerLabel, useRedemptionError } from "./shared.ts";
+import { langName, partnerLabel, regionName, useRedemptionError } from "./shared.ts";
 
 export function PostDialog({ rd, onClose, onSave }: { rd: Redemption; onClose: () => void; onSave: (b: { post_at: string; posted: boolean; note: string; letter_lang?: string }) => void }) {
   const t = useT();
@@ -57,8 +57,12 @@ export function AddRedemptionDialog({ partners, onClose, onDone }: { partners: P
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((v) => ({ ...v, [k]: e.target.value }));
   const picked = products.find((x) => String(x.id) === productId);
   const liveit = picked?.partner.kind === "liveit";
-  const langs = picked?.letter_languages ?? [];
+  // A product whose event posts nothing needs no address.
+  const letter = picked?.letter ?? null;
+  const langs = letter?.languages ?? [];
+  const countries = letter?.countries ?? [];
   const [lang, setLang] = useState("");
+  const [country, setCountry] = useState("");
 
   const submit = async () => {
     setBusy(true);
@@ -73,6 +77,7 @@ export function AddRedemptionDialog({ partners, onClose, onDone }: { partners: P
         address_2: f.address2.trim(),
         postal_code: f.postal.trim(),
         city: f.city.trim(),
+        country: countries.includes(country) ? country : countries[0] ?? "",
         letter_lang: langs.includes(lang) ? lang : langs[0] ?? "",
         post_at: f.postAt,
         note: f.note.trim(),
@@ -114,13 +119,24 @@ export function AddRedemptionDialog({ partners, onClose, onDone }: { partners: P
       </div>
       <Field label={t.t("Name")}><input type="text" required maxLength={200} value={f.name} onChange={set("name")} /></Field>
       <Field label={t.t("Email")}><input type="email" required maxLength={254} value={f.email} onChange={set("email")} /></Field>
-      <Field label={t.t("Street address")}><input type="text" required maxLength={200} autoComplete="street-address" value={f.street} onChange={set("street")} /></Field>
-      <Field label={t.t("Address line 2 (optional)")}><input type="text" maxLength={200} value={f.address2} onChange={set("address2")} /></Field>
-      <div className="rd-grid rd-grid--postal">
-        <Field label={t.t("Postal code")}><input type="text" required maxLength={20} autoComplete="postal-code" value={f.postal} onChange={set("postal")} /></Field>
-        <Field label={t.t("City")}><input type="text" required maxLength={100} value={f.city} onChange={set("city")} /></Field>
-      </div>
-      {langs.length > 1 && <LetterLangField langs={langs} value={langs.includes(lang) ? lang : langs[0] ?? ""} onChange={setLang} />}
+      {letter && (
+        <>
+          <Field label={t.t("Street address")}><input type="text" required maxLength={200} autoComplete="street-address" value={f.street} onChange={set("street")} /></Field>
+          <Field label={t.t("Address line 2 (optional)")}><input type="text" maxLength={200} value={f.address2} onChange={set("address2")} /></Field>
+          <div className="rd-grid rd-grid--postal">
+            <Field label={t.t("Postal code")}><input type="text" required maxLength={20} autoComplete="postal-code" value={f.postal} onChange={set("postal")} /></Field>
+            <Field label={t.t("City")}><input type="text" required maxLength={100} value={f.city} onChange={set("city")} /></Field>
+          </div>
+          {countries.length > 1 && (
+            <Field label={t.t("Country")}>
+              <select value={countries.includes(country) ? country : countries[0]} onChange={(e) => setCountry(e.target.value)}>
+                {countries.map((c) => <option key={c} value={c}>{regionName(c, t.current())}</option>)}
+              </select>
+            </Field>
+          )}
+          {langs.length > 1 && <LetterLangField langs={langs} value={langs.includes(lang) ? lang : langs[0] ?? ""} onChange={setLang} />}
+        </>
+      )}
       <Field label={t.t("Post on (optional)")}><input type="date" value={f.postAt} onChange={set("postAt")} /></Field>
       <Field label={t.t("Note (optional)")}><textarea rows={3} maxLength={2000} value={f.note} onChange={set("note")} /></Field>
     </Dialog>

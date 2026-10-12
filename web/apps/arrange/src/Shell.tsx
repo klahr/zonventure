@@ -117,7 +117,7 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
     item("Events", CalendarDays, { name: "events" }, "events"),
     item("Self-guided", Compass, { name: "quests" }, "quests"),
     item("Hosted", PartyPopper, { name: "parties" }, "parties"),
-    item("Box redemptions", Gift, { name: "redemptions" }, "redemptions"),
+    item("Orders", Gift, { name: "redemptions" }, "redemptions"),
     ...review,
   ];
 }
@@ -143,7 +143,7 @@ function sectionOf(r: Route): { section: Section; label: string } {
     case "parties":
       return { section: "parties", label: "Hosted" };
     case "redemptions":
-      return { section: "redemptions", label: "Box redemptions" };
+      return { section: "redemptions", label: "Orders" };
     case "organizations":
     case "organization":
       return { section: "organizations", label: "Organizations" };

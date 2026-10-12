@@ -97,7 +97,7 @@ func (h *Handlers) GiveFreeTicket(w http.ResponseWriter, r *http.Request) {
 		VoucherCode: auth.FormatVoucherCode(voucher),
 		Emailed:     true,
 	}
-	if err := h.sendTicketTeamLink(ctx, eventID, email, teamToken, voucher); err != nil {
+	if err := h.sendTicketTeamLink(ctx, eventID, email, teamToken, voucher, "", nil); err != nil {
 		logx.Warn("admin.free_ticket.mail", "event_id", eventID, "team_id", teamID, "err", err.Error())
 		resp.Emailed = false
 	}

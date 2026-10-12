@@ -9,8 +9,8 @@ export interface PartnerProduct {
   adventure_title: string;
   team_size: number;
   enabled: boolean;
-  /** The languages its envelope can be printed in, main language first. */
-  letter_languages: string[] | null;
+  /** The posted letter's choices, as on the redeem page; null when its event posts nothing. */
+  letter: { languages: string[]; countries: string[] } | null;
 }
 
 /** internal/admin/redemptions.go partnerDTO */
@@ -22,10 +22,12 @@ export interface Partner {
   products: PartnerProduct[] | null;
 }
 
-/** internal/admin/redemptions.go redemptionDTO */
+/** internal/admin/redemptions.go redemptionDTO: a gift box redemption, or a store purchase whose letter is posted. */
 export interface Redemption {
+  kind: "redemption" | "purchase";
   id: number;
-  state: "pending" | "approved" | "rejected" | "cancelled";
+  /** A purchase is "paid". */
+  state: "pending" | "approved" | "rejected" | "cancelled" | "paid";
   partner_kind: string;
   partner_name: string;
   product_id: number;
@@ -40,6 +42,7 @@ export interface Redemption {
   address_2: string;
   postal_code: string;
   city: string;
+  country: string;
   letter_lang: string;
   post_at: string;
   posted_at: string;
@@ -83,6 +86,7 @@ export interface NewRedemption {
   address_2: string;
   postal_code: string;
   city: string;
+  country: string;
   letter_lang: string;
   post_at: string;
   note: string;
@@ -107,6 +111,7 @@ export const listSelfGuided = () =>
 
 export const decide = (id: number, action: "approve" | "reject" | "cancel") => post<unknown>(`/api/admin/redemptions/${id}/${action}`);
 export const updateRedemption = (id: number, body: { posted?: boolean; post_at?: string; note?: string; letter_lang?: string }) => patch<unknown>(`/api/admin/redemptions/${id}`, body);
+export const updatePurchase = (id: number, body: { posted?: boolean; post_at?: string; note?: string; letter_lang?: string }) => patch<unknown>(`/api/admin/ticket-purchases/${id}`, body);
 export const createRedemption = (body: NewRedemption) => post<unknown>("/api/admin/redemptions", body);
 
 export const addPartner = (kind: string) => post<unknown>("/api/admin/partners", { kind });

@@ -116,5 +116,10 @@
   "{{n}} child": "{{n}} barn",
   "{{n}} children": "{{n}} barn",
   "{{n}} team per game": "{{n}} lag per omgång",
-  "{{n}} teams per game": "{{n}} lag per omgång"
+  "{{n}} teams per game": "{{n}} lag per omgång",
+  "Posting letters": "Posta brev",
+  "Where you post printed letters to buyers, for adventures that come with one. Buyers give an address in one of these countries.": "Dit ni postar tryckta brev till köpare, för äventyr som har ett. Köpare anger en adress i något av de här länderna.",
+  "Remove {{country}}": "Ta bort {{country}}",
+  "Add a country": "Lägg till ett land",
+  "+ Add a country…": "+ Lägg till ett land…"
 }

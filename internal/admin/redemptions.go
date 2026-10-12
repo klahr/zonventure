@@ -1,12 +1,14 @@
 package admin
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"net/http"
 	"net/mail"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -55,8 +57,9 @@ type partnerProductDTO struct {
 	AdventureTitle string `json:"adventure_title"`
 	TeamSize       int    `json:"team_size"`
 	Enabled        bool   `json:"enabled"`
-	// LetterLanguages are the languages its letter can be posted in.
-	LetterLanguages []string `json:"letter_languages"`
+	// Letter is what a redemption of it chooses for the letter posted,
+	// as on /redeem; nil when its event posts nothing.
+	Letter *redeemLetter `json:"letter"`
 }
 
 type partnerDTO struct {
@@ -68,6 +71,9 @@ type partnerDTO struct {
 }
 
 type redemptionDTO struct {
+	// Kind is redemption, or purchase for a store ticket whose letter is
+	// posted: an order to post either way, the console lists both.
+	Kind          string `json:"kind"`
 	ID            int64  `json:"id"`
 	State         string `json:"state"`
 	PartnerKind   string `json:"partner_kind"`
@@ -84,6 +90,7 @@ type redemptionDTO struct {
 	Address2      string `json:"address_2"`
 	PostalCode    string `json:"postal_code"`
 	City          string `json:"city"`
+	Country       string `json:"country"`
 	LetterLang    string `json:"letter_lang"`
 	PostAt        string `json:"post_at"`
 	PostedAt      string `json:"posted_at"`
@@ -114,6 +121,7 @@ type RedeemRequest struct {
 	Address2      string `json:"address_2"`
 	PostalCode    string `json:"postal_code"`
 	City          string `json:"city"`
+	Country       string `json:"country"`
 	LetterLang    string `json:"letter_lang"`
 	AcceptedTerms bool   `json:"accepted_terms"`
 	// Organiser-only.
@@ -306,8 +314,7 @@ func (h *Handlers) createRedemption(ctx context.Context, req RedeemRequest, orgI
 	for _, f := range []*string{&req.Name, &req.Email, &req.StreetAddress, &req.Address2, &req.PostalCode, &req.City, &req.Note} {
 		*f = strings.TrimSpace(*f)
 	}
-	if req.ProductID <= 0 || req.Name == "" || req.Email == "" || req.StreetAddress == "" ||
-		req.PostalCode == "" || req.City == "" || strings.TrimSpace(req.SecurityCode) == "" {
+	if req.ProductID <= 0 || req.Name == "" || req.Email == "" || strings.TrimSpace(req.SecurityCode) == "" {
 		return 0, &redeemError{http.StatusBadRequest, "missing_field", "fill in every required field"}
 	}
 	for _, f := range []string{req.Name, req.Email, req.StreetAddress, req.Address2, req.PostalCode, req.City} {
@@ -331,14 +338,13 @@ func (h *Handlers) createRedemption(ctx context.Context, req RedeemRequest, orgI
 		kind        string
 		productOrg  int64
 		productName string
-		graphID     int64
+		eventID     int64
 	)
 	err := h.DB.QueryRowContext(ctx, `
-		SELECT p.id, p.kind, p.org_id, pp.name, COALESCE(e.graph_id, 0)
+		SELECT p.id, p.kind, p.org_id, pp.name, pp.event_id
 		FROM partner_products pp JOIN partners p ON p.id = pp.partner_id
-		LEFT JOIN events e ON e.id = pp.event_id
 		WHERE pp.id = $1 AND pp.enabled AND p.enabled
-	`, req.ProductID).Scan(&partnerID, &kind, &productOrg, &productName, &graphID)
+	`, req.ProductID).Scan(&partnerID, &kind, &productOrg, &productName, &eventID)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && orgID != 0 && productOrg != orgID) {
 		return 0, &redeemError{http.StatusBadRequest, "unknown_product", "unknown product"}
 	}
@@ -350,24 +356,37 @@ func (h *Handlers) createRedemption(ctx context.Context, req RedeemRequest, orgI
 	if !ok {
 		return 0, &redeemError{http.StatusBadRequest, "invalid_code", "that doesn't look like a " + partnerNames[kind] + " code"}
 	}
-	langs, err := letterLanguages(ctx, h.DB, graphID)
+	// An event that posts a letter needs to know where, and in what.
+	letter, err := h.eventLetter(ctx, eventID)
 	if err != nil {
-		logx.Warn("admin.redeem.languages", "err", err.Error())
+		logx.Warn("admin.redeem.letter", "err", err.Error())
 		return 0, &redeemError{http.StatusInternalServerError, "", "lookup failed"}
 	}
-	letterLang, ok := pickLetterLang(langs, req.LetterLang)
-	if !ok {
-		return 0, &redeemError{http.StatusBadRequest, "invalid_language", "the letter can't be posted in that language"}
+	var letterLang, country string
+	if letter != nil {
+		if req.StreetAddress == "" || req.PostalCode == "" || req.City == "" {
+			return 0, &redeemError{http.StatusBadRequest, "missing_field", "fill in every required field"}
+		}
+		if letterLang, ok = pickLetterLang(letter.Languages, req.LetterLang); !ok {
+			return 0, &redeemError{http.StatusBadRequest, "invalid_language", "the letter can't be posted in that language"}
+		}
+		country = strings.ToUpper(strings.TrimSpace(req.Country))
+		if country == "" && len(letter.Countries) == 1 {
+			country = letter.Countries[0]
+		}
+		if !slices.Contains(letter.Countries, country) {
+			return 0, &redeemError{http.StatusBadRequest, "invalid_country", "letters aren't posted to that country"}
+		}
 	}
 
 	var id int64
 	err = h.DB.QueryRowContext(ctx, `
 		INSERT INTO partner_redemptions(partner_id, product_id, product_name, kind, box_number, security_code,
-		    name, email, street_address, address_2, postal_code, city, letter_lang, post_at, note, created_by_user_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		    name, email, street_address, address_2, postal_code, city, country, letter_lang, post_at, note, created_by_user_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		RETURNING id
 	`, partnerID, req.ProductID, productName, kind, box, code, req.Name, req.Email, req.StreetAddress,
-		req.Address2, req.PostalCode, req.City, letterLang, postAt, req.Note, createdBy).Scan(&id)
+		req.Address2, req.PostalCode, req.City, country, letterLang, postAt, req.Note, createdBy).Scan(&id)
 	if isUniqueViolation(err) {
 		return 0, &redeemError{http.StatusConflict, "code_used", "this code has already been redeemed"}
 	}
@@ -392,6 +411,7 @@ type redeemOptionProduct struct {
 // redeemLetter is what the buyer chooses for the letter posted to them.
 type redeemLetter struct {
 	Languages []string `json:"languages"`
+	Countries []string `json:"countries"`
 }
 
 type redeemOptionPartner struct {
@@ -417,7 +437,7 @@ func (h *Handlers) RedeemOptionsByOrg(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) redeemOptions(w http.ResponseWriter, r *http.Request, orgID int64) {
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT p.kind, pp.id, pp.name, COALESCE(a.title, e.adventure_slug), o.name, COALESCE(e.graph_id, 0)
+		SELECT p.kind, pp.id, pp.name, COALESCE(a.title, e.adventure_slug), o.name, e.id
 		FROM partner_products pp
 		JOIN partners p ON p.id = pp.partner_id
 		JOIN events e ON e.id = pp.event_id
@@ -433,23 +453,37 @@ func (h *Handlers) redeemOptions(w http.ResponseWriter, r *http.Request, orgID i
 	}
 	defer rows.Close()
 	partners := []redeemOptionPartner{}
-	vs := versions{}
+	type product struct {
+		kind    string
+		eventID int64
+		p       redeemOptionProduct
+	}
+	var products []product
 	for rows.Next() {
-		var kind string
-		var p redeemOptionProduct
-		var graphID int64
-		if err := rows.Scan(&kind, &p.ID, &p.Name, &p.AdventureTitle, &p.OrgName, &graphID); err != nil {
+		var x product
+		if err := rows.Scan(&x.kind, &x.p.ID, &x.p.Name, &x.p.AdventureTitle, &x.p.OrgName, &x.eventID); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 			return
 		}
-		g, err := vs.get(r.Context(), h.DB, graphID)
-		if err != nil {
-			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
-			return
+		products = append(products, x)
+	}
+	if err := rows.Err(); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+		return
+	}
+	letters := map[int64]*redeemLetter{}
+	for _, x := range products {
+		kind, p := x.kind, x.p
+		l, ok := letters[x.eventID]
+		if !ok {
+			var err error
+			if l, err = h.eventLetter(r.Context(), x.eventID); err != nil {
+				httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+				return
+			}
+			letters[x.eventID] = l
 		}
-		if l := graphLanguages(g); len(l) > 0 {
-			p.Letter = &redeemLetter{Languages: l}
-		}
+		p.Letter = l
 		if n := len(partners); n == 0 || partners[n-1].Kind != kind {
 			partners = append(partners, redeemOptionPartner{Kind: kind, Name: partnerNames[kind]})
 		}
@@ -491,10 +525,12 @@ func (h *Handlers) redeem(w http.ResponseWriter, r *http.Request, orgID int64) {
 	}
 	// A buyer never sets the organiser's fields.
 	req.PostAt, req.Note = "", ""
-	if _, rerr := h.createRedemption(r.Context(), req, orgID, nil); rerr != nil {
+	id, rerr := h.createRedemption(r.Context(), req, orgID, nil)
+	if rerr != nil {
 		rerr.write(w)
 		return
 	}
+	h.sendRedemptionReceived(r.Context(), id)
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusCreated, map[string]bool{"ok": true})
 }
@@ -539,7 +575,7 @@ func (h *Handlers) loadPartners(ctx context.Context, orgID int64, partnerID int6
 		SELECT p.id, p.kind, p.enabled,
 		       COALESCE(pp.id, 0), COALESCE(pp.name, ''), COALESCE(pp.event_id, 0),
 		       COALESCE(e.name, ''), COALESCE(a.title, e.adventure_slug, ''),
-		       COALESCE(pp.team_size, 0), COALESCE(pp.enabled, FALSE), COALESCE(e.graph_id, 0)
+		       COALESCE(pp.team_size, 0), COALESCE(pp.enabled, FALSE)
 		FROM partners p
 		LEFT JOIN partner_products pp ON pp.partner_id = p.id
 		LEFT JOIN events e ON e.id = pp.event_id
@@ -552,20 +588,13 @@ func (h *Handlers) loadPartners(ctx context.Context, orgID int64, partnerID int6
 	}
 	defer rows.Close()
 	out := []partnerDTO{}
-	vs := versions{}
 	for rows.Next() {
 		var p partnerDTO
 		var pr partnerProductDTO
-		var graphID int64
 		if err := rows.Scan(&p.ID, &p.Kind, &p.Enabled, &pr.ID, &pr.Name, &pr.EventID,
-			&pr.EventName, &pr.AdventureTitle, &pr.TeamSize, &pr.Enabled, &graphID); err != nil {
+			&pr.EventName, &pr.AdventureTitle, &pr.TeamSize, &pr.Enabled); err != nil {
 			return nil, err
 		}
-		g, err := vs.get(ctx, h.DB, graphID)
-		if err != nil {
-			return nil, err
-		}
-		pr.LetterLanguages = graphLanguages(g)
 		if n := len(out); n == 0 || out[n-1].ID != p.ID {
 			p.Name = partnerNames[p.Kind]
 			p.Products = []partnerProductDTO{}
@@ -574,6 +603,24 @@ func (h *Handlers) loadPartners(ctx context.Context, orgID int64, partnerID int6
 		if pr.ID != 0 {
 			last := &out[len(out)-1]
 			last.Products = append(last.Products, pr)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	letters := map[int64]*redeemLetter{}
+	for i := range out {
+		for j := range out[i].Products {
+			pr := &out[i].Products[j]
+			l, ok := letters[pr.EventID]
+			if !ok {
+				var err error
+				if l, err = h.eventLetter(ctx, pr.EventID); err != nil {
+					return nil, err
+				}
+				letters[pr.EventID] = l
+			}
+			pr.Letter = l
 		}
 	}
 	return out, rows.Err()
@@ -893,7 +940,7 @@ const redemptionSelect = `
 	SELECT r.id, r.state, r.kind, COALESCE(r.product_id, 0), COALESCE(pp.name, r.product_name),
 	       COALESCE(pp.event_id, 0), COALESCE(e.name, ''),
 	       r.box_number, r.security_code, r.name, r.email, r.street_address, r.address_2,
-	       r.postal_code, r.city, r.letter_lang, r.post_at, COALESCE(r.posted_at, ''), r.note, r.created_at,
+	       r.postal_code, r.city, r.country, r.letter_lang, r.post_at, COALESCE(r.posted_at, ''), r.note, r.created_at,
 	       COALESCE(r.decided_at, ''), COALESCE(u.username, ''),
 	       COALESCE(r.team_id, 0), COALESCE(t.name, ''), COALESCE(e.graph_id, 0), COALESCE(e.print_delivery, '{}')
 	FROM partner_redemptions r
@@ -908,8 +955,9 @@ func scanRedemption(sc interface{ Scan(...any) error }) (redemptionDTO, error) {
 	var d redemptionDTO
 	err := sc.Scan(&d.ID, &d.State, &d.PartnerKind, &d.ProductID, &d.ProductName, &d.EventID, &d.EventName,
 		&d.BoxNumber, &d.SecurityCode, &d.Name, &d.Email, &d.StreetAddress, &d.Address2,
-		&d.PostalCode, &d.City, &d.LetterLang, &d.PostAt, &d.PostedAt, &d.Note, &d.CreatedAt,
+		&d.PostalCode, &d.City, &d.Country, &d.LetterLang, &d.PostAt, &d.PostedAt, &d.Note, &d.CreatedAt,
 		&d.DecidedAt, &d.DecidedBy, &d.TeamID, &d.TeamName, &d.graphID, &d.printDelivery)
+	d.Kind = "redemption"
 	d.PartnerName = partnerNames[d.PartnerKind]
 	return d, err
 }
@@ -947,7 +995,7 @@ func (h *Handlers) ListRedemptions(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), redemptionSelect+`
 		WHERE p.org_id = $1 AND CASE $2::text
 		    WHEN 'all' THEN TRUE
-		    WHEN 'to_post' THEN r.state IN ('pending', 'approved') AND r.posted_at IS NULL
+		    WHEN 'to_post' THEN `+redemptionToPost+`
 		    ELSE r.state = $2 END
 		ORDER BY CASE WHEN $2 = 'to_post' THEN r.post_at = '' END, CASE WHEN $2 = 'to_post' THEN r.post_at END,
 		         CASE WHEN $2 = 'to_post' THEN r.created_at END, r.created_at DESC, r.id DESC
@@ -967,6 +1015,30 @@ func (h *Handlers) ListRedemptions(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, d)
 	}
+	if state == "to_post" || state == "all" {
+		bought, err := h.purchaseOrders(r.Context(), orgID, state == "to_post", 0)
+		if err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+			return
+		}
+		out = append(out, bought...)
+		slices.SortStableFunc(out, func(a, b redemptionDTO) int {
+			if state == "to_post" {
+				// The ones to post first first: by post date, undated last.
+				if (a.PostAt == "") != (b.PostAt == "") {
+					if a.PostAt == "" {
+						return 1
+					}
+					return -1
+				}
+				if c := cmp.Compare(a.PostAt, b.PostAt); c != 0 {
+					return c
+				}
+				return cmp.Compare(a.CreatedAt, b.CreatedAt)
+			}
+			return cmp.Compare(b.CreatedAt, a.CreatedAt)
+		})
+	}
 	vs := versions{}
 	for i := range out {
 		if err := out[i].fillVersion(r.Context(), h.DB, vs); err != nil {
@@ -980,7 +1052,10 @@ func (h *Handlers) ListRedemptions(w http.ResponseWriter, r *http.Request) {
 		WHERE p.org_id = $1 GROUP BY r.state
 		UNION ALL
 		SELECT 'to_post', COUNT(*) FROM partner_redemptions r JOIN partners p ON p.id = r.partner_id
-		WHERE p.org_id = $1 AND r.state IN ('pending', 'approved') AND r.posted_at IS NULL
+		WHERE p.org_id = $1 AND `+redemptionToPost+`
+		UNION ALL
+		SELECT 'to_post', COUNT(*) FROM ticket_purchases tp JOIN events e ON e.id = tp.event_id
+		WHERE e.org_id = $1 AND `+postedPurchase+` AND tp.posted_at IS NULL
 	`, orgID)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
@@ -994,9 +1069,54 @@ func (h *Handlers) ListRedemptions(w http.ResponseWriter, r *http.Request) {
 			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 			return
 		}
-		counts[s] = n
+		counts[s] += n
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"redemptions": out, "counts": counts})
+}
+
+// redemptionToPost picks the redemptions still to post: pending or
+// approved, with an address (asked only when a letter is posted), not
+// yet posted.
+const redemptionToPost = `r.state IN ('pending', 'approved') AND r.street_address <> '' AND r.posted_at IS NULL`
+
+// postedPurchase picks the store purchases with a letter to post: paid
+// tickets whose checkout collected an address, which it does only when
+// the event posts something.
+const postedPurchase = `tp.kind = 'ticket' AND tp.state = 'paid' AND tp.street_address <> ''`
+
+// purchaseOrders are the organisation's store purchases with a letter to
+// post, as orders beside its redemptions: only those not yet posted when
+// toPost, only purchase id when it isn't 0.
+func (h *Handlers) purchaseOrders(ctx context.Context, orgID int64, toPost bool, id int64) ([]redemptionDTO, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT tp.id, tp.event_id, COALESCE(NULLIF(e.name, ''), a.title, e.adventure_slug),
+		       tp.buyer_email, tp.ship_name, tp.street_address, tp.address_2, tp.postal_code, tp.city, tp.country,
+		       tp.letter_lang, tp.post_at, COALESCE(tp.posted_at, ''), tp.note, COALESCE(tp.paid_at, tp.created_at),
+		       COALESCE(tp.team_id, 0), COALESCE(t.name, ''), COALESCE(e.graph_id, 0), e.print_delivery
+		FROM ticket_purchases tp
+		JOIN events e ON e.id = tp.event_id
+		LEFT JOIN adventures a ON a.slug = e.adventure_slug
+		LEFT JOIN teams t ON t.id = tp.team_id
+		WHERE e.org_id = $1 AND `+postedPurchase+` AND (NOT $2 OR tp.posted_at IS NULL) AND ($3::bigint = 0 OR tp.id = $3)
+		ORDER BY tp.id DESC
+		LIMIT 500
+	`, orgID, toPost, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []redemptionDTO
+	for rows.Next() {
+		d := redemptionDTO{Kind: "purchase", State: "paid", PartnerKind: "store"}
+		if err := rows.Scan(&d.ID, &d.EventID, &d.EventName, &d.Email, &d.Name, &d.StreetAddress, &d.Address2,
+			&d.PostalCode, &d.City, &d.Country, &d.LetterLang, &d.PostAt, &d.PostedAt, &d.Note, &d.CreatedAt,
+			&d.TeamID, &d.TeamName, &d.graphID, &d.printDelivery); err != nil {
+			return nil, err
+		}
+		d.ProductName = d.EventName
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 // CreateRedemption is an organiser entering a box redemption taken by
@@ -1299,6 +1419,96 @@ func (h *Handlers) UpdateRedemption(w http.ResponseWriter, r *http.Request) {
 	h.writeRedemption(w, r, http.StatusOK, id)
 }
 
+// UpdatePurchaseOrder is UpdateRedemption for a store purchase whose
+// letter is posted: when to post it, whether it has been, its language
+// and a note.
+//
+// PATCH /api/admin/ticket-purchases/{purchaseID}
+func (h *Handlers) UpdatePurchaseOrder(w http.ResponseWriter, r *http.Request) {
+	_, orgID, ok := redemptionOrg(w, r, false)
+	if !ok {
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "purchaseID"), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "bad purchase id")
+		return
+	}
+	var eventID int64
+	err = h.DB.QueryRowContext(r.Context(), `
+		SELECT tp.event_id FROM ticket_purchases tp JOIN events e ON e.id = tp.event_id
+		WHERE tp.id = $1 AND e.org_id = $2 AND `+postedPurchase, id, orgID).Scan(&eventID)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "order not found")
+		return
+	}
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+		return
+	}
+	var req struct {
+		PostAt     *string `json:"post_at"`
+		Note       *string `json:"note"`
+		Posted     *bool   `json:"posted"`
+		LetterLang *string `json:"letter_lang"`
+	}
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if req.PostAt != nil {
+		*req.PostAt = strings.TrimSpace(*req.PostAt)
+		if *req.PostAt != "" {
+			if _, err := time.Parse("2006-01-02", *req.PostAt); err != nil {
+				httpx.Error(w, http.StatusBadRequest, "post_at must be YYYY-MM-DD")
+				return
+			}
+		}
+	}
+	if req.Note != nil && len(*req.Note) > 2000 {
+		httpx.Error(w, http.StatusBadRequest, "note is too long")
+		return
+	}
+	if req.LetterLang != nil {
+		letter, err := h.eventLetter(r.Context(), eventID)
+		if err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+			return
+		}
+		var langs []string
+		if letter != nil {
+			langs = letter.Languages
+		}
+		l, ok := pickLetterLang(langs, *req.LetterLang)
+		if !ok {
+			httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "the letter can't be posted in that language", "reason": "invalid_language"})
+			return
+		}
+		req.LetterLang = &l
+	}
+	if _, err := h.DB.ExecContext(r.Context(), `
+		UPDATE ticket_purchases SET
+		    post_at = COALESCE($1, post_at),
+		    note = COALESCE($2, note),
+		    posted_at = CASE WHEN $3::boolean IS NULL THEN posted_at
+		                     WHEN $3 THEN COALESCE(posted_at, now_text())
+		                     ELSE NULL END,
+		    letter_lang = COALESCE($5, letter_lang)
+		WHERE id = $4
+	`, req.PostAt, req.Note, req.Posted, id, req.LetterLang); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "save failed", err)
+		return
+	}
+	got, err := h.purchaseOrders(r.Context(), orgID, false, id)
+	if err == nil && len(got) == 1 {
+		err = got[0].fillVersion(r.Context(), h.DB, versions{})
+	}
+	if err != nil || len(got) != 1 {
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, got[0])
+}
+
 /* ---------------- Mail ---------------- */
 
 // sendRedemptionMail sends through the outbox when there is one, and
@@ -1334,6 +1544,7 @@ func (h *Handlers) sendRedemptionApproved(ctx context.Context, eventID int64, em
 		l.Lang = lang
 	}
 	subject, c := emailtpl.BoxConfirmed(l.Lang, partnerNames[kind], publicURL+"/team/"+teamToken, publicURL+"/play", auth.FormatVoucherCode(voucher), l.Brand.Name)
+	c = l.withBuyerNote(c)
 	c = emailtpl.WithPrints(c, h.printEmailLinks(ctx, eventID, publicURL, teamToken))
 	c.Picture = l.Cover
 	msg := l.message([]string{email}, subject, c)
@@ -1344,6 +1555,65 @@ func (h *Handlers) sendRedemptionApproved(ctx context.Context, eventID int64, em
 		return errors.New("no mailer configured")
 	}
 	return h.Mailer.Send(ctx, msg)
+}
+
+// addressLines is a postal address as an email shows it, a line each.
+func addressLines(name, street, address2, postal, city string) []string {
+	var out []string
+	for _, line := range []string{name, street, address2, strings.TrimSpace(postal + " " + city)} {
+		if strings.TrimSpace(line) != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// sendRedemptionReceived tells a buyer their code has arrived and where
+// their envelope goes, in the event's look and the envelope's language.
+// Organisers entering a redemption by hand have the buyer on the phone,
+// so only the public form sends it.
+func (h *Handlers) sendRedemptionReceived(ctx context.Context, id int64) {
+	var (
+		email, kind, lang, name, street, address2, postal, city string
+		eventID, orgID                                          int64
+	)
+	if err := h.DB.QueryRowContext(ctx, `
+		SELECT r.email, r.kind, r.letter_lang, r.name, r.street_address, r.address_2, r.postal_code, r.city,
+		       COALESCE(pp.event_id, 0), p.org_id
+		FROM partner_redemptions r JOIN partners p ON p.id = r.partner_id
+		LEFT JOIN partner_products pp ON pp.id = r.product_id
+		WHERE r.id = $1
+	`, id).Scan(&email, &kind, &lang, &name, &street, &address2, &postal, &city, &eventID, &orgID); err != nil {
+		logx.Warn("admin.redemption.received", "redemption_id", id, "err", err.Error())
+		return
+	}
+	l := h.orgLook(ctx, orgID)
+	if eventID > 0 {
+		l = h.eventLook(ctx, eventID)
+	}
+	if lang != "" {
+		l.Lang = lang
+	}
+	// An address was asked only when a letter is posted.
+	var address []string
+	if street != "" {
+		address = addressLines(name, street, address2, postal, city)
+	}
+	subject, c := emailtpl.BoxReceived(l.Lang, partnerNames[kind], address)
+	c.Picture = l.Cover
+	msg := l.message([]string{email}, subject, c)
+	var err error
+	switch {
+	case h.MailOutbox != nil:
+		err = h.MailOutbox.Enqueue(ctx, "redemption_received", msg)
+	case h.Mailer != nil:
+		err = h.Mailer.Send(ctx, msg)
+	default:
+		err = errors.New("no mailer configured")
+	}
+	if err != nil {
+		logx.Warn("admin.redemption.mail", "kind", "redemption_received", "redemption_id", id, "err", err.Error())
+	}
 }
 
 // notifyNewRedemption tells the organisation's admins a code is waiting
