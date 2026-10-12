@@ -11,6 +11,33 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- **The party adventure creator is a guide.** Pick a theme, then it
+  opens fullscreen in that look and asks one thing per screen: who it
+  is for, its name, each card in turn, then all the cards on one
+  screen, then ready to play. A party adventure opened again starts on
+  the overview of its cards. The phone's back button steps back through
+  the screens. The console's creator keeps its timeline.
+- **A birthday is about the birthday child.** The birthday template
+  asks for the child's name and age first and writes them into the
+  title and the example questions ("How old is Mia today?" with 6, 7
+  and 8 to pick from), in English and Swedish.
+- **Icons over words on the cards.** The card kinds are Options, Typed
+  answer and Info; moving and deleting a card are arrow and bin
+  buttons; a tick on each option marks the right one. The question's
+  text looks like a field to write in, and example cards say so until
+  they are changed.
+- **The price is said once:** how many teams play free, and what more
+  costs.
+
+### Fixed
+
+- **Free party adventures can always be played.** Up to the free
+  number of teams no longer waits for payments to be open.
+- **Cards fit a phone's screen.** A long question no longer pushed the
+  card past the edge of a narrow screen, in the guide and the console.
+
 ## [0.26.0] - 2026-10-10
 
 ### Added
