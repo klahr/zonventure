@@ -7,11 +7,6 @@
 #
 #   COMPOSE_FILE=compose.yaml:compose.override.yaml:compose.prod.yaml
 #
-# The package is private, so log the host in once with a classic token
-# that has only read:packages:
-#
-#   docker login ghcr.io -u <github-user> --password-stdin
-#
 # `make upgrade` then pulls the newest tag and pins it as VERSION in
 # .env, so a bare `docker compose up -d` keeps running it. Without that
 # line it would run :latest as last pulled on this host, which may be

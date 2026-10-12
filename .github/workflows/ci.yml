@@ -205,8 +205,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME}"
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
-          # The source label links the package to this repo, so it inherits
-          # the repo's (private) visibility and access.
+          # The source label links the package to this repo.
           docker build --build-arg "VERSION=$VERSION" \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             -t "$IMAGE:$VERSION" -t "$IMAGE:latest" .

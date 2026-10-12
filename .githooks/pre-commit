@@ -4,9 +4,8 @@
 #
 # Enable with:  git config core.hooksPath .githooks
 #
-# 1. Secrets. GitHub's own secret scanning needs Advanced Security,
-#    which is not available on a free private repo, so this hook is the
-#    only automated barrier before a push — and a push cannot be undone.
+# 1. Secrets. GitHub's secret scanning only sees a push once it has
+#    happened, and a push cannot be undone.
 # 2. gofmt. Cheap here, and it keeps CI from failing on formatting.
 #
 # No Node dependencies: husky/lint-staged in the commit path of a
