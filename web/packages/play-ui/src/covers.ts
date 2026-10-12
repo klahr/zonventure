@@ -2,7 +2,7 @@
  * A starter theme's cover picture (STARTER_THEMES id), 16:9: small (800
  * px wide, a card's backdrop) and wide (1600 px, a page's banner). Its
  * subject is on the right, its left side calm, for text. Every theme the
- * party adventure creator offers has one (THEMES.md, made with
+ * party adventure creator offers has one (made with
  * `make theme-cover`). Print takes its own copy: internal/trail/covers.
  */
 export interface ThemeCover {

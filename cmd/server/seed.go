@@ -403,7 +403,7 @@ func upsertUser(d *sql.DB, username, password, role string, orgID *int64) (int64
 	isAdmin := role == auth.RoleAdmin
 	// Mark accounts seeded with well-known default passwords so the
 	// in-app banner fires until the operator changes them. Demo flow
-	// values come from internal docs / SELFHOSTING.md examples;
+	// values come from internal docs / docs/selfhosting.md examples;
 	// keeping them in one list here means a future "let's add a
 	// 'guest' demo user" only needs one new entry.
 	isDefault := 0

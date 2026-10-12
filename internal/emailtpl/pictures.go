@@ -18,7 +18,7 @@ type Picture struct {
 	Wide bool
 }
 
-// The house pictures (ILLUSTRATIONS.md), by id: the file under
+// The house pictures, by id: the file under
 // /assets/email/ the server serves (internal/server/web/assets/email),
 // whether it is a banner, and its alt text. A new picture is one line
 // here and its file there.

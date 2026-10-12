@@ -502,7 +502,7 @@ func seedAdminIfMissing(d *sql.DB, creds string) error {
 // Stamps password_is_default=1 when the seeded password is one of the
 // well-known docs/defaults ("admin", "rootpw"). Login + whoami surface
 // the flag to the UI as a loud banner so an operator who skipped the
-// "change me immediately" step in SELFHOSTING.md doesn't expose a
+// "change me immediately" step in docs/selfhosting.md doesn't expose a
 // takeover-trivial admin to the public internet.
 func seedAdminUser(d *sql.DB, creds string) error {
 	i := strings.IndexByte(creds, ':')

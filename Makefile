@@ -53,7 +53,7 @@ help:
 	@echo "    make theme-cover ID=pirate SRC=~/Downloads/pic.jpg"
 	@echo "                    A starter theme's cover picture, for web and print"
 	@echo "    make illustration ID=no-events SRC=~/Downloads/pic.jpg [WIDE=1] [EMAIL=1]"
-	@echo "                    A picture for the product's screens (ILLUSTRATIONS.md)"
+	@echo "                    A picture for the product's screens"
 	@echo ""
 	@echo "  Build & release"
 	@echo "    make build      Production binary (trimpath, stripped, static)"
@@ -267,7 +267,7 @@ latest:
 	@$(LATEST_TAG)
 
 # Upgrade an existing Docker Compose deployment to the latest released
-# tag. Take a Postgres backup first — see SELFHOSTING.md.
+# tag. Take a Postgres backup first — see docs/selfhosting.md.
 #
 # Checks out the tag (detached HEAD) just long enough for the build
 # to stamp `main.version` from `git describe`, then switches back to

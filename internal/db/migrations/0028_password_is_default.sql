@@ -2,7 +2,7 @@
 -- one signal that matters in practice is the global admin who hasn't
 -- changed admin/admin yet — leaving that on a publicly-reachable
 -- box is a takeover. The flag drives a loud in-app banner so an
--- operator who skipped SELFHOSTING.md doesn't ship by mistake.
+-- operator who skipped docs/selfhosting.md doesn't ship by mistake.
 --
 -- 1 = the user's password matches the well-known default ("admin"
 -- for the seeded global admin). 0 = the user has changed their

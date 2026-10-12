@@ -4,9 +4,8 @@
 // wired to at startup.
 //
 // The point is observability, not configuration: swapping a seam's
-// implementation means rebuilding the binary (the project picked
-// compile-time selection over runtime install for the reasons in
-// TODO.md), so the GUI panel fed by this list is descriptive only.
+// implementation means rebuilding the binary, so the GUI panel fed
+// by this list is descriptive only.
 // The slice is built once in cmd/server/main.go and passed through
 // to the admin handlers; there is deliberately no global registry.
 package components

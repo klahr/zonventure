@@ -1,6 +1,6 @@
 /**
  * Zonventure's own pictures for its screens: the welcome dialog, sign-in,
- * empty lists, errors and thank-yous (ILLUSTRATIONS.md, made with
+ * empty lists, errors and thank-yous (made with
  * `make illustration`). Each carries its own background, so it reads as a
  * picture in a rounded frame on light and dark alike.
  *

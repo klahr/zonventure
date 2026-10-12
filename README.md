@@ -47,16 +47,16 @@ an organisation — create one, add yourself to it as a separate
 its Organizations page to offer its adventures to other orgs.
 
 Prefer a native binary? `go build -o zv ./cmd/server` still works —
-see [SELFHOSTING.md](SELFHOSTING.md#building-from-source-without-docker).
+see [docs/selfhosting.md](docs/selfhosting.md#building-from-source-without-docker).
 
 ## Documentation
 
-- **[SELFHOSTING.md](SELFHOSTING.md)** — Docker-first self-host
+- **[docs/selfhosting.md](docs/selfhosting.md)** — Docker-first self-host
   onramp: env vars, TLS / mailer / Stripe / external-Postgres
   recipes, upgrades. Native-binary build instructions live there too.
-- **[OPERATIONS.md](OPERATIONS.md)** — day-2 ops: backup / restore,
+- **[docs/operations.md](docs/operations.md)** — day-2 ops: backup / restore,
   metrics, log format, retention.
-- **[MCP.md](MCP.md)** — opt-in Model Context Protocol endpoint
+- **[docs/mcp.md](docs/mcp.md)** — opt-in Model Context Protocol endpoint
   for connecting Claude / other LLM clients to author adventures.
 - **[`/manual`](https://zonventure.com/manual)** — in-app arranger
   manual (also available offline at `internal/server/web/manual.html`).
@@ -80,8 +80,7 @@ internal/mailer/   # SMTP + log-only mailers
 
 ## Status
 
-Self-host is usable today. See [`TODO.md`](TODO.md) for open work
-and the roadmap.
+Self-host is usable today.
 
 ## Licence
 
@@ -124,7 +123,6 @@ After cloning, enable the repository's hooks once:
 
 ```sh
 git config core.hooksPath .githooks
-git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
 
 The pre-commit hook runs `gitleaks` over staged changes and checks

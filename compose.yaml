@@ -130,7 +130,7 @@ services:
       # loopback) and publish the port from compose.override.yaml —
       # see compose.override.example.yaml.
       ZV_METRICS_ADDR:            ${ZV_METRICS_ADDR:-}
-      # Extra OAuth redirect hosts for MCP clients (see SELFHOSTING.md).
+      # Extra OAuth redirect hosts for MCP clients (see docs/selfhosting.md).
       ZV_OAUTH_REDIRECT_HOSTS:    ${ZV_OAUTH_REDIRECT_HOSTS:-}
       # Upload size caps in bytes; empty → server defaults.
       ZV_MAX_IMAGE_BYTES:         ${ZV_MAX_IMAGE_BYTES:-}
@@ -138,7 +138,7 @@ services:
       ZV_MAX_VIDEO_BYTES:         ${ZV_MAX_VIDEO_BYTES:-}
       # Single sign-on (OpenID Connect, e.g. Google Workspace). All
       # blank by default → SSO endpoints 404 and the login UI hides
-      # the button. See SELFHOSTING.md → "Single sign-on" for the
+      # the button. See docs/selfhosting.md → "Single sign-on" for the
       # Google Cloud Console walkthrough; ZV_OIDC_ENABLED=1 plus the
       # five required values turns it on.
       ZV_OIDC_ENABLED:            ${ZV_OIDC_ENABLED:-}

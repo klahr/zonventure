@@ -198,7 +198,7 @@ How it works (`internal/oauth`): the `/mcp` 401 names
 metadata (`/.well-known/oauth-authorization-server`). The client
 registers itself at `/oauth/register` (public clients only, redirect
 URIs on the allowlist — see `ZV_OAUTH_REDIRECT_HOSTS` in
-SELFHOSTING.md), sends the user to `/oauth/authorize` with PKCE S256,
+selfhosting.md), sends the user to `/oauth/authorize` with PKCE S256,
 which forwards to the console's consent page `#/authorize`, and
 exchanges the code at `/oauth/token`.
 

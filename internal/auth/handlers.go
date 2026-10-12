@@ -125,7 +125,7 @@ type whoamiResponse struct {
 	// red "change your password now" banner — leaving the seeded
 	// password on a publicly-reachable box is a takeover, and
 	// self-host operators who skim the docs need a louder nudge
-	// than a footnote in SELFHOSTING.md.
+	// than a footnote in docs/selfhosting.md.
 	PasswordIsDefault bool `json:"password_is_default,omitempty"`
 	// ListingReviewer: a platform admin made the user a listing
 	// reviewer, so the console shows the review queue.

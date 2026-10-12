@@ -53,7 +53,7 @@ RUN VERSION="${VERSION:-$(git describe --tags --always 2>/dev/null || echo dev)}
 
 # Runtime image. distroless/static is ~2 MB; no shell, no package
 # manager. The canonical self-host path is `docker compose up -d` —
-# see compose.yaml + SELFHOSTING.md. For one-off runs against an
+# see compose.yaml + docs/selfhosting.md. For one-off runs against an
 # external Postgres:
 #
 #   docker run --rm -p 8080:8080 \

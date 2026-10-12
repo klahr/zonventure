@@ -518,7 +518,7 @@ process(parse_json(body))</pre>
 
 <section id="self-hosting">
   <h2>Self-hosting</h2>
-  <p>Zonventure is open source. You can run your own instance — for an internal company tool, a school, a venue, or just to keep player data inside your own infrastructure. The full operator guide lives in <a href="https://github.com/klahr/zonventure/blob/main/SELFHOSTING.md" rel="noopener">SELFHOSTING.md</a> in the source tree; this section is the orientation.</p>
+  <p>Zonventure is open source. You can run your own instance — for an internal company tool, a school, a venue, or just to keep player data inside your own infrastructure. The full operator guide lives in <a href="https://github.com/klahr/zonventure/blob/main/docs/selfhosting.md" rel="noopener">docs/selfhosting.md</a> in the source tree; this section is the orientation.</p>
 
   <h3>Quick start</h3>
   <p>The canonical path is Docker Compose:</p>
@@ -541,7 +541,7 @@ docker compose up -d</code></pre>
     <li><strong>No Stripe by default.</strong> Without <code>ZV_STRIPE_SECRET_KEY</code> set, event passes within the free player allowance still work, but paid purchases are refused. Wire Stripe in if you want to sell passes or tickets to other organisations on your instance, and set your own prices with <code>ZV_PRICE_PER_PLAYER_CENTS</code> / <code>ZV_FREE_PLAYERS_PER_EVENT</code>.</li>
     <li><strong>No SSO by default.</strong> Username + password is the front door. Set <code>ZV_OIDC_*</code> to enable Google Workspace (or any OIDC provider) sign-in for your domain. The login page picks up the SSO button automatically.</li>
     <li><strong>You're the global admin.</strong> The seeded admin account manages every org on the instance, curates the catalog and watches the system — it doesn't author adventures or run events. To author, make an organisation the catalog publisher (Organizations page) and add yourself to it as a separate, non-admin user. Treat the admin account like a root password — store it in the same place you keep <code>POSTGRES_PASSWORD</code>.</li>
-    <li><strong>Backups are your job.</strong> All durable state lives in the <code>zv_pg_data</code> volume — adventures, events, uploaded images and audio, recap tokens. <code>docker compose down -v</code> wipes everything. SELFHOSTING.md has a tested <code>pg_dump</code>-based backup recipe.</li>
+    <li><strong>Backups are your job.</strong> All durable state lives in the <code>zv_pg_data</code> volume — adventures, events, uploaded images and audio, recap tokens. <code>docker compose down -v</code> wipes everything. docs/selfhosting.md has a tested <code>pg_dump</code>-based backup recipe.</li>
     <li><strong>The marketing landing page is off by default.</strong> An unauthenticated visitor lands directly on the login screen. Flip it on via the admin Settings page if you want a public "what is this?" page.</li>
   </ul>
 
@@ -554,7 +554,7 @@ docker compose up -d</code></pre>
 make upgrade               # checks out the latest tag, rebuilds, restarts</code></pre>
   <p>Take a Postgres backup before any upgrade. Migrations are forward-only — there is no automated downgrade path.</p>
 
-  <div class="callout">Self-hosting is supported but not white-glove. SELFHOSTING.md tracks every operator-facing detail (env vars, TLS, OIDC walkthrough with Google Cloud Console steps, retention policies, Stripe setup). If the manual contradicts the operator guide, the operator guide wins.</div>
+  <div class="callout">Self-hosting is supported but not white-glove. docs/selfhosting.md tracks every operator-facing detail (env vars, TLS, OIDC walkthrough with Google Cloud Console steps, retention policies, Stripe setup). If the manual contradicts the operator guide, the operator guide wins.</div>
 </section>
 
 <section id="help">

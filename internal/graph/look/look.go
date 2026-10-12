@@ -101,7 +101,7 @@ type Style struct {
 	SoundWrong int64 `json:"sound_wrong,omitempty"`
 	// Cover is an adventure_media id: the adventure's own cover picture,
 	// 16:9, across the top of the join page and the players' welcome and
-	// on a printed cover, in place of its starter theme's (THEMES.md).
+	// on a printed cover, in place of its starter theme's.
 	// Only the adventure's own look shows it, not a theme in its graph.
 	Cover int64 `json:"cover,omitempty"`
 }

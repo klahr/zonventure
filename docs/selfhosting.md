@@ -87,7 +87,7 @@ short tour:
 | `ZV_OIDC_ORG_NAME` | Organisation that JIT-provisioned SSO users join. Defaults to `ZV_OIDC_HOSTED_DOMAIN` | unset |
 | `ZV_DB_MAX_OPEN_CONNS` / `ZV_DB_MAX_IDLE_CONNS` | Postgres pool sizing; bump for managed clusters with high `max_connections` | `25` / `5` |
 | `ZV_WEB_OVERRIDE_DIR` | Path to a directory of HTML / JSON files that shadow the embedded pages; its `landing.html` and `pricing.html` turn on the public `/` and `/pricing` — see [Custom landing page](#custom-landing-page) | unset (use embedded) |
-| `ZV_MCP_ENABLED` | `1` mounts the `POST /mcp` endpoint so users can connect Claude / other MCP clients to author adventures — see [MCP.md](MCP.md) | unset (off) |
+| `ZV_MCP_ENABLED` | `1` mounts the `POST /mcp` endpoint so users can connect Claude / other MCP clients to author adventures — see [mcp.md](mcp.md) | unset (off) |
 | `ZV_OAUTH_REDIRECT_HOSTS` | Extra hosts (comma-separated) MCP clients may return to after signing in with OAuth. Claude's (`claude.ai`, `claude.com`) and loopback are always allowed. OAuth is on with `ZV_MCP_ENABLED` and a real `ZV_PUBLIC_URL` | unset |
 
 After editing `.env`:
@@ -156,7 +156,7 @@ users at the box:
    ```
 
    Drop that into cron or a systemd timer. Off-host the result, and
-   restore as in [OPERATIONS.md → Restore](OPERATIONS.md#restore).
+   restore as in [operations.md → Restore](operations.md#restore).
 8. **Optionally bind `ZV_METRICS_ADDR=127.0.0.1:9100`** if you scrape
    with Prometheus from a sidecar.
 
@@ -457,7 +457,7 @@ sending.
 If you'd rather use a provider's HTTP API (per-message tracking IDs,
 IAM-rotated credentials for SES, server-side templates) the
 `mailer.Mailer` interface in `internal/mailer/` is the seam to plug
-into — see [`TODO.md`](TODO.md) item 15.
+into.
 
 ## Single sign-on (Google Workspace)
 
@@ -584,7 +584,7 @@ export ZV_SEED_ADMIN=admin:hunter2
 The same env vars listed above apply. Migrations run on startup;
 `ZV_SEED_ADMIN` honours the same "create-if-missing" semantics as in
 the Docker setup. Day-2 ops (backup / restore / metrics / retention)
-are covered in [`OPERATIONS.md`](./OPERATIONS.md).
+are covered in [`operations.md`](operations.md).
 
 ### systemd (sketch)
 
@@ -717,9 +717,9 @@ Not carried over:
 
 ## Going further
 
-- **[OPERATIONS.md](OPERATIONS.md)** — backup, restore, metrics,
+- **[operations.md](operations.md)** — backup, restore, metrics,
   logging format, retention sweepers.
-- **[MCP.md](MCP.md)** — opt-in `POST /mcp` endpoint that lets
+- **[mcp.md](mcp.md)** — opt-in `POST /mcp` endpoint that lets
   arrangers connect Claude / other MCP clients and author
   adventures via tool calls. Off until `ZV_MCP_ENABLED=1`.
 - **[`/manual`](https://zonventure.com/manual)** — in-app arranger
