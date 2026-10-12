@@ -51,19 +51,20 @@ func (s *Server) registerGraphEditTools() {
 						"type":     "object",
 						"required": []string{"op"},
 						"properties": map[string]any{
-							"op":        map[string]any{"type": "string", "enum": []string{"put_node", "delete_node", "set_text", "patch_node", "put_zone", "delete_zone", "put_theme", "delete_theme", "connect", "disconnect"}},
-							"node":      map[string]any{"type": "object", "description": "put_node: the full node."},
-							"zone":      map[string]any{"type": "object", "description": "put_zone: {slug, name, lat, lng, radius_m, polygon?, group?}."},
-							"theme":     map[string]any{"type": "object", "description": "put_theme: {slug, name, look}."},
-							"slug":      map[string]any{"type": "string", "description": "delete_node / delete_zone / delete_theme: what to delete; set_text / patch_node: the step (omit for the dev phone's)."},
-							"find":      map[string]any{"type": "string", "description": "set_text: the text to change, quoted exactly as it is."},
-							"replace":   map[string]any{"type": "string", "description": "set_text: what it becomes."},
-							"all":       map[string]any{"type": "boolean", "description": "set_text: change every occurrence in the step."},
-							"patch":     map[string]any{"type": "object", "description": "patch_node: the fields to change."},
-							"from":      map[string]any{"type": "string"},
-							"from_port": map[string]any{"type": "string"},
-							"to":        map[string]any{"type": "string"},
-							"here":      map[string]any{"type": "boolean", "description": "put_zone: centre the zone on the author's current position."},
+							"op":             map[string]any{"type": "string", "enum": []string{"put_node", "delete_node", "set_text", "patch_node", "put_zone", "delete_zone", "put_theme", "delete_theme", "put_print_material", "delete_print_material", "connect", "disconnect"}},
+							"node":           map[string]any{"type": "object", "description": "put_node: the full node."},
+							"zone":           map[string]any{"type": "object", "description": "put_zone: {slug, name, lat, lng, radius_m, polygon?, group?}."},
+							"theme":          map[string]any{"type": "object", "description": "put_theme: {slug, name, look}."},
+							"print_material": map[string]any{"type": "object", "description": `put_print_material: {id, name, delivery: "posted"|"emailed"|"organiser", files: {<language>: <pdf media id>}}, a PDF per language the adventure is played in.`},
+							"slug":           map[string]any{"type": "string", "description": "delete_node / delete_zone / delete_theme / delete_print_material: what to delete; set_text / patch_node: the step (omit for the dev phone's)."},
+							"find":           map[string]any{"type": "string", "description": "set_text: the text to change, quoted exactly as it is."},
+							"replace":        map[string]any{"type": "string", "description": "set_text: what it becomes."},
+							"all":            map[string]any{"type": "boolean", "description": "set_text: change every occurrence in the step."},
+							"patch":          map[string]any{"type": "object", "description": "patch_node: the fields to change."},
+							"from":           map[string]any{"type": "string"},
+							"from_port":      map[string]any{"type": "string"},
+							"to":             map[string]any{"type": "string"},
+							"here":           map[string]any{"type": "boolean", "description": "put_zone: centre the zone on the author's current position."},
 						},
 					},
 				},
@@ -118,6 +119,7 @@ type graphOp struct {
 	Node     json.RawMessage `json:"node,omitempty"`
 	Zone     json.RawMessage `json:"zone,omitempty"`
 	Theme    json.RawMessage `json:"theme,omitempty"`
+	Print    json.RawMessage `json:"print_material,omitempty"`
 	Slug     string          `json:"slug,omitempty"`
 	From     string          `json:"from,omitempty"`
 	FromPort string          `json:"from_port,omitempty"`
@@ -426,6 +428,29 @@ func applyGraphOp(g *graph.Graph, op graphOp, here *position) error {
 			}
 		}
 		return fmt.Errorf("no theme %q", op.Slug)
+	case "put_print_material":
+		var pm graph.PrintMaterial
+		if err := decodeStrict(op.Print, &pm); err != nil {
+			return fmt.Errorf("print_material: %w", err)
+		}
+		if pm.ID == "" {
+			return fmt.Errorf("print_material needs an id")
+		}
+		for i := range g.PrintMaterials {
+			if g.PrintMaterials[i].ID == pm.ID {
+				g.PrintMaterials[i] = pm
+				return nil
+			}
+		}
+		g.PrintMaterials = append(g.PrintMaterials, pm)
+	case "delete_print_material":
+		for i := range g.PrintMaterials {
+			if g.PrintMaterials[i].ID == op.Slug {
+				g.PrintMaterials = append(g.PrintMaterials[:i], g.PrintMaterials[i+1:]...)
+				return nil
+			}
+		}
+		return fmt.Errorf("no print material %q", op.Slug)
 	case "connect":
 		if op.From == "" || op.FromPort == "" || op.To == "" {
 			return fmt.Errorf("from, from_port and to are required")

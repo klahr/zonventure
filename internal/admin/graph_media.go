@@ -87,6 +87,11 @@ func remapGraphMedia(g *graph.Graph, ids map[int64]int64) {
 			}
 		}
 	}
+	for i := range g.PrintMaterials {
+		for l, m := range g.PrintMaterials[i].Files {
+			g.PrintMaterials[i].Files[l] = id(m)
+		}
+	}
 }
 
 // copyGraphMedia copies the source adventure's media rows named by ids

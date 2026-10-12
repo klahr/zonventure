@@ -42,7 +42,7 @@ func (s *Server) registerMediaTools() {
 	s.tools.register(ToolDescriptor{
 		Name:  "list_adventure_media",
 		Scope: scopeRead,
-		Description: "The adventure's uploaded pictures, sounds and videos, newest first: {id, kind, mime_type, size_bytes, uploaded_at}. " +
+		Description: "The adventure's uploaded pictures, sounds, videos and PDFs, newest first: {id, kind, mime_type, size_bytes, uploaded_at}. " +
 			"Use it to find the id of a file the user just uploaded through get_upload_link.",
 		InputSchema: slugOnly,
 	}, listAdventureMedia)
@@ -50,8 +50,8 @@ func (s *Server) registerMediaTools() {
 	s.tools.register(ToolDescriptor{
 		Name:  "upload_adventure_media",
 		Scope: scopeWrite,
-		Description: "Upload an image, audio or video file to a graph adventure and get back its media {id, kind, mime_type, size_bytes}. " +
-			`Reference it with edit_adventure_graph: a block takes the id ({"id":"b2","kind":"image","media":<id>,"alt":"…"}); a hint's media and an answer's image take {"id":<id>,"kind":"image"}. ` +
+		Description: "Upload an image, audio, video or PDF file to a graph adventure and get back its media {id, kind, mime_type, size_bytes}. " +
+			`Reference it with edit_adventure_graph: a block takes the id ({"id":"b2","kind":"image","media":<id>,"alt":"…"}); a hint's media and an answer's image take {"id":<id>,"kind":"image"}; a PDF goes only in a print material (put_print_material). ` +
 			"Bytes travel base64-encoded in the call, which is only reliable for small files: prefer get_upload_link. " +
 			"Images are re-encoded and shrunk; audio and video types are sniffed from the bytes. " +
 			"Size caps are the server's ZV_MAX_IMAGE_BYTES / ZV_MAX_AUDIO_BYTES / ZV_MAX_VIDEO_BYTES.",

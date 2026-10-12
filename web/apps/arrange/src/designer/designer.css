@@ -351,6 +351,9 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
    off from the settings under it. */
 .box > .box__row:first-child:not(:last-child) { align-items: center; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--border-soft); }
 .box__row { display: flex; gap: var(--sp-2); align-items: flex-end; }
+.print__file { align-items: center; flex-wrap: wrap; }
+.print__lang { min-width: 6rem; font-weight: 600; }
+.box__row > .print__delivery { flex: 0 1 12rem; }
 /* A bare input beside a labelled number: the number is the short one. */
 .box__row:has(> .field__input) > .field--num { flex: 0 0 6.5rem; }
 .box__row > .field__input { flex: 1; min-width: 0; }

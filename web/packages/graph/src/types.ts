@@ -43,6 +43,23 @@ export interface Graph {
   language?: string;
   /** Other languages: language → field key → text. See i18n.ts. */
   translations?: Record<string, Record<string, string>>;
+  /** PDFs that come with the adventure on paper; players never see them. */
+  print_materials?: PrintMaterial[];
+}
+
+/** graph.Delivery — how a print material reaches the buyer. */
+export type Delivery = "posted" | "emailed" | "organiser";
+
+/** graph.MaxPrintMaterials */
+export const MAX_PRINT_MATERIALS = 10;
+
+/** graph.PrintMaterial — one printable document, a PDF per language. */
+export interface PrintMaterial {
+  id: string;
+  name: string;
+  delivery: Delivery;
+  /** Language → adventure_media id of a PDF. */
+  files?: Record<string, number>;
 }
 
 /** graph.HostValue — a word a party's host fills in: the birthday child's name. */

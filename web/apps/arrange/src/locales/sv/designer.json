@@ -1033,5 +1033,20 @@
   "Show": "Visa",
   "Looks": "Utseenden",
   "This adventure": "Det här äventyret",
-  "Share with organisation": "Dela med organisationen"
+  "Share with organisation": "Dela med organisationen",
+  "Print materials": "Trycksaker",
+  "PDFs that come with the adventure on paper, such as a letter with the first clue. Players never see them in the game. A posted one needs a PDF in every language the adventure is played in.": "PDF:er som hör till äventyret på papper, som ett brev med den första ledtråden. Spelarna ser dem aldrig i spelet. En som skickas med posten behöver en PDF på varje språk äventyret spelas på.",
+  "Name, such as Letter": "Namn, till exempel Brev",
+  "Delivery": "Leverans",
+  "Posted by you": "Postas av er",
+  "Emailed to the buyer": "Mejlas till köparen",
+  "For organisers only": "Bara för arrangörer",
+  "Add print material": "Lägg till trycksak",
+  "That isn't a PDF.": "Det där är ingen PDF.",
+  "Open PDF": "Öppna PDF",
+  "Missing: needed to post it": "Saknas: behövs för att posta den",
+  "No PDF": "Ingen PDF",
+  "Upload PDF": "Ladda upp PDF",
+  "Pick a picture, sound or video.": "Välj en bild, ett ljud eller en video.",
+  "Could not reach the server. Check your connection.": "Kunde inte nå servern. Kontrollera din anslutning."
 }

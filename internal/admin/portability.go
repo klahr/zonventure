@@ -607,15 +607,22 @@ func importGraph(ctx context.Context, tx *sql.Tx, advID, userID int64, env *grap
 	for _, m := range media {
 		switch m.Kind {
 		case graph.MediaImage, graph.MediaAudio, graph.MediaVideo:
+			if !strings.HasPrefix(m.MimeType, string(m.Kind)+"/") {
+				return badRequestf("graph media %q: mime type %q is not %s", m.File, m.MimeType, m.Kind)
+			}
+		case graph.MediaPDF:
+			if m.MimeType != "application/pdf" {
+				return badRequestf("graph media %q: mime type %q is not a PDF", m.File, m.MimeType)
+			}
 		default:
 			return badRequestf("graph media %q has unknown kind %q", m.File, m.Kind)
-		}
-		if !strings.HasPrefix(m.MimeType, string(m.Kind)+"/") {
-			return badRequestf("graph media %q: mime type %q is not %s", m.File, m.MimeType, m.Kind)
 		}
 		b, ok := assets[m.File]
 		if !ok {
 			return badRequestf("graph media %q missing from archive", m.File)
+		}
+		if m.Kind == graph.MediaPDF && http.DetectContentType(b) != "application/pdf" {
+			return badRequestf("graph media %q is not a PDF", m.File)
 		}
 		mime := m.MimeType
 		if m.Kind == graph.MediaImage {

@@ -72,6 +72,7 @@ import { CatchUpBanner, StepTalk, WorkPanel, cardTalk, catchUpOf, useCollab, typ
 import { useSession } from "../session.tsx";
 import { Inspector } from "./Inspector.tsx";
 import { LanguageSwitch, LanguagesSettings, TranslateStep, translationLanguages } from "./Translate.tsx";
+import { PrintMaterials } from "./PrintMaterials.tsx";
 import { ListView } from "./ListView.tsx";
 import { Resources } from "./Resources.tsx";
 import { Simulator, type SimMode } from "./Simulator.tsx";
@@ -1777,6 +1778,9 @@ export function Designer({ slug }: { slug: string }) {
               editing={editLang}
               onEditing={setEditLang}
             />
+            <AdventureSlug.Provider value={slug}>
+              <PrintMaterials graph={graph} main={mainLang} onChange={change} />
+            </AdventureSlug.Provider>
             <Look
               brand={brand}
               saving={brandSaving}

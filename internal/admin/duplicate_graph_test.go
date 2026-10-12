@@ -53,6 +53,7 @@ func graphFixture(t *testing.T, slug string) (db *sql.DB, advID int64, user auth
 	snd = []byte("ID3 not really an mp3")
 	picID := insertMedia(t, db, advID, "image", "image/png", pic)
 	sndID := insertMedia(t, db, advID, "audio", "audio/mpeg", snd)
+	pdfID := insertMedia(t, db, advID, "pdf", "application/pdf", fixturePDF)
 
 	g := &graph.Graph{
 		Nodes: []graph.Node{
@@ -74,6 +75,8 @@ func graphFixture(t *testing.T, slug string) (db *sql.DB, advID int64, user auth
 		},
 		Journal: []graph.JournalEntry{{Slug: "clue", Title: "Clue",
 			Media: []graph.Media{{ID: picID, Kind: graph.MediaImage}}}},
+		PrintMaterials: []graph.PrintMaterial{{ID: "letter", Name: "Letter", Delivery: graph.DeliveryPosted,
+			Files: map[string]int64{"en": pdfID}}},
 	}
 	if _, _, err := graphstore.Publish(context.Background(), db, advID, userID, g, "First"); err != nil {
 		t.Fatalf("publish source graph: %v", err)
@@ -81,6 +84,9 @@ func graphFixture(t *testing.T, slug string) (db *sql.DB, advID int64, user auth
 	user = auth.User{ID: userID, Role: auth.RoleOrgAdmin, OrgID: &orgID}
 	return db, advID, user, pic, snd
 }
+
+// fixturePDF is a print material's file in graphFixture.
+var fixturePDF = []byte("%PDF-1.4\n%%EOF\n")
 
 func insertMedia(t *testing.T, db *sql.DB, advID int64, kind, mime string, content []byte) int64 {
 	t.Helper()
@@ -96,12 +102,13 @@ func insertMedia(t *testing.T, db *sql.DB, advID int64, kind, mime string, conte
 }
 
 // assertGraphMediaOwned checks every media id g names is a row of advID
-// holding one of want, and that the picture block shows pic.
+// holding one of want, that the picture block shows pic, and that the
+// letter is fixturePDF.
 func assertGraphMediaOwned(t *testing.T, db *sql.DB, advID int64, g *graph.Graph, pic []byte, want ...[]byte) {
 	t.Helper()
 	ids := g.MediaIDs()
-	if len(ids) != len(want) {
-		t.Fatalf("graph names %d media, want %d", len(ids), len(want))
+	if len(ids) != len(want)+1 {
+		t.Fatalf("graph names %d media, want %d and a letter", len(ids), len(want))
 	}
 	for _, id := range ids {
 		var owner int64
@@ -129,6 +136,14 @@ func assertGraphMediaOwned(t *testing.T, db *sql.DB, advID int64, g *graph.Graph
 	}
 	if je := g.Journal[0].Media[0].ID; je != picID {
 		t.Errorf("journal picture = %d, want the block's %d", je, picID)
+	}
+	var owner int64
+	if err := db.QueryRow(`SELECT adventure_id, content FROM adventure_media WHERE id = $1 AND kind = 'pdf'`,
+		g.PrintMaterials[0].Files["en"]).Scan(&owner, &content); err != nil {
+		t.Fatalf("letter: %v", err)
+	}
+	if owner != advID || string(content) != string(fixturePDF) {
+		t.Errorf("letter belongs to adventure %d with %d bytes, want %d with the fixture's", owner, len(content), advID)
 	}
 }
 
@@ -167,8 +182,8 @@ func TestDuplicateAdventure_CopiesGraphAndMedia(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM adventure_media WHERE adventure_id = $1`, newID).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Errorf("copy has %d media rows, want 2", n)
+	if n != 3 {
+		t.Errorf("copy has %d media rows, want 3", n)
 	}
 
 	pub, err := graphstore.Published(ctx, db, newID)

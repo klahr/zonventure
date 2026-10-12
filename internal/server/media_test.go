@@ -198,3 +198,92 @@ func TestGraphMedia(t *testing.T) {
 		t.Errorf("an anonymous caller must see nothing, got %d", s)
 	}
 }
+
+// A print material's PDF is uploaded like a picture, but only a print
+// material may name it and only staff may fetch it: a letter is the
+// first clue, and teams get it in the post.
+func TestPrintMaterialMedia(t *testing.T) {
+	ts, assignmentID, cleanup := newTestServer(t)
+	defer cleanup()
+
+	pub := newClient(t, ts)
+	if s := pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
+		t.Fatalf("login = %d", s)
+	}
+	s1, pdf := pub.uploadNamed("/api/admin/adventures/demo/media", "letter.pdf", []byte("%PDF-1.4\n1 0 obj << >> endobj\n%%EOF\n"))
+	s2, png := pub.upload("/api/admin/adventures/demo/media", tinyPNG(t, 10))
+	if s1 != 201 || pdf["kind"] != "pdf" || s2 != 201 {
+		t.Fatalf("uploads: %d %v, %d", s1, pdf, s2)
+	}
+	pdfID := int64(pdf["id"].(float64))
+	pngID := int64(png["id"].(float64))
+
+	withPrint := func(file int64, stepMedia []graph.Media) graph.Graph {
+		return graph.Graph{
+			Nodes: []graph.Node{
+				{Slug: "start", Type: graph.Start},
+				{Slug: "look", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+					Blocks: graph.LegacyBlocks("What does the letter say?", stepMedia),
+					Outputs: []graph.Output{{Port: "solved", Trigger: graph.OnAnswer,
+						Matchers: []match.Matcher{{Kind: match.Exact, Value: "go"}}}},
+				}},
+				{Slug: "end", Type: graph.End},
+			},
+			Edges: []graph.Edge{
+				{From: "start", FromPort: "out", To: "look"},
+				{From: "look", FromPort: "solved", To: "end"},
+			},
+			PrintMaterials: []graph.PrintMaterial{{ID: "letter", Name: "Letter", Delivery: graph.DeliveryPosted,
+				Files: map[string]int64{"en": file}}},
+		}
+	}
+	save := func(g graph.Graph) (int, refusalDTO) {
+		var refused refusalDTO
+		return pub.doAny("PUT", "/api/admin/adventures/demo/graph", graph.Envelope{Format: graph.FormatV2, Graph: g}, &refused), refused
+	}
+	if s, r := save(withPrint(pdfID, []graph.Media{{ID: pdfID, Kind: graph.MediaImage}})); s != 422 || r.Code != "media_kind" {
+		t.Errorf("a step showing the PDF = %d %+v, want 422 media_kind", s, r)
+	}
+	if s, r := save(withPrint(pngID, nil)); s != 422 || r.Code != "media_kind" {
+		t.Errorf("a print material naming a picture = %d %+v, want 422 media_kind", s, r)
+	}
+	if s, r := save(withPrint(pdfID, []graph.Media{{ID: pngID, Kind: graph.MediaImage}})); s != 200 {
+		t.Fatalf("save = %d %+v", s, r)
+	}
+	if s := pub.doAny("POST", "/api/admin/adventures/demo/graph/publish", nil, nil); s != 200 {
+		t.Fatalf("publish = %d", s)
+	}
+	if s := pub.status("/media/" + strconv.FormatInt(pdfID, 10)); s != 200 {
+		t.Errorf("staff should open the PDF, got %d", s)
+	}
+
+	arr := newClient(t, ts)
+	arr.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil)
+	var ev struct {
+		ID int64 `json:"id"`
+	}
+	arr.do("POST", "/api/admin/events", map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &ev)
+	var team struct {
+		Members []struct {
+			Token string `json:"token"`
+		} `json:"members"`
+	}
+	arr.do("POST", "/api/admin/events/"+itoa(ev.ID)+"/teams", map[string]any{"name": "A", "member_names": []string{"a"}}, &team)
+	if s := arr.do("POST", "/api/admin/events/"+itoa(ev.ID)+"/start", nil, nil); s != 204 {
+		t.Fatalf("start = %d", s)
+	}
+	p := newClient(t, ts)
+	p.status("/play?t=" + team.Members[0].Token)
+	var st struct {
+		Prefetch []int64 `json:"prefetch"`
+	}
+	p.doAny("GET", "/api/player/play", nil, &st)
+	for _, id := range st.Prefetch {
+		if id == pdfID {
+			t.Errorf("the PDF is in the team's prefetch list %v", st.Prefetch)
+		}
+	}
+	if s := p.status("/media/" + strconv.FormatInt(pdfID, 10)); s != 404 {
+		t.Errorf("a player must not fetch the PDF, got %d", s)
+	}
+}

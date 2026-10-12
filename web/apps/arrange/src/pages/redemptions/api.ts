@@ -50,6 +50,16 @@ export interface Redemption {
   team_id?: number;
   team_name: string;
   letter_languages: string[] | null;
+  /** What to print for it, in its envelope's language. */
+  print: PrintLink[] | null;
+}
+
+/** internal/admin/redemptions.go printLink */
+export interface PrintLink {
+  id: string;
+  name: string;
+  lang: string;
+  media_id: number;
 }
 
 export type RedemptionState = Redemption["state"];
@@ -87,7 +97,7 @@ export interface ProductInput {
 const opt = (signal?: AbortSignal) => (signal ? { signal } : {});
 
 export const listRedemptions = (state: string, signal?: AbortSignal) =>
-  get<{ redemptions: Redemption[] | null; counts: Partial<Record<RedemptionState, number>> }>(`/api/admin/redemptions?state=${encodeURIComponent(state)}`, opt(signal));
+  get<{ redemptions: Redemption[] | null; counts: Partial<Record<RedemptionState | "to_post", number>> }>(`/api/admin/redemptions?state=${encodeURIComponent(state)}`, opt(signal));
 export const listPartners = (signal?: AbortSignal) =>
   get<{ partners: Partner[] | null }>("/api/admin/partners", opt(signal)).then((r) => r.partners ?? []);
 /** internal/admin/org_profile.go: only the slug, for the redeem page link. */

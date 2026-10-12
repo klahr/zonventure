@@ -1,6 +1,7 @@
 package admin
 
-// Media for graph adventures: pictures and sounds a step or hint shows.
+// Media for graph adventures: pictures and sounds a step or hint shows,
+// and the PDFs of its print materials.
 //
 //	POST /api/admin/adventures/{slug}/media   upload one file (multipart "file")
 //	GET  /media/{mediaID}                     fetch it
@@ -72,15 +73,19 @@ var maxVideoBytes int64 = func() int64 {
 	return def
 }()
 
-// UploadAdventureMedia stores one image, audio or video file for the
+// maxPDFBytes is the per-upload size cap for a print material's PDF: a
+// letter with pictures, or a printed map.
+const maxPDFBytes int64 = 20 << 20
+
+// UploadAdventureMedia stores one image, audio, video or PDF file for the
 // adventure. Videos are for video blocks; the validator keeps them off
-// hints.
+// hints. PDFs are for print materials; graphstore keeps them off steps.
 func (h *Handlers) UploadAdventureMedia(w http.ResponseWriter, r *http.Request) {
 	advID, ok := h.graphTarget(w, r)
 	if !ok {
 		return
 	}
-	limit := max(maxImageBytes, maxAudioBytes, maxVideoBytes)
+	limit := max(maxImageBytes, maxAudioBytes, maxVideoBytes, maxPDFBytes)
 	httpx.ExtendDeadlines(w, 10*time.Minute)
 	r.Body = http.MaxBytesReader(w, r.Body, limit+(1<<20))
 	if err := r.ParseMultipartForm(limit); err != nil {
@@ -125,8 +130,14 @@ func (h *Handlers) UploadAdventureMedia(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		kind = graph.MediaVideo
+	case mime == "application/pdf":
+		if int64(len(data)) > maxPDFBytes {
+			httpx.Error(w, http.StatusRequestEntityTooLarge, "PDF too large")
+			return
+		}
+		kind = graph.MediaPDF
 	default:
-		httpx.Error(w, http.StatusBadRequest, "only image, audio and video uploads are accepted")
+		httpx.Error(w, http.StatusBadRequest, "only image, audio, video and PDF uploads are accepted")
 		return
 	}
 

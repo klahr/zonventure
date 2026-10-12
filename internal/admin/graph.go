@@ -159,6 +159,10 @@ func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusUnprocessableEntity, graphRefusal{Error: err.Error(), Code: "media_foreign"})
 		return
 	}
+	if errors.Is(err, graphstore.ErrMediaKind) {
+		httpx.JSON(w, http.StatusUnprocessableEntity, graphRefusal{Error: err.Error(), Code: "media_kind"})
+		return
+	}
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "saving draft failed", err)
 		return
@@ -388,6 +392,8 @@ func (h *Handlers) publishRefused(w http.ResponseWriter, report valid.Report, er
 		})
 	case errors.Is(err, graphstore.ErrForeignMedia):
 		httpx.JSON(w, http.StatusUnprocessableEntity, graphRefusal{Error: err.Error(), Code: "media_foreign"})
+	case errors.Is(err, graphstore.ErrMediaKind):
+		httpx.JSON(w, http.StatusUnprocessableEntity, graphRefusal{Error: err.Error(), Code: "media_kind"})
 	default:
 		httpx.ServerErr(w, http.StatusInternalServerError, "publishing failed", err)
 	}

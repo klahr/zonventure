@@ -59,12 +59,25 @@ func TestApplyGraphOp(t *testing.T) {
 		t.Errorf("deleting a node should drop its edges, have %+v", g.Edges)
 	}
 
+	// A print material is put whole by id, replaced by the same id.
+	mustApply(t, g, graphOp{Op: "put_print_material", Print: json.RawMessage(`{"id":"letter","name":"Letter","delivery":"posted","files":{"sv":4}}`)})
+	mustApply(t, g, graphOp{Op: "put_print_material", Print: json.RawMessage(`{"id":"letter","name":"Brev","delivery":"posted","files":{"sv":5}}`)})
+	if len(g.PrintMaterials) != 1 || g.PrintMaterials[0].Name != "Brev" || g.PrintMaterials[0].Files["sv"] != 5 {
+		t.Errorf("print materials = %+v", g.PrintMaterials)
+	}
+	mustApply(t, g, graphOp{Op: "delete_print_material", Slug: "letter"})
+	if len(g.PrintMaterials) != 0 {
+		t.Errorf("deleted print material is still there: %+v", g.PrintMaterials)
+	}
+
 	for name, op := range map[string]graphOp{
 		"unknown field":        {Op: "put_node", Node: json.RawMessage(`{"slug":"x","type":"story","sparkle":1}`)},
 		"no slug":              {Op: "put_node", Node: json.RawMessage(`{"type":"story"}`)},
 		"connect to nothing":   {Op: "connect", From: "start", FromPort: "out", To: "ghost"},
 		"disconnect nothing":   {Op: "disconnect", From: "start", FromPort: "out"},
 		"delete missing zone":  {Op: "delete_zone", Slug: "ghost"},
+		"print without id":     {Op: "put_print_material", Print: json.RawMessage(`{"name":"Letter"}`)},
+		"delete missing print": {Op: "delete_print_material", Slug: "ghost"},
 		"unknown op":           {Op: "rename"},
 		"zone with bad fields": {Op: "put_zone", Zone: json.RawMessage(`{"slug":"z","radius":3}`)},
 	} {

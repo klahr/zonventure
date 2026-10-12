@@ -352,7 +352,11 @@ func TestRedemption_LetterLanguage(t *testing.T) {
 	var graphID int64
 	if err := db.QueryRow(`
 		INSERT INTO adventure_graphs(adventure_id, version, graph)
-		VALUES ((SELECT id FROM adventures WHERE slug = 'demo'), 1, '{"translations": {"sv": {"title": "Demo"}}}')
+		VALUES ((SELECT id FROM adventures WHERE slug = 'demo'), 1, '{"translations": {"sv": {"title": "Demo"}},
+		  "print_materials": [
+		    {"id": "letter", "name": "Letter", "delivery": "posted", "files": {"en": 11, "sv": 12}},
+		    {"id": "key", "name": "Answer key", "delivery": "organiser", "files": {"en": 13}},
+		    {"id": "self", "name": "Self-print", "delivery": "emailed", "files": {"en": 14, "sv": 15}}]}')
 		RETURNING id`).Scan(&graphID); err != nil {
 		t.Fatal(err)
 	}
@@ -411,6 +415,11 @@ func TestRedemption_LetterLanguage(t *testing.T) {
 		LetterLang      string   `json:"letter_lang"`
 		LetterLanguages []string `json:"letter_languages"`
 		TeamID          int64    `json:"team_id"`
+		Print           []struct {
+			ID      string `json:"id"`
+			Lang    string `json:"lang"`
+			MediaID int64  `json:"media_id"`
+		} `json:"print"`
 	}
 	var list struct {
 		Redemptions []langView `json:"redemptions"`
@@ -425,6 +434,25 @@ func TestRedemption_LetterLanguage(t *testing.T) {
 	sv, en := byCode["ABCDEF123"], byCode["ABCDEF124"]
 	if sv.LetterLang != "sv" || en.LetterLang != "en" || strings.Join(sv.LetterLanguages, ",") != "en,sv" {
 		t.Fatalf("stored = %+v / %+v", sv, en)
+	}
+	// The organiser prints the posted letter in the buyer's language and
+	// the answer key in what it has; the self-print one is the buyer's.
+	if p := sv.Print; len(p) != 2 || p[0].ID != "letter" || p[0].MediaID != 12 || p[1].ID != "key" || p[1].Lang != "en" {
+		t.Errorf("Swedish order prints %+v, want the Swedish letter and the English key", p)
+	}
+
+	var toPost struct {
+		Redemptions []langView     `json:"redemptions"`
+		Counts      map[string]int `json:"counts"`
+	}
+	if s := boss.do("GET", "/api/admin/redemptions?state=to_post", nil, &toPost); s != 200 || len(toPost.Redemptions) != 2 || toPost.Counts["to_post"] != 2 {
+		t.Fatalf("to post = %d %+v", s, toPost)
+	}
+	if s := boss.do("PATCH", "/api/admin/redemptions/"+itoa(en.ID), map[string]any{"posted": true}, nil); s != 200 {
+		t.Fatalf("mark posted = %d", s)
+	}
+	if s := boss.do("GET", "/api/admin/redemptions?state=to_post", nil, &toPost); s != 200 || len(toPost.Redemptions) != 1 || toPost.Counts["to_post"] != 1 {
+		t.Errorf("to post after posting one = %d %+v", s, toPost)
 	}
 
 	if s, e := doErr(boss, "PATCH", "/api/admin/redemptions/"+itoa(en.ID), map[string]any{"letter_lang": "xx"}); s != 400 || e.Reason != "invalid_language" {

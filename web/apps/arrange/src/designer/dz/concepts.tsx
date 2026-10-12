@@ -1,4 +1,4 @@
-import { BookMarked, GitBranch, Hash, KeyRound, Languages, Lightbulb, ListChecks, MapPin, MessageSquareReply, Package, Palette, Route, Shuffle, SlidersHorizontal, Smartphone, Sparkles, Timer, Trophy, Users, Waypoints, PartyPopper, type LucideIcon } from "lucide-react";
+import { BookMarked, GitBranch, Hash, KeyRound, Languages, Lightbulb, ListChecks, MapPin, MessageSquareReply, Package, Palette, Printer, Route, Shuffle, SlidersHorizontal, Smartphone, Sparkles, Timer, Trophy, Users, Waypoints, PartyPopper, type LucideIcon } from "lucide-react";
 import type { Trigger } from "@zonventure/graph";
 import { ICON } from "./ui.tsx";
 
@@ -51,6 +51,7 @@ export const RESOURCE = {
   languages: { concept: "content", icon: Languages },
   look: { concept: "content", icon: Palette },
   party: { concept: "content", icon: PartyPopper },
+  print: { concept: "content", icon: Printer },
 } as const satisfies Record<string, { concept: Concept; icon: LucideIcon }>;
 
 /** A concept's icon on a tile tinted in its colour. */

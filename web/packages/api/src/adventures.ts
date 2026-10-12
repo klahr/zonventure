@@ -187,14 +187,14 @@ export const saveBrand = (slug: string, b: Brand) =>
 /** internal/admin: mediaView */
 export interface MediaUpload {
   id: number;
-  kind: "image" | "audio" | "video";
+  kind: "image" | "audio" | "video" | "pdf";
   mime_type: string;
   size_bytes: number;
 }
 
 /**
- * Upload one image or audio file for the adventure. Images are resized
- * by the server; the same file twice returns the same id.
+ * Upload one image, audio, video or PDF file for the adventure. Images
+ * are resized by the server; the same file twice returns the same id.
  */
 export function uploadMedia(slug: string, file: File) {
   const form = new FormData();

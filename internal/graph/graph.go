@@ -118,6 +118,57 @@ type Graph struct {
 	// it is rendered, and anything untranslated falls back to the main
 	// text — a half-translated adventure still plays.
 	Translations map[string]map[string]string `json:"translations,omitempty"`
+
+	// PrintMaterials are the PDFs that come with the adventure on paper:
+	// a letter with the first clue, a map. They belong to the version, so
+	// an event prints the ones it plays. Players never see them in play.
+	PrintMaterials []PrintMaterial `json:"print_materials,omitempty"`
+}
+
+// Delivery is how a print material reaches a team's buyer.
+type Delivery string
+
+const (
+	// DeliveryPosted is printed and posted by the organiser.
+	DeliveryPosted Delivery = "posted"
+	// DeliveryEmailed is sent to the buyer to print themselves.
+	DeliveryEmailed Delivery = "emailed"
+	// DeliveryOrganiser is for the organiser alone: an answer key.
+	DeliveryOrganiser Delivery = "organiser"
+)
+
+// MaxPrintMaterials is how many print materials an adventure may have.
+const MaxPrintMaterials = 10
+
+// PrintMaterial is one printable document, in each language the
+// adventure is played in.
+type PrintMaterial struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Delivery Delivery `json:"delivery"`
+	// Files maps a language to an adventure_media id of kind pdf.
+	Files map[string]int64 `json:"files,omitempty"`
+}
+
+// PrintMediaIDs returns the media ids of the print materials, once each.
+// A missing file is the validator's to report, not a media id.
+func (g *Graph) PrintMediaIDs() []int64 {
+	seen := map[int64]bool{}
+	var out []int64
+	for _, pm := range g.PrintMaterials {
+		langs := make([]string, 0, len(pm.Files))
+		for l := range pm.Files {
+			langs = append(langs, l)
+		}
+		sort.Strings(langs)
+		for _, l := range langs {
+			if id := pm.Files[l]; id > 0 && !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+	}
+	return out
 }
 
 // Field keys for Translations. A node's are:
@@ -411,6 +462,8 @@ const (
 	// MediaVideo is only ever a video block's; steps and hints keep to
 	// pictures and sounds.
 	MediaVideo MediaKind = "video"
+	// MediaPDF is only ever a print material's.
+	MediaPDF MediaKind = "pdf"
 )
 
 // Media shows a picture or plays a sound on a step or a hint. ID is an
@@ -1476,6 +1529,9 @@ func (g *Graph) MediaIDs() []int64 {
 		for _, id := range th.Look.MediaIDs() {
 			add([]Media{{ID: id}})
 		}
+	}
+	for _, id := range g.PrintMediaIDs() {
+		add([]Media{{ID: id}})
 	}
 	return out
 }

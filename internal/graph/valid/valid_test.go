@@ -1049,3 +1049,44 @@ func TestBlockAnimationRules(t *testing.T) {
 	assertCode(t, animated(&graph.Animation{Repeat: "twice"}), "block.animation.repeat")
 	assertCode(t, animated(&graph.Animation{Delay: 30}), "block.animation.delay")
 }
+
+// A posted print material must be printable in every language a buyer
+// can choose; one that isn't posted may lack some, with a warning.
+func TestPrintMaterials(t *testing.T) {
+	sev := func(r Report, code string) Severity {
+		t.Helper()
+		for _, i := range r.Issues {
+			if i.Code == code {
+				return i.Severity
+			}
+		}
+		return ""
+	}
+	g := valid3()
+	g.Language = "sv"
+	g.Translations = map[string]map[string]string{"en": {}}
+	g.PrintMaterials = []graph.PrintMaterial{{ID: "letter", Name: "Letter", Delivery: graph.DeliveryPosted, Files: map[string]int64{"sv": 1}}}
+	if s := sev(Check(g), "print.missing"); s != Error {
+		t.Errorf("a posted letter without English is %q, want an error", s)
+	}
+	g.PrintMaterials[0].Delivery = graph.DeliveryEmailed
+	if s := sev(Check(g), "print.missing"); s != Warning {
+		t.Errorf("an emailed letter without English is %q, want a warning", s)
+	}
+	g.PrintMaterials[0].Files["en"] = 2
+	g.PrintMaterials[0].Files["fi"] = 3
+	r := Check(g)
+	assertNoCode(t, r, "print.missing")
+	if s := sev(r, "print.language"); s != Warning {
+		t.Errorf("a Finnish file for an adventure without Finnish is %q, want a warning", s)
+	}
+
+	g.PrintMaterials = append(g.PrintMaterials, graph.PrintMaterial{ID: "letter", Delivery: "courier"})
+	r = Check(g)
+	assertCode(t, r, "resource.slug.duplicate")
+	assertCode(t, r, "print.name")
+	assertCode(t, r, "print.delivery")
+
+	g.PrintMaterials = make([]graph.PrintMaterial, graph.MaxPrintMaterials+1)
+	assertCode(t, Check(g), "print.count")
+}

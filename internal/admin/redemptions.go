@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"github.com/klahr/zonventure/internal/emailtpl"
+	"maps"
 	"net/http"
 	"net/mail"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
@@ -93,6 +96,8 @@ type redemptionDTO struct {
 	TeamName      string `json:"team_name"`
 	// LetterLanguages are those the letter_lang may be changed to.
 	LetterLanguages []string `json:"letter_languages"`
+	// Print is what the organiser prints for it, in its letter's language.
+	Print []printLink `json:"print"`
 
 	graphID int64
 }
@@ -171,35 +176,82 @@ func checkPartnerCode(kind, box, code string) (string, string, bool) {
 	return "", "", false
 }
 
+// versions holds the adventure versions a list's rows play, by id, as
+// most rows share one.
+type versions map[int64]*graph.Graph
+
+// get returns version id, or nil for an event not yet pinned to one.
+func (v versions) get(ctx context.Context, q graphstore.Querier, id int64) (*graph.Graph, error) {
+	if id == 0 {
+		return nil, nil
+	}
+	if g, ok := v[id]; ok {
+		return g, nil
+	}
+	s, err := graphstore.ByID(ctx, q, id)
+	if err != nil {
+		return nil, err
+	}
+	v[id] = s.Graph
+	return s.Graph, nil
+}
+
 // letterLanguages lists the languages a product's letter can be posted
 // in: those of the adventure version its event plays, main language
 // first. An event not yet pinned to a version has none to offer.
 func letterLanguages(ctx context.Context, q graphstore.Querier, graphID int64) ([]string, error) {
-	if graphID == 0 {
-		return nil, nil
-	}
-	s, err := graphstore.ByID(ctx, q, graphID)
-	if err != nil {
-		return nil, err
-	}
-	if l := s.Graph.Languages(); l != nil {
-		return l, nil
-	}
-	return []string{s.Graph.Language}, nil
+	g, err := versions{}.get(ctx, q, graphID)
+	return graphLanguages(g), err
 }
 
-// letterLanguagesCached is letterLanguages for a list, where most rows
-// share a version.
-func letterLanguagesCached(ctx context.Context, q graphstore.Querier, cache map[int64][]string, graphID int64) ([]string, error) {
-	if l, ok := cache[graphID]; ok {
-		return l, nil
+func graphLanguages(g *graph.Graph) []string {
+	if g == nil {
+		return nil
 	}
-	l, err := letterLanguages(ctx, q, graphID)
-	if err != nil {
-		return nil, err
+	if l := g.Languages(); l != nil {
+		return l
 	}
-	cache[graphID] = l
-	return l, nil
+	return []string{g.Language}
+}
+
+// printLink is a print material an organiser prints for one order.
+type printLink struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Lang    string `json:"lang"`
+	MediaID int64  `json:"media_id"`
+}
+
+// printLinks lists what the organiser prints for an order in lang: the
+// version's posted and organiser-only materials, each in lang, else in
+// the main language, else in any it has.
+func printLinks(g *graph.Graph, lang string) []printLink {
+	out := []printLink{}
+	if g == nil {
+		return out
+	}
+	for _, pm := range g.PrintMaterials {
+		if pm.Delivery != graph.DeliveryPosted && pm.Delivery != graph.DeliveryOrganiser {
+			continue
+		}
+		l := lang
+		if pm.Files[l] <= 0 {
+			l = g.Language
+		}
+		if pm.Files[l] <= 0 {
+			l = ""
+			for _, k := range slices.Sorted(maps.Keys(pm.Files)) {
+				if pm.Files[k] > 0 {
+					l = k
+					break
+				}
+			}
+		}
+		if l != "" {
+			out = append(out, printLink{ID: pm.ID, Name: pm.Name, Lang: l, MediaID: pm.Files[l]})
+		}
+	}
+	return out
 }
 
 // pickLetterLang checks a requested letter language against those
@@ -397,7 +449,7 @@ func (h *Handlers) redeemOptions(w http.ResponseWriter, r *http.Request, orgID i
 	}
 	defer rows.Close()
 	partners := []redeemOptionPartner{}
-	langs := map[int64][]string{}
+	vs := versions{}
 	for rows.Next() {
 		var kind string
 		var p redeemOptionProduct
@@ -406,12 +458,12 @@ func (h *Handlers) redeemOptions(w http.ResponseWriter, r *http.Request, orgID i
 			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 			return
 		}
-		l, err := letterLanguagesCached(r.Context(), h.DB, langs, graphID)
+		g, err := vs.get(r.Context(), h.DB, graphID)
 		if err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 			return
 		}
-		if len(l) > 0 {
+		if l := graphLanguages(g); len(l) > 0 {
 			p.Letter = &redeemLetter{Languages: l}
 		}
 		if n := len(partners); n == 0 || partners[n-1].Kind != kind {
@@ -516,7 +568,7 @@ func (h *Handlers) loadPartners(ctx context.Context, orgID int64, partnerID int6
 	}
 	defer rows.Close()
 	out := []partnerDTO{}
-	langs := map[int64][]string{}
+	vs := versions{}
 	for rows.Next() {
 		var p partnerDTO
 		var pr partnerProductDTO
@@ -525,9 +577,11 @@ func (h *Handlers) loadPartners(ctx context.Context, orgID int64, partnerID int6
 			&pr.EventName, &pr.AdventureTitle, &pr.TeamSize, &pr.Enabled, &graphID); err != nil {
 			return nil, err
 		}
-		if pr.LetterLanguages, err = letterLanguagesCached(ctx, h.DB, langs, graphID); err != nil {
+		g, err := vs.get(ctx, h.DB, graphID)
+		if err != nil {
 			return nil, err
 		}
+		pr.LetterLanguages = graphLanguages(g)
 		if n := len(out); n == 0 || out[n-1].ID != p.ID {
 			p.Name = partnerNames[p.Kind]
 			p.Products = []partnerProductDTO{}
@@ -876,8 +930,22 @@ func scanRedemption(sc interface{ Scan(...any) error }) (redemptionDTO, error) {
 	return d, err
 }
 
+// fillVersion adds what the row's adventure version decides: the letter's
+// languages and what to print.
+func (d *redemptionDTO) fillVersion(ctx context.Context, q graphstore.Querier, vs versions) error {
+	g, err := vs.get(ctx, q, d.graphID)
+	if err != nil {
+		return err
+	}
+	d.LetterLanguages = graphLanguages(g)
+	d.Print = printLinks(g, d.LetterLang)
+	return nil
+}
+
 // ListRedemptions returns the organisation's redemptions in one state
-// (pending by default, or all) with a count per state.
+// (pending by default, or all) with a count per state. to_post is those
+// still to be posted: pending or approved, not yet marked posted, the
+// ones to post first first.
 func (h *Handlers) ListRedemptions(w http.ResponseWriter, r *http.Request) {
 	_, orgID, ok := redemptionOrg(w, r, false)
 	if !ok {
@@ -887,14 +955,18 @@ func (h *Handlers) ListRedemptions(w http.ResponseWriter, r *http.Request) {
 	switch state {
 	case "":
 		state = "pending"
-	case "pending", "approved", "rejected", "cancelled", "all":
+	case "pending", "approved", "rejected", "cancelled", "all", "to_post":
 	default:
 		httpx.Error(w, http.StatusBadRequest, "bad state")
 		return
 	}
 	rows, err := h.DB.QueryContext(r.Context(), redemptionSelect+`
-		WHERE p.org_id = $1 AND ($2::text = 'all' OR r.state = $2)
-		ORDER BY r.created_at DESC, r.id DESC
+		WHERE p.org_id = $1 AND CASE $2::text
+		    WHEN 'all' THEN TRUE
+		    WHEN 'to_post' THEN r.state IN ('pending', 'approved') AND r.posted_at IS NULL
+		    ELSE r.state = $2 END
+		ORDER BY CASE WHEN $2 = 'to_post' THEN r.post_at = '' END, CASE WHEN $2 = 'to_post' THEN r.post_at END,
+		         CASE WHEN $2 = 'to_post' THEN r.created_at END, r.created_at DESC, r.id DESC
 		LIMIT 500
 	`, orgID, state)
 	if err != nil {
@@ -911,17 +983,20 @@ func (h *Handlers) ListRedemptions(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, d)
 	}
-	langs := map[int64][]string{}
+	vs := versions{}
 	for i := range out {
-		if out[i].LetterLanguages, err = letterLanguagesCached(r.Context(), h.DB, langs, out[i].graphID); err != nil {
+		if err := out[i].fillVersion(r.Context(), h.DB, vs); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 			return
 		}
 	}
-	counts := map[string]int{"pending": 0, "approved": 0, "rejected": 0, "cancelled": 0}
+	counts := map[string]int{"pending": 0, "approved": 0, "rejected": 0, "cancelled": 0, "to_post": 0}
 	crows, err := h.DB.QueryContext(r.Context(), `
 		SELECT r.state, COUNT(*) FROM partner_redemptions r JOIN partners p ON p.id = r.partner_id
 		WHERE p.org_id = $1 GROUP BY r.state
+		UNION ALL
+		SELECT 'to_post', COUNT(*) FROM partner_redemptions r JOIN partners p ON p.id = r.partner_id
+		WHERE p.org_id = $1 AND r.state IN ('pending', 'approved') AND r.posted_at IS NULL
 	`, orgID)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
@@ -962,7 +1037,7 @@ func (h *Handlers) CreateRedemption(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) writeRedemption(w http.ResponseWriter, r *http.Request, status int, id int64) {
 	d, err := scanRedemption(h.DB.QueryRowContext(r.Context(), redemptionSelect+`WHERE r.id = $1`, id))
 	if err == nil {
-		d.LetterLanguages, err = letterLanguages(r.Context(), h.DB, d.graphID)
+		err = d.fillVersion(r.Context(), h.DB, versions{})
 	}
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)

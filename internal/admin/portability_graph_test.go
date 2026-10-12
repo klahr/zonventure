@@ -65,8 +65,8 @@ func TestPortabilityGraphRoundTrip(t *testing.T) {
 	if manifest.Format != "zonventure-adventure-v1" {
 		t.Errorf("format = %q", manifest.Format)
 	}
-	if len(manifest.Graph) == 0 || len(manifest.Media) != 2 {
-		t.Fatalf("manifest graph %d bytes, %d graph media; want a graph and 2", len(manifest.Graph), len(manifest.Media))
+	if len(manifest.Graph) == 0 || len(manifest.Media) != 3 {
+		t.Fatalf("manifest graph %d bytes, %d graph media; want a graph and 3", len(manifest.Graph), len(manifest.Media))
 	}
 	for _, m := range manifest.Media {
 		if !files[m.File] {

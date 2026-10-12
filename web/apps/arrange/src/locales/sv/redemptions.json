@@ -7,5 +7,9 @@
   "{{n}} code waiting for review": "{{n}} kod väntar på granskning",
   "{{n}} codes waiting for review": "{{n}} koder väntar på granskning",
   "{{n}} player per team": "{{n}} spelare per lag",
-  "{{n}} players per team": "{{n}} spelare per lag"
+  "{{n}} players per team": "{{n}} spelare per lag",
+  "To post": "Att posta",
+  "All languages": "Alla språk",
+  "Nothing left to post.": "Inget kvar att posta.",
+  "Open the PDF to print it": "Öppna PDF:en för att skriva ut den"
 }

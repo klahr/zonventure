@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/valid"
@@ -172,19 +173,38 @@ func scan(row *sql.Row) (Stored, error) {
 // another's files.
 var ErrForeignMedia = errors.New("graph refers to media from another adventure")
 
+// ErrMediaKind means a print material names a file that is not a PDF,
+// or a step names a PDF. A PDF is printed, never shown to players: a
+// step may show any media it names to the team standing there.
+var ErrMediaKind = errors.New("print materials must be PDFs, and only print materials may be")
+
 func checkMedia(ctx context.Context, q Querier, adventureID int64, g *graph.Graph) error {
 	ids := g.MediaIDs()
 	if len(ids) == 0 {
 		return nil
 	}
-	var n int
+	printed := g.PrintMediaIDs()
+	steps := *g
+	steps.PrintMaterials = nil
+	for _, id := range steps.MediaIDs() {
+		if slices.Contains(printed, id) {
+			return ErrMediaKind
+		}
+	}
+	var n, pdfPrinted, pdfAll int
 	if err := q.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM adventure_media WHERE adventure_id = $1 AND id = ANY($2)
-	`, adventureID, ids).Scan(&n); err != nil {
+		SELECT COUNT(*),
+		       COUNT(*) FILTER (WHERE kind = 'pdf' AND id = ANY($3)),
+		       COUNT(*) FILTER (WHERE kind = 'pdf')
+		FROM adventure_media WHERE adventure_id = $1 AND id = ANY($2)
+	`, adventureID, ids, printed).Scan(&n, &pdfPrinted, &pdfAll); err != nil {
 		return fmt.Errorf("checking media: %w", err)
 	}
 	if n != len(ids) {
 		return ErrForeignMedia
+	}
+	if pdfPrinted != len(printed) || pdfAll != len(printed) {
+		return ErrMediaKind
 	}
 	return nil
 }

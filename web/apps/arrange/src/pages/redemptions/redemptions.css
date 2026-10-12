@@ -11,6 +11,7 @@
 .dz .rd-item__main { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: var(--dz-space-3) var(--dz-space-4); padding: var(--dz-space-4); }
 .dz .rd-item__col { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
 .dz .rd-pills { display: inline-flex; flex-wrap: wrap; gap: var(--dz-space-1); }
+.dz .rd-filter { display: inline-flex; align-items: center; gap: var(--dz-space-2); margin-bottom: var(--dz-space-3); font-size: var(--dz-text-sm); color: var(--dz-muted); }
 .dz .rd-label { font-size: var(--dz-text-sm); color: var(--dz-muted); }
 .dz .rd-codes { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
 .dz .rd-code { display: inline-flex; align-items: center; gap: 6px; padding: 1px 6px; border: 1px solid var(--dz-border); border-radius: var(--dz-r-1); background: var(--dz-surface-2); color: var(--dz-ink); font-family: var(--dz-font-mono); font-size: var(--dz-text-sm); cursor: pointer; white-space: nowrap; }

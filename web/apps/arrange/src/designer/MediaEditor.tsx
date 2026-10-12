@@ -133,6 +133,11 @@ export function useMediaUpload() {
     try {
       for (const f of Array.from(files)) {
         const r = await adventures.uploadMedia(slug, await downscale(f));
+        // A PDF is a print material's, never a step's.
+        if (r.kind === "pdf") {
+          setError(t.t("Pick a picture, sound or video."));
+          continue;
+        }
         if (!added.some((m) => m.id === r.id)) added.push({ id: r.id, kind: r.kind });
       }
     } catch (e) {

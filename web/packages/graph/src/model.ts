@@ -539,6 +539,7 @@ export function cleanGraph(g: Graph): Graph {
   if (g.time_limit) out.time_limit = g.time_limit;
   if (g.language) out.language = g.language;
   if (g.translations && Object.keys(g.translations).length) out.translations = g.translations;
+  if (g.print_materials?.length) out.print_materials = g.print_materials;
   if (g.frames?.length) out.frames = g.frames.map((f) => ({ ...f, x: Math.round(f.x), y: Math.round(f.y), width: Math.round(f.width), height: Math.round(f.height) }));
   return out;
 }

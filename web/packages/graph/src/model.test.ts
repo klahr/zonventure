@@ -228,6 +228,7 @@ describe("persistence", () => {
       frames: [{ id: "f", x: 0, y: 0, width: 10, height: 10 }],
       language: "sv",
       translations: { en: { "meta:title": "T" } },
+      print_materials: [{ id: "letter", name: "Letter", delivery: "posted", files: { sv: 1 } }],
     };
     assert.deepEqual(Object.keys(cleanGraph(full)).sort(), Object.keys(full).sort());
   });

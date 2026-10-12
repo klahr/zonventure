@@ -15,6 +15,7 @@ package valid
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"regexp"
 	"slices"
@@ -120,6 +121,7 @@ func Check(g *graph.Graph) Report {
 	checkTimeLimit(r, g)
 	checkTranslations(r, g)
 	checkHostEdits(r, g)
+	checkPrintMaterials(r, g)
 
 	sort.SliceStable(r.issues, func(i, j int) bool {
 		if r.issues[i].Severity != r.issues[j].Severity {
@@ -1430,6 +1432,50 @@ func checkMedia(r *reporter, g *graph.Graph) {
 				if m.Kind != graph.MediaImage && m.Kind != graph.MediaAudio && m.Kind != graph.MediaVideo {
 					r.err("media.kind", n.Slug, "", "media %d is %q; it must be an image, audio or video", m.ID, m.Kind)
 				}
+			}
+		}
+	}
+}
+
+// checkPrintMaterials keeps a posted material printable in every language
+// a buyer can choose: a missing one blocks publishing, since nobody could
+// print that buyer's letter.
+func checkPrintMaterials(r *reporter, g *graph.Graph) {
+	pms := g.PrintMaterials
+	if len(pms) > graph.MaxPrintMaterials {
+		r.err("print.count", "", "", "an adventure has at most %d print materials", graph.MaxPrintMaterials)
+	}
+	checkUnique(r, "print material", len(pms), func(i int) string { return pms[i].ID })
+	langs := g.Languages()
+	if langs == nil && g.Language != "" {
+		langs = []string{g.Language}
+	}
+	for _, pm := range pms {
+		name := pm.Name
+		if strings.TrimSpace(name) == "" {
+			r.err("print.name", "", "", "print material %q has no name", pm.ID)
+			name = pm.ID
+		}
+		switch pm.Delivery {
+		case graph.DeliveryPosted, graph.DeliveryEmailed, graph.DeliveryOrganiser:
+		default:
+			r.err("print.delivery", "", "", "print material %q is delivered %q; it must be posted, emailed or organiser", name, pm.Delivery)
+		}
+		for _, l := range slices.Sorted(maps.Keys(pm.Files)) {
+			if id := pm.Files[l]; id <= 0 {
+				r.err("print.file", "", "", "print material %q has no file for %s", name, l)
+			} else if !slices.Contains(langs, l) {
+				r.warn("print.language", "", "", "print material %q has a file for %s, which the adventure isn't played in", name, l)
+			}
+		}
+		for _, l := range langs {
+			if _, ok := pm.Files[l]; ok {
+				continue
+			}
+			if pm.Delivery == graph.DeliveryPosted {
+				r.err("print.missing", "", "", "print material %q is posted but has no file for %s", name, l)
+			} else {
+				r.warn("print.missing", "", "", "print material %q has no file for %s", name, l)
 			}
 		}
 	}

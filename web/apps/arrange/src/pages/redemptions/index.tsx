@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, Mail, MailCheck, Pencil, Plus } from "lucide-react";
+import { Copy, Mail, MailCheck, Pencil, Plus, Printer } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { href, navigate } from "../../router.ts";
@@ -7,6 +7,7 @@ import {
   Button, Empty, ErrorBox, HelpPopover, ICON, Loading, Page, PageHeader, Pill, Tabs, fmtDateTime, relTime, useDialogs, useLoad, useToast, type Tone,
 } from "../../ui/index.ts";
 import { SPOTS } from "@zonventure/ui";
+import { play } from "@zonventure/api";
 import { decide, listPartners, listRedemptions, updateRedemption, type Redemption } from "./api.ts";
 import { AddRedemptionDialog, PostDialog } from "./dialogs.tsx";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
@@ -14,8 +15,8 @@ import { PartnersCard } from "./Partners.tsx";
 import { langName, partnerLabel, useRedemptionError } from "./shared.ts";
 import "./redemptions.css";
 
-const STATES = ["pending", "approved", "rejected", "cancelled", "all"] as const;
-const LABEL: Record<(typeof STATES)[number], string> = { pending: "Pending", approved: "Approved", rejected: "Rejected", cancelled: "Cancelled", all: "All" };
+const STATES = ["pending", "to_post", "approved", "rejected", "cancelled", "all"] as const;
+const LABEL: Record<(typeof STATES)[number], string> = { pending: "Pending", to_post: "To post", approved: "Approved", rejected: "Rejected", cancelled: "Cancelled", all: "All" };
 const TONE: Record<string, Tone> = { pending: "warn", approved: "good", rejected: "bad", cancelled: "neutral" };
 
 /**
@@ -34,8 +35,12 @@ export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
   const [adding, setAdding] = useState(false);
   const counts = list.data?.counts ?? {};
   const canAdd = (partners.data ?? []).some((p) => p.enabled && (p.products ?? []).some((x) => x.enabled));
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  const rows = list.data?.redemptions ?? [];
+  const total = STATES.reduce((a, s) => a + (s === "to_post" || s === "all" ? 0 : counts[s] ?? 0), 0);
+  // Letters print a language at a time: offer the languages the list holds.
+  const [lang, setLang] = useState("");
+  const all = list.data?.redemptions ?? [];
+  const langs = [...new Set(all.filter((r) => (r.letter_languages?.length ?? 0) > 1).map((r) => r.letter_lang).filter(Boolean))].sort();
+  const rows = lang && langs.includes(lang) ? all.filter((r) => r.letter_lang === lang) : all;
 
   return (
     <Page>
@@ -62,12 +67,21 @@ export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
           return { id: s, href: href({ name: "redemptions", tab: s }), label: <>{t.t(LABEL[s])}{n > 0 && <span className="rd-count">{n}</span>}</> };
         })}
       />}
+      {langs.length > 1 && (
+        <label className="rd-filter">
+          <span>{t.t("Envelope language")}</span>
+          <select value={langs.includes(lang) ? lang : ""} onChange={(e) => setLang(e.target.value)}>
+            <option value="">{t.t("All languages")}</option>
+            {langs.map((l) => <option key={l} value={l}>{langName(l, t.current())}</option>)}
+          </select>
+        </label>
+      )}
       {list.error && !list.data ? (
         <ErrorBox message={list.error} retry={list.reload} retryLabel={t.t("Retry")} />
       ) : !list.data ? (
         <Loading label={t.t("Loading…")} />
       ) : rows.length === 0 ? (
-        <Empty title={total === 0 ? t.t("No redemptions yet.") : st === "pending" ? t.t("No redemptions waiting for review.") : t.t("No redemptions here.")} {...(total === 0 ? { illustration: SPOTS.noRedemptions } : {})} />
+        <Empty title={total === 0 ? t.t("No redemptions yet.") : st === "pending" ? t.t("No redemptions waiting for review.") : st === "to_post" ? t.t("Nothing left to post.") : t.t("No redemptions here.")} {...(total === 0 ? { illustration: SPOTS.noRedemptions } : {})} />
       ) : (
         <ul className="rd-list">
           {rows.map((rd) => <RedemptionItem key={rd.id} rd={rd} showState={st === "all"} reload={list.reload} />)}
@@ -167,6 +181,13 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
   const postedLabel = rd.posted_at ? t.t("Mark as not posted") : t.t("Mark as posted");
   const postedItem: MenuItem = { label: postedLabel, icon: postedIcon, onClick: () => void togglePosted() };
   const cancelItem: MenuItem = { label: t.t("Cancel redemption"), danger: true, onClick: () => void act("cancel") };
+  const prints = !closed && (rd.print ?? []).map((p) => (
+    <Button key={p.id} size="sm" icon={<Printer size={ICON.sm} aria-hidden />}
+      title={t.t("Open the PDF to print it")}
+      onClick={() => window.open(play.mediaURL(p.media_id), "_blank", "noopener")}>
+      {(rd.letter_languages?.length ?? 0) > 1 ? `${p.name} (${langName(p.lang, locale)})` : p.name}
+    </Button>
+  ));
   return (
     <li className="rd-item">
       <div className="rd-item__main">
@@ -225,12 +246,14 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
           <>
             <Button size="sm" disabled={busy} onClick={() => act("approve")}>{t.t("Approve")}</Button>
             <Button size="sm" disabled={busy} onClick={() => act("reject")}>{t.t("Reject")}</Button>
+            {prints}
             <span className="rd-spacer" />
             <MoreMenu size="sm" label={t.t("More")} items={[postItem, postedItem, { separator: true }, cancelItem]} />
           </>
         )}
         {rd.state === "approved" && (
           <>
+            {prints}
             <Button size="sm" disabled={busy} icon={postedIcon} onClick={() => void togglePosted()}>{postedLabel}</Button>
             <span className="rd-spacer" />
             <MoreMenu size="sm" label={t.t("More")} items={[postItem, { separator: true }, cancelItem]} />
