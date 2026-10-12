@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-12
+
 ### Changed
 
 - **The party adventure creator is a guide.** Pick a theme, then it
