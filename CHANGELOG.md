@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-10-12
+
 ### Added
 
 - Gift box buyers choose the language their envelope is printed in when the adventure is translated, and the redemption list shows it.
