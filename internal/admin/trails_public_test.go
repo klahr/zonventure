@@ -432,9 +432,9 @@ func TestPublicTrail_Sweep(t *testing.T) {
 }
 
 // TestPublicTrail_Free: with no blocks a draft is hosted at once, free,
-// for FreeTeams teams a game. Nothing paid vouches for the email, so the
-// link isn't mailed and the address isn't confirmed; the answer opens
-// the admin page.
+// for FreeTeams teams a game. The admin link is mailed (no receipt
+// promised); nothing paid vouches for the email, so the address isn't
+// confirmed; the answer opens the admin page.
 func TestPublicTrail_Free(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newPartyFixture(t)
@@ -459,8 +459,11 @@ func TestPublicTrail_Free(t *testing.T) {
 	if got := f.teamsLimit(t, m[1]); got != admin.FreeTeams {
 		t.Errorf("teams limit = %d, want %d", got, admin.FreeTeams)
 	}
-	if len(f.mail.messages) != mailed {
-		t.Error("mailed an address nothing vouches for")
+	if len(f.mail.messages) != mailed+1 {
+		t.Fatalf("mails: %d, want the admin link", len(f.mail.messages)-mailed)
+	}
+	if got := f.lastMail(t); !strings.HasPrefix(got, "someone@example.com\n") || !strings.Contains(got, co.HostURL) || strings.Contains(got, "receipt") || strings.Contains(got, "Kvitto") {
+		t.Errorf("admin link mail: %s", got)
 	}
 	var confirmed bool
 	var purchases int

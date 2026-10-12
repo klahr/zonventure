@@ -559,10 +559,11 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if free {
-		// Nothing paid confirms the address: it counts as confirmed, and
-		// gets the link mailed, only when this browser signed in with it,
-		// lest anyone could have us mail strangers. The answer opens the
-		// admin page either way.
+		// The admin link is mailed to the address given, so the host can
+		// find the page again; drafts are limited per caller and day, which
+		// bounds what a stranger can have us send. Nothing paid confirms
+		// the address, though: it counts as confirmed (My trails) only when
+		// this browser signed in with it. The answer opens the admin page.
 		session, _ := h.trailSession(ctx, r)
 		vouched := h.hosted().Free() || strings.EqualFold(session, email)
 		tx, err := h.DB.BeginTx(ctx, nil)
@@ -584,10 +585,8 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 			httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 			return
 		}
-		if vouched {
-			if err := h.sendPartyHostLink(ctx, eventID, email, hostToken); err != nil {
-				logx.Warn("admin.trail.paid_mail", "event_id", eventID, "err", err.Error())
-			}
+		if err := h.sendPartyHostLink(ctx, eventID, email, hostToken); err != nil {
+			logx.Warn("admin.trail.paid_mail", "event_id", eventID, "err", err.Error())
 		}
 		httpx.JSON(w, http.StatusCreated, map[string]any{
 			"event_id": eventID,
@@ -651,17 +650,18 @@ func (h *Handlers) sendTrailPaid(ctx context.Context, eventID int64, to, hostTok
 		validUntil    time.Time
 		orgID         int64
 		lang, slug    string
+		blocks        int
 	)
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT e.party_name, COALESCE(e.player_token, ''), e.valid_until, e.org_id, a.language, a.slug
+		SELECT e.party_name, COALESCE(e.player_token, ''), e.valid_until, e.org_id, a.language, a.slug, COALESCE(e.hosted_blocks, 0)
 		FROM events e JOIN adventures a ON a.slug = e.adventure_slug WHERE e.id = $1
-	`, eventID).Scan(&title, &player, &validUntil, &orgID, &lang, &slug); err != nil {
+	`, eventID).Scan(&title, &player, &validUntil, &orgID, &lang, &slug, &blocks); err != nil {
 		return err
 	}
 	l := h.orgLook(ctx, orgID)
 	l.Lang = emailtpl.Lang(lang)
 	subject, c := emailtpl.TrailPaid(l.Lang, base+"/party/"+hostToken, base+"/j/"+player, title,
-		trailDate(l.Lang, validUntil), l.Brand.Name)
+		trailDate(l.Lang, validUntil), l.Brand.Name, blocks > 0 && !h.hosted().Free())
 	c.Picture = h.emailCover(ctx, l.Lang, slug)
 	if h.SellerIdentity != nil {
 		if seller := h.SellerIdentity(l.Lang); seller != "" {

@@ -117,18 +117,16 @@ export interface GuideProps {
   example: boolean;
   /** Paid, or from the host page: the last screen is Overview, with Done. */
   finishOnOverview: boolean;
-  /** How many teams play free, for Ready to say. */
-  freeTeams: number;
+  /** The last screen's form (teams, email) and the button that sends it. */
+  ready?: { body: ReactNode; action: ReactNode } | undefined;
   /** Notes about the trail (a game running, reprint, ended), shown on Overview. */
   notes?: ReactNode;
   /** A passing message (copied, an error), shown on every screen. */
   note?: string | null;
   close: () => void;
-  /** Done (finishOnOverview) or on to the teams and checkout (Ready). */
+  /** Done, on Overview when finishOnOverview. */
   finish: () => void;
   busy: boolean;
-  /** What the Ready screen offers besides playing: save to email, copy, delete. */
-  extras?: ReactNode;
   /** The bar's slot for Reload after a conflict. */
   barAction?: ReactNode;
 }
@@ -432,49 +430,47 @@ export function Guide(props: GuideProps) {
       ) : (
         nextBtn(t("Next"), () => go({ at: "ready" }), !ready)
       ),
+      { hero: true },
     );
   }
 
   return shell(
     <>
       <h1 className="trail-guide__title">{t("Ready to play?")}</h1>
-      <ol className="trail-guide__how">
-        <li>
-          <span className="trail-guide__how-icon" aria-hidden="true">
-            <Icon name="print" size={26} />
-          </span>
-          {t("Print the cards")}
-        </li>
-        <li>
-          <span className="trail-guide__how-icon" aria-hidden="true">
-            <Icon name="hide" size={26} />
-          </span>
-          {t("Hide them")}
-        </li>
-        <li>
-          <span className="trail-guide__how-icon" aria-hidden="true">
-            <Icon name="phone" size={26} />
-          </span>
-          {t("Play on your phones")}
-        </li>
-      </ol>
-      <p className="trail-guide__chip">
-        <Icon name="users" size={18} />
-        {t("Up to {{n}} teams free", { n: props.freeTeams })}
+      <p className="trail-guide__lead">
+        <strong>{title}</strong> · {t("{{n}} cards", { n: cards.length })}
       </p>
-      {props.extras}
+      {props.ready?.body}
     </>,
     <>
       {backBtn(back)}
-      {nextBtn(t("Choose teams"), props.finish, props.busy)}
+      {props.ready?.action}
     </>,
     { hero: true },
   );
 }
 
+/** A drag in Overview's list, as it is drawn: the row picked up, the slot it would go to, how far it has moved. */
+interface ListDrag {
+  from: number;
+  over: number;
+  dy: number;
+  /** How far the rows it passes step aside: its height and the gap. */
+  shift: number;
+  /** Let go: gliding into its slot. */
+  dropping: boolean;
+}
+
+const DROP_MS = 180;
+const EDGE_PX = 72;
+const EDGE_SLOP = 24;
+
 /**
  * Overview's cards, one row each: tap to open, drag the handle to move
- * it (on the card's screen, the arrows do the same).
+ * it (on the card's screen, the arrows do the same). The row follows
+ * the finger; the rows it passes slide aside to open its slot; let go,
+ * it glides in, and only then does the order change, with nothing
+ * left to jump. Near the screen's top or bottom the list scrolls.
  */
 function CardList(props: {
   cards: Card[];
@@ -486,44 +482,145 @@ function CardList(props: {
   onMove: (from: number, to: number) => void;
 }) {
   const t = useT().t;
+  const list = useRef<HTMLOListElement>(null);
   const rows = useRef<(HTMLLIElement | null)[]>([]);
-  const [drag, setDrag] = useState<{ from: number; over: number } | null>(null);
-  // Where the dragged row would go: past every other row whose middle is above the pointer.
-  const overAt = (from: number, y: number) => {
-    let n = 0;
-    rows.current.forEach((el, i) => {
-      if (!el || i === from) return;
-      const r = el.getBoundingClientRect();
-      if (y > r.top + r.height / 2) n++;
+  const [drag, setDrag] = useState<ListDrag | null>(null);
+  const [settling, setSettling] = useState(false);
+  // Between pointer events: where the drag began (the rows' places then,
+  // the scroll then), and where the finger is now.
+  const live = useRef<{
+    from: number;
+    over: number;
+    startY: number;
+    startScroll: number;
+    tops: number[];
+    heights: number[];
+    shift: number;
+    y: number;
+    scroller: HTMLElement | null;
+    raf: number;
+  } | null>(null);
+
+  useEffect(() => () => cancelAnimationFrame(live.current?.raf ?? 0), []);
+
+  const follow = () => {
+    const l = live.current;
+    if (!l) return;
+    const dy = l.y - l.startY + (l.scroller?.scrollTop ?? 0) - l.startScroll;
+    const middle = l.tops[l.from]! + l.heights[l.from]! / 2 + dy;
+    let over = 0;
+    l.tops.forEach((top, i) => {
+      if (i !== l.from && middle > top + l.heights[i]! / 2) over++;
     });
-    return n;
+    if (over !== l.over) {
+      l.over = over;
+      navigator.vibrate?.(8);
+    }
+    setDrag({ from: l.from, over, dy, shift: l.shift, dropping: false });
   };
+
+  // Each frame: scroll while the finger rests near an edge (under the bar, above the foot).
+  const tick = () => {
+    const l = live.current;
+    if (!l) return;
+    const s = l.scroller;
+    if (s) {
+      const top = (s.querySelector(".trail-guide__bar")?.getBoundingClientRect().bottom ?? 0) + EDGE_PX;
+      const bottom = (s.querySelector(".trail-guide__foot")?.getBoundingClientRect().top ?? innerHeight) - EDGE_PX;
+      // Only toward where the finger has gone: a row picked up near an edge stays put.
+      const by = l.y < top && l.y < l.startY - EDGE_SLOP ? l.y - top : l.y > bottom && l.y > l.startY + EDGE_SLOP ? l.y - bottom : 0;
+      if (by) {
+        const was = s.scrollTop;
+        s.scrollTop += Math.max(-16, Math.min(16, by / 3));
+        if (s.scrollTop !== was) follow();
+      }
+    }
+    l.raf = requestAnimationFrame(tick);
+  };
+
+  const pick = (i: number, e: React.PointerEvent<HTMLElement>) => {
+    if (props.readOnly || live.current || drag) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    const rects = props.cards.map((_, j) => rows.current[j]!.getBoundingClientRect());
+    const gap = rects.length > 1 ? rects[1]!.top - rects[0]!.bottom : 0;
+    const scroller = list.current?.closest<HTMLElement>(".trail-guide") ?? null;
+    live.current = {
+      from: i,
+      over: i,
+      startY: e.clientY,
+      startScroll: scroller?.scrollTop ?? 0,
+      tops: rects.map((r) => r.top),
+      heights: rects.map((r) => r.height),
+      shift: rects[i]!.height + gap,
+      y: e.clientY,
+      scroller,
+      raf: 0,
+    };
+    navigator.vibrate?.(12);
+    setDrag({ from: i, over: i, dy: 0, shift: live.current.shift, dropping: false });
+    live.current.raf = requestAnimationFrame(tick);
+  };
+
+  const drop = (keep: boolean) => {
+    const l = live.current;
+    if (!l) return;
+    cancelAnimationFrame(l.raf);
+    live.current = null;
+    const from = l.from;
+    const over = keep ? l.over : from;
+    // Where its slot is, from where it began: the rows between have stepped aside by its height.
+    let dy = 0;
+    if (over > from) dy = l.tops[over]! + l.heights[over]! - l.heights[from]! - l.tops[from]!;
+    if (over < from) dy = l.tops[over]! - l.tops[from]!;
+    setDrag({ from, over, dy, shift: l.shift, dropping: true });
+    setTimeout(() => {
+      // Reorder with the transitions off: every row is already where the new order puts it.
+      setSettling(true);
+      if (over !== from) props.onMove(from, over);
+      setDrag(null);
+      requestAnimationFrame(() => requestAnimationFrame(() => setSettling(false)));
+    }, DROP_MS);
+  };
+
+  const place = (i: number): CSSProperties | undefined => {
+    if (!drag) return undefined;
+    if (i === drag.from) {
+      return {
+        transform: `translateY(${drag.dy}px) scale(${drag.dropping ? 1 : 1.03})`,
+        transition: drag.dropping ? `transform ${DROP_MS}ms var(--trail-ease), box-shadow ${DROP_MS}ms` : "none",
+      };
+    }
+    if (drag.from < drag.over && i > drag.from && i <= drag.over) return { transform: `translateY(${-drag.shift}px)` };
+    if (drag.from > drag.over && i >= drag.over && i < drag.from) return { transform: `translateY(${drag.shift}px)` };
+    return undefined;
+  };
+
   if (props.cards.length === 0) return <p className="trail-muted">{t("No cards yet.")}</p>;
   return (
-    <ol className="trail-guide__list">
+    <ol ref={list} className={"trail-guide__list" + (drag ? " is-dragging" : "") + (settling ? " is-settling" : "")}>
       {props.cards.map((c, i) => (
         <li
           key={c.id}
           ref={(el) => {
             rows.current[i] = el;
           }}
-          className={(drag?.from === i ? "is-dragged" : "") + (drag && drag.from !== drag.over && drag.over === i ? " is-target" : "")}
+          className={drag?.from === i ? (drag.dropping ? "is-dropping" : "is-dragged") : undefined}
+          style={place(i)}
         >
           {!props.readOnly && (
             <span
               className="trail-guide__grip"
               title={t("Hold and drag to move")}
               aria-hidden="true"
-              onPointerDown={(e) => {
-                e.currentTarget.setPointerCapture?.(e.pointerId);
-                setDrag({ from: i, over: i });
+              onPointerDown={(e) => pick(i, e)}
+              onPointerMove={(e) => {
+                if (!live.current) return;
+                live.current.y = e.clientY;
+                follow();
               }}
-              onPointerMove={(e) => drag && setDrag({ ...drag, over: overAt(drag.from, e.clientY) })}
-              onPointerUp={() => {
-                if (drag) props.onMove(drag.from, drag.over);
-                setDrag(null);
-              }}
-              onPointerCancel={() => setDrag(null)}
+              onPointerUp={() => drop(true)}
+              onPointerCancel={() => drop(false)}
             >
               <Icon name="grip" size={18} />
             </span>

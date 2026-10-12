@@ -201,14 +201,18 @@ func TrailSignin(lang, link string) (string, Content) {
 // TrailPaid is a paid quiz trail's host link, mailed to the buyer: where
 // to print the cards and show the players their link. Stripe mails the
 // receipt.
-func TrailPaid(lang, hostURL, playerURL, title, startBy, org string) (string, Content) {
+func TrailPaid(lang, hostURL, playerURL, title, startBy, org string, paid bool) (string, Content) {
+	keep := T(lang, "Anyone with the admin link can run and change your party adventure, so keep it to yourself.")
+	if paid {
+		keep += " " + T(lang, "Your receipt comes in a separate email.")
+	}
 	return T(lang, "%s is ready to play", title), Content{
 		Lang:      lang,
 		Preheader: T(lang, "Print the cards, hide them and let the teams join."),
 		Heading:   T(lang, "%s is ready to play", title),
 		Body: T(lang, "Open the admin page to print the cards and the answer key, and to show the players their link. Start the first game by %s; from then you can play as many games as you like for 14 days.", startBy) +
 			"\n\n" + T(lang, "Players join here: %s", playerURL) +
-			"\n\n" + T(lang, "Anyone with the admin link can run and change your party adventure, so keep it to yourself. Your receipt comes in a separate email."),
+			"\n\n" + keep,
 		Buttons: []Button{{T(lang, "Open the admin page"), hostURL}},
 		Footer:  T(lang, "The party adventure and everything about the players is deleted 14 days after the first game.") + " " + playerFooter(lang, "", org),
 	}
