@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/results"
@@ -52,6 +53,8 @@ type partnerProductDTO struct {
 	AdventureTitle string `json:"adventure_title"`
 	TeamSize       int    `json:"team_size"`
 	Enabled        bool   `json:"enabled"`
+	// LetterLanguages are the languages its letter can be posted in.
+	LetterLanguages []string `json:"letter_languages"`
 }
 
 type partnerDTO struct {
@@ -79,6 +82,7 @@ type redemptionDTO struct {
 	Address2      string `json:"address_2"`
 	PostalCode    string `json:"postal_code"`
 	City          string `json:"city"`
+	LetterLang    string `json:"letter_lang"`
 	PostAt        string `json:"post_at"`
 	PostedAt      string `json:"posted_at"`
 	Note          string `json:"note"`
@@ -87,6 +91,10 @@ type redemptionDTO struct {
 	DecidedBy     string `json:"decided_by"`
 	TeamID        int64  `json:"team_id,omitempty"`
 	TeamName      string `json:"team_name"`
+	// LetterLanguages are those the letter_lang may be changed to.
+	LetterLanguages []string `json:"letter_languages"`
+
+	graphID int64
 }
 
 // RedeemRequest is a box redemption, from a buyer on /redeem or an
@@ -101,6 +109,7 @@ type RedeemRequest struct {
 	Address2      string `json:"address_2"`
 	PostalCode    string `json:"postal_code"`
 	City          string `json:"city"`
+	LetterLang    string `json:"letter_lang"`
 	AcceptedTerms bool   `json:"accepted_terms"`
 	// Organiser-only.
 	PostAt string `json:"post_at"`
@@ -160,6 +169,56 @@ func checkPartnerCode(kind, box, code string) (string, string, bool) {
 		return box, code, true
 	}
 	return "", "", false
+}
+
+// letterLanguages lists the languages a product's letter can be posted
+// in: those of the adventure version its event plays, main language
+// first. An event not yet pinned to a version has none to offer.
+func letterLanguages(ctx context.Context, q graphstore.Querier, graphID int64) ([]string, error) {
+	if graphID == 0 {
+		return nil, nil
+	}
+	s, err := graphstore.ByID(ctx, q, graphID)
+	if err != nil {
+		return nil, err
+	}
+	if l := s.Graph.Languages(); l != nil {
+		return l, nil
+	}
+	return []string{s.Graph.Language}, nil
+}
+
+// letterLanguagesCached is letterLanguages for a list, where most rows
+// share a version.
+func letterLanguagesCached(ctx context.Context, q graphstore.Querier, cache map[int64][]string, graphID int64) ([]string, error) {
+	if l, ok := cache[graphID]; ok {
+		return l, nil
+	}
+	l, err := letterLanguages(ctx, q, graphID)
+	if err != nil {
+		return nil, err
+	}
+	cache[graphID] = l
+	return l, nil
+}
+
+// pickLetterLang checks a requested letter language against those
+// offered. None requested is the first, so a form that predates the
+// choice still redeems.
+func pickLetterLang(langs []string, want string) (string, bool) {
+	want = strings.TrimSpace(want)
+	if len(langs) == 0 {
+		return "", want == ""
+	}
+	if want == "" {
+		return langs[0], true
+	}
+	for _, l := range langs {
+		if l == want {
+			return l, true
+		}
+	}
+	return "", false
 }
 
 // Buyers' redemption attempts are capped per IP: every attempt, good or
@@ -236,12 +295,14 @@ func (h *Handlers) createRedemption(ctx context.Context, req RedeemRequest, orgI
 		kind        string
 		productOrg  int64
 		productName string
+		graphID     int64
 	)
 	err := h.DB.QueryRowContext(ctx, `
-		SELECT p.id, p.kind, p.org_id, pp.name
+		SELECT p.id, p.kind, p.org_id, pp.name, COALESCE(e.graph_id, 0)
 		FROM partner_products pp JOIN partners p ON p.id = pp.partner_id
+		LEFT JOIN events e ON e.id = pp.event_id
 		WHERE pp.id = $1 AND pp.enabled AND p.enabled
-	`, req.ProductID).Scan(&partnerID, &kind, &productOrg, &productName)
+	`, req.ProductID).Scan(&partnerID, &kind, &productOrg, &productName, &graphID)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && orgID != 0 && productOrg != orgID) {
 		return 0, &redeemError{http.StatusBadRequest, "unknown_product", "unknown product"}
 	}
@@ -253,15 +314,24 @@ func (h *Handlers) createRedemption(ctx context.Context, req RedeemRequest, orgI
 	if !ok {
 		return 0, &redeemError{http.StatusBadRequest, "invalid_code", "that doesn't look like a " + partnerNames[kind] + " code"}
 	}
+	langs, err := letterLanguages(ctx, h.DB, graphID)
+	if err != nil {
+		logx.Warn("admin.redeem.languages", "err", err.Error())
+		return 0, &redeemError{http.StatusInternalServerError, "", "lookup failed"}
+	}
+	letterLang, ok := pickLetterLang(langs, req.LetterLang)
+	if !ok {
+		return 0, &redeemError{http.StatusBadRequest, "invalid_language", "the letter can't be posted in that language"}
+	}
 
 	var id int64
 	err = h.DB.QueryRowContext(ctx, `
 		INSERT INTO partner_redemptions(partner_id, product_id, product_name, kind, box_number, security_code,
-		    name, email, street_address, address_2, postal_code, city, post_at, note, created_by_user_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		    name, email, street_address, address_2, postal_code, city, letter_lang, post_at, note, created_by_user_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		RETURNING id
 	`, partnerID, req.ProductID, productName, kind, box, code, req.Name, req.Email, req.StreetAddress,
-		req.Address2, req.PostalCode, req.City, postAt, req.Note, createdBy).Scan(&id)
+		req.Address2, req.PostalCode, req.City, letterLang, postAt, req.Note, createdBy).Scan(&id)
 	if isUniqueViolation(err) {
 		return 0, &redeemError{http.StatusConflict, "code_used", "this code has already been redeemed"}
 	}
@@ -276,10 +346,16 @@ func (h *Handlers) createRedemption(ctx context.Context, req RedeemRequest, orgI
 /* ---------------- Public: /redeem ---------------- */
 
 type redeemOptionProduct struct {
-	ID             int64  `json:"id"`
-	Name           string `json:"name"`
-	AdventureTitle string `json:"adventure_title"`
-	OrgName        string `json:"org_name"`
+	ID             int64         `json:"id"`
+	Name           string        `json:"name"`
+	AdventureTitle string        `json:"adventure_title"`
+	OrgName        string        `json:"org_name"`
+	Letter         *redeemLetter `json:"letter"`
+}
+
+// redeemLetter is what the buyer chooses for the letter posted to them.
+type redeemLetter struct {
+	Languages []string `json:"languages"`
 }
 
 type redeemOptionPartner struct {
@@ -305,7 +381,7 @@ func (h *Handlers) RedeemOptionsByOrg(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) redeemOptions(w http.ResponseWriter, r *http.Request, orgID int64) {
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT p.kind, pp.id, pp.name, COALESCE(a.title, e.adventure_slug), o.name
+		SELECT p.kind, pp.id, pp.name, COALESCE(a.title, e.adventure_slug), o.name, COALESCE(e.graph_id, 0)
 		FROM partner_products pp
 		JOIN partners p ON p.id = pp.partner_id
 		JOIN events e ON e.id = pp.event_id
@@ -321,12 +397,22 @@ func (h *Handlers) redeemOptions(w http.ResponseWriter, r *http.Request, orgID i
 	}
 	defer rows.Close()
 	partners := []redeemOptionPartner{}
+	langs := map[int64][]string{}
 	for rows.Next() {
 		var kind string
 		var p redeemOptionProduct
-		if err := rows.Scan(&kind, &p.ID, &p.Name, &p.AdventureTitle, &p.OrgName); err != nil {
+		var graphID int64
+		if err := rows.Scan(&kind, &p.ID, &p.Name, &p.AdventureTitle, &p.OrgName, &graphID); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 			return
+		}
+		l, err := letterLanguagesCached(r.Context(), h.DB, langs, graphID)
+		if err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+			return
+		}
+		if len(l) > 0 {
+			p.Letter = &redeemLetter{Languages: l}
 		}
 		if n := len(partners); n == 0 || partners[n-1].Kind != kind {
 			partners = append(partners, redeemOptionPartner{Kind: kind, Name: partnerNames[kind]})
@@ -417,7 +503,7 @@ func (h *Handlers) loadPartners(ctx context.Context, orgID int64, partnerID int6
 		SELECT p.id, p.kind, p.enabled,
 		       COALESCE(pp.id, 0), COALESCE(pp.name, ''), COALESCE(pp.event_id, 0),
 		       COALESCE(e.name, ''), COALESCE(a.title, e.adventure_slug, ''),
-		       COALESCE(pp.team_size, 0), COALESCE(pp.enabled, FALSE)
+		       COALESCE(pp.team_size, 0), COALESCE(pp.enabled, FALSE), COALESCE(e.graph_id, 0)
 		FROM partners p
 		LEFT JOIN partner_products pp ON pp.partner_id = p.id
 		LEFT JOIN events e ON e.id = pp.event_id
@@ -430,11 +516,16 @@ func (h *Handlers) loadPartners(ctx context.Context, orgID int64, partnerID int6
 	}
 	defer rows.Close()
 	out := []partnerDTO{}
+	langs := map[int64][]string{}
 	for rows.Next() {
 		var p partnerDTO
 		var pr partnerProductDTO
+		var graphID int64
 		if err := rows.Scan(&p.ID, &p.Kind, &p.Enabled, &pr.ID, &pr.Name, &pr.EventID,
-			&pr.EventName, &pr.AdventureTitle, &pr.TeamSize, &pr.Enabled); err != nil {
+			&pr.EventName, &pr.AdventureTitle, &pr.TeamSize, &pr.Enabled, &graphID); err != nil {
+			return nil, err
+		}
+		if pr.LetterLanguages, err = letterLanguagesCached(ctx, h.DB, langs, graphID); err != nil {
 			return nil, err
 		}
 		if n := len(out); n == 0 || out[n-1].ID != p.ID {
@@ -764,9 +855,9 @@ const redemptionSelect = `
 	SELECT r.id, r.state, r.kind, COALESCE(r.product_id, 0), COALESCE(pp.name, r.product_name),
 	       COALESCE(pp.event_id, 0), COALESCE(e.name, ''),
 	       r.box_number, r.security_code, r.name, r.email, r.street_address, r.address_2,
-	       r.postal_code, r.city, r.post_at, COALESCE(r.posted_at, ''), r.note, r.created_at,
+	       r.postal_code, r.city, r.letter_lang, r.post_at, COALESCE(r.posted_at, ''), r.note, r.created_at,
 	       COALESCE(r.decided_at, ''), COALESCE(u.username, ''),
-	       COALESCE(r.team_id, 0), COALESCE(t.name, '')
+	       COALESCE(r.team_id, 0), COALESCE(t.name, ''), COALESCE(e.graph_id, 0)
 	FROM partner_redemptions r
 	JOIN partners p ON p.id = r.partner_id
 	LEFT JOIN partner_products pp ON pp.id = r.product_id
@@ -779,8 +870,8 @@ func scanRedemption(sc interface{ Scan(...any) error }) (redemptionDTO, error) {
 	var d redemptionDTO
 	err := sc.Scan(&d.ID, &d.State, &d.PartnerKind, &d.ProductID, &d.ProductName, &d.EventID, &d.EventName,
 		&d.BoxNumber, &d.SecurityCode, &d.Name, &d.Email, &d.StreetAddress, &d.Address2,
-		&d.PostalCode, &d.City, &d.PostAt, &d.PostedAt, &d.Note, &d.CreatedAt,
-		&d.DecidedAt, &d.DecidedBy, &d.TeamID, &d.TeamName)
+		&d.PostalCode, &d.City, &d.LetterLang, &d.PostAt, &d.PostedAt, &d.Note, &d.CreatedAt,
+		&d.DecidedAt, &d.DecidedBy, &d.TeamID, &d.TeamName, &d.graphID)
 	d.PartnerName = partnerNames[d.PartnerKind]
 	return d, err
 }
@@ -819,6 +910,13 @@ func (h *Handlers) ListRedemptions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out = append(out, d)
+	}
+	langs := map[int64][]string{}
+	for i := range out {
+		if out[i].LetterLanguages, err = letterLanguagesCached(r.Context(), h.DB, langs, out[i].graphID); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+			return
+		}
 	}
 	counts := map[string]int{"pending": 0, "approved": 0, "rejected": 0, "cancelled": 0}
 	crows, err := h.DB.QueryContext(r.Context(), `
@@ -863,6 +961,9 @@ func (h *Handlers) CreateRedemption(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) writeRedemption(w http.ResponseWriter, r *http.Request, status int, id int64) {
 	d, err := scanRedemption(h.DB.QueryRowContext(r.Context(), redemptionSelect+`WHERE r.id = $1`, id))
+	if err == nil {
+		d.LetterLanguages, err = letterLanguages(r.Context(), h.DB, d.graphID)
+	}
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 		return
@@ -911,19 +1012,20 @@ func (h *Handlers) ApproveRedemption(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 	var (
-		state, email, kind, eventState string
-		eventID                        int64
-		teamSize                       int
+		state, email, kind, eventState, letterLang string
+		eventID                                    int64
+		teamSize                                   int
 	)
 	// A product deleted since (with its event, say) leaves nothing to
 	// approve into: that reads as a closed event.
 	if err := tx.QueryRowContext(ctx, `
-		SELECT r.state, r.email, r.kind, COALESCE(pp.event_id, 0), COALESCE(pp.team_size, 0), COALESCE(e.state, '')
+		SELECT r.state, r.email, r.kind, COALESCE(pp.event_id, 0), COALESCE(pp.team_size, 0), COALESCE(e.state, ''),
+		       r.letter_lang
 		FROM partner_redemptions r
 		LEFT JOIN partner_products pp ON pp.id = r.product_id
 		LEFT JOIN events e ON e.id = pp.event_id
 		WHERE r.id = $1 FOR UPDATE OF r
-	`, id).Scan(&state, &email, &kind, &eventID, &teamSize, &eventState); err != nil {
+	`, id).Scan(&state, &email, &kind, &eventID, &teamSize, &eventState, &letterLang); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
 		return
 	}
@@ -937,6 +1039,11 @@ func (h *Handlers) ApproveRedemption(w http.ResponseWriter, r *http.Request) {
 	}
 	teamID, teamToken, voucher, err := createTicketTeam(ctx, tx, eventID, email, teamSize)
 	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
+		return
+	}
+	// The team starts in the letter's language; it can still switch.
+	if _, err := tx.ExecContext(ctx, `UPDATE teams SET lang = $1 WHERE id = $2`, letterLang, teamID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
 		return
 	}
@@ -957,7 +1064,7 @@ func (h *Handlers) ApproveRedemption(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
 		return
 	}
-	if err := h.sendRedemptionApproved(ctx, eventID, email, kind, teamToken, voucher); err != nil {
+	if err := h.sendRedemptionApproved(ctx, eventID, email, kind, letterLang, teamToken, voucher); err != nil {
 		logx.Warn("admin.redemption.approve.mail", "redemption_id", id, "team_id", teamID, "err", err.Error())
 	}
 	logx.Info("admin.redemption.approved", "redemption_id", id, "team_id", teamID)
@@ -975,13 +1082,13 @@ func (h *Handlers) RejectRedemption(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var email, kind string
+	var email, kind, letterLang string
 	err := h.DB.QueryRowContext(r.Context(), `
 		UPDATE partner_redemptions
 		   SET state = 'rejected', decided_by_user_id = $1, decided_at = now_text()
 		 WHERE id = $2 AND state = 'pending'
-		RETURNING email, kind
-	`, me.ID, id).Scan(&email, &kind)
+		RETURNING email, kind, letter_lang
+	`, me.ID, id).Scan(&email, &kind, &letterLang)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "redemption isn't pending", "reason": "not_pending"})
 		return
@@ -990,7 +1097,7 @@ func (h *Handlers) RejectRedemption(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "reject failed", err)
 		return
 	}
-	h.sendRedemptionMail(r.Context(), "redemption_rejected", []string{email}, func(lang string) (string, emailtpl.Content) {
+	h.sendRedemptionMail(r.Context(), "redemption_rejected", letterLang, []string{email}, func(lang string) (string, emailtpl.Content) {
 		return emailtpl.BoxRejected(lang, partnerNames[kind])
 	}, id, orgID)
 	h.writeRedemption(w, r, http.StatusOK, id)
@@ -1016,15 +1123,15 @@ func (h *Handlers) CancelRedemption(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 	var (
-		email, kind string
-		teamID      sql.NullInt64
+		email, kind, letterLang string
+		teamID                  sql.NullInt64
 	)
 	err = tx.QueryRowContext(ctx, `
 		UPDATE partner_redemptions
 		   SET state = 'cancelled', decided_by_user_id = $1, decided_at = now_text()
 		 WHERE id = $2 AND state IN ('pending', 'approved')
-		RETURNING email, kind, team_id
-	`, me.ID, id).Scan(&email, &kind, &teamID)
+		RETURNING email, kind, team_id, letter_lang
+	`, me.ID, id).Scan(&email, &kind, &teamID, &letterLang)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "redemption can't be cancelled", "reason": "not_cancellable"})
 		return
@@ -1054,14 +1161,15 @@ func (h *Handlers) CancelRedemption(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "cancel failed", err)
 		return
 	}
-	h.sendRedemptionMail(ctx, "redemption_cancelled", []string{email}, func(lang string) (string, emailtpl.Content) {
+	h.sendRedemptionMail(ctx, "redemption_cancelled", letterLang, []string{email}, func(lang string) (string, emailtpl.Content) {
 		return emailtpl.BoxCancelled(lang, partnerNames[kind])
 	}, id, orgID)
 	h.writeRedemption(w, r, http.StatusOK, id)
 }
 
 // UpdateRedemption sets what the organisation tracks by hand: when to
-// post the box, whether it has been posted, and a note.
+// post the box, whether it has been posted, the letter's language, and a
+// note.
 func (h *Handlers) UpdateRedemption(w http.ResponseWriter, r *http.Request) {
 	_, orgID, ok := redemptionOrg(w, r, false)
 	if !ok {
@@ -1072,9 +1180,10 @@ func (h *Handlers) UpdateRedemption(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		PostAt *string `json:"post_at"`
-		Note   *string `json:"note"`
-		Posted *bool   `json:"posted"`
+		PostAt     *string `json:"post_at"`
+		Note       *string `json:"note"`
+		Posted     *bool   `json:"posted"`
+		LetterLang *string `json:"letter_lang"`
 	}
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -1092,15 +1201,39 @@ func (h *Handlers) UpdateRedemption(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "note is too long")
 		return
 	}
+	if req.LetterLang != nil {
+		var graphID int64
+		if err := h.DB.QueryRowContext(r.Context(), `
+			SELECT COALESCE(e.graph_id, 0) FROM partner_redemptions r
+			LEFT JOIN partner_products pp ON pp.id = r.product_id
+			LEFT JOIN events e ON e.id = pp.event_id
+			WHERE r.id = $1
+		`, id).Scan(&graphID); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+			return
+		}
+		langs, err := letterLanguages(r.Context(), h.DB, graphID)
+		if err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+			return
+		}
+		l, ok := pickLetterLang(langs, *req.LetterLang)
+		if !ok {
+			httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "the letter can't be posted in that language", "reason": "invalid_language"})
+			return
+		}
+		req.LetterLang = &l
+	}
 	if _, err := h.DB.ExecContext(r.Context(), `
 		UPDATE partner_redemptions SET
 		    post_at = COALESCE($1, post_at),
 		    note = COALESCE($2, note),
 		    posted_at = CASE WHEN $3::boolean IS NULL THEN posted_at
 		                     WHEN $3 THEN COALESCE(posted_at, now_text())
-		                     ELSE NULL END
+		                     ELSE NULL END,
+		    letter_lang = COALESCE($5, letter_lang)
 		WHERE id = $4
-	`, req.PostAt, req.Note, req.Posted, id); err != nil {
+	`, req.PostAt, req.Note, req.Posted, id, req.LetterLang); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "save failed", err)
 		return
 	}
@@ -1111,8 +1244,11 @@ func (h *Handlers) UpdateRedemption(w http.ResponseWriter, r *http.Request) {
 
 // sendRedemptionMail sends through the outbox when there is one, and
 // logs rather than fails: the redemption itself has already been saved.
-func (h *Handlers) sendRedemptionMail(ctx context.Context, kind string, to []string, build func(lang string) (string, emailtpl.Content), redemptionID, orgID int64) {
+func (h *Handlers) sendRedemptionMail(ctx context.Context, kind, lang string, to []string, build func(lang string) (string, emailtpl.Content), redemptionID, orgID int64) {
 	l := h.orgLook(ctx, orgID)
+	if lang != "" {
+		l.Lang = lang
+	}
 	subject, c := build(l.Lang)
 	msg := l.message(to, subject, c)
 	var err error
@@ -1129,12 +1265,15 @@ func (h *Handlers) sendRedemptionMail(ctx context.Context, kind string, to []str
 	}
 }
 
-func (h *Handlers) sendRedemptionApproved(ctx context.Context, eventID int64, email, kind, teamToken, voucher string) error {
+func (h *Handlers) sendRedemptionApproved(ctx context.Context, eventID int64, email, kind, lang, teamToken, voucher string) error {
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	if publicURL == "" {
 		return errors.New("redemption email requires PublicURL")
 	}
 	l := h.eventLook(ctx, eventID)
+	if lang != "" {
+		l.Lang = lang
+	}
 	subject, c := emailtpl.BoxConfirmed(l.Lang, partnerNames[kind], publicURL+"/team/"+teamToken, publicURL+"/play", auth.FormatVoucherCode(voucher), l.Brand.Name)
 	c.Picture = l.Cover
 	msg := l.message([]string{email}, subject, c)
@@ -1170,7 +1309,7 @@ func (h *Handlers) notifyNewRedemption(ctx context.Context, id, orgID int64) {
 		return
 	}
 	link := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/") + "/arrange#redemptions"
-	h.sendRedemptionMail(ctx, "redemption_new", to, func(lang string) (string, emailtpl.Content) {
+	h.sendRedemptionMail(ctx, "redemption_new", "", to, func(lang string) (string, emailtpl.Content) {
 		subject, c := emailtpl.BoxWaiting(lang, link)
 		c.Picture = h.house(lang, emailtpl.PictureGiftBox)
 		return subject, c

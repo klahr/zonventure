@@ -2309,6 +2309,8 @@
   "Players per team must be between 1 and 50": "Players per team must be between 1 and 50",
   "Post": "Post",
   "Post date and note": "Post date and note",
+  "Envelope language": "Envelope language",
+  "The envelope can't be printed in that language.": "The envelope can't be printed in that language.",
   "Post on": "Post on",
   "Post on (optional)": "Post on (optional)",
   "Post on {{date}}": "Post on {{date}}",

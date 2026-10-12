@@ -2,18 +2,20 @@ import { useState } from "react";
 import { useT } from "../../i18n.tsx";
 import { Button, Dialog, Field, useToast } from "../../ui/index.ts";
 import { addProduct, createRedemption, updateProduct, type Partner, type PartnerProduct, type Redemption, type SelfGuidedEvent } from "./api.ts";
-import { partnerLabel, useRedemptionError } from "./shared.ts";
+import { langName, partnerLabel, useRedemptionError } from "./shared.ts";
 
-export function PostDialog({ rd, onClose, onSave }: { rd: Redemption; onClose: () => void; onSave: (b: { post_at: string; posted: boolean; note: string }) => void }) {
+export function PostDialog({ rd, onClose, onSave }: { rd: Redemption; onClose: () => void; onSave: (b: { post_at: string; posted: boolean; note: string; letter_lang?: string }) => void }) {
   const t = useT();
   const [postAt, setPostAt] = useState(rd.post_at || "");
   const [posted, setPosted] = useState(!!rd.posted_at);
   const [note, setNote] = useState(rd.note || "");
+  const langs = rd.letter_languages ?? [];
+  const [lang, setLang] = useState(rd.letter_lang || langs[0] || "");
   return (
     <Dialog
       title={t.t("Post date and note")}
       onClose={onClose}
-      onSubmit={() => onSave({ post_at: postAt, posted, note: note.trim() })}
+      onSubmit={() => onSave({ post_at: postAt, posted, note: note.trim(), ...(langs.length > 1 ? { letter_lang: lang } : {}) })}
       footer={<><Button onClick={onClose}>{t.t("Cancel")}</Button><Button type="submit" variant="primary">{t.t("Save")}</Button></>}
     >
       <Field label={t.t("Post on")}>
@@ -23,10 +25,22 @@ export function PostDialog({ rd, onClose, onSave }: { rd: Redemption; onClose: (
         <input type="checkbox" checked={posted} onChange={(e) => setPosted(e.target.checked)} />
         <span>{t.t("Posted")}</span>
       </label>
+      {langs.length > 1 && <LetterLangField langs={langs} value={lang} onChange={setLang} />}
       <Field label={t.t("Note")}>
         <textarea rows={4} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} />
       </Field>
     </Dialog>
+  );
+}
+
+function LetterLangField({ langs, value, onChange }: { langs: string[]; value: string; onChange: (v: string) => void }) {
+  const t = useT();
+  return (
+    <Field label={t.t("Envelope language")}>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {langs.map((l) => <option key={l} value={l}>{langName(l, t.current())}</option>)}
+      </select>
+    </Field>
   );
 }
 
@@ -43,6 +57,8 @@ export function AddRedemptionDialog({ partners, onClose, onDone }: { partners: P
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((v) => ({ ...v, [k]: e.target.value }));
   const picked = products.find((x) => String(x.id) === productId);
   const liveit = picked?.partner.kind === "liveit";
+  const langs = picked?.letter_languages ?? [];
+  const [lang, setLang] = useState("");
 
   const submit = async () => {
     setBusy(true);
@@ -57,6 +73,7 @@ export function AddRedemptionDialog({ partners, onClose, onDone }: { partners: P
         address_2: f.address2.trim(),
         postal_code: f.postal.trim(),
         city: f.city.trim(),
+        letter_lang: langs.includes(lang) ? lang : langs[0] ?? "",
         post_at: f.postAt,
         note: f.note.trim(),
       });
@@ -103,6 +120,7 @@ export function AddRedemptionDialog({ partners, onClose, onDone }: { partners: P
         <Field label={t.t("Postal code")}><input type="text" required maxLength={20} autoComplete="postal-code" value={f.postal} onChange={set("postal")} /></Field>
         <Field label={t.t("City")}><input type="text" required maxLength={100} value={f.city} onChange={set("city")} /></Field>
       </div>
+      {langs.length > 1 && <LetterLangField langs={langs} value={langs.includes(lang) ? lang : langs[0] ?? ""} onChange={setLang} />}
       <Field label={t.t("Post on (optional)")}><input type="date" value={f.postAt} onChange={set("postAt")} /></Field>
       <Field label={t.t("Note (optional)")}><textarea rows={3} maxLength={2000} value={f.note} onChange={set("note")} /></Field>
     </Dialog>

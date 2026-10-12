@@ -341,3 +341,114 @@ func TestRedemption_ScopingAndLiveit(t *testing.T) {
 		t.Errorf("deleting a partner with redemptions = %d %+v, want 409 in_use", s, e)
 	}
 }
+
+// A buyer picks the language their envelope is printed in among those
+// the product's adventure version is played in. Their emails and their
+// team's starting language follow it, and the organiser can change it.
+func TestRedemption_LetterLanguage(t *testing.T) {
+	boss, db, _, _, eventID, cleanup := redemptionStack(t)
+	defer cleanup()
+
+	var graphID int64
+	if err := db.QueryRow(`
+		INSERT INTO adventure_graphs(adventure_id, version, graph)
+		VALUES ((SELECT id FROM adventures WHERE slug = 'demo'), 1, '{"translations": {"sv": {"title": "Demo"}}}')
+		RETURNING id`).Scan(&graphID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE events SET graph_id = $1 WHERE id = $2`, graphID, eventID); err != nil {
+		t.Fatal(err)
+	}
+	var partner, product struct {
+		ID int64 `json:"id"`
+	}
+	if s := boss.do("POST", "/api/admin/partners", map[string]string{"kind": "truestory"}, &partner); s != 201 {
+		t.Fatalf("create partner = %d", s)
+	}
+	if s := boss.do("POST", "/api/admin/partners/"+itoa(partner.ID)+"/products",
+		map[string]any{"name": "Mystery walk", "event_id": eventID}, &product); s != 201 {
+		t.Fatalf("create product = %d", s)
+	}
+
+	buyer := newClient(t, boss.ts)
+	var opts struct {
+		Partners []struct {
+			Products []struct {
+				Letter *struct {
+					Languages []string `json:"languages"`
+				} `json:"letter"`
+			} `json:"products"`
+		} `json:"partners"`
+	}
+	if s := buyer.do("GET", "/api/redeem/options", nil, &opts); s != 200 {
+		t.Fatalf("options = %d", s)
+	}
+	if l := opts.Partners[0].Products[0].Letter; l == nil || strings.Join(l.Languages, ",") != "en,sv" {
+		t.Fatalf("letter = %+v, want languages en,sv", l)
+	}
+
+	form := func(code, lang string) map[string]any {
+		return map[string]any{
+			"product_id": product.ID, "security_code": code, "name": "Ada Buyer", "email": "ada@buyer.test",
+			"street_address": "Storgatan 1", "postal_code": "111 22", "city": "Stockholm",
+			"letter_lang": lang, "accepted_terms": true,
+		}
+	}
+	if s, e := doErr(buyer, "POST", "/api/redeem", form("ABCDEF123", "de")); s != 400 || e.Reason != "invalid_language" {
+		t.Fatalf("German letter = %d %+v, want 400 invalid_language", s, e)
+	}
+	if s := buyer.do("POST", "/api/redeem", form("ABCDEF123", "sv"), nil); s != 201 {
+		t.Fatalf("redeem in Swedish = %d", s)
+	}
+	// A form from before the choice gets the main language.
+	if s := buyer.do("POST", "/api/redeem", form("ABCDEF124", ""), nil); s != 201 {
+		t.Fatalf("redeem without a language = %d", s)
+	}
+
+	type langView struct {
+		ID              int64    `json:"id"`
+		SecurityCode    string   `json:"security_code"`
+		LetterLang      string   `json:"letter_lang"`
+		LetterLanguages []string `json:"letter_languages"`
+		TeamID          int64    `json:"team_id"`
+	}
+	var list struct {
+		Redemptions []langView `json:"redemptions"`
+	}
+	if s := boss.do("GET", "/api/admin/redemptions", nil, &list); s != 200 || len(list.Redemptions) != 2 {
+		t.Fatalf("list = %d %+v", s, list)
+	}
+	byCode := map[string]langView{}
+	for _, r := range list.Redemptions {
+		byCode[r.SecurityCode] = r
+	}
+	sv, en := byCode["ABCDEF123"], byCode["ABCDEF124"]
+	if sv.LetterLang != "sv" || en.LetterLang != "en" || strings.Join(sv.LetterLanguages, ",") != "en,sv" {
+		t.Fatalf("stored = %+v / %+v", sv, en)
+	}
+
+	if s, e := doErr(boss, "PATCH", "/api/admin/redemptions/"+itoa(en.ID), map[string]any{"letter_lang": "xx"}); s != 400 || e.Reason != "invalid_language" {
+		t.Errorf("unknown language = %d %+v, want 400 invalid_language", s, e)
+	}
+	var got langView
+	if s := boss.do("PATCH", "/api/admin/redemptions/"+itoa(en.ID), map[string]any{"letter_lang": "sv"}, &got); s != 200 || got.LetterLang != "sv" {
+		t.Errorf("change language = %d %+v", s, got)
+	}
+
+	if s := boss.do("POST", "/api/admin/redemptions/"+itoa(sv.ID)+"/approve", nil, &got); s != 200 || got.TeamID == 0 {
+		t.Fatalf("approve = %d %+v", s, got)
+	}
+	var teamLang, body string
+	if err := db.QueryRow(`SELECT lang FROM teams WHERE id = $1`, got.TeamID).Scan(&teamLang); err != nil {
+		t.Fatal(err)
+	}
+	if teamLang != "sv" {
+		t.Errorf("team starts in %q, want sv", teamLang)
+	}
+	if err := db.QueryRow(`SELECT body_text FROM mail_outbox WHERE kind = 'redemption_team_link' AND to_addr = 'ada@buyer.test'`).Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, "bekräftad") {
+		t.Errorf("team link email isn't in Swedish: %q", body)
+	}
+}

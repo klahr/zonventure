@@ -262,6 +262,8 @@ type landingStrings struct {
 	RedeemProductLabel        string
 	RedeemAddressHeading      string
 	RedeemAddressHint         string
+	RedeemLetterLangLabel     string
+	RedeemLetterLangHint      string
 	RedeemNameLabel           string
 	RedeemEmailLabel          string
 	RedeemStreetLabel         string
@@ -273,6 +275,7 @@ type landingStrings struct {
 	RedeemSending             string
 	RedeemDoneHeading         string
 	RedeemDoneBody            string
+	RedeemDoneLetter          string
 	RedeemNone                string
 	RedeemErrMissing          string
 	RedeemErrTerms            string
@@ -637,6 +640,8 @@ func redeemSubs(s landingStrings) [][2]string {
 		{"{{REDEEM_PRODUCT_LABEL}}", s.RedeemProductLabel},
 		{"{{REDEEM_ADDRESS_HEADING}}", s.RedeemAddressHeading},
 		{"{{REDEEM_ADDRESS_HINT}}", s.RedeemAddressHint},
+		{"{{REDEEM_LETTER_LANG_LABEL}}", s.RedeemLetterLangLabel},
+		{"{{REDEEM_LETTER_LANG_HINT}}", s.RedeemLetterLangHint},
 		{"{{REDEEM_NAME_LABEL}}", s.RedeemNameLabel},
 		{"{{REDEEM_EMAIL_LABEL}}", s.RedeemEmailLabel},
 		{"{{REDEEM_STREET_LABEL}}", s.RedeemStreetLabel},
@@ -649,6 +654,7 @@ func redeemSubs(s landingStrings) [][2]string {
 			"sending":        s.RedeemSending,
 			"doneHeading":    s.RedeemDoneHeading,
 			"doneBody":       s.RedeemDoneBody,
+			"doneLetter":     s.RedeemDoneLetter,
 			"none":           s.RedeemNone,
 			"errMissing":     s.RedeemErrMissing,
 			"errTerms":       s.RedeemErrTerms,

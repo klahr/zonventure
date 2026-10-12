@@ -9,6 +9,8 @@ export interface PartnerProduct {
   adventure_title: string;
   team_size: number;
   enabled: boolean;
+  /** The languages its envelope can be printed in, main language first. */
+  letter_languages: string[] | null;
 }
 
 /** internal/admin/redemptions.go partnerDTO */
@@ -38,6 +40,7 @@ export interface Redemption {
   address_2: string;
   postal_code: string;
   city: string;
+  letter_lang: string;
   post_at: string;
   posted_at: string;
   note: string;
@@ -46,6 +49,7 @@ export interface Redemption {
   decided_by: string;
   team_id?: number;
   team_name: string;
+  letter_languages: string[] | null;
 }
 
 export type RedemptionState = Redemption["state"];
@@ -69,6 +73,7 @@ export interface NewRedemption {
   address_2: string;
   postal_code: string;
   city: string;
+  letter_lang: string;
   post_at: string;
   note: string;
 }
@@ -91,7 +96,7 @@ export const listSelfGuided = () =>
   get<{ events: SelfGuidedEvent[] | null }>("/api/admin/events?public_for_sale=true").then((r) => r.events ?? []);
 
 export const decide = (id: number, action: "approve" | "reject" | "cancel") => post<unknown>(`/api/admin/redemptions/${id}/${action}`);
-export const updateRedemption = (id: number, body: { posted?: boolean; post_at?: string; note?: string }) => patch<unknown>(`/api/admin/redemptions/${id}`, body);
+export const updateRedemption = (id: number, body: { posted?: boolean; post_at?: string; note?: string; letter_lang?: string }) => patch<unknown>(`/api/admin/redemptions/${id}`, body);
 export const createRedemption = (body: NewRedemption) => post<unknown>("/api/admin/redemptions", body);
 
 export const addPartner = (kind: string) => post<unknown>("/api/admin/partners", { kind });

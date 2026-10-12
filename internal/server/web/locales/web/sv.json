@@ -2309,6 +2309,8 @@
   "Players per team must be between 1 and 50": "Antal spelare per lag måste vara mellan 1 och 50",
   "Post": "Post",
   "Post date and note": "Postdatum och anteckning",
+  "Envelope language": "Kuvertets språk",
+  "The envelope can't be printed in that language.": "Kuvertet kan inte tryckas på det språket.",
   "Post on": "Skicka den",
   "Post on (optional)": "Skicka den (valfritt)",
   "Post on {{date}}": "Skickas {{date}}",

@@ -83,7 +83,7 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 	}
 
 	rows, err := tx.QueryContext(ctx, `
-		SELECT t.id FROM teams t
+		SELECT t.id, t.lang FROM teams t
 		LEFT JOIN team_graph_state s ON s.team_id = t.id
 		WHERE t.event_id = $1 AND s.team_id IS NULL AND t.withdrawn_at IS NULL
 		ORDER BY t.id
@@ -91,14 +91,18 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 	if err != nil {
 		return err
 	}
-	var teams []int64
+	type placing struct {
+		id   int64
+		lang string
+	}
+	var teams []placing
 	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
+		var p placing
+		if err := rows.Scan(&p.id, &p.lang); err != nil {
 			rows.Close()
 			return err
 		}
-		teams = append(teams, id)
+		teams = append(teams, p)
 	}
 	if err := closeRows(rows); err != nil {
 		return err
@@ -108,16 +112,23 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 	// A team placed after the event has been paused counts from the
 	// clock as it reads now, not the pauses before it joined.
 	clock := pauseClock(paused, pausedAt, now)
-	for _, teamID := range teams {
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO team_graph_state (team_id, event_id, graph_id, started_at, node_entered_at, updated_at, start_paused, node_paused)
-			VALUES ($1, $2, $3, $4, $4, $4, $5, $5)
-		`, teamID, eventID, graphID, now, clock); err != nil {
-			return fmt.Errorf("placing team %d: %w", teamID, err)
-		}
+	for _, p := range teams {
+		teamID := p.id
 		g, err := e.graph(ctx, tx, graphID)
 		if err != nil {
 			return err
+		}
+		// The team starts in the language it was given, if the adventure
+		// is translated into it; the main language is stored as "".
+		lang := p.lang
+		if lang == g.Language || !slices.Contains(g.Languages(), lang) {
+			lang = ""
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO team_graph_state (team_id, event_id, graph_id, started_at, node_entered_at, updated_at, start_paused, node_paused, lang)
+			VALUES ($1, $2, $3, $4, $4, $4, $5, $5, $6)
+		`, teamID, eventID, graphID, now, clock, lang); err != nil {
+			return fmt.Errorf("placing team %d: %w", teamID, err)
 		}
 		// The roles' kits, in the backpack before the first step, which
 		// may already ask what the team carries.

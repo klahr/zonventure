@@ -7,6 +7,15 @@ export const PARTNER_KINDS = [
   { kind: "truestory", label: "TrueStory" },
 ];
 
+/** A language code by its name in locale, e.g. "sv" as "Swedish". */
+export function langName(code: string, locale: string): string {
+  try {
+    return new Intl.DisplayNames([locale], { type: "language" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
 export const partnerLabel = (kind: string, name?: string) => name || PARTNER_KINDS.find((p) => p.kind === kind)?.label || kind;
 
 const REASONS: Record<string, string> = {
@@ -18,6 +27,7 @@ const REASONS: Record<string, string> = {
   invalid_email: "Enter a valid email address.",
   missing_field: "Fill in every required field.",
   unknown_product: "Pick a product.",
+  invalid_language: "The envelope can't be printed in that language.",
   exists: "That partner is already added.",
   in_use: "It has redemptions, so it can't be deleted. Disable it instead.",
 };

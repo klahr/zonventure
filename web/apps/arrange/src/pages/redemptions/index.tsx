@@ -11,7 +11,7 @@ import { decide, listPartners, listRedemptions, updateRedemption, type Redemptio
 import { AddRedemptionDialog, PostDialog } from "./dialogs.tsx";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
 import { PartnersCard } from "./Partners.tsx";
-import { partnerLabel, useRedemptionError } from "./shared.ts";
+import { langName, partnerLabel, useRedemptionError } from "./shared.ts";
 import "./redemptions.css";
 
 const STATES = ["pending", "approved", "rejected", "cancelled", "all"] as const;
@@ -200,7 +200,12 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
           <div className="rd-item__col">
             <span className="rd-label">{t.t("Post")}</span>
             {rd.post_at && <span className="rd-sub">{t.t("Post on {{date}}", { date: rd.post_at })}</span>}
-            <span>{rd.posted_at ? <span title={fmtDateTime(rd.posted_at, locale)}><Pill tone="good">{t.t("Posted")}</Pill></span> : <Pill>{t.t("Not posted")}</Pill>}</span>
+            <span className="rd-pills">
+              {rd.posted_at ? <span title={fmtDateTime(rd.posted_at, locale)}><Pill tone="good">{t.t("Posted")}</Pill></span> : <Pill>{t.t("Not posted")}</Pill>}
+              {rd.letter_lang && (rd.letter_languages?.length ?? 0) > 1 && (
+                <Pill title={t.t("Envelope language")}>{langName(rd.letter_lang, locale)}</Pill>
+              )}
+            </span>
             {rd.note && <span className="rd-sub rd-note">{rd.note}</span>}
           </div>
         )}

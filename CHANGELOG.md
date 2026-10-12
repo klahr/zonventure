@@ -11,6 +11,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Gift box buyers choose the language their envelope is printed in when the adventure is translated, and the redemption list shows it.
+- A redeemed box's emails are written in the envelope's language, and its team starts playing in it.
+- Organisers can change a redemption's envelope language, and pick it when adding a redemption by hand.
+
 ## [0.27.1] - 2026-10-12
 
 ### Changed

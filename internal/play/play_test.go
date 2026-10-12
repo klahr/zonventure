@@ -1290,6 +1290,38 @@ func TestLanguageLive(t *testing.T) {
 	}
 }
 
+// A team placed with a starting language plays in it when the adventure
+// is translated into it, and in the main language otherwise.
+func TestStartingLanguage(t *testing.T) {
+	t.Parallel()
+	g := &graph.Graph{
+		Language:     "sv",
+		Nodes:        []graph.Node{{Slug: "start", Type: graph.Start}, {Slug: "end", Type: graph.End}},
+		Edges:        []graph.Edge{edge("start", "out", "end")},
+		Translations: map[string]map[string]string{"en": {graph.NodeKey("end", "text"): "The end."}},
+	}
+	ctx := context.Background()
+	f := setup(t, g, 0)
+	want := map[string]string{"en": "en", "sv": "", "fi": ""}
+	teams := map[string]int64{}
+	for lang := range want {
+		var id int64
+		mustScan(t, f.db.QueryRow(`INSERT INTO teams(event_id, name, token, lang) VALUES ($1, $2, $3, $4) RETURNING id`,
+			f.eventID, "Team "+lang, fmt.Sprintf("lang-%d-%s", f.eventID, lang), lang), &id)
+		teams[lang] = id
+	}
+	if err := f.eng.StartEvent(ctx, f.eventID); err != nil {
+		t.Fatal(err)
+	}
+	for lang, id := range teams {
+		var got string
+		mustScan(t, f.db.QueryRow(`SELECT lang FROM team_graph_state WHERE team_id = $1`, id), &got)
+		if got != want[lang] {
+			t.Errorf("a team given %q plays in %q, want %q", lang, got, want[lang])
+		}
+	}
+}
+
 // Roles are dealt among the players who are playing, claims first, the
 // rest each to whoever holds fewest; a player alone holds them all, and
 // a claim by someone no longer playing does not count.
