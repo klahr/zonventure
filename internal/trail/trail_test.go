@@ -125,6 +125,38 @@ func TestTemplates(t *testing.T) {
 	}
 }
 
+// TestTemplatePerson: a birthday template is about the child named,
+// genitive and age options included; the example is Elsa, 8.
+func TestTemplatePerson(t *testing.T) {
+	tp, _ := NewFromTemplate("birthday", "en")
+	if !tp.Person || tp.Title != "Elsa turns 8" {
+		t.Fatalf("example: %+v", tp)
+	}
+	cases := []struct {
+		lang, name string
+		age        int
+		title, q   string
+	}{
+		{"en", "Mia", 7, "Mia turns 7", "What is Mia's favourite animal?"},
+		{"sv", "Mia", 7, "Mia fyller 7", "Vilket är Mias favoritdjur?"},
+		{"sv", "Jonas", 40, "Jonas fyller 40", "Vilket är Jonas favoritdjur?"},
+		{"sv", "  ", 0, "Elsa fyller 8", "Vilket är Elsas favoritdjur?"},
+	}
+	for _, c := range cases {
+		tp, _ := NewFromTemplateFor("birthday", c.lang, Person{Name: c.name, Age: c.age})
+		if tp.Title != c.title || tp.Cards[2].Text != c.q {
+			t.Errorf("%+v: %q, %q", c, tp.Title, tp.Cards[2].Text)
+		}
+	}
+	tp, _ = NewFromTemplateFor("birthday", "en", Person{Name: "Mia", Age: 7})
+	if got := strings.Join(tp.Cards[1].Options, ","); got != "6,7,8" || tp.Cards[1].Correct != "X" {
+		t.Errorf("age options: %s %s", got, tp.Cards[1].Correct)
+	}
+	if kids, _ := NewFromTemplate("kids", "en"); kids.Person {
+		t.Error("kids is about no one")
+	}
+}
+
 // TestCover: every look the party adventure creator offers
 // (web/packages/trail/src/themes.ts TRAIL_THEMES) has its print picture.
 func TestCover(t *testing.T) {

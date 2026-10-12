@@ -116,8 +116,11 @@ export const shareURL = (k: TrailKey) => `${location.origin}/app/party/trail/edi
 
 export const getStart = (org: string, lang: string) => request<TrailStart>(`/api/o/${enc(org)}/trail?lang=${enc(lang)}`);
 
-export const createDraft = (org: string, template: string, language: string) =>
-  request<{ id: number; secret: string; trail: PublicTrail }>(`/api/o/${enc(org)}/trail/drafts`, { method: "POST", body: { template, language } });
+export const createDraft = (org: string, template: string, language: string, person?: { name: string; age: number }) =>
+  request<{ id: number; secret: string; trail: PublicTrail }>(`/api/o/${enc(org)}/trail/drafts`, {
+    method: "POST",
+    body: { template, language, person: person?.name ?? "", age: person?.age ?? 0 },
+  });
 
 const draft = (id: number) => `/api/trail/drafts/${id}`;
 

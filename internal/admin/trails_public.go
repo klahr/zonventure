@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
@@ -116,7 +117,7 @@ func (h *Handlers) GetTrailStart(w http.ResponseWriter, r *http.Request) {
 	lang := trailLang(r.URL.Query().Get("lang"))
 	for _, n := range trail.TemplateNames {
 		t, _ := trail.NewFromTemplate(n, lang)
-		out.Templates = append(out.Templates, trailTemplateDTO{Name: n, Title: t.Title, Kids: t.Kids, Cards: len(t.Cards)})
+		out.Templates = append(out.Templates, trailTemplateDTO{Name: n, Title: t.Title, Kids: t.Kids, Cards: len(t.Cards), Person: t.Person})
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, out)
@@ -240,7 +241,13 @@ func (h *Handlers) writePublicTrail(w http.ResponseWriter, ctx context.Context, 
 type createDraftRequest struct {
 	Template string `json:"template"`
 	Language string `json:"language"`
+	// Who a template about someone is about; empty for its example.
+	Person string `json:"person"`
+	Age    int    `json:"age"`
 }
+
+// maxPersonName bounds the name written into a template's cards.
+const maxPersonName = 40
 
 // CreateTrailDraft starts a quiz trail from a template. The answer holds
 // the draft's secret, the only key to it: the browser keeps it.
@@ -262,7 +269,12 @@ func (h *Handlers) CreateTrailDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lang := trailLang(req.Language)
-	t, ok := trail.NewFromTemplate(req.Template, lang)
+	person := strings.TrimSpace(req.Person)
+	if utf8.RuneCountInString(person) > maxPersonName || req.Age < 0 || req.Age > 120 {
+		httpx.Error(w, http.StatusBadRequest, "the name or the age is out of range")
+		return
+	}
+	t, ok := trail.NewFromTemplateFor(req.Template, lang, trail.Person{Name: person, Age: req.Age})
 	if !ok {
 		httpx.Error(w, http.StatusBadRequest, "no such template")
 		return

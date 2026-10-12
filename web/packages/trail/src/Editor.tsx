@@ -200,7 +200,7 @@ export function Editor(props: EditorProps) {
   );
 }
 
-function SaveNote({ t, state, savedText }: { t: T; state: SaveState; savedText?: string | undefined }) {
+export function SaveNote({ t, state, savedText }: { t: T; state: SaveState; savedText?: string | undefined }) {
   const text: Record<SaveState, string> = {
     saved: savedText ?? t("Saved"),
     saving: t("Saving…"),
@@ -227,13 +227,14 @@ function SaveNote({ t, state, savedText }: { t: T; state: SaveState; savedText?:
   );
 }
 
-const KINDS: { kind: Kind; label: string; icon: string }[] = [
-  { kind: "quiz", label: "Question with options", icon: "quiz" },
-  { kind: "answer", label: "Question with answer", icon: "answer" },
-  { kind: "info", label: "Information", icon: "info" },
+/** The kinds of card: label names one on the paper, short on the switch. */
+const KINDS: { kind: Kind; label: string; short: string; icon: string }[] = [
+  { kind: "quiz", label: "Question with options", short: "Options", icon: "quiz" },
+  { kind: "answer", label: "Question with answer", short: "Typed answer", icon: "answer" },
+  { kind: "info", label: "Information", short: "Info", icon: "info" },
 ];
 
-function CardEditor(props: {
+export function CardEditor(props: {
   t: T;
   card: Card;
   position: number;
@@ -269,10 +270,12 @@ function CardEditor(props: {
               aria-checked={card.kind === k.kind}
               className={"trail-kind" + (card.kind === k.kind ? " is-on" : "")}
               disabled={readOnly}
+              title={t(k.label)}
+              aria-label={t(k.label)}
               onClick={() => onChange(asKind(card, k.kind))}
             >
               <Icon name={k.icon} size={16} />
-              <span>{t(k.label)}</span>
+              <span>{t(k.short)}</span>
             </button>
           ))}
         </div>
@@ -288,35 +291,36 @@ function CardEditor(props: {
             {t(KINDS.find((k) => k.kind === card.kind)!.label)}
           </span>
         </div>
-        <textarea
-          className="trail-paper__text"
-          value={card.text}
-          rows={2}
-          maxLength={MAX_TEXT}
-          disabled={readOnly}
-          placeholder={card.kind === "info" ? t("Write what the teams read here…") : t("Write the question…")}
-          aria-label={card.kind === "info" ? t("Text") : t("Question")}
-          onChange={(e) => onChange({ ...card, text: e.target.value })}
-        />
+        {/* A field to write in, and looks it: tinted, with a pencil. */}
+        <label className="trail-paper__write">
+          <textarea
+            className="trail-paper__text"
+            value={card.text}
+            rows={2}
+            maxLength={MAX_TEXT}
+            disabled={readOnly}
+            placeholder={card.kind === "info" ? t("Write what the teams read here…") : t("Write the question…")}
+            aria-label={card.kind === "info" ? t("Text") : t("Question")}
+            onChange={(e) => onChange({ ...card, text: e.target.value })}
+          />
+          {!readOnly && (
+            <span className="trail-paper__pencil" aria-hidden="true">
+              <Icon name="pencil" size={16} />
+            </span>
+          )}
+        </label>
 
         {card.kind === "quiz" && (
           <div className="trail-options">
-            <p className="trail-muted">{t("Tap 1, X or 2 to mark the right option.")}</p>
+            {/* The mark (1, X, 2) is what the paper and the phone show;
+                the tick at the end says which option is right. */}
             {CHOICES.map((mark, i) => {
               const right = card.correct === mark;
               return (
                 <div className={"trail-option" + (right ? " is-right" : "")} key={mark}>
-                  <button
-                    type="button"
-                    className={"trail-mark" + (right ? " is-right" : "")}
-                    aria-pressed={right}
-                    aria-label={t("Mark {{c}} as the right option", { c: mark })}
-                    title={t("Mark {{c}} as the right option", { c: mark })}
-                    disabled={readOnly}
-                    onClick={() => onChange({ ...card, correct: mark })}
-                  >
+                  <span className="trail-mark trail-mark--static" aria-hidden="true">
                     {mark}
-                  </button>
+                  </span>
                   <input
                     value={card.options?.[i] ?? ""}
                     maxLength={MAX_OPTION}
@@ -325,12 +329,18 @@ function CardEditor(props: {
                     aria-label={t("Option {{c}}", { c: mark })}
                     onChange={(e) => onChange({ ...card, options: (card.options ?? ["", "", ""]).map((o, j) => (j === i ? e.target.value : o)) })}
                   />
-                  {right && (
-                    <span className="trail-right">
-                      <Icon name="check" size={14} />
-                      {t("Right")}
-                    </span>
-                  )}
+                  <button
+                    type="button"
+                    className={"trail-tick" + (right ? " is-right" : "")}
+                    aria-pressed={right}
+                    aria-label={t("Mark {{c}} as the right option", { c: mark })}
+                    title={right ? t("Right") : t("Mark {{c}} as the right option", { c: mark })}
+                    disabled={readOnly}
+                    onClick={() => onChange({ ...card, correct: mark })}
+                  >
+                    <Icon name="check" size={18} />
+                    {right && <span>{t("Right")}</span>}
+                  </button>
                 </div>
               );
             })}
@@ -364,7 +374,10 @@ function CardEditor(props: {
                 {t("+ Another accepted spelling")}
               </button>
             )}
-            <p className="trail-muted">{t("The teams type the answer on their phone. Upper and lower case don't matter.")}</p>
+            <p className="trail-muted trail-hint">
+              <Icon name="phone" size={14} />
+              {t("Teams type it on their phone. Aa or aa, both count.")}
+            </p>
           </div>
         )}
       </div>
@@ -382,17 +395,14 @@ function CardEditor(props: {
 
       {!readOnly && (
         <div className="trail-card__actions">
-          <button type="button" className="trail-tool" disabled={!props.canEarlier} onClick={props.onEarlier} title={t("Move earlier")}>
-            <Icon name="left" size={18} />
-            <span>{t("Move earlier")}</span>
+          <button type="button" className="trail-tool trail-tool--icon" disabled={!props.canEarlier} onClick={props.onEarlier} title={t("Move earlier")} aria-label={t("Move earlier")}>
+            <Icon name="left" size={20} />
           </button>
-          <button type="button" className="trail-tool" disabled={!props.canLater} onClick={props.onLater} title={t("Move later")}>
-            <span>{t("Move later")}</span>
-            <Icon name="right" size={18} />
+          <button type="button" className="trail-tool trail-tool--icon" disabled={!props.canLater} onClick={props.onLater} title={t("Move later")} aria-label={t("Move later")}>
+            <Icon name="right" size={20} />
           </button>
-          <button type="button" className="trail-tool trail-tool--danger" onClick={props.onDelete} title={t("Delete card")}>
-            <Icon name="trash" size={18} />
-            <span>{t("Delete card")}</span>
+          <button type="button" className="trail-tool trail-tool--icon trail-tool--danger" onClick={props.onDelete} title={t("Delete card")} aria-label={t("Delete card")}>
+            <Icon name="trash" size={20} />
           </button>
         </div>
       )}
@@ -406,7 +416,7 @@ function CardEditor(props: {
  * answer to it by number; an information card's text is on both. Not to
  * edit: the card is edited in one place, the paper.
  */
-function PhonePreview({ t, title, card, number }: { t: T; title: string; card: Card; number: number }) {
+export function PhonePreview({ t, title, card, number }: { t: T; title: string; card: Card; number: number }) {
   return (
     <div className="trail-phone" aria-hidden="true">
       <div className="trail-phone__screen">

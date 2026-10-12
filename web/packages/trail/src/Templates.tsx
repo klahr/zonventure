@@ -9,6 +9,8 @@ export interface TemplateInfo {
   title: string;
   kids: boolean;
   cards: number;
+  /** About someone (a birthday child), whose name and age a draft can get. */
+  person?: boolean;
 }
 
 const ABOUT: Record<string, { label: string; blurb: string; icon: string }> = {
@@ -19,15 +21,18 @@ const ABOUT: Record<string, { label: string; blurb: string; icon: string }> = {
   blank: { label: "Blank", blurb: "Start from one empty card.", icon: "plus" },
 };
 
-/** The templates to pick from, each with what it is for. */
-export function TemplatePicker({ i18n, templates, busy, onPick }: { i18n: I18n; templates: TemplateInfo[]; busy?: boolean; onPick: (name: string) => void }) {
+/**
+ * The templates to pick from, each with what it is for. Themed, every
+ * one wears the look around it (a look already chosen) instead of its own.
+ */
+export function TemplatePicker({ i18n, templates, busy, onPick, themed }: { i18n: I18n; templates: TemplateInfo[]; busy?: boolean; onPick: (name: string) => void; themed?: boolean }) {
   const t = i18n.t;
   return (
-    <ul className="trail-templates">
+    <ul className={"trail-templates" + (themed ? " trail-templates--themed" : "")}>
       {templates.map((tp) => {
         const about = ABOUT[tp.name];
         // Tinted in the look the template starts in, so the card matches what it makes.
-        const accent = themeById(TEMPLATE_THEMES[tp.name])?.look.accent;
+        const accent = themed ? undefined : themeById(TEMPLATE_THEMES[tp.name])?.look.accent;
         return (
           <li key={tp.name}>
             <button

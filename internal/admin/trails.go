@@ -39,6 +39,9 @@ type trailTemplateDTO struct {
 	Title string `json:"title"`
 	Kids  bool   `json:"kids"`
 	Cards int    `json:"cards"`
+	// Person: the template is about someone, whose name and age a new
+	// draft can be given.
+	Person bool `json:"person"`
 }
 
 // ListTrailTemplates lists the templates a trail starts from, in lang.
@@ -49,7 +52,7 @@ func (h *Handlers) ListTrailTemplates(w http.ResponseWriter, r *http.Request) {
 	out := []trailTemplateDTO{}
 	for _, name := range trail.TemplateNames {
 		t, _ := trail.NewFromTemplate(name, lang)
-		out = append(out, trailTemplateDTO{Name: name, Title: t.Title, Kids: t.Kids, Cards: len(t.Cards)})
+		out = append(out, trailTemplateDTO{Name: name, Title: t.Title, Kids: t.Kids, Cards: len(t.Cards), Person: t.Person})
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"templates": out})
 }

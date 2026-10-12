@@ -3,8 +3,10 @@ import { ApiError } from "@zonventure/api";
 import { money } from "@zonventure/hosted";
 import { useConfirm } from "@zonventure/ui";
 import {
-  Editor,
+  Icon,
   problems,
+  themeById,
+  themeStyle,
   useTrailSave,
   type TrailApi,
   type TrailTheme,
@@ -27,6 +29,7 @@ import {
   type PublicTrail,
 } from "./trail.ts";
 import { leave, outside } from "./embed.ts";
+import { Guide, GuideShell } from "./Guide.tsx";
 
 const MINE = "/app/party/trail/mine";
 
@@ -47,8 +50,8 @@ function target(host: boolean): { id: number } | { token: string } | null {
 }
 
 /**
- * The public creator: the same editor as the console's, saved to the
- * draft (or, from the host page, to the trail the host link runs). Done
+ * The public creator: a guide through the same cards as the console's
+ * editor, saved to the draft (or, from the host page, to the trail the host link runs). Done
  * goes to checkout while the trail is unpaid.
  */
 export function TrailEdit({ host }: { host: boolean }) {
@@ -121,10 +124,6 @@ function Creator({
   );
   const s = useTrailSave(api, doc);
   const live = s.doc as PublicTrail;
-  const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(
-    null,
-  );
-  const [tried, setTried] = useState(false);
   const [paying, setPaying] = useState(false);
   const [panel, setPanel] = useState<"email" | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -160,10 +159,10 @@ function Creator({
         leave(MINE);
         return;
       }
+      // Ready is reached only when every card is finished; this guards
+      // a change made since.
       const first = problems(s.cards)[0];
-      setTried(true);
       if (first) {
-        if (first.card) setFocus({ id: first.card, nonce: Date.now() });
         setNote(
           first.card
             ? t("Finish the marked cards first.")
@@ -212,12 +211,12 @@ function Creator({
 
   if (paying && "id" in which)
     return (
-      <Checkout
-        doc={live}
-        id={which.id}
-        cards={s.cards.length}
+      <GuideShell
+        style={themeStyle(themeById(theme)?.look)}
         back={() => setPaying(false)}
-      />
+      >
+        <Checkout doc={live} id={which.id} cards={s.cards.length} />
+      </GuideShell>
     );
 
   const saved = live.email
@@ -226,106 +225,121 @@ function Creator({
       ? undefined
       : t("Saved on this phone");
   return (
-    <div className="party-trail">
+    <>
       {confirmDialog}
-      {live.round_open && (
-        <p className="party-note">
-          {t("A game is being played. Changes apply from the next game.")}
-        </p>
-      )}
-      {live.reprint && live.state !== "draft" && (
-        <p className="party-note">
-          {t(
-            "The cards changed since you printed them. Print them again from the admin page before the next game.",
-          )}
-        </p>
-      )}
-      {ended && (
-        <p className="party-note">{t("This party adventure has ended.")}</p>
-      )}
-      {/* A template's cards are filled in as an example; until the
-          first edit, say they are there to be made one's own. */}
-      {!byHost &&
-        live.state === "draft" &&
-        live.template !== "blank" &&
-        live.revision === 0 &&
-        s.state === "saved" && (
-          <p className="party-note">
-            {t(
-              "The cards are filled in as an example. Tap any text and write your own: names, questions and answers.",
-            )}
-          </p>
-        )}
-      {note && (
-        <p className="party-note" role="status">
-          {note}
-        </p>
-      )}
-      {panel === "email" && <SaveToEmail close={() => setPanel(null)} />}
-      <Editor
-        i18n={i18n}
+      <Guide
         title={s.title}
         cards={s.cards}
         state={s.state}
         readOnly={s.readOnly || ended}
         onChange={s.change}
-        focus={focus}
-        showProblems={tried}
         savedText={saved}
         theme={theme}
         onTheme={ended ? undefined : (th) => void pickTheme(th)}
-        actions={
+        fresh={!byHost && live.state === "draft" && live.revision === 0}
+        example={
+          !byHost &&
+          live.state === "draft" &&
+          live.template !== "blank" &&
+          live.revision === 0
+        }
+        finishOnOverview={byHost || live.state !== "draft"}
+        freeTeams={live.price.free_teams}
+        note={note}
+        close={() =>
+          void s
+            .flush()
+            .then(() =>
+              leave(
+                byHost
+                  ? `/app/party/host/${encodeURIComponent(which.token)}`
+                  : MINE,
+              ),
+            )
+        }
+        finish={() => void done()}
+        busy={busy}
+        barAction={
+          s.state === "conflict" && (
+            <button type="button" className="trail-btn" onClick={reload}>
+              {t("Reload")}
+            </button>
+          )
+        }
+        notes={
           <>
-            {s.state === "conflict" && (
-              <button type="button" className="trail-btn" onClick={reload}>
-                {t("Reload")}
-              </button>
+            {live.round_open && (
+              <p className="party-note">
+                {t("A game is being played. Changes apply from the next game.")}
+              </p>
             )}
-            {!byHost && (
-              <details className="party-menu">
-                <summary className="trail-btn">{t("Menu")}</summary>
-                <div className="party-menu__items">
-                  {!live.email && (
-                    <button type="button" onClick={() => setPanel("email")}>
-                      {t("Save to email")}
-                    </button>
-                  )}
-                  {key && (
-                    <button type="button" onClick={() => void copy()}>
-                      {t("Copy link to this party adventure")}
-                    </button>
-                  )}
-                  <a href={MINE} target={outside}>
-                    {t("My party adventures")}
-                  </a>
-                  {live.state === "draft" && (
-                    <button
-                      type="button"
-                      className="is-danger"
-                      onClick={() => void remove()}
-                    >
-                      {t("Delete")}
-                    </button>
-                  )}
-                </div>
-              </details>
+            {live.reprint && live.state !== "draft" && (
+              <p className="party-note">
+                {t(
+                  "The cards changed since you printed them. Print them again from the admin page before the next game.",
+                )}
+              </p>
             )}
-            {!ended && (
-              <button
-                type="button"
-                className="trail-btn trail-btn--primary"
-                disabled={busy}
-                onClick={() => void done()}
-              >
-                {!byHost && live.state === "draft"
-                  ? t("Get it ready to play")
-                  : t("Done")}
-              </button>
+            {ended && (
+              <p className="party-note">
+                {t("This party adventure has ended.")}
+              </p>
             )}
           </>
         }
+        extras={
+          !byHost && (
+            <div className="trail-guide__extras">
+              {panel === "email" ? (
+                <SaveToEmail close={() => setPanel(null)} />
+              ) : (
+                <ul className="trail-guide__actions">
+                  {!live.email && (
+                    <li>
+                      <button type="button" onClick={() => setPanel("email")}>
+                        <Icon name="mail" size={20} />
+                        <span>
+                          <strong>{t("Save to email")}</strong>
+                          <small>
+                            {t("Open it from any phone or computer.")}
+                          </small>
+                        </span>
+                      </button>
+                    </li>
+                  )}
+                  {key && (
+                    <li>
+                      <button type="button" onClick={() => void copy()}>
+                        <Icon name="link" size={20} />
+                        <strong>{t("Copy link")}</strong>
+                      </button>
+                    </li>
+                  )}
+                  <li>
+                    <a href={MINE} target={outside}>
+                      <Icon name="folder" size={20} />
+                      <strong>{t("My party adventures")}</strong>
+                    </a>
+                  </li>
+                  {live.state === "draft" && (
+                    <li>
+                      <button
+                        type="button"
+                        className="is-danger"
+                        onClick={() => void remove()}
+                      >
+                        <Icon name="trash" size={20} />
+                        <strong>{t("Delete")}</strong>
+                      </button>
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
+          )
+        }
       />
-    </div>
+    </>
   );
 }
 
@@ -411,12 +425,10 @@ function Checkout({
   doc,
   id,
   cards,
-  back,
 }: {
   doc: PublicTrail;
   id: number;
   cards: number;
-  back: () => void;
 }) {
   const i18n = useT();
   const t = i18n.t;
@@ -456,146 +468,131 @@ function Checkout({
     <section className="party-card">
       <p className="party-eyebrow">{t("Party adventure")}</p>
       <h1>{doc.title}</h1>
-      <ul className="party-points">
-        <li>{t("{{n}} cards", { n: cards })}</li>
+      <ul className="trail-guide__facts">
         <li>
-          {t(
-            "Play as many games as you like for 14 days from the first game. Start within 60 days.",
-          )}
+          <Icon name="cards" size={20} />
+          {t("{{n}} cards", { n: cards })}
         </li>
         <li>
-          {t(
-            "Up to {{n}} teams in one game, each on a phone. No app and no accounts.",
-            { n: limit(blocks) },
-          )}
+          <Icon name="users" size={20} />
+          {t("Up to {{n}} teams, one phone each", { n: limit(blocks) })}
+        </li>
+        <li>
+          <Icon name="calendar" size={20} />
+          {t("Play as often as you like for {{n}} days", { n: 14 })}
         </li>
       </ul>
-      {!doc.payments_open ? (
-        <>
-          <p className="party-note">
-            {t(
-              "Booking isn't open right now. Your party adventure is saved; check back soon.",
-            )}
-          </p>
-          <button type="button" className="party-btn" onClick={back}>
-            {t("Back to the cards")}
+      {/* Free play needs no payments; more teams do. */}
+      <form className="party-form" onSubmit={submit}>
+        {!doc.payments_open ? null : blocks === 0 ? (
+          <button
+            type="button"
+            className="party-link"
+            onClick={() => setBlocks(1)}
+          >
+            {t("More than {{n}} teams in one game?", {
+              n: doc.price.free_teams,
+            })}
           </button>
-        </>
-      ) : (
-        <form className="party-form" onSubmit={submit}>
-          {blocks === 0 ? (
-            <button
-              type="button"
-              className="party-link"
-              onClick={() => setBlocks(1)}
-            >
-              {t("More than {{n}} teams in one game?", {
-                n: doc.price.free_teams,
-              })}
-            </button>
-          ) : (
-            <label className="party-field">
-              <span>{t("Teams in one game")}</span>
-              <div className="party-stepper">
-                <button
-                  type="button"
-                  onClick={() => setBlocks((b) => Math.max(0, b - 1))}
-                  aria-label={t("Fewer")}
-                >
-                  −
-                </button>
-                <output aria-live="polite">
-                  {t("up to {{n}}", { n: limit(blocks) })}
-                </output>
-                <button
-                  type="button"
-                  onClick={() => setBlocks((b) => Math.min(10, b + 1))}
-                  disabled={blocks >= 10}
-                  aria-label={t("More")}
-                >
-                  +
-                </button>
-              </div>
-            </label>
-          )}
+        ) : (
           <label className="party-field">
-            <span>{t("Your email")}</span>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-            />
-            <small className="party-muted">
-              {free
-                ? t(
-                    "You go straight to the page you run it from. Sign in with this email to find it again.",
-                  )
-                : t("We send the link you run the party adventure from here.")}
-            </small>
+            <span>{t("Teams in one game")}</span>
+            <div className="party-stepper">
+              <button
+                type="button"
+                onClick={() => setBlocks((b) => Math.max(0, b - 1))}
+                aria-label={t("Fewer")}
+              >
+                −
+              </button>
+              <output aria-live="polite">
+                {t("up to {{n}}", { n: limit(blocks) })}
+              </output>
+              <button
+                type="button"
+                onClick={() => setBlocks((b) => Math.min(10, b + 1))}
+                disabled={blocks >= 10}
+                aria-label={t("More")}
+              >
+                +
+              </button>
+            </div>
           </label>
-          {doc.kids && (
-            <label className="party-check">
-              <input
-                type="checkbox"
-                checked={consent}
-                onChange={(e) => setConsent(e.target.checked)}
-                required
-              />
-              <span>
-                {t(
-                  "I am the guardian of the children who will play, or I have their guardians' consent.",
-                )}
-              </span>
-            </label>
-          )}
-          {free ? (
-            <div className="party-total">
-              <span>{t("Total")}</span>
-              <strong>{t("Free")}</strong>
-            </div>
-          ) : (
-            <div className="party-total">
-              <span>
-                {blocks > 1
-                  ? t("{{price}} per {{n}} teams", {
-                      price: money(
-                        doc.price.block_cents,
-                        doc.price.currency,
-                        loc,
-                      ),
-                      n: per,
-                    })
-                  : t("Total")}
-              </span>
-              <strong>{money(total, doc.price.currency, loc)}</strong>
-            </div>
-          )}
-          {error && (
-            <p className="party-error" role="alert">
-              {error}
-            </p>
-          )}
-          <div className="party-actions">
-            <button
-              className="party-btn party-btn--primary"
-              disabled={busy || !email || (doc.kids && !consent)}
-            >
-              {busy
-                ? t("Opening checkout…")
-                : free
-                  ? t("Get it ready to play")
-                  : t("Pay {{total}}", {
-                      total: money(total, doc.price.currency, loc),
-                    })}
-            </button>
-            <button type="button" className="party-btn" onClick={back}>
-              {t("Back to the cards")}
-            </button>
+        )}
+        <label className="party-field">
+          <span>{t("Your email")}</span>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+          />
+          <small className="party-muted">
+            {free
+              ? t(
+                  "You go straight to the page you run it from. Sign in with this email to find it again.",
+                )
+              : t("We send the link you run the party adventure from here.")}
+          </small>
+        </label>
+        {doc.kids && (
+          <label className="party-check">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+              required
+            />
+            <span>
+              {t(
+                "I am the guardian of the children who will play, or I have their guardians' consent.",
+              )}
+            </span>
+          </label>
+        )}
+        {free ? (
+          <div className="party-total">
+            <span>{t("Total")}</span>
+            <strong>{t("Free")}</strong>
           </div>
-        </form>
-      )}
+        ) : (
+          <div className="party-total">
+            <span>
+              {blocks > 1
+                ? t("{{price}} per {{n}} teams", {
+                    price: money(
+                      doc.price.block_cents,
+                      doc.price.currency,
+                      loc,
+                    ),
+                    n: per,
+                  })
+                : t("Total")}
+            </span>
+            <strong>{money(total, doc.price.currency, loc)}</strong>
+          </div>
+        )}
+        {error && (
+          <p className="party-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="party-actions">
+          <button
+            className="party-btn party-btn--primary"
+            disabled={busy || !email || (doc.kids && !consent)}
+          >
+            {busy
+              ? t("Opening checkout…")
+              : free
+                ? t("Get it ready to play")
+                : t("Pay {{total}}", {
+                    total: money(total, doc.price.currency, loc),
+                  })}
+          </button>
+        </div>
+      </form>
     </section>
   );
 }

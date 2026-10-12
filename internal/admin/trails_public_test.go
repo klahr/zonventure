@@ -106,6 +106,39 @@ func (f *partyFixture) mails() int {
 	return len(f.mail.messages)
 }
 
+// TestPublicTrail_DraftPerson: a birthday draft is about the child
+// named, with their age; the start page says which templates ask; a
+// name or an age out of range is refused.
+func TestPublicTrail_DraftPerson(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newPartyFixture(t)
+	defer cleanup()
+	f.publicTrailRoutes()
+	if w := call(t, f.public, "GET", "/api/o/acme/trail?lang=en", nil); !strings.Contains(w.Body.String(), `"name":"birthday","title":"Elsa turns 8","kids":true,"cards":4,"person":true`) {
+		t.Errorf("start page: %s", w.Body)
+	}
+	w := call(t, f.public, "POST", "/api/o/acme/trail/drafts", map[string]any{"template": "birthday", "language": "en", "person": " Mia ", "age": 7})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("new draft: %d %s", w.Code, w.Body)
+	}
+	var d draftCreated
+	if err := json.Unmarshal(w.Body.Bytes(), &d); err != nil {
+		t.Fatal(err)
+	}
+	if d.Trail.Title != "Mia turns 7" || d.Trail.Cards[1].Text != "How old is Mia today?" || strings.Join(d.Trail.Cards[1].Options, ",") != "6,7,8" {
+		t.Errorf("draft: %q %+v", d.Trail.Title, d.Trail.Cards[1])
+	}
+	for _, body := range []map[string]any{
+		{"template": "birthday", "person": strings.Repeat("x", 41)},
+		{"template": "birthday", "person": "Mia", "age": 121},
+		{"template": "birthday", "person": "Mia", "age": -1},
+	} {
+		if w := call(t, f.public, "POST", "/api/o/acme/trail/drafts", body); w.Code != http.StatusBadRequest {
+			t.Errorf("%v: %d", body, w.Code)
+		}
+	}
+}
+
 // TestPublicTrail_Draft: a draft is made only where the org sells quiz
 // trails, opens with its secret and nothing else, saves, stays out of
 // the org's adventures, duplicates and deletes.

@@ -70,7 +70,6 @@
   "Tap 1, X or 2 to mark the right option.": "Tryck på 1, X eller 2 för att markera rätt alternativ.",
   "Text": "Text",
   "The right answer": "Rätt svar",
-  "The teams type the answer on their phone. Upper and lower case don't matter.": "Lagen skriver svaret i mobilen. Stora och små bokstäver spelar ingen roll.",
   "The teams' phones get it too.": "Lagens mobiler får det också.",
   "Trying on looks… tap one to keep it.": "Provar utseenden … tryck på ett för att behålla det.",
   "Undo": "Ångra",
@@ -94,5 +93,9 @@
   "Answer": "Svara",
   "Continue": "Fortsätt",
   "See it on a phone": "Se det i en mobil",
-  "Hide the phone": "Dölj mobilen"
+  "Hide the phone": "Dölj mobilen",
+  "Options": "Alternativ",
+  "Typed answer": "Skrivet svar",
+  "Info": "Info",
+  "Teams type it on their phone. Aa or aa, both count.": "Lagen skriver det i mobilen. Aa eller aa, båda räknas."
 }

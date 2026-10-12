@@ -154,6 +154,9 @@
   color: var(--ink);
 }
 .trail-card {
+  /* A width of its own: sized to its content, the question's field
+     (field-sizing: content) would push it past a phone's edge. */
+  width: 100%;
   max-width: 38rem;
   margin: 0 auto;
   display: flex;
@@ -456,16 +459,37 @@
   text-transform: uppercase;
   opacity: 0.85;
 }
+.trail-paper__write {
+  position: relative;
+  display: block;
+}
+.trail-paper__pencil {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--accent);
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.trail-paper__write:focus-within .trail-paper__pencil {
+  opacity: 0;
+}
 .trail-paper__text {
   box-sizing: border-box;
   width: 100%;
   min-height: 4.5rem;
   field-sizing: content;
-  padding: var(--sp-2) 0;
-  border: 0;
-  border-bottom: 2px dashed var(--border-soft);
-  border-radius: 0;
-  background: transparent;
+  padding: var(--sp-2) 2.8rem var(--sp-2) var(--sp-3);
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 35%, var(--border-soft));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  cursor: text;
   color: var(--ink);
   font: inherit;
   font-size: clamp(1.15rem, 3.6vw, 1.4rem);
@@ -475,8 +499,20 @@
   outline: none;
   transition: border-color 0.2s;
 }
+.trail-paper__text:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border-soft));
+}
 .trail-paper__text:focus {
-  border-bottom-color: var(--accent);
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.trail-paper__text:disabled {
+  border-color: transparent;
+  background: transparent;
+  padding-left: 0;
+  cursor: default;
 }
 .trail-paper__text::placeholder,
 .trail-option input::placeholder {
@@ -560,6 +596,53 @@
 .trail-option.is-right .trail-mark--static {
   background: var(--trail-good);
   color: #fff;
+}
+/* The tick that marks an option right: a quiet circle, green when on. */
+.trail-tick {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-width: 2.6rem;
+  height: 2.6rem;
+  padding: 0 0.7rem;
+  border: 1.5px dashed color-mix(in srgb, var(--trail-good) 45%, var(--border-soft));
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: color-mix(in srgb, var(--trail-good) 55%, var(--muted));
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s, transform 0.2s var(--trail-ease);
+}
+.trail-tick:hover:not(:disabled) {
+  border-style: solid;
+  color: var(--trail-good);
+  background: color-mix(in srgb, var(--trail-good) 8%, transparent);
+}
+.trail-tick:active:not(:disabled) {
+  transform: scale(0.92);
+}
+.trail-tick.is-right,
+.trail-tick.is-right:hover:not(:disabled) {
+  border: 1.5px solid var(--trail-good);
+  background: var(--trail-good);
+  color: #fff;
+  box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--trail-good) 80%, transparent);
+  animation: trail-pop 0.3s var(--trail-ease) both;
+}
+.trail-tick:disabled {
+  cursor: default;
+}
+.trail-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
 }
 .trail-right {
   flex: none;
@@ -649,6 +732,13 @@
 .trail-tool:disabled {
   opacity: 0.4;
   cursor: default;
+}
+.trail-tool.trail-tool--icon {
+  justify-content: center;
+  width: 2.9rem;
+  height: 2.9rem;
+  padding: 0;
+  border-radius: 50%;
 }
 .trail-tool--danger:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--danger) 40%, var(--border-soft));
@@ -910,6 +1000,9 @@
 .trail-template--office { --tint: var(--c-logic); }
 .trail-template--family { --tint: var(--c-time); }
 .trail-template--blank { --tint: var(--muted); }
+.trail-templates--themed .trail-template {
+  --tint: var(--accent);
+}
 .trail-template__art {
   flex: none;
   display: grid;
@@ -954,6 +1047,13 @@
 .trail-template:hover .trail-template__go {
   color: var(--tint);
   transform: translateX(3px);
+}
+
+.trail-templates--themed .trail-template__art {
+  background:
+    radial-gradient(3rem 2rem at 80% 10%, rgba(255, 255, 255, 0.35), transparent 70%),
+    var(--trail-brand);
+  color: var(--trail-on-brand, #fff);
 }
 
 /* ---------- Looks ---------- */
@@ -1247,7 +1347,8 @@
   }
   .trail-kinds {
     width: 100%;
-    grid-template-columns: repeat(3, 1fr);
+    box-sizing: border-box;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .trail-kind {
     flex-direction: column;

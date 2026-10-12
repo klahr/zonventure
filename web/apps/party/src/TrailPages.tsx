@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ApiError, request } from "@zonventure/api";
 import { money } from "@zonventure/hosted";
 import { coverOf } from "@zonventure/play-ui";
-import { TEMPLATE_THEMES, TRAIL_THEMES, TemplatePicker, ThemeShowcase, themeById } from "@zonventure/trail";
+import { Icon, TRAIL_THEMES, TemplatePicker, themeById, themeStyle, type TrailTheme } from "@zonventure/trail";
 import { SPOTS, useConfirm } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import {
@@ -26,7 +26,8 @@ import {
   type TrailStart as Start,
   type TrailSummary,
 } from "./trail.ts";
-import { embedded, outside } from "./embed.ts";
+import { embedded, leave, outside } from "./embed.ts";
+import { GuideShell, ThemeHero } from "./Guide.tsx";
 import { Spot, ThankYouBanner } from "./pictures.tsx";
 
 const MINE = "/app/party/trail/mine";
@@ -44,7 +45,18 @@ function MyTrailsLink() {
   );
 }
 
-/** The start page: what a quiz trail is, what it costs, and a template to begin from. */
+/** The looks the start page shows first; "More themes" shows them all. */
+const FAVOURITES = ["party", "summer", "christmas", "halloween", "jungle", "pirate", "space", "office"];
+
+const param = (name: string) => new URLSearchParams(location.search).get(name);
+
+/**
+ * Start: pick a theme, then, fullscreen, who it is for (a template with
+ * example cards, or blank) and, for a template about someone, whose
+ * birthday it is. The draft is made only then. Each step is in the
+ * address (?theme=, &for=), so back returns to the one before and, from
+ * the landing page's frame, the guide opens out of it.
+ */
 export function TrailStart({ org }: { org: string }) {
   const i18n = useT();
   const t = i18n.t;
@@ -53,12 +65,23 @@ export function TrailStart({ org }: { org: string }) {
   const [missing, setMissing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [theme, setTheme] = useState(TRAIL_THEMES[0]!.id);
-  const [picked, setPicked] = useState(false);
+  const [chosen, setChosen] = useState(() => param("theme"));
+  const [forWhom, setForWhom] = useState(() => param("for"));
+  const [more, setMore] = useState(false);
+  const [person, setPerson] = useState("");
+  const [age, setAge] = useState("");
 
   useEffect(() => {
     getStart(org, lang).then(setStart, () => setMissing(true));
   }, [org, lang]);
+  useEffect(() => {
+    const pop = () => {
+      setChosen(param("theme"));
+      setForWhom(param("for"));
+    };
+    addEventListener("popstate", pop);
+    return () => removeEventListener("popstate", pop);
+  }, []);
 
   if (missing || (start && !start.enabled)) {
     return (
@@ -70,29 +93,112 @@ export function TrailStart({ org }: { org: string }) {
   }
   if (!start) return <p className="party-muted">{t("Loading…")}</p>;
 
-  const pick = async (template: string) => {
+  const theme = themeById(chosen ?? undefined);
+  const step = (url: string) => {
+    history.pushState(null, "", url);
+    setChosen(param("theme"));
+    setForWhom(param("for"));
+    scrollTo(0, 0);
+  };
+  const choose = (th: TrailTheme) => {
+    const url = `${location.pathname}?theme=${encodeURIComponent(th.id)}`;
+    if (embedded) return leave(url);
+    step(url);
+  };
+  const make = async (template: string, who?: { name: string; age: number }) => {
+    if (!theme) return;
     setBusy(true);
     setError(null);
     try {
-      const d = await createDraft(org, template, lang);
+      const d = await createDraft(org, template, lang, who);
       holdTrail({ id: d.id, secret: d.secret });
-      // A look they chose is the one they get; otherwise the template's own.
-      const th = themeById(picked ? theme : (TEMPLATE_THEMES[template] ?? theme));
-      if (th) await setTrailTheme({ id: d.id }, { id: th.id, look: th.look }).catch(() => {});
+      await setTrailTheme({ id: d.id }, { id: theme.id, look: theme.look }).catch(() => {});
       location.href = editURL(d.id);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : t("Something went wrong. Try again."));
       setBusy(false);
     }
   };
+
+  const template = start.templates.find((tp) => tp.name === forWhom && tp.person);
+  if (theme && template) {
+    const n = Number(age);
+    return (
+      <GuideShell
+        style={themeStyle(theme.look)}
+        back={() => history.back()}
+        hero={<ThemeHero theme={theme} />}
+        foot={
+          <button
+            type="button"
+            className="trail-btn trail-btn--primary trail-guide__next"
+            disabled={busy || !person.trim()}
+            onClick={() => void make(template.name, { name: person.trim(), age: n > 0 ? n : 0 })}
+          >
+            {t("Next")}
+            <Icon name="right" size={18} />
+          </button>
+        }
+      >
+        <h1 className="trail-guide__title">{t("Whose birthday is it?")}</h1>
+        <p className="trail-guide__lead">{t("We put the name and the age in the example questions.")}</p>
+        {error && (
+          <p className="party-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="trail-guide__person">
+          <label className="party-field">
+            <span>{t("Name")}</span>
+            <input value={person} maxLength={40} autoFocus autoComplete="off" placeholder="Elsa" onChange={(e) => setPerson(e.target.value)} />
+          </label>
+          <label className="party-field trail-guide__age">
+            <span>{t("Turns")}</span>
+            <input type="number" inputMode="numeric" min={1} max={120} value={age} placeholder="8" onChange={(e) => setAge(e.target.value)} />
+          </label>
+        </div>
+        <button type="button" className="trail-link trail-guide__skip" disabled={busy} onClick={() => void make(template.name)}>
+          {t("Skip, keep the example")}
+        </button>
+      </GuideShell>
+    );
+  }
+
+  if (theme) {
+    return (
+      <GuideShell style={themeStyle(theme.look)} back={() => history.back()} hero={<ThemeHero theme={theme} onChange={() => history.back()} />}>
+        <h1 className="trail-guide__title">{t("Who is it for?")}</h1>
+        <p className="trail-guide__lead">{t("You get example cards to make your own.")}</p>
+        {error && (
+          <p className="party-error" role="alert">
+            {error}
+          </p>
+        )}
+        <TemplatePicker
+          i18n={i18n}
+          templates={start.templates}
+          busy={busy}
+          themed
+          onPick={(name) =>
+            start.templates.find((tp) => tp.name === name)?.person
+              ? step(`${location.pathname}?theme=${encodeURIComponent(theme.id)}&for=${encodeURIComponent(name)}`)
+              : void make(name)
+          }
+        />
+      </GuideShell>
+    );
+  }
+
   const price = start.price.block_cents > 0 ? money(start.price.block_cents, start.price.currency, i18n.current()) : null;
   const priceLine = (
-    <p className="party-price">
+    <p className="trail-guide__chip">
+      <Icon name="users" size={18} />
       {price
-        ? t("Free for up to {{free}} teams · {{price}} for up to {{n}}", { free: start.price.free_teams, price, n: start.price.teams_per_block })
-        : t("Free to make and to play for {{days}} days", { days: start.play_days })}
+        ? t("{{free}} teams free · more from {{price}}", { free: start.price.free_teams, price })
+        : t("Free to play for {{days}} days", { days: start.play_days })}
     </p>
   );
+  const shown = more ? TRAIL_THEMES : TRAIL_THEMES.filter((th) => FAVOURITES.includes(th.id));
 
   return (
     <>
@@ -102,28 +208,34 @@ export function TrailStart({ org }: { org: string }) {
         <section className="party-card">
           <h1>{t("Make your own party adventure")}</h1>
           <p className="party-lead">{t("A little adventure for your party: write the questions, hide the printed cards around the house, the garden or the park, and let the teams set off with their phones. Who wins?")}</p>
-          {priceLine}
         </section>
       )}
       <section className="party-card">
-        <h2>{t("Start from")}</h2>
-        {embedded && priceLine}
-        {error && (
-          <p className="party-error" role="alert">
-            {error}
-          </p>
+        <h2>{t("Pick a theme")}</h2>
+        <p className="party-muted">{t("The look of the cards and the phones. You can change it later.")}</p>
+        {priceLine}
+        <ul className="trail-guide-themes">
+          {shown.map((th) => {
+            const cover = coverOf(th.id);
+            return (
+              <li key={th.id}>
+                <button
+                  type="button"
+                  className="trail-guide-theme"
+                  style={{ ...themeStyle(th.look), ...(cover ? { backgroundImage: `url(${cover.small})` } : {}) }}
+                  onClick={() => choose(th)}
+                >
+                  <span>{t(th.label)}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {!more && (
+          <button type="button" className="party-btn trail-guide-themes__more" onClick={() => setMore(true)}>
+            {t("More themes")}
+          </button>
         )}
-        <TemplatePicker i18n={i18n} templates={start.templates} busy={busy} onPick={(n) => void pick(n)} />
-      </section>
-      <section className="party-card">
-        <h2>{t("Pick a look")}</h2>
-        <ThemeShowcase
-          i18n={i18n}
-          value={theme}
-          onChange={setTheme}
-          onPicked={() => setPicked(true)}
-          sample={{ text: t("How many legs does a spider have?"), options: ["6", "8", "10"], correct: "X" }}
-        />
       </section>
     </>
   );
