@@ -145,6 +145,22 @@ func WithFiles(c Content, files []FileLink) Content {
 	return c
 }
 
+// WithPrints lists the adventure's print materials the buyer prints at
+// home, one download link each; none leaves c as it is.
+func WithPrints(c Content, files []FileLink) Content {
+	if len(files) == 0 {
+		return c
+	}
+	var b strings.Builder
+	b.WriteString("\n\n**" + T(c.Lang, "To print") + "**  \n")
+	b.WriteString(T(c.Lang, "Print these at home before you set off: the adventure starts with them.") + "\n\n")
+	for _, f := range files {
+		b.WriteString("- [" + mdEscape(f.Name) + "](" + f.URL + ")\n")
+	}
+	c.Body += strings.TrimRight(b.String(), "\n")
+	return c
+}
+
 // PartyHost is a hosted event's host link: the page the buyer sets the
 // event up and runs it from. The link is their only key, so the mail
 // says so.

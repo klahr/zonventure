@@ -280,6 +280,9 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Post("/events/{eventID}/files", adminH.AddEventFile)
 			r.Get("/events/{eventID}/files/{fileID}", adminH.GetEventFile)
 			r.Delete("/events/{eventID}/files/{fileID}", adminH.DeleteEventFile)
+			// How the event delivers its adventure's print materials.
+			r.Get("/events/{eventID}/print-delivery", adminH.EventPrintDelivery)
+			r.Put("/events/{eventID}/print-delivery", adminH.SetEventPrintDelivery)
 			r.Post("/events/{eventID}/start", adminH.StartEvent)
 			r.Post("/events/{eventID}/pause", adminH.PauseEvent)
 			r.Get("/events/{eventID}/messages", adminH.ListEventMessages)

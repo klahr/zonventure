@@ -480,3 +480,140 @@ func TestRedemption_LetterLanguage(t *testing.T) {
 		t.Errorf("team link email isn't in Swedish: %q", body)
 	}
 }
+
+// An event may deliver its adventure's print materials differently. An
+// emailed one is a link in the team's email, downloadable by the team's
+// token in its language until the team is withdrawn; a posted one is the
+// organiser's to print and no team's to download.
+func TestRedemption_PrintDelivery(t *testing.T) {
+	boss, db, httpc, _, eventID, cleanup := redemptionStack(t)
+	defer cleanup()
+
+	media := func(content string) int64 {
+		var id int64
+		if err := db.QueryRow(`
+			INSERT INTO adventure_media(adventure_id, kind, mime_type, size_bytes, sha256, content)
+			VALUES ((SELECT id FROM adventures WHERE slug = 'demo'), 'pdf', 'application/pdf', $1, md5($2), $2::bytea)
+			RETURNING id`, len(content), content).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	letterEN, letterSV, selfSV := media("%PDF letter en"), media("%PDF letter sv"), media("%PDF self sv")
+	var graphID int64
+	if err := db.QueryRow(`
+		INSERT INTO adventure_graphs(adventure_id, version, graph)
+		VALUES ((SELECT id FROM adventures WHERE slug = 'demo'), 1, jsonb_build_object(
+		  'translations', '{"sv": {"title": "Demo"}}'::jsonb,
+		  'print_materials', jsonb_build_array(
+		    jsonb_build_object('id', 'letter', 'name', 'Letter', 'delivery', 'posted', 'files', jsonb_build_object('en', $1::bigint, 'sv', $2::bigint)),
+		    jsonb_build_object('id', 'self', 'name', 'Self-print', 'delivery', 'emailed', 'files', jsonb_build_object('sv', $3::bigint)))))
+		RETURNING id`, letterEN, letterSV, selfSV).Scan(&graphID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE events SET graph_id = $1 WHERE id = $2`, graphID, eventID); err != nil {
+		t.Fatal(err)
+	}
+
+	type material struct {
+		ID        string `json:"id"`
+		Adventure string `json:"adventure_delivery"`
+		Delivery  string `json:"delivery"`
+	}
+	var got struct {
+		Materials []material `json:"materials"`
+	}
+	path := "/api/admin/events/" + itoa(eventID) + "/print-delivery"
+	if s := boss.do("GET", path, nil, &got); s != 200 || len(got.Materials) != 2 || got.Materials[0].Delivery != "posted" {
+		t.Fatalf("print delivery = %d %+v", s, got)
+	}
+	if s, e := doErr(boss, "PUT", path, map[string]any{"deliveries": map[string]string{"ghost": "emailed"}}); s != 400 || e.Reason != "invalid_delivery" {
+		t.Errorf("unknown material = %d %+v, want 400 invalid_delivery", s, e)
+	}
+
+	var partner, product struct {
+		ID int64 `json:"id"`
+	}
+	boss.do("POST", "/api/admin/partners", map[string]string{"kind": "truestory"}, &partner)
+	boss.do("POST", "/api/admin/partners/"+itoa(partner.ID)+"/products", map[string]any{"name": "Walk", "event_id": eventID}, &product)
+	buyer := newClient(t, boss.ts)
+	if s := buyer.do("POST", "/api/redeem", map[string]any{
+		"product_id": product.ID, "security_code": "ABCDEF123", "name": "Ada", "email": "ada@buyer.test",
+		"street_address": "Storgatan 1", "postal_code": "111 22", "city": "Stockholm", "letter_lang": "sv", "accepted_terms": true,
+	}, nil); s != 201 {
+		t.Fatalf("redeem = %d", s)
+	}
+	var list struct {
+		Redemptions []struct {
+			ID    int64 `json:"id"`
+			Print []struct {
+				ID string `json:"id"`
+			} `json:"print"`
+		} `json:"redemptions"`
+	}
+	boss.do("GET", "/api/admin/redemptions", nil, &list)
+	rid := list.Redemptions[0].ID
+	if p := list.Redemptions[0].Print; len(p) != 1 || p[0].ID != "letter" {
+		t.Errorf("organiser prints %+v, want only the posted letter", p)
+	}
+	var approved struct {
+		TeamID int64 `json:"team_id"`
+	}
+	if s := boss.do("POST", "/api/admin/redemptions/"+itoa(rid)+"/approve", nil, &approved); s != 200 {
+		t.Fatalf("approve = %d", s)
+	}
+	var token, body string
+	if err := db.QueryRow(`SELECT token FROM teams WHERE id = $1`, approved.TeamID).Scan(&token); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT body_text FROM mail_outbox WHERE kind = 'redemption_team_link'`).Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, "/team/"+token+"/print/self") || strings.Contains(body, "/print/letter") {
+		t.Errorf("email links the wrong materials:\n%s", body)
+	}
+
+	download := func(material string) (int, string) {
+		t.Helper()
+		resp, err := httpc.Get(boss.ts.URL + "/team/" + token + "/print/" + material)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	if s, b := download("self"); s != 200 || b != "%PDF self sv" {
+		t.Errorf("self-print = %d %q", s, b)
+	}
+	if s, _ := download("letter"); s != 404 {
+		t.Errorf("the posted letter downloads for the team: %d", s)
+	}
+
+	// Emailing the letter this season: the team gets it, in Swedish, and
+	// the organiser has nothing left to print.
+	if s := boss.do("PUT", path, map[string]any{"deliveries": map[string]string{"letter": "emailed"}}, &got); s != 200 || got.Materials[0].Delivery != "emailed" {
+		t.Fatalf("override = %d %+v", s, got)
+	}
+	if s, b := download("letter"); s != 200 || b != "%PDF letter sv" {
+		t.Errorf("emailed letter = %d %q, want the Swedish one", s, b)
+	}
+	boss.do("GET", "/api/admin/redemptions?state=all", nil, &list)
+	if p := list.Redemptions[0].Print; len(p) != 0 {
+		t.Errorf("organiser still prints %+v", p)
+	}
+	if s := boss.do("PUT", path, map[string]any{"deliveries": map[string]string{"letter": "posted"}}, &got); s != 200 || got.Materials[0].Delivery != "posted" {
+		t.Errorf("back to the adventure's = %d %+v", s, got)
+	}
+	var raw string
+	if err := db.QueryRow(`SELECT print_delivery::text FROM events WHERE id = $1`, eventID).Scan(&raw); err != nil || raw != "{}" {
+		t.Errorf("print_delivery = %q %v, want no overrides left", raw, err)
+	}
+
+	if s := boss.do("POST", "/api/admin/redemptions/"+itoa(rid)+"/cancel", nil, nil); s != 200 {
+		t.Fatalf("cancel = %d", s)
+	}
+	if s, _ := download("self"); s != 404 {
+		t.Errorf("a withdrawn team still downloads: %d", s)
+	}
+}

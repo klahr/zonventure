@@ -15,9 +15,11 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/eventfile"
+	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/play"
+	"github.com/klahr/zonventure/internal/printmat"
 	"github.com/klahr/zonventure/internal/sitename"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/ws"
@@ -867,4 +869,48 @@ func (h *Handlers) TeamFile(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 	eventfile.Serve(w, f, content)
+}
+
+// TeamPrint downloads a print material the event emails to its buyers,
+// by the team's token: the link in the team's email. It is in the team's
+// language when there is one, and stops working once the team is
+// withdrawn. A material the event posts or keeps for organisers is not
+// the team's to fetch.
+func (h *Handlers) TeamPrint(w http.ResponseWriter, r *http.Request) {
+	var (
+		eventID   int64
+		lang      string
+		withdrawn bool
+	)
+	err := h.DB.QueryRowContext(r.Context(), `
+		SELECT event_id, lang, withdrawn_at IS NOT NULL FROM teams WHERE token = $1
+	`, chi.URLParam(r, "token")).Scan(&eventID, &lang, &withdrawn)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && withdrawn {
+		httpx.Error(w, http.StatusNotFound, "no such file")
+		return
+	}
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+		return
+	}
+	g, o, err := printmat.ForEvent(r.Context(), h.DB, eventID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+		return
+	}
+	for _, pm := range printmat.Effective(g, o) {
+		if pm.ID != chi.URLParam(r, "material") || pm.Delivery != graph.DeliveryEmailed {
+			continue
+		}
+		_, id := printmat.File(pm, lang, g.Language)
+		var content []byte
+		if err := h.DB.QueryRowContext(r.Context(),
+			`SELECT content FROM adventure_media WHERE id = $1 AND kind = 'pdf'`, id).Scan(&content); err != nil {
+			break
+		}
+		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+		eventfile.Serve(w, eventfile.File{Name: pm.Name + ".pdf", Mime: "application/pdf"}, content)
+		return
+	}
+	httpx.Error(w, http.StatusNotFound, "no such file")
 }

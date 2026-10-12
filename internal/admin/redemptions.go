@@ -5,10 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"github.com/klahr/zonventure/internal/emailtpl"
-	"maps"
 	"net/http"
 	"net/mail"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +19,7 @@ import (
 	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/printmat"
 	"github.com/klahr/zonventure/internal/results"
 )
 
@@ -99,7 +98,8 @@ type redemptionDTO struct {
 	// Print is what the organiser prints for it, in its letter's language.
 	Print []printLink `json:"print"`
 
-	graphID int64
+	graphID       int64
+	printDelivery []byte
 }
 
 // RedeemRequest is a box redemption, from a buyer on /redeem or an
@@ -223,32 +223,16 @@ type printLink struct {
 }
 
 // printLinks lists what the organiser prints for an order in lang: the
-// version's posted and organiser-only materials, each in lang, else in
-// the main language, else in any it has.
-func printLinks(g *graph.Graph, lang string) []printLink {
+// version's materials the event posts or keeps for organisers, each in
+// lang, else in the main language, else in any it has.
+func printLinks(g *graph.Graph, o printmat.Overrides, lang string) []printLink {
 	out := []printLink{}
-	if g == nil {
-		return out
-	}
-	for _, pm := range g.PrintMaterials {
+	for _, pm := range printmat.Effective(g, o) {
 		if pm.Delivery != graph.DeliveryPosted && pm.Delivery != graph.DeliveryOrganiser {
 			continue
 		}
-		l := lang
-		if pm.Files[l] <= 0 {
-			l = g.Language
-		}
-		if pm.Files[l] <= 0 {
-			l = ""
-			for _, k := range slices.Sorted(maps.Keys(pm.Files)) {
-				if pm.Files[k] > 0 {
-					l = k
-					break
-				}
-			}
-		}
-		if l != "" {
-			out = append(out, printLink{ID: pm.ID, Name: pm.Name, Lang: l, MediaID: pm.Files[l]})
+		if l, id := printmat.File(pm, lang, g.Language); id > 0 {
+			out = append(out, printLink{ID: pm.ID, Name: pm.Name, Lang: l, MediaID: id})
 		}
 	}
 	return out
@@ -911,7 +895,7 @@ const redemptionSelect = `
 	       r.box_number, r.security_code, r.name, r.email, r.street_address, r.address_2,
 	       r.postal_code, r.city, r.letter_lang, r.post_at, COALESCE(r.posted_at, ''), r.note, r.created_at,
 	       COALESCE(r.decided_at, ''), COALESCE(u.username, ''),
-	       COALESCE(r.team_id, 0), COALESCE(t.name, ''), COALESCE(e.graph_id, 0)
+	       COALESCE(r.team_id, 0), COALESCE(t.name, ''), COALESCE(e.graph_id, 0), COALESCE(e.print_delivery, '{}')
 	FROM partner_redemptions r
 	JOIN partners p ON p.id = r.partner_id
 	LEFT JOIN partner_products pp ON pp.id = r.product_id
@@ -925,7 +909,7 @@ func scanRedemption(sc interface{ Scan(...any) error }) (redemptionDTO, error) {
 	err := sc.Scan(&d.ID, &d.State, &d.PartnerKind, &d.ProductID, &d.ProductName, &d.EventID, &d.EventName,
 		&d.BoxNumber, &d.SecurityCode, &d.Name, &d.Email, &d.StreetAddress, &d.Address2,
 		&d.PostalCode, &d.City, &d.LetterLang, &d.PostAt, &d.PostedAt, &d.Note, &d.CreatedAt,
-		&d.DecidedAt, &d.DecidedBy, &d.TeamID, &d.TeamName, &d.graphID)
+		&d.DecidedAt, &d.DecidedBy, &d.TeamID, &d.TeamName, &d.graphID, &d.printDelivery)
 	d.PartnerName = partnerNames[d.PartnerKind]
 	return d, err
 }
@@ -938,7 +922,7 @@ func (d *redemptionDTO) fillVersion(ctx context.Context, q graphstore.Querier, v
 		return err
 	}
 	d.LetterLanguages = graphLanguages(g)
-	d.Print = printLinks(g, d.LetterLang)
+	d.Print = printLinks(g, printmat.Parse(d.printDelivery), d.LetterLang)
 	return nil
 }
 
@@ -1350,6 +1334,7 @@ func (h *Handlers) sendRedemptionApproved(ctx context.Context, eventID int64, em
 		l.Lang = lang
 	}
 	subject, c := emailtpl.BoxConfirmed(l.Lang, partnerNames[kind], publicURL+"/team/"+teamToken, publicURL+"/play", auth.FormatVoucherCode(voucher), l.Brand.Name)
+	c = emailtpl.WithPrints(c, h.printEmailLinks(ctx, eventID, publicURL, teamToken))
 	c.Picture = l.Cover
 	msg := l.message([]string{email}, subject, c)
 	if h.MailOutbox != nil {

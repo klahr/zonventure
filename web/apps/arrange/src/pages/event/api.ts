@@ -1,4 +1,5 @@
-import { get, patch, post, request } from "@zonventure/api";
+import { get, patch, post, put, request } from "@zonventure/api";
+import type { Delivery } from "@zonventure/graph";
 
 /** internal/admin/handlers.go: eventDTO (detail payload). */
 export interface EventInfo {
@@ -245,6 +246,18 @@ export const uploadFile = (id: number, file: File) => {
 };
 export const fileURL = (id: number, fileId: number) => `${E(id)}/files/${fileId}`;
 export const deleteFile = (id: number, fileId: number) => request<void>(`${E(id)}/files/${fileId}`, { method: "DELETE" });
+/** internal/admin/print_delivery.go eventPrintMaterial */
+export interface EventPrintMaterial {
+  id: string;
+  name: string;
+  adventure_delivery: Delivery;
+  delivery: Delivery;
+}
+export const getPrintDelivery = (id: number, signal?: AbortSignal) =>
+  get<{ materials: EventPrintMaterial[] | null }>(E(id) + "/print-delivery", signal ? { signal } : {}).then((r) => r.materials ?? []);
+/** "" goes back to the adventure's delivery. */
+export const setPrintDelivery = (id: number, deliveries: Record<string, Delivery | "">) =>
+  put<{ materials: EventPrintMaterial[] | null }>(E(id) + "/print-delivery", { deliveries });
 export const deleteMessage = (id: number, messageId: number) => request<void>(`${E(id)}/messages/${messageId}`, { method: "DELETE" });
 export const photoSrc = (id: number, photoId: number) => `${E(id)}/photos/${photoId}/image`;
 export const reviewPhoto = (id: number, photoId: number, status: string) => post<void>(`${E(id)}/photos/${photoId}/review`, { status });

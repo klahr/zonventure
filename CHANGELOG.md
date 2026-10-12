@@ -20,6 +20,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 - Assistants can upload print materials and add them with `put_print_material`.
 - Box redemptions have print buttons for the adventure's posted and organiser-only materials, in the envelope's language.
 - A "To post" tab lists redemptions not yet posted, the earliest post date first, and the list can be narrowed to one envelope language.
+- An event can deliver its adventure's print materials differently from the adventure, such as emailing a letter in summer that is posted in winter.
+- Emailed print materials are download links in the ticket and box confirmation emails, in the team's language, until the team is withdrawn.
 
 ### Fixed
 

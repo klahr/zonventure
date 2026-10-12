@@ -132,3 +132,6 @@
 
 /* A hash from the event's results record, to compare by eye. */
 .ev-hash { font-family: ui-monospace, monospace; font-size: .8rem; word-break: break-all; }
+
+.dz .ev-prints { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--dz-space-2); }
+.dz .ev-prints li { display: flex; align-items: center; justify-content: space-between; gap: var(--dz-space-3); }

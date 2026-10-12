@@ -133,5 +133,12 @@
   "All {{n}} entries add up, and every team's result is the one recorded.": "Alla {{n}} poster stämmer, och varje lags resultat är det som loggades.",
   "The results were changed outside the game:": "Resultaten har ändrats utanför spelet:",
   "The event's results fingerprint:": "Eventets fingeravtryck för resultaten:",
-  "The record so far (the event hasn't ended):": "Loggen hittills (eventet har inte slutat):"
+  "The record so far (the event hasn't ended):": "Loggen hittills (eventet har inte slutat):",
+  "Print materials": "Trycksaker",
+  "How each of the adventure's print materials reaches a buyer of this event.": "Hur varje trycksak i äventyret når en köpare av det här eventet.",
+  "Delivery of {{name}}": "Leverans av {{name}}",
+  "{{delivery}} (as in the adventure)": "{{delivery}} (som i äventyret)",
+  "Posted by you": "Postas av er",
+  "Emailed to the buyer": "Mejlas till köparen",
+  "For organisers only": "Bara för arrangörer"
 }

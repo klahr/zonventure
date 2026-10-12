@@ -46,6 +46,8 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		// The organisers' files, by the team's token: the download links
 		// in the ticket and invitation emails.
 		r.Get("/team/{token}/files/{fileID}", publicH.TeamFile)
+		// Print materials the event emails to its buyers, likewise.
+		r.Get("/team/{token}/print/{material}", publicH.TeamPrint)
 		// Post-event recap. Two halves: the SPA shell at /recap/{token}
 		// and the JSON it fetches on load. Both gate on event state
 		// in the handler — a token from a still-running event 404s

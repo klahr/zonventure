@@ -151,6 +151,8 @@ var catalog = map[string]map[string]string{
 		"Open your team page to claim your own place, share the others with your teammates, and start playing whenever you're ready.": "Öppna lagsidan för att ta din plats, dela de andra med dina lagkamrater och börja spela när du är redo.",
 		"Prefer to type it in? Go to %[1]s and enter your voucher code: **%[2]s**":                                                    "Vill du hellre skriva in den? Gå till %[1]s och ange din vouchers-kod: **%[2]s**",
 		"Files from the organisers": "Filer från arrangörerna",
+		"To print":                  "Att skriva ut",
+		"Print these at home before you set off: the adventure starts with them.":  "Skriv ut dem hemma innan ni ger er av: äventyret börjar med dem.",
 		"Download them before you set off. They are also in the menu of the game.": "Ladda ner dem innan ni ger er av. De finns också i spelets meny.",
 		"Open the team page": "Öppna lagsidan",
 		"The link stays valid while you play. Lost it? Use “I lost my link” on the play page with this email address.": "Länken fungerar så länge du spelar. Tappat bort den? Välj ”Jag har tappat min länk” på spelsidan och ange den här e-postadressen.",
