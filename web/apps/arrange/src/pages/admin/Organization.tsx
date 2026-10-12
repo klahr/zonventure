@@ -515,7 +515,7 @@ function SetupCard({ org, connect, onTrusted, onParty, onVerified, onPublisher, 
         </div>
       </div>
       <Toggle checked={org.trusted} onChange={onTrusted} label={t.t("Invoice billing")} hint={t.t("Lets the org pay for event passes by invoice instead of via Stripe.")} />
-      <Toggle checked={org.verified_creator} onChange={onVerified} label={t.t("Verified creator")} hint={t.t("Their store listings and party offers go public without review, and the store shows a Verified creator badge. Turning it on approves what of theirs is waiting.")} />
+      <Toggle checked={org.verified_creator} onChange={onVerified} label={t.t("Verified creator")} hint={t.t("Their store listings and party adventures go public without review, and the store shows a Verified creator badge. Turning it on approves what of theirs is waiting.")} />
       <Toggle checked={org.party_adventures} onChange={onParty} label={t.t("Party adventures")} hint={t.t("Opens the public creator, where anyone makes a party adventure without an account: /app/party/trail/start/{{slug}}.", { slug: org.slug ?? "" })} />
       <Toggle checked={org.is_publisher} onChange={onPublisher} label={t.t("Catalog publisher")} hint={t.t("The catalog publisher authors the adventures you list in the catalog and commission to other organizations.")} />
       {connect?.platform_fee_enabled && <ConnectRow org={org} status={connect} reload={reload} />}

@@ -128,7 +128,7 @@ export function EventPage({ id }: { id: number }) {
               ? { href: href({ name: "quests" }), label: t.t("Self-guided adventures") }
               : event.party
                 ? { href: href({ name: "parties" }), label: t.t("Hosted") }
-                : { href: href({ name: "events" }), label: t.t("Events") }
+                : { href: href({ name: "events" }), label: t.t("Live events") }
           }
           title={
             <>

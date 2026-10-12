@@ -24,7 +24,7 @@ export function ListingReviewPage({ kind, id }: { kind: ListingKind; id: number 
       throw new Error(reviewError(e, t));
     }
   }, [kind, id]);
-  const back = <a href={href({ name: "listing-reviews" })}>{t.t("← Listing reviews")}</a>;
+  const back = <a href={href({ name: "listing-reviews" })}>{t.t("← Content review")}</a>;
   if (load.error && !load.data) {
     return (
       <Page>

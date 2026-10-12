@@ -11,6 +11,17 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Orders has a print queue: each click opens the next letter of the orders shown, and at the end they can be marked as posted together.
+- A posted letter's name and address are deleted 90 days after posting, or after a box redemption is turned down; the period is under Settings → Legal and in the privacy policy.
+
+### Changed
+
+- The console's Events are now Live events (Liveevent), set apart from Self-guided and Hosted ones.
+- Party offers and booked parties are now party adventures (Partyäventyr), as the public site sells them. In Swedish, Hosted is now Med värd.
+- Listing reviews is now Content review (Innehållsgranskning), and its Swedish texts no longer call what is reviewed an advert.
+
 ## [0.29.1] - 2026-10-13
 
 ### Fixed

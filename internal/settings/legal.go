@@ -26,11 +26,12 @@ type Legal struct {
 	Jurisdiction    string `json:"jurisdiction"`
 	HostingProvider string `json:"hosting_provider"`
 	EmailProvider   string `json:"email_provider"`
-	// Days before player locations, login history and a finished party
-	// are deleted; 0 keeps them.
+	// Days before player locations, login history, a finished party and
+	// a posted letter's postal address are deleted; 0 keeps them.
 	LocationRetentionDays int `json:"location_retention_days"`
 	AuditRetentionDays    int `json:"audit_retention_days"`
 	PartyRetentionDays    int `json:"party_retention_days"`
+	AddressRetentionDays  int `json:"address_retention_days"`
 	// Reviewed drops the pages' "draft template" notes.
 	Reviewed bool `json:"reviewed"`
 	// LastUpdated is the date the pages show, YYYY-MM-DD; empty is today.
@@ -38,7 +39,7 @@ type Legal struct {
 }
 
 // DefaultLegal applies to any value never saved.
-var DefaultLegal = Legal{LocationRetentionDays: 30, AuditRetentionDays: 90, PartyRetentionDays: 14}
+var DefaultLegal = Legal{LocationRetentionDays: 30, AuditRetentionDays: 90, PartyRetentionDays: 14, AddressRetentionDays: 90}
 
 // MaxLegalText is the longest a legal text value may be.
 const MaxLegalText = 300
@@ -64,6 +65,7 @@ func (l *Legal) fields() []legalField {
 		{key: "legal_location_retention_days", env: "ZV_LOCATION_RETENTION_DAYS", days: &l.LocationRetentionDays},
 		{key: "legal_audit_retention_days", env: "ZV_AUDIT_RETENTION_DAYS", days: &l.AuditRetentionDays},
 		{key: "legal_party_retention_days", env: "ZV_PARTY_RETENTION_DAYS", days: &l.PartyRetentionDays},
+		{key: "legal_address_retention_days", env: "ZV_ADDRESS_RETENTION_DAYS", days: &l.AddressRetentionDays},
 		{key: "legal_reviewed", env: "ZV_LEGAL_REVIEWED", flag: &l.Reviewed},
 		{key: "legal_last_updated", env: "ZV_LEGAL_LAST_UPDATED", text: &l.LastUpdated},
 	}

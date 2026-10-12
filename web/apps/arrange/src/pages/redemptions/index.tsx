@@ -10,6 +10,7 @@ import { SPOTS } from "@zonventure/ui";
 import { play } from "@zonventure/api";
 import { decide, listPartners, listRedemptions, updatePurchase, updateRedemption, type Redemption } from "./api.ts";
 import { AddRedemptionDialog, PostDialog } from "./dialogs.tsx";
+import { PrintQueueButton } from "./PrintQueue.tsx";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
 import { PartnersCard } from "./Partners.tsx";
 import { langName, partnerLabel, regionName, useRedemptionError } from "./shared.ts";
@@ -70,14 +71,19 @@ export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
           return { id: s, href: href({ name: "redemptions", tab: s }), label: <>{t.t(LABEL[s])}{n > 0 && <span className="rd-count">{n}</span>}</> };
         })}
       />}
-      {langs.length > 1 && (
-        <label className="rd-filter">
-          <span>{t.t("Envelope language")}</span>
-          <select value={langs.includes(lang) ? lang : ""} onChange={(e) => setLang(e.target.value)}>
-            <option value="">{t.t("All languages")}</option>
-            {langs.map((l) => <option key={l} value={l}>{langName(l, t.current())}</option>)}
-          </select>
-        </label>
+      {(langs.length > 1 || rows.some((r) => (r.print?.length ?? 0) > 0)) && (
+        <div className="rd-toolbar">
+          {langs.length > 1 && (
+            <label className="rd-filter">
+              <span>{t.t("Envelope language")}</span>
+              <select value={langs.includes(lang) ? lang : ""} onChange={(e) => setLang(e.target.value)}>
+                <option value="">{t.t("All languages")}</option>
+                {langs.map((l) => <option key={l} value={l}>{langName(l, t.current())}</option>)}
+              </select>
+            </label>
+          )}
+          <PrintQueueButton orders={rows} reload={list.reload} />
+        </div>
       )}
       {list.error && !list.data ? (
         <ErrorBox message={list.error} retry={list.reload} retryLabel={t.t("Retry")} />

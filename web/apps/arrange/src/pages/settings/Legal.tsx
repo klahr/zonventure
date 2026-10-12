@@ -17,12 +17,13 @@ interface Legal {
   location_retention_days: number;
   audit_retention_days: number;
   party_retention_days: number;
+  address_retention_days: number;
   reviewed: boolean;
   last_updated: string;
 }
 
 type TextKey = { [K in keyof Legal]: Legal[K] extends string ? K : never }[keyof Legal];
-type DaysKey = "location_retention_days" | "audit_retention_days" | "party_retention_days";
+type DaysKey = "location_retention_days" | "audit_retention_days" | "party_retention_days" | "address_retention_days";
 
 /**
  * Who runs the platform, how to reach them and how long data is kept,
@@ -107,7 +108,8 @@ export function LegalTab() {
           <Row>
             {days("location_retention_days", t.t("Player locations and answers"))}
             {days("audit_retention_days", t.t("Login history"))}
-            {days("party_retention_days", t.t("A finished party"))}
+            {days("party_retention_days", t.t("A finished party adventure"))}
+            {days("address_retention_days", t.t("A posted letter's address"))}
           </Row>
         </Card>
         <Card title={t.t("Review")}>

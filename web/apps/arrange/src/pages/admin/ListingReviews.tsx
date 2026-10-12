@@ -29,11 +29,11 @@ export function ListingReviewsPage({ tab, reviewer, admin }: { tab?: string | un
   return (
     <Page>
       <PageHeader
-        title={t.t("Listing reviews")}
-        subtitle={t.t("Store listings and party offers go public once a reviewer approves them. Verified creators skip this.")}
+        title={t.t("Content review")}
+        subtitle={t.t("Store listings and party adventures go public once a reviewer approves them. Verified creators skip this.")}
       />
       <Tabs
-        label={t.t("Listing reviews")}
+        label={t.t("Content review")}
         current={current}
         tabs={[
           { id: "queue", label: t.t("Waiting"), href: href({ name: "listing-reviews" }) },
@@ -160,7 +160,7 @@ export function kindLabel(t: Translator, kind: ListingKind): string {
     case "event":
       return t.t("Self-guided");
     case "party":
-      return t.t("Party");
+      return t.t("Party adventure");
     case "org":
       return t.t("Organisation page");
     default:

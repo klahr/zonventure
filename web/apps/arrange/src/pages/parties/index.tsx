@@ -115,12 +115,12 @@ function Offers({ slug }: { slug?: string | undefined }) {
 
   const newBtn = (
     <Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={() => setCreating(true)} disabled={available.length === 0}>
-      {t.t("New party offer")}
+      {t.t("New party adventure")}
     </Button>
   );
   const about = (
     <HelpPopover
-      label={t.t("About parties")}
+      label={t.t("About party adventures")}
       body={t.t(
         "A parent books a party on your page and pays, with no account. They get a host page to print the cards and share the player link; teams join and play game after game for 14 days, then everything about the players is deleted.",
       )}
@@ -128,7 +128,7 @@ function Offers({ slug }: { slug?: string | undefined }) {
   );
 
   const columns: Column<Row>[] = [
-    { key: "name", header: t.t("Party"), cell: (o) => (
+    { key: "name", header: t.t("Party adventure"), cell: (o) => (
       <span className="evs-namecell">
         <AdventureCover title={o.title} src={o.cover} />
         <span className="evs-stack">
@@ -167,21 +167,21 @@ function Offers({ slug }: { slug?: string | undefined }) {
   else if (!load.data) body = <Loading label={t.t("Loading…")} />;
   else if (offered.length === 0)
     body = available.length > 0 ? (
-      <Empty title={t.t("No party offers yet.")} action={newBtn} illustration={SPOTS.noPartyOffers}>
+      <Empty title={t.t("No party adventures yet.")} action={newBtn} illustration={SPOTS.noPartyOffers}>
         {t.t("Pick an adventure, set a price, and share the booking page with parents.")}
       </Empty>
     ) : (
-      <Empty title={t.t("None of your adventures can be a party yet.")} illustration={SPOTS.noPartyOffers}>
-        {t.t("A party plays without asking where each player stands. See below what stops each adventure.")}
+      <Empty title={t.t("None of your adventures can be a party adventure yet.")} illustration={SPOTS.noPartyOffers}>
+        {t.t("A party adventure plays without asking where each player stands. See below what stops each adventure.")}
       </Empty>
     );
-  else body = <Table columns={columns} rows={offered} rowKey={(o) => o.adventure_slug} rowHref={(o) => href({ name: "parties", slug: o.adventure_slug })} caption={t.t("Party offers")} />;
+  else body = <Table columns={columns} rows={offered} rowKey={(o) => o.adventure_slug} rowHref={(o) => href({ name: "parties", slug: o.adventure_slug })} caption={t.t("Party adventures")} />;
 
   return (
     <>
       <Card
-        title={t.t("Offers")}
-        subtitle={t.t("Children's parties parents book and pay for on your booking page.")}
+        title={t.t("Party adventures for children")}
+        subtitle={t.t("Party adventures for children that parents book and pay for on your booking page.")}
         actions={<>{about}{offered.length > 0 && newBtn}</>}
         flush={offered.length > 0}
       >
@@ -189,7 +189,7 @@ function Offers({ slug }: { slug?: string | undefined }) {
       </Card>
       {unavailable.length > 0 && (
         <details className="pt-unavailable">
-          <summary>{t.t("{{n}} adventures can't be offered as a party", { n: unavailable.length })}</summary>
+          <summary>{t.t("{{n}} adventures can't be offered as a party adventure", { n: unavailable.length })}</summary>
           <ul>
             {unavailable.map((o) => (
               <li key={o.adventure_slug}>
@@ -271,14 +271,14 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
     if (busy || !target) return;
     setError(null);
     if (!Number.isInteger(kidsN) || kidsN < 1 || kidsN > 50) return setError(t.t("Most children must be between 1 and 50"));
-    if (enabled && exampleCents <= 0) return setError(t.t("Set a price before the party can be booked"));
+    if (enabled && exampleCents <= 0) return setError(t.t("Set a price before the party adventure can be booked"));
     setBusy(true);
     try {
       const saved = await request<{ listing_review?: string }>(`/api/admin/party-offers/${encodeURIComponent(target.adventure_slug)}`, {
         method: "PUT",
         body: { enabled: enabled && !blocked, base_cents: minor(base), per_kid_cents: minor(perKid), currency: "sek", max_kids: kidsN, blurb },
       });
-      toast.ok(isNew ? t.t("Party offer created") : t.t("Saved"));
+      toast.ok(isNew ? t.t("Party adventure created") : t.t("Saved"));
       // A draft waits to be submitted for review: the list opens that next.
       props.onClose();
       props.onSaved({ slug: target.adventure_slug, title: target.title }, saved?.listing_review);
@@ -290,7 +290,7 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
 
   return (
     <Dialog
-      title={isNew ? t.t("New party offer") : t.t("Party offer")}
+      title={isNew ? t.t("New party adventure") : t.t("Party adventure")}
       wide
       onClose={() => !busy && props.onClose()}
       onSubmit={() => void submit()}
@@ -329,7 +329,7 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
         )
       )}
       {props.offer && <ListingStatus kind="page" review={props.offer.listing_review} reason={props.offer.reject_reason} listed={props.offer.listed} newerVersion={props.offer.newer_version} />}
-      {blocked && <Callout variant="warning">{t.t("Can't be offered as a party: {{reason}}", { reason: target!.problems![0]! })}</Callout>}
+      {blocked && <Callout variant="warning">{t.t("Can't be offered as a party adventure: {{reason}}", { reason: target!.problems![0]! })}</Callout>}
       <div className="pt-terms">
         <Field label={t.t("Base price (kr)")}>
           <input inputMode="decimal" value={base} onChange={(e) => setBase(e.target.value)} placeholder="0" />
@@ -343,7 +343,7 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
       </div>
       {exampleCents > 0 && (
         <p className="evs-muted evs-small">
-          {t.t("A party of {{n}} children costs {{price}}.", { n: example, price: fmtMoney(exampleCents, "SEK", loc) })}
+          {t.t("A party adventure for {{n}} children costs {{price}}.", { n: example, price: fmtMoney(exampleCents, "SEK", loc) })}
         </p>
       )}
       <Field label={t.t("Description on the booking page")}>

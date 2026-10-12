@@ -55,7 +55,7 @@ export function TicketSalesCard() {
 
   const kinds: Record<string, string> = {
     ticket: t.t("Self-guided ticket"),
-    party: t.t("Party booking"),
+    party: t.t("Party adventure booking"),
     hosted: t.t("Hosted pass"),
     hosted_blocks: t.t("More teams"),
   };
@@ -131,8 +131,8 @@ export function TicketSalesCard() {
       title={t.t("Ticket sales")}
       subtitle={
         isAdmin
-          ? t.t("Self-guided tickets, party bookings and hosted passes, across all orgs. Refunds go back to the buyer's card.")
-          : t.t("Self-guided tickets and party bookings sold for your events, and hosted passes you bought. A refund goes back to the buyer's card from your Stripe balance.")
+          ? t.t("Self-guided tickets, party adventure bookings and hosted passes, across all orgs. Refunds go back to the buyer's card.")
+          : t.t("Self-guided tickets and party adventure bookings sold for your events, and hosted passes you bought. A refund goes back to the buyer's card from your Stripe balance.")
       }
       flush
     >

@@ -67,7 +67,7 @@ export function ListingStatus({ review, reason, listed, kind, newerVersion }: {
           {newerVersion && (
             <>
               {" "}
-              {t.t("The adventure has a newer published version; booked parties play the approved one. Submit the offer to move parties to the newest version.")}
+              {t.t("The adventure has a newer published version; booked party adventures play the approved one. Submit the offer to move them to the newest version.")}
             </>
           )}
         </Callout>

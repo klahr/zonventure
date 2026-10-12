@@ -124,7 +124,7 @@ export function PricingTab() {
       </PriceCard>
       <PriceCard
         title={t.t("Platform fee")}
-        who={t.t("The platform's cut of the tickets and parties orgs sell, taken from the sale; the rest goes to the org's Stripe account. All 0 turns it off.")}
+        who={t.t("The platform's cut of the tickets and party adventures orgs sell, taken from the sale; the rest goes to the org's Stripe account. All 0 turns it off.")}
         keys={["fee_percent_bps", "fee_fixed_cents", "fee_min_cents"]}
         saved={saved}
         draft={draft}

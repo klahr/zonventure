@@ -77,7 +77,7 @@ export function EventsPage() {
   return (
     <Page>
       <PageHeader
-        title={t.t("Events")}
+        title={t.t("Live events")}
         actions={ready.data ? <Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={() => setDialog({})}>{t.t("Schedule event")}</Button> : undefined}
       />
       {events.error && !events.data ? (

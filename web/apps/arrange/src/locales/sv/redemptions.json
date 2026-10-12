@@ -20,5 +20,17 @@
   "Paid {{when}}": "Betald {{when}}",
   "Paid": "Betald",
   "Country": "Land",
-  "Letters aren't posted to that country.": "Brev postas inte till det landet."
+  "Letters aren't posted to that country.": "Brev postas inte till det landet.",
+  "Print queue: {{n}} document": "Utskriftskö: {{n}} dokument",
+  "Print queue: {{n}} documents": "Utskriftskö: {{n}} dokument",
+  "Print queue": "Utskriftskö",
+  "{{n}} order marked as posted": "{{n}} beställning markerad som postad",
+  "{{n}} orders marked as posted": "{{n}} beställningar markerade som postade",
+  "Close": "Stäng",
+  "Mark {{n}} order as posted": "Markera {{n}} beställning som postad",
+  "Mark these {{n}} orders as posted": "Markera de här {{n}} beställningarna som postade",
+  "Open {{i}} of {{n}}": "Öppna {{i}} av {{n}}",
+  "Next: {{doc}} for {{name}}": "Nästa: {{doc}} till {{name}}",
+  "All {{n}} opened. Print them, post the envelopes, then mark the orders as posted.": "Alla {{n}} öppnade. Skriv ut dem, posta kuverten och markera sedan beställningarna som postade.",
+  "Each click opens one PDF in a new tab: browsers don't let one click open more.": "Varje klick öppnar en PDF i en ny flik: webbläsare låter inte ett klick öppna fler."
 }

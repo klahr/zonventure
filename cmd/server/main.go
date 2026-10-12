@@ -343,9 +343,9 @@ func main() {
 	// from completed runs and ages out auth_events. The periods are set
 	// under Settings → Legal and read on every sweep; 0 disables.
 	retDone := retention.Start(ctx, sqlDB, retention.Config{
-		Days: func() (int, int, int) {
+		Days: func() (int, int, int, int) {
 			l := settings.CurrentLegal()
-			return l.LocationRetentionDays, l.AuditRetentionDays, l.PartyRetentionDays
+			return l.LocationRetentionDays, l.AuditRetentionDays, l.PartyRetentionDays, l.AddressRetentionDays
 		},
 		Interval: *retentionInterval,
 	})

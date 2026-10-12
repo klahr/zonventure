@@ -25,6 +25,7 @@ type LegalConfig struct {
 	LocationRetentionDays string
 	AuditRetentionDays    string
 	PartyRetentionDays    string
+	AddressRetentionDays  string
 	LastUpdated           string // YYYY-MM-DD; defaults to today on first render
 	HostingProvider       string // sub-processor name shown in privacy policy
 	EmailProvider         string // sub-processor name shown in privacy policy
@@ -65,6 +66,7 @@ func legalFrom(m LegalConfig, l settings.Legal) LegalConfig {
 	m.LocationRetentionDays = strconv.Itoa(l.LocationRetentionDays)
 	m.AuditRetentionDays = strconv.Itoa(l.AuditRetentionDays)
 	m.PartyRetentionDays = strconv.Itoa(l.PartyRetentionDays)
+	m.AddressRetentionDays = strconv.Itoa(l.AddressRetentionDays)
 	m.Reviewed, m.LastUpdated = l.Reviewed, l.LastUpdated
 	return m
 }
@@ -124,6 +126,9 @@ func (c LegalConfig) defaulted() LegalConfig {
 	}
 	if d.PartyRetentionDays == "" {
 		d.PartyRetentionDays = "14"
+	}
+	if d.AddressRetentionDays == "" {
+		d.AddressRetentionDays = "90"
 	}
 	if d.LastUpdated == "" {
 		d.LastUpdated = time.Now().UTC().Format("2006-01-02")
@@ -372,6 +377,7 @@ func writeLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
 		{"{{LOCATION_RETENTION_DAYS}}", d.LocationRetentionDays},
 		{"{{AUDIT_RETENTION_DAYS}}", d.AuditRetentionDays},
 		{"{{PARTY_RETENTION_DAYS}}", d.PartyRetentionDays},
+		{"{{ADDRESS_RETENTION_DAYS}}", d.AddressRetentionDays},
 		{"{{LAST_UPDATED}}", d.LastUpdated},
 		{"{{HOSTING_PROVIDER}}", d.HostingProvider},
 		{"{{EMAIL_PROVIDER}}", d.EmailProvider},

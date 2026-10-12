@@ -104,17 +104,17 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
     return [
       item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"),
       item("Organizations", Building2, { name: "organizations" }, "organizations"),
-      item("Listing reviews", ClipboardCheck, { name: "listing-reviews" }, "listing-reviews"),
+      item("Content review", ClipboardCheck, { name: "listing-reviews" }, "listing-reviews"),
       item("Logs", Terminal, { name: "logs" }, "logs"),
     ];
   }
   // A listing reviewer, in an organisation or none, also has the queue.
-  const review = user.listing_reviewer ? [item("Listing reviews", ClipboardCheck, { name: "listing-reviews" }, "listing-reviews")] : [];
+  const review = user.listing_reviewer ? [item("Content review", ClipboardCheck, { name: "listing-reviews" }, "listing-reviews")] : [];
   if (!user.memberships.length) return [item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"), ...review];
   return [
     item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"),
     item("Adventures", MapIcon, { name: "adventures" }, "adventures"),
-    item("Events", CalendarDays, { name: "events" }, "events"),
+    item("Live events", CalendarDays, { name: "events" }, "events"),
     item("Self-guided", Compass, { name: "quests" }, "quests"),
     item("Hosted", PartyPopper, { name: "parties" }, "parties"),
     item("Orders", Gift, { name: "redemptions" }, "redemptions"),
@@ -137,7 +137,7 @@ function sectionOf(r: Route): { section: Section; label: string } {
     case "events":
     case "event":
     case "event-control":
-      return { section: "events", label: "Events" };
+      return { section: "events", label: "Live events" };
     case "quests":
       return { section: "quests", label: "Self-guided" };
     case "parties":
@@ -151,7 +151,7 @@ function sectionOf(r: Route): { section: Section; label: string } {
       return { section: "logs", label: "Logs" };
     case "listing-reviews":
     case "listing-review":
-      return { section: "listing-reviews", label: "Listing reviews" };
+      return { section: "listing-reviews", label: "Content review" };
     case "settings":
     case "webhook-log":
       return { section: "settings", label: "Settings" };

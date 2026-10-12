@@ -33,9 +33,12 @@ type Config struct {
 	// ends, for its results page, before the whole event goes. A party
 	// never started goes once its valid_until has passed. Default 14.
 	PartyDays int
-	// Days, when set, replaces the three periods above on every sweep:
+	// AddressDays is how long after a letter is posted (or a box
+	// redemption turned down) its postal address is kept. Default 90.
+	AddressDays int
+	// Days, when set, replaces the four periods above on every sweep:
 	// Settings → Legal's, so a saved change applies from the next run.
-	Days func() (location, audit, party int)
+	Days func() (location, audit, party, address int)
 	// Interval between sweeps. The work is cheap and incremental;
 	// once an hour is plenty.
 	Interval time.Duration
@@ -51,7 +54,7 @@ func Start(ctx context.Context, db *sql.DB, cfg Config) <-chan struct{} {
 	return periodic.Start(ctx, cfg.Interval, func(ctx context.Context) {
 		run := cfg
 		if cfg.Days != nil {
-			run.LocationDays, run.AuditDays, run.PartyDays = cfg.Days()
+			run.LocationDays, run.AuditDays, run.PartyDays, run.AddressDays = cfg.Days()
 		}
 		sweep(ctx, db, run)
 	})
@@ -75,6 +78,9 @@ func sweep(ctx context.Context, db *sql.DB, cfg Config) {
 	}
 	if cfg.PartyDays > 0 {
 		prunePartyEvents(ctx, db, cfg.PartyDays)
+	}
+	if cfg.AddressDays > 0 {
+		clearPostedAddresses(ctx, db, cfg.AddressDays)
 	}
 	// User-deletion grace period is fixed (7 days, set in admin.me),
 	// not operator-tunable, so it has no Days field on Config — the
