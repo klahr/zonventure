@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.29.2] - 2026-10-13
+
 ### Added
 
 - Orders has a print queue: each click opens the next letter of the orders shown, and at the end they can be marked as posted together.
