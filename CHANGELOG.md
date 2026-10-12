@@ -11,1280 +11,486 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-10-12
+
+### Changed
+
+- The party adventure creator ends on one "Ready to play?" screen with teams, email, consent and a single button.
+- The team count's − and + are always on the last screen, greyed out while payments are closed.
+- Free party adventures also email the host link, and the email promises a receipt only when paid.
+- Reopening a party adventure shows the theme's cover above the cards.
+- Dragging a card follows the finger, the other cards slide aside and the list scrolls near the edge.
+
+### Fixed
+
+- Checkout text on white panels is readable on dark themes.
+
+### Removed
+
+- The creator's separate checkout page, save to email, copy link, My party adventures and delete.
+
 ## [0.27.0] - 2026-10-12
 
 ### Changed
 
-- **The party adventure creator is a guide.** Pick a theme, then it
-  opens fullscreen in that look and asks one thing per screen: who it
-  is for, its name, each card in turn, then all the cards on one
-  screen, then ready to play. A party adventure opened again starts on
-  the overview of its cards. The phone's back button steps back through
-  the screens. The console's creator keeps its timeline.
-- **A birthday is about the birthday child.** The birthday template
-  asks for the child's name and age first and writes them into the
-  title and the example questions ("How old is Mia today?" with 6, 7
-  and 8 to pick from), in English and Swedish.
-- **Icons over words on the cards.** The card kinds are Options, Typed
-  answer and Info; moving and deleting a card are arrow and bin
-  buttons; a tick on each option marks the right one. The question's
-  text looks like a field to write in, and example cards say so until
-  they are changed.
-- **The price is said once:** how many teams play free, and what more
-  costs.
+- The party adventure creator is a fullscreen guide in the chosen theme, asking one thing per screen.
+- A reopened party adventure starts on its card overview, and the phone's back button steps back through screens.
+- The birthday template asks for the child's name and age and writes them into the title and questions.
+- Cards use icons for card kinds, moving and deleting, and a tick marks the right option.
+- The price is stated once: how many teams play free and what more costs.
 
 ### Fixed
 
-- **Free party adventures can always be played.** Up to the free
-  number of teams no longer waits for payments to be open.
-- **Cards fit a phone's screen.** A long question no longer pushed the
-  card past the edge of a narrow screen, in the guide and the console.
+- Free party adventures can be played up to the free team count even while payments are closed.
+- Long questions no longer push cards past the edge of a narrow phone screen.
 
 ## [0.26.0] - 2026-10-10
 
 ### Added
 
-- **Content review before anything goes public.** What an organisation
-  puts up for sale — a self-guided event in its store, a party offer on
-  its page — goes public once a listing reviewer approves it. The point
-  is to keep offensive content off the platform, so a review shows
-  everything the listing puts in front of people on one page, raw: the
-  listing, the organisation's page, the adventure's title, icon, cover
-  and description, and every text, picture, sound, film and file of the
-  adventure version it plays. Reject with a reason and the organisation
-  is told by email; what was public before stays up.
-- **Submitting confirms the content.** Edits leave a listing a draft;
-  its creator submits it for review, confirming it contains nothing
-  offensive, hateful or illegal and follows the terms. Who confirmed,
-  and when, is shown to the reviewer. An edit after submitting needs
-  submitting again, and a reviewer's decision names the version they
-  saw, so nothing is approved unseen.
-- **Approval pins the adventure version.** Players get the version that
-  was reviewed: a self-guided event plays the one it was created with,
-  and a booked party plays its offer's approved one even when a newer
-  version is published. Submitting the offer again sends the newer one
-  for review.
-- **Listing reviewers.** A platform admin chooses who reviews, person by
-  person — platform admins included, and an AI assistant's own account.
-  No one reviews their own organisation's listings.
-- **AI review over MCP.** A reviewer's assistant uses
-  `list_listing_reviews`, `get_listing_review` (every text, then the
-  pictures as images), `approve_listing` and `reject_listing`; an
-  organisation's assistant uses `submit_listing_for_review`, with the
-  user's confirmation. Every submission and decision is logged with how
-  it was made (console, assistant, or automatic for a verified
-  creator), for spot-checks under Listing reviews → Recent decisions.
-- **A tamper-evident review log.** Every submission and decision is an
-  entry in a hash chain: each one's SHA-256 covers the entry before it
-  and a fingerprint of exactly what was reviewed, which is kept as the
-  reviewer saw it. The database refuses edits and deletes, and Listing
-  reviews → Recent decisions → "Check the log" recomputes the chain and
-  says which entry was changed, removed or no longer matches its content.
-  The chain's latest hash is mailed to platform admins once a day when
-  it has moved, so even a rewritten log shows against an earlier mail.
-- **Tamper-evident results.** Every event keeps a hash chain of what
-  happened in it — each answer as typed, hints, skips, organisers'
-  rescues and withdrawals, score changes, each team's finish — with the
-  server's time and each team's standing after it. Once recorded,
-  nothing can be edited or removed without breaking the chain. A team's
-  finish is its receipt, shown on its recap page to keep, and the
-  event's end seals it with a fingerprint. "Check results" on the event
-  page recomputes the record and compares it with the scores now shown,
-  so a result changed afterwards — by anyone — shows.
-- **Organisation pages, adventure presentation and player files are
-  reviewed too.** Once an unverified organisation has something for
-  sale, a change to its page (tagline, website, logo, cover) or to an
-  adventure's presentation (title, description, author, intro, outro,
-  meeting point, area, note to buyers, icon, cover) is held back as a
-  proposal. It is submitted with the creator's word and goes live only
-  when a reviewer approves it, so every page, the player app and every
-  email show approved content only. Colours apply at once, and taking a
-  picture or text down still applies at once. On an event sold in the
-  store, a new file reaches players once the listing is approved with
-  it. AI assistants submit these with `submit_listing_for_review`.
-- **What is served is checked against what was approved.** "Check the
-  log" — and a daily check mailed with the log's fingerprint — compares
-  every approved listing's served content (its fields and cover, the
-  adventure version, every text and media item) with the fingerprint of
-  its approval. An edit made around review, straight in the database,
-  shows as "changed outside review" — the organisation's page, the
-  adventure's presentation and players' files included, measured
-  against their latest approval; a platform admin's rename of an
-  organisation shows as "edited since approval". A day's check that
-  finds a problem is mailed to platform admins even when the log hasn't
-  moved.
-- **Saved adventure versions and uploaded media are locked.** The
-  database refuses changes to a saved version's content (only its label
-  changes) and to uploaded media: a change is a new version or a new
-  upload, as the app has always made it.
-- **Reviewers sign their decisions with a passkey.** A listing reviewer
-  adds a passkey under Listing reviews → Your passkeys; every approval
-  and rejection they make in the console is then signed with it, over
-  the decision itself — the action, the listing, the revision reviewed
-  and the reason. The private key never leaves their device (or their
-  passkey provider), so the server can't make a signed decision on its
-  own, and the device must verify the person. The signature goes into
-  the hash-chained log with a copy of the public key, and checking the
-  log checks every signature again. Decisions an AI assistant makes
-  through an API token are not signed, and the log says so.
-- **Verified creators.** A platform admin marks an organisation as a
-  verified creator: its submissions are approved at once, and its page,
-  store cards and ticket pages show a "Verified creator" badge.
+- Listings for sale, such as store events and party offers, go public only after a listing reviewer approves them.
+- A rejection is emailed to the organisation with a reason, and anything already public stays up.
+- Creators submit listings for review, confirming the content is not offensive or illegal; any later edit needs resubmitting.
+- Players get the approved adventure version, even when a newer version is published.
+- Platform admins choose listing reviewers, and no one reviews their own organisation's listings.
+- AI assistants can review and submit listings over MCP with `list_listing_reviews`, `get_listing_review`, `approve_listing`, `reject_listing` and `submit_listing_for_review`.
+- Submissions and decisions go into a tamper-evident hash-chained log, verified under Listing reviews → Recent decisions → "Check the log".
+- Platform admins are emailed the review log's latest hash and a check of served content against approvals daily.
+- Events keep a tamper-evident record of results, with each team's receipt and "Check results" on the event page.
+- Once an unverified organisation sells something, changes to its page and adventure presentation go live only after review.
+- New player files on a store event reach players once the listing is approved with them.
+- The database refuses changes to saved adventure versions and uploaded media.
+- Reviewers sign approvals and rejections with a passkey; decisions made by AI assistants are logged as unsigned.
+- Platform admins can mark an organisation as a verified creator, auto-approving its submissions and showing a badge.
 
 ### Changed
 
-- Everything for sale when this version is installed stays for sale,
-  approved as it is, with the adventure version it plays now. Store
-  listings in an imported organisation bundle wait for review.
-- What the store shows, and what a buyer pays, is the approved listing:
-  clearing the price, pausing the event or turning the offer off still
-  takes it down at once.
-- `/store-cover/event/{id}` serves the approved listing's cover;
-  `?draft=1` serves the uploaded one to the event's organisation and
-  platform admins.
+- The store shows and charges the approved listing; clearing the price, pausing or turning it off still applies at once.
+- `/store-cover/event/{id}` serves the approved cover, and `?draft=1` serves the uploaded one to the organisation and admins.
+- Store listings in an imported organisation bundle wait for review.
+
+### Upgrading
+
+- Everything for sale at upgrade stays for sale, approved as is, with the adventure version it plays now.
 
 ## [0.25.9] - 2026-10-10
 
 ### Added
 
-- **Files for an event's players.** Organisers upload up to 10 files
-  of at most 20 MB each on the event page — the rules as a PDF, a map
-  to print, a packing list. Every team of the event downloads them
-  from the lobby and the game's menu, and invitations and tickets link
-  to them under "Files from the organisers". The files belong to the
-  event, never the adventure, so a duplicated or re-run adventure
-  doesn't carry them.
+- Organisers can upload up to 10 files of 20 MB each for an event's players, linked from the game and emails.
 
-### Changed — party adventure creator
+### Changed
 
-- **The phone beside the card.** The editor shows each card as a
-  team's phone shows it — "Your answer to question 1:", the options,
-  Continue — in the adventure's look, beside the card when there is
-  room and under "See it on a phone" when not. Above the card it says
-  that this is the card you print and hide, and that the right answer
-  isn't printed. The creator's editing page is wider on a computer to
-  make room.
-- **"Start from" comes first** on the start page, with the price, and
-  the looks follow it. A template starts in its own look unless the
-  visitor picks one.
-- **"Get it ready to play"** instead of "Done" while the party
-  adventure is a draft, so it is clear that booking comes next.
-- **A template's cards say they are an example** until the first
-  edit: put in your own names, questions and answers.
-- **The right option keeps its 1, X or 2**, marked green with a
-  "Right" tag, instead of turning into a tick; the hint to tap one
-  sits above the options. The counter reads "Card 2 of 4", so it no
-  longer clashes with "Question 1".
-- **Move earlier, Move later and Delete card keep their words on a
-  phone** instead of bare arrows that read as previous and next card.
-- **"My party adventures"** everywhere instead of "My trails".
+- The party adventure creator shows each card beside a phone preview of how teams see it.
+- The creator's start page puts templates and the price first, and a template starts in its own look.
+- Draft party adventures say "Get it ready to play" instead of "Done".
+- Template cards say they are an example until first edited.
+- The right option keeps its 1, X or 2, marked green with a "Right" tag.
+- Move earlier, Move later and Delete card keep their words on a phone.
+- "My trails" is now "My party adventures" everywhere.
 
 ## [0.25.8] - 2026-10-09
 
 ### Fixed
 
-- **The arrange app's and player's maps load their tiles after a map
-  host change.** A browser kept MapLibre's worker, cached as immutable,
-  with the old Content-Security-Policy, and the worker's tile downloads
-  failed with "NetworkError" (seen in Firefox). The worker's address now
-  names the map host, so a new host fetches a fresh copy.
+- Maps load their tiles again after a map host change instead of failing with "NetworkError".
 
 ## [0.25.7] - 2026-10-09
 
-### Changed — vector maps
+### Changed
 
-- **Every map is a vector map** from OpenFreeMap, free and open to
-  commercial use, instead of OpenStreetMap's own tile server: sharper,
-  with labels that stay upright as you zoom. That is the arrange app's
-  maps, the store's, the recap's, the live view's and the small maps
-  in the player and the designer, which one shared hidden map draws as
-  pictures. Point `ZV_MAP_STYLE_URL` at another MapLibre style to
-  change them all; the privacy policy names the style's host.
-- **No raster tiles by default.** `ZV_MAP_TILE_URL` is now optional: set
-  it and the small maps fall back to those tiles when their picture
-  cannot be drawn. Without it, no browser asks OpenStreetMap's tile
-  server for anything.
-- **The store, recap and live view use MapLibre** from this server's
-  own copy, as the arrange app does; Leaflet is gone.
+- Every map is an OpenFreeMap vector map, and `ZV_MAP_STYLE_URL` points them all at another MapLibre style.
+- `ZV_MAP_TILE_URL` is optional and only a fallback for small maps; by default no OpenStreetMap tiles are requested.
+- The store, recap and live view use MapLibre served by the instance itself.
 
 ### Fixed
 
-- **Maps in scrolling pages zoom with Ctrl (⌘ on a Mac) and the wheel,
-  and move with two fingers on a phone**: the store's map, the recap's
-  and the adventure map in the arrange app. A plain wheel or one finger
-  still scrolls the page, and a hint says how. The live view's map,
-  which fills its panel, zooms with the plain wheel.
-- **Scripts and styles are served gzipped** to browsers that take it.
+- Maps in scrolling pages zoom with Ctrl (⌘ on a Mac) and the wheel, or two fingers on a phone.
+- Scripts and styles are served gzipped.
+
+### Removed
+
+- Leaflet.
 
 ## [0.25.6] - 2026-10-09
 
 ### Fixed
 
-- **The area field from 0.25.5 ships.** That release was tagged without
-  its code: the adventure area, its editor field and its place in the
-  store API arrive now.
+- The adventure area from 0.25.5 now ships; that release was tagged without its code.
 
 ## [0.25.5] - 2026-10-09
 
-### Added — where an adventure is played
+### Added
 
-- **An adventure has an area**: a few words on where it is played,
-  such as "Göteborg · Slottsskogen" or "Hemma". Set it under Edit
-  details or with `update_adventure_meta` (`area`); the store API
-  returns it, and the store shows it on each card and on its map.
+- Adventures have an area, set under Edit details or with `update_adventure_meta`, and shown in the store.
 
 ## [0.25.4] - 2026-10-09
 
 ### Fixed
 
-- **A new organisation logo shows in emails at once.** Its address now
-  carries a version, so mail clients that cached the old logo fetch the
-  new one.
+- A new organisation logo shows in emails at once.
 
 ## [0.25.3] - 2026-10-09
 
 ### Fixed
 
-- **A hub's branch pictures load on the phone.** They were never in
-  what a team may fetch, so a tile showed a broken image unless the same
-  picture was also used in a step.
-- **A hidden score stays hidden on the end screen**, which showed the
-  points, deductions and total anyway.
-- **An adventure's time limit leaves a team alone once it has reached
-  the step the limit sends it to**, instead of throwing it back there
-  when time runs out, and the countdown goes away.
+- A hub's branch pictures load on the phone.
+- A hidden score stays hidden on the end screen.
+- An adventure's time limit no longer throws back a team that already reached the step it sends to.
 
 ## [0.25.2] - 2026-10-09
 
-### Added — texts can quote an earlier answer
+### Added
 
-- **`{{answer:<step>}}` in a text shows what the team answered at that
-  step**, so a name asked once can sign every later letter.
-
-- **A snow backdrop**: snowflakes, stars and specks in the adventure's
-  colours, or ones you pick, falling slowly with motion on. "Falling
-  snow" in the backdrop presets.
+- `{{answer:<step>}}` in a text shows what the team answered at that step.
+- A "Falling snow" backdrop in the adventure's colours or chosen ones.
 
 ### Fixed
 
-- **The start's radius shows on the map** under Edit details.
+- The start's radius shows on the map under Edit details.
 
 ## [0.25.1] - 2026-10-09
 
-### Added — a note to the buyer
+### Added
 
-- **An adventure can carry a buyer note**: Markdown added to the
-  ticket and party-host emails, never shown to players. Use it for
-  parent instructions or printables the players must not see. Set it
-  under Edit details or with `update_adventure_meta` (`buyer_note`).
+- Adventures can carry a Markdown buyer note in ticket and party-host emails, never shown to players.
 
 ## [0.25.0] - 2026-10-09
 
-### Added — a surprise reveal for parties
+### Added
 
-- **A party keeps each game's results secret until the host finishes
-  it.** While the teams play, the phones show no points, place or quiz
-  answers, and a typed answer is "saved" rather than right or wrong.
-  The live scoreboard lists the teams with "?" for points. "Finish
-  game" reveals everything at once: the scoreboard ranks the teams, and
-  each phone's "See your results" opens the team's recap.
-- **On for new parties**, with a checkbox on the host page to show the
-  results as the teams play instead. Parties made before keep showing
-  them.
+- Parties keep results secret until the host finishes the game, then reveal the ranking and each team's recap.
+- The surprise reveal is on for new parties, with a host-page checkbox to show results as teams play.
+
+### Changed
+
+- A search step reads as arriving, with a "Vi är framme" button.
+- Swedish texts say "du" instead of "ni" in the player, pages, console and emails.
+- Events can only be created for a published adventure and stay on that version until moved.
+- Self-guided adventures no longer ask for an under-13 attestation.
+- Creating a self-guided adventure marks and refuses unpublished adventures and says why.
 
 ### Fixed
 
-- **A party adventure's result screen names each question**: "Your
-  answer to question 1:" instead of "Pick the answer to the question."
-  on every row. The phone asks the same way while playing. Parties
-  made before this keep the old wording.
-- **A party adventure's result screen lists the typed-answer cards
-  too**, with what the team typed or the right answer, so "2 of 3
-  right" adds up with the points. The recap counts them the same way.
-- **"Your team: Team Ponies"** instead of "You're on team Team
-  Ponies", **"Worth 1 point"** instead of "Worth 1 points", and
-  **"1 player"** instead of "1 players" on the host page.
-- **A party's host page shows its name once** when it is the same as
-  the adventure's title.
-- **A party's live scoreboard shows the current game alone**: only its
-  teams, "Game 2" where the internal code was, and a clock from that
-  game's start less its own pauses. Once the host finishes the game the
-  board says it is complete and stops the clock, instead of running on;
-  the next game starts it again.
-
-### Changed — arriving instead of searching
-
-- **A search step reads as arriving.** Its button says "Vi är framme"
-  (We're here) instead of "Sök här", and away from every place it says
-  "Du är inte framme än." instead of "Du är inte på någon av platserna
-  att söka på.". At a place it says "Du är vid …", as a zone card does.
-
-### Changed — the player speaks to one person
-
-- **Swedish texts say "du", not "ni"**: in the player, the party and
-  hosted pages, the console, the landing pages and the emails ("Du är
-  framme", "Ditt svar", "Dina laglänkar till …").
-
-### Changed — events need a published adventure, and keep its version
-
-- **An event can only be created for a published adventure**, and is
-  tied to the version published at that moment until moved to a newer
-  one in its settings. Before, an event of an unpublished adventure
-  could be created but never started.
-- **A self-guided adventure asks no under-13 attestation**: its players
-  buy their own tickets, so the arranger cannot know who they are.
-- **Creating a self-guided adventure** marks unpublished adventures in
-  the picker, refuses them before creating anything, and says why when
-  it cannot start.
-
-### Fixed — the start's radius on the adventure page
-
-- **The "Start here" map draws the start's radius** and zooms to show
-  all of it, when teams must be within it to begin.
-
-### Fixed — home screen marks a branch visited when it is finished
-
-- **A home screen's branch is "Visited" once the team has come back
-  through its end**, not as soon as it went in: a team that goes back
-  halfway sees it still open. A branch with no way back to the screen,
-  such as a suspect's own topics, is visited once entered, as before.
+- A party's result screen names each question and lists typed-answer cards, so the totals add up.
+- A party's live scoreboard shows only the current game, with its own clock that stops when finished.
+- The "Start here" map draws the start's radius and zooms to fit it.
+- A home screen's branch is marked "Visited" only once the team has come back through its end.
 
 ## [0.24.5] - 2026-10-09
 
-### Changed — self-guided events sell in SEK
+### Added
 
-- **Self-guided events priced in EUR now sell in SEK**, like everything
-  else. The amount stays as it was set: check the ticket price of any
-  event priced before 0.21.0.
+- Settings → Purchases lists ticket sales with buyer, amount and state, for an org or every org for admins.
+- Platform admins can refund a sale in full, which removes bought teams or calls off the event.
 
-### Added — ticket sales under Settings → Purchases
+### Changed
 
-- **Ticket sales** lists what buyers paid for: self-guided tickets,
-  party bookings, hosted passes and more teams, with the buyer, amount
-  and state. An org sees its own; the platform admin sees every org's.
-- **Refund** (platform admin only) refunds a sale in full. A sale paid
-  to an org's Stripe account takes the org's share back and returns the
-  platform fee. Once Stripe confirms, a ticket's team leaves the game, a
-  party or hosted event is called off, and bought teams are taken away.
+- Self-guided events priced in EUR now sell in SEK at the same amount.
+
+### Upgrading
+
+- Check the ticket price of any self-guided event priced before 0.21.0.
 
 ## [0.24.4] - 2026-10-08
 
-### Changed — questions in the page's own style
+### Changed
 
-- **Questions in the page's own style** instead of the browser's: taking
-  a team out, finishing a game and deleting a party adventure ask in a
-  dialog with Cancel and a named button, in the page's language.
+- Confirmations use the page's own dialog instead of the browser's.
 
 ## [0.24.3] - 2026-10-08
 
-### Changed — a party quiz says "Question", not "Card"
+### Changed
 
-- **A party quiz numbers its questions "Question 1", "Question 2"…**
-  (Fråga 1…) in the creator, on the printed cards and on the phone,
-  instead of "Card 1".
+- A party quiz numbers its questions "Question 1", "Question 2" instead of "Card 1".
 
 ## [0.24.2] - 2026-10-08
 
-### Changed — joining a party is just a team name
+### Changed
 
-- **No "How many are you?"** on a party's join page: a team is one
-  phone, and counts as one player.
-- **🎲 next to Team name** rolls a name, such as "The Speedy Foxes" or
-  "De snabba rävarna". A rolled name that is taken rolls again.
-- **The welcome says "You're on team …"** for a party, instead of
-  naming the team twice as both player and team.
-- **A party quiz card says "Card 1" once**: under the card's title, the
-  phone asks to pick or type the answer to the card.
+- Joining a party asks only for a team name, and each phone counts as one player.
+- A 🎲 button next to Team name rolls a random team name.
 
 ## [0.24.1] - 2026-10-08
 
-### Changed — Stripe API version 2026-09-30.endive
+### Changed
 
-- **stripe-go upgraded to v87** (from v82), which speaks Stripe API
-  version `2026-09-30.endive`. The Stripe webhook endpoint must be on
-  that same version: events of any other release train are refused
-  with a 400 "bad signature" (the log says which version arrived).
+- Breaking: Stripe API version is now `2026-09-30.endive`, and the Stripe webhook endpoint must use the same version.
 
 ## [0.24.0] - 2026-10-08
 
-### Changed — the tutorial is seven short, guided lessons
+### Changed
 
-- **Tutorials** (⋮ → Tutorials) lists seven lessons on a panel over the
-  canvas: Create an adventure, Places and check-ins, Puzzles and hints,
-  Choices, The look, Test it and Publish. Each is a few steps, ticks
-  itself off once done, and can be done in any order, on any adventure,
-  and again. The one to do next stands out.
-- **A lesson shows one thing at a time**: a card says what to do, a
-  pulsing arrow points at it, and the rest of the designer is dimmed and
-  locked so nothing is touched by mistake. Steps move on by themselves
-  as they get done; text to write comes with Copy and "Write it for me".
-- **Back, Start over, Pause and Stop** on every card. Back holds a step
-  already done until Next; Pause hands the designer back and leaves a
-  "Resume" pill. Progress is kept per account in this browser, so a
-  lesson picks up where it was left, after a reload too.
-- **A lesson only counts what it adds**: started on an adventure that
-  already has places or puzzles, it asks for new ones instead of
-  skipping to the end.
-- **Test it follows the team**: it asks for a place under "Team is at"
-  only once the previewed team stands at a check-in, and shows "+5 min"
-  unlocking a hint once it reaches a puzzle.
-- **Create an adventure** opens the filled-in wizard and carries on in
-  the designer with the welcome text. Phones keep the docked guide.
-- **Stopping a tutorial asks in the app's own dialog**, on a phone too,
-  not the browser's.
+- Tutorials are seven short, guided lessons that can be done in any order, on any adventure.
+- A lesson shows one step at a time with a pulsing arrow, dimming and locking the rest of the designer.
+- Lesson cards have Back, Start over, Pause and Stop, and progress is kept per account in the browser.
+- A lesson counts only what it adds, so it works on adventures that already have content.
 
 ## [0.23.0] - 2026-10-07
 
-### Added — a designer tutorial
+### Added
 
-- **Tutorial: your first adventure** is a third choice under New
-  adventure, and a button on an empty Adventures list. The wizard comes
-  filled in with the example, Erik's stolen elephants in the Jungle look,
-  and the designer opens with a guide docked over the canvas.
-- The guide has ten steps: welcome text, a zone, a check-in, a puzzle, a
-  hint, a choice, tying up the ends, the look, Test play and publishing.
-  Each says what to do with the designer's own labels, offers example
-  text to copy, and has a button that opens the right place. Steps tick
-  themselves off as the draft gets there, or by hand. It can be hidden
-  to a pill, and is started on any adventure from ⋮ → Tutorial.
-- **On a phone** the guide is a sheet along the bottom showing the step
-  at hand, and it tucks away into a pill once its button has opened a
-  form. Its words follow the phone's simple step form, steps go straight
-  into the outline, and the choice comes ready-wired, left to the end and
-  right to a story leading back, since nothing can be dragged.
-- Progress lives in the browser, per adventure. In English and Swedish.
-  The welcome after signing up offers it too.
+- "Tutorial: your first adventure" fills in an example and docks a ten-step guide over the designer.
+- On a phone the tutorial guide is a sheet along the bottom that follows the simple step form.
+- The tutorial is in English and Swedish and is offered after signing up.
 
 ### Fixed
 
-- **The designer no longer goes blank** when a step whose text was left
-  empty is opened after a reload: the server leaves an empty text out,
-  and the step's discussion choked on it.
-- **A new "Check in at a place" step has a text to write in**, like a
-  story; it came with only a title, so teams were sent off with no
-  words.
-- **The theme editor's "Save" is now "Share with organisation"**, which
-  is what it does: a theme's changes save by themselves, and the button
-  only copies it to the organisation's themes.
+- The designer no longer goes blank when a step with empty text is opened after a reload.
+- A new "Check in at a place" step has a text to write in.
+- The theme editor's "Save" is now "Share with organisation", which is what it does.
 
 ## [0.22.0] - 2026-10-07
 
-### Added — pictures in emails
+### Added
 
-- **Players' and hosts' emails show the adventure's cover** across the
-  top of the card: its own cover picture, else its starter theme's, else
-  a house banner. The team invitation, the ticket and gift-box team
-  links, lost links, the hosted player link, the party host link, the
-  round summary, email steps during the game, and the party adventure's
-  paid, keep-it and ended mails.
-- **Account emails show a small picture** above the heading: verify,
-  email change, password reset and the party adventure's confirm and
-  sign-in links an envelope, a new gift-box redemption a gift box.
-- Pictures are JPEG at the instance's public URL (`/assets/email/…`,
-  `/assets/email/covers/<theme>.jpg`, from
-  `internal/server/web/assets/email`), so every mail client shows them;
-  without `ZV_PUBLIC_URL` no picture is sent. Each has alt text, and an
-  email reads the same with images blocked. The mapping is in
-  `internal/emailtpl/pictures.go`; `make theme-cover` now also writes the
-  email cover and `make illustration … EMAIL=1` an email picture.
-- The console's email previews show them too.
+- Player and host emails show the adventure's cover, and account emails a small picture.
+- Email pictures are served from `ZV_PUBLIC_URL`; without it no pictures are sent.
+- Illustrations on the player, party and console pages, including empty lists and the 404 page.
 
-### Added — illustrations
+### Changed
 
-- **Pictures for the players' and party pages** (ILLUSTRATIONS.md): the
-  play app's "Open your invitation link" and "Can't reach the game"
-  screens, the party thank-you pages (booked, payment received, party
-  adventure paid) with a banner across the card, an empty My trails,
-  "Nothing here" and a party that can't be found. The 404 page shows a
-  picture above a small "404" (`/assets/illustrations/not-found.webp`).
-- **Pictures in the console**: a banner across the welcome dialog, a
-  picture beside the sign-in form (a strip above it on a phone), one
-  with "a reset link is on its way", in the lobby for someone with no
-  organisation, and above "Something went wrong". Empty lists show one
-  too — events, self-guided adventures, adventures, teams, party
-  offers, purchases and redemptions (`Empty`'s `illustration`; `Dialog`
-  takes a `banner`). The pictures live in `@zonventure/ui`
-  (`SPOTS`, `WIDE`); `make illustration` adds one.
-
-### Changed — the store, recap and live board wear the look
-
-- **Store**: an event with no cover of its own shows its adventure's
-  look cover (its own picture, else its starter theme's) on the store
-  card and the event page, and the adventure's title is set in the
-  look's title font (`look` on store items; `{{LOOK_FONT}}` in
-  store-event.html).
-- **Recap**: the look's second colour, page colour and text apply as on
-  the live board, the cards keeping a readable palette on that colour;
-  the cover sits above the title, in the look's font (`look` on the
-  recap).
-- **Live board**: the title, the pre-start and the finish card use the
-  look's title font, and the cards show its cover (`look` on the
-  snapshot).
-- The look's fonts and starter covers are served from the player's
-  build (`/assets/look-font/{key}.css`); an adventure's own cover is
-  public at `/adventure-assets/cover/{slug}`, as its icon is.
-
-### Changed — tidier public pages
-
-- **Privacy and Terms** use the site's tokens, topbar and footer and
-  follow the light/dark choice; until Settings → Legal is filled in,
-  they show a styled page saying what is missing instead of plain text.
-- **The topbar** of the built-in pages (manual, store, redeem, legal)
-  is the marketing site's: a light glass bar, EN/SV as text, the menu
-  button at the end; it stays dark over a dark hero.
-- Shared `--font-brand`, `--font-body`, `--danger` (with a dark
-  variant) and radius tokens in page-tokens.css; the footer's CSS lives
-  once, in topbar.css.
-
-### Changed — the party pages wear the adventure's look
-
-- **The join page, the host page and the booking page** take the
-  adventure's colours, title font and backdrop, and its cover picture
-  across the top, so they match the game the teams then play. The join
-  info, the host page's party and a public party offer carry the look
-  (`look`, and `theme` and `cover_url` where they were missing); a
-  picture backdrop stays on the phones.
-- **My trails** shows each party adventure's look as a little cover
-  beside its name (`theme` on `/api/trail/mine`).
-
-### Changed — a tidier console
-
-- **Covers where there is no icon**: the adventures list and page, the
-  events and parties lists and the event pickers show an adventure's
-  look cover — its own picture, else its starter theme's — in place of
-  its initials. The adventure and event lists carry `theme` and `cover`
-  (`adventure_theme`, `adventure_cover` on events).
-- **Settings → Themes** sits in a card like the other tabs and asks
-  before removing a theme in the console's own dialog. **Pricing**,
-  **Legal** and **Themes** say Saved, or what went wrong, in a toast.
-- **New adventure** shows its first page in the designer's phone
-  frame, which fits a narrow phone, and picks the audience with the
-  same segmented control as the designer and the theme editor.
-- **The party adventure creator** fills the content area, its card row
-  pinned in view, instead of starting below the fold. Its templates are
-  tinted in the look each one starts in.
+- The store, recap and live board use the adventure's look, with its cover, colours and title font.
+- An adventure's own cover is public at `/adventure-assets/cover/{slug}`.
+- Privacy and Terms match the site's style and say what is missing until Settings → Legal is filled in.
+- The built-in pages use the marketing site's topbar.
+- Party join, host and booking pages wear the adventure's look and cover.
+- Console lists show an adventure's look cover where it has no icon.
+- Settings → Pricing, Legal and Themes confirm saves or errors in a toast.
+- The party adventure creator fills the content area with its card row pinned in view.
 
 ### Fixed
 
-- **Printed cards stay readable in light looks**: a card's header text
-  (and a cover's title band) is black on a light look colour and white
-  on a dark one, as in the creator, instead of always white — Retro
-  80s' yellow information cards and Space's light blue were unreadable.
+- Printed cards stay readable in light looks.
 
 ## [0.21.1] - 2026-10-07
 
 ### Fixed
 
-- `make upgrade` on a host that pulls from ghcr.io pins the release in
-  `.env` (`VERSION=X.Y.Z`), so a later bare `docker compose up -d` keeps
-  running it instead of falling back to the host's stale `:latest`. It
-  also picks the newest X.Y.Z tag the same way `make latest` does.
+- `make upgrade` pins the release as `VERSION=X.Y.Z` in `.env`, so a bare `docker compose up -d` keeps it.
 
 ## [0.21.0] - 2026-10-07
 
-### Changed — legal settings in the console
+### Added
 
-- **Settings → Legal** (platform admin) sets the company (name,
-  organisation and VAT numbers, address), contact and data-protection
-  emails, jurisdiction, the sub-processors named in the privacy policy,
-  how many days player locations, login history and finished parties
-  are kept, and the lawyer review. A preview shows /privacy and /terms
-  with the values as typed. A save applies at once to the pages, the
-  seller line by every buy button and the landing page, and to the
-  retention sweeper from its next run; one that changes what the pages
-  say moves their Last updated date to today.
-- **Upgrading:** the first start copies `ZV_COMPANY_*`,
-  `ZV_CONTACT_EMAIL`, `ZV_DPO_EMAIL`, `ZV_JURISDICTION`,
-  `ZV_HOSTING_PROVIDER`, `ZV_EMAIL_PROVIDER`, `ZV_LEGAL_REVIEWED`,
-  `ZV_LEGAL_LAST_UPDATED` and `ZV_*_RETENTION_DAYS` in once, logging
-  each; after that they are ignored. The `-retention-*-days` flags are
-  removed. Map tiles stay env vars for now.
-
-### Changed — prices in the console, in SEK
-
-- **Settings → Pricing** (platform admin) sets the event pass (price
-  per player, free players per event), the hosted pass (per block of
-  15 teams) and the platform fee on what orgs sell, in SEK including
-  VAT. A save applies to the next checkout without a restart; past and
-  open purchases keep their amounts. Defaults: 49 kr per player after
-  15 free, 149 kr per block, no fee. Nothing is set in Stripe.
-- **Removed:** `ZV_PRICE_PER_PLAYER_CENTS`, `ZV_FREE_PLAYERS_PER_EVENT`,
-  `ZV_HOSTED_BLOCK_CENTS`, `ZV_HOSTED_CURRENCY` and
-  `ZV_PLATFORM_FEE_*`. A server started with one set logs that it is
-  ignored. **Upgrading:** enter your prices under Settings → Pricing,
-  then drop the vars.
-- **SEK only.** The event pass is sold in SEK (was EUR), and orgs sell
-  tickets and parties in SEK: the currency pickers are gone and another
-  currency is refused. A listing priced in another currency keeps it
-  until its price is next saved. Migration `0116_sek_only`.
-
-### Changed — a clearer theme editor
-
-- The theme editor shows its themes as a strip of cards in their own
-  colours, title face and accent, and folds the look's controls into
-  Colours, Text, Cards and buttons, Background, and Motion and
-  celebration, beside a phone preview of a sample puzzle that stays in
-  view, the same in an adventure and in Settings. Save for the
-  organisation is now just **Save**.
-- **Main look** under Adventure settings offers the organisation's
-  themes and the starters beside the adventure's own. Picking one the
-  adventure lacks applies it and adds a copy to its themes.
-- **Settings → Themes** edits the organisation's theme library outside
-  any adventure: new from a starter, rename, change, duplicate, delete,
-  each change saved by itself and previewed on a sample step. Pictures
-  and sounds are not offered there. Removing a library theme moved here
-  from the New theme gallery.
-
-### Fixed
-
-- A theme saved to the organisation's library no longer keeps the
-  adventure's cover picture, as it already dropped its picture and
-  sounds.
-
-### Added — your own cover picture
-
-- The designer's theme editor has a **Cover picture**: upload a
-  picture, and an adventure in that look shows it across the top of
-  the join page and the players' welcome and on a quiz trail's printed
-  cover, in place of its starter theme's. It is stored in the look's
-  style (`cover`, a media id of the adventure's own), copied when the
-  adventure is duplicated, and kept when another starter theme is
-  picked.
-
-## [0.20.0] - 2026-10-06
-
-### Added — cover pictures for party adventure looks
-
-- **Every party adventure look has a cover picture** (all 14, made with
-  Gemini from the prompts in THEMES.md). It shows
-  behind the sample card on the start page (and the landing page's
-  creator), across the top of the join page and the players' welcome,
-  and as a banner on the printed cover with the QR code. The phone
-  learns the look from a new `theme` on the play state's event and the
-  join info (`adventures.trail_theme`).
-- Pictures live in `web/packages/play-ui/src/covers` (WebP, 800 and
-  1600 px, `THEME_COVERS`) and `internal/trail/covers` (JPEG, for the
-  PDF). `make theme-cover ID=… SRC=…` makes all three from one image.
-- The printed cover's title goes white, over a soft shadow, on a dark
-  picture (Space, Retro 80s, Detective), measured from the picture.
-- The join page no longer repeats the title above itself when the party
-  and the adventure share a name.
-
-### Changed — the printed cards wear the look
-
-- **The cards PDF follows the adventure's look, easy on the printer**:
-  each card's header is the creator's gradient (the look's two colours,
-  as `--trail-brand`; information cards as `--trail-info`) with white
-  text and a white number badge; the rest of the card — outline,
-  options, hints — is plain grey and black. The cover matches. Fonts
-  stay Helvetica: the look's fonts exist only as web fonts.
-
-### Changed — less scrolling in the landing page's creator
-
-- **The creator's frame fits its content**: the start page tells the
-  landing page its height (a `zv-trail-frame` message, same origin), so
-  only the page scrolls; the editor asks for the screen's height and is
-  brought into view, its bar and card row pinned.
-- **Looks wrap in rows** instead of a sideways strip; on the start page
-  they are compact swatches, the name shown on the sample card.
-- The editor's card row no longer scrolls the landing page around the
-  frame when a card is selected.
-
-## [0.19.1] - 2026-10-06
-
-### Added — switch party adventures on per organisation
-
-- **Site admin → organisation → Settings → Party adventures** opens or
-  closes that org's public creator (`organizations.quiz_trail_enabled`,
-  `POST /api/admin/organizations/{id}/party-adventures`). Enabled orgs
-  show a "Party adventures" badge in the organisation list and on the
-  org's page. No more SQL to turn it on.
-
-## [0.19.0] - 2026-10-06
-
-### Changed — party adventures are free for small parties
-
-- **Free for up to 3 teams per game.** Hosting with no blocks — now the
-  default at the public checkout and in Host it — makes the event at
-  once, with nothing to pay. More teams cost as before: 149 kr per 15,
-  bought at checkout or later from the admin page ("Up to 15 teams for
-  149 kr"). Migration `0115` lets an event hold no blocks.
-- A free public checkout mails the admin link, and counts the email as
-  confirmed, only when the browser is signed in with that address; the
-  page opens the admin page straight away either way.
-
-### Added — looks for party adventures
-
-- **A party adventure has a look**: one of 14 starter themes (Party,
-  Sunshine, Candy, Jungle, Pirate, Space…), picked from "Look" in the
-  creator. The card in the creator wears it at once — colours and title
-  font — and it is saved as the adventure's own look, so the teams'
-  phones get it too (`PUT …/cards/theme`, validated as any look).
-  Each template starts in a look of its own.
-- **The start page tries the looks on**: a sample card cycles through
-  them until the visitor touches the page; the one on show, or the one
-  they tap, is the new adventure's.
-- The starter themes moved to `@zonventure/play-ui`. Migration
-  `0114_trail_theme`.
+- The theme editor takes an uploaded cover picture, shown on the join page, welcome and printed cover.
 
 ### Changed
 
-- **Quiz trails are now "party adventures" (partyäventyr)**, sold as a
-  casual little adventure for a party rather than a quiz walk: the
-  landing page section (`/#party-adventure`), the creator, the console,
-  the emails and the templates' names. Code ids keep `trail`.
-- A team's **recap opens once the team is done** — it finished, or its
-  hosted game was finished — instead of only when the whole event ends,
-  which for a self-guided or hosted event meant months or days.
+- Settings → Legal sets company details, contacts, jurisdiction, sub-processors and retention days, with a preview.
+- Saving legal settings updates /privacy, /terms and seller lines at once, and the retention sweeper on its next run.
+- Settings → Pricing sets the event pass, hosted pass and platform fee in SEK, applied without a restart.
+- Breaking: tickets, parties and the event pass are sold in SEK only; other currencies are refused.
+- The theme editor shows themes as cards, groups its controls and keeps a phone preview in view.
+- Main look offers the organisation's themes and the starters, copying a picked one into the adventure.
+- Settings → Themes edits the organisation's theme library outside any adventure.
 
-### Added — the public quiz trail
+### Fixed
 
-- **`/o/{slug}/trail`**: anyone makes a quiz trail on a phone with no
-  account, where the org sells them (`organizations.quiz_trail_enabled`,
-  set by a site admin). Pick a template, write the cards in the same
-  creator as the console's, and pay the hosted pass to play. "Free to
-  make · 149 kr to play for 14 days."
-- A trail is a hidden adventure of the seller org
-  (`adventures.trail_hidden`: kept out of its adventure lists, the
-  catalog, MCP, party offers and Host it) plus a `trails` row. A draft
-  opens with a secret only the maker's browser holds; **Copy link**
-  carries it in the URL fragment.
-- **Save to email**: a link confirms the address and saves every trail
-  the browser holds there; **My trails** (`/trail/mine`) lists them, and
-  a sign-in link opens them from any browser. Neither says whether an
-  address has trails.
-- **Checkout** asks for the email the admin link goes to, the teams per
-  game ("More than 15 teams in one game?") and, for a kids' trail, the
-  guardian's consent; payment makes the hosted event and mails the
-  admin link (`trail_paid`). Where hosting is free it opens at once.
-- The **host page** edits the trail (changes apply from the next game)
-  and, a week into play, offers **Keep it**: in the console
-  (`#/keep/{token}`, after signing in or up) the trail moves into the
-  keeper's org as an ordinary quiz trail, and its event goes. The same
-  link is mailed on day 7 (`trail_keep`).
-- An hourly sweeper deletes unpaid drafts 30 days after their last edit
-  and paid trails when their event has ended (`trail_ended`).
-- Migration `0112_quiz_trail`: `organizations.quiz_trail_enabled`,
-  `adventures.trail_hidden`, `trails`, `trail_email_tokens`.
+- A theme saved to the organisation's library no longer keeps the adventure's cover picture.
 
-### Added — quiz trails in the console
+### Removed
 
-- **New adventure → Quiz trail (simple)**: an adventure written as a row
-  of cards — a question with three options (1, X, 2), a question with a
-  typed answer, or a card to read — from a template (birthday party,
-  kids' trail, office or team, family, blank), in Swedish or English.
-  The creator works on a phone: the selected card above, a timeline of
-  numbered cards below, hold and drag to reorder (or Move earlier/later),
-  Undo after a delete or move. It saves as you type.
-- The cards make the graph, one way (`internal/trail`): each card is a
-  step with no place. The question is on paper; the phone shows "Card N"
-  and the options, or a field for a typed answer (one try, a point when
-  right). Quiz answers count at the end, as on a tipspromenad.
-- Saving keeps the draft; **Done** publishes when every card is finished
-  and says what each still needs otherwise. A hosted game (and Host it)
-  publishes the latest cards first, so edits between games apply.
-- **Print cards** (two to an A4 sheet: number, question, options) and an
-  **answer key**, as PDFs; from a hosted event the cards come after a
-  cover with the player link's QR code. The creator and the host page
-  say when the cards changed since they were printed.
-- **Open in the designer** hands a trail over for good; a trail whose
-  draft was changed in the designer is read-only in the creator.
-- The creator lives in a shared package, `@zonventure/trail`.
-- Migration `0111_trail_cards`: `adventures.trail_cards`,
-  `trail_revision`, `trail_graph`, `trail_printed`, `trail_template`,
-  `trail_kids`.
+- Breaking: `ZV_PRICE_PER_PLAYER_CENTS`, `ZV_FREE_PLAYERS_PER_EVENT`, `ZV_HOSTED_BLOCK_CENTS`, `ZV_HOSTED_CURRENCY` and `ZV_PLATFORM_FEE_*` are ignored.
+- The `-retention-*-days` flags.
 
-### Added — paying for hosted events
+### Upgrading
 
-- **A hosted event costs a pass per block of 15 teams per game**:
-  `ZV_HOSTED_BLOCK_CENTS` (default 14900 — 149 kr — where a platform
-  fee is set, free otherwise) in `ZV_HOSTED_CURRENCY` (default sek).
-- **Host it**, on an adventure's page in the console: a hosted event of
-  the org's own adventure, run from the console or the host link mailed
-  to the arranger. Paid on the platform's own Stripe account (no
-  connected account); made at once where hosting is free. "More than 15
-  teams in one game?" buys more blocks.
-- **Add 15 teams** on the host page and the console: one more block per
-  game, paid in a tab of its own (the host link never goes to the
-  payment provider), landing on `/app/party/paid`. A refund takes the
-  block back.
-- **A party's platform fee is the pass price** instead of the percent
-  formula, where a platform fee is set. An offer must cost more than the
-  pass and be in its currency.
-- The console no longer makes teams or player places for a hosted
-  event, schedules it or starts it (`event_hosted`): its teams join from
-  the player link, and its games start as they do.
-- Migration `0110_hosted_pricing`: purchase kinds `hosted` and
-  `hosted_blocks`; `ticket_purchases.blocks`, `buyer_org_id`,
-  `adventure_slug`.
+- The first start copies `ZV_COMPANY_*`, `ZV_CONTACT_EMAIL`, `ZV_DPO_EMAIL`, `ZV_JURISDICTION` and other legal vars once, then ignores them.
+- `ZV_HOSTING_PROVIDER`, `ZV_EMAIL_PROVIDER`, `ZV_LEGAL_*` and `ZV_*_RETENTION_DAYS` are likewise copied once, then ignored.
+- Enter your prices under Settings → Pricing, then drop the old price vars.
+- A listing priced in another currency keeps it until its price is next saved (migration `0116_sek_only`).
 
-### Changed — hosted events
+## [0.20.0] - 2026-10-06
 
-- **A party is a hosted event that plays game after game.** Its first
-  game must start within 60 days of purchase; from then it plays for 14
-  days. Teams join from one **player link** (`/j/{token}`, shown as a QR
-  code on the host page and on the printed cards), name themselves and
-  say how many they are; the first team to join starts a game. The host
-  no longer makes teams or hands out join codes, and there is no Start
-  or End button.
-- **Finish game** on the host page closes the game, signs its phones out
-  and mails the host a summary: teams, players, ranking, and how many
-  teams got each question right. A game nobody has played for 3 hours
-  finishes by itself; an event whose days are over ends, finishing its
-  game first. Each game plays the graph as it was when it opened, so
-  what the host changes (personalisation, mode, places) between games
-  applies from the next one; changes are refused during a game.
-- A game takes up to 15 teams; a team name is unique within its game.
-  The host can take a team out of the game. "Send by email" mails the
-  player link to one address (50 a day per event).
-- **The console's Parties entry is now Hosted**, for every org member:
-  the org's hosted events, and (org admins) the offers they are booked
-  from. Hosted events no longer appear under Events. A hosted event's
-  page in the console shows the host page's views — games, player link,
-  where it is played, places, the host's words — through the same
-  handlers (`/api/admin/events/{id}/hosted/…`).
-- The hosted views live in a shared package, `@zonventure/hosted`.
-- Migration `0109_hosted`: `events.player_token`, `hosted_blocks`,
-  `first_game_at`, `current_round`; `event_rounds`; `teams.round`,
-  `teams.headcount` (team names unique per game); a round's own graph
-  copy (`adventure_graphs.event_id`).
+### Added
+
+- Every party adventure look has a cover picture, shown on the start, join, welcome and printed cover pages.
+
+### Changed
+
+- The printed cards follow the adventure's look, with coloured headers and printer-friendly bodies.
+- The landing page's creator frame fits its content, so only the page scrolls.
+- Looks wrap in rows instead of a sideways strip, as compact swatches on the start page.
+
+### Fixed
+
+- The printed cover's title turns white on dark cover pictures.
+- The join page no longer repeats the title when the party and adventure share a name.
+- Selecting a card in the creator no longer scrolls the landing page around the frame.
+
+## [0.19.1] - 2026-10-06
+
+### Added
+
+- Site admins switch party adventures on or off per organisation, shown as a badge in the org list.
+
+## [0.19.0] - 2026-10-06
+
+### Added
+
+- Party adventures pick one of 14 starter looks, which the teams' phones also get.
+- The start page cycles a sample card through the looks; the one shown or tapped is used.
+- Anyone can make a quiz trail without an account at `/o/{slug}/trail`, paying the hosted pass to play.
+- Save to email and My trails (`/trail/mine`) keep a browser's trails and open them anywhere.
+- Checkout asks for the admin email, teams per game and, for kids' trails, guardian consent.
+- Keep it moves a hosted trail into the keeper's own organisation, offered a week into play.
+- An hourly sweeper deletes unpaid drafts after 30 days and paid trails once their event ends.
+- New adventure → Quiz trail builds an adventure from a row of cards on a phone-friendly creator.
+- Quiz trails print as cards and an answer key, with a QR-code cover for hosted events.
+- Open in the designer hands a quiz trail over to the full designer for good.
+- Host it runs a hosted event of the org's own adventure, paid on the platform's Stripe account.
+- Hosted events cost a pass per block of 15 teams per game, set by `ZV_HOSTED_BLOCK_CENTS` and `ZV_HOSTED_CURRENCY`.
+- Add 15 teams buys one more block per game from the host page or console.
+
+### Changed
+
+- Party adventures are free for up to 3 teams per game; more cost 149 kr per 15.
+- A free public checkout mails the admin link only when the browser is signed in with that address.
+- Quiz trails are now called party adventures throughout the site, emails and templates.
+- A team's recap opens once the team is done, not when the whole event ends.
+- A party's platform fee is the pass price, and an offer must cost more than the pass.
+- A party is a hosted event playing game after game for 14 days, joined from one player link.
+- Finish game closes a game and mails the host a summary; idle games finish after 3 hours.
+- A game takes up to 15 teams with unique names, and the host can remove a team.
+- The console's Parties entry is now Hosted, open to every org member, and hosted events leave Events.
+- The console no longer makes teams, schedules or starts hosted events.
 
 ## [0.18.0] - 2026-10-06
 
 ### Changed
 
-- **Parties** has its own entry in the console sidebar, next to
-  Self-guided, instead of a Settings tab. Org admins only, as before;
-  old `#/settings/parties` links land on it.
+- Parties has its own console sidebar entry instead of a Settings tab.
 
 ## [0.17.0] - 2026-10-05
 
-### Added — parties
+### Added
 
-- Orgs can offer adventures as **children's parties** (Settings →
-  Parties): a base price plus a price per child, and a maximum number
-  of children. A parent books on `/o/{slug}/party/{id}` and pays with
-  no account; the payment goes through Stripe Connect like a ticket.
-- The booker gets a **host page** link by email (`/party/{token}`). From
-  it they add teams within the children booked, print the cards, and
-  start, pause and end the game. "Send the link again" mails a fresh
-  link and retires the old one.
-- Parties play in **QR mode**: the adventure's zones become cards the
-  host prints and hides, each with a code of its own per party. A team
-  reaches a zone by scanning its card in the game, or with the phone's
-  camera (the card holds `/play?station=CODE`), or by typing the code.
-  The phone never asks for location. Adventures that ask where each
-  player stands (search answers, keys at posts, `players_in_zone`,
-  `zones_held`, `walked`) cannot be offered.
-- A party plays its own copy of the published graph (a negative
-  version in `adventure_graphs`, never listed among versions).
-- A refunded party is cancelled. Parties are deleted whole
-  `ZV_PARTY_RETENTION_DAYS` days (default 14) after they end; see
-  OPERATIONS.md.
-- New player action `station`, new refusal code `unknown_station`.
-- **Personalisation.** Authors mark what a party's host may change
-  (designer): a text or quiz question ("A party host may rewrite it"), a
-  typed answer ("A party host may set the answer"), and **party words**
-  that texts use as `{{host:<slug>}}`, such as the birthday child's name
-  (`host_values`; ordinary events show the default). The host fills them
-  in on the host page before the party starts.
-- **Park mode.** Zones marked "A party host may move it" (`movable`) can
-  be put in the host's own park: the host walks to each spot and taps
-  "Put it here", or moves them all at once around where they stand.
-  Moved zones are at least 25 m across. A party chooses cards or park
-  before it starts; an adventure that cards can't play is offered only
-  in park mode, and only when every zone is movable. Starting refuses
-  until every place is put.
+- Orgs offer adventures as children's parties, booked and paid by a parent without an account.
+- The booker gets a host page link to add teams, print cards and run the game.
+- Parties play in QR mode: teams reach zones by scanning printed cards instead of location.
+- Parties are deleted `ZV_PARTY_RETENTION_DAYS` days (default 14) after they end; refunded parties are cancelled.
+- Authors mark texts, answers and party words a host may personalise, such as the birthday child's name.
+- Park mode lets a host place movable zones in their own park before the party starts.
+- `ZV_PLATFORM_FEE_FIXED_CENTS` adds a fixed amount to every ticket's platform fee.
+- Settings → Billing has an Open Stripe dashboard button for the org's Express account.
 
-### Changed — Stripe Connect uses Express accounts
+### Changed
 
-- Orgs selling tickets now onboard as Stripe Connect **Express**
-  accounts instead of Standard ones. Tickets are still destination
-  charges on the platform account, which carries refunds and disputes
-  and keeps the platform fee; the org receives the rest. Stripe bills
-  the platform per active Express account and per payout, and the
-  platform's Stripe account must have Express enabled in its Connect
-  settings.
-- New Express accounts are paid out **monthly**, on the 1st, so the
-  platform pays Stripe's per-payout fee once a month per org rather
-  than daily.
-- Settings → Billing has an **Open Stripe dashboard** button, backed by
-  `POST /api/admin/organizations/{orgID}/stripe-connect/dashboard`,
-  which opens the org's Express dashboard (balance, payouts, bank
-  details).
-- Orgs already onboarded as Standard accounts keep selling unchanged.
-  Their dashboard button fails, since Stripe has no Express dashboard
-  for them, so they keep using dashboard.stripe.com.
-
-### Added — fixed part of the platform fee
-
-- `ZV_PLATFORM_FEE_FIXED_CENTS` adds a fixed amount to every ticket's
-  platform fee, so the fee is now `max(percent + fixed, min)`. Use it to
-  cover the per-ticket costs the platform carries: Stripe's fixed card
-  fee and the Connect account and payout fees.
+- Breaking: orgs now onboard as Stripe Connect Express accounts; the platform must enable Express in Stripe.
+- New Express accounts are paid out monthly on the 1st.
+- Orgs already on Standard accounts keep selling, but must use dashboard.stripe.com directly.
 
 ## [0.16.1] - 2026-10-05
 
-### Changed — one page per organisation, no shared store
+### Changed
 
-- `/o/{slug}` is an organisation's one page: who it is and every
-  adventure it sells, where the old landing page only linked onward.
-  `/o/{slug}/store` redirects to it, keeping the query (a buyer back
-  from checkout); checkout now returns buyers there directly. Event
-  pages stay at `/o/{slug}/store/event/{id}`, and their breadcrumb leads
-  to the organisation's page (`{{ORG_PATH}}`).
-- There is no store of every organisation's adventures any more: the
-  new setting `ZV_HOME_ORG` names the site's own organisation, which
-  `/store` redirects to and the landing page lists (`{{HOME_STORE_API}}`).
-  Unset, `/store` is not found. `GET /api/store/items` and the
-  `org-landing.html` template are gone; the sitemap lists `/o/{slug}`.
+- `/o/{slug}` is now the organisation's single page listing every adventure it sells; `/o/{slug}/store` redirects there.
+- Breaking: there is no shared store; `ZV_HOME_ORG` names the site's organisation that `/store` redirects to.
+
+### Removed
+
+- `GET /api/store/items` and the `org-landing.html` template.
 
 ## [0.16.0] - 2026-10-05
 
-### Added — the adventure's icon in the store
+### Added
 
-- Store cards (the store, the landing page and organisation pages) show
-  the adventure's icon as a badge on the cover, and a store event page
-  shows it above the title. Without an event cover, the icon is the
-  page's link-preview image (`og:image`). `/api/store/items` carries
-  `adventure_icon_url`; the event page template gets `{{ICON_URL}}`,
-  `{{HAS_ICON}}` and `{{OG_IMAGE_URL}}`.
-- A store event page's cover is 16:9, the shape event covers are made
-  in and the store cards show, instead of being cropped to 4:3.
+- Store cards and event pages show the adventure's icon, also used as the link-preview image.
 
-### Fixed — self-guided adventures could be finished
+### Changed
 
-- When every team so far had finished, a self-guided adventure was
-  completed like an event: it left the store and its players were signed
-  out. It now stays open, and "End event" is refused for it (the web UI
-  hides it; the MCP's `end_event` says so): pause it to stop selling
-  tickets, or cancel it to close it for good.
+- A store event page's cover is 16:9 instead of cropped to 4:3.
 
-### Changed — releasing
+### Fixed
 
-- `make patch|minor|major` replaces `make tag BUMP=…`: it moves
-  `[Unreleased]` under a dated version heading, commits CHANGELOG.md
-  and tags that commit, refusing when `[Unreleased]` is empty.
-  `make latest` prints the newest release tag. CHANGELOG.md now has a
-  heading for every release since 0.2.0.
+- Self-guided adventures no longer close when every team so far has finished; "End event" is refused.
 
 ## [0.15.0] - 2026-10-05
 
-### Added — hidden places
+### Added
 
-- A zone can be **hidden from teams** (designer: Resources → zone →
-  "Hide the place from teams"; graph `zones[].hidden`). Phones show
-  "Find the place." with no name, map link or distance — for steps where
-  finding the place is the puzzle. Arrival is still checked on the
-  server; the simulator and designer see the zone whole.
+- A zone can be hidden from teams, so finding the place becomes the puzzle.
 
-### Fixed — going back after time is up
+### Fixed
 
-- When an adventure's time limit moved a team to its last step (such as
-  the accusation), the back button still led home, where the team could
-  play on with no clock. Out of time, there is no way back.
+- A team out of time can no longer go back and play on without a clock.
 
 ## [0.14.0] - 2026-10-05
 
-### Changed — the MCP covers an adventure from idea to running events
+### Added
 
-- **Pictures from a phone:** `get_upload_link` (was `get_media_upload_url`)
-  returns a link that opens a page to pick the file on, so a photo gets
-  in from the Claude app without curl or base64. A link adds a step's
-  picture, sound or video, sets the adventure's icon (`for: icon`) or an
-  event's cover (`for: event_cover`); `list_adventure_media` lists the
-  uploads, newest first. Migration `0107_upload_link_purpose`.
-- **Self-guided adventures:** `update_event` sets the ticket price,
-  currency, players per ticket, store blurb and secret roles.
-- **Scheduled events:** `create_event` explains it needs an event pass
-  and links to where it is bought, instead of an opaque error.
-- **One way to do each thing:** the old-format `create_adventure` and
-  `validate_adventure` are gone; `create_graph_adventure` is now
-  `create_adventure`. `get_adventure` returns the settings an assistant
-  works from — brief, look, starting point, `icon_url` — instead of the
-  old export (which had no brief). `list_adventures` says which can be
-  edited and which are playable.
-- **Renamed:** `attach_image` → `set_adventure_icon`, `detach_avatar` →
-  `remove_adventure_icon`, `play_start`/`play_act`/`play_end` →
-  `playtest_start`/`playtest_act`/`playtest_end`. The player tools
-  (`add_slot`, …) keep their names, which are the event's `allowed_ops`.
-- The instructions cover pictures and events; `describe_event_lifecycle`
-  indexes every tool (a test keeps it so), and `MCP.md` is current.
+- Org admins save themes for the whole organisation, offered first wherever a theme starts.
+- MCP `list_org_themes` lists the organisation's themes.
+- MCP `edit_adventure_graph` gains `set_text` and `patch_node`, editing the dev phone's step by default.
+- MCP `get_step` reads one step, by default the one on the dev phone.
 
-### Fixed — MCP
+### Changed
 
-- `get_event_state_summary` always reported an empty state and no
-  teams: it read the event detail flat, but the event is nested.
-- `create_purchase` refused on servers running simulated payments, as
-  if Stripe were configured.
-- A change to an adventure's look or texts (designer or MCP) now shows
-  on dev phones at once.
+- Breaking: MCP `get_media_upload_url` is now `get_upload_link`, returning a page to pick a file from a phone.
+- MCP `get_upload_link` covers step media, the adventure icon and event covers; `list_adventure_media` lists uploads.
+- MCP `update_event` sets ticket price, currency, players per ticket, store blurb and secret roles.
+- MCP `create_event` explains when an event pass is needed and links to buying one.
+- Breaking: MCP `create_graph_adventure` is now `create_adventure`; the old-format `create_adventure` and `validate_adventure` are gone.
+- MCP `get_adventure` returns brief, look, starting point and icon; `list_adventures` says which are editable and playable.
+- Breaking: MCP tools renamed to `set_adventure_icon`, `remove_adventure_icon` and `playtest_start`/`playtest_act`/`playtest_end`.
+- The MCP assistant gives shorter replies, one question at a time.
+- The DEV bar sits at the top of the phone, above the adventure's bar, while scrolling.
 
-### Added — MCP edits the step on the dev phone
+### Fixed
 
-- `edit_adventure_graph` gains `set_text {find, replace, all?}`, which
-  changes words by quoting them (it lists the step's texts when the quote
-  is not there, and asks for more when it is ambiguous), and
-  `patch_node {patch}`, a JSON merge patch whose lists of items with ids,
-  such as blocks and matchers, merge by id, and a puzzle's outputs by
-  port — a new accepted answer is one matcher sent, the other outputs kept. Without a slug both edit the step the
-  author's dev phone shows, so "change this text" takes one call.
-- MCP `get_step`: one step's JSON and where its ports lead, by default
-  the dev phone's step, instead of reading the whole graph.
-
-### Changed — a terser MCP
-
-- The assistant's instructions ask for short, focused replies: one
-  sentence on what changed, one question at a time, a single default
-  instead of a menu, and no plan or step names unless the user is lost.
-
-### Changed — the dev bar on top
-
-- A dev ticket's DEV bar sits at the very top of the phone, above the
-  adventure's bar, and both stay on screen while scrolling.
-
-### Fixed — a finished dev ticket could not be played again
-
-- A dev team reaching the end completed its dev event, which signed the
-  phone out and expired its link, so it showed "Event completed" for
-  good. Dev events no longer complete; starting over or stepping back
-  clears the team's finish and reopens a dev event closed before this
-  fix (open the dev ticket's link again once).
-
-### Fixed — QR scanner off centre
-
-- The camera for a QR answer covered the whole page instead of the
-  screen (`.pv`'s container containment held the fixed overlay), so the
-  viewfinder sat low. It now opens on the body, centred on the screen.
-
-### Added — the organisation's own themes
-
-- An org admin keeps a theme for all the organisation's adventures with
-  **Save for the organisation** in the designer's theme editor (a theme
-  of the same name is replaced after asking). Pictures and sounds stay
-  behind: they belong to one adventure.
-- The organisation's themes come first, after the default, wherever a
-  theme starts — the theme editor's New theme and the New adventure
-  wizard. An org admin removes one from the theme editor's gallery;
-  adventures that took it keep their copy.
-- `GET/POST /api/admin/org-themes`, `PUT/DELETE /api/admin/org-themes/{id}`,
-  migration `0106_org_themes`.
-- MCP: `list_org_themes`; the guide's look step offers them first.
+- MCP `get_event_state_summary` no longer reports an empty state and no teams.
+- MCP `create_purchase` works on servers running simulated payments.
+- Changes to an adventure's look or texts show on dev phones at once.
+- A dev ticket that reached the end can be played again.
+- The QR answer scanner is centred on the screen instead of sitting low.
 
 ## [0.13.0] - 2026-10-05
 
-### Changed — the MCP guides a new adventure step by step
+### Added
 
-- The assistant leads the author through six named steps — the idea,
-  making it, the look, where it starts, the stops, trying it — offering
-  suggestions with every question, ending every reply with the next
-  step, and handing over a dev ticket's link right after the adventure
-  is made, so the author's phone follows along as it is built.
+- Dev tickets play an adventure's draft on a phone, updating within a second of every save.
+- The DEV bar jumps to any step or starts over.
+- Dev tickets come from the designer's menu as a QR code, link or email, or via MCP tools.
+- Arrangers can let a team start anywhere, from the event console, MCP or `POST /api/admin/teams/{id}/start-anywhere`.
+- MCP `play_start` and `simulate_adventure` take `anywhere: true` for playtests away from the site.
+- New adventure is a four-step guide with a phone preview, opening a playable adventure in the designer.
+- Themes choose how a right answer is celebrated: confetti, emoji, a tick or only words.
+- Themes set their own words for "Correct!" and "Not quite", and their own answer sounds.
 
-### Added — dev tickets: the draft, live, on your phone
+### Changed
 
-- **Play the draft while it is edited.** A dev ticket plays an
-  adventure's saved draft instead of a published version: every save —
-  in the designer, or by an assistant through the MCP — shows on the
-  phone within a second. Nothing is published, no event restarted. For
-  walking the site while talking to Claude, who changes the adventure
-  as you look.
-- **Go anywhere in it.** The phone's DEV bar goes to any step — back to
-  one played, or on to one not reached, played afresh — or starts over.
-  A step taken out while the phone stands on it leaves it at the start.
-- From the designer's ⋯ menu (Play the draft on my phone: a QR code,
-  the link, and a field to email it to any address), or the MCP: `create_dev_ticket`, `get_dev_screen` (what the
-  phone shows, so "change this" works), `dev_go_to` and `dev_reset`.
-- Each author has one dev ticket per adventure, free, never listed among
-  the events, never billed or ranked. Its graph is the adventure's dev
-  row (version 0), which is never a release.
-
-### Changed — the adventure's picture in the player's bar
-
-- The picture beside the menu in the player is the adventure's own,
-  when it has one; the organisation's logo is the fallback.
-
-### Added — starting away from the starting point
-
-- **For a real team:** an arranger can let a team begin wherever it
-  stands — team ⋯ → Let start anywhere in the event console, or the MCP
-  tool `let_team_start_anywhere`, or `POST /api/admin/teams/{id}/start-anywhere`.
-  For a phone whose location won't settle, or a meeting point moved on
-  the day. The team still sees the start screen with its start open,
-  and presses Begin itself; the event log records it.
-- **For a playtest:** `play_start` and `simulate_adventure` take
-  `anywhere: true`, so an assistant can try a draft away from the site.
-
-### Added — a guided new adventure
-
-- **New adventure is a guide in four steps**, with the adventure's
-  first page on a phone beside it all the way: the basics (title, one
-  line about it, language, who it is for — the link name fills itself
-  in), the look (the starter themes, large, on the adventure's own
-  title; Try a right answer shows its celebration), where it starts
-  (on a map, or skipped), and a last look before it is made.
-- It opens in the designer with the chosen look as the main look and
-  the first saved theme, and a start, a welcome step with its title and
-  line, and an end — playable at once.
-
-### Added — celebrations and sounds per theme
-
-- **How a right answer is celebrated:** confetti, just the tick, or only
-  the words; the confetti in the look's own colours, or emoji raining
-  instead (🦄🌈, 🐘🍌…).
-- **The look's own words** in place of "Correct!" and "Not quite".
-- **Sounds of the adventure's own** on a right and a wrong answer,
-  uploaded in the theme editor; Try a right / wrong answer acts one out
-  in the preview. Teams may always fetch a look's sounds; a main look's
-  must be the adventure's own audio, and duplicating copies them.
-- Several starter themes celebrate in their own way — Hacker answers
-  ACCESS GRANTED, Unicorn rains 🦄🌈✨.
+- The MCP assistant guides a new adventure through six steps and hands over a dev ticket early.
+- The player's bar shows the adventure's own picture, falling back to the organisation's logo.
 
 ## [0.12.0] - 2026-10-05
 
-### Added — buttons, answer bar, text size and titles
+### Added
+- Themes can set button shape, fill and size, a bottom or floating answer bar, text size and title style.
+- Any adventure image can be the page background, with strength, blur, fade and a fixed option.
+- Blocks can have an entrance animation, an attention effect, a duration and a delay.
+- A look's step transition sets how each step comes in and how the previous one leaves.
+- Phones set to reduce motion show animations and transitions still.
+- Show again in the preview replays a step's entrance, animations and transition.
+- An adventure can keep its own saved themes, which a Change the theme step can switch to.
+- MCP: `edit_adventure_graph` has `put_theme` and `delete_theme`.
+- New themes can start from the default look or one of 19 ready-made starter themes.
+- Stripes and confetti take up to 8 colours, and retro horizon and lined paper backgrounds are new.
+- A "Colour spots" background paints up to 12 soft, blending spots placed by clicking.
+- The theme editor has a background pattern designer with presets, colours, strength, size, fade and drift.
+- `backdrop` on `PATCH /api/admin/adventures/{slug}` and `update_adventure_meta` sets the background pattern.
+- Eleven more typefaces, including playful title fonts, all self-hosted with their licences.
+- Text cards can be see-through, optionally frosted, so the background shows through.
+- The theme editor warns when text, titles or buttons would be hard to read outdoors.
+- Adventures have a "Self-guided adventure" button that opens the new self-guided adventure dialog.
+- Editors can test play an adventure's saved draft from its page without opening the designer.
 
-- **Buttons:** shape (pill, rounded, square), fill (classic, gradient,
-  flat, outline, soft) and size (small, normal, large). A chosen fill
-  keeps the accent on a coloured answer bar too; classic keeps the old
-  look, where the button punches through the bar.
-- **Answer bar:** along the bottom, or floating — a panel off the edge.
-- **Text size** from 85 to 140 %, titles with it.
-- **Titles:** plain, ribbon, underline or shadow, and in capitals.
-- All in the theme editor, stored with the look's `style`; the starter
-  themes use them. The contrast warning covers outlined and soft buttons.
-- **Show again** in the preview reopens the step, so its entrance,
-  animations and transition play once more.
+### Changed
+- Adventure settings now only picks the main look: the standard look or a saved theme.
 
-### Added — a picture as background
-
-- **Any image of the adventure can be the page.** The background
-  picker's Picture tile uploads one; strength lets the page colour show
-  through (dimming or lightening it), blur softens it (0–20 px) so text
-  reads, and it can fade toward the bottom and stay still while the
-  page scrolls. It works in saved themes and as the main look.
-- Teams may always fetch a look's picture, before any step shows it. A
-  main look's picture must be the adventure's own image; a theme's is
-  part of the graph's media, so it is checked, duplicated and exported
-  with the rest. Duplicating an adventure copies its main look's
-  picture too.
-
-### Added — animations
-
-- **Blocks can move.** A sparkle button on every block opens its
-  animation: an entrance as it appears (fade, slide, zoom, bounce, flip,
-  rise, whoosh, roll…), an effect to catch the eye after it (pulse,
-  bounce, shake, wobble, tada, heartbeat, swing, rubber band, jelly,
-  flash, head shake) once, three times or over and over, a duration
-  (0.2–5 seconds), and a delay so blocks arrive one after another. A
-  sample card in the panel plays each change at once, and Play again
-  replays the step in the preview. Stored on the block
-  (`animation`), so it is versioned and published with the step.
-- **Step transitions, in and out.** A look's step transition — fade,
-  slide, zoom, flip, pop or none — sets how each new step comes in, and
-  the step it replaces leaves with the matching exit (sliding out the
-  other way, fading, zooming or flipping away) in a quarter of a second.
-  What leaves is a still copy of its page, so nothing in it plays again.
-  Themes carry the transition, and several starter themes have one.
-- Our own keyframes, named as animate.style names its effects; no
-  third-party code. Phones set to reduce motion show everything still.
-
-### Added — saved themes
-
-- **An adventure can keep looks of its own.** The designer's ⋯ menu has
-  a Themes editor: name a theme and set its whole look — colours, fonts,
-  corners, cards and background — with the same controls as the main
-  look, previewed on a phone. A Change the theme step can switch to a
-  saved theme as well as to the built-in ones. Adventure settings now
-  only picks the main look — the standard look or a saved theme, applied
-  at once — and a main look that is no saved theme can be saved as one
-  to edit it. Themes live in the graph: they are part of the draft,
-  reach players on Publish, travel with export and duplicate, and a
-  running event keeps the themes its steps switch to. A theme a step
-  still uses cannot be deleted.
-- MCP: `edit_adventure_graph` has `put_theme` and `delete_theme`; a theme
-  effect may name a saved theme's slug.
-- **Starter themes.** New theme offers the default look or one of 19
-  ready-made ones to adjust, each with its own colours, fonts,
-  background and cards, shown large enough to choose by eye: Playful
-  (Unicorn, Rainbow, Party, Sunshine, Ice cream, Candy), Adventure
-  (Jungle, Space, Detective, Pirate, Ocean, Pen & paper), then Hacker,
-  Cyberpunk, Retro 80s, Office, Scary, Sad and Love. Every one passes the contrast check.
-- **Rainbows and party confetti.** Stripes and confetti take a list of
-  up to 8 colours used in turn (`colors` on the backdrop).
-- **Retro horizon and lined paper.** Two new backgrounds: an 1980s
-  synthwave scene — starry sky in the colours you list, a striped sun,
-  a neon grid running to the horizon — and a notebook page with ruled
-  lines and a margin.
-- **Seven more typefaces:** Nunito ("Friendly") and Inter ("Clean") for
-  text; Creepster ("Spooky"), Pacifico ("Romantic"), VT323 ("Retro
-  terminal"), Orbitron ("Futuristic") and Press Start 2P ("Arcade") for
-  titles; self-hosted with their licences.
-- **See-through cards.** A look's card opacity lets the background show
-  through text cards, optionally frosted so the text stays readable.
-  Stored with the look's other finer choices in one `style` object
-  (`look_style` on the adventure; `style` in the API and MCP).
-- **Contrast warning.** The theme editor says when text or titles would
-  be hard to read outdoors, with the ratio and the WCAG aim — also for
-  text on see-through cards over the background.
-
-### Added — colour spots
-
-- **A background of colours that blend.** The "Colour spots" pattern
-  paints soft spots that fade into each other. Click the page in the
-  theme editor to add a spot (up to 12), drag one to move it, and pick it
-  to change its colour; a spot without a colour follows the palette.
-  Spread sets how far each reaches, and spots may go to full strength.
-
-### Fixed — roles lost when the designer saved
-
-- Roles made in the designer's Resources panel were dropped by the
-  next save. The designer now keeps them, and a test checks that a save
-  keeps every part of the graph.
-
-### Fixed — finding steps in Swedish
-
-- **The designer's Add step search understands Swedish.** It matched only
-  the English names, so "tema" did not find "Byt tema". It now matches
-  each step's name, description and search words in the designer's
-  language as well as in English, å, ä and ö included. Every step in the
-  list has Swedish search words, and the steps that showed in English in
-  a Swedish designer have Swedish names and descriptions.
-
-### Added — background patterns
-
-- **A pattern behind the cards.** The theme editor has a background
-  designer: pick a preset (polka dots, candy stripes, picnic
-  checks, graph paper, comic sunburst, waves, zigzag, party confetti,
-  soft glow), then adjust its colours, strength, size and angle, and
-  switch on a fade toward the bottom, a still pattern while the page
-  scrolls, or a slow drift (never on phones set to reduce motion). Only
-  the values are saved, not the preset. Empty colours follow the
-  palette, and a step's theme replaces colours picked by hand.
-- Stored as `backdrop` on the adventure — a kind and numbers, never
-  CSS: `PATCH /api/admin/adventures/{slug}` and the MCP's
-  `update_adventure_meta` take `{"backdrop": {"kind": "dots", "opacity":
-  0.12, "scale": 24, …}}`, and `{"kind": ""}` removes it. Text stays on
-  the solid cards, so a pattern never sits under it.
-
-### Added — playful fonts
-
-- **Four more typefaces for an adventure's look:** Baloo 2 ("Bubbly")
-  and Patrick Hand ("Handwritten") for text and titles, Chewy
-  ("Cartoon") and Luckiest Guy ("Comic") for titles only. Keys
-  `baloo-2`, `patrick-hand`, `chewy`, `luckiest-guy` in `font` and
-  `heading_font`. Self-hosted like the others, with their licences.
-
-### Added — self-guided adventures and test play from an adventure
-
-- **Start a self-guided adventure from the adventure itself.** Its card
-  on the Adventures page and its own page have a "Self-guided adventure"
-  button, for adventures the organisation owns or was commissioned. It
-  opens the new self-guided adventure dialog with that adventure chosen,
-  and goes to the new event once created.
-- **Test play from the adventure's page.** Its editors get a "Test play"
-  button that plays the saved draft from Start in the designer's
-  simulator, in a floating window, without opening the designer.
+### Fixed
+- Roles made in the designer's Resources panel are no longer dropped by the next save.
+- The designer's Add step search now matches Swedish names, descriptions and search words.
 
 ## [0.11.1] - 2026-10-05
 
@@ -1292,84 +498,39 @@ _No changes recorded._
 
 ## [0.11.0] - 2026-10-05
 
-### Added — free tickets for testers and guests
-
-- **Give someone a ticket without payment.** On an event's Teams tab,
-  type an email address and press "Give free ticket": it makes a team
-  the size of a bought ticket and emails them what a buyer gets — the
-  team link and the voucher code to type at `/play`. The code and link
-  also show on the spot, to copy by hand. API:
-  `POST /api/admin/events/{id}/free-ticket` with `{"email": …}`; MCP tool
-  `give_free_ticket`.
+### Added
+- Organisers can give someone a free ticket by email from the event's Teams tab, API or MCP.
 
 ## [0.10.0] - 2026-10-05
 
-### Added — teams must start at the starting point
+### Added
+- An adventure can require teams to be within a radius of the starting point before they begin.
 
-- **An adventure can require teams to begin where it starts.** Tick
-  "Teams must be at the starting point to begin" under the adventure's
-  starting location and set a radius (5–5000 m; also `start_radius_m`
-  in the API and MCP). Teams are held on the start screen, which shows
-  the distance and a map link, until a player is inside the radius; only
-  then can they start, and the clock starts then. The lobby tells them
-  in advance. Works with start codes, and carries over in exports.
-  The designer's simulator and the MCP's `simulate_adventure` and
-  `play_start` hold the team at the starting point the same way; the
-  simulator lists the starting point as a place to move the team to.
-
-### Fixed — clearing the starting point
-
-- **Clearing the starting location in the adventure details now clears
-  it.** `{"start_lat": null}` was indistinguishable from an absent field,
-  so the update silently kept the old coordinates.
+### Fixed
+- Clearing the starting location in the adventure details now actually clears it.
 
 ## [0.9.3] - 2026-10-04
 
-### Added — organisation identity on /o/{slug}/store
-
-- **The per-organisation store knows its organisation.** `store.html`
-  now receives `{{ORG_NAME}}`, `{{ORG_TAGLINE}}`, `{{ORG_PATH}}`,
-  `{{LOGO_BLOCK}}`, `{{HERO_BG_STYLE}}`, `{{ORG_BRAND_OVERRIDES}}` and
-  `{{STORE_SCOPE}}` (`org` or `all`), the same data `/o/{slug}` gets.
-  The global `/store` fills them with nothing.
+### Added
+- The per-organisation store page receives the organisation's name, logo and branding.
 
 ## [0.9.2] - 2026-10-04
 
-### Fixed — Secure cookies behind a reverse proxy
-
-- **Cookies are marked `Secure` behind a trusted proxy again.** The
-  real-IP middleware rewrote the request's peer to the client address
-  before the cookie code checked whether the peer was a trusted proxy,
-  so `X-Forwarded-Proto: https` was ignored and session, CSRF and
-  language cookies went out without `Secure` on every proxied
-  deployment.
+### Security
+- Session, CSRF and language cookies are marked `Secure` again behind a trusted reverse proxy.
 
 ## [0.9.1] - 2026-10-03
 
-### Added — prebuilt images on ghcr.io
-
-- **Release tags publish the app image.** CI pushes
-  `ghcr.io/klahr/zonventure:X.Y.Z` and `:latest` once every job is green.
-  `compose.prod.yaml` runs that image, and `make upgrade` pulls it instead
-  of building when the overlay is enabled. See SELFHOSTING.md → Upgrades.
+### Added
+- Release tags publish `ghcr.io/klahr/zonventure` images, and `make upgrade` can pull instead of build.
 
 ## [0.9.0] - 2026-10-03
 
-### Added — extra pages from the override dir
+### Added
+- Any `<name>.html` in `ZV_WEB_OVERRIDE_DIR` is served at `/<name>` with the shared topbar and footer.
 
-- **`ZV_WEB_OVERRIDE_DIR` can add pages.** Any `<name>.html` in it is
-  served at `/<name>` with the shared topbar and footer, unless an app
-  route or an embedded template already uses that name. zv logs a
-  warning at startup for override pages an app route hides.
-
-### Removed — the landing page toggle
-
-- **The public landing page is on when you ship one.** `/` and
-  `/pricing` are served only when `ZV_WEB_OVERRIDE_DIR` contains
-  `landing.html` / `pricing.html`; otherwise `/` goes to the login
-  screen and `/pricing` is a 404. `ZV_LANDING_ENABLED` and the
-  "Show public landing page" admin setting are gone, and the embedded
-  landing and pricing pages are now reference templates only.
+### Removed
+- Breaking: `ZV_LANDING_ENABLED` is gone; `/` and `/pricing` are served only from override `landing.html` and `pricing.html`.
 
 ## [0.8.2] - 2026-10-02
 
@@ -1381,139 +542,29 @@ _No changes recorded._
 
 ## [0.8.0] - 2026-10-02
 
-### Added — a picture for each role
+### Added
+- Adventures can declare roles that players take, and blocks can show only to a role's holder.
+- A role can have a picture, shown beside it on every phone.
+- A Roles block shows roles as portraits and can let players choose theirs.
+- Roles can be made final at a step, so they no longer move between players mid-game.
+- A player can hand a role's kit item to a teammate by QR code.
+- Conditions can check how many players are inside a zone, or that zones are held at once.
+- Blocks can show only on the phone of the player standing in a zone.
+- A secret saboteur role, with Sabotage and Accusation blocks, can be turned off per event.
+- A puzzle can be answerable only by one role, and roles can bring items.
+- Two-key launch puzzles open when enough players turn their keys at the same time.
+- Unanimous answers count only once every player has answered the same way.
+- Phones keep reporting their position every 15 seconds while a step waits on a place.
+- The simulator splits teams up to open branches that need players in several places.
 
-- **A role can have a picture** (`image` on the role), set under
-  Adventure settings → Roles and shown beside the role on every phone.
-  A secret role's picture reaches only its player.
+### Changed
+- Breaking: a hub branch waiting on where players are now holds the team at the hub.
+- "Inside a zone" now means any player is inside it, not the team's latest ping.
+- Every single-picture setting now uses a dashed box: click to upload, Remove below.
 
-### Added — handing a kit item to a teammate
-
-- **Give** in the backpack, on a role's kit item the player may use:
-  the phone shows a QR code, and a teammate taps **Scan to receive an
-  item** in their own backpack. The item is then theirs to use and to
-  give on, whoever holds the role (`team_item_holders`). A code works
-  once, for five minutes, on the giver's own team only, and never on the
-  giver's own phone; a code made again for the item replaces the last.
-  The giver's phone closes the code and says who has the item now.
-  `POST /api/player/items/give` and `/api/player/items/receive`.
-
-### Added — a Roles block, and roles made final
-
-- **Roles block** (`roles`): the roles as portraits, two or three to a
-  row: the player's own, or with *team* everyone's. With *choose* the
-  players pick theirs there: tap a portrait to choose it, tap it again to
-  let it go; a teammate's pick is greyed out. Until then a role is Free,
-  never shown as dealt, and the step's Continue waits until every player
-  has chosen a role, or every role is chosen (`roles_chosen` on the
-  view). The phone's menu lists the roles the same way. A secret role
-  never shows among the team's.
-- **Roles made final** (*lock*): as the team leaves the step, every role
-  stays with whoever holds it then, chosen or dealt. After that no one
-  takes or gives back a role (`409 roles_final`), and a player who joins
-  later holds none, so roles no longer move between players mid-game.
-  The menu and the block both say so.
-
-### Changed — pictures are set by clicking the picture's box
-
-- Every place that sets one picture — logos, covers, team and account
-  pictures, and the designer's single pictures (tiles, lock symbols,
-  hub branches, hotspots, chat avatars, suspects, roles) — now uses the
-  dashed box from the organisation's branding settings: click the box
-  to upload, Remove under it. The player's team picture works the same
-  way on the phone.
-
-### Added — conditions on where each player is, for teams that split up
-
-- **Two new conditions** for gates, hub branches and block show rules:
-  *Players inside a zone* (`players_in_zone`, compared like a number:
-  "at least 2 at the gate") and *A player in each of these zones*
-  (`zones_held`: someone at the gate *and* someone at the bridge, at
-  once). They read each phone's own position, from phones heard from
-  in the last minute.
-- **Blocks shown only to the player standing there.** A block's show
-  condition can ask *This player is inside a zone* (`here`): the clue at
-  the fountain is on the phone at the fountain, the code at the church
-  on the one at the church, pictures included — another player's phone
-  can neither see nor fetch it. Gates and hub branches decide for the
-  whole team, so the validator refuses `here` — and `role` — there
-  (`cond.player.team`).
-- **A saboteur among the team.** A role can be *secret*: dealt at
-  random to one player when the team makes its first move — on teams
-  of three or more — and never chosen. Only that player knows; their
-  phone shows the role, nobody else's lists it, and the end screen
-  reveals who it was, which of their *goals* they met (conditions on the
-  team's state, checked as it finishes) and whether they were caught.
-  Two new blocks: *Sabotage*, a button only the saboteur sees and
-  presses once, costing the team points, locking the answer for a while
-  or planting a false journal note; and *Accusation*, where each player
-  names a teammate on their own phone and the team scores if most name
-  the saboteur. There is one team score: a successful saboteur costs
-  their own team. Arrangers can turn secret roles off per event, from
-  the event page, for a school group or a team-building day.
-- **Role abilities.** A puzzle can be *answered only by* one role — the
-  Locksmith opens the door: the others see the step, and that it is the
-  Locksmith's to answer (`403 not_yours`, not a wrong guess). A role can
-  *bring* items: the team starts with them, everyone's backpack shows
-  whose they are, and only that role's player can place them in an
-  item puzzle's slots. A player alone holds every role, so neither ever
-  shuts a team out. Kits are packed when a team is placed, so teams
-  already playing when a kit is added do not get it.
-- **Two-key launch** — a new way of answering a puzzle: each player
-  turns their own key on their own phone, and it opens once enough keys
-  are turned within a few seconds of each other (every player, or the
-  number the author sets; 10 seconds unless set). With *posts*, each
-  key is turned at a zone of its own — one player at the east gate, one
-  at the west. A team with fewer players needs only as many keys as it
-  has, so a player alone can still finish. The phones show the keys
-  turned as dots, and the simulator splits teams up to turn keys at
-  posts.
-- **Unanimous answers** — a puzzle option: a right answer counts only
-  once every player has given one leading the same way, on their own
-  phone, so no one player can carry the team. Until then it is neither
-  taken nor a wrong guess, and the phones say how many have answered;
-  a wrong answer counts as ever and withdraws that player's. A player
-  alone answers for the team.
-- **Roles.** An adventure can declare roles — *Navigator*, *Decoder* —
-  under Resources, and a block's show condition can ask *This player
-  has a role* (`role`): the map on the navigator's phone, the key on the
-  decoder's. Players see who holds each role in the menu, and take one
-  or give it back there; a role nobody took is shared out to whoever
-  holds fewest, so every role is always someone's and a player alone
-  holds them all. A teammate's chosen role is theirs until they give it
-  back (`409 role_taken`). Organisers and the simulator see every
-  role's blocks. Roles are translated like the rest of the adventure,
-  a forgotten player's roles are shared out again, and who held which
-  is deleted with the event's other player data.
-- **Hubs wait for a team to get there.** A branch locked on where the
-  players are — *inside a zone*, as well as the new conditions — no
-  longer counts as permanently shut while the team has the players for
-  it: the team stays at the hub until they are in place, instead of
-  being moved on past the branch. A team too small for it still moves
-  on, as from any shut branch, and so does one whose branch is shut on
-  the clock, its history or what it carries. **This changes existing
-  adventures:** a hub whose last branch waited on *inside a zone* used
-  to let the team leave; now the team waits there. Locked branches now also make the
-  phone report its position quickly, as hidden blocks already did.
-- **Phones keep reporting while a step waits on a place**, every 15
-  seconds even when standing still — the browser only reports a move,
-  and a player holding a post must keep counting as there.
-- **The simulator splits teams up** to open a branch that wants players
-  in several places, and gathers them again after; the feed says so.
-- **Inside a zone now means any player is inside it**, not wherever
-  the team's most recent ping happened to come from — a team that
-  splits up no longer flickers in and out of a zone as its phones take
-  turns reporting.
-
-### Fixed — teammates far apart rejected as teleports; zone pictures refused
-
-- The anti-teleport check compared each ping with the team's last one,
-  from whichever phone, so two players a few streets apart could have
-  their pings refused as impossible jumps. It now compares each phone
-  only with itself, and so does the trusted-position rule.
-- A picture in a block shown only inside a zone was refused (404) to
-  a player standing in that zone, in an adventure with strict assets:
-  the media check never read where the team was. It does now.
+### Fixed
+- Teammates a few streets apart are no longer rejected as teleporting.
+- Pictures in zone-only blocks are no longer refused to a player in that zone.
 
 ## [0.7.0] - 2026-10-01
 
@@ -1521,17 +572,11 @@ _No changes recorded._
 
 ## [0.6.0] - 2026-10-01
 
-### Added — teams choose their picture; names fixed once a team begins
+### Added
+- Players can set their team's picture, shown on the leaderboard and organisers' map.
 
-- **Players can set their team's picture** from the player app's
-  menu, beside their own name and the team name. It shows on the live
-  leaderboard and the organisers' map.
-- **Names and the picture are fixed for players once their team
-  begins** — its first move, not placement, so a self-guided team can
-  still name itself on its first screen. Changing them after is
-  refused (`409 team_started`) and the menu shows them read-only; the
-  share page's picture upload follows the same rule. Organisers can
-  still change all of it from the event page.
+### Changed
+- Team names and picture are fixed for players once the team makes its first move.
 
 ## [0.5.4] - 2026-10-01
 
@@ -1551,1387 +596,213 @@ _No changes recorded._
 
 ## [0.5.0] - 2026-09-30
 
-### Added — building an adventure with an assistant, on site
-
-- **Small graph edits over MCP.** `edit_adventure_graph` applies a
-  batch of node, zone and edge changes to the draft, all or nothing,
-  instead of resending the whole graph; `undo_adventure_graph_edit`
-  steps back through them. `create_graph_adventure` starts a new graph
-  adventure in one call.
-- **"Here" zones.** **Field mode** (Adventures → Field mode) shares the
-  phone's position while the author walks; an assistant places a zone
-  where they stand with `put_zone` and `here: true`. Only the latest
-  position is kept.
-- **A brief per adventure**: theme, audience, length and the rest, set
-  with `update_adventure_meta` and read back with the adventure.
-- **No setup prompt needed.** The MCP server tells the assistant how
-  to co-author (interview, one stop at a time, never invent site facts,
-  test before publishing), offers a `field_session` prompt to start,
-  and `get_authoring_guide` gives it step recipes.
-- **Sign in from Claude.** The MCP endpoint speaks OAuth 2.1, so it can
-  be added as a claude.ai custom connector — and used from the Claude
-  mobile app — by signing in and allowing it, instead of pasting a
-  token. Approved clients are listed, and disconnected, under API
-  tokens.
-- **Watch it being built.** A designer open on an adventure shows an
-  assistant's edits as they are saved: the canvas updates, the steps
-  it changed glow for a moment, and the toolbar says an assistant is
-  editing. Loading them is an ordinary edit, so Undo takes it back.
-- **No more overwritten drafts.** A save based on an older draft is
-  refused; if the designer and an assistant edit at the same moment,
-  the designer asks whether to load theirs or keep yours, and the
-  assistant is told to re-read before trying again.
-- **Photos from an assistant.** `get_media_upload_url` gives an
-  assistant with a shell a short-lived upload link, so it uploads with
-  `curl -F file=@…` instead of pasting base64, which broke on anything
-  but tiny images.
-- The assistant is told that players' text is Markdown, and how to use
-  it — and `{{team}}` — to make steps livelier.
-- `simulate_adventure` plays the draft with the real rules, and
-  `upload_adventure_media` adds pictures and sounds to graph adventures.
+### Added
+- MCP: `edit_adventure_graph` applies small all-or-nothing graph edits, and `undo_adventure_graph_edit` reverts them.
+- Field mode shares the author's position so an assistant can place a zone where they stand.
+- Each adventure has a brief (theme, audience, length) set with `update_adventure_meta`.
+- The MCP server explains how to co-author an adventure, with no setup prompt needed.
+- The MCP endpoint supports OAuth 2.1, so it works as a claude.ai custom connector.
+- The designer shows an assistant's edits live as they are saved.
+- A save based on an older draft is refused instead of overwriting newer work.
+- An assistant with a shell can upload photos via a short-lived upload link.
+- `simulate_adventure` plays the draft, and `upload_adventure_media` adds pictures and sounds.
 
 ## [0.4.1] - 2026-09-30
 
 ### Fixed
-
-- The menu button on a phone opens the side menu in the designer too.
-- **Blocks can be dragged by their handle again**, with a mouse or a
-  finger: the block follows the pointer, the others slide aside, and
-  it glides into place when let go. Steps in the list view move the
-  same way, and lean in when dropped into a branch.
-- On a phone, the side menu opens over an open step instead of behind
-  it.
-- A step dragged in the list view lands where it appears to be,
-  including just above the End.
+- Blocks and list-view steps can be dragged by their handle again, with mouse or finger.
+- A step dragged in the list view lands where it appears to be.
+- On a phone, the side menu opens over an open step, also in the designer.
 
 ## [0.4.0] - 2026-09-30
 
-### Added — making an adventure on a phone
-
-- **Mark where I stand.** A puzzle or story's place can be pinned to
-  where the phone is, in one tap, from the step itself; the zone is
-  named after the step and sized 15, 30 or 60 m. Every zone map also
-  has **Use my location**, and **Add a corner where I stand** for an
-  area walked out on foot. On a touch screen the map moves with two
-  fingers, so one finger scrolls the panel past it.
-- **A simple step form on phones**: name, what the team reads,
-  pictures (with **Take photo**, which opens the camera), the answer
-  and the place. **More options** opens every setting, as before.
-- **Add block** on a phone lists the six common blocks first, with
-  the rest under **More blocks**.
-- **Test here with my location** in the preview moves the test team
-  where the phone goes, to try a route on site.
-- **Sign-up asks whether you're making your own adventures** (the
-  default) or joining an organization that will add you. Making your
-  own creates an organization named after you, so there is no
-  organization step before the first adventure.
+### Added
+- A step's place can be pinned to where the phone stands in one tap.
+- Zone maps have Use my location and Add a corner where I stand.
+- Phones get a simple step form, with Take photo and More options for every setting.
+- Add block on a phone lists the six common blocks first.
+- Test here with my location moves the preview's test team with the phone.
+- Sign-up can create your own organisation so you can start making adventures at once.
 
 ### Changed
-
-- A puzzle's **Routes** are now called **Answers and next steps**.
-- **+ Puzzle** and **+ Story** in the list view wear their step type's
-  colour and icon.
-- On a phone, the console's top bar shows the Zonventure mark instead
-  of the wordmark, leaving room for the breadcrumb.
-- **Settings is reached from the account menu** only; the side menu no
-  longer lists it twice. It opens on the first tab, as the side menu's
-  link did.
-- **An organization's logo, or its initials, sits beside its name** in
-  the top bar and in the account menu's organization switcher.
-- **An adventure's starting location has a map**: click or tap to put
-  the pin, drag it, or use **Use my location**. The coordinate fields
-  follow it.
-- **Use first gated puzzle** works for an adventure not yet
-  published, from the designer's draft, and takes the first place in
-  playing order rather than the first zone declared.
-- The publish messages talk about players, not events: "Not published
-  yet, so players can't play it", and "New events use this version;
-  ones already running keep theirs".
-- A new adventure's link name and author are filled in and tucked
-  away; they open when they need attention.
-- An iPhone photo in HEIC is converted to JPEG before upload, even
-  when it is already small.
-- **Logging out lands on the site's front page**, and the login
-  screen's logo links there. Where the landing page is off, that is
-  the login again.
-- **Adventure settings shows each section as a card**, like a step's
-  settings, in two columns on a wide screen.
-- **Start a new event** (dashboard) and **Schedule event** (Events)
-  appear only once the organization has a published adventure to run.
-- **A compass, map or hot-and-cold block can make its own place**:
-  **+ New place on the map…** in its zone list adds a zone and opens
-  its map in the block, with **Use my location**.
-
-### Changed — new Zonventure logo
-
-- **The favicon and the play app's install icons use the new flat
-  Zonventure mark**: one colour in the browser tab, the colour mark on a
-  navy tile on home screens.
-- **Shared links to the landing page get a real preview image**,
-  `/og-image.png` (1200 × 630), instead of the SVG favicon that most
-  link previewers ignore. Drop an `og-image.png` into
-  `ZV_WEB_OVERRIDE_DIR` to replace it.
+- A puzzle's Routes are now called Answers and next steps.
+- An adventure's starting location has a map for placing the pin.
+- Compass, map and hot-and-cold blocks can create a new place from their zone list.
+- Settings is reached from the account menu only.
+- An organisation's logo or initials show beside its name in the top bar.
+- Adventure settings shows each section as a card.
+- Start a new event and Schedule event appear only once a published adventure exists.
+- Use first gated puzzle works on unpublished drafts and follows playing order.
+- Logging out lands on the site's front page.
+- iPhone HEIC photos are always converted to JPEG before upload.
+- The favicon and install icons use the new Zonventure logo.
+- Shared links get a real `/og-image.png` preview, replaceable via `ZV_WEB_OVERRIDE_DIR`.
 
 ## [0.3.3] - 2026-09-30
 
-### Added — a static site at /shop
-
-- **zv serves the `shop/` folder of `ZV_WEB_OVERRIDE_DIR` at `/shop/`**,
-  file for file, so an operator can host a small static site (the
-  Zonventure book shop) next to the landing page. `/shop/book` serves
-  `shop/book.html`, and unknown paths get `shop/404.html`. Without a
-  `shop/` folder, `/shop/` is a 404 as before.
+### Added
+- The `shop/` folder of `ZV_WEB_OVERRIDE_DIR` is served as a static site at `/shop/`.
 
 ## [0.3.2] - 2026-09-30
 
-### Added — item slots
+### Added
+- Item slots let a puzzle be answered with items from the backpack.
+- A team missing the needed items is told and can leave to find them.
+- Steps can be reordered anywhere in the designer's list view, into or out of branches.
 
-- **A puzzle can be answered with items from the backpack** (answer
-  kind `items`, and "Item slots" in the add-step menu). Each slot
-  wants one item, in order; the phone shows the slots' names and the
-  backpack, never which item goes where. The server checks the fill
-  and that the team carries those items, then takes the first answer
-  route and — unless the author turns it off — uses the items up. A
-  wrong fill is a wrong guess and costs nothing. The validator flags
-  slots with no item or an undeclared one, and warns about an item no
-  step ever gives.
-- **A team without the items is told, and can go and find them.** The
-  phone says something is missing — or, if the author chooses, which
-  items — and a new route trigger, "Not carrying the items", shows as
-  a button while that is so. Leaving records nothing for the puzzle,
-  so it is presented again when the team comes back. The validator
-  warns when that route leaves an ordinary hub's branch, which cannot
-  be re-entered; a home screen's can.
-
-### Added — reorder steps in the designer's list view
-
-- **Steps can be dragged by a handle, or moved with ↑/↓, anywhere in
-  the list** — on the main line, into a branch or out of one — not
-  only in a straight-line adventure. A step where the flow splits
-  stays put.
-
-### Changed — the shared catalog is switched off
-
-- **Listing an adventure in the catalog no longer opens it to every
-  organisation**, and the publisher's puzzle library stays with the
-  publisher. Other organisations reach its adventures only through a
-  commission or an event pass the operator grants, so existing events
-  keep running. The console hides the Catalog tab and its links, and
-  old `#/catalog` URLs open Adventures. Curation still works; one
-  switch on each side (`admin.CatalogEnabled`, and `CATALOG_ENABLED`
-  in the console's router) turns the catalog back on.
+### Changed
+- The shared catalog is switched off; other organisations reach adventures only via commission or event pass.
 
 ## [0.3.1] - 2026-09-29
 
-### Added — API tokens for the REST API
+### Added
+- API tokens now work on `/api/admin` as `Authorization: Bearer`, with `read` tokens limited to GET.
 
-- **The tokens under Settings → Account → API tokens now work on
-  `/api/admin`**, not just `/mcp`. Scripts and agents send
-  `Authorization: Bearer zvmcp_…` and act as the user who minted the
-  token, with no session cookie or CSRF header. A `read` token may
-  only use GET; mutations need `write`. The card is shown even when
-  `ZV_MCP_ENABLED` is off; the MCP endpoint field only appears when
-  it is on.
-- **Account and credential routes stay session-only**: tokens get
-  403 on token management, password and email changes, TOTP,
-  sessions, account deletion, data export, the billing portal and
-  admin password/TOTP resets.
+### Security
+- Account and credential routes refuse API tokens and stay session-only.
 
 ## [0.3.0] - 2026-09-29
 
-### Added — redeem Live it and TrueStory gift boxes
+### Added
+- Buyers can redeem Live it and TrueStory gift boxes at `/redeem` or `/o/{slug}/redeem`.
+- Organisers approve box redemptions, which creates a team and emails its link.
+- Org admins choose which partners and products give access to which self-guided adventure.
 
-- **Buyers redeem a gift box at `/redeem`** (or an organisation's own
-  `/o/{slug}/redeem`): they pick the partner, enter the box's code (a
-  Live it box number and security code, or a 9-character TrueStory
-  experience code), choose the adventure and give a postal address.
-  A code can be redeemed once; attempts are capped per IP.
-- **Organisers approve each code** under **Box redemptions** after
-  checking it in the partner's portal. Approval creates a team on the
-  product's self-guided adventure and emails the team link, valid for
-  a year; rejecting or cancelling emails the buyer and frees the code.
-  Organisers can also track when to post the envelope, whether it has
-  been posted, and a note, and enter phone or email orders by hand.
-- **Org admins set up partners and products**: which partners they take
-  boxes from, and which self-guided adventure (and team size) each
-  product gives access to. Migration `0072_partner_redemptions`.
-
-### Fixed — live monitoring
-
-- **The public board's socket no longer drops every 40 seconds.** The
-  server never read from it, so its keep-alive ping always timed out
-  and the TV reconnected about 90 times an hour.
-- **The public board no longer shows where the puzzles are** while the
-  event can still be played. It frames the map on the play area
-  instead and shows the puzzle pins once the event is over.
-- **The completion screen crowns the top-ranked team**, by points for a
-  designed adventure, rather than whoever finished first. When time
-  runs out with no finisher, the leader is still named.
-- **Race control keeps up during a busy event.** Pushes are coalesced
-  to at most one rebuild a second per viewer, the page re-renders at
-  most every 1.5 s and never stalls under a steady stream of updates,
-  a slow render can no longer overwrite a page you have left, and the
-  map keeps your pan and zoom.
-- **Tracks stay small.** A team's trail is capped at about 120 points,
-  widening the time buckets on long events, instead of resending
-  every 10-second point on each push.
-- **Elapsed time leaves pauses out**, on the public board and in race
-  control, and both run on the server's clock, so a device whose clock
-  is off no longer shows a wrong time. The board shows a pause banner.
-  Migration `0071_event_paused_seconds` starts tracking pause time;
-  pauses before the upgrade count as zero.
-- **The public board shows every team.** With more teams than fit, it
-  keeps the leaders pinned and pages through the rest every 10 s. A
-  team keeps its colour when it changes place, and withdrawn teams
-  rank last with a "withdrew" label.
-- **The public board recovers on its own.** A heartbeat and a watchdog
-  replace a socket left half-open (a TV waking from sleep, say), and
-  the board polls until the socket is back. It also has its own rate
-  limit bucket, so at a venue where everyone shares one address the TV
-  and the players' phones no longer use up each other's allowance.
-- **Race control shows how long since each team last did anything**,
-  as "5m ago", from the server rather than a capped feed, so the
-  quietest teams no longer show "—". The feed's filter for setup noise
-  works again.
-- **Race control draws from what the server pushes** instead of
-  fetching it again, keeps one map whose markers and trails update in
-  place (the view and an open popup stay put), and keeps the scroll
-  position of its lists.
-- **A watch stops when access ends.** Race control re-checks every 30 s
-  that its user may still see the event; logging out or leaving the
-  organisation stops the updates, and the page says so.
-- The live board's footer shows a readable time instead of an ISO
-  timestamp.
+### Fixed
+- The public board's socket no longer drops every 40 seconds.
+- The public board hides puzzle locations until the event is over.
+- The completion screen crowns the top-ranked team rather than the first finisher.
+- Race control keeps up during busy events and keeps map view, popups and scroll position.
+- Team trails are capped at about 120 points to stay small.
+- Elapsed time leaves out pauses and uses the server's clock; earlier pauses count as zero.
+- The public board pages through every team and shows withdrawn teams last.
+- The public board recovers on its own from a half-open socket and has its own rate limit.
+- Race control shows how long since each team last did anything.
+- Race control stops updating once the viewer loses access to the event.
+- The live board's footer shows a readable time.
 
 ## [0.2.0] - 2026-09-28
 
-### Upgrading from 0.1.x
+### Upgrading
 
-- **Back up first.** Migrations 0056–0070 run on first start;
-  `0065_catalog_publisher` and `0066_adventure_org_not_null` rewrite
-  existing rows (see the breaking change below).
-- **The platform admin no longer authors or runs events.** After the
-  upgrade, add an org admin to the new **Zonventure Catalog** org to
-  keep editing the catalog.
-- **Moving to a new install** (e.g. running it alongside the old one):
-  restore the 0.1.x dump into an *empty* database before 0.2.0 has
-  started against it, and keep the same `ZV_TOTP_KEY`. A dump can't be
-  restored on top of a database already migrated to 0.2.0.
-- **Compose volumes are named after the checkout directory.** A clone
-  into a directory other than the old one starts on an empty database.
-- The repository moved from `git.sr.ht/~klahr/zv` to
-  `github.com/klahr/zonventure`; update the checkout's remote before
-  `make upgrade`.
-
-### Added — twelve new blocks, and more ways to hide a clue
-
-- **New blocks:** split secret (one part to each player's phone),
-  bearing lock, shake to reveal, incoming call, suspect board, photo
-  challenge, spot the difference, Morse flasher, letter tiles, team vote,
-  live bulletin (the organisers' newest message) and random draw.
-- **Photo challenges** are reviewed from the event's control page: an
-  approved photo adds its points to the team's score, a denied one can
-  be retaken, and the team moves on without waiting. Approved photos
-  show on the team's recap. Photos and votes are pruned with location
-  pings, and "Forget me" deletes a player's.
-- **Options on existing blocks:** torch styles (scratch card, UV lens,
-  red lens), a mirror-writing note, a Caesar wheel the team turns, and
-  audio that plays backwards or shows its spectrogram.
-- **Conditions:** "Metres walked on this step" and "Card drawn".
-- **Hide the score:** an adventure setting keeps the team's running
-  score off its phone. Points still count, and the end screen,
-  standings and recap still show them.
-- **Every block can be switched off** and kept for later, the title and
-  points too. Title and points are still added to new steps, but can now
-  be deleted, and deleting any block asks first.
-
-### Changed
-
-- A typed answer no longer has a QR button; only a QR scan puzzle scans.
-
-### Changed — the classic console understands designed adventures
-
-An adventure with a published graph plays the graph; its lane pages,
-kept from before, are never shown to a team again. The console used to
-show — and edit — those pages anyway.
-
-- **Adventure and catalog pages** describe the published graph: its
-  steps, puzzle count, zones on the map, places to reach and extent.
-  The lane preview, the lane simulator and the classic editor button
-  are gone for these adventures; authors get "Test play in designer".
-- **Event page, race control and team window** show a graph team's
-  points, place (the shared ranking, level teams sharing it) and
-  current step; the activity feed names steps instead of "puzzle 1";
-  race control's map draws the graph's zones. The event detail payload
-  gains `event.engine`, per-team `score`/`rank`/`node`/`outcome`, and
-  `graph` (step titles, puzzle count, zones); positions gain `node`.
-  The HTTP and live-push event detail are now built by one function.
-- **PDF report and team recap** rank graph events by points, like the
-  CSV; the recap shows points, rank, the steps reached, zone pins and
-  the quiz walk.
-- **Copying, exporting and importing an adventure carry its graph**
-  (published and draft) and the media it references. Exports gain the
-  optional `graph` and `graph_media` fields; older exports import as
-  before.
-- **Lane edits to a graph adventure are refused** (409 `graph_adventure`)
-  over HTTP and MCP, and the classic editor says why. "Skip this
-  puzzle", a lane move that could finish a graph team behind the
-  engine's back, is refused for graph events and no longer offered.
-
-### Removed — the puzzle library
-
-The shared puzzle library (`#puzzles`, `GET/POST /api/admin/puzzles`,
-`GET /api/admin/puzzles/{id}`, `POST …/pages/copy-from/{id}` and the
-editor's "Copy from library…") is gone. Library puzzles stay in the
-database, unreachable.
-
-### Fixed — "Call a webhook" and "Send an email" steps are delivered
-
-- **Webhook and email steps were never sent.** Passing one queued a row
-  in `graph_effect_outbox` that nothing read. A worker
-  (`internal/effects`) now sends them after the team's move commits,
-  retries failures with backoff for about a day, and gives up after six
-  attempts (migration `0069`).
-- **An email step has a subject and a message** in place of the
-  "Template" name, which named nothing. It goes to the team's contact
-  email through the configured mailer (`ZV_SMTP_*`); `{{team}}`,
-  `{{event}}` and `{{step}}` are filled in when it is sent. A team
-  without a usable address is given up on at once, not retried. An
-  email step missing either field fails validation
-  (`effect.email.missing`), and an unknown placeholder is a warning
-  (`effect.email.placeholder`).
-- **Method and headers.** A webhook step has a method (GET, POST — the
-  default —, PUT, PATCH, DELETE) and custom headers, such as an
-  Authorization token. POST, PUT and PATCH send the team and step as
-  JSON; GET and DELETE send them as query parameters. Every request
-  carries `X-Zv-Delivery-Id`, the same on retries. Header values are
-  stored in the adventure and readable by anyone who can open or export
-  it.
-- **No calls to the server's own network.** The host is resolved and
-  pinned at send time and must be public; `localhost` is refused unless
-  `ZV_EFFECT_WEBHOOKS_ALLOW_LOOPBACK=1` (development only).
-
-### Added — content blocks on graph steps
-
-A puzzle's, story's and end's content is an ordered list of blocks the
-author arranges in the inspector (drag the handle, or arrow keys),
-instead of one text and a media list. The answer stays below them.
-
-- **Kinds.** Text, note (paper, telegram, text message, newspaper,
-  sticky), picture, sound, video, divider; compass (distance optional),
-  map (fixed or fitted zoom, the team's position optional, labelled
-  markers), hot-and-cold radar; chat, cipher sheet (Morse, pigpen,
-  semaphore, Caesar, custom), hotspots, torch; look-through camera
-  overlay, level, noise meter; countdown, status (items, counters),
-  and standings.
-- **Title and points are blocks** every puzzle has (a story, its title):
-  added where missing when a graph is read, moved but never removed.
-  Points show what the best answer is worth.
-- **Quiz walk.** A quiz block (1, X, 2) and one tie-breaker (closest
-  number) per adventure. A pick can change until the team leaves the
-  step, then it is final; picks are stored in
-  `team_block_picks` (migration `0068`); a story waits for its
-  questions; the right answers stay off the phone until the team
-  finishes, when right answers score and the end shows the review.
-  Among finished teams on the same score, the closer tie-break guess
-  ranks first. New player action `pick`.
-- **Graph events rank by points everywhere.** One rule (`play.Ahead`) —
-  points, then the tie-breaker between finished teams, then the earlier
-  finish — ranks the standings block, the live leaderboard and the
-  results CSV. The leaderboard shows a graph team's points, and its
-  tie-break guess once the event is over; the CSV has `points`,
-  `tiebreak_guess` and `tiebreak_off_by` columns. Both used to rank
-  graph events by lane pages solved, which graph play never counts.
-- **Show only when…** Any block can wait for a condition — near a zone,
-  a while after arriving, carrying an item — optionally showing a
-  teaser meanwhile. The server withholds a hidden block and its file;
-  `recheck_at` and `watch_position` tell the phone when to ask again.
-- **Tokens.** `{{score}}`, `{{counter:<slug>}}`, `{{item:<slug>}}` and
-  `{{team}}` in texts.
-- **Old graphs keep working.** A step's `prompt`/`text` and `media` are
-  read as blocks (media first, as shown before) wherever a graph is
-  decoded, and their translations move to the text block's key. Graphs
-  are written back as blocks only. The player view still carries a
-  flattened `text` and `media` for phones on the previous bundle.
-- **Video uploads**, capped by `ZV_MAX_VIDEO_BYTES` (default 30 MiB),
-  are never prefetched. `/media/{id}` now answers Range requests.
-- **Organiser messages.** Information to an event's teams, beside the
-  game rather than in the adventure: to every team or chosen ones,
-  shown in the player app's inbox (a bell with an unread count, and a
-  banner as one arrives). `GET`/`POST /api/admin/events/{id}/messages`,
-  `DELETE …/messages/{messageID}`, and the MCP tools
-  `list_event_messages`, `send_event_message`, `delete_event_message`;
-  migration `0067_event_messages`.
-- Map tiles still come from `tile.openstreetmap.org`; move to a tile
-  provider before maps reach players at scale.
-
-### Added — choosing how a puzzle is answered
-
-- **Answer kind picker.** Every puzzle's inspector has an answer part —
-  typed ones too — that starts with *How the team answers*: typed, QR
-  scan, options, lock, tile picture, search, or the step's quiz
-  questions.
-  Switching keeps the routes' ports, so the canvas stays connected;
-  typed answers become a choice's options, and kinds that need no
-  matchers drop them.
-- **Puzzles answered by their quiz questions** (`answer.kind:
-  "questions"`, preset *Quiz post*). The answer bar becomes a button,
-  "2 of 3 answered" until every shown question has a pick, then
-  Continue, which takes the first answer route. A quiz walk post can now
-  have a zone, time limit, hints and a timeout route. Continuing early
-  is refused with `unanswered` and is not a wrong guess.
-- **The story's Continue** counts the same way instead of waiting for
-  the server to refuse it.
-- **The answer bar's own settings** (`puzzle.bar`), for a typed
-  answer: placeholder, button label, keyboard (automatic, letters or
-  numbers — the author's choice wins over the guess from the answers)
-  and whether the QR button shows. Placeholder and button translate
-  under `bar:placeholder` and `bar:button`.
-- **Scan-only puzzles** (`answer.kind: "scan"`). The bar is one labelled
-  scan button; the decoded text goes through the routes' answers as a
-  typed guess does. "Type the code instead" falls back to the box when
-  the camera fails.
-- **A box per part.** A list answer of two to six parts gets a box for
-  each, joined with commas as the answers split them, instead of one
-  comma-separated line.
-- **Validation.** A warning for quiz questions on a puzzle answered
-  another way (the team can leave them behind), for a questions puzzle
-  with no questions or more than one answer route; an error for quiz
-  questions on an end, which is marked before they could be answered.
-  A warning for answer-bar settings on a puzzle that shows no bar, and
-  an error for an unknown keyboard.
-
-### Changed — platform admin no longer authors or runs events (breaking)
-
-The global admin is now purely the operator: it manages organisations
-and watches the system. Authoring and running events belong to
-organisations.
-
-- **Admin is refused on content and event routes.** `/api/admin`
-  adventure, graph, puzzle, page, media, event, team, webhook,
-  assignment-list and simulator routes, `POST /purchases` and
-  `/ws/arrange` answer the admin with 403. MCP tools carry an audience:
-  an admin token only sees and calls `grant_slots_to_event`,
-  `list_purchases`, `get_purchase` and `describe_event_lifecycle`.
-- **The catalog has a publisher org.** Catalog adventures used to be
-  the admin's ownerless (`org_id IS NULL`) rows; now they belong to the
-  one org flagged `organizations.is_publisher`, whose org admins author
-  them. Migration `0065_catalog_publisher` moves existing ownerless
-  adventures and library puzzles into a new "Zonventure Catalog"
-  publisher org; `0066_adventure_org_not_null` then makes
-  `adventures.org_id` mandatory and requires library puzzles to have
-  an owner.
-- **Curation moved to the operator's endpoints.** New
-  `GET /api/admin/catalog`, `PUT /api/admin/catalog/{slug}/published`,
-  `/api/admin/catalog/{slug}/shares` (replacing
-  `/api/admin/adventures/{slug}/shares`) and
-  `PUT /api/admin/organizations/{id}/publisher`. Authors can no longer
-  set `published` via `PATCH /api/admin/adventures/{slug}` or
-  `update_adventure_meta` (400). Event passes and commissions only
-  accept catalog adventures. The publisher org can't be deleted while
-  it publishes.
-- **Operator event actions moved to the org page.**
-  `GET /api/admin/organizations/{id}/events` (no live token) and
-  `POST /api/admin/organizations/{id}/events/{eventID}/cancel`. The
-  admin console's sidebar is Dashboard, Organizations, Logs and
-  Settings; an org's page shows its events (Grant slots, Cancel), the
-  catalog it publishes, and the adventures commissioned for it.
-- **`make seed`** also creates a `publisher` / `publisher` org admin
-  (`-seed-publisher`) in the publisher org, which owns the demo
-  adventure.
-
-### Fixed — authoring gates
-
-- Creating adventures (form, import, MCP `create_adventure`) and
-  library puzzles now requires org admin; org members and users
-  without an org were let through, the latter creating ownerless
-  catalog rows.
-- `GET /api/admin/adventures` and `/puzzles` no longer crash for a
-  signed-up user without an organisation.
-- Unpublished catalog adventures could be bought, duplicated, read
-  and copied from by any org; they are now visible only when listed,
-  shared or assigned.
-
-### Hardening — vendor pinning, CSP, durable submits
-
-A round of polish on the player + arranger surfaces. Each item closes
-a specific footgun the previous shape exposed.
-
-- **Self-hosted Leaflet (with lazy loader).** Both the live board and
-  the recap previously pulled `leaflet@1.9.4` from `unpkg.com` on
-  page-open; an unpkg outage or a hostile CDN swap would have either
-  broken the live view mid-event or — worse — let an attacker inject
-  script into a logged-in arranger session. Bytes now live under
-  `/assets/leaflet/` (JS + CSS + the marker / layer PNGs the CSS
-  references via relative paths) and ship from the Go binary. The
-  arranger surface uses a new `ensureLeaflet()` helper that injects
-  the script on first map open — most arranger views never touch a
-  map, so the 150 KB cost is paid once per session by the views
-  that actually need it. Same helper landed earlier in `play.html`;
-  the previous `unpkg` URL there moved to the self-hosted path
-  alongside it. All map-using arrange functions
-  (`mountAdventureMap`, `initRunMap`, `renderPuzzleLocationMap`,
-  `openFullscreenMap`) wrap their bodies in `ensureLeaflet().then()`
-  and return synchronously-callable handles so the caller's
-  `.remove()` / `.invalidate()` keeps working before Leaflet has
-  arrived.
-
-- **In-app `confirm()` / `prompt()` across the arranger surface.**
-  Twenty-odd destructive actions (refund, void, lane delete, slug
-  rename, mid-event slot rotate, brand-asset removal, 2FA off,
-  recovery-code regenerate, …) used the browser's native
-  `window.confirm` / `window.prompt`. Mobile browsers style those
-  full-screen on top of the page chrome, killing the surrounding
-  context the user just chose to act from. Two new helpers,
-  `inAppConfirm` and `inAppPrompt`, render through the existing
-  `modal()` chrome (focus trap, Esc handling, back-button
-  integration). The modal's `setBeforeClose` hook also learned to
-  await Promises, so dirty-check guards like "Discard unsaved
-  changes?" can use the same async helper without losing their
-  block-the-close contract. Power-user keyboard shortcuts (Enter to
-  submit a prompt, Esc to cancel) are wired up.
-
-- **At-least-once player submit outbox.** The player surface kept
-  queued answer/advance frames in `pendingAnswers` until
-  `ws.send()` returned success. That return only proves the OS
-  buffer accepted the frame, not that the server processed it — a
-  socket that died mid-flight could lose an answer with no error
-  path. Submissions now stay on disk until the server explicitly
-  acks the matching `client_action_id` on the
-  `answer_result` / `answer_error` channel. The server already
-  deduped retries via `player_action_dedup`; this change extends
-  that contract end-to-end so a retried frame replays the cached
-  response. Reconnect re-sends every queued entry; the new
-  `ackPending(actionID)` helper drops the matching outbox row when
-  the server confirms. Three new unit tests in
-  `play-queue.test.js` exercise the ack path.
-
-- **Tightened CSP.** The global header dropped its
-  `https://fonts.googleapis.com` / `https://fonts.gstatic.com`
-  allowances now that the webfonts ship from `/assets/fonts/*`.
-  Player and public-facing pages (play, live, recap, landing,
-  pricing, privacy, terms, manual, store, store-event,
-  org-landing, 404) gained a stricter `<meta http-equiv>`
-  Content-Security-Policy that drops the `unpkg.com` allowance
-  entirely — those surfaces no longer load anything from a CDN.
-  The `/arrange` admin surface keeps the looser baseline because
-  xterm + xterm-addon-fit are still pulled from unpkg; browsers
-  intersect the meta and header policies, so a stricter
-  per-page meta wins over the header for the surfaces that
-  don't need the looser allowance.
-
-- **`server.go` split into `routes_*.go`.** The 1470-line monolith
-  shrank to 660 lines; the route registrations moved into
-  `routes_pages.go`, `routes_assets.go`, `routes_public.go`,
-  `routes_auth.go`, `routes_player.go`, and `routes_admin.go`,
-  one helper per surface. `New()` keeps the middleware chain and
-  the per-package handler construction; a private `routesEnv`
-  struct bundles the captured deps so each helper signature is
-  just `(r chi.Router, env *routesEnv)`. Route patterns don't
-  overlap, so the call order in `New()` is purely for
-  readability — chi treats each pattern independently. Tests
-  pass unchanged.
+- Back up first: migrations 0056–0070 run on first start, and `0065`/`0066` rewrite existing rows.
+- Add an org admin to the new Zonventure Catalog org to keep editing the catalog.
+- To move to a new install, restore the 0.1.x dump into an empty database and keep `ZV_TOTP_KEY`.
+- Compose volumes are named after the checkout directory, so a new directory starts with an empty database.
+- Point the checkout's remote at `github.com/klahr/zonventure` before `make upgrade`.
+- Behind a reverse proxy, list it in the new `ZV_TRUSTED_PROXIES` or forwarded headers are ignored.
 
 ### Added
 
-- **Stripe Connect marketplace flow.** The hosted instance can now
-  charge a per-ticket platform fee on /store sales and route the
-  rest of the money straight to the selling org's Stripe account.
-  Self-host stays inert — the entire path is gated on
-  `ZV_PLATFORM_FEE_PERCENT_BPS` / `ZV_PLATFORM_FEE_MIN_CENTS`,
-  both default 0, no Connect onboarding required, no behaviour
-  change on existing deployments. Fee formula is
-  `max(percent_of_price, floor)` so a flat €5 doesn't crush an €8
-  ticket and a flat percentage doesn't trail off on a €120
-  corporate ticket; matches Eventbrite / Tito conventions.
-
-  Implementation lives behind a new optional `MarketplaceProvider`
-  interface that extends `payments.Provider` with three methods:
-  `CreateConnectedAccount`, `CreateAccountLink`, `GetConnectedAccount`.
-  Stripe satisfies both interfaces (compile-time-asserted); other
-  providers (the simulated dev impl, future Mollie / Paddle if/when
-  they land) only satisfy Provider and are unaffected. Marketplace
-  bits on `CheckoutParams` (`ConnectedAccountID`,
-  `ApplicationFeeCents`) and `RefundParams` (`RefundApplicationFee`,
-  `ConnectedAccountID`) are ignored by non-marketplace providers.
-  The Stripe impl wires `PaymentIntentData.{TransferData,
-  ApplicationFeeAmount}` for destination charges and
-  `RefundApplicationFee + ReverseTransfer` for proportional
-  application-fee clawback on refunds.
-
-  Schema in `0049_stripe_connect.sql`: `organizations` gains
-  `stripe_connect_account_id` (unique partial index),
-  `stripe_connect_charges_enabled`, `stripe_connect_payouts_enabled`,
-  `stripe_connect_synced_at`. `ticket_purchases` gains
-  `application_fee_cents BIGINT NOT NULL DEFAULT 0` so the per-row
-  fee is captured at checkout creation (not at webhook time) — a
-  fee-formula change later doesn't retroactively alter what was
-  charged on already-completed sales.
-
-  Org-side onboarding is **lazy** — quest creation works without
-  Connect (the quest just stays hidden from /store and /store/buy
-  refuses with 409 until the org finishes setup). Three new admin
-  endpoints under `/api/admin/organizations/{orgID}/stripe-connect/`:
-  `start` (idempotent: creates the account on first call, mints
-  fresh hosted-onboarding URL on every call), `status` (cached
-  read), `refresh` (force-syncs from Stripe). All three gated to
-  org_admins of the named org plus global admins.
-
-  Settings → **Billing** is the new tab where the arranger
-  manages it. Four states are surfaced explicitly: marketplace
-  off (self-host), no account yet, onboarding incomplete, and
-  connected & accepting. The `?stripe_connect=return` query
-  param the Stripe redirect URL appends triggers a forced
-  server-side sync + welcome toast on landing. Quest detail
-  pages get a "Stripe Connect required" banner when the seller
-  org isn't onboarded — owner org_admins see an actionable deep
-  link to Settings → Billing; cross-org viewers see a softer "the
-  seller org needs to finish setup" line.
-
-  The /store listing query and `/store/buy` are both
-  marketplace-aware: when the platform fee is configured, the
-  WHERE filters out un-onboarded quests, and BuyTicket forwards
-  the connected account id + computed application fee into the
-  Checkout call. `account.updated` webhook events update the
-  cache directly from the payload (no extra Stripe API call) so
-  the listing reflects Stripe's reality without waiting for the
-  manual refresh button. Operator runbook for turning the flow
-  on lives at the bottom of the Stripe Connect section in
-  SELFHOSTING.md.
-
-- **Quests** — a tailored arranger surface for always-on, ticket-
-  purchased events. Backend rows are still `events` with
-  `public_for_sale=true`; the new "Quests" sidebar entry partitions
-  them into a dedicated list (`#quests`) so the regular `#events`
-  page stays focused on operator-scheduled events the org runs
-  itself. ListEvents gains a `?public_for_sale=true|false` filter
-  param backing the partition; the Events page passes `false`,
-  the Quests page passes `true`.
-
-  Quest creation is a single form (adventure picker, name,
-  blurb, ticket price, currency, players-per-ticket, attestation,
-  optional cover image) that chains POST /events → PATCH
-  public-store fields → optional cover upload → POST /events/start
-  in one click. The quest auto-starts so it's immediately listed
-  at /store; teams arrive later via ticket purchases. The
-  empty-team start guard is relaxed for `public_for_sale=true`
-  events — without this, every quest would 409 at start since
-  there's no team to add yet.
-
-  `public_for_sale` is now an **immutable type marker** set at
-  CreateEvent — UpdateEvent refuses to flip the flag with 409 so
-  an arranger can't silently turn a regular event into a quest
-  mid-flight (or vice versa). Quest detail pages reuse the
-  existing event-detail view with rebranding: a "Quest" pill in
-  the lifecycle bar, the Reschedule action hidden (quests are
-  always-on), and a quest-only edit panel for ticket price /
-  blurb / cover (the legacy "List on /store" toggle on the event-
-  detail page is gone — it was a footgun once the type became
-  immutable). Visibility on /store is state-driven: pause to
-  delist temporarily, cancel to kill.
-
-  MCP coverage: `create_event` accepts `public_for_sale` so an
-  LLM can author quests; `start_event` inherits the relaxed
-  empty-team guard automatically. `describe_event_lifecycle`
-  documents the differences in the transition table and a
-  dedicated "Quests vs regular events" section. The whole MCP
-  surface is uniform across regular events and quests since
-  they're the same DB rows differing only in the type marker.
-
-- **Simulated payment provider.** Second `payments.Provider` impl
-  alongside Stripe, picked via `ZV_PAYMENTS_PROVIDER=simulated`.
-  Auto-confirms checkouts in-process: the buyer hits a tiny
-  `/dev/payments/checkout/{sid}` page, clicks "Pay (simulate)", the
-  server fires a synthesised `payments.Event` into its own webhook
-  endpoint, and the rest of the flow runs end-to-end — team
-  created, magic links emailed, dedupe + idempotency exercised.
-  Strictly dev-only (no signature verification, no real money). Its
-  primary purpose is validating that the abstraction works: the
-  same handler code consumes events from both providers without
-  importing either SDK. Lives at `internal/payments/simulated/`.
+- Twelve new blocks, including split secret, bearing lock, incoming call, photo challenge, Morse flasher, team vote and random draw.
+- Organisers review photo challenges from the event's control page, and approved photos show on the recap.
+- New block options: torch styles, mirror writing, a turnable Caesar wheel, and reversed or spectrogram audio.
+- Graph steps are built from ordered content blocks such as text, notes, maps, compass, radar, cipher sheets and standings.
+- Any block can wait for a condition, such as being near a zone or metres walked, and show a teaser meanwhile.
+- Any block can be switched off and kept for later, and an adventure can hide the running score.
+- Quiz walks: 1-X-2 quiz blocks with one tie-breaker question per adventure, revealed when the team finishes.
+- Texts can use `{{score}}`, `{{counter:<slug>}}`, `{{item:<slug>}}` and `{{team}}`.
+- Video uploads, capped by `ZV_MAX_VIDEO_BYTES` (default 30 MiB).
+- Organisers can message all or chosen teams, shown in an inbox in the player app.
+- Puzzles let the author choose how the team answers: typed, QR scan, options, lock, tile picture, search or quiz questions.
+- Typed answers have their own placeholder, button and keyboard settings, and multi-part answers get one box per part.
+- Webhook steps can set method and headers, and email steps have a subject and message sent via `ZV_SMTP_*`.
+- A public store at `/store` sells tickets for always-on events, with a detail page per event.
+- Quests: a dedicated console page for always-on, ticket-sold events, created and started from one form.
+- The hosted instance can take a Stripe Connect fee on store sales via `ZV_PLATFORM_FEE_PERCENT_BPS` and `ZV_PLATFORM_FEE_MIN_CENTS`.
+- `ZV_PAYMENTS_PROVIDER=simulated` enables a development-only payment provider that needs no real money.
+- MCP server at `POST /mcp` (`ZV_MCP_ENABLED=1`) for authoring adventures and running whole events, with read or write tokens.
+- Players who lost their link can request a fresh one with the team's contact email.
+- Puzzles and hints can have audio attachments, capped by `ZV_MAX_AUDIO_BYTES` (default 15 MiB).
+- Play works offline: the phone caches the adventure's media and keeps queued answers across reloads.
 
 ### Changed
 
-- **Payment-provider abstraction.** Stripe is now a concrete impl
-  behind a `payments.Provider` interface (`internal/payments`). The
-  rest of the app no longer imports `github.com/stripe/stripe-go`
-  — checkout, refund, webhook ingest, and customer-portal calls all
-  flow through the four-method interface, and `stripe-go` itself is
-  confined to `internal/payments/stripe/`. Future Mollie / Paddle /
-  Adyen impls drop in next to it; cmd/server picks one at startup
-  based on env, and the rest of the wiring is untouched. The admin
-  webhook route is renamed to `PaymentsWebhook` (still mounted at
-  `/api/webhooks/stripe` for back-compat with operator-configured
-  Stripe URLs); `Handlers.StripeSecretKey` / `StripeWebhookSecret`
-  fields are replaced by `Handlers.Provider`. No schema changes —
-  the DB columns keep their `stripe_*` names for now and a future
-  multi-provider deployment can either widen their meaning or
-  alias-rename per provider.
+- Breaking: the platform admin no longer authors adventures or runs events; organisations do.
+- Breaking: catalog adventures belong to a publisher org, and only the operator publishes them.
+- Breaking: an event's `public_for_sale` is fixed when it is created.
+- Designed adventures show their graph on the adventure, catalog, event, race control and recap pages.
+- Graph events rank by points everywhere, with the tie-breaker deciding between finished teams.
+- Copying, exporting and importing an adventure now include its graph and media.
+- Classic lane edits and "Skip this puzzle" are refused for designed adventures.
+- Only a QR scan puzzle has a scan button; typed answers no longer do.
+- Destructive actions, pausing an event and live-event edits now ask in an in-app dialog first.
+- The public live map no longer shows full team names.
+- Hints can be reordered with up and down buttons.
+- Server error messages are shown in Swedish when a translation exists.
+- Static assets are cached between visits, and a new service worker no longer takes over tabs mid-event.
+- `make` lists its targets, adds `make rebuild` and `make reset`, and drops `make deploy`, `seed-compose` and `restart`.
 
-### Added
+### Fixed
 
-- **Always-on adventures with public ticket sales.** A new public
-  store page at `/store` lists every event with `public_for_sale=true`
-  as a buy-card. A buyer types their email, pays via Stripe Checkout,
-  and the webhook creates a single team in the event and emails the
-  magic links to the buyer. The event itself is just an ordinary
-  event the operator manually started without a `scheduled_at`,
-  flipped public, and priced — no new event mode, no per-purchase
-  progress primitive, no separate "always-on" lifecycle. The buyer
-  becomes the team's "captain" and uses the existing team-share QR
-  to bring teammates in. Schema in `0047_event_public_store.sql`:
-  `public_for_sale`, `ticket_price_cents`, `ticket_currency`,
-  `ticket_team_size`, `public_blurb` columns on `events` plus a
-  `ticket_purchases` ledger keyed on `stripe_session_id` for
-  redelivery dedupe. Per-event hero image lives on the same row
-  via `0048_event_cover_image.sql` (`cover_image_*` columns) and
-  is served at `/store-cover/event/{id}`; uploads route through
-  `imageutil.NormalizeUpload` so the same MIME / SVG / shrink rules
-  the rest of the app uses apply uniformly. Endpoints:
-  `GET /api/store/items`, `GET /api/store/items/{event_id}`,
-  `POST /api/store/buy`, plus admin
-  `POST /api/admin/events/{id}/cover` + `DELETE` companion. The
-  arrange UI gains a "Public store" panel below the live-view bar
-  on every event detail page: cover upload, price + currency +
-  team-size + blurb form, one-click "List on /store" toggle.
-  Refund handling reuses the existing `charge.refunded` webhook —
-  a refunded ticket flips its row to `refunded` and withdraws the
-  team it created, so the buyer can no longer act on the magic
-  link. Each adventure also gets its own server-rendered detail
-  page at `/store/event/{id}` with proper OpenGraph metadata,
-  product price markup, and a sticky buy card; this is the
-  canonical buy surface, and the listing cards now link straight
-  to it. Marketing override seam covers both pages: drop custom
-  `store.html` and `store-event.html` into `ZV_WEB_OVERRIDE_DIR`
-  and the embedded brand-neutral versions are shadowed at request
-  time, same shape as `landing.html` and `pricing.html`. The
-  branded variants in the sibling `zv-web` repo carry the hosted
-  visual language (Aclonica heading, brand-pink hero gradient,
-  hero photo, "how it works" strip, FAQ). Both pages — embedded
-  and override — are localised English / Swedish via the shared
-  `landingStrings` table; ~50 new keys cover hero copy, "how it
-  works" steps, card vocabulary, FAQ Q&A, buy-form labels, JS-
-  side toasts and validation. A `{n}` placeholder convention lets
-  team-size phrasing live in the locale string ("Up to {n}
-  players" / "Upp till {n} spelare") and gets resolved per-event
-  server-side. The hosted `zv-web/landing.html` now also surfaces
-  a Store link in the topbar, mobile overlay, and footer.
-- **MCP connector.** New opt-in `POST /mcp` endpoint exposing
-  adventure authoring as Model Context Protocol tools so an
-  arranger can connect Claude desktop / claude.ai / other MCP
-  clients and author adventures by tool call. Eight tools cover
-  full CRUD: `list_adventures`, `get_adventure`,
-  `validate_adventure` (dry-run), `create_adventure`, `add_puzzle`,
-  `update_adventure_meta`, `set_lane_mode`,
-  `delete_adventure` (two-phase, requires `confirm:true`). Per-user
-  bearer tokens minted from **Settings → Account → MCP API tokens**;
-  plaintext shown once, stored as `sha256(token)` in a new
-  `mcp_tokens` table (migration `0045_mcp_tokens.sql`). Off by
-  default — operators set `ZV_MCP_ENABLED=1` to mount the route.
-  Tool calls inherit the minting user's authoring policy
-  (`canAuthor` / `canSeeOwned`) so an MCP session can't reach
-  beyond what the user could do in `/arrange`. Binary assets
-  (image / audio bytes) are intentionally NOT supported via MCP —
-  the model writes alt-text placeholders and the user attaches
-  files via the arranger UI. See [MCP.md](MCP.md).
-- **MCP: run a whole event without visiting the web.** The
-  connector grows from 24 authoring tools to 32 covering the full
-  event lifecycle, so an arranger can author → buy slots → schedule
-  → invite → start → observe → wrap up an event entirely through
-  an MCP client. New phases:
-  - **Lifecycle (8 tools):** `list_events`, `get_event`,
-    `create_event`, `update_event`, `start_event`, `pause_event`,
-    `resume_event`, `cancel_event` (password-gated).
-  - **Teams + slots (10 tools):** `create_team`, `bulk_create_teams`
-    (JSON; multipart import stays web-only), `update_team`,
-    `delete_team` (password-gated), `withdraw_team`,
-    `unwithdraw_team`, `unlock_team`, `add_slot`, `remove_slot`,
-    `rotate_slot_token`.
-  - **Observation (4 tools):** `list_positions`, `list_activity`,
-    `list_tracks`, `get_event_state_summary` (synthesised
-    poll-friendly leaderboard for "wait until done" loops).
-  - **Billing (5 tools):** `list_purchases`, `get_purchase`,
-    `create_purchase` (provider hard-coded to `simulated`; refused
-    on Stripe-enabled deployments — real-money buys stay in the
-    web checkout), `confirm_purchase`, `grant_slots_to_event`
-    (admin-only, re-checked at the MCP layer since the route gate
-    is bypassed).
-  - **Invitations (3 tools):** `send_event_invitations`,
-    `send_team_invitation`, `get_event_invite_ics`. Real emails go
-    out under the existing org rate limit; descriptions flag
-    non-idempotency.
-  - **Polish (2 tools):** `export_event_results_csv` (CSV inline;
-    recap PDF stays web-only), `describe_event_lifecycle` (static
-    Markdown reference covering the state machine, edit-permission
-    matrix, polling cadence, and security gates so the model can
-    plan transitions without trial-and-error).
+- Webhook and email steps are now actually sent, with retries for about a day.
+- Paid ticket emails are retried when the mail server is down, instead of being lost.
+- Only org admins can create adventures, and unpublished catalog adventures are no longer open to every org.
+- Player answers are kept until the server confirms them, so none are lost on a dropped connection.
+- Confirming an email change no longer fails.
+- Unpaid Stripe sessions no longer count as paid, and a partial refund no longer withdraws the team.
+- Retried Stripe requests no longer create duplicate refunds or checkouts.
+- Two servers starting at once no longer run migrations twice.
+- Player dialogs work with a keyboard, and player buttons have 44 px tap targets.
+- The iOS keyboard no longer hides the answer box, and autocorrect no longer changes answers.
+- The console respects reduced motion and has better text contrast.
+- The live leaderboard stays smooth with many teams and on screens left running for long.
+- Swedish translations are corrected, and the 404 page is translated.
 
-  Every new tool delegates to the existing `*admin.Handlers`
-  method via a thin in-process adapter (`internal/mcp/adapter.go`),
-  so policy, audit, webhook and WebSocket publish work runs in
-  exactly one place — no parallel implementation. `mcp.New()`
-  gains a fourth argument (`*admin.Handlers`); update embedders.
-- **MCP token scopes.** `mcp_tokens` gains a `scopes` JSONB
-  column (migration `0046_mcp_token_scopes.sql`); the token-mint
-  modal exposes two checkboxes (`read` / `write`). Existing tokens
-  default to `["read","write"]` so back-compat is invisible.
-  Read-only tokens are useful for dashboards / monitoring clients
-  that should never mutate state. Scopes only narrow what the
-  underlying user can do — they never grant authority beyond the
-  user's role. Tools panic at startup if registered without a
-  scope so a new tool can't ship ungated.
+### Removed
 
-### Security (round 2)
-
-- **Webhook SSRF closed.** `validateWebhookURL` now resolves the
-  registered host and rejects any IP in the loopback / private /
-  link-local / metadata ranges (incl. AWS 169.254.169.254, IPv6
-  ULAs, IPv4-mapped loopback, CGNAT, IETF benchmarking). The same
-  gate runs again at delivery time so a DNS rebind between
-  registration and dispatch can't pivot the worker. Delivery
-  client also refuses redirects (`CheckRedirect → ErrUseLastResponse`)
-  so a clean public URL that 302s to an internal one fails closed.
-- **Webhook delivery body is bounded.** The worker drains at most
-  64 KiB of the customer's response before closing — a slow-loris
-  / huge-body endpoint can no longer monopolise a worker for the
-  full 30 s timeout.
-- **ZIP-bomb defence on ods / xlsx imports.** ODS pre-flight rejects
-  `content.xml` whose declared uncompressed size exceeds 50 MiB and
-  trips a streaming counter on the actual reads; xlsx passes
-  `excelize.Options{UnzipSizeLimit: 50 MiB}` so excelize bails on
-  decompression-bomb archives.
-- **Server-side empty-event guard.** `transitionEvent("start")` now
-  rejects events with zero teams (409). Closes a bypass where a
-  stale UI cache or scripted client could slip past the new
-  client-side guard.
-- **Seed flow stamps `password_is_default`.** `cmd/server/seed.go`
-  upsertUser now sets the flag for well-known seed passwords (admin,
-  rootpw, s3cret, jane), so the in-app red banner fires on demo /
-  compose-seeded installs too — not just ZV_SEED_ADMIN flows.
-- **QR-share URL builder requires `ZV_PUBLIC_URL`.** Dropped the
-  `r.Host` fallback (same poisoned-Host attack as the email links).
-  Returns 503 when unset rather than printing a QR pointing at
-  whatever the request claimed the host was.
-- **Session inactivity timeout.** Lookup now bumps `last_used_at`
-  on each request (throttled to 1 write/min/session) and rejects
-  sessions whose last-use is older than 7 days regardless of
-  `expires_at`. A leaked cookie now expires from real-world
-  inactivity, not just from the absolute 30-day TTL.
-
-### Changed
-
-- **Mid-edit save warning is a styled modal.** Replaced the native
-  `confirm()` with a proper modal that calls out the categories of
-  change (typo / logic / disable-or-reorder) and explicitly tells
-  the arranger which kinds are safe vs. risky on a live event.
-- **Pause needs confirmation.** Pausing an active event is now
-  gated by a small modal that explains what players will see; one-
-  tap pause was too easy to misclick on a mobile dashboard.
-- **Member-removal warns on owned events.** Removing an org member
-  who created scheduled / running / paused events surfaces the
-  count and a "remove anyway" / "cancel" choice. Prevents
-  accidentally orphaning live events from the audit trail.
-- **Live map drops team-name popup.** The Leaflet popup that
-  exposed full team names on the public spectator map is gone —
-  initials still show on the marker, but pairing precise GPS with
-  a child's name (school events sometimes use first names) is
-  closed off. Arrangers who need full names + positions still
-  have the staff `/api/admin/positions` view.
-- **CSV-injection defang on roster import.** Names that start with
-  `=`, `+`, `-`, `@`, tab, or `|` get a single-quote prefix at
-  parse time so a re-export to CSV (clipboard, leaderboard
-  download) doesn't smuggle a formula into Excel/Sheets/Numbers.
-  Applied uniformly across csv, ods, xlsx, and IOF-XML importers.
-- **Hint reorder via up/down arrows.** Each hint row gains
-  Move-up / Move-down buttons so an arranger can rearrange hints
-  without delete-and-recreate (which lost any attached images /
-  audio). Disabled at the ends; preserves the hint id so attached
-  media survives.
+- The shared puzzle library and its endpoints.
 
 ### Security
 
-- **GPS plausibility check.** `recordLocation` now computes implied
-  speed against the team's previous ping and rejects anything above
-  60 m/s. Without this gate, the gateReached check (which trusts the
-  latest ping) was trivially bypassable: a player at the start could
-  POST "I'm at the gate" coordinates and walk through every gated
-  puzzle from a chair. Real GPS jitter clears the bar; teleport
-  doesn't.
-- **Hint text gated by reveal in player snapshot.** `buildHintDTOs`
-  no longer ships the rendered hint body for hints below the team's
-  reveal threshold. Devtools can no longer read every locked hint
-  off the state DTO; a fresh reveal returns the body in the
-  `RevealedText` field of the HTTP response so the UI paints
-  instantly without waiting for the next WS state push.
-- **Open redirect via `X-Forwarded-Host` closed.** Email links
-  (password reset, email verify, email change) and the team-share
-  QR URL now read only from the operator-set `ZV_PUBLIC_URL`,
-  never from request headers. An attacker behind a hostile
-  reverse proxy can no longer inject a phishing host into outbound
-  email bodies.
-- **Audio uploads are MIME-sniffed server-side** with
-  `http.DetectContentType` instead of trusting the client header,
-  plus `X-Content-Type-Options: nosniff` on the serve route. Closes
-  the polyglot path where an HTML+audio blob could land under the
-  audio table with a forged `audio/mpeg` Content-Type.
-- **Default-credentials warning banner.** Every page now shows a
-  red "Change your password now" banner when the seeded admin
-  account still holds `admin/admin` (or `root/rootpw`). Cleared
-  the moment the user changes their password through any of the
-  password-update paths.
-- **WebSocket Origin check is documented load-bearing.** Inline
-  comment on `ws.Accept` warns future contributors not to disable
-  the default Origin check by passing `OriginPatterns` /
-  `InsecureSkipVerify` — the same-origin gate is the WS CSRF
-  equivalent.
-- **Magic-link exchange is rate-limited.** `MagicLinkLogin` now
-  goes through a per-IP burst limiter (20 / minute) so a scripted
-  client can't pummel the audit log + DB lookup probing tokens.
-- **Live board's GPS map stays off by default**, with an
-  explanatory comment near the event-create INSERT so a casual
-  refactor can't accidentally enable it. Competing teams who get
-  the live URL no longer see opponents' real-time positions
-  unless the arranger explicitly flips the toggle.
-- **Server-side validation of legal pages.** `/privacy` and
-  `/terms` now return 503 with a list of missing env vars when
-  `ZV_COMPANY_NAME` / `ZV_CONTACT_EMAIL` / `ZV_JURISDICTION` are
-  unset, instead of shipping `[set ZV_COMPANY_NAME]` placeholder
-  text to real users.
-
-### Added
-
-- **Lost-magic-link recovery.** Players who closed the tab or
-  switched devices can now request a fresh link from the no-session
-  screen by entering the team's contact email. New endpoint
-  `POST /api/player/recover-link` rotates magic tokens (clearing
-  `claimed_at` so the new link is single-use again) and emails the
-  fresh links. Always returns 204 to avoid email enumeration.
-- **Empty-event start guard.** Tapping Start on an event with zero
-  teams now opens a clear "Add at least one team first" modal
-  instead of letting the request hit the server and returning a
-  generic toast.
-- **GPS permission-denied recovery copy.** The play surface's GPS
-  help block now distinguishes "permission denied" (no Retry — the
-  browser won't re-prompt) from "no signal" (Retry button works),
-  with platform-agnostic settings guidance and the arranger-
-  override fallback path spelled out.
-### Tests
-
-- **Client-side offline-queue unit tests.** Extracted the player's
-  offline action queue from `play.html` into `play-queue.js` so
-  it can be unit-tested in isolation; `play-queue.test.js` runs
-  under Node's built-in test runner (`node --test`) — no Jest, no
-  Vitest, no `package.json`. 12 cases cover `clientActionId`
-  uniqueness + crypto/fallback paths, the localStorage round-trip,
-  cap enforcement under hand-edited storage, malformed-JSON
-  tolerance, and quota-exceeded `setItem` failures. CI gains a
-  `nodejs` package + a `test-js` task in `.builds.yml`.
-- **Regression coverage for the 0.1.6 server work.** Ten new
-  Postgres-backed integration tests pin the recent fixes:
-  - `TestRevealHint_RejectsBeforeUnlockTime` / `_AllowsAtZeroDelay`
-    cover the new server-side hint-timer 403, including the
-    `Retry-After` header the offline replay queue depends on.
-  - `TestSubmitAnswer_ReplaysCachedResponseOnRetry` and the hint
-    counterpart pin the dedup contract — same `client_action_id`
-    replays the cached body, a fresh id runs against current state.
-  - `TestAudio_PageUploadRoundTrip`, `_PageRejectsNonAudioMime`,
-    `_PageVisibleAcrossPagesInSameAdventure`, `_HintGatedByReveal`
-    cover the new audio handlers + the puzzle/hint visibility split
-    introduced when we relaxed `canViewPageImage` for prefetch.
-  - `TestManifest_IncludesAllAdventureAssets` / `_RequiresSlot`
-    cover the new `/api/player/manifest` endpoint.
-  Tests skip without `ZV_TEST_DSN`, run on CI.
-
-### Changed
-
-- **Server error messages are now localized.** The client `api()`
-  helper auto-translates `body.error` through the i18n table — every
-  call site that already shows `r.body?.error` in a toast or result
-  line now surfaces the Swedish translation when one exists, no
-  per-site changes needed. The translation table grew by ~80 entries
-  covering the player + arranger surfaces (auth, signup, TOTP,
-  asset uploads, gameplay errors, validation messages, common
-  arranger CRUD errors). Pure-internal 500s like `"begin tx"` and
-  `"lookup failed"` stay English on purpose — the operator reading
-  logs is the audience there. WS `answer_error` frames also run
-  through `t()` for consistency.
-
-### Added
-
-- **Offline-tolerant play.** The player UI now caches the adventure's
-  images + audio up-front (service worker + new
-  `GET /api/player/manifest`), persists queued answer/advance actions
-  to localStorage so a reload doesn't lose them, and tags every
-  mutating action with a stable `client_action_id`. The server's new
-  `player_action_dedup` table replays the cached response on a retry
-  with the same id — so a queued submit that flushes after a
-  reconnect doesn't double-process even if the original landed
-  before the connection died. Visibility for puzzle assets relaxed
-  to "any team member of this adventure" (down from "team is on
-  this exact page") so the SW can prefetch all puzzles up-front;
-  hint assets stay reveal-gated.
-- **Server-side hint timer validation.** `RevealHint` now checks
-  `now - team.current_page_started_at >= hint.delay_seconds` and
-  returns 403 with `Retry-After` if the hint isn't unlocked yet.
-  Closes a pre-existing gap where the client gated the reveal
-  button on `unlocks_in_seconds` but the server never re-checked,
-  so a misclocked or malicious client could POST early.
-- **Audio attachments on puzzles and hints.** Arrangers can now upload
-  audio (`.mp3`, `.m4a`, `.ogg`, `.wav`, anything `audio/*`) alongside
-  images on a puzzle or a hint. Players see a native HTML5 `<audio
-  controls>` element; the page-level audio is visible to any team on
-  the puzzle, hint audio is reveal-gated like hint images. Each clip
-  carries an optional `description` field for a transcript / summary
-  fallback. New routes: `POST /api/admin/pages/{id}/audio`,
-  `PATCH/DELETE /api/admin/audio/{id}`, plus the `hints/.../audio`
-  + `hint-audio/{id}` mirrors. Size cap defaults to 15 MiB
-  (`ZV_MAX_AUDIO_BYTES` overrides). Page-clone copies audio rows
-  blob-for-blob, same as images.
-- **"Add media" replaces "Add image"** in the puzzle and hint editors.
-  Single picker accepts `image/*,audio/*` and routes the upload to the
-  matching endpoint by MIME — the existing image flow stays
-  unchanged, audio takes a new code path that skips client-side
-  downscaling.
-
-### Reliability — three load-bearing gaps closed
-
-Three places where the existing code was correct in the small but
-fragile under load. Each is now sound.
-
-- **Webhook delivery worker no longer holds a Postgres row lock
-  across the customer HTTP call.** New migration
-  `0054_webhook_delivery_lease.sql` adds `in_flight_until`. The
-  worker's `tick` is split into two transactions: claim+lease
-  (commits in milliseconds) → customer HTTP without any DB
-  connection held → outcome write. A slow-loris customer endpoint
-  costs one goroutine + http connection until its 30-second
-  timeout, not a Postgres backend pinned for the full window.
-  Multiple workers can now coexist (`SKIP LOCKED` + the lease
-  guard against double-claim); a worker that crashes mid-send
-  leaves the row reclaimable after `leaseWindow` (5 minutes).
-  Consumers were already required to dedupe on
-  `X-Zv-Delivery-Id`, so a duplicate from a stale lease behaves
-  the same as a duplicate from existing redelivery.
-
-- **Durable mail outbox.** Migration `0055_mail_outbox.sql` plus a
-  new `internal/mailer/outbox.go`. The post-Stripe ticket-fulfilment
-  magic-link send now enqueues to the outbox inside the
-  fulfilment transaction; a worker drains the queue with the same
-  retry shape as webhooks (1m → 5m → 30m → 2h → 8h → 24h, six
-  attempts). Earlier a transient SMTP outage could leave a paid
-  buyer stranded with no UI to trigger a resend; now they get the
-  link automatically when the relay recovers. Other interactive
-  mail flows (signup verification, password reset) keep direct
-  `Mailer.Send` calls because the user has UI-driven retry there.
-  Falls back to direct `Send` when no outbox is configured (early
-  dev setups).
-
-- **live.html DOM reconciliation by `team_id`.** The audience
-  leaderboard previously rebuilt every team row on every WS push
-  (`replaceChildren` + FLIP capture). On a 30-team TV with rapid
-  position pings that meant hundreds of full board rebuilds per
-  minute. The render path now reuses rows whose
-  `teamRowFingerprint` (rank, page-index, finished, name, avatar,
-  members, page count, current puzzle title) is unchanged — DOM
-  destruction drops from "all rows" to "only changed rows", and
-  in-flight CSS transitions (the progress-bar fill, FLIP) survive
-  across renders. Stays smooth at 30+ teams.
-
-### Security & correctness round
-
-A round of audit work landed a set of bugs, hardening seams, and
-test coverage gaps. Headline items:
-
-- **Email-change confirmation no longer 500s.**
-  `ConsumeEmailChangeToken` was reading `users.role` and
-  `users.org_id` — columns dropped by migration 0020. Now reuses
-  `loadUserByID`. Regression test drives the issue + confirm flow
-  end-to-end against a real database.
-
-- **Stripe webhook handlers gate on `payment_status`.**
-  `checkout.session.completed` fires for async methods (ACH / PIX
-  / BACS) before funds are captured. Both `handleCheckoutCompleted`
-  and `handleTicketCheckoutCompleted` now require
-  `payment_status="paid"` or `"no_payment_required"` before
-  fulfilling. An unpaid session is logged and skipped, not flipped
-  to "paid" optimistically.
-
-- **Partial refunds no longer trigger team withdrawal.**
-  `charge.refunded` fires for every refund delta, so a €5 partial
-  refund used to flip an entire ticket purchase to `refunded` and
-  withdraw the team. The handler now requires
-  `Refunded == true && AmountRefunded >= AmountCents` before
-  flipping state.
-
-- **Stripe API calls carry `IdempotencyKey` headers.** `Refund`,
-  `CreateCheckout`, and `CreateConnectedAccount` derive a stable
-  key from the local row id (e.g. `refund-purchase-42`,
-  `checkout-purchase-42`, `connect-org-42`). A retried admin
-  Refund click no longer cuts a duplicate refund; a transport
-  hiccup mid-checkout no longer mints two Stripe sessions. The
-  three params types gain an `IdempotencyKey` field on the
-  abstract `payments` interface so future provider impls can
-  honour it the same way.
-
-- **`X-Forwarded-For` honoured only behind a trusted proxy.** New
-  `ZV_TRUSTED_PROXIES` env var (comma-separated CIDR/IP list,
-  e.g. `127.0.0.1,::1` for sidecar mode or `10.0.0.0/8` for a
-  private VPC). When unset (the safe default), forwarded headers
-  are ignored — attackers on a directly-reachable deployment
-  can't spoof their source IP to bypass the per-IP rate limiter
-  or audit log. Same gate applies to `X-Forwarded-Proto` for
-  cookie `Secure` decisions, and chi's stock `middleware.RealIP`
-  is replaced by `trustedProxyRealIP` that honours the same gate.
-  Operators behind nginx / Caddy / Traefik need to set this on
-  upgrade; the fresh `.env.example` documents both common shapes.
-
-- **Migration runner.** `pg_advisory_lock` around the boot-time
-  loop so two booting processes serialise. Single-shot `SELECT`
-  for applied migrations replaces N×SELECT-COUNT round-trips.
-  Boot-time duplicate-prefix check refuses to start when two
-  migrations share a 4-digit prefix (the existing `0033_*` pair
-  is grandfathered).
-
-- **SMTP CRLF / header-injection guard.** Recipient and From
-  addresses are validated for control bytes before being passed
-  to `net/smtp`; every header value goes through
-  `sanitizeHeader` which strips CR/LF/NUL/etc. before reaching
-  the wire. Closes the BCC-smuggling vector if a future caller
-  stops sanitising at the boundary.
-
-- **OIDC + TOTP hardening.** OIDC: the IdP-supplied email goes
-  through `TrimSpace` + a printable-ASCII gate before becoming
-  the username, so unicode confusables can't collide with a
-  legitimate user. `amrIncludesMFA` now matches only RFC 8176's
-  `mfa` / `mca` (was lenient and accepted single-factor `otp` /
-  `swk` / `hwk`). TOTP recovery codes consume in constant time:
-  `consumeRecoveryCode` runs Argon2 against every unused hash
-  regardless of an early match, so a wrong-guess and a
-  right-guess take the same wall-clock time.
-
-- **Fuzz tests for parser surfaces.** New `Fuzz*` tests for
-  tokenx, mdx, icscal, orgslug, teamimport CSV + IOFXML, and
-  adventure validation. The fuzzer caught and we fixed three real
-  bugs in flight: an mdx panic on a malformed autolink (`0<0@0>`)
-  that would have crashed any handler rendering author markdown;
-  an icscal NUL byte propagating through SUMMARY (rejected by
-  some mail clients); an orgslug `Slugify("www")` returning a
-  value that fails `Validate` (auto-derived slugs from "www
-  Inc." were unsavable).
-
-### Service worker + asset caching
-
-- **Static assets get ETag + revalidation.** `serveAsset`
-  previously set `Cache-Control: no-store` despite the comment
-  claiming long-cached. Every navigation re-downloaded
-  `topbar.css`, `page-tokens.css`, `i18n.js`, `fsmap.css`, and
-  the 130 KB `jsqr.js` blob. Now: ETag computed from the served
-  bytes at handler-construction time + `public, max-age=3600,
-  must-revalidate`. Repeat visits get 304s; a deploy mints fresh
-  ETags (process restart → new sums) so users pick up new
-  assets within the cache window. Single biggest repeat-visit
-  perf win in the product.
-
-- **Service worker cache rotates per deploy.** The cache version
-  is now keyed to the server-injected build version (was hardcoded
-  `-v1`). The `/play-sw.js` route substitutes `__ZV_BUILD_VERSION__`
-  with the running version stamp; `activate` purges any stale
-  shell or per-team asset cache whose suffix doesn't match
-  current. An operator no longer has to remember to bump a
-  literal in the source on every release.
-
-- **Mid-event SW hot-swaps disabled.** Removed `clients.claim()`
-  from `activate`. A fresh SW no longer takes over open player
-  tabs the moment it activates — existing clients keep their
-  current SW until a natural reload, so a regression in the new
-  worker can't strip offline state out from under a team during
-  their event. New tabs land on the fresh worker as expected.
-
-- **Fetch-handler scope guard.** The SW registers at scope `/`
-  because it needs to intercept `/adventure-assets/*` and
-  `/org-logo/*` (siblings of `/play`, not children). Defence in
-  depth: an explicit allowlist at the top of the fetch handler
-  — `HANDLED_PREFIXES` + `HANDLED_EXACT` — early-returns on
-  anything outside the player's surface so a future bug in one
-  handler can't accidentally widen the SW's reach into
-  `/arrange`, `/api/admin/*`, etc. `prefetchAssets` is also
-  capped at 200 URLs per message.
-
-### Player a11y, mobile, i18n
-
-- **Player modals are real dialogs.** Hint sheet, menu drawer,
-  welcome dialog, and QR scanner all now carry `role="dialog"`,
-  `aria-modal="true"`, `aria-labelledby` on the heading, focus
-  trap (Tab / Shift-Tab cycle within the panel), focus restore
-  on close, and focus the right initial element on open (the
-  close button by default; the primary CTA for the welcome
-  dialog). The same pattern is exposed as `wireModal()` for
-  reuse. Earlier these were "fake modals" — keyboard users
-  tabbed straight out into the page behind.
-
-- **iOS soft-keyboard no longer hides the submit dock.** The
-  `viewport` meta on `play.html` gets
-  `interactive-widget=resizes-content` so the layout viewport
-  shrinks when the keyboard slides up. Combined with new
-  answer-input attributes (`autocapitalize="off"`,
-  `autocorrect="off"`, `spellcheck="false"`,
-  `enterkeyhint="send"`) the central interaction — typing an
-  answer — works correctly on iOS without the keyboard's
-  autocorrect mangling the input.
-
-- **44 px tap targets across the player.** Every dismiss control
-  (hint-sheet-close, welcome panel-close, team-share panel-close,
-  menu-btn, menu-close, hint-toggle pill) now meets the WCAG
-  2.5.5 floor that the file's own `--tap-target` token had been
-  specifying. The visible glyph stays compact via `padding`;
-  `min-width`/`min-height` carries the hit area for outdoor /
-  gloved use.
-
-- **`prefers-reduced-motion` honoured across the arranger surface.**
-  arrange.html previously had ZERO reduced-motion handling
-  despite shipping 24+ keyframe animations. Now matches the
-  global pattern in page-tokens.css. AA contrast on the `--muted`
-  token is bumped from `#6b7f96` (3.86:1, fails AA on light bg)
-  to `#4f6478` (~5.4:1) — same value play.html already used.
-
-- **Live page memory + CPU on long-running TVs.** The clock
-  interval pauses when `document.hidden`. The `lastPct` map is
-  pruned against the current seen-team set so a TV cycling
-  through back-to-back events doesn't accumulate entries forever.
-  WS `snapshot`+`tracks` bursts coalesce via
-  `requestAnimationFrame` so the back-to-back pair triggers one
-  render per frame instead of two.
-
-- **Arranger pollers go quiet when the tab is hidden.** Simulator
-  status (1.5 s) and webhook-log (4 s) pollers are now
-  self-rescheduling `setTimeout` loops that skip ticks when the
-  tab is buried and double their delay (cap 30 s) on failure —
-  no more thundering herd against a recovering server.
-
-- **Swedish translation sweep.** A round of mechanical fixes to
-  `sv.json` closed pervasive grammar errors: `en event` →
-  `ett event` (event is neuter — 14 hits); `genevent` →
-  `genomgång` (a machine-translation typo at the top of the SV
-  manual); `Läser in` → `Laddar` (literal calque);
-  `exportet` → `exporten` (gender); `spelartak`/`lagtak` → `Max
-  antal spelare`/`Max antal lag` (calques). Nuance calls
-  (`Uppdrag` overloading, `Recap` untranslated, `Hint`
-  inconsistency, brand split) deferred to a copywriting pass.
-
-- **404 page localised.** Routes through a new `render404` handler
-  that substitutes the `NotFound*` strings into the embedded
-  template; SV translations land in `landing/sv.json`. The
-  English-only minimal-card design is preserved so the failure
-  floor stays self-contained.
-
-### Operator-visible config
-
-- **`ZV_TRUSTED_PROXIES`** (new). Comma-separated CIDR/IP list of
-  reverse proxies whose `X-Forwarded-*` headers are honoured.
-  Empty (default) means "trust nothing": forwarded headers are
-  ignored and per-IP rate limits / audit log see the immediate
-  peer. Operators behind nginx / Caddy / Traefik / Cloudflare
-  Tunnel need to set this on upgrade. See `.env.example` for
-  shape examples.
-
-- **Makefile reorganised.** `make` (no args) now prints a short
-  menu grouped by purpose. New: `make rebuild` (clean image
-  build without wiping the DB), `make reset` (wipe Postgres
-  volume + rebuild — destructive, confirms first). Removed:
-  `make deploy` (was misnamed and duplicated `make up`),
-  `make seed-compose` (folded into `make seed`),
-  systemd-specific `make restart`. Existing targets kept.
+- Webhooks can no longer call private or internal addresses, nor follow redirects.
+- Webhook header values, such as tokens, are stored in the adventure and readable by anyone who can open or export it.
+- Maps load from the server itself, and player pages no longer load scripts from a CDN.
+- Spreadsheet imports reject ZIP bombs and defuse names that start with a formula character.
+- Email links and the team QR code use only `ZV_PUBLIC_URL`, never request headers.
+- Sessions expire after 7 days without use, and magic-link login is rate-limited.
+- Implausible GPS jumps are rejected, so players cannot fake reaching a zone.
+- Hint texts stay off the phone until revealed, and hint timers are enforced by the server.
+- Audio uploads are checked by content, not by the declared type.
+- Seeded demo accounts show the change-your-password banner.
+- The live board's GPS map stays off unless the organiser turns it on.
+- `/privacy` and `/terms` fail until `ZV_COMPANY_NAME`, `ZV_CONTACT_EMAIL` and `ZV_JURISDICTION` are set.
+- Email headers reject injected line breaks, and OIDC and recovery-code checks are stricter.
 
 ## [0.1.5] - 2026-05-01
 
 ### Added
 
-- **Sidebar version line.** Every signed-in user now sees the running
-  build's version in the sidebar footer (fetched once per session from
-  the public `/api/version`).
-- **One-click upgrade affordance.** Admins with a newer release
-  available now get an "Update to v\<latest\>" button under the version
-  line that jumps straight to Settings → Software update.
-- **`make upgrade` target.** One command that fetches tags, checks out
-  the newest release, and rebuilds the Docker image at that commit —
-  replacing the three-line recipe operators were copy-pasting. The
-  in-app upgrade card and `SELFHOSTING.md` lead with this; the
-  underlying `git`/`docker` commands are kept as the equivalent.
-
-### Changed
-
-- **Plain-language copy on the Software update page.** The lede now
-  says "Checks once a day whether a newer version of Zonventure is
-  available" instead of "Compares the running binary against the
-  upstream CHANGELOG.md" — same behaviour, less jargon for non-technical
-  admins.
-- **Brand naming clarified.** "Zonventure" is the platform; "Zonventure
-  Studio" is the arranger tool (used only in the `/arrange` `<title>`,
-  the browser-unsupported message, and the welcome modal); "Zonventure
-  AB" is the legal entity. Player-facing pages, marketing surfaces,
-  emails, and the TOTP issuer label all use plain "Zonventure".
+- The sidebar footer shows the running version to every signed-in user.
+- Admins see an "Update to v<latest>" button in the sidebar when a newer release exists.
+- `make upgrade` fetches tags, checks out the newest release and rebuilds the Docker image.
 
 ## [0.1.4] - 2026-04-30
 
 ### Fixed
 
-- **2FA login was broken.** The TOTP challenge form sent an empty
-  `recovery_code` instead of the typed TOTP code: the DOM helper's
-  `h({ hidden: '' })` coerced the empty string to `false` when assigning
-  to the boolean `hidden` property, so the recovery-code input was
-  visible from the start and the form's `hasAttribute('hidden')` check
-  picked the recovery branch with an empty payload. Anyone who enrolled
-  in 2FA in 0.1.0–0.1.3 was effectively locked out. The same latent bug
-  affected the TOTP-enrolment QR panel and the email-change revert
-  banner; both now hide their initial state correctly.
-- **In-app upgrade instructions matched no real upgrade path.** The
-  Settings → Software update card showed `docker compose pull && docker
-  compose up -d`, neither of which actually upgrades the locally-built
-  `app` image. The card and `SELFHOSTING.md` now show one recipe that
-  fetches tags, checks out the latest release, and rebuilds with
-  `docker compose up -d --build` — producing a clean version stamp in
-  `/api/version`.
+- Two-factor login works again; anyone who enrolled in 0.1.0–0.1.3 was locked out.
+- The 2FA enrolment QR panel and email-change revert banner now start hidden as intended.
+- The in-app upgrade instructions now show a recipe that actually rebuilds the app image.
 
 ## [0.1.3] - 2026-04-30
 
 ### Fixed
 
-- **Docker build no longer stamps every binary as `-dirty`.** The 0.1.2
-  fix re-included `.git` in the build context, but `.dockerignore` still
-  strips other tracked files (`Dockerfile`, `compose.yaml`, `.gitignore`,
-  `TODO.md`, `.dockerignore`), and `git describe --dirty` saw them as
-  deleted inside the container. The build now runs `git checkout -- .`
-  to restore those files before describing, so a clean tagged checkout
-  produces a clean version string. Affects every operator on the Docker
-  Compose path.
+- Docker builds of a clean tagged checkout no longer report a `-dirty` version.
 
 ## [0.1.2] - 2026-04-30
 
 ### Fixed
 
-- **Docker build no longer stamps every binary as `dev`.** The build
-  context's `.dockerignore` was excluding `.git`, so the in-container
-  `git describe --tags --always --dirty` couldn't see any history and
-  fell back to `echo dev`. Tagged Docker builds now report their real
-  version via `/api/version`, and the Settings → Software update page
-  no longer flags every Docker-built binary as a development build.
-  Affects every operator on the Docker Compose path; binary builds via
-  `make build` were unaffected.
+- Docker builds now report their real version in `/api/version` instead of `dev`.
 
 ## [0.1.1] - 2026-04-30
 
 ### Added
 
-- **In-app update detection.** Admins see a new **Settings → Software
-  update** page that compares the running binary against the
-  upstream `CHANGELOG.md`, shows the changes since the running
-  version, and offers a **Check now** button. A small dot on the
-  hamburger menu and the Settings entry surfaces the badge when an
-  update is available. The check runs daily in the background; the
-  fetch URL is configurable via `ZV_CHANGELOG_URL`.
-- **`make tag BUMP=...`** helper for bumping the version and
-  creating an annotated tag locally based on the latest existing
-  tag. Prints the push command rather than pushing for you.
+- Admins get a Settings → Software update page that checks daily for new releases and lists the changes.
+- `ZV_CHANGELOG_URL` sets where the update check fetches the changelog from.
 
 ## [0.1.0] - 2026-04-30
 
@@ -2939,23 +810,15 @@ First tagged release.
 
 ### Added
 
-- **Player experience.** Magic-link join with no app install, multi-puzzle
-  adventures with markdown prompts and images, GPS / location puzzles,
-  hints with timed reveal, and a real-time live audience view.
-- **Arranger UI.** Full authoring of adventures, puzzles, hints, and
-  teams; event scheduling; per-adventure branding; a race simulator for
-  testing pacing without real players.
-- **Identity & multi-tenancy.** Admin / org-admin / org-member roles,
-  multiple organisations per user, TOTP two-factor authentication, and
-  an audit log.
-- **Localisation.** English and Swedish throughout, with a build-time
-  gate that fails when a string is missing a translation.
-- **Self-host.** Single static Go binary with embedded migrations and
-  assets, packaged as a one-command Docker Compose stack on top of
-  Postgres. Configurable retention, optional Prometheus metrics, and
-  pg_dump-portable backup / restore.
+- Players join by magic link without installing an app and solve multi-puzzle adventures with GPS puzzles and timed hints.
+- A live audience view follows the event in real time.
+- Arrangers author adventures, puzzles, hints and teams, schedule events, brand adventures and test pacing with a race simulator.
+- Admin, org-admin and org-member roles, multiple organisations per user, TOTP two-factor authentication and an audit log.
+- English and Swedish throughout.
+- Self-hosting as a single Go binary in a one-command Docker Compose stack on Postgres.
+- Configurable retention, optional Prometheus metrics and pg_dump-portable backup and restore.
 
-[Unreleased]: https://github.com/klahr/zonventure/compare/0.2.0...main
+[Unreleased]: https://github.com/klahr/zonventure/compare/0.27.0...main
 [0.2.0]: https://github.com/klahr/zonventure/releases/tag/0.2.0
 [0.1.5]: https://github.com/klahr/zonventure/releases/tag/0.1.5
 [0.1.4]: https://github.com/klahr/zonventure/releases/tag/0.1.4
