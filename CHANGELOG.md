@@ -11,6 +11,18 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-10-12
+
+### Added
+
+- Store tickets for an adventure that posts a letter ask for the letter's language on the event page and for a postal address at checkout; the ticket email repeats where it goes.
+- Organisations choose the countries they post letters to, under Settings → Organization.
+- A running self-guided event can move to its adventure's latest published version. One for sale moves once its listing is approved; teams already playing keep their version.
+- Box redemptions is now Orders: it lists posted store purchases beside gift boxes, with print buttons and "Mark as posted" for both.
+- The redeem page asks for an address and envelope language only when the adventure posts a letter, and for the country when the organisation posts to more than one.
+- A gift box buyer gets an email when their code arrives, saying it is being checked and where their envelope goes.
+- The box confirmation email includes the adventure's note to buyers, as the ticket email does.
+
 ## [0.28.0] - 2026-10-12
 
 ### Added
@@ -24,13 +36,6 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 - A "To post" tab lists redemptions not yet posted, the earliest post date first, and the list can be narrowed to one envelope language.
 - An event can deliver its adventure's print materials differently from the adventure, such as emailing a letter in summer that is posted in winter.
 - Emailed print materials are download links in the ticket and box confirmation emails, in the team's language, until the team is withdrawn.
-- Store tickets for an adventure that posts a letter ask for the letter's language on the event page and for a postal address at checkout; the ticket email repeats where it goes.
-- Organisations choose the countries they post letters to, under Settings → Organization.
-- A running self-guided event can move to its adventure's latest published version. One for sale moves once its listing is approved; teams already playing keep their version.
-- Box redemptions is now Orders: it lists posted store purchases beside gift boxes, with print buttons and "Mark as posted" for both.
-- The redeem page asks for an address and envelope language only when the adventure posts a letter, and for the country when the organisation posts to more than one.
-- A gift box buyer gets an email when their code arrives, saying it is being checked and where their envelope goes.
-- The box confirmation email includes the adventure's note to buyers, as the ticket email does.
 - Assistants see an event's print materials in `get_event`, change their delivery with `set_print_delivery`, list gift boxes to post with `list_orders` and mark them sent with `mark_order_posted`.
 
 ### Fixed
