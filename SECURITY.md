@@ -28,7 +28,7 @@ and the Docker Compose setup.
 Out of scope: issues that need an already-compromised operator account
 or host, denial of service by sheer request volume, and
 misconfigurations that the docs warn against (for example running with
-the default `admin` / `zv` credentials, or `ZV_ENV=dev` in production).
+the default `admin` / `admin` credentials, or `ZV_ENV=dev` in production).
 
 Please test against your own instance, not against zonventure.com or
 anyone else's deployment.
