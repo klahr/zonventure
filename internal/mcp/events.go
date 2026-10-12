@@ -36,7 +36,7 @@ func (s *Server) registerEventTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "get_event",
 		Scope:       scopeRead,
-		Description: "Read full detail for one event: meta, every team, every team's player slots (with magic-link tokens), allowed next operations from the current state. Use before transitioning state so you can confirm `state` matches the action's precondition (start: scheduled, pause: running, resume: paused; end: running/paused; cancel: scheduled/running/paused).",
+		Description: "Read full detail for one event: meta, every team, every team's player slots (with magic-link tokens), allowed next operations from the current state. print_materials, when its adventure has any, says how the event delivers each (delivery) beside the adventure's own (adventure_delivery); set_print_delivery changes it. Use before transitioning state so you can confirm `state` matches the action's precondition (start: scheduled, pause: running, resume: paused; end: running/paused; cancel: scheduled/running/paused).",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},
@@ -206,6 +206,9 @@ func getEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResu
 	if err != nil {
 		return errorResult("call: " + err.Error()), nil
 	}
+	if status == http.StatusOK {
+		body = withPrintMaterials(ctx, s, id, body)
+	}
 	// A read-scoped token must stay read-only. The event detail carries
 	// capability tokens — each team's share + recap token and every
 	// player's magic-link token — which let the holder act as those
@@ -214,6 +217,31 @@ func getEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResu
 		body = redactEventCapabilityTokens(body)
 	}
 	return adminCallResult(status, body), nil
+}
+
+// withPrintMaterials adds print_materials to an event's detail: how the
+// event delivers each of its adventure's print materials, beside the
+// adventure's own (set_print_delivery changes it). An event without any
+// is left as it is, as is one whose materials can't be read.
+func withPrintMaterials(ctx context.Context, s *Server, id string, body []byte) []byte {
+	status, pb, err := callAdmin(ctx, s.Admin.EventPrintDelivery, "GET", "/api/admin/events/"+id+"/print-delivery",
+		map[string]string{"eventID": id}, nil, nil)
+	if err != nil || status != http.StatusOK {
+		return body
+	}
+	var p struct {
+		Materials []json.RawMessage `json:"materials"`
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(pb, &p) != nil || len(p.Materials) == 0 || json.Unmarshal(body, &m) != nil {
+		return body
+	}
+	m["print_materials"], _ = json.Marshal(p.Materials)
+	out, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 // redactEventCapabilityTokens blanks the per-team and per-slot

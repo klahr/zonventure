@@ -141,6 +141,7 @@ func (s *Server) registerTools() {
 	s.registerStepTools()
 	s.registerOrgThemeTools()
 	s.registerMediaTools()
+	s.registerOrderTools()
 	s.registerGuideTool()
 	// Phase 4 — invitations + ICS export. invitations.go.
 	s.registerInvitationTools()

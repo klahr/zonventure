@@ -22,6 +22,7 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 - A "To post" tab lists redemptions not yet posted, the earliest post date first, and the list can be narrowed to one envelope language.
 - An event can deliver its adventure's print materials differently from the adventure, such as emailing a letter in summer that is posted in winter.
 - Emailed print materials are download links in the ticket and box confirmation emails, in the team's language, until the team is withdrawn.
+- Assistants see an event's print materials in `get_event`, change their delivery with `set_print_delivery`, list gift boxes to post with `list_orders` and mark them sent with `mark_order_posted`.
 
 ### Fixed
 

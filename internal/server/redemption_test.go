@@ -486,6 +486,7 @@ func TestRedemption_LetterLanguage(t *testing.T) {
 // token in its language until the team is withdrawn; a posted one is the
 // organiser's to print and no team's to download.
 func TestRedemption_PrintDelivery(t *testing.T) {
+	t.Setenv("ZV_MCP_ENABLED", "1")
 	boss, db, httpc, _, eventID, cleanup := redemptionStack(t)
 	defer cleanup()
 
@@ -608,6 +609,27 @@ func TestRedemption_PrintDelivery(t *testing.T) {
 	var raw string
 	if err := db.QueryRow(`SELECT print_delivery::text FROM events WHERE id = $1`, eventID).Scan(&raw); err != nil || raw != "{}" {
 		t.Errorf("print_delivery = %q %v, want no overrides left", raw, err)
+	}
+
+	// An assistant sees and changes the same, and posts the orders.
+	call := mcpTool(t, boss.ts, boss)
+	if out, isErr := call("get_event", map[string]any{"event_id": eventID}); isErr || !strings.Contains(out, `"print_materials"`) || !strings.Contains(out, `"adventure_delivery":"emailed"`) {
+		t.Errorf("get_event = %v %s", isErr, out)
+	}
+	if out, isErr := call("set_print_delivery", map[string]any{"event_id": eventID, "deliveries": map[string]string{"self": "organiser"}}); isErr || !strings.Contains(out, `"id":"self","name":"Self-print","adventure_delivery":"emailed","delivery":"organiser"`) {
+		t.Errorf("set_print_delivery = %v %s", isErr, out)
+	}
+	if out, isErr := call("list_orders", map[string]any{"lang": "en"}); isErr || strings.Contains(out, "ABCDEF123") {
+		t.Errorf("list_orders in English = %v %s, want none", isErr, out)
+	}
+	if out, isErr := call("list_orders", map[string]any{"lang": "sv"}); isErr || !strings.Contains(out, "ABCDEF123") || !strings.Contains(out, `"id":"self"`) {
+		t.Errorf("list_orders in Swedish = %v %s, want the order and its self-print", isErr, out)
+	}
+	if out, isErr := call("mark_order_posted", map[string]any{"redemption_id": rid}); isErr || !strings.Contains(out, `"posted_at":"2`) {
+		t.Errorf("mark_order_posted = %v %s", isErr, out)
+	}
+	if out, isErr := call("list_orders", map[string]any{}); isErr || strings.Contains(out, "ABCDEF123") {
+		t.Errorf("a posted order is still to post: %v %s", isErr, out)
 	}
 
 	if s := boss.do("POST", "/api/admin/redemptions/"+itoa(rid)+"/cancel", nil, nil); s != 200 {
