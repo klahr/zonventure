@@ -1,5 +1,6 @@
 /zonventure
 /zv-server
+/server
 *.test
 /coverage.out
 /.env
