@@ -684,7 +684,7 @@ function PurchaseActions({ p, reload }: { p: Purchase; reload: () => void }) {
   // The refund call returns at once; the state flips when Stripe's
   // charge.refunded webhook lands, so poll the row for up to 30 s.
   const refund = async () => {
-    const go = await dialogs.confirm({
+    const go = await dialogs.password({
       title: t.t("Refund"),
       message: t.t("Refund {{amount}} to the customer? The state flips to \"refunded\" once Stripe confirms.", { amount: money }),
       confirmLabel: t.t("Refund"),
@@ -693,7 +693,7 @@ function PurchaseActions({ p, reload }: { p: Purchase; reload: () => void }) {
     if (!go) return;
     setBusy(true);
     try {
-      await refundPurchase(p.id);
+      await refundPurchase(p.id, go);
     } catch (e) {
       toast.err(e);
       setBusy(false);

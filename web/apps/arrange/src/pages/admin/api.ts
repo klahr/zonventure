@@ -168,7 +168,7 @@ export const revokeShare = (s: string, orgId: number) => request<void>(`/api/adm
 
 export const setBilled = (purchaseId: number, billed: boolean) => post<unknown>(`/api/admin/purchases/${purchaseId}/billed`, { billed });
 export const voidPurchase = (purchaseId: number) => post<unknown>(`/api/admin/purchases/${purchaseId}/void`);
-export const refundPurchase = (purchaseId: number) => post<unknown>(`/api/admin/purchases/${purchaseId}/refund`);
+export const refundPurchase = (purchaseId: number, password: string) => post<unknown>(`/api/admin/purchases/${purchaseId}/refund`, undefined, pw(password));
 
 /** internal/logx/logx.go Entry.MarshalJSON */
 export interface LogEntry {

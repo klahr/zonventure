@@ -110,7 +110,7 @@
   "Refund {{amount}} to {{email}}? Their team is taken out of the game once Stripe confirms.": "Återbetala {{amount}} till {{email}}? Deras lag tas bort ur spelet när Stripe har bekräftat.",
   "Sale": "Köp",
   "Self-guided ticket": "Biljett, på egen hand",
-  "Self-guided tickets and party bookings sold for your events, and hosted passes you bought.": "Biljetter och kalasbokningar sålda till dina event, och värdpass du har köpt.",
+  "Self-guided tickets and party bookings sold for your events, and hosted passes you bought. A refund goes back to the buyer's card from your Stripe balance.": "Biljetter och kalasbokningar sålda till dina event, och värdpass du har köpt. En återbetalning går tillbaka till köparens kort från ditt Stripe-saldo.",
   "Self-guided tickets, party bookings and hosted passes, across all orgs. Refunds go back to the buyer's card.": "Biljetter, kalasbokningar och värdpass, för alla organisationer. Återbetalningar går tillbaka till köparens kort.",
   "Ticket sales": "Biljettköp",
   "{{n}} child": "{{n}} barn",

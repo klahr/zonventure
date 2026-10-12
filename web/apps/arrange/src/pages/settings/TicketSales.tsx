@@ -67,7 +67,7 @@ export function TicketSalesCard() {
         : t.plural(s.team_size, { one: t.t("{{n}} player"), other: t.t("{{n}} players") });
 
   const refund = async (s: Sale) => {
-    const yes = await dialogs.confirm({
+    const pw = await dialogs.password({
       title: t.t("Refund"),
       message:
         s.kind === "ticket"
@@ -78,10 +78,10 @@ export function TicketSalesCard() {
       confirmLabel: t.t("Refund"),
       danger: true,
     });
-    if (!yes) return;
+    if (!pw) return;
     setBusy(s.id);
     try {
-      await post(`/api/admin/ticket-purchases/${s.id}/refund`);
+      await post(`/api/admin/ticket-purchases/${s.id}/refund`, undefined, { headers: { "X-Confirm-Password": pw } });
     } catch (e) {
       toast.err(e);
       setBusy(null);
@@ -132,7 +132,7 @@ export function TicketSalesCard() {
       subtitle={
         isAdmin
           ? t.t("Self-guided tickets, party bookings and hosted passes, across all orgs. Refunds go back to the buyer's card.")
-          : t.t("Self-guided tickets and party bookings sold for your events, and hosted passes you bought.")
+          : t.t("Self-guided tickets and party bookings sold for your events, and hosted passes you bought. A refund goes back to the buyer's card from your Stripe balance.")
       }
       flush
     >
@@ -171,7 +171,7 @@ export function TicketSalesCard() {
             { key: "buyer", header: t.t("Buyer"), wide: true, cell: (s) => s.buyer_email },
             { key: "total", header: t.t("Total"), align: "end" as const, cell: (s) => money(s) },
             { key: "state", header: t.t("State"), cell: statePill },
-            ...(isAdmin && shown.some((s) => s.refundable)
+            ...(shown.some((s) => s.refundable)
               ? [{
                   key: "actions",
                   header: <span className="cs-sr">{t.t("Actions")}</span>,

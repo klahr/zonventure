@@ -90,8 +90,12 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// the platform admin reconciles across orgs. Buying is org-only.
 		r.Get("/purchases", adminH.ListPurchases)
 		// Ticket sales: self-guided tickets, party bookings and hosted
-		// passes, for the Purchases tab. Refunding one is admin-only.
+		// passes, for the Purchases tab.
 		r.Get("/ticket-purchases", adminH.ListTicketSales)
+		// Refunding one: the platform admin any, an org admin their own
+		// org's tickets and parties; the handler checks which. As with
+		// purchases, the charge.refunded webhook flips the row.
+		r.Post("/ticket-purchases/{purchaseID}/refund", adminH.RefundTicketSale)
 
 		// Gift box redemptions: org admins set up partners and their
 		// products; org admins and members work the approval queue.
@@ -544,7 +548,6 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// works whether the refund originated here or in the
 			// Stripe Dashboard.
 			r.Post("/purchases/{purchaseID}/refund", adminH.RefundPurchase)
-			r.Post("/ticket-purchases/{purchaseID}/refund", adminH.RefundTicketSale)
 			// Off-platform invoice tracking — admin marks an invoice
 			// purchase as billed once the real invoice has been sent.
 			// The Purchases page's "to bill" filter ignores billed

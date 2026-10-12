@@ -93,7 +93,8 @@ func (h *Handlers) ListTicketSales(w http.ResponseWriter, r *http.Request) {
 			httpx.ServerErr(w, http.StatusInternalServerError, "list failed", err)
 			return
 		}
-		d.Refundable = d.State == "paid" && hasCharge && d.AmountCents > 0
+		d.Refundable = d.State == "paid" && hasCharge && d.AmountCents > 0 &&
+			(isAdmin(me) || me.Role == auth.RoleOrgAdmin && sellerRefundable(d.Kind, d.FeeCents))
 		d.Teams = d.Blocks * TeamsPerBlock
 		out = append(out, d)
 	}
@@ -112,7 +113,9 @@ func (h *Handlers) ListTicketSales(w http.ResponseWriter, r *http.Request) {
 // fee) takes the org's share back from that account and returns the
 // fee, so the buyer gets everything back and nobody keeps any of it.
 //
-// Admin-only: refunds touch real money.
+// Refunds touch real money: the platform admin refunds any sale, an
+// org admin only their own org's tickets and parties sold through its
+// connected account (see sellerRefundable). Reauth: X-Confirm-Password.
 //
 // POST /api/admin/ticket-purchases/{purchaseID}/refund
 func (h *Handlers) RefundTicketSale(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +123,8 @@ func (h *Handlers) RefundTicketSale(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusServiceUnavailable, "payments not configured")
 		return
 	}
-	if me, _ := auth.FromContext(r.Context()); me.Role != auth.RoleAdmin {
+	me, _ := auth.FromContext(r.Context())
+	if !isAdmin(me) && me.Role != auth.RoleOrgAdmin {
 		httpx.Error(w, http.StatusForbidden, "admin only")
 		return
 	}
@@ -133,15 +137,25 @@ func (h *Handlers) RefundTicketSale(w http.ResponseWriter, r *http.Request) {
 		state    string
 		chargeID sql.NullString
 		fee      int64
+		kind     string
+		orgID    sql.NullInt64
 	)
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT state, stripe_charge_id, application_fee_cents FROM ticket_purchases WHERE id = $1`,
-		purchaseID).Scan(&state, &chargeID, &fee); err != nil {
+	if err := h.DB.QueryRowContext(r.Context(), `
+		SELECT p.state, p.stripe_charge_id, p.application_fee_cents, p.kind, `+ticketSaleOrg+`
+		FROM ticket_purchases p
+		LEFT JOIN events e ON e.id = p.event_id
+		LEFT JOIN party_offers o ON o.id = p.party_offer_id
+		WHERE p.id = $1`,
+		purchaseID).Scan(&state, &chargeID, &fee, &kind, &orgID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "purchase not found")
 			return
 		}
 		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+		return
+	}
+	if !isAdmin(me) && (!isOrgScoped(me) || !orgID.Valid || orgID.Int64 != *me.OrgID || !sellerRefundable(kind, fee)) {
+		httpx.Error(w, http.StatusForbidden, "only the platform can refund this sale")
 		return
 	}
 	if state != "paid" {
@@ -150,6 +164,9 @@ func (h *Handlers) RefundTicketSale(w http.ResponseWriter, r *http.Request) {
 	}
 	if !chargeID.Valid || chargeID.String == "" {
 		httpx.Error(w, http.StatusConflict, "purchase has no recorded charge id")
+		return
+	}
+	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
 	rf, err := h.Provider.Refund(r.Context(), payments.RefundParams{
@@ -164,11 +181,21 @@ func (h *Handlers) RefundTicketSale(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logx.Info("payments.ticket_refund.created",
-		"ticket_purchase_id", purchaseID, "charge_id", chargeID.String,
+		"ticket_purchase_id", purchaseID, "charge_id", chargeID.String, "by_user", me.ID,
 		"refund_id", rf.ID, "status", rf.Status, "reverse_transfer", fee > 0)
 	httpx.JSON(w, http.StatusAccepted, map[string]any{
 		"purchase_id": purchaseID,
 		"refund_id":   rf.ID,
 		"status":      rf.Status,
 	})
+}
+
+// sellerRefundable reports whether an org admin may refund a sale
+// themselves: a ticket or party sold through the org's connected
+// account, which a platform fee marks. Refunding it reverses the
+// transfer, so the org pays it back, not the platform. Hosted passes
+// and sales that settled on the platform account stay with the
+// platform admin.
+func sellerRefundable(kind string, feeCents int64) bool {
+	return (kind == "ticket" || kind == "party") && feeCents > 0
 }

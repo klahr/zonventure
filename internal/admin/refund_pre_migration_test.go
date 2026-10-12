@@ -67,11 +67,15 @@ func TestRefundPurchase_PreMigrationGate(t *testing.T) {
 	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).Scan(&orgID); err != nil {
 		t.Fatal(err)
 	}
+	hash, err := auth.HashPassword("hunter2")
+	if err != nil {
+		t.Fatal(err)
+	}
 	var adminID int64
 	if err := db.QueryRow(`
-		INSERT INTO users(username, email, email_verified, is_admin)
-		VALUES ('platform-admin', 'admin@example.com', 1, TRUE) RETURNING id
-	`).Scan(&adminID); err != nil {
+		INSERT INTO users(username, email, email_verified, is_admin, password_hash)
+		VALUES ('platform-admin', 'admin@example.com', 1, TRUE, $1) RETURNING id
+	`, hash).Scan(&adminID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`
@@ -147,6 +151,7 @@ func TestRefundPurchase_PreMigrationGate(t *testing.T) {
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest("POST",
 		"/api/admin/purchases/"+strconv.FormatInt(freshID, 10)+"/refund", nil)
+	req.Header.Set("X-Confirm-Password", "hunter2")
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("fresh refund: status=%d body=%s, want 202", w.Code, w.Body.String())

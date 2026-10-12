@@ -93,16 +93,16 @@ export function PurchasesTab() {
   };
 
   const refund = async (p: Purchase) => {
-    const yes = await dialogs.confirm({
+    const pw = await dialogs.password({
       title: t.t("Refund"),
       message: t.t('Refund {{amount}} to the customer? The state flips to "refunded" once Stripe confirms.', { amount: money(p) }),
       confirmLabel: t.t("Refund"),
       danger: true,
     });
-    if (!yes) return;
+    if (!pw) return;
     setBusy(p.id);
     try {
-      await post(`/api/admin/purchases/${p.id}/refund`);
+      await post(`/api/admin/purchases/${p.id}/refund`, undefined, { headers: { "X-Confirm-Password": pw } });
     } catch (e) {
       toast.err(e);
       setBusy(null);

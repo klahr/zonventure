@@ -399,7 +399,7 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event payments.E
 //
 // Admin-only: refunds touch real money, so org_admins can't do it
 // from their own UI. They contact us, we click; the audit log on
-// the provider side records who initiated.
+// the provider side records who initiated. Reauth: X-Confirm-Password.
 func (h *Handlers) RefundPurchase(w http.ResponseWriter, r *http.Request) {
 	if !h.paymentsEnabled() {
 		httpx.Error(w, http.StatusServiceUnavailable, "payments not configured")
@@ -446,6 +446,9 @@ func (h *Handlers) RefundPurchase(w http.ResponseWriter, r *http.Request) {
 		// pointer back to the legacy dashboard.
 		httpx.Error(w, http.StatusConflict,
 			"this purchase pre-dates the migration to this instance — refund it through the pre-migration Stripe dashboard, not the in-app button")
+		return
+	}
+	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
 

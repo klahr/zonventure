@@ -14,8 +14,9 @@ import (
 )
 
 // The Purchases tab lists ticket sales of every kind: an org sees its
-// own, the platform admin all, and only the admin refunds them — an
-// org's sale with its fee clawed back, the platform's own as is.
+// own, the platform admin all. The admin refunds any — an org's sale
+// with its fee clawed back, the platform's own as is — and an org admin
+// only their own org's sales through its connected account.
 func TestTicketSales_ListAndRefund(t *testing.T) {
 	t.Parallel()
 	db, cleanup := dbtest.Open(t)
@@ -27,11 +28,15 @@ func TestTicketSales_ListAndRefund(t *testing.T) {
 		}
 	}
 
-	var acme, other, adminID int64
+	hash, err := auth.HashPassword("hunter2")
+	must(err)
+	var acme, other, adminID, memberID, orgAdminID int64
 	must(db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).Scan(&acme))
 	must(db.QueryRow(`INSERT INTO organizations(name) VALUES ('Other') RETURNING id`).Scan(&other))
-	must(db.QueryRow(`INSERT INTO users(username, email_verified, is_admin) VALUES ('admin', 1, TRUE) RETURNING id`).Scan(&adminID))
-	_, err := db.Exec(`INSERT INTO adventures(slug, title, author, org_id, published) VALUES ('treasure', 'Treasure Hunt', 'Acme', $1, 1), ('elsewhere', 'Elsewhere', 'Other', $2, 1)`, acme, other)
+	must(db.QueryRow(`INSERT INTO users(username, email_verified, is_admin, password_hash) VALUES ('admin', 1, TRUE, $1) RETURNING id`, hash).Scan(&adminID))
+	must(db.QueryRow(`INSERT INTO users(username, email_verified, password_hash) VALUES ('acme-member', 1, $1) RETURNING id`, hash).Scan(&memberID))
+	must(db.QueryRow(`INSERT INTO users(username, email_verified, password_hash) VALUES ('acme-admin', 1, $1) RETURNING id`, hash).Scan(&orgAdminID))
+	_, err = db.Exec(`INSERT INTO adventures(slug, title, author, org_id, published) VALUES ('treasure', 'Treasure Hunt', 'Acme', $1, 1), ('elsewhere', 'Elsewhere', 'Other', $2, 1)`, acme, other)
 	must(err)
 	var acmeEvent, otherEvent int64
 	must(db.QueryRow(`INSERT INTO events(adventure_slug, org_id, state, live_token, name) VALUES ('treasure', $1, 'running', 'lt-a', 'Harbour Night') RETURNING id`, acme).Scan(&acmeEvent))
@@ -39,18 +44,21 @@ func TestTicketSales_ListAndRefund(t *testing.T) {
 
 	// Acme's self-guided ticket, sold through its connected account;
 	// a hosted pass Acme bought from the platform; Other's ticket; and
-	// a pending one, which can't be refunded.
-	var ticket, hosted, pending int64
+	// a pending one, which can't be refunded; and an Acme ticket that
+	// settled on the platform account (no fee).
+	var ticket, hosted, pending, platformTicket, otherTicket int64
 	must(db.QueryRow(`
 		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, state, stripe_charge_id, application_fee_cents, paid_at)
 		VALUES ($1, 'buyer@example.com', 4, 20000, 'sek', 'paid', 'ch_ticket', 2000, now_text()) RETURNING id`, acmeEvent).Scan(&ticket))
 	must(db.QueryRow(`
 		INSERT INTO ticket_purchases(kind, buyer_org_id, adventure_slug, buyer_email, team_size, blocks, amount_cents, currency, state, stripe_charge_id, paid_at)
 		VALUES ('hosted', $1, 'treasure', 'host@example.com', 0, 1, 29900, 'sek', 'paid', 'ch_hosted', now_text()) RETURNING id`, acme).Scan(&hosted))
-	_, err = db.Exec(`
+	must(db.QueryRow(`
+		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, state, stripe_charge_id, application_fee_cents)
+		VALUES ($1, 'someone@example.com', 2, 10000, 'sek', 'paid', 'ch_other', 1000) RETURNING id`, otherEvent).Scan(&otherTicket))
+	must(db.QueryRow(`
 		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, state, stripe_charge_id)
-		VALUES ($1, 'someone@example.com', 2, 10000, 'sek', 'paid', 'ch_other')`, otherEvent)
-	must(err)
+		VALUES ($1, 'early@example.com', 2, 10000, 'sek', 'paid', 'ch_platform') RETURNING id`, acmeEvent).Scan(&platformTicket))
 	must(db.QueryRow(`
 		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency)
 		VALUES ($1, 'late@example.com', 2, 10000, 'sek') RETURNING id`, acmeEvent).Scan(&pending))
@@ -86,24 +94,49 @@ func TestTicketSales_ListAndRefund(t *testing.T) {
 		}
 		return out
 	}
-	refund := func(r http.Handler, id int64) int {
+	refundWith := func(r http.Handler, id int64, password string) int {
 		w := httptest.NewRecorder()
-		r.ServeHTTP(w, httptest.NewRequest("POST", "/api/admin/ticket-purchases/"+strconv.FormatInt(id, 10)+"/refund", nil))
+		req := httptest.NewRequest("POST", "/api/admin/ticket-purchases/"+strconv.FormatInt(id, 10)+"/refund", nil)
+		if password != "" {
+			req.Header.Set("X-Confirm-Password", password)
+		}
+		r.ServeHTTP(w, req)
 		return w.Code
 	}
+	refund := func(r http.Handler, id int64) int { return refundWith(r, id, "hunter2") }
 
-	orgAdmin := router(auth.User{ID: 99, Username: "acme-admin", Role: auth.RoleOrgAdmin, OrgID: &acme})
+	member := router(auth.User{ID: memberID, Username: "acme-member", Role: auth.RoleOrgMember, OrgID: &acme})
+	if m := list(member); m[ticket].Refundable {
+		t.Fatalf("member sees a refundable sale: %+v", m)
+	}
+	if code := refund(member, ticket); code != http.StatusForbidden || stub.refunded {
+		t.Fatalf("member refund: %d, provider called %v", code, stub.refunded)
+	}
+
+	orgAdmin := router(auth.User{ID: orgAdminID, Username: "acme-admin", Role: auth.RoleOrgAdmin, OrgID: &acme})
 	mine := list(orgAdmin)
-	if len(mine) != 3 || mine[ticket].Kind != "ticket" || mine[ticket].EventName != "Harbour Night" ||
-		mine[hosted].Kind != "hosted" || !mine[ticket].Refundable || mine[pending].Refundable {
+	if len(mine) != 4 || mine[ticket].Kind != "ticket" || mine[ticket].EventName != "Harbour Night" ||
+		mine[hosted].Kind != "hosted" || !mine[ticket].Refundable || mine[pending].Refundable ||
+		mine[hosted].Refundable || mine[platformTicket].Refundable {
 		t.Fatalf("Acme's sales: %+v", mine)
 	}
-	if code := refund(orgAdmin, ticket); code != http.StatusForbidden || stub.refunded {
-		t.Fatalf("org admin refund: %d, provider called %v", code, stub.refunded)
+	for _, id := range []int64{hosted, platformTicket, otherTicket} {
+		if code := refund(orgAdmin, id); code != http.StatusForbidden || stub.refunded {
+			t.Fatalf("org admin refund of %d: %d, provider called %v", id, code, stub.refunded)
+		}
+	}
+	for _, pw := range []string{"", "wrong"} {
+		if code := refundWith(orgAdmin, ticket, pw); code != http.StatusUnauthorized || stub.refunded {
+			t.Fatalf("refund with password %q: %d, provider called %v", pw, code, stub.refunded)
+		}
+	}
+	if code := refund(orgAdmin, ticket); code != http.StatusAccepted ||
+		stub.refundParams.ChargeID != "ch_ticket" || !stub.refundParams.RefundApplicationFee {
+		t.Fatalf("org admin's own ticket refund: %d %+v", code, stub.refundParams)
 	}
 
 	platform := router(auth.User{ID: adminID, Username: "admin", Role: auth.RoleAdmin})
-	if all := list(platform); len(all) != 4 || all[hosted].OrgName != "Acme" {
+	if all := list(platform); len(all) != 5 || all[hosted].OrgName != "Acme" || !all[hosted].Refundable {
 		t.Fatalf("every sale: %+v", all)
 	}
 	if code := refund(platform, ticket); code != http.StatusAccepted ||
