@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.30.2] - 2026-10-14
+
 ### Added
 
 - The console's dialogs have a close button in the top-right corner.
