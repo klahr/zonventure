@@ -35,6 +35,10 @@ export const THEME_COVERS: Record<string, ThemeCover> = {
     small: new URL("./covers/crayfish-800.webp", import.meta.url).href,
     wide: new URL("./covers/crayfish-1600.webp", import.meta.url).href,
   },
+  cyberpunk: {
+    small: new URL("./covers/cyberpunk-800.webp", import.meta.url).href,
+    wide: new URL("./covers/cyberpunk-1600.webp", import.meta.url).href,
+  },
   detective: {
     small: new URL("./covers/detective-800.webp", import.meta.url).href,
     wide: new URL("./covers/detective-1600.webp", import.meta.url).href,
@@ -47,6 +51,10 @@ export const THEME_COVERS: Record<string, ThemeCover> = {
     small: new URL("./covers/halloween-800.webp", import.meta.url).href,
     wide: new URL("./covers/halloween-1600.webp", import.meta.url).href,
   },
+  hacker: {
+    small: new URL("./covers/hacker-800.webp", import.meta.url).href,
+    wide: new URL("./covers/hacker-1600.webp", import.meta.url).href,
+  },
   "ice-cream": {
     small: new URL("./covers/ice-cream-800.webp", import.meta.url).href,
     wide: new URL("./covers/ice-cream-1600.webp", import.meta.url).href,
@@ -54,6 +62,10 @@ export const THEME_COVERS: Record<string, ThemeCover> = {
   jungle: {
     small: new URL("./covers/jungle-800.webp", import.meta.url).href,
     wide: new URL("./covers/jungle-1600.webp", import.meta.url).href,
+  },
+  love: {
+    small: new URL("./covers/love-800.webp", import.meta.url).href,
+    wide: new URL("./covers/love-1600.webp", import.meta.url).href,
   },
   lucia: {
     small: new URL("./covers/lucia-800.webp", import.meta.url).href,
@@ -78,6 +90,14 @@ export const THEME_COVERS: Record<string, ThemeCover> = {
   "pen-and-paper": {
     small: new URL("./covers/pen-and-paper-800.webp", import.meta.url).href,
     wide: new URL("./covers/pen-and-paper-1600.webp", import.meta.url).href,
+  },
+  sad: {
+    small: new URL("./covers/sad-800.webp", import.meta.url).href,
+    wide: new URL("./covers/sad-1600.webp", import.meta.url).href,
+  },
+  scary: {
+    small: new URL("./covers/scary-800.webp", import.meta.url).href,
+    wide: new URL("./covers/scary-1600.webp", import.meta.url).href,
   },
   space: {
     small: new URL("./covers/space-800.webp", import.meta.url).href,
