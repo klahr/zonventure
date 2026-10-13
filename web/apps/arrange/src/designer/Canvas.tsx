@@ -36,6 +36,7 @@ import {
   startZone,
   sameData,
   samePosition,
+  translatedNode,
   upgradeNode,
   withFixed,
   type DragFrom,
@@ -96,6 +97,8 @@ interface Props {
   live?: CanvasLive;
   /** The work on each step: status, owner, conversations, unseen. */
   talk?: ReadonlyMap<string, CardTalk>;
+  /** A translation to show the cards' texts in, where they are translated. */
+  shownIn?: Record<string, string>;
 }
 
 /** Someone else's arrivals, removals and new wires, animated for a moment. */
@@ -149,7 +152,7 @@ const START_ZOOM = 0.75;
  * The pick is created at that spot and wired in. Releasing on a handle
  * that refuses the wire shows why instead.
  */
-export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, revealRequest = 0, playing = null, changed, marks, fx, live, talk }: Props) {
+export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, revealRequest = 0, playing = null, changed, marks, fx, live, talk, shownIn }: Props) {
   const rf = useReactFlow();
   const t = useT();
   const ariaLabels = useMemo(
@@ -220,6 +223,17 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
     return src?.title || from;
   };
 
+  // The card's step, in the translation shown: one object per step, so an
+  // unchanged card stays memoised.
+  const shown = useMemo(() => {
+    if (!shownIn) return (n: Graph["nodes"][number]) => n;
+    const seen = new WeakMap<Graph["nodes"][number], Graph["nodes"][number]>();
+    return (n: Graph["nodes"][number]) => {
+      if (!seen.has(n)) seen.set(n, translatedNode(n, shownIn));
+      return seen.get(n)!;
+    };
+  }, [shownIn]);
+
   // Document → React Flow nodes, reusing unchanged objects so memoised
   // cards do not re-render.
   useEffect(() => {
@@ -228,7 +242,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         idOfExisting: (n) => n.id,
         idOfTarget: (n) => n.slug,
         isUnchanged: (existing, n) =>
-          existing.data.node === n &&
+          existing.data.node === shown(n) &&
           sameData(existing.data.issues, issuesBySlug.get(n.slug) ?? []) &&
           existing.selected === (n.slug === selected) &&
           existing.data.playing === (n.slug === playing) &&
@@ -245,7 +259,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           type: "zv" as const,
           position: { x: n.x ?? 0, y: n.y ?? 0 },
           data: {
-            node: n,
+            node: shown(n),
             issues: issuesBySlug.get(n.slug) ?? [],
             playing: n.slug === playing,
             ...(changed?.has(n.slug) ? { changed: changed.get(n.slug)! } : {}),
@@ -262,7 +276,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         }),
       }).items,
     );
-  }, [graph, issuesBySlug, selected, playing, changed, marks, fx, talk, t]);
+  }, [graph, issuesBySlug, selected, playing, changed, marks, fx, talk, shown, t]);
 
   // Steps someone else removed linger a moment, fading, where they were.
   const ghosts = useMemo<CardNode[]>(

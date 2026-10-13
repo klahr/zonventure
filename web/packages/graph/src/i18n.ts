@@ -172,6 +172,41 @@ export function nodeTexts(n: Node): Translatable[] {
 }
 
 /**
+ * The step as it reads in a translation, for showing it: its title, text
+ * and route names in that language where they are translated, the
+ * original elsewhere. Only for display — the graph keeps the main texts.
+ */
+export function translatedNode(n: Node, tr: Record<string, string>): Node {
+  const k = (field: string) => tr[nodeKey(n.slug, field)]?.trim() || undefined;
+  const blocks = (list: Block[] | undefined) =>
+    list?.map((b) => ((b.kind === "text" || b.kind === "note") && k(`block:${b.id}`) ? { ...b, text: k(`block:${b.id}`)! } : b));
+  const out: Node = { ...n, ...(k("title") ? { title: k("title")! } : {}) };
+  if (n.puzzle)
+    out.puzzle = {
+      ...n.puzzle,
+      ...(n.puzzle.blocks ? { blocks: blocks(n.puzzle.blocks)! } : {}),
+      ...(n.puzzle.outputs ? { outputs: n.puzzle.outputs.map((o) => (k(`out:${o.port}:label`) ? { ...o, label: k(`out:${o.port}:label`)! } : o)) } : {}),
+    };
+  if (n.story?.blocks) out.story = { ...n.story, blocks: blocks(n.story.blocks)! };
+  if (n.end?.blocks) out.end = { ...n.end, blocks: blocks(n.end.blocks)! };
+  if (n.hub)
+    out.hub = {
+      ...n.hub,
+      ...(k("hub-text") ? { text: k("hub-text")! } : {}),
+      ...(n.hub.branches
+        ? {
+            branches: n.hub.branches.map((b) => ({
+              ...b,
+              ...(k(`branch:${b.port}:label`) ? { label: k(`branch:${b.port}:label`)! } : {}),
+              ...(k(`branch:${b.port}:note`) ? { note: k(`branch:${b.port}:note`)! } : {}),
+            })),
+          }
+        : {}),
+    };
+  return out;
+}
+
+/**
  * The adventure-wide texts: its title, intro and outro, journal notes,
  * zone names, the time-up message.
  */

@@ -924,6 +924,11 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .tr-row__main { display: block; white-space: pre-wrap; padding: var(--sp-2); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--ink-soft); font-size: var(--text-sm); }
 .tr-row__outdated { color: var(--warning); }
 .tr-lang { flex: 1; }
+.tr-all { display: flex; flex-direction: column; gap: var(--sp-4); margin-top: var(--sp-3); }
+.tr-all__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+.tr-all__head h4 { margin: 0; }
+.tr-all__filter { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--ink-soft); font-size: var(--text-sm); }
+.tr-group h5 { margin: 0 0 var(--sp-2); padding-bottom: var(--sp-1); border-bottom: 1px solid var(--border); }
 
 /* --- Phone ------------------------------------------------------------- */
 /* The toolbar keeps what a phone needs — the outline, the issues,

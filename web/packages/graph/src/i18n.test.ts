@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adventureTexts, allTexts, coverage, blockKey, isOutdated, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey } from "./i18n.ts";
+import { adventureTexts, allTexts, coverage, blockKey, isOutdated, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey, translatedNode } from "./i18n.ts";
 import type { Graph } from "./types.ts";
 
 const g: Graph = {
@@ -97,4 +97,13 @@ test("the answer bar's words are translated where the engine reads them", () => 
   } };
   const keys = nodeTexts(p).map((t) => t.key);
   assert.ok(keys.includes(nodeKey("p", "bar:placeholder")) && keys.includes(nodeKey("p", "bar:button")), keys.join(" "));
+});
+
+test("a step shown in a translation reads its translated texts, the original where there is none", () => {
+  const q = g.nodes[1]!;
+  const shown = translatedNode(q, { [nodeKey("q", "title")]: "The question", [nodeKey("q", "out:solved:label")]: "Right", [blockKey("q", "b1")]: "  " });
+  assert.equal(shown.title, "The question");
+  assert.equal(shown.puzzle!.outputs![0]!.label, "Right");
+  assert.deepEqual(shown.puzzle!.blocks, q.puzzle!.blocks, "an empty translation shows the original");
+  assert.equal(q.title, "Frågan", "the step itself is left as it was");
 });

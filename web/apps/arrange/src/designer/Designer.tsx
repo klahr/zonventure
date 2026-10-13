@@ -5,19 +5,27 @@ import {
   Bot,
   Check,
   GitCompare,
+  GraduationCap,
   History,
   Info,
+  Keyboard,
+  Languages,
   LayoutGrid,
   ListOrdered,
   Loader2,
   MessageSquare,
   MoreVertical,
   Network,
+  Palette,
+  Pencil,
   Play,
   Plus,
+  Printer,
   Redo2,
   Rocket,
   RotateCcw,
+  Settings,
+  Smartphone,
   Tag,
   Undo2,
   UploadCloud,
@@ -73,7 +81,7 @@ import type { Mark } from "./NodeCard.tsx";
 import { CatchUpBanner, StepTalk, WorkPanel, cardTalk, catchUpOf, useCollab, type CatchUp } from "./Collab.tsx";
 import { useSession } from "../session.tsx";
 import { Inspector } from "./Inspector.tsx";
-import { LanguageSwitch, LanguagesSettings, TranslateStep, languageName, translationLanguages } from "./Translate.tsx";
+import { LanguageSwitch, LanguagesSettings, languageName, translationLanguages } from "./Translate.tsx";
 import { PrintMaterials } from "./PrintMaterials.tsx";
 import { ListView } from "./ListView.tsx";
 import { Resources } from "./Resources.tsx";
@@ -333,7 +341,8 @@ export function Designer({ slug }: { slug: string }) {
   const mainLang = graph?.language || adventureLang;
   const [editLangPick, setEditLang] = useState("");
   const editLang = graph && translationLanguages(graph, mainLang).includes(editLangPick) ? editLangPick : mainLang;
-  const translating = !!graph && editLang !== mainLang;
+  // The toolbar's switch shows the steps in a translation; they are still edited in the main language.
+  const shownIn = graph && editLang !== mainLang ? (graph.translations?.[editLang] ?? {}) : undefined;
 
   // --- load -------------------------------------------------------------------
 
@@ -1113,21 +1122,22 @@ export function Designer({ slug }: { slug: string }) {
     ));
   const kebabItems: ContextMenuItem[] = [
     // Saved first: renaming the adventure moves its draft along with it.
-    { label: t.t("Edit details"), onClick: () => void (async () => { if (unsaved && !(await saveNow())) return; setDetailsOpen(true); })() },
-    { label: t.t("Adventure settings"), onClick: () => setSettingsOpen(true) },
-    { label: t.t("Themes"), onClick: () => openThemes() },
-    { label: t.t("Languages"), onClick: () => setSettingsOpen("languages") },
-    { label: t.t("Print materials"), onClick: () => setSettingsOpen("print") },
-    { label: t.t("Play the draft on my phone"), onClick: () => setDevOpen(true) },
+    { label: t.t("Edit details"), icon: <Pencil size={ICON.sm} />, onClick: () => void (async () => { if (unsaved && !(await saveNow())) return; setDetailsOpen(true); })() },
+    { label: t.t("Adventure settings"), icon: <Settings size={ICON.sm} />, onClick: () => setSettingsOpen(true) },
+    { label: t.t("Themes"), icon: <Palette size={ICON.sm} />, onClick: () => openThemes() },
+    { label: t.t("Languages"), icon: <Languages size={ICON.sm} />, onClick: () => setSettingsOpen("languages") },
+    { label: t.t("Print materials"), icon: <Printer size={ICON.sm} />, onClick: () => setSettingsOpen("print") },
+    { label: t.t("Play the draft on my phone"), icon: <Smartphone size={ICON.sm} />, onClick: () => setDevOpen(true) },
     {
       label: narrowScreen() ? t.t("Tutorial") : t.t("Tutorials"),
+      icon: <GraduationCap size={ICON.sm} />,
       onClick: () =>
         narrowScreen()
           ? setTutorial(tutorial ? { ...tutorial, collapsed: false } : { baseline: welcomeText(graph), done: [] })
           : setCoach((p) => ({ ...p, panel: "open", run: p.run && { ...p.run, paused: true } })),
     },
     // A phone has no keyboard to take shortcuts from.
-    ...(isTouch() ? [] : [{ label: t.t("Keyboard shortcuts"), shortcut: "?", onClick: () => setHelpOpen(true) }]),
+    ...(isTouch() ? [] : [{ label: t.t("Keyboard shortcuts"), icon: <Keyboard size={ICON.sm} />, shortcut: "?", onClick: () => setHelpOpen(true) }]),
   ];
 
   // The tutorial's "show me" buttons: each takes the author where its step is done.
@@ -1705,6 +1715,7 @@ export function Designer({ slug }: { slug: string }) {
             <div className="dz-list">
               <ListView
                 graph={graph}
+                {...(shownIn ? { shownIn } : {})}
                 issues={shownIssues}
                 selected={selected}
                 playing={previewing ? playing : null}
@@ -1725,6 +1736,7 @@ export function Designer({ slug }: { slug: string }) {
             <ReactFlowProvider>
               <Canvas
                 graph={graph}
+                {...(shownIn ? { shownIn } : {})}
                 issues={preview ? [] : shownIssues}
                 selected={selected}
                 playing={previewing ? playing : null}
@@ -1785,8 +1797,6 @@ export function Designer({ slug }: { slug: string }) {
                   : setPublishAsk({ kind: "rollback", version: v.version })
               }
             />
-          ) : node && translating ? (
-            <TranslateStep node={node} graph={graph} meta={meta} lang={editLang} onGraphChange={change} onClose={() => choose(null)} readOnly={readOnly} />
           ) : node ? (
             <AdventureSlug.Provider value={slug}>
               <OpenThemes.Provider value={openThemes}>
@@ -1885,6 +1895,7 @@ export function Designer({ slug }: { slug: string }) {
             onPosition={setPlaying}
             brand={brand}
             title={adventureTitle}
+            lang={editLang}
           />
         </FloatingWindow>
       )}
@@ -1969,11 +1980,7 @@ export function Designer({ slug }: { slug: string }) {
                 change({ ...graph, language: l });
               }}
               editing={editLang}
-              onEditing={(l) => {
-                setEditLang(l);
-                // "Translate" goes to the steps, now in that language, like the toolbar's switch.
-                if (l !== mainLang) setSettingsOpen(false);
-              }}
+              {...(readOnly ? { readOnly } : {})}
             />
             )}
             {settingsOpen !== "languages" && (

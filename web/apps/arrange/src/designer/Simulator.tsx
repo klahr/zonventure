@@ -61,6 +61,8 @@ interface Props {
   title: string;
   /** Only the phone, small, without the controls beside it: a preview of the look. */
   bare?: boolean;
+  /** The language the team plays in: the toolbar's, so the phone shows a translation. */
+  lang?: string;
 }
 
 interface LogLine {
@@ -121,7 +123,7 @@ function useWindowHeight(): number {
 /** The player app's own catalogs, so the phone reads as a team's would. */
 const PHONE_CATALOGS = { en: {}, sv: playSv as Record<string, string> };
 
-export function Simulator({ slug, graph, envelope, selected, mode, onMode, restart, onPosition, brand, title, bare }: Props) {
+export function Simulator({ slug, graph, envelope, selected, mode, onMode, restart, onPosition, brand, title, bare, lang }: Props) {
   const t = useT();
 
   const [team, setTeam] = useState<play.SimTeam | null>(null);
@@ -157,6 +159,9 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   // read by the preview effect so re-placing on an edit keeps it there.
   const whereRef = useRef<play.SimAction | null>(null);
   const logId = useRef(0);
+  // Read when a team is placed or started, so a fresh one plays in it too.
+  const langRef = useRef(lang);
+  langRef.current = lang;
 
   const say = useCallback((text: string, tone?: "warn") => {
     setLog((l) => [{ id: ++logId.current, text, ...(tone ? { tone } : {}) }, ...l].slice(0, 30));
@@ -199,12 +204,14 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     }
     const ac = new AbortController();
     const id = setTimeout(() => {
-      void run({ kind: "place", node: selected }, null, ac.signal).then((r) => {
-        // Keep the team where the author put it, so previewing a
-        // zone-gated step does not reset to "not there" on every edit.
-        const where = whereRef.current;
-        if (r?.team && where) void run(where, r.team, ac.signal);
-      });
+      void run({ kind: "place", node: selected }, null, ac.signal)
+        .then((r) => (r?.team && langRef.current && langRef.current !== graph.language ? run({ kind: "language", lang: langRef.current }, r.team, ac.signal) : r))
+        .then((r) => {
+          // Keep the team where the author put it, so previewing a
+          // zone-gated step does not reset to "not there" on every edit.
+          const where = whereRef.current;
+          if (r?.team && where) void run(where, r.team, ac.signal);
+        });
     }, 300);
     return () => {
       clearTimeout(id);
@@ -223,6 +230,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     whereRef.current = null;
     const ac = new AbortController();
     void run({ kind: "start" }, null, ac.signal).then((r) => {
+      if (r?.team && !r.refusal && langRef.current && langRef.current !== graph.language) void run({ kind: "language", lang: langRef.current }, r.team, ac.signal);
       if (r?.refusal) say(r.refusal.message, "warn");
       else if (r) {
         setCeremony(true);
@@ -236,6 +244,11 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     return () => ac.abort();
     // Deliberately not keyed on the graph: a run carries on across edits.
   }, [mode, restart, nonce, run]);
+
+  // The toolbar's language changed: the team in play switches, as a player can.
+  useEffect(() => {
+    if (team && lang) void run({ kind: "language", lang }, team);
+  }, [lang]);
 
   // Play again (the block animation editor): remount the step so it enters anew.
   const [replay, setReplay] = useState(0);

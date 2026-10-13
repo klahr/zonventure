@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { Button, DzPortal, useEscapeToClose } from "../designer/dz/ui.tsx";
+import { X } from "lucide-react";
+import { Button, DzPortal, ICON, useEscapeToClose } from "../designer/dz/ui.tsx";
 import { useT } from "../i18n.tsx";
 
 /**
@@ -18,6 +19,7 @@ export function Dialog(props: {
   /** A picture across the top, edge to edge, above the title. */
   banner?: ReactNode;
 }) {
+  const t = useT();
   const id = useId();
   useEscapeToClose(props.onClose);
   // Focus goes into the dialog — to a field marked autoFocus, else the
@@ -48,6 +50,9 @@ export function Dialog(props: {
           {props.banner && <div className="cs-dialog__banner">{props.banner}</div>}
           <div className="modal-head">
             <h2 id={id}>{props.title}</h2>
+            <Button variant="ghost" size="icon" onClick={props.onClose} aria-label={t.t("Close")} title={t.t("Close")}>
+              <X size={ICON.md} />
+            </Button>
           </div>
           <div className="modal-body">{props.children}</div>
           {props.footer && <div className="modal-foot">{props.footer}</div>}

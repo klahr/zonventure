@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Angels' Ware
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Check } from "lucide-react";
 import { ICON } from "./ui.tsx";
 
@@ -16,6 +16,7 @@ export type ContextMenuItem =
       checked?: boolean;
       title?: string;
       shortcut?: string;
+      icon?: ReactNode;
     };
 
 export function CanvasContextMenu({
@@ -102,7 +103,10 @@ export function CanvasContextMenu({
                 {it.checked ? <Check size={ICON.xs} /> : null}
               </span>
             )}
-            <span className="context-menu-label">{it.label}</span>
+            <span className="context-menu-label">
+              {it.icon && <span className="context-menu-icon" aria-hidden="true">{it.icon}</span>}
+              {it.label}
+            </span>
             {it.shortcut && <span className="context-menu-shortcut">{it.shortcut}</span>}
           </button>
         ),

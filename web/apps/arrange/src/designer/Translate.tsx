@@ -1,18 +1,19 @@
-import { useState } from "react";
-import type { AdventureMeta, Graph, Node, Translatable } from "@zonventure/graph";
-import { adventureTexts, coverage, isOutdated, nodeTexts, setTranslation } from "@zonventure/graph";
-import { Languages, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import type { AdventureMeta, Graph, Translatable } from "@zonventure/graph";
+import { adventureTexts, allTexts, coverage, isOutdated, nodeBySlug, nodeTexts, outline, setTranslation } from "@zonventure/graph";
+import { Languages } from "lucide-react";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { useT } from "../i18n.tsx";
-import { Button, ICON } from "./dz/ui.tsx";
+import { ICON } from "./dz/ui.tsx";
 import { STEP } from "./dz/types.tsx";
 
 /**
  * Translating an adventure. The structure — steps, routes, answers — is
  * edited once, in the main language; other languages only add text.
- * Choosing a language to edit in the toolbar turns the inspector into a
- * list of the step's texts, each with the original beside a box for the
- * translation. Anything left empty plays in the main language.
+ * Languages in the settings lists every text of the adventure, each with
+ * the original beside a box for the translation; the toolbar's switch
+ * shows the steps in a translation. Anything left empty plays in the
+ * main language.
  *
  * The main language is the adventure's own setting, not the graph's: the
  * designer passes it in as `main`, and the server writes it into the
@@ -34,15 +35,15 @@ export const languageName = (l: string) => LANGUAGE_NAMES[l] ?? l.toUpperCase();
 
 export const translationLanguages = (g: Graph, main: string) => Object.keys(g.translations ?? {}).filter((l) => l !== main).sort();
 
-/** The toolbar's "editing in" switch, with how far each translation has come. */
+/** The toolbar's "showing in" switch, with how far each translation has come. */
 export function LanguageSwitch({ graph, main, meta, value, onChange }: { graph: Graph; main: string; meta: AdventureMeta; value: string; onChange: (l: string) => void }) {
   const t = useT();
   const others = translationLanguages(graph, main);
   if (!others.length) return null;
   return (
-    <label className="lang-switch" title={t.t("The language you are editing the text in")}>
+    <label className="lang-switch" title={t.t("The language the steps are shown in")}>
       <Languages size={ICON.sm} aria-hidden="true" />
-      <select className="field__input" value={value} onChange={(e) => onChange(e.target.value)} aria-label={t.t("Editing in")}>
+      <select className="field__input" value={value} onChange={(e) => onChange(e.target.value)} aria-label={t.t("Showing in")}>
         <option value={main}>{languageName(main)}</option>
         {others.map((l) => (
           <option key={l} value={l}>
@@ -100,62 +101,38 @@ function TextRows({ texts, graph, lang, onGraphChange, readOnly }: { texts: Tran
   );
 }
 
-/** The inspector while translating: the step's texts, original beside translation. */
-export function TranslateStep({ node, graph, meta, lang, onGraphChange, onClose, readOnly }: { node: Node; graph: Graph; meta: AdventureMeta; lang: string; onGraphChange: (g: Graph) => void; onClose: () => void; readOnly?: boolean }) {
-  const t = useT();
-  const kind = STEP[node.type];
-  const Icon = kind.icon;
-  return (
-    <>
-      <div className="inspector-head">
-        <span className="inspector-identity">
-          <span className={`inspector-drop-icon dz-step-icon dz-step-icon--${node.type}`} aria-hidden="true">
-            <Icon size={ICON.lg} />
-          </span>
-          <span className="inspector-identity-text">
-            <span className="inspector-name">{node.title || t.t(kind.label)}</span>
-            <span className="inspector-subtitle">{t.t("Translating into {{lang}}", { lang: languageName(lang) })}</span>
-          </span>
-        </span>
-        <span className="inspector-head-right">
-          <Button variant="ghost" size="icon" className="inspector-close" onClick={onClose} aria-label={t.t("Close inspector")} title={t.t("Close inspector")}>
-            <X size={ICON.md} />
-          </Button>
-        </span>
-      </div>
-      <div className="inspector-body">
-        <div className="insp">
-          <TextRows texts={nodeTexts(node)} graph={graph} lang={lang} onGraphChange={onGraphChange} {...(readOnly ? { readOnly } : {})} />
-          {/* The adventure's own texts count too; here they are found without leaving the steps. */}
-          <details className="box">
-            <summary>{t.t("Title, journal, places and messages in {{lang}}", { lang: languageName(lang) })}</summary>
-            <TextRows texts={adventureTexts(graph, meta)} graph={graph} lang={lang} onGraphChange={onGraphChange} {...(readOnly ? { readOnly } : {})} />
-          </details>
-        </div>
-      </div>
-    </>
-  );
-}
-
 /**
- * Adventure settings: the main language, the translations, and their
- * adventure-wide texts. Changing the main language saves the adventure's
+ * Adventure settings: the main language, the translations, and every
+ * text to translate — the adventure's own, then each step's in the order
+ * a team meets them. Changing the main language saves the adventure's
  * setting straight away, through onMainChange.
  */
-export function LanguagesSettings({ graph, main, meta, onChange, onMainChange, editing, onEditing }: {
+export function LanguagesSettings({ graph, main, meta, onChange, onMainChange, editing, readOnly }: {
   graph: Graph;
   main: string;
   meta: AdventureMeta;
   onChange: (g: Graph) => void;
   onMainChange: (l: string) => Promise<void>;
+  /** The language the toolbar shows, translated first. */
   editing: string;
-  onEditing: (l: string) => void;
+  readOnly?: boolean;
 }) {
   const t = useT();
   const [error, setError] = useState<string | null>(null);
+  const [pick, setPick] = useState(editing);
+  const [onlyMissing, setOnlyMissing] = useState(true);
   const others = translationLanguages(graph, main);
   const addable = Object.keys(LANGUAGE_NAMES).filter((l) => l !== main && !others.includes(l));
-  const lang = others.includes(editing) ? editing : others[0];
+  const lang = others.includes(pick) ? pick : others[0];
+  // What is left to translate, taken when the language or the filter
+  // changes rather than on every edit, so a row stays while it is typed in.
+  const missing = useMemo(() => {
+    const tr = (lang && graph.translations?.[lang]) || {};
+    return new Set(allTexts(graph, meta).filter((x) => !x.answers && !x.optional && (!tr[x.key]?.trim() || isOutdated(graph, lang!, x))).map((x) => x.key));
+  }, [lang, onlyMissing]);
+  const shown = (texts: Translatable[]) => (onlyMissing ? texts.filter((x) => missing.has(x.key)) : texts);
+  const steps = outline(graph).flatMap((r) => (r.kind === "step" ? [nodeBySlug(graph, r.slug)!] : []));
+  const rows = readOnly ? { readOnly } : {};
   return (
     <section className="insp__section">
       <h3>
@@ -182,7 +159,7 @@ export function LanguagesSettings({ graph, main, meta, onChange, onMainChange, e
           <span className="tr-lang">
             <strong>{languageName(l)}</strong> · {t.t("{{pct}} % translated", { pct: Math.round(coverage(graph, l, meta) * 100) })}
           </span>
-          <button type="button" className="link-btn" onClick={() => onEditing(l)}>{t.t("Translate")}</button>
+          <button type="button" className="link-btn" onClick={() => setPick(l)}>{t.t("Translate")}</button>
           <button
             type="button"
             className="link-btn"
@@ -193,7 +170,6 @@ export function LanguagesSettings({ graph, main, meta, onChange, onMainChange, e
               const sources = { ...(graph.translation_sources ?? {}) };
               delete sources[l];
               onChange({ ...graph, translations: next, translation_sources: sources });
-              if (editing === l) onEditing(main);
             }}
           >
             {t.t("Remove")}
@@ -205,7 +181,7 @@ export function LanguagesSettings({ graph, main, meta, onChange, onMainChange, e
           onChange={(e) => {
             if (!e.target.value) return;
             onChange({ ...graph, translations: { ...(graph.translations ?? {}), [e.target.value]: {} } });
-            onEditing(e.target.value);
+            setPick(e.target.value);
           }}>
           <option value="">{t.t("+ Add a translation…")}</option>
           {addable.map((l) => (
@@ -214,10 +190,32 @@ export function LanguagesSettings({ graph, main, meta, onChange, onMainChange, e
         </select>
       )}
       {lang && (
-        <details className="box" open={editing === lang}>
-          <summary>{t.t("Title, journal, places and messages in {{lang}}", { lang: languageName(lang) })}</summary>
-          <TextRows texts={adventureTexts(graph, meta)} graph={graph} lang={lang} onGraphChange={onChange} />
-        </details>
+        <div className="tr-all">
+          <div className="tr-all__head">
+            <h4>{t.t("Texts in {{lang}}", { lang: languageName(lang) })}</h4>
+            <label className="tr-all__filter">
+              <input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} />
+              {t.t("Only untranslated")}
+            </label>
+          </div>
+          {onlyMissing && !missing.size && <p className="field__hint">{t.t("Everything is translated.")}</p>}
+          {shown(adventureTexts(graph, meta)).length > 0 && (
+            <section className="tr-group">
+              <h5>{t.t("Title, journal, places and messages")}</h5>
+              <TextRows texts={shown(adventureTexts(graph, meta))} graph={graph} lang={lang} onGraphChange={onChange} {...rows} />
+            </section>
+          )}
+          {steps.map((n) => {
+            const texts = shown(nodeTexts(n));
+            if (!texts.length) return null;
+            return (
+              <section key={n.slug} className="tr-group">
+                <h5>{n.title || t.t(STEP[n.type].label)}</h5>
+                <TextRows texts={texts} graph={graph} lang={lang} onGraphChange={onChange} {...rows} />
+              </section>
+            );
+          })}
+        </div>
       )}
     </section>
   );

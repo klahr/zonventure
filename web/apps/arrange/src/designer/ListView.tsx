@@ -16,6 +16,7 @@ import {
   outline,
   removeStep,
   textOf,
+  translatedNode,
   type Gap,
   type Graph,
   type Issue,
@@ -42,6 +43,8 @@ interface Props {
   onSelect: (slug: string | null) => void;
   /** Show a step on the canvas, for what the list cannot do: wiring. */
   onOpenCanvas: (slug: string | null) => void;
+  /** A translation to show the steps' texts in, where they are translated. */
+  shownIn?: Record<string, string>;
 }
 
 /**
@@ -61,7 +64,7 @@ interface Props {
  * removing a step still needs a straight line; drawing a new branch is
  * the canvas's job.
  */
-export function ListView({ graph, issues, selected, playing = null, changed, marks, talk, onChange, onSelect, onOpenCanvas }: Props) {
+export function ListView({ graph, issues, selected, playing = null, changed, marks, talk, onChange, onSelect, onOpenCanvas, shownIn }: Props) {
   const t = useT();
   const rows = useMemo(() => outline(graph), [graph]);
   const line = useMemo(() => linearSteps(graph), [graph]);
@@ -216,7 +219,8 @@ export function ListView({ graph, issues, selected, playing = null, changed, mar
     onChange(insertAfter(graph, at, node));
     onSelect(node.slug);
   };
-  const title = (n: Node | undefined) => n?.title || (n ? t.t(STEP[n.type].label) : "");
+  const shown = (n: Node) => (shownIn ? translatedNode(n, shownIn) : n);
+  const title = (n: Node | undefined) => (n && shown(n).title) || (n ? t.t(STEP[n.type].label) : "");
 
   return (
     <div className="listview">
@@ -287,7 +291,7 @@ export function ListView({ graph, issues, selected, playing = null, changed, mar
                   </span>
                   {(() => {
                     // What it says, or else what it is — unless the title already says that.
-                    const sub = summary(n) || (title(n) !== t.t(kind.label) ? t.t(kind.label) : "");
+                    const sub = summary(shown(n)) || (title(n) !== t.t(kind.label) ? t.t(kind.label) : "");
                     return sub ? <span className="step__sub">{sub}</span> : null;
                   })()}
                 </span>

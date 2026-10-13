@@ -11,6 +11,16 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- The console's dialogs have a close button in the top-right corner.
+- The designer's More menu shows an icon beside each entry.
+
+### Changed
+
+- More → Languages lists every text of the adventure for the chosen translation — the adventure's own, then each step's in the order a team meets them — with the original beside each box. "Only untranslated", on by default, shows just what is missing or outdated.
+- The designer's language switch shows the adventure in that language: the canvas, the list view and the phone preview read the translation, and the original where there is none. Steps are still edited in the main language; the inspector no longer turns into a translation form.
+
 ## [0.30.1] - 2026-10-14
 
 ### Added

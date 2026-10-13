@@ -713,6 +713,16 @@
 .dz .canvas-context-menu button .context-menu-label {
   flex: 1 1 auto;
 }
+.dz .canvas-context-menu .context-menu-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.dz .canvas-context-menu .context-menu-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--dz-muted);
+}
 @media (prefers-reduced-motion: reduce) {
 .dz .canvas-context-menu {
     animation: none;
