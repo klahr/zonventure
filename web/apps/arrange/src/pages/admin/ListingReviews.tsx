@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Bot, Check, ExternalLink, FileSearch, KeyRound, Trash2, UserPlus, X, Zap } from "lucide-react";
 import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
-import { href, navigate } from "../../router.ts";
+import { href } from "../../router.ts";
 import { Button, Card, Dialog, Empty, ErrorBox, Field, ICON, Loading, Page, PageHeader, Pill, Table, Tabs, fmtDateTime, fmtMoney, relTime, useDialogs, useLoad, useToast, type Column } from "../../ui/index.ts";
 import { createPasskey, isCancelled, passkeysSupported, signWithPasskey } from "../../ui/webauthn.ts";
 import {
@@ -72,9 +72,7 @@ export function reviewError(e: unknown, t: Translator): string {
       case "not_pending":
         return t.t("This listing isn't waiting for review any more: someone has decided it, or it was changed.");
       case "passkey_required":
-        return t.t("Add a passkey under “Your passkeys” first: every decision you make here is signed with it.");
-      case "signature_required":
-        return t.t("The decision wasn't signed. Try again and confirm with your passkey.");
+        return t.t("Add a passkey under “Your passkeys” to sign your decisions with it.");
       case "bad_signature":
         return t.t("Your passkey's signature didn't check out, so nothing was decided. Try again.");
       case "passkeys_unavailable":
@@ -88,41 +86,63 @@ export function reviewError(e: unknown, t: Translator): string {
 }
 
 /**
- * Makes a decision, signed: the server turns the decision into a
- * challenge, the reviewer's passkey signs it, and the decision goes in
- * with the signature (internal/admin/reviewer_passkeys.go). The reason
- * is trimmed once, so the one signed is the one sent. A refused decision
- * is said in words and the list reloaded.
+ * Makes a decision, signed with the reviewer's passkey when they can:
+ * the server turns the decision into a challenge, the passkey signs it,
+ * and the decision goes in with the signature
+ * (internal/admin/reviewer_passkeys.go). Signing is optional, but going
+ * without takes a confirmation — with no passkey, when the passkey is
+ * cancelled, or when the server can't do passkeys. The reason is trimmed
+ * once, so the one signed is the one sent. A refused decision is said in
+ * words and the list reloaded.
  */
 export function useDecide(onDone: () => void) {
   const t = useT();
   const toast = useToast();
+  const dialogs = useDialogs();
   const [busy, setBusy] = useState(false);
-  const sign = async (ref: ListingRef, action: "approve" | "reject", reason: string): Promise<DecisionSignature> => {
-    const c = await signListingDecision(ref, action, reason);
-    return { session_id: c.session_id, credential: await signWithPasskey(c.options) };
+  /** The signature, or why there is none: "none" without a passkey, "cancelled" when the reviewer stopped it. */
+  const sign = async (ref: ListingRef, action: "approve" | "reject", reason: string): Promise<DecisionSignature | "none" | "cancelled"> => {
+    if (!passkeysSupported() || (await listReviewerPasskeys()).length === 0) return "none";
+    try {
+      const c = await signListingDecision(ref, action, reason);
+      return { session_id: c.session_id, credential: await signWithPasskey(c.options) };
+    } catch (e) {
+      if (isCancelled(e)) return "cancelled";
+      if (e instanceof ApiError && (e.code === "passkey_required" || e.code === "passkeys_unavailable")) return "none";
+      throw e;
+    }
   };
+  const confirmUnsigned = (action: "approve" | "reject", why: "none" | "cancelled") =>
+    dialogs.confirm({
+      title: action === "approve" ? t.t("Approve without a signature?") : t.t("Reject without a signature?"),
+      message: (why === "cancelled"
+        ? t.t("You didn't sign with your passkey.")
+        : t.t("You have no passkey to sign with.")) + " " +
+        t.t("The decision goes in the log unsigned: nothing there shows it was you. Add a passkey under “Your passkeys” to sign your decisions."),
+      confirmLabel: action === "approve" ? t.t("Approve unsigned") : t.t("Reject unsigned"),
+      danger: true,
+    });
   const run = async (action: "approve" | "reject", ref: ListingRef, rawReason: string, after?: () => void) => {
     const reason = action === "reject" ? rawReason.trim() : "";
     setBusy(true);
     try {
-      const signature = await sign(ref, action, reason);
+      const signed = await sign(ref, action, reason);
+      const signature = typeof signed === "object" ? signed : undefined;
+      if (!signature && !(await confirmUnsigned(action, signed as "none" | "cancelled"))) {
+        toast.err(t.t("Nothing was decided."));
+        return;
+      }
       if (action === "approve") await approveListing(ref, signature);
       else await rejectListing(ref, reason, signature);
       toast.ok(
         (action === "approve" ? t.t("Approved: it is public now") : t.t("Rejected: the organisation has been told why")) +
-          " " + t.t("Signed with your passkey."),
+          " " + (signature ? t.t("Signed with your passkey.") : t.t("Not signed.")),
       );
       after?.();
       onDone();
     } catch (e) {
-      if (isCancelled(e)) {
-        toast.err(t.t("Signing was cancelled: nothing was decided."));
-        return;
-      }
       toast.err(reviewError(e, t));
-      if (e instanceof ApiError && e.code === "passkey_required") navigate({ name: "listing-reviews", tab: "passkeys" });
-      else if (e instanceof ApiError && e.status === 409) onDone();
+      if (e instanceof ApiError && e.status === 409) onDone();
     } finally {
       setBusy(false);
     }
@@ -139,8 +159,8 @@ function Queue() {
   const reviews = useLoad((s) => listListingReviews(s), []);
   const keys = useLoad((s) => listReviewerPasskeys(s), []);
   const needKey = keys.data?.length === 0 && (
-    <Card title={t.t("Add a passkey to decide")} subtitle={t.t("Every decision you make here is signed with your passkey, so no one can make or change one in your name.")}>
-      <a className="btn primary sm" href={href({ name: "listing-reviews", tab: "passkeys" })}>
+    <Card title={t.t("Sign your decisions")} subtitle={t.t("Optional: add a passkey and every decision you make here is signed with it, so no one can make or change one in your name.")}>
+      <a className="btn sm" href={href({ name: "listing-reviews", tab: "passkeys" })}>
         <KeyRound size={ICON.sm} aria-hidden /> {t.t("Add a passkey")}
       </a>
     </Card>
@@ -383,7 +403,7 @@ function Log() {
             </>
           )}
           <p><code className="adm-hash">{check.head_hash || "—"}</code></p>
-          <p>{t.t("{{signed}} decisions signed with a reviewer's passkey, each checked again; {{unsigned}} unsigned (an AI assistant or an automatic approval).", { signed: check.signed ?? 0, unsigned: check.unsigned ?? 0 })}</p>
+          <p>{t.t("{{signed}} decisions signed with a reviewer's passkey, each checked again; {{unsigned}} unsigned (a reviewer without a passkey, an AI assistant or an automatic approval).", { signed: check.signed ?? 0, unsigned: check.unsigned ?? 0 })}</p>
           <p className="adm-sub">{t.t("Compare it with the fingerprint mailed to platform admins each day: if one mailed earlier can't be found in the log, it was rewritten.")}</p>
           {check.served && <ServedResult served={check.served} />}
         </div>
@@ -469,8 +489,8 @@ function Reviewers() {
 }
 
 /**
- * The reviewer's passkeys, which sign every decision they make in the
- * console. The private key stays on their device (or in their passkey
+ * The reviewer's passkeys, which, when they have one, sign every
+ * decision they make in the console. The private key stays on their device (or in their passkey
  * manager); the server keeps only the public key.
  */
 function Passkeys() {
@@ -516,7 +536,7 @@ function Passkeys() {
   return (
     <Card
       title={t.t("Your passkeys")}
-      subtitle={t.t("Every decision you make in the console is signed with a passkey: your face, fingerprint or PIN unlocks it, and its private key never leaves your device or passkey manager. The server keeps only the public key, so no one can make or change a decision in your name.")}
+      subtitle={t.t("Optional: with a passkey, every decision you make in the console is signed with it. Your face, fingerprint or PIN unlocks it, and its private key never leaves your device or passkey manager. The server keeps only the public key, so no one can make or change a signed decision in your name.")}
     >
       {!passkeysSupported() && <ErrorBox message={t.t("This browser can't use passkeys. Use a recent browser on a device with a screen lock.")} />}
       {keys.error && !keys.data ? (
@@ -524,7 +544,7 @@ function Passkeys() {
       ) : !keys.data ? (
         <Loading label={t.t("Loading…")} />
       ) : keys.data.length === 0 ? (
-        <p className="adm-sub">{t.t("You have no passkey yet: add one to approve or reject listings.")}</p>
+        <p className="adm-sub">{t.t("You have no passkey: your decisions go in unsigned. Add one to sign them.")}</p>
       ) : (
         <ul className="adm-passkeys">
           {keys.data.map((k) => (

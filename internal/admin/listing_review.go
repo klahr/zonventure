@@ -761,14 +761,11 @@ func (h *Handlers) decideListing(w http.ResponseWriter, r *http.Request, approve
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the listing changed while you looked: reload and review it again", "code": "changed"})
 		return
 	}
-	// A person in the console signs what they decide with their passkey;
-	// an assistant through an API token can't, and is logged as one.
+	// A person in the console may sign what they decide with their
+	// passkey; a signature sent must check out. An assistant through an
+	// API token can't sign, and is logged as one.
 	var sig decisionSignature
-	if !auth.ViaAPIToken(ctx) && h.webAuthn() != nil {
-		if req.Signature == nil {
-			httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "sign the decision with your passkey", "code": "signature_required"})
-			return
-		}
+	if !auth.ViaAPIToken(ctx) && req.Signature != nil {
 		verb := map[bool]string{true: "approve", false: "reject"}[approve]
 		if sig, err = h.checkDecisionSignature(ctx, tx, me, req.Signature, verb, kind, id, req.Revision, reason); err != nil {
 			if errors.Is(err, errBadSignature) {

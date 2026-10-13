@@ -179,8 +179,9 @@ type chainReport struct {
 	OK      bool  `json:"ok"`
 	Entries int64 `json:"entries"`
 	// Signed counts decisions signed with a reviewer's passkey, each
-	// checked; Unsigned those made through an API token or by a
-	// verified creator's automatic approval.
+	// checked; Unsigned those made without one: by a reviewer with
+	// no passkey, through an API token or by a verified creator's
+	// automatic approval.
 	Signed   int64 `json:"signed"`
 	Unsigned int64 `json:"unsigned"`
 	// Served compares what approved listings serve now with what was
@@ -245,13 +246,6 @@ func (h *Handlers) verifyChain(ctx context.Context) (chainReport, error) {
 				rep.Signed++
 				if err := verifyDecisionSignature(e); err != nil {
 					rep.Problems = append(rep.Problems, chainProblem{id, err.Error()})
-				}
-			case e.Via == "console":
-				// The console signs every decision when passkeys are
-				// configured (ZV_PUBLIC_URL).
-				rep.Unsigned++
-				if h.webAuthn() != nil {
-					rep.Problems = append(rep.Problems, chainProblem{id, "a console decision without a signature"})
 				}
 			default:
 				rep.Unsigned++

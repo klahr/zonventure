@@ -11,6 +11,10 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- Signing listing reviews with a passkey is optional. Approve and reject still ask for the passkey; without one, or with the passkey prompt cancelled, the reviewer confirms deciding unsigned. The log check no longer flags unsigned console decisions.
+
 ## [0.29.2] - 2026-10-13
 
 ### Added

@@ -1,8 +1,8 @@
 package admin
 
-// Passkey signing for human listing reviewers (migration 0125). A
-// reviewer registers a passkey; each decision they make in the console
-// is signed with it. The challenge the passkey signs is a hash of the
+// Passkey signing for human listing reviewers (migration 0125). Signing
+// is optional: a reviewer who registers a passkey signs each decision
+// they make in the console with it. The challenge the passkey signs is a hash of the
 // decision itself (signedDecision), so the signature covers exactly what
 // was decided, and the private key never leaves the reviewer's device:
 // the server can't make a signed decision on its own. The signature goes
@@ -16,8 +16,9 @@ package admin
 //	POST   /api/admin/listing-reviews/{kind}/{id}/sign        {action, revision, reason} → what to sign
 //
 // approve and reject then take {revision, reason, signature: {session_id,
-// credential}}. A decision made through an API token (an AI assistant
-// over MCP) is not signed; one made in the console must be.
+// credential}}, the signature optional. A decision made through an API
+// token (an AI assistant over MCP) is not signed; one made in the
+// console is when the reviewer has a passkey.
 
 import (
 	"bytes"

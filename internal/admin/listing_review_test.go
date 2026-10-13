@@ -766,9 +766,10 @@ func TestListingReview_HashChain(t *testing.T) {
 	}
 }
 
-// A decision in the console is signed with the reviewer's passkey over
-// exactly that decision; one unsigned, signed for another decision, or
-// signed once already is refused. The log checks every signature again.
+// A decision in the console may be signed with the reviewer's passkey
+// over exactly that decision; one signed for another decision, or signed
+// once already, is refused. Signing is optional: an unsigned decision
+// goes in as one. The log checks every signature again.
 func TestListingReview_PasskeySigning(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newListingFixture(t)
@@ -778,9 +779,6 @@ func TestListingReview_PasskeySigning(t *testing.T) {
 	rev := f.queue(t)[0].Revision
 	path := fmt.Sprintf("/api/admin/listing-reviews/event/%d/", f.eventID)
 
-	if w := call(t, f.reviewer, "POST", path+"approve", map[string]any{"revision": rev}); w.Code != http.StatusBadRequest || code(w) != "signature_required" {
-		t.Fatalf("unsigned: %d %s", w.Code, w.Body)
-	}
 	forReject := f.signed(t, "event", f.eventID, "reject", rev, "Nope")
 	if w := call(t, f.reviewer, "POST", path+"approve", map[string]any{"revision": rev, "signature": forReject}); w.Code != http.StatusForbidden || code(w) != "bad_signature" {
 		t.Fatalf("signed for another decision: %d %s", w.Code, w.Body)
@@ -799,6 +797,10 @@ func TestListingReview_PasskeySigning(t *testing.T) {
 	if w := call(t, f.reviewer, "POST", path+"approve", map[string]any{"revision": f.queue(t)[0].Revision, "signature": sig}); w.Code != http.StatusForbidden {
 		t.Fatalf("replayed signature: %d %s", w.Code, w.Body)
 	}
+	// Without a signature it goes in, unsigned.
+	if w := call(t, f.reviewer, "POST", path+"approve", map[string]any{"revision": f.queue(t)[0].Revision}); w.Code != http.StatusOK {
+		t.Fatalf("unsigned: %d %s", w.Code, w.Body)
+	}
 
 	w := call(t, f.reviewer, "GET", "/api/admin/listing-reviews/log/verify", nil)
 	var rep struct {
@@ -806,7 +808,7 @@ func TestListingReview_PasskeySigning(t *testing.T) {
 		Signed   int  `json:"signed"`
 		Unsigned int  `json:"unsigned"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil || !rep.OK || rep.Signed != 1 || rep.Unsigned != 0 {
+	if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil || !rep.OK || rep.Signed != 1 || rep.Unsigned != 1 {
 		t.Fatalf("verify = %+v (%v) %s", rep, err, w.Body)
 	}
 	if w := call(t, f.reviewer, "GET", "/api/admin/me/reviewer-passkeys", nil); !strings.Contains(w.Body.String(), `"name":"Test key"`) || !strings.Contains(w.Body.String(), "last_used_at") {
