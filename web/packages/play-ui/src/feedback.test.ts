@@ -31,12 +31,24 @@ test("a wrong answer shakes, carrying the ladder text", () => {
   });
 });
 
+test("an answer on a step that just moves on gets no feedback, right or wrong", () => {
+  assert.equal(feedbackForResult("answer", { accepted: true, points: 5, port: "out", quiet: true, view }, english), null);
+  assert.equal(feedbackForResult("answer", { accepted: false, port: "out", quiet: true, view }, english), null);
+  assert.equal(feedbackForResult("answer", { accepted: false, port: "out", quiet: true, view: { ...view, results_held: true } }, english), null);
+});
+
+test("a gate that turns the team back to the hub says not yet", () => {
+  assert.equal(feedbackForResult("choose", { accepted: false, port: "garden", not_yet: true, view }, english)?.tone, "info");
+  assert.equal(feedbackForResult("choose", { accepted: false, port: "garden", view }, english), null);
+});
+
 test("moves without an answer are silent", () => {
   assert.equal(feedbackForResult("continue", { accepted: false, port: "out", view }, english), null);
 });
 
 test("refusals map by code", () => {
   assert.equal(feedbackForRefusal("stale", english).tone, "info");
+  assert.match(feedbackForRefusal("maintenance", english).text, /maintenance/);
   assert.equal(feedbackForRefusal("nonsense", english).tone, "bad");
 });
 

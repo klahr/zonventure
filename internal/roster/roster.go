@@ -27,6 +27,7 @@ import (
 type TeamInput struct {
 	Name        string
 	MemberNames []string
+	Email       string
 }
 
 // Importer parses a roster source into a flat list of TeamInputs.

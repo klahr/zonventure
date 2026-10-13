@@ -171,6 +171,12 @@ func (h *Handlers) sendResetEmail(r *http.Request, to, token string) error {
 	return h.Mailer.Send(r.Context(), emailtpl.Message([]string{to}, subject, emailtpl.Classic, emailtpl.Platform(), c))
 }
 
+// ResetLink is the reset URL for token, as the forgot-password mail
+// builds it; the admins page's "Send reset link" mails the same one.
+func ResetLink(publicURL, token string) string {
+	return buildResetLink(publicURL, nil, token)
+}
+
 // buildResetLink returns the password-reset URL the email body
 // embeds. Reads only `publicURL` (from ZV_PUBLIC_URL) — request
 // headers like X-Forwarded-Host are intentionally NOT consulted,

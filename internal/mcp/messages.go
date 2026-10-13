@@ -23,7 +23,7 @@ func (s *Server) registerMessageTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "send_event_message",
 		Scope:       scopeWrite,
-		Description: "Send teams an informational message during an event — 'lunch is served at the square at 12', 'the bridge is closed, go round'. It is not part of the game: it shows in the player app's inbox, not in the adventure. Omit team_ids to reach every team; pass team ids (from list_teams / get_event) to reach only those.",
+		Description: "Send teams an informational message during an event — 'lunch is served at the square at 12', 'the bridge is closed, go round'. It is not part of the game: it shows in the player app's inbox, not in the adventure. Omit team_ids to reach every team; pass team ids (from get_event) to reach only those.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id", "text"},

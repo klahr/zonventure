@@ -3,6 +3,7 @@ package sim
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -378,6 +379,74 @@ func TestTeamsTurnKeysAtPosts(t *testing.T) {
 	for _, s := range res.Steps {
 		if s.Node == "launch" && s.Left != c.Teams {
 			t.Errorf("%d teams launched, want %d", s.Left, c.Teams)
+		}
+	}
+}
+
+func TestWrongGuessesComeFromTheAdventure(t *testing.T) {
+	t.Parallel()
+	puzzle := func(slug, answer string) graph.Node {
+		return graph.Node{Slug: slug, Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+			Outputs: []graph.Output{{Port: "ok", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: answer}}}},
+		}}
+	}
+	choice := graph.Node{Slug: "c", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+		Answer: &graph.Answer{Kind: graph.AnswerChoice, Fields: []graph.ChoiceField{{Options: []graph.ChoiceOption{{Value: "a", Label: "Grön"}}}}},
+	}}
+	g := &graph.Graph{Nodes: []graph.Node{puzzle("q", "kyrka"), puzzle("r", "Torget"), choice}}
+	got := contentGuesses(g, g.Nodes[0])
+	if want := []string{"kyrk", "ykrka", "Torget", "Grön"}; !slices.Equal(got, want) {
+		t.Errorf("contentGuesses = %v, want %v", got, want)
+	}
+}
+
+// A branch puzzle that times out is passed through for good, so the key
+// behind its answer is out of reach and the team goes round between the
+// home screen and the gate: it is given up on, not left to loop.
+func TestHubGateLoopStallsTheTeam(t *testing.T) {
+	g := &graph.Graph{
+		Items: []graph.Item{{Slug: "key", Name: "Key"}},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "hub", Type: graph.Hub, HubCfg: &graph.HubConfig{Policy: graph.PolicyChoice, Home: true,
+				Branches: []graph.Branch{{Port: "tower", Label: "Tower"}, {Port: "door", Label: "Door"}}}},
+			{Slug: "riddle", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Blocks:           graph.LegacyBlocks("What has hands but no arms?", nil),
+				TimeLimitSeconds: 1,
+				Outputs: []graph.Output{
+					{Port: "right", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "clock face"}}},
+					{Port: "late", Trigger: graph.OnTimeout},
+				},
+			}},
+			{Slug: "give", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.GrantItem, Item: "key", Qty: 1}},
+			{Slug: "gate", Type: graph.Gate, GateCfg: &graph.GateConfig{Condition: cond.Predicate{Op: cond.OpItem, Item: "key"}}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "hub"},
+			{From: "hub", FromPort: "tower", To: "riddle"},
+			{From: "hub", FromPort: "door", To: "gate"},
+			{From: "riddle", FromPort: "right", To: "give"},
+			{From: "riddle", FromPort: "late", To: "hub"},
+			{From: "give", FromPort: "out", To: "hub"},
+			{From: "gate", FromPort: "pass", To: "end"},
+			{From: "gate", FromPort: "fail", To: "hub"},
+		},
+	}
+	c := config()
+	c.Teams = 3
+	res := run(t, g, c)
+	if res.Ended != "stalled" {
+		t.Fatalf("ended %q, want stalled", res.Ended)
+	}
+	for _, tm := range res.Teams {
+		if !tm.Stalled {
+			t.Errorf("%s not stalled", tm.Name)
+		}
+	}
+	for _, e := range res.Events {
+		if e.Kind == "stalled" && (e.Node != "hub" || !strings.Contains(e.Text, "out of reach")) {
+			t.Errorf("stalled at %q: %s", e.Node, e.Text)
 		}
 	}
 }

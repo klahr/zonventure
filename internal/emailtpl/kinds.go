@@ -1,8 +1,10 @@
 package emailtpl
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/klahr/zonventure/internal/sitename"
 )
@@ -49,7 +51,7 @@ func VerifyEmail(lang, link string) (string, Content) {
 		Heading:   T(lang, "Welcome to %s!", sitename.Name()),
 		Body:      T(lang, "Confirm your email address to finish setting up your account."),
 		Buttons:   []Button{{T(lang, "Confirm my email"), link}},
-		Footer:    T(lang, "The link expires in 1 hour. If you didn't sign up, you can ignore this email."),
+		Footer:    T(lang, "The link expires in 24 hours. If you didn't sign up, you can ignore this email."),
 	}
 }
 
@@ -64,12 +66,133 @@ func EmailChange(lang, link string) (string, Content) {
 	}
 }
 
+// OrgInvitation asks an account to join org — newAccount when it was
+// made for the invitation and must choose its password first (link
+// sets it); nothing changes
+// until they accept in the console that link opens. role is the one
+// the invitation names (org_admin or org_member).
+func OrgInvitation(lang, org, role, link string, newAccount bool) (string, Content) {
+	if newAccount {
+		body := T(lang, "An admin of %s has made you a %s account to join their organization as an event host. Choose your password, then accept or decline.", mdEscape(org), mdEscape(sitename.Name()))
+		switch role {
+		case "org_admin":
+			body = T(lang, "An admin of %s has made you a %s account to join their organization as an admin. Choose your password, then accept or decline.", mdEscape(org), mdEscape(sitename.Name()))
+		case "org_writer":
+			body = T(lang, "An admin of %s has made you a %s account to join their organization as a writer. Choose your password, then accept or decline.", mdEscape(org), mdEscape(sitename.Name()))
+		}
+		return T(lang, "%s invites you to join them", org), Content{
+			Lang:      lang,
+			Preheader: T(lang, "Choose your password to answer. The link works for 7 days."),
+			Heading:   T(lang, "Join %s?", mdEscape(org)),
+			Body:      body,
+			Buttons:   []Button{{T(lang, "Choose your password"), link}},
+			Footer:    T(lang, "If you don't know them, ignore this email: nothing happens unless you choose a password and accept."),
+		}
+	}
+	body := T(lang, "An admin of %s wants to add your %s account to their organization as an event host. Sign in to accept or decline.", mdEscape(org), mdEscape(sitename.Name()))
+	switch role {
+	case "org_admin":
+		body = T(lang, "An admin of %s wants to add your %s account to their organization as an admin. Sign in to accept or decline.", mdEscape(org), mdEscape(sitename.Name()))
+	case "org_writer":
+		body = T(lang, "An admin of %s wants to add your %s account to their organization as a writer. Sign in to accept or decline.", mdEscape(org), mdEscape(sitename.Name()))
+	}
+	return T(lang, "%s invites you to join them", org), Content{
+		Lang:      lang,
+		Preheader: T(lang, "Accept or decline when you next sign in."),
+		Heading:   T(lang, "Join %s?", mdEscape(org)),
+		Body:      body,
+		Buttons:   []Button{{T(lang, "Sign in to answer"), link}},
+		Footer:    T(lang, "If you don't know them, decline: you stay out of their organization."),
+	}
+}
+
+// What an AccountChanged notice is about.
+const (
+	ChangedEmail    = "email"
+	ChangedPassword = "password"
+	ChangedTOTPOn   = "totp_on"
+	ChangedTOTPOff  = "totp_off"
+)
+
+// AccountChanged tells the address on file that something about signing
+// in changed, so a hijacked session can't change it unseen. For
+// ChangedEmail it goes to the old address and newEmail names the new one.
+// contact is the platform's contact address (settings.Legal), if set.
+func AccountChanged(lang, what, newEmail, revertLink, contact string) (string, Content) {
+	site := mdEscape(sitename.Name())
+	var heading, body string
+	footer := T(lang, "If this was you, there's nothing to do. If it wasn't, someone else may have access to your account: reset your password straight away.")
+	if contact != "" {
+		footer = T(lang, "If this was you, there's nothing to do. If it wasn't, someone else may have access to your account: reset your password straight away and write to %[1]s at %[2]s.", site, mdEscape(contact))
+	}
+	var buttons []Button
+	switch what {
+	case ChangedEmail:
+		heading = T(lang, "Your email address was changed")
+		body = T(lang, "The email address for your %[1]s account was changed to %[2]s. This address no longer gets the account's emails.", site, mdEscape(newEmail))
+		if revertLink != "" {
+			buttons = []Button{{T(lang, "Put my address back"), revertLink}}
+			footer = T(lang, "If this was you, there's nothing to do. If it wasn't, use the button within 7 days: it puts this address back, signs out every session and revokes every API token. Then reset your password.")
+		}
+	case ChangedPassword:
+		heading = T(lang, "Your password was changed")
+		body = T(lang, "The password for your %s account was changed.", site)
+	case ChangedTOTPOn:
+		heading = T(lang, "Two-factor authentication was turned on")
+		body = T(lang, "Two-factor authentication was turned on for your %s account.", site)
+	default:
+		heading = T(lang, "Two-factor authentication was turned off")
+		body = T(lang, "Two-factor authentication was turned off for your %s account.", site)
+	}
+	return T(lang, "Security notice for your %s account", sitename.Name()), Content{
+		Lang:      lang,
+		Preheader: heading,
+		Heading:   heading,
+		Body:      body,
+		Buttons:   buttons,
+		Footer:    footer,
+	}
+}
+
+// AccountDeletion confirms that the account is deleted on when (a date
+// already written in lang), or, as the reminder the day before, that it
+// is deleted tomorrow. link opens the console, where signing in shows
+// Cancel deletion.
+func AccountDeletion(lang, when, link string, reminder bool) (string, Content) {
+	site := mdEscape(sitename.Name())
+	subject := T(lang, "Your %s account will be deleted on %s", sitename.Name(), when)
+	heading := T(lang, "Your account will be deleted")
+	body := T(lang, "You asked to delete your %[1]s account. It and everything only it holds will be deleted for good on %[2]s.", site, mdEscape(when))
+	if reminder {
+		subject = T(lang, "Your %s account will be deleted tomorrow", sitename.Name())
+		heading = T(lang, "Your account will be deleted tomorrow")
+		body = T(lang, "Your %[1]s account will be deleted for good on %[2]s, as you asked. After that it can't be restored.", site, mdEscape(when))
+	}
+	return subject, Content{
+		Lang:      lang,
+		Preheader: T(lang, "Changed your mind? Sign in and cancel the deletion before %s.", when),
+		Heading:   heading,
+		Body:      body,
+		Buttons:   []Button{{T(lang, "Keep my account"), link}},
+		Footer:    T(lang, "To keep the account, sign in before then and choose Cancel deletion. If you didn't ask for this, sign in, cancel it and change your password."),
+	}
+}
+
 // --- players -----------------------------------------------------------------
 
 // PlayerLink is one player's way into a game.
 type PlayerLink struct {
 	Team, Player, URL string
 	Event             string
+}
+
+// brandName is who a player's email is from in its subject: the
+// organisation, else the platform.
+func brandName(org string) string {
+	if org != "" {
+		return org
+	}
+	return sitename.Name()
 }
 
 func playerFooter(lang, event, org string) string {
@@ -94,13 +217,86 @@ func TeamInvitation(lang, team, event, org string, players []PlayerLink, calenda
 	if event != "" {
 		heading = T(lang, "You're in: %s", event)
 	}
-	return T(lang, "Your %s team links", sitename.Name()), Content{
+	return T(lang, "Your %s team links", brandName(org)), Content{
 		Lang:      lang,
 		Preheader: T(lang, "The links for team %s — one per player.", team),
 		Heading:   heading,
 		Body:      b.String(),
 		Footer:    playerFooter(lang, event, org),
 	}
+}
+
+// Location is time zone tz, an organisation's; Europe/Stockholm when it
+// names none this server knows.
+func Location(tz string) *time.Location {
+	if tz != "" {
+		if l, err := time.LoadLocation(tz); err == nil {
+			return l
+		}
+	}
+	if l, err := time.LoadLocation("Europe/Stockholm"); err == nil {
+		return l
+	}
+	return time.UTC
+}
+
+var (
+	svWeekdays = []string{"söndag", "måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag"}
+	svMonths   = []string{"januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"}
+)
+
+// When is a start time as an email states it, in time zone tz:
+// "Saturday 18 October 2026, 14:00 (CEST)".
+func When(lang string, t time.Time, tz string) string {
+	t = t.In(Location(tz))
+	if lang == "sv" {
+		return fmt.Sprintf("%s %d %s %d kl. %s (%s)", svWeekdays[t.Weekday()], t.Day(), svMonths[t.Month()-1], t.Year(), t.Format("15:04"), t.Format("MST"))
+	}
+	return t.Format("Monday 2 January 2006, 15:04 (MST)")
+}
+
+// WithSchedule says in a team's invitation when event starts and where
+// to meet, either left out with "". changed says the time has moved
+// since the team's last invitation.
+func WithSchedule(subject string, c Content, event, when, place string, changed bool) (string, Content) {
+	lang := c.Lang
+	var lines []string
+	if when != "" {
+		if changed {
+			lines = append(lines, T(lang, "The time has changed: it now starts **%s**.", when))
+		} else {
+			lines = append(lines, T(lang, "It starts **%s**.", when))
+		}
+	}
+	if place != "" {
+		lines = append(lines, T(lang, "Meeting place: **%s**", mdEscape(place)))
+	}
+	if len(lines) > 0 {
+		c.Body = strings.Join(lines, "  \n") + "\n\n" + c.Body
+	}
+	if changed && when != "" {
+		subject = T(lang, "New time: %s", subject)
+		c.Preheader = T(lang, "It now starts %s.", when)
+		if event != "" {
+			c.Heading = T(lang, "New time for %s", event)
+		}
+	}
+	return subject, c
+}
+
+// contactLink is an organiser's address as a link to write to it.
+func contactLink(contact string) string {
+	return "[" + mdEscape(contact) + "](mailto:" + contact + ")"
+}
+
+// WithContact adds where a buyer writes with questions: the
+// organisation's contact address; none leaves c as it is.
+func WithContact(c Content, contact string) Content {
+	if contact == "" {
+		return c
+	}
+	c.Body += "\n\n" + T(c.Lang, "Questions? Write to the organiser at %s.", contactLink(contact))
+	return c
 }
 
 // TeamLink is the one link a buyer sets their team up from. voucher (an
@@ -113,14 +309,34 @@ func TeamLink(lang, teamURL, playURL, voucher, org string) (string, Content) {
 	if voucher != "" && playURL != "" {
 		body += "\n\n" + T(lang, "Prefer to type it in? Go to %[1]s and enter your voucher code: **%[2]s**", playURL, voucher)
 	}
-	return T(lang, "Your %s ticket — team link inside", sitename.Name()), Content{
+	return T(lang, "Your %s ticket — team link inside", brandName(org)), Content{
 		Lang:      lang,
 		Preheader: T(lang, "Set up your team and start whenever you're ready."),
 		Heading:   T(lang, "Thanks — your adventure is ready"),
 		Body:      body,
 		Buttons:   []Button{{T(lang, "Open the team page"), teamURL}},
-		Footer:    T(lang, "The link stays valid while you play. Lost it? Use “I lost my link” on the play page with this email address.") + " " + playerFooter(lang, "", org),
+		Footer:    T(lang, "The link works for 30 days.") + " " + lostLink(lang, playURL) + " " + playerFooter(lang, "", org),
 	}
+}
+
+// AsGift turns a TeamLink mail into a free ticket from org to event: it reads as
+// a gift, not as a purchase.
+func AsGift(lang, org, event string, c Content) (string, Content) {
+	c.Heading = T(lang, "A gift from %s — your adventure is ready", org)
+	c.Preheader = T(lang, "%s has given you a ticket. Set up your team and start whenever you're ready.", org)
+	if event == "" {
+		event = sitename.Name()
+	}
+	return T(lang, "A gift from %[1]s: your ticket to %[2]s", org, event), c
+}
+
+// lostLink says where a player gets a lost link sent again: the player
+// app's sign-in page, beside playURL (".../play").
+func lostLink(lang, playURL string) string {
+	if playURL == "" {
+		return T(lang, "Lost it? Open the play page and enter this email address to get a new link.")
+	}
+	return T(lang, "Lost it? Go to %s and enter this email address to get a new link.", strings.TrimSuffix(playURL, "/play")+"/app/play/")
 }
 
 // FileLink is one of the files the organisers left for an event's
@@ -165,14 +381,14 @@ func WithPrints(c Content, files []FileLink) Content {
 // event up and runs it from. The link is their only key, so the mail
 // says so.
 func PartyHost(lang, hostURL, party, org string) (string, Content) {
-	return T(lang, "Your %s party — host link inside", sitename.Name()), Content{
+	return T(lang, "Your %s party — host link inside", brandName(org)), Content{
 		Lang:      lang,
 		Preheader: T(lang, "Set up the party, print the cards and show the players their link."),
 		Heading:   T(lang, "%s is booked", party),
-		Body: T(lang, "Open the host page to print and hide the cards and show the players their link. The first team to join starts the game; play as many games as you like for 14 days from then.") +
+		Body: T(lang, "Open the host page to print and hide the cards and show the players their link. The first team to join starts the game, within 60 days of booking; play as many games as you like for 14 days from then.") +
 			"\n\n" + T(lang, "Anyone with this link can run the party, so keep it to yourself."),
 		Buttons: []Button{{T(lang, "Open the host page"), hostURL}},
-		Footer:  T(lang, "Everything about the players is deleted a while after the party.") + " " + playerFooter(lang, "", org),
+		Footer:  T(lang, "Everything about the players is deleted a while after the party.") + " " + T(lang, "You get this because you host %s.", party),
 	}
 }
 
@@ -185,7 +401,7 @@ func HostedPlayerLink(lang, playerURL, party, org string) (string, Content) {
 		Heading:   T(lang, "Join %s", party),
 		Body:      T(lang, "Open the link on the phone your team plays on, give the team a name and start."),
 		Buttons:   []Button{{T(lang, "Join the game"), playerURL}},
-		Footer:    playerFooter(lang, "", org),
+		Footer:    T(lang, "You get this because the host of %s sent you the player link.", party),
 	}
 }
 
@@ -216,21 +432,26 @@ func TrailSignin(lang, link string) (string, Content) {
 
 // TrailPaid is a paid quiz trail's host link, mailed to the buyer: where
 // to print the cards and show the players their link. Stripe mails the
-// receipt.
-func TrailPaid(lang, hostURL, playerURL, title, startBy, org string, paid bool) (string, Content) {
-	keep := T(lang, "Anyone with the admin link can run and change your party adventure, so keep it to yourself.")
+// receipt. Until is the day to start the first game by, or, once one
+// has started, the last day to play.
+func TrailPaid(lang, hostURL, playerURL, title, until, org string, started, paid bool) (string, Content) {
+	keep := T(lang, "Anyone with the host link can run and change your party adventure, so keep it to yourself.")
 	if paid {
 		keep += " " + T(lang, "Your receipt comes in a separate email.")
+	}
+	when := T(lang, "Open the host page to print the cards and the answer key, and to show the players their link. Start the first game by %s; from then you can play as many games as you like for 14 days.", until)
+	if started {
+		when = T(lang, "Open the host page to print the cards and the answer key, and to show the players their link. You can play as many games as you like until %s.", until)
 	}
 	return T(lang, "%s is ready to play", title), Content{
 		Lang:      lang,
 		Preheader: T(lang, "Print the cards, hide them and let the teams join."),
 		Heading:   T(lang, "%s is ready to play", title),
-		Body: T(lang, "Open the admin page to print the cards and the answer key, and to show the players their link. Start the first game by %s; from then you can play as many games as you like for 14 days.", startBy) +
+		Body: when +
 			"\n\n" + T(lang, "Players join here: %s", playerURL) +
 			"\n\n" + keep,
-		Buttons: []Button{{T(lang, "Open the admin page"), hostURL}},
-		Footer:  T(lang, "The party adventure and everything about the players is deleted 14 days after the first game.") + " " + playerFooter(lang, "", org),
+		Buttons: []Button{{T(lang, "Open the host page"), hostURL}},
+		Footer:  T(lang, "The party adventure and everything about the players is deleted 14 days after the first game.") + " " + T(lang, "You get this because you host %s.", title),
 	}
 }
 
@@ -310,7 +531,7 @@ func RoundSummary(lang, hostURL, party, org string, round int, teams []RoundTeam
 		for _, c := range cards {
 			pct := 0
 			if c.Reached > 0 {
-				pct = c.Right * 100 / c.Reached
+				pct = (c.Right*200 + c.Reached) / (2 * c.Reached)
 			}
 			b.WriteString(T(lang, "- %[1]s: %[2]d%% right (%[3]d of %[4]d teams)", mdEscape(c.Title), pct, c.Right, c.Reached) + "\n")
 		}
@@ -321,7 +542,7 @@ func RoundSummary(lang, hostURL, party, org string, round int, teams []RoundTeam
 		Heading:   T(lang, "Game %d is over", round),
 		Body:      b.String(),
 		Buttons:   []Button{{T(lang, "Open the host page"), hostURL}},
-		Footer:    T(lang, "You get this because you host %s.", party) + " " + playerFooter(lang, "", org),
+		Footer:    T(lang, "You get this because you host %s.", party),
 	}
 }
 
@@ -337,27 +558,27 @@ func formatPoints(f float64) string {
 func BoxConfirmed(lang, partner, teamURL, playURL, voucher, org string) (string, Content) {
 	_, c := TeamLink(lang, teamURL, playURL, voucher, org)
 	c.Heading = T(lang, "Your %s box is confirmed!", partner)
-	c.Footer = T(lang, "The link stays valid for a year. Lost it? Use “I lost my link” on the play page with this email address.")
-	return T(lang, "Your %s adventure — team link inside", sitename.Name()), c
+	c.Footer = T(lang, "The link works for a year.") + " " + lostLink(lang, playURL)
+	return T(lang, "Your %s adventure — team link inside", brandName(org)), c
 }
 
 // BoxReceived tells a box buyer their code has arrived and is being
 // checked, and where their envelope goes: a wrong address is caught
 // before anything is posted. address is the postal address, a line each.
-func BoxReceived(lang, partner string, address []string) (string, Content) {
+func BoxReceived(lang, partner string, address []string, contact string) (string, Content) {
 	subject := T(lang, "We've got your %s code", partner)
 	return subject, WithEnvelope(Content{
 		Lang:      lang,
 		Preheader: T(lang, "We're checking it and will email your team link soon."),
 		Heading:   subject,
 		Body:      T(lang, "We're checking it with %s now. Once it checks out, we email your team link to this address, usually within a working day.", partner),
-	}, address)
+	}, address, contact)
 }
 
 // WithEnvelope says where the buyer's envelope is posted, a line each of
-// address, so a wrong address is caught before it goes out; none leaves
-// c as it is.
-func WithEnvelope(c Content, address []string) Content {
+// address, so a wrong address is caught before it goes out, and whom to
+// write to then (contact, optional); no address leaves c as it is.
+func WithEnvelope(c Content, address []string, contact string) Content {
 	if len(address) == 0 {
 		return c
 	}
@@ -366,17 +587,31 @@ func WithEnvelope(c Content, address []string) Content {
 		lines[i] = mdEscape(l)
 	}
 	c.Body += "\n\n" + T(c.Lang, "Your envelope goes to:") + "  \n" + strings.Join(lines, "  \n")
-	c.Body += "\n\n" + T(c.Lang, "Something wrong? Reply to this email and we'll sort it out.")
+	if contact != "" {
+		c.Body += "\n\n" + T(c.Lang, "Something wrong? Write to the organiser at %s before the envelope is posted.", contactLink(contact))
+	} else {
+		c.Body += "\n\n" + T(c.Lang, "Something wrong? Contact the organiser before the envelope is posted.")
+	}
 	return c
 }
 
-// BoxRejected tells a buyer their box's code did not check out.
-func BoxRejected(lang, partner string) (string, Content) {
+// BoxRejected tells a buyer their box's code did not check out; contact
+// is the organiser's address, when there is one.
+func BoxRejected(lang, partner, reason, contact string) (string, Content) {
 	subject := T(lang, "About your %s box", partner)
+	body := T(lang, "We couldn't confirm the code from your %[1]s box with %[1]s.", partner)
+	if reason != "" {
+		body += "\n\n" + T(lang, "The organiser's reason: %s", reason)
+	}
+	if contact != "" {
+		body += "\n\n" + T(lang, "Please check the code and redeem it again, or write to %s and we'll sort it out.", contactLink(contact))
+	} else {
+		body += "\n\n" + T(lang, "Please check the code and redeem it again, or reply to this email and we'll sort it out.")
+	}
 	return subject, Content{
 		Lang:    lang,
 		Heading: subject,
-		Body:    T(lang, "We couldn't confirm the code from your %[1]s box with %[1]s.", partner) + "\n\n" + T(lang, "Please check the code and redeem it again, or reply to this email and we'll sort it out."),
+		Body:    body,
 	}
 }
 
@@ -447,7 +682,35 @@ func ListingRejected(lang, what, reason, link string) (string, Content) {
 	c := Content{
 		Lang:    lang,
 		Heading: subject,
-		Body:    T(lang, "Your changes to the listing for “%s” were not approved. Anything already public stays as it was. Change the listing and save it to send it for review again.", mdEscape(what)),
+		Body:    T(lang, "Your listing for “%s” was not approved. If an earlier version is public, it stays as it was. Change the listing, save it and press Submit for review.", mdEscape(what)),
+		Quote:   reason,
+	}
+	if link != "" {
+		c.Buttons = []Button{{T(lang, "Open it"), link}}
+	}
+	return subject, c
+}
+
+// OrgPageApproved tells an organisation's admins their organisation
+// page change is public: a review decision, worded as the page and not
+// as a listing.
+func OrgPageApproved(lang, org, link string) (string, Content) {
+	subject := T(lang, "Your organisation page is approved")
+	c := Content{Lang: lang, Heading: subject, Body: T(lang, "The changes to the organisation page of “%s” are approved and now public.", mdEscape(org))}
+	if link != "" {
+		c.Buttons = []Button{{T(lang, "Open it"), link}}
+	}
+	return subject, c
+}
+
+// OrgPageRejected tells an organisation's admins their organisation
+// page change was turned down, and why. What was public stays up.
+func OrgPageRejected(lang, org, reason, link string) (string, Content) {
+	subject := T(lang, "Your organisation page was not approved")
+	c := Content{
+		Lang:    lang,
+		Heading: subject,
+		Body:    T(lang, "The changes to the organisation page of “%s” were not approved. What is public now stays as it was. Change the page under Settings → Organization, save it and press Submit for review.", mdEscape(org)),
 		Quote:   reason,
 	}
 	if link != "" {
@@ -459,7 +722,7 @@ func ListingRejected(lang, what, reason, link string) (string, Content) {
 // PlayLinks is every link an address has, sent when it asks.
 func PlayLinks(lang string, links []PlayerLink, org string) (string, Content) {
 	var b strings.Builder
-	b.WriteString(T(lang, "Here are fresh links for the teams this address is registered with. Each works on one device: opening it claims it for that device. Your old links no longer work."))
+	b.WriteString(T(lang, "Here are the links for the teams this address is registered with. Each works on one device: opening it claims it for that device."))
 	b.WriteString("\n\n")
 	for _, l := range links {
 		if l.Event != "" {
@@ -468,12 +731,12 @@ func PlayLinks(lang string, links []PlayerLink, org string) (string, Content) {
 			b.WriteString(T(lang, "- **%[1]s**, team %[2]s: [%[3]s](%[3]s)\n", mdEscape(l.Player), mdEscape(l.Team), l.URL))
 		}
 	}
-	return T(lang, "Your %s play links", sitename.Name()), Content{
+	return T(lang, "Your %s play links", brandName(org)), Content{
 		Lang:      lang,
 		Preheader: T(lang, "Your way back into the game."),
 		Heading:   T(lang, "Your play links"),
 		Body:      b.String(),
-		Footer:    T(lang, "You get this because someone asked for the links of this address. If it wasn't you, ignore it."),
+		Footer:    T(lang, "You get this because someone asked for the links of this address. Your links are the same as before."),
 	}
 }
 
@@ -499,6 +762,23 @@ func TeamMessage(lang, subject, body, event, org string) (string, Content) {
 	}
 }
 
+// EventCancelled tells a team the event it was invited to is cancelled;
+// contact is the organisers' address, when there is one.
+func EventCancelled(lang, team, event, org, contact string) (string, Content) {
+	subject := T(lang, "%s is cancelled", event)
+	body := T(lang, "Hi %[1]s! The organisers have cancelled %[2]s, so your player links no longer work. Questions? Contact the organisers.", mdEscape(team), mdEscape(event))
+	if contact != "" {
+		body = T(lang, "Hi %[1]s! The organisers have cancelled %[2]s, so your player links no longer work. Questions? Write to the organisers at %[3]s.", mdEscape(team), mdEscape(event), contactLink(contact))
+	}
+	return subject, Content{
+		Lang:      lang,
+		Preheader: T(lang, "Your player links no longer work."),
+		Heading:   subject,
+		Body:      body,
+		Footer:    playerFooter(lang, event, org),
+	}
+}
+
 func firstLine(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
@@ -508,6 +788,70 @@ func firstLine(s string) string {
 		return string(r[:110]) + "…"
 	}
 	return s
+}
+
+// --- buying from the platform --------------------------------------------------
+
+// Receipt is a paid event pass as its receipt states it.
+type Receipt struct {
+	Number    int64
+	Seller    string
+	Buyer     string
+	Adventure string
+	Players   int
+	// TopUp is players added to a pass the buyer already had.
+	TopUp       bool
+	Paid        time.Time
+	AmountCents int
+	Currency    string
+	Refunded    bool
+}
+
+// money is an amount as a receipt states it: "2205.00 SEK", with a
+// decimal comma in Swedish.
+func money(lang string, cents int, currency string) string {
+	s := fmt.Sprintf("%d.%02d %s", cents/100, cents%100, strings.ToUpper(currency))
+	if lang == "sv" {
+		s = strings.Replace(s, ".", ",", 1)
+	}
+	return s
+}
+
+// PurchaseReceipt is an event pass's receipt, in time zone tz. Mailed to
+// its buyer, link is where it downloads; without one it is the receipt
+// a download serves.
+func PurchaseReceipt(lang string, r Receipt, tz string, link string) (string, Content) {
+	paid := r.Paid.In(Location(tz))
+	date := paid.Format("2 January 2006")
+	if lang == "sv" {
+		date = fmt.Sprintf("%d %s %d", paid.Day(), svMonths[paid.Month()-1], paid.Year())
+	}
+	item := T(lang, "Event pass for %[1]d players: %[2]s", r.Players, r.Adventure)
+	if r.TopUp {
+		item = T(lang, "%[1]d more players on an event pass: %[2]s", r.Players, r.Adventure)
+	}
+	lines := []string{
+		T(lang, "Receipt no. %d", r.Number),
+		T(lang, "Date: %s", date),
+		T(lang, "Seller: %s", mdEscape(r.Seller)),
+		T(lang, "Buyer: %s", mdEscape(r.Buyer)),
+		T(lang, "Item: %s", mdEscape(item)),
+		T(lang, "Amount paid: **%s**", money(lang, r.AmountCents, r.Currency)),
+	}
+	if r.Refunded {
+		lines = append(lines, T(lang, "This purchase has been refunded."))
+	}
+	c := Content{
+		Lang:      lang,
+		Preheader: T(lang, "Thanks for your purchase."),
+		Heading:   T(lang, "Receipt"),
+		Body:      strings.Join(lines, "  \n"),
+	}
+	if link != "" {
+		c.Heading = T(lang, "Thanks for your purchase")
+		c.Buttons = []Button{{T(lang, "Download receipt"), link}}
+	}
+	return T(lang, "Your %s receipt", r.Seller), c
 }
 
 // --- designers -----------------------------------------------------------------
@@ -622,6 +966,9 @@ var Kinds = []Kind{
 	{"team_message", "Message to teams", "players", func(lang, org string) (string, Content) {
 		body := strings.ReplaceAll(T(lang, "Hi {{team}}!\n\nWe start from the old lighthouse — look for the **red flag**.\nBring a charged phone and good shoes.\n\nSee you there!"), "{{team}}", T(lang, "The Seagulls"))
 		return TeamMessage(lang, T(lang, "Meet at the lighthouse at 14:00"), body, T(lang, "Harbour Mystery"), org)
+	}},
+	{"event_cancelled", "Event cancelled", "players", func(lang, org string) (string, Content) {
+		return EventCancelled(lang, T(lang, "The Seagulls"), T(lang, "Harbour Mystery"), org, "")
 	}},
 	{"game_email", "Email during the game", "players", func(lang, org string) (string, Content) {
 		return GameEmail(lang, T(lang, "A letter has arrived"), T(lang, "Dear detectives,\n\nThe keeper's last entry mentions a tide table. Find it before the water rises.\n\n— A friend"), T(lang, "Harbour Mystery"), org)

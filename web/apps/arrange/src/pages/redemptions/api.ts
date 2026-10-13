@@ -110,9 +110,10 @@ export const listSelfGuided = () =>
   get<{ events: SelfGuidedEvent[] | null }>("/api/admin/events?public_for_sale=true").then((r) => r.events ?? []);
 
 export const decide = (id: number, action: "approve" | "reject" | "cancel") => post<unknown>(`/api/admin/redemptions/${id}/${action}`);
+export const reject = (id: number, reason: string) => post<unknown>(`/api/admin/redemptions/${id}/reject`, { reason });
 export const updateRedemption = (id: number, body: { posted?: boolean; post_at?: string; note?: string; letter_lang?: string }) => patch<unknown>(`/api/admin/redemptions/${id}`, body);
 export const updatePurchase = (id: number, body: { posted?: boolean; post_at?: string; note?: string; letter_lang?: string }) => patch<unknown>(`/api/admin/ticket-purchases/${id}`, body);
-export const createRedemption = (body: NewRedemption) => post<unknown>("/api/admin/redemptions", body);
+export const createRedemption = (body: NewRedemption) => post<Redemption>("/api/admin/redemptions", body);
 
 export const addPartner = (kind: string) => post<unknown>("/api/admin/partners", { kind });
 export const setPartnerEnabled = (id: number, enabled: boolean) => patch<unknown>(`/api/admin/partners/${id}`, { enabled });

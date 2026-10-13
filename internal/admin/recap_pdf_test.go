@@ -78,6 +78,31 @@ func TestWriteRecapPDF_HappyPath(t *testing.T) {
 	}
 }
 
+// The statistics get a page of their own once a team has played, and
+// none before.
+func TestWriteRecapPDF_StatisticsPage(t *testing.T) {
+	t.Parallel()
+	pages := func(st *EventStats) int {
+		t.Helper()
+		d := recapPDFData{OrgName: "Acme Corp", AdventureTitle: "Old Town", GeneratedAt: time.Now(), Graph: true,
+			Teams: []recapPDFTeam{{Rank: 1, Name: "Alpha", Points: 3}}, Stats: st}
+		var buf bytes.Buffer
+		if err := writeRecapPDF(&buf, d); err != nil {
+			t.Fatalf("writeRecapPDF: %v", err)
+		}
+		return strings.Count(buf.String(), "/Type /Page") - strings.Count(buf.String(), "/Type /Pages")
+	}
+	median, fastest := 1800, 1500
+	st := &EventStats{Teams: 2, Finished: 1, Guesses: 9, Wrong: 6, Solved: 3, FirstTry: 2, Hints: 1, MedianSeconds: &median, FastestSeconds: &fastest, SlowestSeconds: &median,
+		Puzzles: []PuzzleStats{{Node: "a", Title: "Fyren", Reached: 2, Solved: 2, FirstTry: 1, Wrong: 5}, {Node: "b", Title: "Kajen", Reached: 1, Solved: 1, FirstTry: 1, Wrong: 1, MedianSeconds: &fastest}}}
+	if n := pages(st); n != 2 {
+		t.Errorf("with statistics: %d pages, want 2", n)
+	}
+	if n := pages(&EventStats{}); n != 1 {
+		t.Errorf("before anyone played: %d pages, want 1", n)
+	}
+}
+
 func TestWriteRecapPDF_EmptyTeams(t *testing.T) {
 	t.Parallel()
 	d := recapPDFData{
@@ -291,6 +316,22 @@ func TestRecapDateLine(t *testing.T) {
 				t.Errorf("recapDateLine = %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+func TestRecapTitle(t *testing.T) {
+	t.Parallel()
+	may1 := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	d := recapPDFData{EventName: "Acme team day", AdventureTitle: "Acme Park Walk", EventStartedAt: may1}
+	if got := recapTitle(d); got != "Acme team day" {
+		t.Errorf("recapTitle = %q", got)
+	}
+	if got := recapSubtitle(d); got != "Acme Park Walk  ·  May 1, 2026" {
+		t.Errorf("recapSubtitle = %q", got)
+	}
+	d.EventName = ""
+	if got, sub := recapTitle(d), recapSubtitle(d); got != "Acme Park Walk" || sub != "May 1, 2026" {
+		t.Errorf("unnamed event: %q / %q", got, sub)
 	}
 }
 

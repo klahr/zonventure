@@ -30,6 +30,8 @@
   .card {
     text-align: center;
     max-width: 28rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
     padding: 2.5rem 2rem;
     background: var(--surface);
     border: 1px solid var(--border-soft);
@@ -63,7 +65,7 @@
 <body>
   <main class="card">
     <img class="spot" src="/assets/illustrations/not-found.webp" alt="" width="480" height="480">
-    <p class="num">404</p>
+    <p class="num">{{STATUS_CODE}}</p>
     <h1>{{NOT_FOUND_HEADING}}</h1>
     <p>{{NOT_FOUND_BODY}}</p>
     <div class="links">

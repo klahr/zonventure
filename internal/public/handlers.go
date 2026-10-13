@@ -50,6 +50,9 @@ type Handlers struct {
 	// Looks resolves look covers and typefaces for the store, recap and
 	// live board (LoadPageLook).
 	Looks LookAssets
+	// Payments is whether a payment provider is wired. Without one no
+	// ticket can be bought, so the store lists nothing.
+	Payments bool
 	// tracks caches each event's tracks for tracksTTL; see buildTracks.
 	tracks tracksCache
 }
@@ -81,6 +84,8 @@ type teamDTO struct {
 	// Withdrawn teams stay on the board, ranked after everyone still
 	// playing.
 	Withdrawn bool `json:"withdrawn,omitempty"`
+	// Joined is set once any of the team's players has signed in.
+	Joined bool `json:"joined,omitempty"`
 }
 
 // LiveDTO is the snapshot shape served both by /api/public/live/{token}
@@ -174,7 +179,8 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name, COALESCE(t.completed_at, ''),
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       (t.withdrawn_at IS NOT NULL)::int AS withdrawn
+		       (t.withdrawn_at IS NOT NULL)::int AS withdrawn,
+		       EXISTS (SELECT 1 FROM player_slots ps WHERE ps.team_id = t.id AND ps.last_login_at IS NOT NULL) AS joined
 		FROM teams t
 		WHERE t.event_id = $1 AND ($2 = 0 OR t.round = $2)
 	`, id, round)
@@ -189,7 +195,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 			hasAvatar int
 			withdrawn int
 		)
-		if err := rows.Scan(&t.ID, &t.Name, &t.CompletedAt, &hasAvatar, &withdrawn); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.CompletedAt, &hasAvatar, &withdrawn, &t.Joined); err != nil {
 			return LiveDTO{}, id, http.StatusInternalServerError, "scan failed"
 		}
 		if hasAvatar != 0 {
@@ -199,7 +205,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		teams = append(teams, t)
 	}
 	// Every team's members in one query: this runs for each viewer on
-	// every push.
+	// every push. A player who erased their data is left out.
 	teamIdx := make(map[int64]int, len(teams))
 	for i := range teams {
 		teams[i].Members = []memberDTO{}
@@ -207,7 +213,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 	}
 	mrows, err := h.DB.QueryContext(ctx, `
 		SELECT ps.team_id, ps.name FROM player_slots ps JOIN teams t ON t.id = ps.team_id
-		WHERE t.event_id = $1 ORDER BY ps.team_id, LOWER(ps.name)
+		WHERE t.event_id = $1 AND ps.name <> '(forgotten)' ORDER BY ps.team_id, LOWER(ps.name)
 	`, id)
 	if err != nil {
 		return LiveDTO{}, id, http.StatusInternalServerError, "members failed"

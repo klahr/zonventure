@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "@zonventure/api";
 import { coverOf } from "@zonventure/play-ui";
+import { useConfirm } from "@zonventure/ui";
 import { Game, HostedProvider, PersonaliseSection, PlacesSection, PlayerLink, TrailPrint, WhereSection, adaptable, partyApi, type HostedEvent } from "@zonventure/hosted";
 import { Resend } from "./Book.tsx";
 import { useT } from "./i18n.tsx";
 import { useLook } from "./look.ts";
-import { hostEditURL, keepLink } from "./trail.ts";
+import { holdHostLink, hostEditURL, keepLink, replaceHostLink, setTrailSession, verify } from "./trail.ts";
 
 /**
  * The host page: a hosted event's player link, its cards to print and
@@ -22,19 +23,30 @@ export function Host({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [ask, confirmDialog] = useConfirm();
   useLook(party?.look);
+
+  // The mailed link confirms the party's email: opening it is proof the
+  // host reads that inbox, so "Get a link by email" finds it later.
+  useEffect(() => {
+    const m = /^#confirm=(.+)$/.exec(location.hash);
+    if (!m) return;
+    history.replaceState(null, "", location.pathname);
+    verify(decodeURIComponent(m[1]!)).then(setTrailSession, () => {});
+  }, []);
 
   const load = useCallback(() => {
     api.get().then(
       (p) => {
         setParty(p);
         setGone(false);
+        if (p.public_trail && p.trail_id) holdHostLink(p.trail_id, token);
       },
       (e) => {
         if (e instanceof ApiError && e.status === 404) setGone(true);
       },
     );
-  }, [api]);
+  }, [api, token]);
 
   useEffect(load, [load]);
   // Who has joined and how far each team got: often during a game.
@@ -104,10 +116,14 @@ export function Host({ token }: { token: string }) {
 
   return (
     <HostedProvider value={{ i18n, api, run, busy }}>
+      {confirmDialog}
       <div className="party-screen">
         <section className={"party-card party-head" + (cover ? " party-card--cover" : "")}>
           {cover && <div className="party-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
-          {party.adventure_title !== party.name && <p className="party-eyebrow">{party.adventure_title}</p>}
+          <p className="party-eyebrow">
+            {t("Host page")}
+            {party.adventure_title !== party.name && " · " + party.adventure_title}
+          </p>
           <h1>{party.name}</h1>
           <p className="party-muted">
             <StatePill state={party.state} />{" "}
@@ -133,7 +149,7 @@ export function Host({ token }: { token: string }) {
           </p>
         )}
 
-        {party.round_open && <p className="party-note">{t("A game is being played. What you set up below can be changed again when it is finished.")}</p>}
+        {party.round_open && personal && <p className="party-note">{t("A game is being played. Your own words below can be changed again when it is finished.")}</p>}
 
         {chooseWhere && (
           <section className="party-card">
@@ -167,9 +183,11 @@ export function Host({ token }: { token: string }) {
             ) : (
               <>
                 <p className="party-muted">
-                  {t("Print the {{n}} cards and hide them where the players can find them: under a cushion, behind a tree, in the letterbox. The game tells each team which card to look for next.", {
-                    n: party.stations.length,
-                  })}
+                  {party.stations.length === 1
+                    ? t("Print the card and hide it where the players can find it: under a cushion, behind a tree, in the letterbox.")
+                    : t("Print the {{n}} cards and hide them where the players can find them: under a cushion, behind a tree, in the letterbox. The game tells each team which card to look for next.", {
+                        n: party.stations.length,
+                      })}
                 </p>
                 <ol className="party-cards">
                   {party.stations.map((s) => (
@@ -216,6 +234,33 @@ export function Host({ token }: { token: string }) {
               {t("Create a free account to keep this party adventure")}
             </button>
           </section>
+        )}
+        <section className="party-card">
+          <h2>{t("The link to this page")}</h2>
+          <p className="party-muted">{t("Anyone with the link can run your party. If it got to someone it shouldn't have, replace it.")}</p>
+          <button
+            type="button"
+            className="party-btn"
+            disabled={busy}
+            onClick={async () => {
+              if (
+                await ask({
+                  message: t("Replace the link? Older links stop working, on every phone and in your emails. This page opens with the new link: bookmark it, or have it emailed to you again."),
+                  confirmLabel: t("Replace link"),
+                  cancelLabel: t("Cancel"),
+                  danger: true,
+                })
+              )
+                void run(async () => location.replace("/app/party/host/" + encodeURIComponent((await replaceHostLink(token)).token)));
+            }}
+          >
+            {t("Replace link")}
+          </button>
+        </section>
+        {party.public_trail && (
+          <p className="party-right">
+            <a href="/app/party/trail/mine">{t("My party adventures")}</a>
+          </p>
         )}
       </div>
 

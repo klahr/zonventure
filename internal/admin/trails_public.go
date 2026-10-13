@@ -279,12 +279,13 @@ func (h *Handlers) CreateTrailDraft(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "no such template")
 		return
 	}
-	h.newDraft(w, r, orgID, t, t.Title, lang)
+	h.newDraft(w, r, orgID, t, t.Title, lang, 0)
 }
 
 // newDraft makes a draft of org's from t and answers with it and its
 // secret, when the caller's address has not started too many today.
-func (h *Handlers) newDraft(w http.ResponseWriter, r *http.Request, orgID int64, t trail.Template, title, lang string) {
+// A copy is made from adventure from, whose look and edits it keeps.
+func (h *Handlers) newDraft(w http.ResponseWriter, r *http.Request, orgID int64, t trail.Template, title, lang string, from int64) {
 	ctx := r.Context()
 	ip := trailIPHash(r)
 	var started int
@@ -295,7 +296,7 @@ func (h *Handlers) newDraft(w http.ResponseWriter, r *http.Request, orgID int64,
 		return
 	}
 	if started >= maxTrailDraftsPerIP {
-		httpx.Error(w, http.StatusTooManyRequests, "too many new party adventures today; try again tomorrow")
+		httpx.JSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many new party adventures today; try again tomorrow", "code": "too_many_drafts"})
 		return
 	}
 	secret, err := tokenx.New(32)
@@ -313,6 +314,12 @@ func (h *Handlers) newDraft(w http.ResponseWriter, r *http.Request, orgID int64,
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "create failed", err)
 		return
+	}
+	if from > 0 {
+		if err := copyTrailLook(ctx, tx, from, advID); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "create failed", err)
+			return
+		}
 	}
 	var id int64
 	if err := tx.QueryRowContext(ctx, `
@@ -461,7 +468,7 @@ func (h *Handlers) DeleteTrailDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.PaidAt.Valid {
-		httpx.Error(w, http.StatusConflict, "a paid party adventure can't be deleted")
+		httpx.Error(w, http.StatusConflict, "a party adventure that is ready to play can't be deleted")
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM adventures WHERE id = $1 AND trail_hidden`, p.AdvID); err != nil {
@@ -495,7 +502,23 @@ func (h *Handlers) DuplicateTrailDraft(w http.ResponseWriter, r *http.Request) {
 	if title, err = validateName(title, MaxNameLen); err != nil {
 		title = t.dto.Title
 	}
-	h.newDraft(w, r, p.OrgID, tp, title, lang)
+	h.newDraft(w, r, p.OrgID, tp, title, lang, p.AdvID)
+}
+
+// copyTrailLook gives adventure to the look and theme of adventure from,
+// and its revision: an edited trail's copy has no example cards.
+func copyTrailLook(ctx context.Context, tx *sql.Tx, from, to int64) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE adventures n SET accent_color = s.accent_color, accent_secondary_color = s.accent_secondary_color,
+		       background_color = s.background_color, text_color = s.text_color, submit_bg_color = s.submit_bg_color,
+		       font = s.font, heading_font = s.heading_font, corners = s.corners, cards = s.cards,
+		       card_outline = s.card_outline, backdrop = s.backdrop, look_style = s.look_style,
+		       trail_theme = s.trail_theme, trail_revision = s.trail_revision
+		FROM adventures s WHERE s.id = $1 AND n.id = $2
+	`, from, to); err != nil {
+		return err
+	}
+	return clonePicture(ctx, tx, from, to, 0)
 }
 
 /* ---------------- checkout ---------------- */
@@ -562,8 +585,9 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		// The admin link is mailed to the address given, so the host can
 		// find the page again; drafts are limited per caller and day, which
 		// bounds what a stranger can have us send. Nothing paid confirms
-		// the address, though: it counts as confirmed (My trails) only when
-		// this browser signed in with it. The answer opens the admin page.
+		// the address, though: it counts as confirmed (My trails) when
+		// this browser signed in with it, or once the mailed link is
+		// opened (sendTrailPaid). The answer opens the admin page.
 		session, _ := h.trailSession(ctx, r)
 		vouched := h.hosted().Free() || strings.EqualFold(session, email)
 		tx, err := h.DB.BeginTx(ctx, nil)
@@ -577,6 +601,10 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 			httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 			return
 		}
+		if err := h.keepHostToken(ctx, tx, eventID, hostToken); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
+			return
+		}
 		if _, err := attachTrailEvent(ctx, tx, p.Slug, eventID, email, vouched); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 			return
@@ -585,7 +613,7 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 			httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 			return
 		}
-		if err := h.sendPartyHostLink(ctx, eventID, email, hostToken); err != nil {
+		if err := h.sendPartyHostLink(ctx, eventID, email, hostToken, false); err != nil {
 			logx.Warn("admin.trail.paid_mail", "event_id", eventID, "err", err.Error())
 		}
 		httpx.JSON(w, http.StatusCreated, map[string]any{
@@ -611,7 +639,7 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 		return
 	}
-	product := fmt.Sprintf("%s — party adventure, %d teams per game", t.dto.Title, req.Blocks*TeamsPerBlock)
+	product := emailtpl.T(emailtpl.Lang(t.dto.Language), "%[1]s — party adventure, up to %[2]d teams per game", t.dto.Title, teamsLimit(req.Blocks))
 	h.startHostedCheckout(w, r, purchaseID, product, amount, email, "/app/party/trail/paid",
 		strings.TrimRight(h.PublicURL, "/")+"/party/"+hostToken)
 }
@@ -642,26 +670,45 @@ func (h *Handlers) trailOfEvent(ctx context.Context, eventID int64) (publicTrail
 	return p, err == nil, err
 }
 
-// sendTrailPaid mails the buyer of a public trail its host link.
-func (h *Handlers) sendTrailPaid(ctx context.Context, eventID int64, to, hostToken string) error {
+// stripeReceipts is whether the payment provider mails the buyer a
+// receipt of its own: only Stripe does.
+func (h *Handlers) stripeReceipts() bool { return h.Provider != nil && h.Provider.Name() == "stripe" }
+
+// sendTrailPaid mails the buyer of a public trail its host link; sent
+// again, or where no provider mails a receipt, it leaves out that one
+// follows.
+func (h *Handlers) sendTrailPaid(ctx context.Context, eventID int64, to, hostToken string, again bool) error {
 	base := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	var (
 		title, player string
 		validUntil    time.Time
 		orgID         int64
 		lang, slug    string
-		blocks        int
+		blocks, round int
 	)
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT e.party_name, COALESCE(e.player_token, ''), e.valid_until, e.org_id, a.language, a.slug, COALESCE(e.hosted_blocks, 0)
+		SELECT e.party_name, COALESCE(e.player_token, ''), e.valid_until, e.org_id, a.language, a.slug, COALESCE(e.hosted_blocks, 0), e.current_round
 		FROM events e JOIN adventures a ON a.slug = e.adventure_slug WHERE e.id = $1
-	`, eventID).Scan(&title, &player, &validUntil, &orgID, &lang, &slug, &blocks); err != nil {
+	`, eventID).Scan(&title, &player, &validUntil, &orgID, &lang, &slug, &blocks, &round); err != nil {
 		return err
+	}
+	hostURL := base + "/party/" + hostToken
+	// An address nothing has confirmed yet is confirmed by opening this
+	// mail's link (the host page uses the token in its fragment), so
+	// "Get a link by email" finds the trail afterwards.
+	if p, ok, err := h.trailOfEvent(ctx, eventID); err != nil {
+		return err
+	} else if ok && !p.Confirmed && p.Email.Valid && strings.EqualFold(p.Email.String, to) {
+		tok, err := newTrailToken(ctx, h.DB, to, "confirm", []int64{p.ID}, "", time.Now().Add(trailSessionTTL))
+		if err != nil {
+			return err
+		}
+		hostURL += "#confirm=" + tok
 	}
 	l := h.orgLook(ctx, orgID)
 	l.Lang = emailtpl.Lang(lang)
-	subject, c := emailtpl.TrailPaid(l.Lang, base+"/party/"+hostToken, base+"/j/"+player, title,
-		trailDate(l.Lang, validUntil), l.Brand.Name, blocks > 0 && !h.hosted().Free())
+	subject, c := emailtpl.TrailPaid(l.Lang, hostURL, base+"/j/"+player, title,
+		trailDate(l.Lang, validUntil), l.Brand.Name, round > 0, !again && blocks > 0 && !h.hosted().Free() && h.stripeReceipts())
 	c.Picture = h.emailCover(ctx, l.Lang, slug)
 	if h.SellerIdentity != nil {
 		if seller := h.SellerIdentity(l.Lang); seller != "" {
@@ -689,8 +736,8 @@ var stockholm = func() *time.Location {
 }()
 
 // SendTrailHostLink mails a paid trail's host link again, to the email
-// it was paid with: the only place the link lives. Its old link stops
-// working.
+// it was paid with. It is the link the host has: one open elsewhere
+// keeps working.
 //
 // POST /api/trail/drafts/{id}/host-link
 func (h *Handlers) SendTrailHostLink(w http.ResponseWriter, r *http.Request) {
@@ -699,20 +746,16 @@ func (h *Handlers) SendTrailHostLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !p.EventID.Valid || p.State() == "ended" || !p.Email.Valid {
-		httpx.Error(w, http.StatusConflict, "this party adventure has no admin page")
+		httpx.Error(w, http.StatusConflict, "this party adventure has no host page")
 		return
 	}
 	ctx := r.Context()
-	token, err := tokenx.New(24)
+	token, err := h.currentHostToken(ctx, p.EventID.Int64)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "send failed", err)
 		return
 	}
-	if _, err := h.DB.ExecContext(ctx, `UPDATE events SET host_token_hash = $1 WHERE id = $2`, hashHostToken(token), p.EventID.Int64); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "send failed", err)
-		return
-	}
-	if err := h.sendTrailPaid(ctx, p.EventID.Int64, p.Email.String, token); err != nil {
+	if err := h.sendTrailPaid(ctx, p.EventID.Int64, p.Email.String, token, true); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "send failed", err)
 		return
 	}
@@ -877,7 +920,9 @@ func (h *Handlers) SignInToTrails(w http.ResponseWriter, r *http.Request) {
 }
 
 // mailTrailLink mails a confirm or sign-in link and answers 204, or 429
-// when too many went out.
+// when too many confirm links went out. Too many sign-in links still
+// answer 204, unsent, so the answer never tells whether an address has
+// trails.
 func (h *Handlers) mailTrailLink(w http.ResponseWriter, r *http.Request, email, purpose string, ids []int64, orgID int64) {
 	ctx := r.Context()
 	ip := trailIPHash(r)
@@ -886,8 +931,12 @@ func (h *Handlers) mailTrailLink(w http.ResponseWriter, r *http.Request, email, 
 		httpx.ServerErr(w, http.StatusInternalServerError, "send failed", err)
 		return
 	}
+	if !ok && purpose == "signin" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if !ok {
-		httpx.Error(w, http.StatusTooManyRequests, "too many emails; try again in an hour")
+		httpx.JSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many emails; try again in an hour", "code": "too_many_emails"})
 		return
 	}
 	tok, err := newTrailToken(ctx, h.DB, email, purpose, ids, ip, time.Now().Add(trailLinkTTL))
@@ -949,10 +998,11 @@ func (h *Handlers) VerifyTrailEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if purpose == "confirm" {
-		// A paid trail keeps the address it was paid with.
+		// A paid trail keeps the address it was paid with; its host
+		// link's mail confirms that address.
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE trails SET email = $1, email_confirmed_at = now()
-			WHERE id = ANY(string_to_array($2, ',')::bigint[]) AND paid_at IS NULL
+			WHERE id = ANY(string_to_array($2, ',')::bigint[]) AND (paid_at IS NULL OR LOWER(email) = $1)
 		`, email, ids); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "verify failed", err)
 			return

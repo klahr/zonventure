@@ -172,7 +172,7 @@ func (h *Handlers) authorizeEvent(w http.ResponseWriter, r *http.Request, eventI
 		return 0, false
 	}
 	me, _ := auth.FromContext(r.Context())
-	if !sameOrg(me, orgID) {
+	if !sameOrg(me, orgID) || !runsEvents(me) {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return 0, false
 	}
@@ -327,6 +327,9 @@ type eventDTO struct {
 	// SecretRoles whether the event deals them. Detail payload only.
 	HasSecretRoles bool  `json:"has_secret_roles,omitempty"`
 	SecretRoles    *bool `json:"secret_roles,omitempty"`
+	// CheatPassword is the adventure's cheat password, for the event's
+	// organisers to test with on a phone. Detail payload only.
+	CheatPassword string `json:"cheat_password,omitempty"`
 	// TeamsCount is the number of teams attached to the event. The
 	// arrange UI gates the "Start now" affordance on this so a
 	// scheduled event with zero teams gets a concrete error instead
@@ -353,6 +356,9 @@ type eventDTO struct {
 	TicketCurrency   string `json:"ticket_currency,omitempty"`
 	TicketTeamSize   int    `json:"ticket_team_size,omitempty"`
 	PublicBlurb      string `json:"public_blurb,omitempty"`
+	// MeetingPlace is where teams meet, said in the invitation and the
+	// calendar entry. Detail payload only.
+	MeetingPlace string `json:"meeting_place,omitempty"`
 	// Party marks a hosted event (see party.go, hosted.go): its host runs
 	// it from the host page, of which the console shows the same views.
 	Party bool `json:"party,omitempty"`
@@ -360,13 +366,38 @@ type eventDTO struct {
 	// upload-or-replace affordance. The bytes themselves are served
 	// out-of-band at /store-cover/event/{id}.
 	HasCoverImage bool `json:"has_cover_image,omitempty"`
-	// Listing review, for a self-guided event on detail responses:
+	// Listing review, for a self-guided event:
 	// where its last store changes are ("", pending, approved,
 	// rejected with ListingRejectReason), and whether an approved
 	// version is up (Listed).
 	ListingReview       string `json:"listing_review,omitempty"`
 	ListingRejectReason string `json:"listing_reject_reason,omitempty"`
 	Listed              bool   `json:"listed,omitempty"`
+	// ListedPriceCents and ListedCurrency are what the store sells a
+	// ticket at: the approved version's, until a changed price is
+	// approved.
+	ListedPriceCents int    `json:"listed_price_cents,omitempty"`
+	ListedCurrency   string `json:"listed_currency,omitempty"`
+	// StoreBlocked says why an approved listing can't be bought and so
+	// isn't in the store; see storeBlocked.
+	StoreBlocked string `json:"store_blocked,omitempty"`
+	// SalesStopped is a self-guided event its organiser stopped selling:
+	// out of the store, while teams with a ticket play on.
+	SalesStopped bool `json:"sales_stopped,omitempty"`
+}
+
+// storeBlocked is why the store keeps an approved listing out
+// (public/store.go storeItemRowFilter): "no_payments" when this server
+// has no payment provider, "connect_required" when a platform fee is
+// set and the org's Stripe account can't take charges (connect false).
+func (h *Handlers) storeBlocked(connect bool) string {
+	switch {
+	case !h.paymentsEnabled():
+		return "no_payments"
+	case h.platformFee().Enabled() && !connect:
+		return "connect_required"
+	}
+	return ""
 }
 
 type createEventRequest struct {
@@ -666,8 +697,13 @@ func (h *Handlers) writeOrgEvents(w http.ResponseWriter, r *http.Request, orgID 
 		       COALESCE(ar.ticket_currency, ''),
 		       COALESCE(ar.ticket_team_size, 0),
 		       COALESCE(ar.cover_image_mime_type, '') <> '' AS has_cover_image,
-		       ar.party, ` + lookCoverSQL("adv") + `
+		       ar.party, ` + lookCoverSQL("adv") + `,
+		       COALESCE(ar.listing_review, ''),
+		       l.event_id IS NOT NULL, COALESCE(l.price_cents, 0), COALESCE(l.currency, ''),
+		       o.stripe_connect_charges_enabled, ar.sales_stopped
 		FROM events ar
+		JOIN organizations o ON o.id = ar.org_id
+		LEFT JOIN event_listings l ON l.event_id = ar.id
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		LEFT JOIN adventures adv ON adv.slug = ar.adventure_slug
 	`
@@ -701,15 +737,20 @@ func (h *Handlers) writeOrgEvents(w http.ResponseWriter, r *http.Request, orgID 
 			d         eventDTO
 			showMap   int
 			hasAvatar int
+			connect   bool
 		)
 		if err := rows.Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.AdventureTitle, &d.State, &d.ScheduledAt, &d.StartedAt,
 			&d.CompletedAt, &d.CancelledAt,
 			&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
 			&d.LiveToken, &showMap, &hasAvatar, &d.TeamsCount, &d.PlayerSlotsCount,
 			&d.PublicForSale, &d.TicketPriceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.HasCoverImage, &d.Party,
-			&d.AdventureTheme, &d.AdventureCover); err != nil {
+			&d.AdventureTheme, &d.AdventureCover, &d.ListingReview, &d.Listed,
+			&d.ListedPriceCents, &d.ListedCurrency, &connect, &d.SalesStopped); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
+		}
+		if d.PublicForSale && d.Listed {
+			d.StoreBlocked = h.storeBlocked(connect)
 		}
 		d.ShowMap = showMap != 0
 		if hasAvatar != 0 {
@@ -918,8 +959,17 @@ func (h *Handlers) OperatorCancelEvent(w http.ResponseWriter, r *http.Request) {
 
 // cancelEvent is the password-gated cancellation both entry points
 // share once they have authorised the caller.
+//
+// With {"email_teams": true} every team with a contact email is told
+// the event is cancelled.
 func (h *Handlers) cancelEvent(w http.ResponseWriter, r *http.Request, eventID int64) {
 	if !h.requirePasswordConfirm(w, r) {
+		return
+	}
+	var req struct {
+		EmailTeams bool `json:"email_teams"`
+	}
+	if r.ContentLength > 0 && !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
 	var state string
@@ -932,7 +982,7 @@ func (h *Handlers) cancelEvent(w http.ResponseWriter, r *http.Request, eventID i
 		return
 	}
 	res, err := h.DB.ExecContext(r.Context(),
-		`UPDATE events SET state='cancelled', cancelled_at=now_text(), `+activity.ClosePause+`
+		`UPDATE events SET state='cancelled', cancelled_at=now_text(), ics_sequence = ics_sequence + 1, `+activity.ClosePause+`
 		 WHERE id=$1 AND state IN ('scheduled','running','paused')`,
 		eventID)
 	if err != nil {
@@ -951,7 +1001,11 @@ func (h *Handlers) cancelEvent(w http.ResponseWriter, r *http.Request, eventID i
 	// failure here doesn't unwind the cancellation.
 	_ = activity.ExpireEventSlotSessions(r.Context(), h.DB, eventID)
 	me, _ := auth.FromContext(r.Context())
-	activity.Record(r.Context(), h.DB, eventID, nil, activity.UserActor(me.ID), activity.EventCancelled, nil)
+	var payload map[string]any
+	if req.EmailTeams {
+		payload = map[string]any{"emailed": h.emailTeamsCancelled(r.Context(), eventID)}
+	}
+	activity.Record(r.Context(), h.DB, eventID, nil, activity.UserActor(me.ID), activity.EventCancelled, payload)
 	if _, err := results.Append(r.Context(), h.DB, eventID, 0, results.EventCancelled, map[string]any{"by": me.Username}); err != nil {
 		logx.Warn("results.append", "kind", results.EventCancelled, "event_id", eventID, "err", err.Error())
 	}
@@ -983,7 +1037,7 @@ func (h *Handlers) EndEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if selfGuided {
 		httpx.JSON(w, http.StatusConflict, map[string]any{
-			"error":  "a self-guided adventure does not end: pause it to stop selling tickets, or cancel it to close it for good",
+			"error":  "a self-guided adventure does not end: stop selling tickets instead, or cancel it to close it for good",
 			"reason": "self_guided",
 		})
 		return
@@ -1062,6 +1116,12 @@ type updateEventRequest struct {
 	// SecretRoles turns the adventure's saboteur on or off for this
 	// event. Teams already dealt keep what they were dealt.
 	SecretRoles *bool `json:"secret_roles,omitempty"`
+	// SalesStopped takes a self-guided event out of the store and
+	// refuses checkout, without pausing the teams that play it.
+	SalesStopped *bool `json:"sales_stopped,omitempty"`
+	// MeetingPlace is where teams meet, in the organiser's words; ""
+	// clears it.
+	MeetingPlace *string `json:"meeting_place,omitempty"`
 }
 
 // UpdateEvent amends mutable run settings. scheduled_at is only editable
@@ -1082,7 +1142,7 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ScheduledAt == nil && req.ShowMap == nil && req.Name == nil &&
 		req.PublicForSale == nil && req.TicketPriceCents == nil &&
-		req.TicketCurrency == nil && req.TicketTeamSize == nil && req.PublicBlurb == nil && req.SecretRoles == nil {
+		req.TicketCurrency == nil && req.TicketTeamSize == nil && req.PublicBlurb == nil && req.SecretRoles == nil && req.SalesStopped == nil && req.MeetingPlace == nil {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
@@ -1119,7 +1179,19 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 			schedAt = t.UTC().Format("2006-01-02 15:04:05")
 		}
 		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE events SET scheduled_at = $1 WHERE id = $2`, schedAt, eventID); err != nil {
+			`UPDATE events SET scheduled_at = $1::text, ics_sequence = ics_sequence + 1 WHERE id = $2 AND scheduled_at IS DISTINCT FROM $1::text`, schedAt, eventID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
+	}
+	if req.MeetingPlace != nil {
+		place := strings.TrimSpace(*req.MeetingPlace)
+		if len([]rune(place)) > 200 {
+			httpx.Error(w, http.StatusBadRequest, "meeting_place is too long (max 200 chars)")
+			return
+		}
+		if _, err := h.DB.ExecContext(r.Context(),
+			`UPDATE events SET meeting_place = $1 WHERE id = $2`, place, eventID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}
@@ -1128,6 +1200,18 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		if _, err := h.DB.ExecContext(r.Context(),
 			`UPDATE events SET secret_roles = $1 WHERE id = $2`, *req.SecretRoles, eventID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
+	}
+	if req.SalesStopped != nil {
+		res, err := h.DB.ExecContext(r.Context(),
+			`UPDATE events SET sales_stopped = $1 WHERE id = $2 AND public_for_sale`, *req.SalesStopped, eventID)
+		if err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			httpx.Error(w, http.StatusConflict, "only a self-guided event sells tickets")
 			return
 		}
 	}
@@ -1422,6 +1506,17 @@ type bulkTeamResultDTO struct {
 	Name  string   `json:"name"`
 	Team  *teamDTO `json:"team,omitempty"`
 	Error string   `json:"error,omitempty"`
+	// Code is "pass_full" when the team did not fit the event pass, so
+	// the UI can offer to add seats and retry.
+	Code string `json:"code,omitempty"`
+}
+
+// passFullError is createOneTeam's refusal of a team the event pass has
+// no room for.
+type passFullError struct{ room, need int }
+
+func (e *passFullError) Error() string {
+	return fmt.Sprintf("the event pass has room for %d more players, and this team has %d; add players to the event pass to continue", e.room, e.need)
 }
 
 // BulkCreateTeams ingests a roster — multiple teams with their member
@@ -1487,9 +1582,14 @@ func (h *Handlers) BulkCreateTeams(w http.ResponseWriter, r *http.Request) {
 		team, err := h.createOneTeam(r.Context(), eventID, orgID, createTeamRequest{
 			Name:        t.Name,
 			MemberNames: t.MemberNames,
+			Email:       t.Email,
 		})
 		if err != nil {
 			res.Error = err.Error()
+			var full *passFullError
+			if errors.As(err, &full) {
+				res.Code = "pass_full"
+			}
 		} else {
 			res.Team = team
 			createdCount++
@@ -1532,6 +1632,10 @@ func (h *Handlers) createOneTeam(ctx context.Context, eventID, orgID int64, req 
 	if len(names) == 0 {
 		return nil, errors.New("at least one member required")
 	}
+	email, err := normaliseTeamEmail(req.Email)
+	if err != nil {
+		return nil, err
+	}
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, errors.New("tx failed")
@@ -1553,7 +1657,7 @@ func (h *Handlers) createOneTeam(ctx context.Context, eventID, orgID int64, req 
 		return nil, errors.New("cap lookup failed")
 	}
 	if maxPlayers > 0 && playerSlotsCount+len(names) > maxPlayers {
-		return nil, errors.New("event is at its player-slot cap; buy another assignment to continue")
+		return nil, &passFullError{room: max(maxPlayers-playerSlotsCount, 0), need: len(names)}
 	}
 	teamTok, err := auth.NewSlotToken()
 	if err != nil {
@@ -1569,8 +1673,8 @@ func (h *Handlers) createOneTeam(ctx context.Context, eventID, orgID int64, req 
 	}
 	var teamID int64
 	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO teams(event_id, name, token, recap_token, voucher_code) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-		eventID, req.Name, teamTok, recapTok, voucher).Scan(&teamID); err != nil {
+		`INSERT INTO teams(event_id, name, token, recap_token, email, voucher_code) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		eventID, req.Name, teamTok, recapTok, email, voucher).Scan(&teamID); err != nil {
 		return nil, errors.New("team name already used for this event")
 	}
 	members := make([]teamSlotDTO, 0, len(names))
@@ -1604,7 +1708,7 @@ func (h *Handlers) createOneTeam(ctx context.Context, eventID, orgID int64, req 
 		"team_name":    req.Name,
 		"member_count": len(members),
 	})
-	return &teamDTO{ID: teamID, Name: req.Name, Members: members}, nil
+	return &teamDTO{ID: teamID, Name: req.Name, Email: email, Members: members}, nil
 }
 
 /* ---------------- Positions & Tracks ---------------- */
@@ -1637,7 +1741,7 @@ func (h *Handlers) buildPositions(ctx context.Context, eventID int64) ([]positio
 			LIMIT 1
 		) p ON true
 		WHERE t.event_id = $1
-		ORDER BY t.name
+		ORDER BY `+teamNameOrder+`
 	`, eventID)
 	if err != nil {
 		return nil, err

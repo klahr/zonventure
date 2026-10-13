@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Map as MapIcon, Plus } from "lucide-react";
+import { canAuthor } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
+import { useSession } from "../../session.tsx";
 import { href } from "../../router.ts";
 import { Button, Card, Empty, ErrorBox, Loading, Page, PageHeader, Table, fmtMoney, useLoad, type Column } from "../../ui/index.ts";
 import { SPOTS } from "@zonventure/ui";
 import { listAdventures, listAssignments, listEvents, type EventRow } from "./api.ts";
-import { AdventureCover, EventsTable, StatePill, eventCover, eventLabel } from "./parts.tsx";
+import { AdventureCover, EventsTable, StatePill, StorePill, eventCover, eventLabel } from "./parts.tsx";
 import { NewEventDialog, canStartEvent, type NewEventProps } from "./NewEventDialog.tsx";
 import { NewQuestDialog } from "./NewQuestDialog.tsx";
 import { useJustPurchased } from "./justPurchased.ts";
@@ -24,6 +26,8 @@ type Filter = "all" | "running" | "paused" | "scheduled" | "completed" | "cancel
  */
 export function NoEvents({ onSchedule }: { onSchedule?: (() => void) | undefined }) {
   const t = useT();
+  const { state } = useSession();
+  const author = state.status === "authenticated" && canAuthor(state.user);
   if (onSchedule) {
     return (
       <Empty
@@ -41,7 +45,7 @@ export function NoEvents({ onSchedule }: { onSchedule?: (() => void) | undefined
       illustration={SPOTS.noEvents}
       action={<a className="btn primary" href={href({ name: "adventures" })}><MapIcon size={16} aria-hidden />{t.t("Go to Adventures")}</a>}
     >
-      {t.t("An event runs a published adventure. Make or publish one first, then schedule it here.")}
+      {author ? t.t("An event runs a published adventure. Make or publish one first, then schedule it here.") : t.t("An event runs a published adventure. Your organization's admins make them; once one is published, schedule it here.")}
     </Empty>
   );
 }
@@ -135,7 +139,19 @@ export function QuestsPage() {
     ) },
     // Teams sold, over the pass's cap when there is one.
     { key: "tickets", header: t.t("Tickets"), wide: true, align: "end", cell: (r) => (r.max_players > 0 ? `${r.teams_count} / ${r.max_players}` : String(r.teams_count)) },
-    { key: "price", header: t.t("Price"), align: "end", cell: (r) => (r.ticket_price_cents && r.ticket_price_cents > 0 ? fmtMoney(r.ticket_price_cents, r.ticket_currency || "SEK", loc) : <span className="evs-muted">—</span>) },
+    // What the store sells at: the approved price, with a changed one
+    // noted until it is approved.
+    { key: "price", header: t.t("Price"), align: "end", cell: (r) => {
+      const draft = r.ticket_price_cents && r.ticket_price_cents > 0 ? fmtMoney(r.ticket_price_cents, r.ticket_currency || "SEK", loc) : "";
+      if (!r.listed || !r.listed_price_cents) return draft || <span className="evs-muted">—</span>;
+      return (
+        <span className="evs-stack">
+          {fmtMoney(r.listed_price_cents, r.listed_currency || "SEK", loc)}
+          {draft && r.ticket_price_cents !== r.listed_price_cents && <span className="evs-sub">{t.t("{{price}} after review", { price: draft })}</span>}
+        </span>
+      );
+    } },
+    { key: "store", header: t.t("Store"), cell: (r) => <StorePill event={r} /> },
     { key: "state", header: t.t("State"), align: "end", cell: (r) => <StatePill event={r} /> },
   ];
 
@@ -155,7 +171,7 @@ export function QuestsPage() {
           <Empty title={t.t("No self-guided adventures yet.")} action={newBtn} illustration={SPOTS.noSelfGuided} />
         ) : (
           <Card flush>
-            <Table columns={columns} rows={quests.data} rowKey={(r) => r.id} rowHref={(r) => href({ name: "event", id: r.id })} caption={t.t("Self-guided adventures")} />
+            <Table columns={columns} rows={quests.data} rowKey={(r) => r.id} rowHref={(r) => href({ name: "event", id: r.id, quest: true })} caption={t.t("Self-guided adventures")} />
           </Card>
         )
       )}

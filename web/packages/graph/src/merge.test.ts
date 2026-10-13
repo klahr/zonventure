@@ -42,6 +42,14 @@ test("the same field changed twice keeps mine and reports the step", () => {
   assert.equal(r.graph.nodes.find((n) => n.slug === "a")?.title, "Mine");
 });
 
+test("preferring theirs takes their side of a clash and keeps the rest of mine", () => {
+  const mine = withNode(withNode(base, "a", { title: "Mine" }), "b", { title: "Only mine" });
+  const r = mergeGraphs(base, mine, withNode(base, "a", { title: "Theirs" }), "theirs");
+  assert.deepEqual(r.conflicts, ["a"]);
+  assert.equal(r.graph.nodes.find((n) => n.slug === "a")?.title, "Theirs");
+  assert.equal(r.graph.nodes.find((n) => n.slug === "b")?.title, "Only mine");
+});
+
 test("additions on both sides keep theirs' order, then mine", () => {
   const mine: Graph = { ...base, nodes: [...base.nodes, { slug: "m", type: "end" }] };
   const theirs: Graph = { ...base, nodes: [...base.nodes, { slug: "t", type: "end" }] };

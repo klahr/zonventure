@@ -1,4 +1,5 @@
 import { get, post, patch, request, type Whoami } from "@zonventure/api";
+import type { ListingReviewState } from "../../ui/listingStatus.tsx";
 
 /** internal/admin/handlers.go: eventDTO (list rows). */
 export interface EventRow {
@@ -24,6 +25,16 @@ export interface EventRow {
   ticket_currency?: string;
   /** A hosted event, run by its host from the host page. */
   party?: boolean;
+  /** A self-guided event's listing review, and whether an approved version is up. */
+  listing_review?: ListingReviewState;
+  listed?: boolean;
+  /** What the store sells a ticket at: the approved version's price. */
+  listed_price_cents?: number;
+  listed_currency?: string;
+  /** Why an approved listing isn't in the store: no payment provider, or no Stripe account under a platform fee. */
+  store_blocked?: "no_payments" | "connect_required";
+  /** Its organiser stopped selling it. */
+  sales_stopped?: boolean;
 }
 
 /** internal/admin/handlers.go: adventureDTO. */
@@ -38,6 +49,7 @@ export interface AdventureRow {
   published: boolean;
   shared: boolean;
   playable: boolean;
+  language?: string;
 }
 
 /** internal/admin/organizations.go: assignmentDTO — an event pass. */
@@ -124,6 +136,11 @@ export interface Pricing {
   player_cents: number;
   free_players_per_event: number;
   currency: string;
+  /** The platform's prices are before VAT; else VAT is included. */
+  vat_excluded?: boolean;
+  fee_percent_bps?: number;
+  fee_fixed_cents?: number;
+  fee_min_cents?: number;
 }
 
 /** The classic console's pricingHelpers: what a pass of n players costs. */
@@ -132,7 +149,7 @@ export function pricing(user: Whoami) {
   const priceCents = p.player_cents || 500;
   const free = p.free_players_per_event ?? 15;
   const currency = p.currency || "SEK";
-  return { priceCents, free, currency, chargeable: (n: number) => Math.max(0, n - free) * priceCents };
+  return { priceCents, free, currency, vatExcluded: !!p.vat_excluded, chargeable: (n: number) => Math.max(0, n - free) * priceCents };
 }
 
 /** The membership of the org the user is working in. */

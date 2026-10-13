@@ -22,7 +22,7 @@ import {
   type Node,
 } from "@zonventure/graph";
 import { CornerDownRight, GripVertical, MessageSquare } from "lucide-react";
-import { useT } from "../i18n.tsx";
+import { routesIn, useT } from "../i18n.tsx";
 import { Thumb } from "./NodeCard.tsx";
 import { STEP } from "./dz/types.tsx";
 
@@ -212,7 +212,7 @@ export function ListView({ graph, issues, selected, playing = null, changed, mar
   const add = (type: "puzzle" | "story") => {
     const at = insertionPoint(graph, selected);
     if (!at) return;
-    const node = newNode(graph, type, { x: 0, y: 0 });
+    const node = routesIn(newNode(graph, type, { x: 0, y: 0 }), graph.language);
     onChange(insertAfter(graph, at, node));
     onSelect(node.slug);
   };

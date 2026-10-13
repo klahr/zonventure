@@ -60,7 +60,7 @@
   "Only your latest position is kept, and only your assistant reads it.": "Bara din senaste position sparas, och bara din assistent läser den.",
   "Share your location with your assistant while you build on site": "Dela din position med din assistent medan du bygger på plats",
   "Cheat password": "Fusklösenord",
-  "Optional, for testing. Leave empty for none. On the phone, tap the adventure's title 7 times and enter it: every answer then counts as right, for no points, and the team is left out of the rankings.": "Valfritt, för test. Lämna tomt för inget. Tryck 7 gånger på äventyrets titel i telefonen och ange det: alla svar räknas då som rätt, utan poäng, och laget räknas inte med i resultatlistan.",
+  "Optional: for testing, or for helping a stuck team past a step during an event. Leave empty for none. On the phone, tap the adventure's title 7 times and enter it: every answer then counts as right, for no points, and the team is left out of the rankings.": "Valfritt: för test, eller för att hjälpa ett lag som kört fast förbi ett steg under ett event. Lämna tomt för inget. Tryck 7 gånger på äventyrets titel i telefonen och ange det: alla svar räknas då som rätt, utan poäng, och laget räknas inte med i resultatlistan.",
   "Show password": "Visa lösenord",
   "Hide password": "Dölj lösenord",
   "Could not create the adventure.": "Kunde inte skapa äventyret.",
@@ -82,5 +82,11 @@
   "Kids": "Barn",
   "Families": "Familjer",
   "Adults": "Vuxna",
-  "Steps": "Steg"
+  "Steps": "Steg",
+  "The start stays locked on the phones until a player on the team is within {{n}} metres of the starting point. Change the distance later in Edit details.": "Starten är låst på telefonerna tills en spelare i laget är inom {{n}} meter från startpunkten. Ändra avståndet senare under Redigera uppgifter.",
+  "teams must be there to begin": "lagen måste vara där för att börja",
+  "Imported: originally by {{name}}.": "Importerat: ursprungligen av {{name}}.",
+  "That short name is taken or could not be used. Pick another:": "Det kortnamnet är upptaget eller kunde inte användas. Välj ett annat:",
+  "Download this adventure as a portable .zip, its pictures and sounds included": "Ladda ner detta äventyr som en portabel .zip, med bilder och ljud",
+  "Imported \"{{title}}\" as a draft: publish it when it is ready.": "Importerade \"{{title}}\" som utkast: publicera det när det är klart."
 }

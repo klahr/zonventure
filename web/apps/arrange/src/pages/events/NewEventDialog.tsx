@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, canAuthor } from "@zonventure/api";
-import { useT } from "../../i18n.tsx";
+import { contentT, useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { CATALOG_ENABLED, navigate } from "../../router.ts";
-import { Button, Callout, Dialog, Empty, ErrorBox, Field, Loading, Row, fmtMoney, useLoad, useToast, errorText } from "../../ui/index.ts";
+import { Button, Callout, Dialog, Empty, ErrorBox, Field, Loading, Row, fmtMoney, useDialogs, useLoad, useToast, errorText } from "../../ui/index.ts";
 import { SPOTS } from "@zonventure/ui";
 import { activeMembership, createEvent, createPurchase, createTeam, listAdventures, listAssignments, pricing, type AdventureRow, type Assignment } from "./api.ts";
 import { iconOrCover } from "../adventures/parts.tsx";
@@ -45,6 +45,8 @@ interface Draft {
   perTeam: string;
   teamPrefix: string;
   playerPrefix: string;
+  /** The no-minors statement, ticked for this event before paying. */
+  attest: boolean;
 }
 function peekDraft(): Partial<Draft> {
   try {
@@ -96,10 +98,11 @@ export function NewEventDialog(props: NewEventProps) {
 function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
   const t = useT();
   const toast = useToast();
-  const { state } = useSession();
+  const { state, refresh } = useSession();
   const user = state.status === "authenticated" ? state.user : null!;
   const loc = t.current();
   const price = pricing(user);
+  const dialogs = useDialogs();
   const trusted = !!activeMembership(user)?.trusted;
   const needsPicker = assignmentId === undefined && slug === undefined;
 
@@ -113,13 +116,13 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
   }, []);
 
   // Only the dialog reopened with the pass just paid for takes the draft.
+  // It stays until the event exists, so closing the dialog on the way
+  // back from Stripe doesn't throw the typing away.
   const [draft] = useState<Partial<Draft>>(() => (assignmentId !== undefined ? peekDraft() : {}));
+  // Billing options an operator turned on since login (invoice) show without a reload.
   useEffect(() => {
-    try {
-      sessionStorage.removeItem(DRAFT_KEY);
-    } catch {
-      /* nothing stored */
-    }
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [picked, setPicked] = useState<string | null>(slug ?? null);
   const [filter, setFilter] = useState("");
@@ -130,9 +133,10 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
   const [teamsOpen, setTeamsOpen] = useState(Number(draft.teamCount) > 0);
   const [teamCount, setTeamCount] = useState(draft.teamCount ?? "0");
   const [perTeam, setPerTeam] = useState(draft.perTeam ?? "3");
-  const [teamPrefix, setTeamPrefix] = useState(draft.teamPrefix ?? "Team");
-  const [playerPrefix, setPlayerPrefix] = useState(draft.playerPrefix ?? "Player");
-  const [attest, setAttest] = useState(false);
+  // Null until typed in: the default follows the adventure's language.
+  const [teamPrefixIn, setTeamPrefix] = useState<string | null>(draft.teamPrefix || null);
+  const [playerPrefixIn, setPlayerPrefix] = useState<string | null>(draft.playerPrefix || null);
+  const [attest, setAttest] = useState(draft.attest ?? false);
   const [attestErr, setAttestErr] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -200,6 +204,9 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
 
   const adventureTitle = pickedAdv?.title ?? pass?.adventure_title ?? advs.find((a) => a.slug === (pass?.adventure_slug ?? slug))?.title ?? pass?.adventure_slug ?? slug ?? "";
   const chosenAdv = advs.find((a) => a.slug === (pickedAdv?.slug ?? pass?.adventure_slug ?? slug));
+  const ct = contentT(chosenAdv?.language);
+  const teamPrefix = teamPrefixIn ?? ct("Team");
+  const playerPrefix = playerPrefixIn ?? ct("Player");
 
   async function submit(provider: "invoice" | null) {
     if (busy || !ctx) return;
@@ -239,6 +246,12 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
       scheduledAt = d.toISOString();
     }
 
+    // An invoice commits the money in one click: say what goes on it first.
+    if (provider === "invoice" && !(await dialogs.confirm({
+      title: t.t("Add to invoice?"),
+      message: t.t("{{amount}} for {{n}} players goes on your organisation's next invoice.", { amount: fmtMoney(total, price.currency, loc), n: playersN }),
+      confirmLabel: t.t("Add to invoice"),
+    }))) return;
     setBusy(true);
     let passId: number | undefined = ctx.mode === "preset" ? ctx.assignmentId : undefined;
     if (ctx.mode === "buy") {
@@ -247,10 +260,10 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
         if (pr.state === "paid" && pr.assignment_id) {
           passId = pr.assignment_id;
           setBought(pr.assignment_id);
-          if (pr.provider === "invoice") toast.ok(t.t("Players added to your next invoice"));
+          if (pr.provider === "invoice") toast.ok(t.t("{{amount}} for {{n}} players added to your organisation's next invoice", { amount: fmtMoney(total, price.currency, loc), n: playersN }));
         } else if (pr.checkout_url) {
           try {
-            const d: Draft = { name, later, when, teamCount: teamsOpen ? teamCount : "0", perTeam, teamPrefix, playerPrefix };
+            const d: Draft = { name, later, when, teamCount: teamsOpen ? teamCount : "0", perTeam, teamPrefix, playerPrefix, attest };
             sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d));
           } catch {
             /* the form is simply empty on the way back */
@@ -263,7 +276,7 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
           return;
         }
       } catch (e) {
-        setError(errorText(e) || t.t("Purchase failed"));
+        setError((e instanceof ApiError ? t.tError(e.code, e.message) : errorText(e)) || t.t("Purchase failed"));
         setBusy(false);
         return;
       }
@@ -278,6 +291,11 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
         ...(scheduledAt ? { scheduled_at: scheduledAt } : {}),
       };
       id = (await createEvent(body)).id;
+      try {
+        sessionStorage.removeItem(DRAFT_KEY);
+      } catch {
+        /* nothing stored */
+      }
     } catch (e) {
       setError(e instanceof ApiError && e.code === "verification_required" ? t.t("Verify your email before scheduling events — check your inbox for the link.") : errorText(e));
       setBusy(false);
@@ -287,8 +305,8 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
     // Best-effort: a team that fails leaves the event in place, and
     // the event page is where it gets finished by hand.
     let failed = 0;
-    const tp = teamPrefix.trim() || "Team";
-    const pp = playerPrefix.trim() || "Player";
+    const tp = teamPrefix.trim() || ct("Team");
+    const pp = playerPrefix.trim() || ct("Player");
     for (let i = 1; i <= teamN; i++) {
       try {
         await createTeam(id, `${tp} ${i}`, Array.from({ length: perN }, (_, j) => `${pp} ${j + 1}`));
@@ -335,7 +353,7 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
         }
       >
         <Empty title={t.t("No adventures you can use yet.")} illustration={SPOTS.noAdventures}>
-          {author ? t.t("Create your own adventure to get started.") : t.t("An organisation admin can create one for you.")}
+          {author ? t.t("Create your own adventure to get started.") : t.t("An organization admin can create one for you.")}
         </Empty>
       </Dialog>
     );
@@ -362,11 +380,11 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
         <>
           <Button onClick={onClose} disabled={busy}>{t.t("Cancel")}</Button>
           {trusted && buying && (
-            <Button onClick={() => void submit("invoice")} disabled={busy} title={t.t("Skip Stripe — your finance team will get an invoice from us.")}>
+            <Button onClick={() => void submit("invoice")} disabled={busy || overCap} title={t.t("Skip Stripe — your finance team will get an invoice from us.")}>
               {t.t("Add to invoice")}
             </Button>
           )}
-          <Button type="submit" variant="primary" loading={busy} disabled={!ctx}>
+          <Button type="submit" variant="primary" loading={busy} disabled={!ctx || overCap}>
             {toCheckout ? t.t("Continue to payment") : t.t("Create event")}
           </Button>
         </>
@@ -416,18 +434,22 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
             <p className="evs-total" aria-live="polite">
               {t.t("Total: ")}
               <strong>{fmtMoney(total, price.currency, loc)}</strong>{" "}
-              <span className="evs-muted evs-small">{t.t("(first {{n}} free, then {{price}} per player)", { n: price.free, price: fmtMoney(price.priceCents, price.currency, loc) })}</span>
+              <span className="evs-muted evs-small">{t.t("(first {{n}} free, then {{price}} per player)", { n: price.free, price: fmtMoney(price.priceCents, price.currency, loc) })}</span>{" "}
+              <span className="evs-muted evs-small">{price.vatExcluded ? t.t("excl. VAT") : t.t("incl. VAT")}</span>
             </p>
           </Row>
+          {price.free >= MIN_PLAYERS && (
+            <p className="evs-muted evs-small">{t.t("Fewer players, such as a test with 4? Leave it at {{n}}: the first {{free}} are free, so it costs nothing.", { n: MIN_PLAYERS, free: price.free })}</p>
+          )}
           <p className="evs-muted evs-small">
             {t.t("You can grow this later from the event page.")}
-            {toCheckout && <> {t.t("You'll pay on Stripe, then come back here to finish the event.")}</>}
+            {toCheckout && <> {trusted ? t.t("Add it to your invoice, or pay on Stripe and come back here to finish the event.") : t.t("You'll pay on Stripe, then come back here to finish the event.")}</>}
           </p>
         </div>
       )}
 
       <Field label={t.t("Name (optional)")}>
-        <input value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder={t.t("e.g. “Saturday Andersson party”")} />
+        <input value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder={t.t("e.g. “Spring outing”")} />
       </Field>
 
       <fieldset className="evs-fieldset">
@@ -469,7 +491,11 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
             {cap > 0
               ? t.t("{{total}} players of the {{cap}} the event pass covers.", { total: teamN * perN, cap })
               : t.t("{{total}} players in all.", { total: teamN * perN })}
+            {overCap && <> {buying ? t.t("Raise Players to {{total}}, or make fewer teams.", { total: teamN * perN }) : t.t("Make fewer or smaller teams.")}</>}
           </p>
+        )}
+        {overCap && buying && (
+          <Button variant="ghost" size="sm" onClick={() => setPlayers(String(teamN * perN))}>{t.t("Raise Players to {{total}}", { total: teamN * perN })}</Button>
         )}
       </details>
 
@@ -484,6 +510,11 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
         />
         <span>{t.t("I confirm no participants under 13 will play this adventure, or I have parental consent for any who will.")}</span>
       </label>
+      <details className="evs-attest-help">
+        <summary>{t.t("What this means")}</summary>
+        <p>{t.t("Players' phones send their location and answers, which is personal data. Children under 13 need a parent's or guardian's consent for that: a written yes to the activity and the game, such as the permission slip for the outing. You collect and keep it; we don't.")}</p>
+        <a href="/manual#player-age" target="_blank" rel="noopener">{t.t("Read more about the player-age statement")}</a>
+      </details>
       {attestErr && <p ref={attestErrRef} id="evs-attest-err" className="cs-field__error" role="alert">{t.t("Please confirm the player-age statement to continue.")}</p>}
 
       {error && <div ref={errorRef}><ErrorBox message={error} /></div>}

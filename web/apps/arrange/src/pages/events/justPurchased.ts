@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useT } from "../../i18n.tsx";
 import { useToast } from "../../ui/index.ts";
+import { navigate } from "../../router.ts";
 import { getPurchase } from "./api.ts";
 
 const KEY = "zv-just-purchased";
@@ -69,6 +70,23 @@ export function useJustPurchased(open: (assignmentId: number) => void) {
       ac.abort();
       clearTimeout(timer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
+/**
+ * The way back from paying to host an adventure: the checkout returns
+ * to the console with ?paid= (internal/admin/hosted_pricing.go). Says
+ * the payment came through and where the game and its host link are.
+ */
+export function useHostedPaid() {
+  const t = useT();
+  const toast = useToast();
+  useEffect(() => {
+    if (!new URLSearchParams(location.search).has("paid")) return;
+    history.replaceState(null, "", location.pathname);
+    toast.ok(t.t("Payment received. The host link is on its way to your email, and the game is under Hosted."));
+    navigate({ name: "parties" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }

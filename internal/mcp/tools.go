@@ -59,6 +59,11 @@ func (r *registry) register(d ToolDescriptor, h toolHandler) {
 
 // audienceAllows reports whether u may call a tool of audience aud.
 func audienceAllows(u auth.User, aud string) bool {
+	// A writer authors and does nothing else: no events, teams,
+	// purchases or store, whatever else the tool is open to.
+	if u.Role == auth.RoleOrgWriter && aud != audienceAuthor && aud != audienceReviewer {
+		return false
+	}
 	switch aud {
 	case audienceAny:
 		return true
@@ -66,6 +71,8 @@ func audienceAllows(u auth.User, aud string) bool {
 		return u.Role == auth.RoleAdmin
 	case audienceReviewer:
 		return u.ListingReviewer
+	case audienceAuthor:
+		return u.Role != auth.RoleAdmin && u.OrgID != nil
 	default:
 		// Org-side tools: org users only — never the platform admin,
 		// and never a lobby user. The handlers assume a non-nil OrgID,
@@ -78,9 +85,12 @@ func audienceAllows(u auth.User, aud string) bool {
 // list returns the tools the caller's audience may call.
 func (r *registry) list(ctx context.Context) []ToolDescriptor {
 	me, _ := auth.FromContext(ctx)
+	have := scopesFromContext(ctx)
 	out := []ToolDescriptor{}
 	for _, d := range r.descriptors {
-		if audienceAllows(me, d.Audience) {
+		// A tool the token's scopes can't call isn't offered: an
+		// assistant would only try it and fail.
+		if audienceAllows(me, d.Audience) && scopesAllow(have, d.Scope) {
 			out = append(out, d)
 		}
 	}
@@ -155,6 +165,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "list_adventures",
+		Audience:    audienceAuthor,
 		Scope:       scopeRead,
 		Description: "The adventures the caller's organisation can use: slug, title, language, can_edit (its own, to author) and playable (published, so events can run it). Check it before choosing a new adventure's slug.",
 		InputSchema: map[string]any{
@@ -165,6 +176,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "get_adventure",
+		Audience:    audienceAuthor,
 		Scope:       scopeRead,
 		Description: "An adventure's settings: title, description, language, the brief agreed with the author, its look (colours, fonts, backdrop, style), starting point, icon_url and how many events run it. The steps are in get_adventure_graph; a single step in get_step.",
 		InputSchema: map[string]any{
@@ -178,6 +190,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "update_adventure_meta",
+		Audience:    audienceAuthor,
 		Scope:       scopeWrite,
 		Description: "Patch an adventure's metadata: rename, recolor, edit intro/outro, change language, set start coords, flip strict_assets. Catalog listing (published) is the platform operator's and is refused here. Only present keys are applied — omit a field to leave it untouched. Use {field: null} on start_lat/start_lng to clear those columns.",
 		InputSchema: map[string]any{
@@ -195,6 +208,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "set_adventure_icon",
+		Audience:    audienceAuthor,
 		Scope:       scopeWrite,
 		Description: "Set the adventure's icon (shown in lists, the store and the player's top bar) from image bytes sent base64 in this call. From a phone, or for anything but a small image, use get_upload_link with for: icon instead — the user taps the link and picks the picture. Replaces any icon; shrunk to 512 px.",
 		InputSchema: map[string]any{
@@ -210,6 +224,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "remove_adventure_icon",
+		Audience:    audienceAuthor,
 		Scope:       scopeWrite,
 		Description: "Remove the adventure's icon; the organisation's logo shows instead.",
 		InputSchema: map[string]any{
@@ -223,6 +238,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "delete_adventure",
+		Audience:    audienceAuthor,
 		Scope:       scopeWrite,
 		Description: "Delete an adventure and everything it owns — its graph versions, draft and media. Refuses if the adventure still backs any events or assignments — clean those up via the arranger UI first. Requires confirm:true to actually run; without it the tool reports what would be deleted.",
 		InputSchema: map[string]any{

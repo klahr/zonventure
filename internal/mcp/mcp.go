@@ -97,9 +97,10 @@ type serverInfo struct {
 //
 // Audience is who may call the tool at all, by the token owner's role:
 // the zero value is org users (authoring and running events), which
-// the platform admin may not call; audienceAdmin is the platform
-// operator only; audienceAny is everyone. tools/list only shows a
-// caller the tools of their audience.
+// the platform admin may not call; audienceAuthor is the org users who
+// author, writers among them; audienceAdmin is the platform operator
+// only; audienceAny is everyone. tools/list only shows a caller the
+// tools of their audience.
 type ToolDescriptor struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
@@ -115,6 +116,9 @@ const (
 	audienceAny   = "any"
 	// audienceReviewer: users a platform admin made listing reviewers.
 	audienceReviewer = "reviewer"
+	// audienceAuthor: authoring tools, which an org writer may call
+	// too. A writer may call no other org tool (audienceAllows).
+	audienceAuthor = "author"
 )
 
 // Scope identifiers — kept in sync with admin.MCPScope* constants.

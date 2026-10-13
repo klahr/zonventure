@@ -7,6 +7,7 @@ import (
 	"net/mail"
 	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
@@ -27,6 +28,8 @@ type signupRequest struct {
 	// keeps a scripted POST honest and gives us a defensible "the user
 	// agreed" answer if a dispute lands later.
 	TermsAccepted bool `json:"terms_accepted"`
+	// Name is what the console greets them by; optional.
+	Name string `json:"name"`
 }
 
 // Signup creates a new organization + org_admin user, sends a
@@ -54,7 +57,14 @@ func (h *Handlers) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Email = strings.TrimSpace(req.Email)
 	req.OrgName = strings.TrimSpace(req.OrgName)
-	if !req.TermsAccepted {
+	req.Name = strings.TrimSpace(req.Name)
+	if utf8.RuneCountInString(req.Name) > MaxDisplayNameLen {
+		httpx.Error(w, http.StatusBadRequest, "name is too long")
+		return
+	}
+	// Consent is asked only while there are terms to agree to: an
+	// instance without /terms and /privacy shows no checkbox.
+	if !req.TermsAccepted && settings.CurrentLegal().Published() {
 		httpx.Error(w, http.StatusBadRequest, "you must accept the Terms of Service and Privacy Policy to sign up")
 		return
 	}
@@ -89,7 +99,7 @@ func (h *Handlers) Signup(w http.ResponseWriter, r *http.Request) {
 		req.OrgName = name
 	}
 
-	res, err := Signup(r.Context(), h.DB, req.Email, req.Password, req.OrgName)
+	res, err := Signup(r.Context(), h.DB, req.Email, req.Password, req.OrgName, req.Name)
 	if err != nil {
 		// Treat duplicate-email as a soft failure: feed the limiter
 		// (so a scripted dictionary attack is throttled) but never
@@ -97,10 +107,10 @@ func (h *Handlers) Signup(w http.ResponseWriter, r *http.Request) {
 		_, _ = h.Limiter.RecordFailure(ip, req.Email)
 		switch {
 		case errors.Is(err, ErrSignupOrgNameTaken):
-			httpx.Error(w, http.StatusConflict, "organization name already in use")
+			httpx.Error(w, http.StatusConflict, "That team or company name is taken. Pick another, or leave it blank.")
 		case errors.Is(err, ErrSignupEmailTaken):
 			// Generic message — don't enumerate accounts.
-			httpx.Error(w, http.StatusConflict, "could not create account")
+			httpx.Error(w, http.StatusConflict, "Could not create an account with this email. If you already have one, log in or reset your password.")
 		case errors.Is(err, ErrPasswordTooShort), errors.Is(err, ErrPasswordTooCommon):
 			httpx.Error(w, http.StatusBadRequest, err.Error())
 		default:
@@ -112,11 +122,11 @@ func (h *Handlers) Signup(w http.ResponseWriter, r *http.Request) {
 
 	// Audit the success and the verification-email send so an admin
 	// reviewing the audit tab can see the same row twice (one
-	// "login/success", one "verify-mail-sent" implicit via no row).
+	// "login/signup", one "verify-mail-sent" implicit via no row).
 	Record(r.Context(), h.DB, AuditEvent{
 		Event: EventLogin, OK: true, UserID: &res.User.ID,
 		Username: res.User.Username, IP: ip, UserAgent: UserAgent(r),
-		Reason: ReasonSuccess,
+		Reason: ReasonSignup,
 	})
 
 	if err := h.sendVerificationEmail(r, res.User.Email, res.VerificationToken); err != nil {
@@ -142,7 +152,8 @@ func (h *Handlers) Signup(w http.ResponseWriter, r *http.Request) {
 // just continue using the previous default.
 func (h *Handlers) SignupConfig(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{
-		"enabled": settings.SignupEnabled(r.Context(), h.DB),
+		"enabled":     settings.SignupEnabled(r.Context(), h.DB),
+		"legal_pages": settings.CurrentLegal().Published(),
 	}
 	if h.OIDC.Enabled() {
 		resp["sso"] = map[string]any{

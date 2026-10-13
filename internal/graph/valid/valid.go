@@ -115,6 +115,7 @@ func Check(g *graph.Graph) Report {
 	checkReachability(r, g)
 	checkTermination(r, g)
 	checkProgressFreeCycles(r, g)
+	checkTimeoutKeys(r, g)
 	checkResources(r, g)
 	checkBlocks(r, g)
 	checkMedia(r, g)
@@ -150,6 +151,9 @@ func checkSlugs(r *reporter, g *graph.Graph) {
 			starts++
 		case graph.End:
 			ends++
+			if n.EndCfg == nil || n.EndCfg.Outcome == "" {
+				r.warn("end.outcome.unset", n.Slug, "", "choose whether this ending is a success or a failure; until then players are told they made it")
+			}
 		}
 	}
 
@@ -593,6 +597,12 @@ func checkReferences(r *reporter, g *graph.Graph) {
 			if n.PuzzleCfg.Unanimous && !n.PuzzleCfg.UsesMatchers() {
 				r.err("puzzle.unanimous.kind", n.Slug, "", "only an answer the routes' accepted answers decide can be unanimous: a typed answer, a scan, a lock or an unmarked choice")
 			}
+			if n.PuzzleCfg.Quiet && !n.PuzzleCfg.UsesMatchers() {
+				r.err("puzzle.quiet.kind", n.Slug, "", "only an answer the routes' accepted answers decide can just move on: a typed answer, a scan, a lock or an unmarked choice")
+			}
+			if n.PuzzleCfg.Quiet && n.PuzzleCfg.Unanimous {
+				r.err("puzzle.quiet.unanimous", n.Slug, "", "a step that moves on at any answer cannot also wait for every player to agree")
+			}
 			if a := n.PuzzleCfg.Answer; a != nil && a.Kind == graph.AnswerKeys {
 				for _, z := range a.Posts {
 					if !zones[z] {
@@ -838,6 +848,82 @@ func checkProgressFreeCycles(r *reporter, g *graph.Graph) {
 			visit(slug)
 		}
 	}
+}
+
+// checkTimeoutKeys finds a puzzle whose timeout leaves an item out of
+// reach that a gate, a branch or an item puzzle needs. A puzzle left by
+// its timeout is passed through that way every time the team comes back,
+// so if every grant of the item lies behind its other outputs, a team
+// that ran out of time can never get it, and goes round between the hub
+// and the gate for good.
+func checkTimeoutKeys(r *reporter, g *graph.Graph) {
+	needed := map[string]bool{}
+	grants := map[string][]string{}
+	for _, n := range g.Nodes {
+		var p []cond.Predicate
+		switch {
+		case n.GateCfg != nil:
+			p = append(p, n.GateCfg.Condition)
+		case n.HubCfg != nil:
+			for _, b := range n.HubCfg.Branches {
+				p = append(p, b.Condition)
+			}
+		case n.PuzzleCfg != nil && n.PuzzleCfg.Kind() == graph.AnswerItems:
+			for it := range n.PuzzleCfg.Answer.Needs() {
+				needed[it] = true
+			}
+		case n.EffectCfg != nil && n.EffectCfg.Kind == graph.GrantItem:
+			grants[n.EffectCfg.Item] = append(grants[n.EffectCfg.Item], n.Slug)
+		}
+		for _, q := range p {
+			for _, it := range cond.Collect(q).Items {
+				needed[it] = true
+			}
+		}
+	}
+	kit := g.Kit()
+	reachable := reachableFromStarts(g)
+	for _, n := range g.Nodes {
+		if n.PuzzleCfg == nil || !reachable[n.Slug] {
+			continue
+		}
+		o, ok := outputFor(n, graph.OnTimeout)
+		if !ok {
+			continue
+		}
+		// The graph as it is for a team that ran out of time here: only
+		// the timeout leads on.
+		timedOut := *g
+		timedOut.Edges = slices.DeleteFunc(slices.Clone(g.Edges), func(e graph.Edge) bool {
+			return e.From == n.Slug && e.FromPort != o.Port
+		})
+		after := reachableFromStarts(&timedOut)
+		for _, it := range slices.Sorted(maps.Keys(grants)) {
+			if !needed[it] || kit[it] > 0 {
+				continue
+			}
+			earnable, lost := false, false
+			for _, at := range grants[it] {
+				earnable = earnable || after[at]
+				lost = lost || reachable[at]
+			}
+			if lost && !earnable {
+				r.warn("output.timeout.unearnable", n.Slug, o.Port,
+					"if time runs out here, the team can never get an item that is needed further on, and may go round in circles; send the timeout where the item can still be earned, or drop the time limit")
+				break
+			}
+		}
+	}
+}
+
+// outputFor is a puzzle's first output with the trigger.
+func outputFor(n graph.Node, t graph.Trigger) (graph.Output, bool) {
+	for _, o := range n.PuzzleCfg.Outputs {
+		if o.Trigger == t {
+			return o, true
+		}
+	}
+	return graph.Output{}, false
 }
 
 func checkResources(r *reporter, g *graph.Graph) {
@@ -1153,6 +1239,30 @@ func checkTimeLimit(r *reporter, g *graph.Graph) {
 	}
 }
 
+// blockNames are the kinds of block in the designer's words, where the
+// kind itself is not one an author would use.
+var blockNames = map[graph.BlockKind]string{
+	graph.BlockCall:     "incoming call",
+	graph.BlockCipher:   "cipher sheet",
+	graph.BlockRadar:    "hot-and-cold",
+	graph.BlockOverlay:  "look-through",
+	graph.BlockNoise:    "noise meter",
+	graph.BlockBearing:  "bearing lock",
+	graph.BlockShake:    "shake to reveal",
+	graph.BlockFlasher:  "Morse flasher",
+	graph.BlockSuspects: "suspect board",
+	graph.BlockSpotDiff: "spot the difference",
+	graph.BlockLetters:  "letter tiles",
+	graph.BlockSplit:    "split secret",
+	graph.BlockVote:     "team vote",
+	graph.BlockPhoto:    "photo challenge",
+	graph.BlockDraw:     "random draw",
+	graph.BlockBulletin: "live bulletin",
+	graph.BlockAccuse:   "accusation",
+	graph.BlockQuiz:     "quiz question",
+	graph.BlockTiebreak: "tie-breaker",
+}
+
 // checkBlocks checks the shape of a step's content: every block's
 // required fields, per kind. A block's file and its show condition are
 // checkMedia's and checkReferences'.
@@ -1171,8 +1281,12 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 				r.err("block.id.duplicate", n.Slug, "", "two content blocks on this step share the id %q", b.ID)
 			}
 			seen[b.ID] = true
+			name := blockNames[b.Kind]
+			if name == "" {
+				name = string(b.Kind)
+			}
 			bad := func(code, format string, args ...any) {
-				r.err(code, n.Slug, "", "the %s on this step "+format, append([]any{b.Kind}, args...)...)
+				r.err(code, n.Slug, "", "the %s on this step "+format, append([]any{name}, args...)...)
 			}
 			if a := b.Animation; a != nil {
 				switch {
@@ -1356,6 +1470,8 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 			case graph.BlockVote, graph.BlockDraw:
 				if filled(b.Options) < 2 {
 					bad("block.options", "has fewer than two options")
+				} else if filled(b.Options) < len(b.Options) {
+					bad("block.options.empty", "has a blank option: fill it in or remove it")
 				}
 			case graph.BlockRoles:
 				if len(g.PublicRoles()) == 0 {

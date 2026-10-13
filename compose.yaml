@@ -83,6 +83,9 @@ services:
       ZV_SMTP_PASS:     ${ZV_SMTP_PASS:-}
       ZV_SMTP_FROM:     ${ZV_SMTP_FROM:-}
       ZV_SMTP_TLS:      ${ZV_SMTP_TLS:-starttls}
+      # Daily update check against the upstream CHANGELOG.md. Set
+      # ZV_CHANGELOG_URL= (empty) in .env to turn it off.
+      ZV_CHANGELOG_URL: ${ZV_CHANGELOG_URL-https://raw.githubusercontent.com/klahr/zonventure/main/CHANGELOG.md}
       # Legal values live under Settings → Legal. These pass through only
       # so the first start after the move can copy them in; drop them
       # once that has happened.

@@ -33,6 +33,10 @@ const (
 	EventTOTPVerify          = "totp_verify"
 	EventTOTPRecoveryCodeUse = "totp_recovery_code_use"
 	EventTOTPAdminReset      = "totp_admin_reset"
+	// EventOrgRequireTOTP is an organisation's two-factor requirement
+	// turned on or off (reason ReasonRequireTOTPOn/Off); OrgID names
+	// the organisation, so its admins see it whoever flipped it.
+	EventOrgRequireTOTP = "org_require_totp"
 )
 
 // Common reason codes. Free-form strings — these are the canonical
@@ -46,6 +50,8 @@ const (
 	ReasonExpiredToken       = "expired_token"
 	ReasonUnknownToken       = "unknown_token"
 	ReasonAdminManual        = "admin_manual"
+	// Signup marks the login row a new account's first session writes.
+	ReasonSignup = "signup"
 	// TOTP-specific reasons. Required is set on a login attempt that
 	// short-circuits with a totp_required response (password was OK,
 	// second factor still needs entering). Invalid covers both bad
@@ -56,6 +62,8 @@ const (
 	ReasonTOTPChallengeExpired = "totp_challenge_expired"
 	ReasonRecoveryCodeInvalid  = "recovery_code_invalid"
 	ReasonTOTPAdminReset       = "totp_admin_reset"
+	ReasonRequireTOTPOn        = "require_totp_on"
+	ReasonRequireTOTPOff       = "require_totp_off"
 )
 
 // AuditEvent is the payload of one auth_events row. UserID is optional;
@@ -70,6 +78,9 @@ type AuditEvent struct {
 	IP        string
 	UserAgent string
 	Reason    string
+	// OrgID, when set, shows the row to that organisation's admins
+	// even if the user isn't a member (a global admin acting on it).
+	OrgID *int64
 }
 
 // Record writes one auth_events row. Best-effort — a write failure is
@@ -83,9 +94,12 @@ func Record(ctx context.Context, db *sql.DB, e AuditEvent) {
 	if e.OK {
 		ok = 1
 	}
-	var userID any
+	var userID, orgID any
 	if e.UserID != nil {
 		userID = *e.UserID
+	}
+	if e.OrgID != nil {
+		orgID = *e.OrgID
 	}
 	// Cap user-agent at 512 bytes — long enough to keep the useful
 	// fingerprint, short enough that a malicious client can't bloat the
@@ -95,9 +109,9 @@ func Record(ctx context.Context, db *sql.DB, e AuditEvent) {
 		ua = ua[:512]
 	}
 	if _, err := db.ExecContext(ctx, `
-		INSERT INTO auth_events(event, ok, user_id, username, ip, user_agent, reason)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, e.Event, ok, userID, e.Username, e.IP, ua, e.Reason); err != nil {
+		INSERT INTO auth_events(event, ok, user_id, username, ip, user_agent, reason, org_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, e.Event, ok, userID, e.Username, e.IP, ua, e.Reason, orgID); err != nil {
 		logx.Warn("auth.audit.write_failed", "event", e.Event, "username", e.Username, "err", err.Error())
 	}
 }

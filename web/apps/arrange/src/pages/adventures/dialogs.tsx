@@ -43,7 +43,7 @@ export function useImportAdventure() {
   const [retry, setRetry] = useState<File | null>(null);
 
   const done = (r: { slug: string; title?: string }) => {
-    toast.ok(t.t('Imported "{{title}}".', { title: r.title || r.slug }));
+    toast.ok(t.t('Imported "{{title}}" as a draft: publish it when it is ready.', { title: r.title || r.slug }));
     location.hash = href({ name: "adventure", slug: r.slug });
   };
 
@@ -68,13 +68,19 @@ export function useImportAdventure() {
     input.click();
   };
 
-  const dialog = retry ? <RenameImportDialog onClose={() => setRetry(null)} onSubmit={(slug) => upload(retry, slug)} /> : null;
+  const dialog = retry ? <RenameImportDialog suggest={importSlug(retry.name)} onClose={() => setRetry(null)} onSubmit={(slug) => upload(retry, slug)} /> : null;
   return { pick, dialog };
 }
 
-function RenameImportDialog({ onClose, onSubmit }: { onClose: () => void; onSubmit: (slug: string) => Promise<void> }) {
+/** A free slug to offer for an archive whose own is taken: its file name, numbered. */
+export function importSlug(fileName: string): string {
+  const base = slugFrom(fileName.replace(/(\.zvadv)?\.zip$/i, ""));
+  return base ? `${base.slice(0, 58)}-2` : "";
+}
+
+function RenameImportDialog({ suggest, onClose, onSubmit }: { suggest: string; onClose: () => void; onSubmit: (slug: string) => Promise<void> }) {
   const t = useT();
-  const [slug, setSlug] = useState("");
+  const [slug, setSlug] = useState(suggest);
   const [busy, setBusy] = useState(false);
   const bad = slug !== "" && !SLUG.test(slug.trim());
   return (
@@ -94,7 +100,7 @@ function RenameImportDialog({ onClose, onSubmit }: { onClose: () => void; onSubm
         </>
       }
     >
-      <Field label={t.t("That slug already exists or could not be created. Pick a new slug:")} error={bad ? t.t("Lowercase a–z, digits, and hyphens only.") : undefined}>
+      <Field label={t.t("That short name is taken or could not be used. Pick another:")} hint={t.t("Used in links. Lowercase a–z, digits and hyphens.")} error={bad ? t.t("Lowercase a–z, digits, and hyphens only.") : undefined}>
         <input autoFocus value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="the-lost-vault" />
       </Field>
     </Dialog>
@@ -329,7 +335,7 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
           <Field label={t.t("Description")}>
             <textarea rows={2} value={f.description} onChange={(e) => set("description", e.target.value)} />
           </Field>
-          <Field label={t.t("Author")}>
+          <Field label={t.t("Author")} {...(edit.data?.original_author ? { hint: t.t("Imported: originally by {{name}}.", { name: edit.data.original_author }) } : {})}>
             <input value={f.author} onChange={(e) => set("author", e.target.value)} />
           </Field>
           <Field label={t.t("Area — where it is played")} hint={t.t("A few words for the store card and map, such as “Göteborg · Slottsskogen” or “At home”.")}>
@@ -399,7 +405,7 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
           </label>
           <Field
             label={t.t("Cheat password")}
-            hint={t.t("Optional, for testing. Leave empty for none. On the phone, tap the adventure's title 7 times and enter it: every answer then counts as right, for no points, and the team is left out of the rankings.")}
+            hint={t.t("Optional: for testing, or for helping a stuck team past a step during an event. Leave empty for none. On the phone, tap the adventure's title 7 times and enter it: every answer then counts as right, for no points, and the team is left out of the rankings.")}
           >
             <Row>
               <input

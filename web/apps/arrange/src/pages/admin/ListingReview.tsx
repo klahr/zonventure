@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Check, Download, X } from "lucide-react";
+import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { href, navigate } from "../../router.ts";
 import { Button, Card, ErrorBox, ICON, Loading, Page, PageHeader, Pill, fmtDateTime, relTime, useLoad } from "../../ui/index.ts";
 import { getListingReview, type ListingKind, type ReviewChange, type ReviewContent, type ReviewMedia } from "./api.ts";
 import { ListingFacts, RejectDialog, isProposal, kindLabel, reviewError, useDecide } from "./ListingReviews.tsx";
+import { changedTexts, isPlayerText, textLabel } from "./reviewTexts.ts";
 import "./admin.css";
 
 /**
@@ -42,15 +44,23 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
   const loc = t.current();
   const [rejecting, setRejecting] = useState(false);
   const [filter, setFilter] = useState("");
-  const { busy, approve, reject } = useDecide(reload);
+  // The copy the reviewer decided on, kept when it changed under them, to show what changed.
+  const [reviewed, setReviewed] = useState<ReviewContent | null>(null);
+  const { busy, approve, reject } = useDecide(reload, () => setReviewed(c));
+  const { state } = useSession();
+  // Support reads the review but never decides.
+  const decides = state.status === "authenticated" && !!state.user.listing_reviewer && state.user.role !== "support";
   const pending = c.state === "pending";
   const ref = { kind: c.kind, id: c.id, revision: c.revision };
   const after = () => navigate({ name: "listing-reviews" });
 
+  const label = (where: string) => textLabel(where, c.step_titles, t);
+  const all = useMemo(() => c.texts.filter((x) => isPlayerText(x.where)), [c.texts]);
   const texts = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    return q ? c.texts.filter((x) => x.text.toLowerCase().includes(q) || x.where.toLowerCase().includes(q)) : c.texts;
-  }, [c.texts, filter]);
+    return q ? all.filter((x) => x.text.toLowerCase().includes(q) || textLabel(x.where, c.step_titles, t).toLowerCase().includes(q)) : all;
+  }, [all, filter, c.step_titles, t]);
+  const changedNow = reviewed && reviewed.revision !== c.revision ? changedTexts(reviewed.texts.filter((x) => isPlayerText(x.where)), all) : null;
 
   const newVersion = !!c.live_graph_id && c.live_graph_id !== c.graph_id;
   const proposal = isProposal(c.kind);
@@ -67,7 +77,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
           </span>
         }
         actions={
-          pending && (
+          pending && decides && (
             <span className="adm-actions">
               <Button variant="danger" icon={<X size={ICON.sm} aria-hidden />} disabled={busy} onClick={() => setRejecting(true)}>{t.t("Reject")}</Button>
               <Button
@@ -83,7 +93,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
         }
       />
 
-      <Card title={t.t("About this listing")}>
+      <Card title={proposal ? t.t("About this change") : t.t("About this listing")}>
         <dl className="adm-review__head">
           <dt>{t.t("Organisation")}</dt>
           <dd className="adm-inline">
@@ -121,6 +131,25 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
         </dl>
       </Card>
 
+      {reviewed && changedNow && (
+        <Card title={t.t("Changed while you looked")} subtitle={t.t("What changed since you opened it. Nothing was decided: look it over and decide again.")}>
+          {!proposal && <ListingFacts kind={c.kind} draft={c.draft} live={reviewed.draft} />}
+          {changedNow.length > 0 && (
+            <ul className="adm-texts">
+              {changedNow.map((x) => (
+                <li key={x.where}>
+                  <span className="adm-texts__where">{label(x.where)}</span>
+                  <span className="adm-texts__text">
+                    {x.text || <span className="adm-sub">{t.t("(removed)")}</span>}
+                    {x.was && <span className="adm-sub adm-listing__was">{t.t("Was: {{v}}", { v: x.was })}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+
       {proposal ? (
         <Card title={t.t("What changes")} subtitle={t.t("Each field as it is public now, and as proposed. Below: the page as it would be.")}>
           <Changes changes={c.changes ?? []} />
@@ -146,7 +175,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
       </Card>
 
       <Card
-        title={t.t("Every text ({{n}})", { n: c.texts.length })}
+        title={t.t("Every text ({{n}})", { n: all.length })}
         subtitle={t.t("As written, with where each one is: titles, puzzles, hints, answers, emails, roles, translations.")}
         actions={
           <input
@@ -166,7 +195,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
           <ul className="adm-texts">
             {texts.map((x, i) => (
               <li key={i}>
-                <span className="adm-texts__where">{x.where}</span>
+                <span className="adm-texts__where" title={x.where}>{label(x.where)}</span>
                 <span className="adm-texts__text">{x.text}</span>
               </li>
             ))}
@@ -176,6 +205,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
 
       {rejecting && (
         <RejectDialog
+          proposal={proposal}
           onClose={() => setRejecting(false)}
           onReject={(reason) => {
             setRejecting(false);

@@ -127,8 +127,9 @@ func (p *playStore) sweep() {
 
 func (s *Server) registerPlayTools() {
 	s.tools.register(ToolDescriptor{
-		Name:  "playtest_start",
-		Scope: scopeRead,
+		Name:     "playtest_start",
+		Audience: audienceAuthor,
+		Scope:    scopeRead,
 		Description: "Start a blind playtest of the adventure's saved draft: you play as a team, from what the phone shows, with the real rules. " +
 			"Returns a session id and the first screen. You never see the answers — solve each step from its text, pictures and hints, as a team would. " +
 			"Then call playtest_act once per action and playtest_end for a summary. Nothing is stored; the session lapses after two hours.",
@@ -145,8 +146,9 @@ func (s *Server) registerPlayTools() {
 	}, playStart)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "playtest_act",
-		Scope: scopeRead,
+		Name:     "playtest_act",
+		Audience: audienceAuthor,
+		Scope:    scopeRead,
 		Description: "Do one thing in a playtest started with playtest_start, and see the screen after it. Actions (kind): " +
 			"begin {start} picks where to begin; answer {guess} tries an answer; continue moves on from a story step; " +
 			"choose {port} takes a branch at a choice (port \"done\" moves on when allowed); back returns to the hub above; " +
@@ -176,6 +178,7 @@ func (s *Server) registerPlayTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "playtest_end",
+		Audience:    audienceAuthor,
 		Scope:       scopeRead,
 		Description: "End a playtest and get its summary: time played, steps passed, wrong answers, hints, skips, distance walked and refused actions.",
 		InputSchema: map[string]any{

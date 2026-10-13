@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -58,9 +59,23 @@ func (p orgProfile) heroBgStyle() string {
 	// cssURLQuote percent-encodes the CSS-meaningful chars so a future
 	// cover-URL shape can't escape the quotes.
 	return fmt.Sprintf(
-		"background-image: linear-gradient(135deg, rgba(173,19,87,.6), rgba(226,64,128,.5)), url('%s'); background-size: cover; background-position: center;",
+		"background-image: linear-gradient(135deg, %s, %s), url('%s'); background-size: cover; background-position: center;",
+		heroRGBA(p.Accent.String, "173,19,87", ".6"), heroRGBA(p.Accent2.String, "226,64,128", ".5"),
 		html.EscapeString(cssURLQuote("/org-cover/"+strconv.FormatInt(p.ID, 10))),
 	)
+}
+
+// heroRGBA turns a stored #rgb/#rrggbb brand colour into an rgba()
+// with the given alpha, or def ("r,g,b") when it is unset or invalid.
+func heroRGBA(hex, def, alpha string) string {
+	s := strings.TrimPrefix(hex, "#")
+	if len(s) == 3 {
+		s = string([]byte{s[0], s[0], s[1], s[1], s[2], s[2]})
+	}
+	if v, err := strconv.ParseUint(s, 16, 32); err == nil && len(s) == 6 {
+		def = fmt.Sprintf("%d,%d,%d", v>>16, v>>8&0xff, v&0xff)
+	}
+	return "rgba(" + def + "," + alpha + ")"
 }
 
 // logoBlock renders the org's logo server-side so a no-JS reader sees
@@ -74,6 +89,21 @@ func (p orgProfile) logoBlock() string {
 		html.EscapeString("/org-logo/"+strconv.FormatInt(p.ID, 10)),
 		html.EscapeString(p.Name),
 	)
+}
+
+// websiteBlock links the org's website, shown by its host name. Empty
+// without one; SetMyOrgProfile only stores http(s) URLs.
+func (p orgProfile) websiteBlock() string {
+	site := strings.TrimSpace(p.Website.String)
+	if site == "" {
+		return ""
+	}
+	label := site
+	if u, err := url.Parse(site); err == nil && u.Host != "" {
+		label = strings.TrimPrefix(u.Host, "www.")
+	}
+	return fmt.Sprintf(`<a class="website" href="%s" rel="noopener">%s</a>`,
+		html.EscapeString(site), html.EscapeString(label))
 }
 
 // brandStyle is the org's colour override block; see orgBrandStyleBlock.
@@ -139,7 +169,8 @@ func buildOrgSitemapURLs(ctx context.Context, db *sql.DB, host string) string {
 		JOIN event_listings l ON l.event_id = e.id
 		WHERE e.public_for_sale
 		  AND e.ticket_price_cents IS NOT NULL
-		  AND e.state IN ('running', 'paused')
+		  AND e.state = 'running'
+		  AND NOT e.sales_stopped
 		ORDER BY o.slug
 	`)
 	if err != nil {
@@ -189,7 +220,7 @@ func orgSlugExists(ctx context.Context, db *sql.DB, slug string) bool {
 func redirectLegacyStoreEvent(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	idStr := chi.URLParam(r, "event_id")
 	if idStr == "" {
-		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
+		render404(w, r)
 		return
 	}
 	// Parse the URL param to int64 so the WHERE clause can use the
@@ -198,7 +229,7 @@ func redirectLegacyStoreEvent(w http.ResponseWriter, r *http.Request, db *sql.DB
 	// path falls through to a clean 404.
 	eventID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
+		render404(w, r)
 		return
 	}
 	var slug string
@@ -210,10 +241,11 @@ func redirectLegacyStoreEvent(w http.ResponseWriter, r *http.Request, db *sql.DB
 		WHERE e.id = $1
 		  AND e.public_for_sale
 		  AND e.ticket_price_cents IS NOT NULL
-		  AND e.state IN ('running', 'paused')
+		  AND e.state = 'running'
+		  AND NOT e.sales_stopped
 	`, eventID).Scan(&slug)
 	if errors.Is(err, sql.ErrNoRows) || slug == "" {
-		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
+		render404(w, r)
 		return
 	}
 	if err != nil {

@@ -32,8 +32,8 @@ func TestEventTools_NilAdminGuard(t *testing.T) {
 		{"start_event", startEvent, `{"event_id":1}`},
 		{"pause_event", pauseEvent, `{"event_id":1}`},
 		{"resume_event", resumeEvent, `{"event_id":1}`},
-		{"cancel_event", cancelEvent, `{"event_id":1,"password":"x"}`},
-		{"end_event", endEvent, `{"event_id":1,"password":"x"}`},
+		{"cancel_event", cancelEvent, `{"event_id":1,"confirm":true}`},
+		{"end_event", endEvent, `{"event_id":1,"confirm":true}`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -69,8 +69,8 @@ func TestEventTools_ArgValidation(t *testing.T) {
 		{"get_event without id", getEvent, `{}`, "event_id required"},
 		{"get_event negative id", getEvent, `{"event_id":-1}`, "must be positive"},
 		{"update_event no patch fields", updateEvent, `{"event_id":1}`, "nothing to update"},
-		{"cancel_event without password", cancelEvent, `{"event_id":1}`, "password required"},
-		{"end_event without password", endEvent, `{"event_id":1}`, "password required"},
+		{"cancel_event without confirm", cancelEvent, `{"event_id":1}`, "confirm required"},
+		{"end_event without confirm", endEvent, `{"event_id":1}`, "confirm required"},
 		{"start_event without id", startEvent, `{}`, "event_id required"},
 		{"pause_event without id", pauseEvent, `{}`, "event_id required"},
 		{"resume_event without id", resumeEvent, `{}`, "event_id required"},

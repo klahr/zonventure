@@ -94,6 +94,9 @@ type recapStep struct {
 	Solved    bool   `json:"solved,omitempty"`
 	Attempts  int    `json:"attempts,omitempty"`
 	Zone      string `json:"zone,omitempty"`
+	// Quiz marks a story that asks quiz questions (a party adventure's
+	// multiple-choice card): Solved is then whether every one was right.
+	Quiz bool `json:"quiz,omitempty"`
 }
 
 // recapZone is a zone one of the reached steps is gated on: the graph
@@ -243,6 +246,7 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 	var (
 		hasPrev          bool
 		prevLat, prevLng float64
+		prevTS           string
 		dist             float64
 	)
 	for rows.Next() {
@@ -253,9 +257,19 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if hasPrev {
-			dist += haversineMeters(prevLat, prevLng, p.Lat, p.Lng)
+			// A GPS jump is not a walk (see play.MaxPingSpeedMS).
+			d := haversineMeters(prevLat, prevLng, p.Lat, p.Lng)
+			secs := 5.0
+			if a, err := parseRecapTime(prevTS); err == nil {
+				if b, err := parseRecapTime(p.TS); err == nil {
+					secs = max(secs, b.Sub(a).Seconds())
+				}
+			}
+			if d <= play.MaxPingSpeedMS*secs {
+				dist += d
+			}
 		}
-		prevLat, prevLng = p.Lat, p.Lng
+		prevLat, prevLng, prevTS = p.Lat, p.Lng, p.TS
 		hasPrev = true
 		resp.Track = append(resp.Track, p)
 	}
@@ -335,6 +349,8 @@ func (h *Handlers) recapGraph(ctx context.Context, eventID, teamID int64, resp *
 		FROM team_graph_state WHERE team_id = $1
 	`, teamID).Scan(&points, &startedAt, &completed, &outcome, &lang)
 	if errors.Is(err, sql.ErrNoRows) {
+		// The team never joined: the event's own times are not its time.
+		resp.StartedAt, resp.CompletedAt = "", ""
 		return nil
 	}
 	if err != nil {
@@ -437,13 +453,16 @@ func (h *Handlers) recapGraph(ctx context.Context, eventID, teamID int64, resp *
 				quiz.Right++
 			}
 		}
+		asked, right := 0, 0
 		for _, b := range n.Blocks() {
 			if b.Kind != graph.BlockQuiz {
 				continue
 			}
 			quiz.Total++
+			asked++
 			if p := picks[[2]string{n.Slug, b.ID}]; p != "" && p == b.Answer {
 				quiz.Right++
+				right++
 			}
 		}
 		step := recapStep{
@@ -466,6 +485,10 @@ func (h *Handlers) recapGraph(ctx context.Context, eventID, teamID int64, resp *
 			done = step.Solved
 		case n.StoryCfg != nil:
 			step.Zone = n.StoryCfg.Zone
+			if asked > 0 {
+				step.Quiz = true
+				step.Solved = right == asked
+			}
 		default:
 			continue
 		}

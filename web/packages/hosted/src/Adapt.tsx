@@ -112,7 +112,7 @@ export function PersonaliseSection({ party }: { party: HostedEvent }) {
             {(["1", "X", "2"] as const).map((c, i) => (
               <label className="hosted-quiz__opt" key={c}>
                 <input type="radio" name={"right-" + e.key} checked={b.answer === c} onChange={() => setBlock(e.key, { ...b, options: opts, answer: c })} aria-label={t("Right answer")} />
-                <span className="hosted-quiz__mark">{c}</span>
+                <span className="hosted-quiz__mark">{t(["A", "B", "C"][i]!)}</span>
                 <input
                   value={opts[i] ?? ""}
                   aria-label={t("Option {{c}}", { c })}

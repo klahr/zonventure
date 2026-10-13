@@ -1,7 +1,9 @@
 package admin
 
 import (
+	"context"
 	"net/http"
+	"strings"
 
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
@@ -25,16 +27,61 @@ func (h *Handlers) platformFee() payments.PlatformFee { return payments.FeeFrom(
 // hosted is the hosted event pass, per block of teams: see hosted_pricing.go.
 func (h *Handlers) hosted() payments.HostedPass { return payments.HostedFrom(h.pricing()) }
 
-// pricingResponse is GET/PUT /api/admin/pricing: the prices in force
-// and the one currency they are in.
+// pricingResponse is GET/PUT /api/admin/pricing: the prices in force,
+// the one currency they are in, and the orgs with a listing up that
+// a platform fee stops selling until they connect Stripe.
 type pricingResponse struct {
 	settings.Pricing
-	Currency string `json:"currency"`
+	Currency           string              `json:"currency"`
+	UnconnectedSellers []unconnectedSeller `json:"unconnected_sellers"`
+}
+
+// unconnectedSeller is an org with approved, running store listings
+// and no Stripe Connect account that can take charges.
+type unconnectedSeller struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Listings int    `json:"listings"`
+}
+
+// unconnectedSellers lists the orgs whose listings sell only while
+// there is no platform fee (public/store.go storeItemRowFilter).
+func (h *Handlers) unconnectedSellers(ctx context.Context) ([]unconnectedSeller, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT o.id, o.name, COUNT(*)
+		FROM events e
+		JOIN event_listings l ON l.event_id = e.id
+		JOIN organizations o ON o.id = e.org_id
+		WHERE e.public_for_sale
+		  AND e.ticket_price_cents IS NOT NULL
+		  AND e.state = 'running'
+		  AND NOT o.stripe_connect_charges_enabled
+		GROUP BY o.id, o.name
+		ORDER BY o.name, o.id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []unconnectedSeller{}
+	for rows.Next() {
+		var s unconnectedSeller
+		if err := rows.Scan(&s.ID, &s.Name, &s.Listings); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // GetPricing serves the platform's prices. Admin-only at the route level.
 func (h *Handlers) GetPricing(w http.ResponseWriter, r *http.Request) {
-	httpx.JSON(w, http.StatusOK, pricingResponse{settings.CurrentPricing(), settings.Currency})
+	sellers, err := h.unconnectedSellers(r.Context())
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "could not read the prices", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, pricingResponse{settings.CurrentPricing(), settings.Currency, sellers})
 }
 
 // SetPricing saves every price at once; the next checkout charges them.
@@ -50,6 +97,7 @@ func (h *Handlers) SetPricing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	before := settings.CurrentPricing()
+	p.PayoutTerms = strings.TrimSpace(p.PayoutTerms)
 	if err := settings.SetPricing(r.Context(), h.DB, p); err != nil {
 		logx.Error("admin.pricing.set_failed", "err", err.Error())
 		httpx.Error(w, http.StatusInternalServerError, "could not save the prices")
@@ -57,5 +105,10 @@ func (h *Handlers) SetPricing(w http.ResponseWriter, r *http.Request) {
 	}
 	me, _ := auth.FromContext(r.Context())
 	logx.Info("admin.pricing", "by", me.Username, "before", before, "after", p)
-	httpx.JSON(w, http.StatusOK, pricingResponse{p, settings.Currency})
+	sellers, err := h.unconnectedSellers(r.Context())
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "could not read the prices", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, pricingResponse{p, settings.Currency, sellers})
 }

@@ -165,7 +165,8 @@ func freeAdventureSlug(ctx context.Context, db graphstore.Querier, title string)
 }
 
 // saveTrailDraft makes the adventure's draft from cards and remembers its
-// fingerprint, as the draft reads back.
+// fingerprint, as the draft reads back. It sets the look's transition too
+// (trailTransition), so a trail made before it had one gets it.
 func saveTrailDraft(ctx context.Context, q graphstore.Querier, advID, userID int64, cards []trail.Card, lang string) error {
 	if _, _, err := graphstore.SaveDraft(ctx, q, advID, userID, trail.Compile(cards, lang)); err != nil {
 		return err
@@ -174,7 +175,11 @@ func saveTrailDraft(ctx context.Context, q graphstore.Querier, advID, userID int
 	if err != nil {
 		return err
 	}
-	_, err = q.ExecContext(ctx, `UPDATE adventures SET trail_graph = $2 WHERE id = $1`, advID, graphstore.Fingerprint(d.Graph))
+	_, err = q.ExecContext(ctx, `
+		UPDATE adventures SET trail_graph = $2,
+		       look_style = jsonb_set(COALESCE(look_style, '{}'::jsonb), '{transition}', to_jsonb($3::text))
+		WHERE id = $1
+	`, advID, graphstore.Fingerprint(d.Graph), trailTransition)
 	return err
 }
 

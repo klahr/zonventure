@@ -69,6 +69,7 @@ test("search ranks label prefixes first and requires every word", () => {
   // Keywords catch the words authors actually use.
   assert.ok(rank("gps").includes("checkin"));
   assert.ok(rank("riddle").includes("puzzle-text"));
+  assert.ok(rank("qr").includes("puzzle-text"), "a QR code is a puzzle answered by scanning");
   // Every word must match.
   assert.deepEqual(rank("gate zzz"), []);
   assert.equal(scorePreset(PRESETS[0]!, "   "), 1, "an empty query matches everything");

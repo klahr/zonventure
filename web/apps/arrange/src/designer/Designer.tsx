@@ -24,7 +24,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { ApiError, adventures, type play } from "@zonventure/api";
+import { ApiError, adventures, canAuthor, NetworkError, type play } from "@zonventure/api";
 import {
   FORMAT_V2,
   canRedo,
@@ -45,6 +45,7 @@ import {
   redo,
   removeNode,
   STEP_PITCH,
+  textChanges,
   tidy,
   undo,
   updateNode,
@@ -63,6 +64,7 @@ import { useT } from "../i18n.tsx";
 import { href } from "../router.ts";
 import { EditDetailsDialog } from "../pages/adventures/dialogs.tsx";
 import { firstPlaceOf } from "../pages/adventures/api.ts";
+import { useDialogs } from "../ui/dialogs.tsx";
 import { useAdventureWatch } from "../ui/live.ts";
 import { PresenceBar, holderOf, peerColor, usePresence, type Peer } from "../ui/presence.tsx";
 import { Canvas, cardSizes, type LiveFx } from "./Canvas.tsx";
@@ -71,7 +73,7 @@ import type { Mark } from "./NodeCard.tsx";
 import { CatchUpBanner, StepTalk, WorkPanel, cardTalk, catchUpOf, useCollab, type CatchUp } from "./Collab.tsx";
 import { useSession } from "../session.tsx";
 import { Inspector } from "./Inspector.tsx";
-import { LanguageSwitch, LanguagesSettings, TranslateStep, translationLanguages } from "./Translate.tsx";
+import { LanguageSwitch, LanguagesSettings, TranslateStep, languageName, translationLanguages } from "./Translate.tsx";
 import { PrintMaterials } from "./PrintMaterials.tsx";
 import { ListView } from "./ListView.tsx";
 import { Resources } from "./Resources.tsx";
@@ -91,7 +93,7 @@ import { START_TUTORIAL } from "../pages/dashboard/Onboarding.tsx";
 import { addChoiceAfter, addStepAfter, checkInStep, choiceDraft, emptyStep, loadTutorial, saveTutorial, welcomeStep, welcomeText, withHint, withText, withZoneName, type TutorialState, type TutorialStep } from "./tutorial.ts";
 import { AdventureSlug } from "./MediaEditor.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
-import { DiffDialog, HelpModal, PanelModal, PublishCelebration, PublishLabelModal } from "./dz/dialogs.tsx";
+import { DiffDialog, HelpModal, PanelModal, PublishCelebration, PublishLabelModal, TextChanges } from "./dz/dialogs.tsx";
 import { Button, ICON, IssueRow, IssuesButton, Notice, PromptModal } from "./dz/ui.tsx";
 import { isNarrow as narrowScreen, isTouch } from "./device.ts";
 import "./dz.css";
@@ -132,6 +134,34 @@ interface TickerEntry {
 }
 
 /** The steps of `next` that are new or differ from `prev`. */
+/**
+ * Whether the toolbar's scrolling strip has run out of room for its
+ * labels — beside the editing language and the issue counts it can at
+ * any width — so it shows icons rather than a label cut off.
+ */
+function useTightStrip(): [(el: HTMLDivElement | null) => void, boolean] {
+  const [tight, setTight] = useState(false);
+  const observer = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    observer.current?.disconnect();
+    observer.current = null;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    // The width the labels need, measured while they show.
+    let full = 0;
+    const fit = () => {
+      if (!el.classList.contains("is-tight")) {
+        full = el.scrollWidth;
+        if (full > el.clientWidth) setTight(true);
+      } else if (el.clientWidth >= full) setTight(false);
+    };
+    const o = new ResizeObserver(fit);
+    o.observe(el);
+    for (const c of Array.from(el.children)) o.observe(c);
+    observer.current = o;
+  }, []);
+  return [ref, tight];
+}
+
 function changedSlugs(prev: Graph | null, next: Graph): Set<string> {
   const before = new Map((prev?.nodes ?? []).map((n) => [n.slug, JSON.stringify(n)]));
   return new Set(next.nodes.filter((n) => before.get(n.slug) !== JSON.stringify(n)).map((n) => n.slug));
@@ -206,7 +236,16 @@ export function Designer({ slug }: { slug: string }) {
   // What others did lately, in words.
   const [ticker, setTicker] = useState<TickerEntry[]>([]);
   // Steps both this page and someone else changed: this page's kept.
-  const [clash, setClash] = useState<{ steps: string[]; by: string } | null>(null);
+  // Both changed the same thing: the steps, and the drafts to settle it
+  // from. Nothing autosaves until the author keeps theirs or takes the
+  // other's, so neither is overwritten unseen.
+  const [clash, setClash] = useState<{ steps: string[]; by: string; base: Graph; theirs: Graph } | null>(null);
+  // Steps where the author kept theirs over a clash, told to the other
+  // with the next save.
+  const kept = useRef<string[]>([]);
+  // Someone else kept their version over this author's: the author's own
+  // steps as they were, held for the session to restore.
+  const [discarded, setDiscarded] = useState<{ by: string; held: Map<string, StepNode> } | null>(null);
   // Steps someone else has open that the author chose to edit anyway.
   const [takenOver, setTakenOver] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<string | null>(null);
@@ -220,7 +259,8 @@ export function Designer({ slug }: { slug: string }) {
   const [publishing, setPublishing] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
   const [diff, setDiff] = useState<{ loading: boolean; diff: GraphDiff | null } | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Adventure settings: all of it, or one section opened from the ⋮ menu.
+  const [settingsOpen, setSettingsOpen] = useState<boolean | "languages" | "print">(false);
   const [devOpen, setDevOpen] = useState(false);
   // The theme editor, open on a theme or on the first; null when closed.
   const [themesOpen, setThemesOpen] = useState<{ theme?: string } | null>(null);
@@ -349,6 +389,8 @@ export function Designer({ slug }: { slug: string }) {
     (g: Graph) => {
       if (readOnly) return;
       setHistory((h) => record(h, g, Date.now()));
+      // The catch-up is for arriving; once the author edits, it is stale.
+      setCatchUp(null);
     },
     [readOnly],
   );
@@ -431,8 +473,8 @@ export function Designer({ slug }: { slug: string }) {
    * Loads the draft someone else saved, as an ordinary edit that can be
    * undone. Unsaved work of this page's own is merged into it step by
    * step — field by field within a step — so both people's edits stay;
-   * only where both changed the same thing is the author's own kept and
-   * the clash pointed out.
+   * where both changed the same thing the author's own is shown, and
+   * the author chooses whose to keep before it is saved.
    */
   const pullRemote = useCallback(
     async (who: Saver | null) => {
@@ -445,7 +487,13 @@ export function Designer({ slug }: { slug: string }) {
       if (mine && base && differs(mine, base)) {
         const m = mergeGraphs(base, mine, theirs);
         next = m.graph;
-        if (m.conflicts.length) setClash({ steps: m.conflicts, by: who?.by ?? "" });
+        // A clash still open keeps the draft it started from, so choosing
+        // theirs then also covers what clashed before.
+        setClash((c) =>
+          m.conflicts.length || c
+            ? { steps: [...new Set([...(c?.steps ?? []), ...m.conflicts])], by: who?.by || c?.by || "", base: c?.base ?? base, theirs }
+            : null,
+        );
       }
       if (who) show(mine, next, who);
       setHistory((h) => record(h, next, Date.now()));
@@ -455,6 +503,7 @@ export function Designer({ slug }: { slug: string }) {
       setPublished(r.published ?? null);
       setServerDirty(!!r.dirty);
       setConflict(false);
+      setSaveError(null);
       return true;
     },
     [slug, show],
@@ -465,7 +514,8 @@ export function Designer({ slug }: { slug: string }) {
     setSaving(true);
     missed.current = null;
     try {
-      const r = await adventures.saveGraph<Envelope, Report>(slug, envelope(draft), since.current);
+      const r = await adventures.saveGraph<Envelope, Report>(slug, envelope(draft), since.current, kept.current);
+      kept.current = [];
       setSaved(draft);
       since.current = r.saved_at;
       setIssues(r.report.issues ?? []);
@@ -480,22 +530,30 @@ export function Designer({ slug }: { slug: string }) {
       // work, and the next autosave stores both.
       if (e instanceof ApiError && e.code === "draft_changed") {
         if (!(await pullRemote(missed.current))) setConflict(true);
-      } else setSaveError(errorText(e));
+      } else setSaveError(e instanceof NetworkError ? t.t("Not saved: no connection. Your changes stay on this page and are saved once you're back online.") : errorText(e));
       return false;
     } finally {
       missed.current = null;
       setSaving(false);
     }
-  }, [draft, slug, pullRemote]);
+  }, [draft, slug, pullRemote, t]);
 
+  // Back online: the autosave that failed tries again.
+  const [online, setOnline] = useState(0);
   useEffect(() => {
-    if (!unsaved || readOnly || conflict || loaded.state !== "ready") return;
+    const on = () => setOnline((n) => n + 1);
+    window.addEventListener("online", on);
+    return () => window.removeEventListener("online", on);
+  }, []);
+  useEffect(() => {
+    if (!unsaved || readOnly || conflict || clash || loaded.state !== "ready") return;
     const id = setTimeout(() => void saveNow(), AUTOSAVE_MS);
     return () => clearTimeout(id);
-  }, [unsaved, readOnly, conflict, loaded.state, saveNow]);
+  }, [unsaved, readOnly, conflict, clash, loaded.state, saveNow, online]);
 
   const presence = usePresence();
   const session = useSession();
+  const dialogs = useDialogs();
   const me = session.state.status === "authenticated" ? session.state.user.id : 0;
   useEffect(() => {
     if (me) setCoachState(loadCoach(me));
@@ -542,11 +600,16 @@ export function Designer({ slug }: { slug: string }) {
       return;
     }
     if (m.kind !== "graph_saved") return;
-    const d = m.data as Omit<Saver, "peer">;
+    const d = m.data as Omit<Saver, "peer"> & { kept?: { user_id: number; steps: string[] } };
     if (d.saved_at === since.current) return; // this page's own save
     const who: Saver = { ...d, peer: d.assistant ? `a${d.user_id}` : (presence.others.find((p) => p.user_id === d.user_id && p.kind === "human")?.id ?? "") };
     const b = busy.current;
     if (b.readOnly) return;
+    const mine = draftRef.current;
+    if (d.kept?.user_id === me && mine) {
+      const steps = d.kept.steps.map((x) => nodeBySlug(mine, x)).filter((n): n is StepNode => !!n);
+      if (steps.length) setDiscarded((c) => ({ by: d.by, held: new Map([...(c?.held ?? []), ...steps.map((n) => [n.slug, n] as const)]) }));
+    }
     // While this page's own save is on its way, it answers first: if it
     // is refused, it pulls; if not, this save came after it.
     if (b.saving) missed.current = who;
@@ -677,6 +740,31 @@ export function Designer({ slug }: { slug: string }) {
     if (fresh && selected !== fresh) setFresh(null);
   }, [selected, fresh]);
   const shownIssues = fresh ? issues.filter((i) => i.node !== fresh) : issues;
+
+  // The adventure's own look, saved at once (not with the draft).
+  const applyBrand = async (b: play.Brand) => {
+    tutorialDid("look");
+    const before = brand;
+    setBrand(b);
+    setBrandSaving(true);
+    setBrandError(null);
+    try {
+      const r = await adventures.saveBrand(slug, b);
+      if (r?.held_for_review?.includes("look_cover")) {
+        // Live stays the approved cover until the new one is approved.
+        const style = { ...(b.style ?? {}) } as NonNullable<typeof b.style>;
+        if (before.style?.cover) style.cover = before.style.cover;
+        else delete style.cover;
+        setBrand({ ...b, style });
+        setBrandError(t.t("The new cover picture waits for review before players see it: submit it under Edit details."));
+      }
+    } catch (e) {
+      setBrand(before);
+      setBrandError(e instanceof ApiError ? e.message : t.t("Could not reach the server. Check your connection."));
+    } finally {
+      setBrandSaving(false);
+    }
+  };
 
   // --- working together -------------------------------------------------------------
 
@@ -953,6 +1041,7 @@ export function Designer({ slug }: { slug: string }) {
   const slotOpen = slot !== "inspect" || !!node;
   useTopBarTitle(adventureTitle);
   const root = useRef<HTMLDivElement>(null);
+  const [stripRef, stripTight] = useTightStrip();
   const inspectorWidth = useInspectorWidth(root, t.t("Resize the inspector"));
 
   const stage = useRef<HTMLDivElement>(null);
@@ -986,7 +1075,12 @@ export function Designer({ slug }: { slug: string }) {
     // unexpected failure shows the server's own message.
     const [title, body] =
       loaded.status === 403
-        ? [t.t("You can't edit this adventure"), t.t("Only the organisation that owns an adventure can change it. Adventures from the shared catalog can be scheduled, but not edited.")]
+        ? [
+            t.t("You can't edit this adventure"),
+            session.state.status === "authenticated" && !canAuthor(session.state.user)
+              ? t.t("Only administrators of the organisation that owns an adventure can change it. Ask an administrator in your organisation.")
+              : t.t("Only the organisation that owns an adventure can change it. Adventures from the shared catalog can be scheduled, but not edited."),
+          ]
         : loaded.status === 404
           ? [t.t("Adventure not found"), t.t("It may have been deleted or renamed.")]
           : [t.t("The designer could not open"), loaded.message];
@@ -1005,13 +1099,25 @@ export function Designer({ slug }: { slug: string }) {
   const isLive = published !== null;
   const issueRows = (list: Issue[]) =>
     list.map((i, k) => (
-      <IssueRow key={k} text={<IssueText graph={graph} issue={i} />} actions={i.node ? <Button variant="link" onClick={() => jumpTo(i)}>{t.t("Show")}</Button> : undefined} />
+      <IssueRow
+        key={k}
+        text={<IssueText graph={graph} issue={i} />}
+        actions={
+          i.node ? (
+            <Button variant="link" onClick={() => jumpTo(i)}>{t.t("Show")}</Button>
+          ) : i.code.startsWith("print.") ? (
+            <Button variant="link" onClick={() => setSettingsOpen("print")}>{t.t("Show")}</Button>
+          ) : undefined
+        }
+      />
     ));
   const kebabItems: ContextMenuItem[] = [
     // Saved first: renaming the adventure moves its draft along with it.
     { label: t.t("Edit details"), onClick: () => void (async () => { if (unsaved && !(await saveNow())) return; setDetailsOpen(true); })() },
     { label: t.t("Adventure settings"), onClick: () => setSettingsOpen(true) },
     { label: t.t("Themes"), onClick: () => openThemes() },
+    { label: t.t("Languages"), onClick: () => setSettingsOpen("languages") },
+    { label: t.t("Print materials"), onClick: () => setSettingsOpen("print") },
     { label: t.t("Play the draft on my phone"), onClick: () => setDevOpen(true) },
     {
       label: narrowScreen() ? t.t("Tutorial") : t.t("Tutorials"),
@@ -1167,7 +1273,7 @@ export function Designer({ slug }: { slug: string }) {
             </a>
             <span className="toolbar-divider" aria-hidden="true" />
 
-            <div className="toolbar-scroll">
+            <div className={"toolbar-scroll" + (stripTight ? " is-tight" : "")} ref={stripRef}>
               <div className="toolbar-group">
                 <Button variant="ghost" onClick={doUndo} disabled={!canUndo(history) || readOnly} title={t.t("Undo the last change (Ctrl/Cmd+Z)")} aria-label={t.t("Undo")}>
                   <Undo2 size={ICON.sm} />
@@ -1182,7 +1288,7 @@ export function Designer({ slug }: { slug: string }) {
                 {!listView && (
                 <Button
                   variant="ghost"
-                  className="editor-add-drop"
+                  className="editor-add-drop toolbar-main"
                   disabled={readOnly}
                   onClick={() => setPaletteRequest((n) => n + 1)}
                   title={t.t("Search and insert a step (Ctrl/Cmd+K)")}
@@ -1196,7 +1302,7 @@ export function Designer({ slug }: { slug: string }) {
                     the view on screen. */}
                 <Button
                   variant="ghost"
-                  className="editor-dataview"
+                  className="editor-dataview toolbar-main"
                   onClick={() => setListView((v) => !v)}
                   title={listView ? t.t("Back to the canvas") : t.t("Show the adventure as an outline of its steps")}
                   aria-label={listView ? t.t("Canvas view") : t.t("List view")}
@@ -1220,7 +1326,7 @@ export function Designer({ slug }: { slug: string }) {
                 )}
                 <Button
                   variant="ghost"
-                  className={slot === "work" ? "is-on" : ""}
+                  className={"toolbar-main" + (slot === "work" ? " is-on" : "")}
                   onClick={() => setSlot((s) => (s === "work" ? "inspect" : "work"))}
                   title={t.t("Discussion and the board of steps")}
                   aria-label={t.t("Work")}
@@ -1229,7 +1335,7 @@ export function Designer({ slug }: { slug: string }) {
                   <span className="toolbar-label">{t.t("Work")}</span>
                   {openThreads > 0 && <span className="talk__count">{openThreads}</span>}
                 </Button>
-                <Button variant="ghost" onClick={openHistory} title={t.t("Version history")} aria-label={t.t("History")}>
+                <Button variant="ghost" className="toolbar-main" onClick={openHistory} title={t.t("Version history")} aria-label={t.t("History")}>
                   <History size={ICON.sm} />
                   <span className="toolbar-label">{t.t("History")}</span>
                 </Button>
@@ -1248,8 +1354,8 @@ export function Designer({ slug }: { slug: string }) {
             <IssuesButton
               kind="error"
               count={errors.length}
-              title={t.plural(errors.length, { one: "{{n}} error", other: "{{n}} errors" })}
-              heading={t.plural(errors.length, { one: "{{n}} error to fix before publishing", other: "{{n}} errors to fix before publishing" })}
+              title={t.plural(errors.length, { one: t.t("{{n}} error"), other: t.t("{{n}} errors") })}
+              heading={t.plural(errors.length, { one: t.t("{{n}} error to fix before publishing"), other: t.t("{{n}} errors to fix before publishing") })}
               open={issuePanel === "error"}
               onOpenChange={(o) => setIssuePanel(o ? "error" : null)}
             >
@@ -1258,8 +1364,8 @@ export function Designer({ slug }: { slug: string }) {
             <IssuesButton
               kind="warning"
               count={warnings.length}
-              title={t.plural(warnings.length, { one: "{{n}} warning", other: "{{n}} warnings" })}
-              heading={t.plural(warnings.length, { one: "{{n}} warning", other: "{{n}} warnings" })}
+              title={t.plural(warnings.length, { one: t.t("{{n}} warning"), other: t.t("{{n}} warnings") })}
+              heading={t.plural(warnings.length, { one: t.t("{{n}} warning"), other: t.t("{{n}} warnings") })}
               open={issuePanel === "warning"}
               onOpenChange={(o) => setIssuePanel(o ? "warning" : null)}
             >
@@ -1336,7 +1442,7 @@ export function Designer({ slug }: { slug: string }) {
               </Button>
               <Button
                 variant="ghost"
-                size="icon"
+                className="toolbar-main"
                 title={t.t("More")}
                 aria-label={t.t("More")}
                 onClick={(e) => {
@@ -1345,6 +1451,7 @@ export function Designer({ slug }: { slug: string }) {
                 }}
               >
                 <MoreVertical size={ICON.md} />
+                <span className="toolbar-label">{t.t("More")}</span>
               </Button>
             </div>
           </div>
@@ -1384,7 +1491,7 @@ export function Designer({ slug }: { slug: string }) {
             {clash && (
               <div className="editor-conn-banner editor-conn-banner--info" role="status">
                 <span className="editor-conn-banner-text">
-                  {t.t("You and {{name}} both changed the same thing, so your version was kept:", { name: clash.by || t.t("someone") })}{" "}
+                  {t.t("You and {{name}} both changed the same thing. Your version is not saved until you choose:", { name: clash.by || t.t("someone") })}{" "}
                   {clash.steps.map((x, i) => {
                     const n = draft ? nodeBySlug(draft, x) : undefined;
                     return (
@@ -1400,9 +1507,76 @@ export function Designer({ slug }: { slug: string }) {
                       </span>
                     );
                   })}
+                  <div className="clash-versions">
+                    {clash.steps.map((x) => {
+                      const mine = draft ? nodeBySlug(draft, x) : undefined;
+                      const theirs = nodeBySlug(clash.theirs, x);
+                      const name = clash.by || t.t("someone");
+                      const changes = mine && theirs ? textChanges(mine, theirs) : [];
+                      return (
+                        <div key={x} className="clash-versions__step">
+                          <strong>{(mine ?? theirs)?.title || x}</strong>
+                          {!theirs ? (
+                            <span>{t.t("{{name}} removed this step.", { name })}</span>
+                          ) : !mine ? (
+                            <span>{t.t("You removed this step.")}</span>
+                          ) : changes.length ? (
+                            <TextChanges changes={changes} before={t.t("Your version")} after={t.t("{{name}}’s version", { name })} />
+                          ) : (
+                            <span>{t.t("{{name}} changed how this step works, not its words.", { name })}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </span>
-                <Button size="sm" variant="ghost" onClick={() => setClash(null)} aria-label={t.t("Dismiss")}>
-                  <X size={ICON.sm} />
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    // Theirs where both changed it; the rest of this
+                    // page's work, edits since included, stays.
+                    const mine = draftRef.current;
+                    if (mine) setHistory((h) => record(h, mergeGraphs(clash.base, mine, clash.theirs, "theirs").graph, Date.now()));
+                    setClash(null);
+                  }}
+                >
+                  {t.t("Load theirs")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => {
+                    const mine = draftRef.current;
+                    kept.current = [...new Set([...kept.current, ...clash.steps.filter((x) => mine && nodeBySlug(mine, x))])];
+                    setClash(null);
+                  }}
+                >
+                  {t.t("Keep mine")}
+                </Button>
+              </div>
+            )}
+            {discarded && !readOnly && (
+              <div className="editor-conn-banner editor-conn-banner--info" role="status">
+                <span className="editor-conn-banner-text">
+                  {t.t("{{name}} kept their version of “{{step}}”", {
+                    name: discarded.by || t.t("someone"),
+                    step: [...discarded.held.values()].map((n) => n.title || n.slug).join(", "),
+                  })}
+                </span>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    // A normal edit: saved, and settled with anyone else's, as any other.
+                    const g = draftRef.current;
+                    if (g) {
+                      const held = discarded.held;
+                      const next = { ...g, nodes: g.nodes.map((n) => held.get(n.slug) ?? n) };
+                      setHistory((h) => record(h, next, Date.now()));
+                    }
+                    setDiscarded(null);
+                  }}
+                >
+                  {t.t("Restore my text")}
                 </Button>
               </div>
             )}
@@ -1460,7 +1634,7 @@ export function Designer({ slug }: { slug: string }) {
                 selected,
                 inspecting: slot === "inspect" && !!node,
                 menu: !!kebab,
-                settings: settingsOpen,
+                settings: settingsOpen === true,
                 previewing,
                 playing: previewing ? playing : null,
                 publishing: !!publishAsk,
@@ -1597,10 +1771,22 @@ export function Designer({ slug }: { slug: string }) {
               }}
               onPreview={(v) => void previewVersion(v)}
               onLabel={setLabelEditing}
-              onMakeLive={(v) => (v.label ? void doPublish({ kind: "rollback", version: v.version }, "") : setPublishAsk({ kind: "rollback", version: v.version }))}
+              onMakeLive={(v) =>
+                v.label
+                  ? void dialogs
+                      .confirm({
+                        title: t.t("Publish this version?"),
+                        message: t.t("Events that start from now on play this version. Events already running keep theirs."),
+                        confirmLabel: t.t("Publish"),
+                      })
+                      .then((ok) => {
+                        if (ok) void doPublish({ kind: "rollback", version: v.version }, "");
+                      })
+                  : setPublishAsk({ kind: "rollback", version: v.version })
+              }
             />
           ) : node && translating ? (
-            <TranslateStep node={node} graph={graph} lang={editLang} onGraphChange={change} onClose={() => choose(null)} readOnly={readOnly} />
+            <TranslateStep node={node} graph={graph} meta={meta} lang={editLang} onGraphChange={change} onClose={() => choose(null)} readOnly={readOnly} />
           ) : node ? (
             <AdventureSlug.Provider value={slug}>
               <OpenThemes.Provider value={openThemes}>
@@ -1727,9 +1913,9 @@ export function Designer({ slug }: { slug: string }) {
           }
           confirmLabel={publishAsk.kind === "update" ? t.t("Publish changes") : t.t("Publish")}
           {...(errors.length && publishAsk.kind !== "rollback"
-            ? { blocked: true, warning: t.plural(errors.length, { one: "{{n}} error must be fixed first — publishing will be refused.", other: "{{n}} errors must be fixed first — publishing will be refused." }) }
+            ? { blocked: true, warning: t.plural(errors.length, { one: t.t("{{n}} error must be fixed first — publishing will be refused."), other: t.t("{{n}} errors must be fixed first — publishing will be refused.") }) }
             : notReady && publishAsk.kind !== "rollback"
-              ? { warning: t.plural(notReady, { one: "{{n}} step is not marked ready yet.", other: "{{n}} steps are not marked ready yet." }) }
+              ? { warning: t.plural(notReady, { one: t.t("{{n}} step is not marked ready yet."), other: t.t("{{n}} steps are not marked ready yet.") }) }
               : {})}
           onPublish={(label) => void doPublish(publishAsk, label)}
           onCancel={() => setPublishAsk(null)}
@@ -1758,11 +1944,18 @@ export function Designer({ slug }: { slug: string }) {
         />
       )}
       {settingsOpen && (
-        <PanelModal title={t.t("Adventure settings")} wide onClose={() => setSettingsOpen(false)}>
+        <PanelModal
+          title={settingsOpen === "languages" ? t.t("Languages") : settingsOpen === "print" ? t.t("Print materials") : t.t("Adventure settings")}
+          wide
+          onClose={() => setSettingsOpen(false)}
+        >
           <div className="dz-settings">
-            <AdventureSlug.Provider value={slug}>
-              <Resources graph={graph} onChange={change} />
-            </AdventureSlug.Provider>
+            {settingsOpen === true && (
+              <AdventureSlug.Provider value={slug}>
+                <Resources graph={graph} onChange={change} />
+              </AdventureSlug.Provider>
+            )}
+            {settingsOpen !== "print" && (
             <LanguagesSettings
               graph={graph}
               main={mainLang}
@@ -1776,39 +1969,25 @@ export function Designer({ slug }: { slug: string }) {
                 change({ ...graph, language: l });
               }}
               editing={editLang}
-              onEditing={setEditLang}
+              onEditing={(l) => {
+                setEditLang(l);
+                // "Translate" goes to the steps, now in that language, like the toolbar's switch.
+                if (l !== mainLang) setSettingsOpen(false);
+              }}
             />
-            <AdventureSlug.Provider value={slug}>
-              <PrintMaterials graph={graph} main={mainLang} onChange={change} />
-            </AdventureSlug.Provider>
+            )}
+            {settingsOpen !== "languages" && (
+              <AdventureSlug.Provider value={slug}>
+                <PrintMaterials graph={graph} main={mainLang} onChange={change} />
+              </AdventureSlug.Provider>
+            )}
+            {settingsOpen === true && (
             <Look
               brand={brand}
               saving={brandSaving}
               error={brandError}
               savedThemes={graph.themes ?? []}
-              onApply={async (b) => {
-                tutorialDid("look");
-                const before = brand;
-                setBrand(b);
-                setBrandSaving(true);
-                setBrandError(null);
-                try {
-                  const r = await adventures.saveBrand(slug, b);
-                  if (r?.held_for_review?.includes("look_cover")) {
-                    // Live stays the approved cover until the new one is approved.
-                    const style = { ...(b.style ?? {}) } as NonNullable<typeof b.style>;
-                    if (before.style?.cover) style.cover = before.style.cover;
-                    else delete style.cover;
-                    setBrand({ ...b, style });
-                    setBrandError(t.t("The new cover picture waits for review before players see it: submit it under Edit details."));
-                  }
-                } catch (e) {
-                  setBrand(before);
-                  setBrandError(e instanceof ApiError ? e.message : t.t("Could not reach the server. Check your connection."));
-                } finally {
-                  setBrandSaving(false);
-                }
-              }}
+              onApply={applyBrand}
               {...(readOnly
                 ? {}
                 : {
@@ -1826,6 +2005,7 @@ export function Designer({ slug }: { slug: string }) {
                     onEditThemes: () => openThemes(),
                   })}
             />
+            )}
           </div>
         </PanelModal>
       )}
@@ -1840,6 +2020,8 @@ export function Designer({ slug }: { slug: string }) {
               change(g);
             }}
             onClose={() => setThemesOpen(null)}
+            look={brand}
+            onUse={(look) => void applyBrand(look as play.Brand)}
           />
         </AdventureSlug.Provider>
       )}
@@ -1870,7 +2052,19 @@ export function Designer({ slug }: { slug: string }) {
   );
 }
 
+/**
+ * A print material's missing file, in the author's words: the server's
+ * check names the language by its code.
+ */
+function printIssue(issue: Issue, t: ReturnType<typeof useT>): string | null {
+  const m = /^print material "(.*)" (is posted but )?has no file for ([a-z-]+)$/.exec(issue.message);
+  if (!m || !issue.code.startsWith("print.")) return null;
+  const vars = { name: m[1]!, lang: languageName(m[3]!) };
+  return m[2] ? t.t("Print material “{{name}}” is posted but has no file in {{lang}}.", vars) : t.t("Print material “{{name}}” has no file in {{lang}}.", vars);
+}
+
 function IssueText({ graph, issue }: { graph: Graph; issue: Issue }) {
+  const t = useT();
   return (
     <>
       {issue.node && (
@@ -1879,7 +2073,7 @@ function IssueText({ graph, issue }: { graph: Graph; issue: Issue }) {
           {issue.port ? ` · ${portLabelFor(graph, issue.node, issue.port)}` : ""}:{" "}
         </strong>
       )}
-      {issue.message}
+      {printIssue(issue, t) ?? t.t(issue.message)}
     </>
   );
 }

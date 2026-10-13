@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown, Pause, Play, Search, Trash2 } from "lucide-react";
+import { isGlobalAdmin } from "@zonventure/api";
+import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { Button, ErrorBox, ICON, Page, PageHeader, Pill, errorText, useToast } from "../../ui/index.ts";
 import { listLogs, setLogLevel, type LogEntry } from "./api.ts";
@@ -10,7 +12,7 @@ const MAX_BUFFER = 5000;
 const rank = (l: string) => ({ DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 })[String(l || "INFO").toUpperCase()] ?? 1;
 
 function matches(e: LogEntry, needle: string): boolean {
-  if ((e.msg || "").toLowerCase().includes(needle)) return true;
+  if ((e.msg || "").toLowerCase().includes(needle) || stamp(e.ts).includes(needle)) return true;
   return (e.attrs ?? []).some((a) => String(a.k ?? "").toLowerCase().includes(needle) || attrText(a.v).toLowerCase().includes(needle));
 }
 
@@ -21,7 +23,16 @@ function attrText(v: unknown): string {
   return String(v);
 }
 
-const stamp = (ts: string) => (ts || "").replace("T", " ").replace(/\.\d+/, "").replace("Z", "");
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** An entry's time in the browser's zone, as the audit view shows it, so one clock time finds both. */
+function stamp(ts: string): string {
+  const d = new Date(ts);
+  if (!ts || Number.isNaN(d.getTime())) return ts || "";
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 /** A consumed one-shot filter the audit view leaves for "logs around this time". */
 function takePrefilter(): string {
@@ -44,6 +55,9 @@ function takePrefilter(): string {
 export function LogsPage() {
   const t = useT();
   const toast = useToast();
+  const { state } = useSession();
+  // Support reads the log but leaves the server level alone.
+  const full = state.status === "authenticated" && isGlobalAdmin(state.user);
   const buffer = useRef<(LogEntry & { key: number })[]>([]);
   const nextKey = useRef(0);
   const lastSeq = useRef(0);
@@ -186,11 +200,12 @@ export function LogsPage() {
       <Page wide>
         <PageHeader
           title={t.t("Logs")}
+          subtitle={t.t("Recent entries since the last restart. The server level goes back to INFO on restart. For older lines, run docker compose logs app on the host.")}
           badges={live ? <Pill tone="good">{t.t("Streaming")}</Pill> : <Pill tone="warn">{t.t("Reconnecting…")}</Pill>}
           actions={
             <label className="adm-logbar__sel">
               <span>{t.t("Server level")}</span>
-              <select value={serverLevel} onChange={(e) => void changeServerLevel(e.target.value)} title={t.t("Server log level")}>
+              <select value={serverLevel} disabled={!full} onChange={(e) => void changeServerLevel(e.target.value)} title={t.t("Server log level")}>
                 {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
               </select>
             </label>
@@ -217,6 +232,7 @@ export function LogsPage() {
             {pausedAt === null ? t.t("Pause") : waiting > 0 ? t.t("Resume ({{n}} new)", { n: waiting }) : t.t("Resume")}
           </Button>
           {all.length > 0 && <Button size="sm" icon={<Trash2 size={ICON.sm} aria-hidden />} onClick={clear}>{t.t("Clear")}</Button>}
+          <span style={{ color: "var(--dz-muted)", fontSize: "var(--dz-text-xs)" }}>{t.t("Times in {{zone}}", { zone: ZONE })}</span>
         </div>
         <div className="adm-term-wrap">
           <div className="adm-term" ref={scroller} onScroll={onScroll} role="log" aria-live="off" aria-label={t.t("Logs")} tabIndex={0}>
@@ -225,7 +241,7 @@ export function LogsPage() {
             ) : (
               shown.map((e) => (
                 <div key={e.key} className={`adm-term__line is-${String(e.level || "INFO").toLowerCase()}`}>
-                  <span className="adm-term__ts">{stamp(e.ts)}</span> <span className="adm-term__lvl">{String(e.level || "INFO").padEnd(5)}</span> {e.msg}
+                  <span className="adm-term__ts" title={e.ts}>{stamp(e.ts)}</span> <span className="adm-term__lvl">{String(e.level || "INFO").padEnd(5)}</span> {e.msg}
                   {(e.attrs ?? []).map((a, j) => (
                     <span key={j}> <span className="adm-term__k">{a.k}</span>=<span className="adm-term__v">{attrText(a.v)}</span></span>
                   ))}

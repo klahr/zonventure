@@ -17,6 +17,10 @@ import (
 // ZV_CHANGELOG_URL env var.
 const DefaultChangelogURL = "https://raw.githubusercontent.com/klahr/zonventure/main/CHANGELOG.md"
 
+// Off as the changelog URL turns update checks off: nothing is fetched.
+// cmd/server passes it when ZV_CHANGELOG_URL is set but empty.
+const Off = "off"
+
 // DefaultPollInterval is how often the background loop refetches
 // the changelog. Daily is plenty — releases are weekly at best, and
 // admins can hit the "Check now" button if they want it sooner.
@@ -76,6 +80,9 @@ type Status struct {
 	// check" hint so operators know whether they're looking at a
 	// stale-but-believable snapshot or a confused one.
 	FetchError string `json:"fetch_error,omitempty"`
+	// Disabled is true when update checks are turned off (an empty
+	// ZV_CHANGELOG_URL); nothing is ever fetched.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // Service polls the changelog URL on a fixed interval, caches the
@@ -134,6 +141,7 @@ func NewService(cfg Config) *Service {
 		Current:    parsed.String(),
 		CurrentRaw: cfg.Version,
 		IsDevBuild: !ok || parsed.HasSuffix(),
+		Disabled:   url == Off,
 	}
 	if !ok {
 		s.status.Current = ""
@@ -145,6 +153,9 @@ func NewService(cfg Config) *Service {
 // immediately so the UI doesn't have to wait an hour to see anything.
 // Stops when ctx is done.
 func (s *Service) Start(ctx context.Context) {
+	if s.url == Off {
+		return
+	}
 	go s.loop(ctx)
 }
 
@@ -189,6 +200,9 @@ func (s *Service) Status() Status {
 // "couldn't check today" should never wipe out yesterday's known-good
 // release notes.
 func (s *Service) refresh(ctx context.Context) error {
+	if s.url == Off {
+		return nil
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.url, nil)
 	if err != nil {
 		s.recordFetchErr("build request: " + err.Error())

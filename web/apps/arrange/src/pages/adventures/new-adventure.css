@@ -19,6 +19,8 @@
 .newadv__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); gap: var(--dz-space-3); }
 .newadv__lead { margin: 0; color: var(--dz-ink-soft); }
 .newadv__row { display: flex; align-items: center; justify-content: space-between; gap: var(--dz-space-2); }
+.newadv__check { display: flex; align-items: flex-start; gap: var(--dz-space-2); }
+.newadv__check input { margin-top: 3px; }
 .newadv__summary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--dz-space-2) var(--dz-space-4); margin: 0; }
 .newadv__summary dt { color: var(--dz-muted); font-size: var(--dz-text-sm); }
 .newadv__summary dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }

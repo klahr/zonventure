@@ -97,6 +97,28 @@ func TestFlow(t *testing.T) {
 	if rec.Code != http.StatusFound || !strings.HasPrefix(rec.Header().Get("Location"), "/app/arrange/#/authorize?") {
 		t.Fatalf("authorize: %d %s", rec.Code, rec.Header().Get("Location"))
 	}
+	rec = httptest.NewRecorder()
+	s.Request(rec, httptest.NewRequest("GET", "/api/admin/oauth/request?"+q.Encode(), nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"verified":true`) {
+		t.Errorf("an allowlisted https client should be verified: %d %s", rec.Code, rec.Body)
+	}
+	rec = httptest.NewRecorder()
+	s.Register(rec, httptest.NewRequest("POST", "/oauth/register", strings.NewReader(`{"client_name":"Claude","redirect_uris":["http://127.0.0.1:53682/cb"]}`)))
+	var local struct {
+		ClientID string `json:"client_id"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &local)
+	lq := url.Values{}
+	for k, v := range q {
+		lq[k] = v
+	}
+	lq.Set("client_id", local.ClientID)
+	lq.Set("redirect_uri", "http://127.0.0.1:53682/cb")
+	rec = httptest.NewRecorder()
+	s.Request(rec, httptest.NewRequest("GET", "/api/admin/oauth/request?"+lq.Encode(), nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"verified":false`) {
+		t.Errorf("a loopback client calling itself Claude should be unverified: %d %s", rec.Code, rec.Body)
+	}
 	bad := url.Values{}
 	for k, v := range q {
 		bad[k] = v

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { MAP_ZOOM, type Graph, type Marker, type Zone } from "@zonventure/graph";
 import { CompassFace, FitMap } from "@zonventure/play-ui";
 import { X } from "lucide-react";
+import { contentT } from "../../i18n.tsx";
 import { Field, ZoneSelect } from "../fields.tsx";
 import { ZoneMap } from "../ZoneMap.tsx";
 import { nearLastZone, zoneAt } from "../zones.ts";
@@ -14,8 +15,9 @@ function PlaceSelect<B extends Of<"compass" | "map" | "radar">>({ block, set, t,
   // A compass or map usually points on to the next place, not this
   // step's own: a new one gets a plain name that is its own, to rename.
   const taken = new Set(zones.map((z) => z.name));
-  let name = t.t("New place");
-  for (let i = 2; taken.has(name); i++) name = `${t.t("New place")} ${i}`;
+  const base = contentT(graph.language)("New place");
+  let name = base;
+  for (let i = 2; taken.has(name); i++) name = `${base} ${i}`;
   const zone = zoneOf(graph, block.zone);
   const select = (
     <ZoneSelect

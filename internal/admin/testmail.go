@@ -153,19 +153,30 @@ func (h *Handlers) SendTestEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Without SMTP the LogMailer only writes it to the server log.
+	_, logged := h.Mailer.(mailerpkg.LogMailer)
+	verdict := "If you can read this, the SMTP configuration is working."
+	if logged {
+		verdict = "SMTP is not configured, so this message was only written to the server log, not sent."
+	}
 	subject := sitename.Name() + ": SMTP test"
 	body := "This is a test email from your " + sitename.Name() + " server.\r\n\r\n" +
-		"If you can read this, the SMTP configuration is working.\r\n\r\n" +
+		verdict + "\r\n\r\n" +
 		"Triggered by " + me.Username + " at " + time.Now().UTC().Format(time.RFC3339) + ".\r\n"
 
 	// In the platform's own look: it tests the server, not an organisation.
 	msg := look{Theme: emailtpl.Classic, Brand: emailtpl.Platform()}.themedText(mailerpkg.Message{To: []string{to}, Subject: subject, Text: body})
 	if err := h.Mailer.Send(r.Context(), msg); err != nil {
 		logx.Warn("admin.test_email.send_failed", "to", to, "err", err.Error())
-		httpx.ServerErr(w, http.StatusBadGateway, "send failed", err)
+		// Admin-only, and the cause (dial, TLS, auth) is what the test is for.
+		httpx.Error(w, http.StatusBadGateway, "send failed: "+err.Error())
 		return
 	}
 	testEmailLimit.record(time.Now(), me.ID, ip)
 	logx.Info("admin.test_email.sent", "to", to, "by", me.Username)
-	httpx.JSON(w, http.StatusOK, map[string]string{"to": to, "status": "sent"})
+	status := "sent"
+	if logged {
+		status = "logged"
+	}
+	httpx.JSON(w, http.StatusOK, map[string]string{"to": to, "status": status})
 }

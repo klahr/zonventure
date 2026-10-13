@@ -236,6 +236,11 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 		if sess.Invoice != nil {
 			detail.InvoiceURL = sess.Invoice.HostedInvoiceURL
 		}
+		// A session without an invoice (a store ticket) still has the
+		// charge's Stripe-hosted receipt.
+		if detail.InvoiceURL == "" && sess.PaymentIntent != nil && sess.PaymentIntent.LatestCharge != nil {
+			detail.InvoiceURL = sess.PaymentIntent.LatestCharge.ReceiptURL
+		}
 		if ci := sess.CollectedInformation; ci != nil && ci.ShippingDetails != nil && ci.ShippingDetails.Address != nil {
 			a := ci.ShippingDetails.Address
 			detail.Shipping = &payments.Shipping{Name: ci.ShippingDetails.Name, Line1: a.Line1, Line2: a.Line2,
@@ -296,9 +301,11 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 const webhookAPITimeout = 10 * time.Second
 
 // needsExpand reports whether a webhook's checkout session names a
-// payment intent or invoice without the fields we record from them.
+// payment intent or invoice without the fields we record from them:
+// the charge id, and the invoice URL or else the charge's receipt.
 func needsExpand(sess *stripego.CheckoutSession) bool {
-	return (sess.PaymentIntent != nil && sess.PaymentIntent.ID != "" && sess.PaymentIntent.LatestCharge == nil) ||
+	return (sess.PaymentIntent != nil && sess.PaymentIntent.ID != "" &&
+		(sess.PaymentIntent.LatestCharge == nil || (sess.Invoice == nil && sess.PaymentIntent.LatestCharge.ReceiptURL == ""))) ||
 		(sess.Invoice != nil && sess.Invoice.ID != "" && sess.Invoice.HostedInvoiceURL == "")
 }
 
@@ -310,7 +317,7 @@ func (p *Provider) expandSession(sess *stripego.CheckoutSession) error {
 	defer cancel()
 	params := &stripego.CheckoutSessionParams{}
 	params.Context = ctx
-	params.AddExpand("payment_intent")
+	params.AddExpand("payment_intent.latest_charge")
 	params.AddExpand("invoice")
 	full, err := checkoutsession.Get(sess.ID, params)
 	if err != nil {

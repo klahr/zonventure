@@ -11,6 +11,9 @@ import { ActivityFeed, Ago } from "../event/Activity.tsx";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
 import { MessagesCard, PhotosCard } from "../event/Messages.tsx";
 import { stateText, stateTone } from "../event/util.ts";
+import { getDetail as getEventDetail } from "../event/api.ts";
+import { TeamDetailDialog } from "../event/TeamDetail.tsx";
+import { TeamEditDialog } from "../event/TeamEdit.tsx";
 import "../event/event.css";
 import {
   cancelEvent, endEvent, getActivity, getDetail, getMessages, getPhotos, getTracks, transition, unwithdrawTeam, withdrawTeam,
@@ -27,7 +30,8 @@ const MESSAGES_MS = 15_000;
  * Race control: the live cockpit for a running event — clock, who is
  * where, what just happened, and the few actions an operator takes
  * mid-game. /ws/arrange pushes the detail, tracks and activity as they
- * change; team setup (links, rename, unlock) stays on the event page.
+ * change. Tapping a team opens the event page's team dialog (move on,
+ * edit members, withdraw); adding teams and links stay on the event page.
  */
 export function EventControlPage({ id }: { id: number }) {
   const t = useT();
@@ -40,6 +44,7 @@ export function EventControlPage({ id }: { id: number }) {
   const messages = useLoad((s) => getMessages(id, s).catch(() => ({ messages: [] as Message[] })), [id]);
   const photos = useLoad((s) => getPhotos(id, s).catch(() => ({ photos: [] as Photo[], challenges: 0 })), [id]);
   const [liveLost, setLiveLost] = useState(false);
+  const [openTeam, setOpenTeam] = useState<number | null>(null);
   const [filter, setFilterState] = useState<Set<number>>(() => filters.get(id) ?? new Set());
   const msgAt = useRef(Date.now());
   const photoMark = useRef<string | null>(null);
@@ -114,7 +119,8 @@ export function EventControlPage({ id }: { id: number }) {
   const pause = async () => {
     const ok = await dialogs.confirm({
       title: t.t("Pause this event?"),
-      message: t.t("Every team will see a 'paused — stand by' card on their next state push. Hint countdowns freeze and answer submissions are refused until you resume."),
+      message: t.t("Every team sees “The game is paused” on their phone. Hint countdowns stop and answers aren't accepted until you resume.") +
+        (ev.public_for_sale ? " " + t.t("Nobody can buy a ticket in the store until you resume.") : ""),
       confirmLabel: t.t("Pause"),
     });
     if (!ok) return;
@@ -160,7 +166,7 @@ export function EventControlPage({ id }: { id: number }) {
       title: t.t("End event?"),
       message: t.t("The event ends now for every team. Teams still playing keep the points they have, the results and recaps open, and players are signed out. Enter your password to confirm."),
       confirmLabel: t.t("End event"),
-      cancelLabel: t.t("Keep playing"),
+      cancelLabel: t.t("Keep it running"),
       danger: true,
     });
     if (!pw) return;
@@ -218,7 +224,8 @@ export function EventControlPage({ id }: { id: number }) {
   if (liveURL) more.push({ label: t.t("Copy live view link"), icon: <Copy size={ICON.sm} aria-hidden />, title: liveURL, onClick: () => void copyLive() });
   if (ev.state === "running" || ev.state === "paused" || ev.state === "scheduled") {
     if (more.length) more.push({ separator: true });
-    if (ev.state !== "scheduled") more.push({ label: t.t("End event"), icon: <Flag size={ICON.sm} aria-hidden />, danger: true, onClick: () => void end() });
+    // A self-guided event doesn't end: it stops selling or is cancelled.
+    if (ev.state !== "scheduled" && !ev.public_for_sale) more.push({ label: t.t("End event"), icon: <Flag size={ICON.sm} aria-hidden />, danger: true, onClick: () => void end() });
     more.push({ label: t.t("Cancel event"), icon: <Ban size={ICON.sm} aria-hidden />, danger: true, onClick: () => void cancel() });
   }
   const canWithdraw = (ev.allowed_ops ?? []).includes("withdraw_team");
@@ -281,7 +288,7 @@ export function EventControlPage({ id }: { id: number }) {
 
       <div className="cc-grid">
         <Card title={t.t("Leaderboard")} flush>
-          <Leaderboard detail={d} teams={visibleTeams} colorOf={colorOf} canWithdraw={canWithdraw} onWithdraw={withdraw} onReturn={unwithdraw} />
+          <Leaderboard detail={d} teams={visibleTeams} colorOf={colorOf} canWithdraw={canWithdraw} onWithdraw={withdraw} onReturn={unwithdraw} onOpen={setOpenTeam} />
         </Card>
         <Card title={t.t("Map")}>
           <ControlMap eventId={id} zones={d.graph?.zones ?? []} teams={mapTeams} tracks={tracks.data ?? []} />
@@ -295,6 +302,7 @@ export function EventControlPage({ id }: { id: number }) {
       </div>
 
       <PhotosCard event={ev} graph={d.graph} photos={photos.data?.photos ?? []} challenges={photos.data?.challenges ?? 0} reload={() => { photos.reload(); detail.reload(); }} />
+      {openTeam !== null && <TeamDialog eventId={id} teamId={openTeam} color={colorOf.get(openTeam) ?? ""} onClose={() => setOpenTeam(null)} />}
     </Page>
   );
 }
@@ -313,10 +321,14 @@ function LiveFeed({ items, detail }: { items: Activity[]; detail: EventDetail })
 
 const joined = (tm: Team) => !!tm.completed_at || (tm.members ?? []).some((m) => m.last_login_at);
 
-function LastSeen({ tm }: { tm: Team }) {
+/** The team's latest sign of life: its last logged activity or a player signing in, whichever is later. */
+function LastSeen({ tm, labelled }: { tm: Team; labelled?: boolean }) {
   const t = useT();
   if (!joined(tm)) return <>{t.t("Not joined yet")}</>;
-  return tm.last_activity_at ? <TickingAgo at={tm.last_activity_at} /> : <>—</>;
+  const at = [tm.last_activity_at, ...(tm.members ?? []).map((m) => m.last_login_at)]
+    .reduce<string | undefined>((a, b) => ((toDate(b)?.getTime() ?? 0) > (toDate(a)?.getTime() ?? 0) ? b : a), undefined);
+  if (!at) return <>—</>;
+  return labelled ? <>{t.t("Last activity")}{" "}<TickingAgo at={at} /></> : <TickingAgo at={at} />;
 }
 
 function TickingAgo({ at }: { at: string }) {
@@ -331,11 +343,12 @@ function Leaderboard(props: {
   canWithdraw: boolean;
   onWithdraw: (tm: Team) => void;
   onReturn: (tm: Team) => void;
+  onOpen: (teamId: number) => void;
 }) {
   const t = useT();
   const { detail } = props;
   // The server's rank by points (level teams share it).
-  const rows = [...props.teams].sort((a, b) => (a.rank || Infinity) - (b.rank || Infinity) || a.name.localeCompare(b.name));
+  const rows = [...props.teams].sort((a, b) => (a.rank || Infinity) - (b.rank || Infinity) || a.name.localeCompare(b.name, undefined, { numeric: true }));
   if (rows.length === 0) {
     return <p className="cc-muted cc-pad">{props.teams.length === 0 && (detail.teams ?? []).length === 0 ? t.t("No teams yet.") : t.t("No teams match the current filter.")}</p>;
   }
@@ -348,11 +361,12 @@ function Leaderboard(props: {
         <div className={tm.withdrawn_at ? "cc-withdrawn" : undefined}>
           <span className="cc-team">
             <span className="cc-swatch" style={{ background: props.colorOf.get(tm.id) }} aria-hidden />
-            <span className="cc-team__name">{tm.name}</span>
+            <button type="button" className="cc-team__name cc-team__open" onClick={() => props.onOpen(tm.id)}>{tm.name}</button>
             {tm.completed_at && <Pill tone="good">{"✓ " + t.t("done")}</Pill>}
             {tm.withdrawn_at && <Pill>{t.t("withdrew")}</Pill>}
+            {tm.cheated && <Pill tone="warn">{t.t("cheated")}</Pill>}
           </span>
-          <span className="cc-narrow cc-muted cc-small"><LastSeen tm={tm} /></span>
+          <span className="cc-narrow cc-muted cc-small"><LastSeen tm={tm} labelled /></span>
         </div>
       ),
     },
@@ -391,5 +405,29 @@ function Leaderboard(props: {
     <div className="cc-scroll">
       <Table columns={columns} rows={rows} rowKey={(tm) => tm.id} caption={t.t("Leaderboard")} />
     </div>
+  );
+}
+
+/**
+ * The event page's team dialog, over race control. It reads the event
+ * page's fuller detail, which the pushed race-control detail lacks.
+ */
+function TeamDialog({ eventId, teamId, color, onClose }: { eventId: number; teamId: number; color: string; onClose: () => void }) {
+  const full = useLoad((s) => getEventDetail(eventId, s), [eventId]);
+  const [editing, setEditing] = useState(false);
+  const team = full.data?.teams?.find((tm) => tm.id === teamId);
+  if (!full.data || !team) return null;
+  if (editing) return <TeamEditDialog key={team.id} event={full.data.event} team={team} color={color} reload={full.reload} onClose={onClose} />;
+  return (
+    <TeamDetailDialog
+      event={full.data.event}
+      graph={full.data.graph}
+      team={team}
+      color={color}
+      activityKey={0}
+      reload={full.reload}
+      onEdit={() => setEditing(true)}
+      onClose={onClose}
+    />
   );
 }

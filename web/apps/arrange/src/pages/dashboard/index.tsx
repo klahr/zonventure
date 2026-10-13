@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { ArrowRight, Building2, CalendarClock, Plus, Radio, Ticket, Users } from "lucide-react";
-import { siteName, type Whoami } from "@zonventure/api";
+import { canAuthor, get, isGlobalAdmin, readsAsAdmin, runsEvents, siteName, type Whoami } from "@zonventure/api";
 import { WIDE, wideSrcSet } from "@zonventure/ui";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { CATALOG_ENABLED, href, navigate } from "../../router.ts";
-import { Avatar, Button, Card, Dialog, ErrorBox, Field, Loading, Page, PageHeader, Pill, Table, errorText, relTime, useLoad, useToast, type Column } from "../../ui/index.ts";
+import { Avatar, Button, Callout, Card, Dialog, ErrorBox, Field, Loading, Page, PageHeader, Pill, Row, Table, errorText, fmtMoney, relTime, useLoad, useToast, type Column } from "../../ui/index.ts";
 import { activeMembership, listAdventures, listAssignments, listEvents } from "../events/api.ts";
 import { EventsTable } from "../events/parts.tsx";
 import { NewEventDialog, canStartEvent, type NewEventProps } from "../events/NewEventDialog.tsx";
-import { useJustPurchased } from "../events/justPurchased.ts";
-import { createOrganization, createOwnOrganization, getCatalog, listOrganizations, type OrgRow } from "./api.ts";
+import { NewQuestDialog } from "../events/NewQuestDialog.tsx";
+import { getConnectStatus } from "../event/api.ts";
+import { useHostedPaid, useJustPurchased } from "../events/justPurchased.ts";
+import { createOrganization, createOwnOrganization, getCatalog, listOrganizations, listToInvoice, type OrgRow, type PurchaseRow } from "./api.ts";
 import { SetupCard, type SetupStepProps } from "./Setup.tsx";
 import { Agenda, LiveCard, Tile } from "./Overview.tsx";
 import { Onboarding } from "./Onboarding.tsx";
@@ -29,7 +31,7 @@ export function DashboardPage() {
   const user = state.user;
   return (
     <>
-      {user.role === "admin" ? <AdminDashboard /> : user.memberships.length === 0 ? <LobbyDashboard /> : <ArrangerDashboard user={user} />}
+      {readsAsAdmin(user) ? <AdminDashboard full={isGlobalAdmin(user)} /> : user.memberships.length === 0 ? <LobbyDashboard /> : runsEvents(user) ? <ArrangerDashboard user={user} /> : <WriterDashboard user={user} />}
       {(user.role === "admin" || user.memberships.length > 0) && <Onboarding user={user} />}
     </>
   );
@@ -41,15 +43,26 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
   const t = useT();
   const loc = t.current();
   const [dialog, setDialog] = useState<Omit<NewEventProps, "onClose"> | null>(null);
+  const [selling, setSelling] = useState(false);
+  const [sellSteps, setSellSteps] = useSellSteps(user.org_id);
   useJustPurchased((assignmentId) => setDialog({ assignmentId }));
+  useHostedPaid();
 
   const data = useLoad(async (signal) => {
     const [events, advs, assigns] = await Promise.all([listEvents(undefined, signal), listAdventures(signal), listAssignments(signal)]);
     return { events, advs, assigns };
   }, []);
+  // Whether payouts are set up, for a seller's checklist.
+  const orgId = user.org_id;
+  const author = canAuthor(user);
+  const connect = useLoad((s) => (orgId && author ? getConnectStatus(orgId, s).catch(() => null) : Promise.resolve(null)), [orgId, author]);
 
   const hour = new Date().getHours();
-  const hello = hour < 5 ? t.t("Good evening, {{name}}", { name: user.username }) : hour < 12 ? t.t("Good morning, {{name}}", { name: user.username }) : hour < 18 ? t.t("Good afternoon, {{name}}", { name: user.username }) : t.t("Good evening, {{name}}", { name: user.username });
+  // Their name, or a username they chose; never the email, as screens are shared.
+  const name = user.display_name || (user.username.includes("@") ? "" : user.username);
+  const hello = name
+    ? hour < 5 ? t.t("Good evening, {{name}}", { name }) : hour < 12 ? t.t("Good morning, {{name}}", { name }) : hour < 18 ? t.t("Good afternoon, {{name}}", { name }) : t.t("Good evening, {{name}}", { name })
+    : hour < 5 ? t.t("Good evening") : hour < 12 ? t.t("Good morning") : hour < 18 ? t.t("Good afternoon") : t.t("Good evening");
   const orgName = activeMembership(user)?.org_name;
   const canStart = !!data.data && canStartEvent(data.data.advs, data.data.assigns);
 
@@ -88,9 +101,37 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
   const live = events.filter((r) => r.state === "running" || r.state === "paused");
   const scheduled = events.filter((r) => r.state === "scheduled").sort((a, b) => (a.scheduled_at || "").localeCompare(b.scheduled_at || ""));
   const publisher = !!activeMembership(user)?.is_publisher;
+  // A store seller's checklist, until a listing is approved: for an org
+  // with a self-guided adventure, or one that asked for these steps.
+  const quests = events.filter((r) => r.public_for_sale);
+  const canSell = author && !(publisher && CATALOG_ENABLED);
+  const seller = canSell && (quests.length > 0 || sellSteps);
+  const switchSteps = canSell && quests.length === 0 && (
+    <Button size="sm" variant="ghost" onClick={() => setSellSteps(!sellSteps)}>
+      {sellSteps ? t.t("Running live events instead? Show those steps") : t.t("Selling tickets in your store? Show those steps")}
+    </Button>
+  );
 
   let setup: { lead: string; steps: SetupStepProps[] } | null = null;
-  if (events.length === 0) {
+  if (seller) {
+    if (!quests.some((r) => r.listed || r.listing_review === "approved")) {
+      const status = connect.data;
+      const fee = !!status?.platform_fee_enabled;
+      setup = {
+        lead: t.t("Three steps to selling tickets in your store."),
+        steps: [
+          {
+            done: !!status && (!fee || !!status.charges_enabled),
+            title: t.t("Set up payouts"),
+            hint: fee || !status ? t.t("Connect your Stripe account under Settings → Billing: ticket money is paid out to it.") : t.t("Nothing to connect: tickets are paid to the platform and paid out to you. The terms are under Settings → Billing."),
+            action: { label: t.t("Open Billing"), href: href({ name: "settings", tab: "billing" }) },
+          },
+          { done: quests.length > 0, title: t.t("Put an adventure on sale"), hint: t.t("A published adventure, a name, a price per ticket and a cover. Creating it sends it for review."), action: { label: t.t("New self-guided adventure"), onClick: () => setSelling(true) } },
+          { done: false, title: t.t("Get it approved"), hint: t.t("A reviewer checks the listing and its adventure. Once approved, it is in your store."), action: quests.length > 0 ? { label: t.t("Open Self-guided"), href: href({ name: "quests" }) } : null },
+        ],
+      };
+    }
+  } else if (events.length === 0) {
     if (publisher && CATALOG_ENABLED) {
       // playable: published from the designer; published: listed in the catalog by the platform admin.
       const playable = mine.some((a) => a.playable);
@@ -107,8 +148,10 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
       setup = {
         lead: t.t("Three steps from here to your first event."),
         steps: [
-          { done: mine.length > 0 || unused.length > 0, title: t.t("Pick an adventure"), hint: CATALOG_ENABLED ? t.t("Browse the catalog or write your own.") : t.t("Puzzles, places and story, in the designer."), action: { label: t.t("Create"), href: href({ name: "adventures" }) } },
-          { done: unused.length > 0, title: t.t("Get an event pass"), hint: t.t("One pass per event, sized by players. The first 15 players are free."), action: CATALOG_ENABLED ? { label: t.t("Open the catalog"), href: href({ name: "catalog" }) } : { label: t.t("Open your adventures"), href: href({ name: "adventures" }) } },
+          canAuthor(user)
+            ? { done: mine.length > 0 || unused.length > 0, title: t.t("Pick an adventure"), hint: CATALOG_ENABLED ? t.t("Browse the catalog or write your own.") : t.t("Puzzles, places and story, in the designer."), action: { label: t.t("Create"), href: href({ name: "adventures" }) } }
+            : { done: advs.length > 0 || unused.length > 0, title: t.t("Pick an adventure"), hint: t.t("Your organization's admins write the adventures; you run events with them."), action: { label: t.t("Open adventures"), href: href({ name: "adventures" }) } },
+          { done: unused.length > 0, title: t.t("Get an event pass"), hint: t.t("One pass per event, sized by players. The first 15 players are free."), action: CATALOG_ENABLED ? { label: t.t("Open the catalog"), href: href({ name: "catalog" }) } : { label: t.t("Get a pass from an adventure"), href: href({ name: "adventures" }) } },
           { done: false, title: t.t("Schedule and start"), hint: t.t("Pick a date, add teams, share each player’s magic link."), action: unused.length > 0 ? { label: t.t("Schedule"), onClick: () => setDialog({ assignmentId: unused[0]!.id }) } : null },
         ],
       };
@@ -133,7 +176,7 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
           icon={<CalendarClock size={20} />}
           value={scheduled.length}
           label={t.t("Scheduled")}
-          hint={next ? t.t("Next {{when}}", { when: relTime(next.scheduled_at, loc) }) : t.t("Nothing booked")}
+          hint={next ? t.t("Next {{when}}", { when: relTime(next.scheduled_at, loc) }) : scheduled.length > 0 ? t.t("No start time set") : t.t("Nothing booked")}
           href={href({ name: "events" })}
         />
         <Tile
@@ -145,7 +188,15 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
         />
       </div>
 
-      {setup && <SetupCard {...setup} />}
+      {setup && <SetupCard {...setup} foot={switchSteps} />}
+      {!setup && unused.length > 0 && (
+        <Callout variant="info">
+          <Row>
+            <span>{t.plural(unused.length, { one: t.t("{{n}} event pass is paid and ready: schedule its event."), other: t.t("{{n}} event passes are paid and ready: schedule their events.") })}</span>
+            <Button size="sm" variant="primary" onClick={() => setDialog({ assignmentId: unused[0]!.id })}>{t.t("Schedule")}</Button>
+          </Row>
+        </Callout>
+      )}
 
       {live.length > 0 && (
         <section className="db-section" aria-labelledby="db-live-h">
@@ -173,6 +224,61 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
       )}
 
       {dialog && <NewEventDialog {...dialog} onClose={() => setDialog(null)} />}
+      {selling && <NewQuestDialog onClose={() => setSelling(false)} onCreated={data.reload} />}
+    </Page>
+  );
+}
+
+/** Whether the checklist shows a seller's steps, remembered per organisation on this browser. */
+function useSellSteps(orgId: number | undefined): [boolean, (on: boolean) => void] {
+  const key = "zv-sell-steps-" + (orgId ?? 0);
+  const [on, setOn] = useState(() => {
+    try {
+      return localStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const set = (next: boolean) => {
+    setOn(next);
+    try {
+      if (next) localStorage.setItem(key, "1");
+      else localStorage.removeItem(key);
+    } catch {
+      /* storage blocked: it holds for this visit */
+    }
+  };
+  return [on, set];
+}
+
+/* ---------------- A writer's: the adventures they author ---------------- */
+
+function WriterDashboard({ user }: { user: Whoami }) {
+  const t = useT();
+  const data = useLoad((signal) => listAdventures(signal), []);
+  const orgName = activeMembership(user)?.org_name;
+  const mine = (data.data ?? []).filter((a) => a.mine_to_edit);
+  const columns: Column<(typeof mine)[number]>[] = [
+    { key: "title", header: t.t("Adventure"), wide: true, cell: (a) => a.title || a.slug },
+  ];
+  return (
+    <Page>
+      <PageHeader
+        title={t.t("Hello, {{name}}", { name: user.username })}
+        {...(orgName ? { subtitle: orgName } : {})}
+        actions={<a className="btn primary" href={href({ name: "adventures" })}>{t.t("Open adventures")}</a>}
+      />
+      {data.error && !data.data ? (
+        <ErrorBox message={t.t("Couldn't load the dashboard ({{err}}).", { err: data.error })} retry={data.reload} retryLabel={t.t("Retry")} />
+      ) : !data.data ? (
+        <Loading label={t.t("Loading…")} />
+      ) : mine.length === 0 ? (
+        <Callout variant="info">{t.t("As a writer you create and edit your organization's adventures. Start one under Adventures.")}</Callout>
+      ) : (
+        <Card title={t.t("Your organization's adventures")} flush>
+          <Table columns={columns} rows={mine} rowKey={(a) => a.slug} rowHref={(a) => href({ name: "adventure", slug: a.slug })} caption={t.t("Your organization's adventures")} />
+        </Card>
+      )}
     </Page>
   );
 }
@@ -181,6 +287,8 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
 
 function LobbyDashboard() {
   const t = useT();
+  const { state } = useSession();
+  const email = state.status === "authenticated" ? state.user.email || state.user.username : "";
   const [creating, setCreating] = useState(false);
   return (
     <Page>
@@ -189,7 +297,7 @@ function LobbyDashboard() {
         <div className="db-lobby">
           <img className="db-lobby__art" src={WIDE.noOrganisation.small} srcSet={wideSrcSet(WIDE.noOrganisation)} sizes="(min-width: 40rem) 28rem, 100vw" alt="" width={800} height={609} />
           <div className="db-lobby__text">
-            <p>{t.t("You're signed in but not part of any organization yet. Either create one (you'll be its admin) or ask someone in an existing organization to invite you.")}</p>
+            <p>{t.t("You're signed in but not part of any organization yet. Either create one (you'll be its admin), or ask an admin of an existing organization to add you under Settings → Members with your email, {{email}}.", { email })}</p>
             <div>
               <Button variant="primary" icon={<Building2 size={16} aria-hidden />} onClick={() => setCreating(true)}>{t.t("Create an organization")}</Button>
             </div>
@@ -226,10 +334,12 @@ function CreateOrgDialog({ own, onClose, onCreated }: { own?: boolean; onClose: 
         navigate({ name: "dashboard" });
         toast.ok(t.t("Organization \"{{name}}\" created — you're its admin", { name: n }));
       } else {
-        await createOrganization(n);
+        const o = await createOrganization(n);
         toast.ok(t.t("Organization created"));
         onClose();
-        onCreated?.();
+        // Adding its first user is the next step, on its page.
+        if (o?.id) navigate({ name: "organization", id: o.id });
+        else onCreated?.();
       }
     } catch (e) {
       setError(errorText(e));
@@ -262,12 +372,13 @@ function CreateOrgDialog({ own, onClose, onCreated }: { own?: boolean; onClose: 
 
 /* ---------------- The platform admin's dashboard ---------------- */
 
-function AdminDashboard() {
+/** `full` is false for Support, who sees the overview but creates nothing. */
+function AdminDashboard({ full }: { full: boolean }) {
   const t = useT();
   const [creating, setCreating] = useState(false);
   const data = useLoad(async (signal) => {
-    const [orgs, catalog] = await Promise.all([listOrganizations(signal), getCatalog(signal)]);
-    return { orgs, catalog };
+    const [orgs, catalog, server, toInvoice] = await Promise.all([listOrganizations(signal), getCatalog(signal), get<{ signup_enabled: boolean }>("/api/admin/settings", { signal }), listToInvoice(signal)]);
+    return { orgs, catalog, signup: server.signup_enabled, toInvoice };
   }, []);
 
   if (!data.data) {
@@ -279,7 +390,7 @@ function AdminDashboard() {
     );
   }
 
-  const { orgs, catalog } = data.data;
+  const { orgs, catalog, signup, toInvoice } = data.data;
   const members = (o: OrgRow) => (o.members ?? []).length;
   const totals = orgs.reduce(
     (a, o) => ({ events: a.events + (o.events_total || 0), running: a.running + (o.events_running || 0), members: a.members + members(o) }),
@@ -292,18 +403,19 @@ function AdminDashboard() {
 
   // Past bootstrap once any organisation has held an event.
   let setup: SetupStepProps[] | null = null;
-  if (totals.events === 0) {
+  if (full && totals.events === 0) {
     const haveOrg = orgs.length > 0;
     const manage = { label: t.t("Manage"), href: href({ name: "organizations" }) };
     setup = [
       { done: haveOrg, title: t.t("Create an organization"), hint: t.t("One organization per customer. They’ll run their own events inside it."), action: { label: t.t("Create"), onClick: () => setCreating(true) } },
       { done: orgs.some((o) => members(o) > 0), title: t.t("Invite the first user"), hint: t.t("They’ll set up events and share player links for that organization."), action: haveOrg ? manage : null },
-      {
+      ...(CATALOG_ENABLED ? [{
         done: !!publisher && (catalog.adventures ?? []).some((a) => a.published),
         title: t.t("Add an adventure to the catalog"),
         hint: t.t("Make one organization the catalog publisher; list the adventures it authors so orgs can pick from them."),
         action: haveOrg ? { label: t.t("Manage"), href: publisher ? href({ name: "organization", id: publisher.id }) : href({ name: "organizations" }) } : null,
-      },
+      }] : []),
+      { done: signup, title: t.t("Turn on public sign-up"), hint: t.t("Off on a new server, so only you can create accounts. Turn it on when anyone may sign up and create an organization."), action: { label: t.t("Open settings"), href: href({ name: "settings", tab: "system" }) } },
     ];
   }
 
@@ -320,11 +432,19 @@ function AdminDashboard() {
     { key: "active", header: t.t("Active"), cell: (o) => (o.events_running > 0 ? <Pill tone="good">{t.t("{{n}} running", { n: o.events_running })}</Pill> : <span className="db-muted">—</span>) },
   ];
 
+  const invoiceColumns: Column<PurchaseRow>[] = [
+    { key: "org", header: t.t("Organization"), cell: (p) => <span className="db-ellipsis">{p.org_name || "—"}</span> },
+    { key: "adventure", header: t.t("Adventure"), wide: true, cell: (p) => <span className="db-ellipsis">{p.adventure_title || p.adventure_slug}</span> },
+    { key: "players", header: t.t("Players"), wide: true, align: "end", cell: (p) => p.max_players },
+    { key: "total", header: t.t("Total"), align: "end", cell: (p) => fmtMoney(p.amount_cents, p.currency || "SEK", t.current()) },
+    { key: "when", header: t.t("Bought"), cell: (p) => relTime(p.paid_at || p.created_at, t.current()) },
+  ];
+
   return (
     <Page>
       <PageHeader
         title={t.t("Dashboard")}
-        {...(orgs.length > 0 ? { actions: <Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={() => setCreating(true)}>{t.t("New organization")}</Button> } : {})}
+        {...(full && orgs.length > 0 ? { actions: <Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={() => setCreating(true)}>{t.t("New organization")}</Button> } : {})}
       />
       <div className="db-tiles">
         <Tile
@@ -338,7 +458,7 @@ function AdminDashboard() {
           icon={<Building2 size={20} />}
           value={orgs.length}
           label={t.t("Organizations")}
-          hint={publisher ? t.t("Catalog by {{name}}", { name: publisher.name }) : t.t("No catalog publisher yet")}
+          {...(CATALOG_ENABLED ? { hint: publisher ? t.t("Catalog by {{name}}", { name: publisher.name }) : t.t("No catalog publisher yet") } : {})}
           href={href({ name: "organizations" })}
         />
         <Tile
@@ -348,7 +468,18 @@ function AdminDashboard() {
           hint={t.plural(players, { one: t.t("{{n}} player so far"), other: t.t("{{n}} players so far") })}
         />
       </div>
-      {setup && <SetupCard lead={t.t("Three steps to a working deployment.")} steps={setup} />}
+      {setup && <SetupCard lead={setup.length === 4 ? t.t("Four steps to a working deployment.") : t.t("Three steps to a working deployment.")} steps={setup} />}
+      {toInvoice.length > 0 && (
+        <section className="db-section" aria-labelledby="db-invoice-h">
+          <div className="db-section__head">
+            <h2 id="db-invoice-h" className="db-section__title">{t.t("To invoice")}</h2>
+            {full && <a className="db-section__more" href={href({ name: "settings", tab: "purchases" })}>{t.t("Open purchases")}<ArrowRight size={14} aria-hidden /></a>}
+          </div>
+          <Card flush>
+            <Table columns={invoiceColumns} rows={toInvoice} rowKey={(p) => p.id} rowHref={(p) => href({ name: "organization", id: p.org_id })} caption={t.t("To invoice")} />
+          </Card>
+        </section>
+      )}
       {orgs.length > 0 && (
         <section className="db-section" aria-labelledby="db-orgs-h">
           <div className="db-section__head">

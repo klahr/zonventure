@@ -64,7 +64,7 @@ func (h *Handlers) isCatalogOwner(ctx context.Context, owner sql.NullInt64) bool
 }
 
 // isCatalogSlug reports whether slug is a catalog adventure — the only
-// kind the operator may assign or commission to an org.
+// kind the operator may commission to an org.
 func (h *Handlers) isCatalogSlug(ctx context.Context, slug string) bool {
 	owner, err := h.adventureOwner(ctx, slug)
 	return err == nil && h.isCatalogOwner(ctx, owner)
@@ -178,6 +178,7 @@ func (h *Handlers) SetCatalogPublished(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
 	}
+	noteAction(r, onOff(req.Published))
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
@@ -217,6 +218,7 @@ func (h *Handlers) SetOrgPublisher(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := h.DB.ExecContext(r.Context(),
 		`UPDATE organizations SET is_publisher = $1 WHERE id = $2`, req.IsPublisher, orgID)
+	noteAction(r, onOff(req.IsPublisher))
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
 		return

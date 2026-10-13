@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/klahr/zonventure/internal/admin"
+	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/match"
 
 	"github.com/klahr/zonventure/internal/server"
 )
@@ -22,9 +24,12 @@ func TestContentNeedsAnAuthor(t *testing.T) {
 		if s := boss.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 			t.Fatalf("boss login = %d", s)
 		}
-		body := map[string]string{"username": "member", "password": "longpw01", "role": "org_member"}
-		if s := boss.do("POST", "/api/admin/organizations/"+itoa(orgID)+"/members", body, nil); s != 201 {
-			t.Fatalf("add member = %d", s)
+		var memberID int64
+		if err := db.QueryRow(`INSERT INTO users(username, password_hash, email_verified) VALUES ('member', $1, 1) RETURNING id`, fixtureHash(t, "longpw01")).Scan(&memberID); err != nil {
+			t.Fatalf("seed member: %v", err)
+		}
+		if _, err := db.Exec(`INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_member')`, memberID, orgID); err != nil {
+			t.Fatalf("seed membership: %v", err)
 		}
 		member := newClient(t, ts)
 		if s := member.do("POST", "/api/auth/login", map[string]string{"username": "member", "password": "longpw01"}, nil); s != 200 {
@@ -255,7 +260,36 @@ func TestCatalogCuration(t *testing.T) {
 	}
 	if s := root.do("POST", "/api/admin/organizations/"+itoa(orgID)+"/assignments",
 		map[string]any{"adventure_slug": "boss-trip", "max_players": 5}, nil); s != 400 {
-		t.Errorf("assign org adventure = %d, want 400", s)
+		t.Errorf("assign org draft = %d, want 400", s)
+	}
+	// Once published, the org's own adventure can be given a free pass.
+	g := graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "hello", Type: graph.Puzzle, Title: "Greeting", PuzzleCfg: &graph.PuzzleConfig{
+				Blocks:  graph.LegacyBlocks("Say hello.", nil),
+				Outputs: []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Points: 10, Matchers: []match.Matcher{{Kind: match.Exact, Value: "hello"}}}},
+			}},
+			{Slug: "end", Type: graph.End, EndCfg: &graph.EndConfig{Outcome: graph.Complete, Blocks: graph.LegacyBlocks("Well done.", nil)}},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "hello"},
+			{From: "hello", FromPort: "solved", To: "end"},
+		},
+	}
+	if s := boss.doAny("PUT", "/api/admin/adventures/boss-trip/graph", graph.Envelope{Format: graph.FormatV2, Graph: g}, nil); s != 200 {
+		t.Fatalf("save graph = %d", s)
+	}
+	if s := boss.doAny("POST", "/api/admin/adventures/boss-trip/graph/publish", nil, nil); s != 200 {
+		t.Fatalf("publish = %d", s)
+	}
+	if s := root.do("POST", "/api/admin/organizations/"+itoa(orgID)+"/assignments",
+		map[string]any{"adventure_slug": "boss-trip", "max_players": 5}, nil); s != 201 {
+		t.Errorf("assign own published adventure = %d, want 201", s)
+	}
+	if s := root.do("POST", "/api/admin/organizations/"+itoa(pubID)+"/assignments",
+		map[string]any{"adventure_slug": "boss-trip", "max_players": 5}, nil); s != 400 {
+		t.Errorf("assign another org's adventure = %d, want 400", s)
 	}
 
 	var cat struct {

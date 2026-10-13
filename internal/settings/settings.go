@@ -24,25 +24,42 @@ const (
 	KeySignupEnabled   = "signup_enabled"
 	KeyRedirectTarget  = "redirect_target"
 	KeyMaintenanceMode = "maintenance_mode"
+	KeyAdminTOTP       = "admin_totp_required"
 )
 
 // SignupEnabled reports whether the public /api/auth/signup endpoint
-// is allowed to create new organizations. Defaults to true on any
-// failure (missing row, DB hiccup) so a transient lookup error doesn't
-// take a working signup flow down — the admin can still flip it off
-// explicitly via the UI when they actually want it off.
+// is allowed to create new organizations. Off on any failure (missing
+// row, DB hiccup): a fresh install starts closed, and the admin turns
+// it on in Settings.
 func SignupEnabled(ctx context.Context, db *sql.DB) bool {
 	v, err := getString(ctx, db, KeySignupEnabled)
 	if err != nil {
-		return true
+		return false
 	}
-	return parseBool(v, true)
+	return parseBool(v, false)
 }
 
 // SetSignupEnabled writes the new value, upserting the row so the
 // caller doesn't have to know whether the key already exists.
 func SetSignupEnabled(ctx context.Context, db *sql.DB, on bool) error {
 	return setBool(ctx, db, KeySignupEnabled, on)
+}
+
+// AdminTOTPRequired reports whether every global admin (full or
+// Support) must have two-factor authentication. Off on any failure:
+// a missing row is the default, and failing open here only drops the
+// extra requirement, never a factor someone already has.
+func AdminTOTPRequired(ctx context.Context, db *sql.DB) bool {
+	v, err := getString(ctx, db, KeyAdminTOTP)
+	if err != nil {
+		return false
+	}
+	return parseBool(v, false)
+}
+
+// SetAdminTOTPRequired writes the admin two-factor requirement.
+func SetAdminTOTPRequired(ctx context.Context, db *sql.DB, on bool) error {
+	return setBool(ctx, db, KeyAdminTOTP, on)
 }
 
 // redirectTarget is the in-process cache the redirect middleware reads
@@ -138,9 +155,14 @@ func MaintenancePinnedByEnv() bool {
 // LoadMaintenanceMode seeds the in-memory flag at startup. Env
 // pin wins; otherwise the DB row is read. Tolerates a nil db so
 // tests can drive the middleware via env without a Postgres handle.
+// The pin also turns the stored toggle off, so once it is unset and the
+// app restarted maintenance is off, as the admin UI promises.
 func LoadMaintenanceMode(ctx context.Context, db *sql.DB) {
 	if v, ok := envBool("ZV_MAINTENANCE_MODE"); ok {
 		maintenanceMode.Store(v)
+		if db != nil {
+			_ = setBool(ctx, db, KeyMaintenanceMode, false)
+		}
 		return
 	}
 	if db == nil {

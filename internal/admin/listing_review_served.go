@@ -70,7 +70,7 @@ func (h *Handlers) checkServed(ctx context.Context) (servedReport, error) {
 		       l.graph_id IS DISTINCT FROM e.graph_id
 		FROM event_listings l JOIN events e ON e.id = l.event_id JOIN organizations g ON g.id = e.org_id
 		UNION ALL
-		SELECT 'party', l.offer_id, g.name, COALESCE(NULLIF(a.title, ''), o.adventure_slug), FALSE
+		SELECT 'party', l.offer_id, g.name, COALESCE(NULLIF(l.name, ''), NULLIF(a.title, ''), o.adventure_slug), FALSE
 		FROM party_offer_listings l JOIN party_offers o ON o.id = l.offer_id
 		JOIN organizations g ON g.id = o.org_id LEFT JOIN adventures a ON a.slug = o.adventure_slug
 		ORDER BY 1, 2`)

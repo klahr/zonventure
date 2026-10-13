@@ -175,4 +175,12 @@ func TestQuizWalkOverHTTP(t *testing.T) {
 			t.Errorf("csv row %d = %q, want %q", i, got, w)
 		}
 	}
+	// Each team's status, and finish times in the organisation's time
+	// zone (Europe/Stockholm) with its offset.
+	if recs[0][8] != "status" || recs[1][8] != "finished" || recs[3][8] != "playing" {
+		t.Errorf("status column = %q, %q, %q", recs[0][8], recs[1][8], recs[3][8])
+	}
+	if at := recs[1][6]; !strings.HasSuffix(at, "+01:00") && !strings.HasSuffix(at, "+02:00") {
+		t.Errorf("finished_at = %q, want Stockholm time with its offset", at)
+	}
 }

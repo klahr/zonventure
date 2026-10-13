@@ -45,7 +45,7 @@ import {
   type Frame,
 } from "@zonventure/graph";
 import { Frame as FrameIcon } from "lucide-react";
-import { useT } from "../i18n.tsx";
+import { routesIn, useT } from "../i18n.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
 import { ICON } from "./dz/ui.tsx";
 import { NodeCard, TYPE_LABEL, type CardNode, type Mark } from "./NodeCard.tsx";
@@ -152,6 +152,16 @@ const START_ZOOM = 0.75;
 export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, revealRequest = 0, playing = null, changed, marks, fx, live, talk }: Props) {
   const rf = useReactFlow();
   const t = useT();
+  const ariaLabels = useMemo(
+    () => ({
+      "controls.ariaLabel": t.t("Canvas controls"),
+      "controls.zoomIn.ariaLabel": t.t("Zoom in"),
+      "controls.zoomOut.ariaLabel": t.t("Zoom out"),
+      "controls.fitView.ariaLabel": t.t("Fit to screen"),
+      "minimap.ariaLabel": t.t("Overview map"),
+    }),
+    [t],
+  );
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   const [nodes, setNodes] = useState<CardNode[]>([]);
   const [frameNodes, setFrameNodes] = useState<FrameNode[]>([]);
@@ -203,6 +213,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   }, [issues]);
 
   const sourceTitle = (n: Graph["nodes"][number]): string | undefined => {
+    if (n.effect?.kind === "grant_item") return graph.items?.find((i) => i.slug === n.effect!.item)?.name || undefined;
     const from = n.switch?.from;
     if (!from) return undefined;
     const src = graph.nodes.find((x) => x.slug === from);
@@ -470,17 +481,31 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
 
       const node = nodeBySlug(graph, start.nodeId);
       if (!node) return;
-      const from: DragFrom =
-        start.handleType === "source"
-          ? { side: "output", node, port: start.handleId ?? "" }
-          : { side: "input", node };
       const pt =
         "clientX" in e
           ? { x: e.clientX, y: e.clientY }
           : { x: e.changedTouches[0]?.clientX ?? 0, y: e.changedTouches[0]?.clientY ?? 0 };
+
+      // An output dropped on another step's card, not on its input dot:
+      // the author aimed at that step, so wire it there.
+      if (start.handleType === "source") {
+        const to = document.elementFromPoint(pt.x, pt.y)?.closest<HTMLElement>(".react-flow__node")?.dataset.id;
+        if (to && to !== start.nodeId && nodeBySlug(graph, to)) {
+          const port = start.handleId ?? "";
+          const err = connectionError(graph, start.nodeId, port, to);
+          if (err === null) onChange(connect(graph, start.nodeId, port, to));
+          else setHint(err);
+          return;
+        }
+      }
+
+      const from: DragFrom =
+        start.handleType === "source"
+          ? { side: "output", node, port: start.handleId ?? "" }
+          : { side: "input", node };
       setPalette({ from, screen: pt });
     },
-    [graph],
+    [graph, onChange],
   );
 
   const pick = useCallback(
@@ -495,7 +520,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         onSelect(choice.node.slug);
         return;
       }
-      const build = (at: { x: number; y: number }) => fillStep(nodeFromPreset(graph, choice.preset, at), choice.preset, choice.fill);
+      const build = (at: { x: number; y: number }) => fillStep(routesIn(nodeFromPreset(graph, choice.preset, at), graph.language), choice.preset, choice.fill);
 
       // From the toolbar, "a" or Ctrl+K: after the selected step, or
       // before the End, wired in and with room made for it — not dropped
@@ -522,6 +547,24 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
       }
       onChange(next);
       onSelect(node.slug);
+      // Selecting it opens the inspector over the canvas's right side (or
+      // narrows the canvas): a card dropped there would land behind it, so
+      // pan just enough to show it — and not at all when it is in view.
+      requestAnimationFrame(() => {
+        const el = wrapper.current;
+        const editor = el?.closest<HTMLElement>(".editor");
+        if (!el || !editor) return;
+        const r = el.getBoundingClientRect();
+        const right = Math.min(r.right, editor.getBoundingClientRect().right - (parseFloat(getComputedStyle(editor).getPropertyValue("--dz-inspector-w")) || 0));
+        if (right - r.left < 240 * rf.getZoom()) return;
+        const tl = rf.flowToScreenPosition(at);
+        const br = rf.flowToScreenPosition({ x: at.x + 240, y: at.y + 120 });
+        const dx = tl.x < r.left || br.x > right ? (r.left + right) / 2 - (tl.x + br.x) / 2 : 0;
+        const dy = tl.y < r.top || br.y > r.bottom ? (r.top + r.bottom) / 2 - (tl.y + br.y) / 2 : 0;
+        if (!dx && !dy) return;
+        const vp = rf.getViewport();
+        void rf.setViewport({ x: vp.x + dx, y: vp.y + dy, zoom: vp.zoom }, { duration: 300 });
+      });
     },
     [palette, graph, onChange, onSelect, rf],
   );
@@ -707,6 +750,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   return (
     <div className="dz-flow" ref={wrapper} onDoubleClick={onDoubleClick}>
       <ReactFlow
+        ariaLabelConfig={ariaLabels}
         nodes={[...frameNodes, ...nodes, ...ghosts] as AnyNode[]}
         edges={edges}
         nodeTypes={nodeTypes}

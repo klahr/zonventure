@@ -146,7 +146,8 @@ func TestTOTP_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IssueTOTPChallenge: %v", err)
 	}
-	freshCode, err := totp.GenerateCode(setup.SecretBase32, time.Now())
+	// Next step's code: the enrolment code's step is already spent.
+	freshCode, err := totp.GenerateCode(setup.SecretBase32, time.Now().Add(30*time.Second))
 	if err != nil {
 		t.Fatalf("GenerateCode: %v", err)
 	}
@@ -167,6 +168,19 @@ func TestTOTP_EndToEnd(t *testing.T) {
 	// Second consumption of the same token must fail (single-use).
 	if _, err := ConsumeTOTPChallenge(ctx, db, key, tok, freshCode, ""); err == nil {
 		t.Fatalf("second redemption of consumed challenge succeeded; want ErrChallengeUnknown")
+	}
+
+	// The same code on a fresh challenge is a replay and must fail.
+	tok2, err := IssueTOTPChallenge(ctx, db, uid, "login", "192.0.2.1", "test/1.0")
+	if err != nil {
+		t.Fatalf("IssueTOTPChallenge: %v", err)
+	}
+	if _, err := ConsumeTOTPChallenge(ctx, db, key, tok2, freshCode, ""); err != ErrTOTPReused {
+		t.Fatalf("replayed code: got %v, want ErrTOTPReused", err)
+	}
+	// So must the enrolment code (an earlier step).
+	if _, err := ConsumeTOTPChallenge(ctx, db, key, tok2, code, ""); err != ErrTOTPReused {
+		t.Fatalf("enrolment code reused: got %v, want ErrTOTPReused", err)
 	}
 }
 
@@ -207,6 +221,14 @@ func TestTOTP_RecoveryCodeSingleUse(t *testing.T) {
 	tok2, _ := IssueTOTPChallenge(ctx, db, uid, "login", "", "")
 	if _, err := ConsumeTOTPChallenge(ctx, db, key, tok2, "", rc); err == nil {
 		t.Fatalf("re-use of consumed recovery code succeeded; want ErrRecoveryCodeInvalid")
+	}
+
+	st, err := LoadTOTPStatus(ctx, db, uid)
+	if err != nil {
+		t.Fatalf("LoadTOTPStatus: %v", err)
+	}
+	if st.RecoveryLeft != len(codes)-1 {
+		t.Fatalf("RecoveryLeft = %d, want %d", st.RecoveryLeft, len(codes)-1)
 	}
 }
 

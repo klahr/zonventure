@@ -11,9 +11,10 @@ const LANGUAGE_NAMES: Record<string, string> = { en: "English", sv: "Svenska" };
 /**
  * The look of the organisation's emails: one of the platform's themes,
  * in the logo and colours from Branding. Hovering a theme previews it
- * without saving; choosing one saves at once, for admins.
+ * without saving; choosing one saves at once, for admins. `brand`
+ * changes whenever the logo or colours do, so the preview follows.
  */
-export function EmailLookCard({ orgName, canEdit }: { orgName: string; canEdit: boolean }) {
+export function EmailLookCard({ orgName, canEdit, brand }: { orgName: string; canEdit: boolean; brand: string }) {
   const t = useT();
   const catalog = useLoad(() => emails.themes(), []);
   const current = useLoad(() => emails.orgTheme(), []);
@@ -36,7 +37,7 @@ export function EmailLookCard({ orgName, canEdit }: { orgName: string; canEdit: 
   const shownLang = lang ?? current.data?.language ?? "en";
   const preview = useLoad(
     (signal) => (kind && viewed ? emails.preview(kind, { theme: viewed, lang: shownLang, signal }) : Promise.resolve(null)),
-    [kind, viewed, shownLang],
+    [kind, viewed, shownLang, brand],
   );
 
   const saveLanguage = async (language: string) => {
@@ -108,7 +109,7 @@ export function EmailLookCard({ orgName, canEdit }: { orgName: string; canEdit: 
             ))}
           </div>
           {!canEdit && <p className="og-blurb">{t.t("Only organization admins can change the email theme.")}</p>}
-          <p className="og-blurb">{t.t("Emails use the logo and colours from Branding above. Each event can choose its own theme.")}</p>
+          <p className="og-blurb">{t.t("Emails use the logo and colors from Branding above. Each event can choose its own theme.")}</p>
           {err && <p className="og-err" role="alert">{err}</p>}
         </section>
         <section className="og-section">
@@ -125,7 +126,7 @@ export function EmailLookCard({ orgName, canEdit }: { orgName: string; canEdit: 
 
       <div className="og-preview">
         <div className="og-preview__head">
-        <Field label={t.t("Email")}>
+        <Field label={t.t("Email to preview")}>
           <select value={kind} onChange={(e) => setKind(e.target.value)}>
             {(["players", "designers"] as const).map((a) => {
               const group = kinds.filter((k) => k.audience === a);

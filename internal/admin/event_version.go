@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 
@@ -24,6 +25,35 @@ type eventVersion struct {
 	// event for sale. One that isn't moves at once.
 	Reviewed      bool   `json:"reviewed"`
 	ListingReview string `json:"listing_review"`
+}
+
+// unplaceIdleTeams takes back the placement of an event's teams that
+// have not made a move on an older version than the one it plays or is
+// moving to, so they are placed on the new one when their link is next
+// opened (player.graphplay). A team that answered, solved, chose, took
+// a hint or scored keeps its version.
+func unplaceIdleTeams(ctx context.Context, q execer, eventID int64) error {
+	_, err := q.ExecContext(ctx, `
+		WITH idle AS (
+		    SELECT s.team_id FROM team_graph_state s JOIN events e ON e.id = s.event_id
+		    WHERE e.id = $1 AND s.graph_id <> COALESCE(e.next_graph_id, e.graph_id)
+		      AND s.completed_at IS NULL AND s.score = 0 AND s.penalty_score = 0
+		      AND NOT EXISTS (
+		          SELECT 1 FROM team_node_state n WHERE n.team_id = s.team_id
+		            AND (n.outcome IS NOT NULL OR n.solved_at IS NOT NULL OR n.attempts > 0 OR n.hints_revealed > 0))
+		), nodes AS (
+		    DELETE FROM team_node_state WHERE team_id IN (SELECT team_id FROM idle)
+		), items AS (
+		    DELETE FROM team_items WHERE team_id IN (SELECT team_id FROM idle)
+		), holders AS (
+		    DELETE FROM team_item_holders WHERE team_id IN (SELECT team_id FROM idle)
+		), hubs AS (
+		    DELETE FROM team_hub_branches WHERE team_id IN (SELECT team_id FROM idle)
+		), journal AS (
+		    DELETE FROM team_journal WHERE team_id IN (SELECT team_id FROM idle)
+		)
+		DELETE FROM team_graph_state WHERE team_id IN (SELECT team_id FROM idle)`, eventID)
+	return err
 }
 
 func (h *Handlers) readEventVersion(r *http.Request, eventID int64) (eventVersion, bool, error) {
@@ -114,6 +144,9 @@ func (h *Handlers) UpdateEventVersion(w http.ResponseWriter, r *http.Request) {
 		_, err = h.DB.ExecContext(r.Context(), `
 			UPDATE events e SET graph_id = a.published_graph_id, next_graph_id = NULL
 			FROM adventures a WHERE a.slug = e.adventure_slug AND e.id = $1`, eventID)
+		if err == nil {
+			err = unplaceIdleTeams(r.Context(), h.DB, eventID)
+		}
 	}
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)

@@ -376,6 +376,7 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event payments.E
 	}
 	metrics.PurchaseEvents.WithLabelValues("confirmed_stripe").Inc()
 	logx.Info("payments.purchase.paid", "purchase_id", purchaseID, "assignment_id", assID)
+	h.sendPurchaseReceipt(ctx, purchaseID)
 	// Webhook out: customer-side billing/PO systems that want their
 	// own copy of the paid event. Most won't subscribe (they
 	// reconcile via Stripe directly) but ship for completeness.
@@ -417,12 +418,13 @@ func (h *Handlers) RefundPurchase(w http.ResponseWriter, r *http.Request) {
 
 	var (
 		state        string
+		provider     string
 		chargeID     sql.NullString
 		preMigration bool
 	)
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT state, stripe_charge_id, pre_migration FROM purchases WHERE id = $1`,
-		purchaseID).Scan(&state, &chargeID, &preMigration); err != nil {
+		`SELECT state, provider, stripe_charge_id, pre_migration FROM purchases WHERE id = $1`,
+		purchaseID).Scan(&state, &provider, &chargeID, &preMigration); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "purchase not found")
 			return
@@ -432,6 +434,10 @@ func (h *Handlers) RefundPurchase(w http.ResponseWriter, r *http.Request) {
 	}
 	if state != "paid" {
 		httpx.Error(w, http.StatusConflict, "purchase not in paid state: "+state)
+		return
+	}
+	if provider == "simulated" && h.simulatedActive() {
+		h.refundSimulated(w, r, purchaseID)
 		return
 	}
 	if !chargeID.Valid || chargeID.String == "" {
@@ -472,6 +478,41 @@ func (h *Handlers) RefundPurchase(w http.ResponseWriter, r *http.Request) {
 		"purchase_id": purchaseID,
 		"refund_id":   rf.ID,
 		"status":      rf.Status,
+	})
+}
+
+// refundSimulated refunds a purchase paid through the simulated
+// provider, which has no charge to call back about: it runs the same
+// charge.refunded handling a Stripe refund ends in, at once, so the
+// refund and the loss of access can be tried locally.
+func (h *Handlers) refundSimulated(w http.ResponseWriter, r *http.Request, purchaseID int64) {
+	if !h.requirePasswordConfirm(w, r) {
+		return
+	}
+	chargeID := fmt.Sprintf("sim_ch_purchase_%d", purchaseID)
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE purchases SET stripe_charge_id = $1 WHERE id = $2 AND stripe_charge_id IS NULL`,
+		chargeID, purchaseID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "refund failed", err)
+		return
+	}
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT stripe_charge_id FROM purchases WHERE id = $1`, purchaseID).Scan(&chargeID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "refund failed", err)
+		return
+	}
+	if err := h.handleChargeRefunded(r.Context(), payments.Event{
+		Provider: "simulated",
+		Type:     payments.EventChargeRefunded,
+		Created:  time.Now(),
+		Charge:   &payments.ChargeDetail{ID: chargeID, AmountCents: 1, AmountRefunded: 1, Refunded: true},
+	}); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "refund failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusAccepted, map[string]any{
+		"purchase_id": purchaseID,
+		"status":      "succeeded",
 	})
 }
 

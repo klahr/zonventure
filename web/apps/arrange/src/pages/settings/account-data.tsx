@@ -14,21 +14,23 @@ type Status = { tone: "muted" | "ok" | "err"; text: string } | null;
  * account and its organisation's data — and, for org admins, the org's
  * portable migration bundle, re-importable on any instance.
  */
-export function DownloadsCard({ bundle }: { bundle: boolean }) {
+export function DownloadsCard({ bundle, admin }: { bundle: boolean; admin: boolean }) {
   const t = useT();
   return (
     <Card title={t.t("Download your data")}>
       <div className="acct-list">
-        <ExportRow />
+        <ExportRow admin={admin} />
         {bundle && <BundleRow />}
       </div>
     </Card>
   );
 }
 
-function ExportRow() {
+function ExportRow({ admin }: { admin: boolean }) {
   const t = useT();
   const toast = useToast();
+  const { state } = useSession();
+  const inOrg = state.status === "authenticated" && state.user.memberships.length > 0;
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
   const run = async () => {
@@ -47,7 +49,7 @@ function ExportRow() {
   return (
     <Item
       name={t.t("My data")}
-      meta={t.t("A single JSON file with your account data plus your organization's events, teams, adventures, event passes and purchases.")}
+      meta={admin || !inOrg ? t.t("A single JSON file with your account data.") : t.t("A single JSON file with your account data plus your organization's events, teams, adventures, event passes and purchases.")}
       action={<Button size="sm" icon={<Download size={14} aria-hidden />} loading={busy} onClick={() => void run()}>{t.t("Download")}</Button>}
     >
       {/* Right-to-erasure follow-up: with the data in hand, deletion is one step away. */}
@@ -125,9 +127,12 @@ export function DeleteCard({ user }: { user: Whoami }) {
   const loc = t.current();
 
   const schedule = async () => {
+    const orgs = user.memberships.filter((m) => m.sole_member).map((m) => m.org_name).join(", ");
     const pw = await password({
       title: t.t("Schedule account deletion?"),
-      message: t.t("Type your password to confirm. You'll be logged out and have 7 days to log back in and cancel."),
+      message:
+        t.t("Type your password to confirm. You'll be logged out, and have 7 days to log back in and tap Cancel deletion.") +
+        (orgs ? " " + t.t("You're the only member of {{orgs}}, so it is deleted with you: its events, teams, adventures and event passes.", { orgs }) : ""),
       confirmLabel: t.t("Schedule deletion"),
       danger: true,
     });
@@ -135,8 +140,11 @@ export function DeleteCard({ user }: { user: Whoami }) {
     setBusy(true);
     setStatus({ tone: "muted", text: t.t("Scheduling…") });
     try {
-      await account.scheduleDeletion(pw);
-      location.replace(location.pathname);
+      const r = await account.scheduleDeletion(pw);
+      // A hash-only change doesn't reload: reload so the signed-out
+      // console (the server dropped every session) shows the notice.
+      location.replace(location.pathname + "#/deletion-scheduled?at=" + encodeURIComponent(r.scheduled_deletion_at));
+      location.reload();
     } catch (e) {
       setStatus({ tone: "err", text: errorText(e) });
       setBusy(false);
@@ -163,11 +171,11 @@ export function DeleteCard({ user }: { user: Whoami }) {
         {when ? (
           <span title={fmtDateTime(when, loc)}>{t.t("Scheduled — your account is deleted {{when}}. You can cancel until then.", { when: relTime(when, loc) })}</span>
         ) : (
-          t.t("Deleted after a 7-day grace period; log back in before then to cancel.")
+          t.t("Deleted after a 7-day grace period. To cancel, log back in before then and tap Cancel deletion.")
         )}{" "}
         <HelpPopover
           label={t.t("What gets deleted")}
-          body={t.t("Schedules your account for deletion in 7 days. You can cancel any time before then by logging back in. After the grace period, your account and (if you're the last member) your organization — runs, teams, adventures, purchases — are permanently removed.")}
+          body={t.t("Schedules your account for deletion in 7 days. You can cancel any time before then: log back in and tap Cancel deletion. After the grace period, your account and (if you're the last member) your organization — runs, teams, adventures, purchases — are permanently removed.")}
         />
       </p>
       <StatusLine status={status} />

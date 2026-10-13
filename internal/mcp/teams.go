@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+
+	"github.com/klahr/zonventure/internal/admin"
 )
 
 // Phase 2: teams + slots. Same thin-shim pattern as the event tools
@@ -84,13 +86,13 @@ func (s *Server) registerTeamTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "delete_team",
 		Scope:       scopeWrite,
-		Description: "Remove a team and every slot it owns. Password-gated for the same reason cancel_event is — irreversible mid-event destruction shouldn't be possible from the API token alone.",
+		Description: "Remove a team and every slot it owns. Cannot be undone: ask the user first, then pass confirm: true.",
 		InputSchema: map[string]any{
 			"type":     "object",
-			"required": []string{"team_id", "password"},
+			"required": []string{"team_id", "confirm"},
 			"properties": map[string]any{
-				"team_id":  map[string]any{"type": "integer", "description": "Team to delete."},
-				"password": map[string]any{"type": "string", "description": "Caller's account password; forwarded as X-Confirm-Password."},
+				"team_id": map[string]any{"type": "integer", "description": "Team to delete."},
+				"confirm": map[string]any{"type": "boolean", "description": "true once the user has confirmed deleting this team."},
 			},
 		},
 	}, deleteTeam)
@@ -311,8 +313,8 @@ func updateTeam(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallRe
 }
 
 type deleteTeamArgs struct {
-	TeamID   int64  `json:"team_id"`
-	Password string `json:"password"`
+	TeamID  int64 `json:"team_id"`
+	Confirm bool  `json:"confirm"`
 }
 
 func deleteTeam(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
@@ -323,17 +325,17 @@ func deleteTeam(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallRe
 	if a.TeamID <= 0 {
 		return errorResult("team_id required and must be positive"), nil
 	}
-	if a.Password == "" {
-		return errorResult("password required: delete is irreversible and the admin layer requires re-confirmation"), nil
+	if !a.Confirm {
+		return errorResult("confirm required: delete is irreversible; ask the user, then pass confirm: true"), nil
 	}
 	if r := adminConfigured(s); r != nil {
 		return *r, nil
 	}
 	id := strconv.FormatInt(a.TeamID, 10)
-	status, body, err := callAdmin(ctx, s.Admin.DeleteTeam,
+	status, body, err := callAdmin(admin.WithConfirmed(ctx), s.Admin.DeleteTeam,
 		"DELETE", "/api/admin/teams/"+id,
 		map[string]string{"teamID": id},
-		map[string]string{"X-Confirm-Password": a.Password}, nil)
+		nil, nil)
 	if err != nil {
 		return errorResult("call: " + err.Error()), nil
 	}

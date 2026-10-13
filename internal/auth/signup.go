@@ -13,10 +13,22 @@ import (
 	"github.com/klahr/zonventure/internal/tokenx"
 )
 
-// VerificationTTL is how long a "verify your email" token stays valid
+// VerificationTTL is how long a reset or email-change token stays valid
 // after issuance. Short enough that a leaked link is harmless within
 // hours, long enough that a busy user doesn't have to scramble.
 const VerificationTTL = time.Hour
+
+// VerifyEmailTTL is how long a "verify your email" link works. Longer
+// than a reset link: it grants no login, and people open such mail late.
+const VerifyEmailTTL = 24 * time.Hour
+
+// MaxDisplayNameLen caps users.display_name, in runes.
+const MaxDisplayNameLen = 80
+
+// InviteTTL is how long the link inviting a new account to choose its
+// password works: the invitee may not read the mail the same day, and
+// the organisation's admin can send it again.
+const InviteTTL = 7 * 24 * time.Hour
 
 // VerificationPurpose is the value stamped into email_verifications.purpose.
 // Reserving the column for forgot-password reuse later — we don't want
@@ -26,6 +38,11 @@ const (
 	PurposeVerify         = "verify"
 	PurposeForgotPassword = "forgot_password"
 	PurposeChangeEmail    = "change_email"
+	PurposeRevertEmail    = "revert_email"
+	// PurposeInvite sets the first password of an account an
+	// organisation invited (admin.inviteNewOrgMember); consumed as a
+	// reset, and it confirms the address it was mailed to.
+	PurposeInvite = "invite"
 )
 
 // Signup-related errors.
@@ -55,10 +72,11 @@ type SignupResult struct {
 // active org — and either creates an org later from the dashboard or
 // accepts an invitation. The username column doubles as the login
 // identifier and is set to the (lower-cased, normalised) email so
-// the signup form stays minimal.
-func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (SignupResult, error) {
+// the signup form stays minimal. name is the optional display name.
+func Signup(ctx context.Context, db *sql.DB, email, password, orgName, name string) (SignupResult, error) {
 	email = strings.TrimSpace(email)
 	orgName = strings.TrimSpace(orgName)
+	name = strings.TrimSpace(name)
 	if email == "" || !strings.Contains(email, "@") {
 		return SignupResult{}, ErrSignupBadEmail
 	}
@@ -99,10 +117,10 @@ func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (S
 
 	var userID int64
 	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO users(username, email, password_hash, email_verified)
-		VALUES ($1, $2, $3, 0)
+		INSERT INTO users(username, email, password_hash, email_verified, display_name)
+		VALUES ($1, $2, $3, 0, NULLIF($4, ''))
 		RETURNING id
-	`, email, email, hash).Scan(&userID); err != nil {
+	`, email, email, hash, name).Scan(&userID); err != nil {
 		return SignupResult{}, fmt.Errorf("%w: %v", ErrSignupEmailTaken, err)
 	}
 
@@ -121,7 +139,7 @@ func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (S
 	if err != nil {
 		return SignupResult{}, err
 	}
-	expiresAt := time.Now().Add(VerificationTTL).UTC().Format("2006-01-02 15:04:05")
+	expiresAt := time.Now().Add(VerifyEmailTTL).UTC().Format("2006-01-02 15:04:05")
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO email_verifications(token, user_id, purpose, expires_at)
 		VALUES ($1, $2, $3, $4)
@@ -211,9 +229,9 @@ func VerifyEmail(ctx context.Context, db *sql.DB, token string) (User, error) {
 	// (same logic as Login post-credentials).
 	var u User
 	if err := db.QueryRowContext(ctx, `
-		SELECT id, username, is_admin, COALESCE(email,''), (email_verified <> 0)
+		SELECT id, username, is_admin, is_support, COALESCE(email,''), (email_verified <> 0)
 		FROM users WHERE id = $1
-	`, userID).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified); err != nil {
+	`, userID).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Support, &u.Email, &u.EmailVerified); err != nil {
 		return User{}, err
 	}
 	active, role, err := resolveInitialActiveOrg(ctx, db, u.ID)
@@ -225,7 +243,7 @@ func VerifyEmail(ctx context.Context, db *sql.DB, token string) (User, error) {
 		u.OrgID = &v
 	}
 	if u.IsAdmin {
-		u.Role = RoleAdmin
+		u.Role = u.AdminRole()
 	} else {
 		u.Role = role
 	}
@@ -238,6 +256,12 @@ func VerifyEmail(ctx context.Context, db *sql.DB, token string) (User, error) {
 // the new token string for the caller to email.
 func IssueForgotPasswordToken(ctx context.Context, db *sql.DB, userID int64) (string, error) {
 	return issueOneShotToken(ctx, db, userID, PurposeForgotPassword)
+}
+
+// IssueInviteToken mints the set-your-password token for an invited
+// account that has no password yet.
+func IssueInviteToken(ctx context.Context, db *sql.DB, userID int64) (string, error) {
+	return issueOneShotToken(ctx, db, userID, PurposeInvite)
 }
 
 // ConsumeForgotPasswordToken validates a reset token and atomically:
@@ -278,7 +302,7 @@ func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassw
 	if err != nil {
 		return User{}, "", false, err
 	}
-	if purpose != PurposeForgotPassword {
+	if purpose != PurposeForgotPassword && purpose != PurposeInvite {
 		return User{}, "", false, ErrVerificationUnknown
 	}
 	// Fail closed on parse: a corrupt expires_at value mustn't extend a
@@ -308,9 +332,15 @@ func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassw
 	}
 	defer tx.Rollback() //nolint:errcheck
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE users SET password_hash = $1, password_is_default = 0 WHERE id = $2`,
+		`UPDATE users SET password_hash = $1, password_is_default = 0, password_set_by_admin = 0 WHERE id = $2`,
 		hash, userID); err != nil {
 		return User{}, "", false, err
+	}
+	if purpose == PurposeInvite {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE users SET email_verified = 1 WHERE id = $1`, userID); err != nil {
+			return User{}, "", false, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM sessions WHERE user_id = $1`, userID); err != nil {
@@ -355,9 +385,9 @@ func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassw
 
 	var u User
 	if err := db.QueryRowContext(ctx, `
-		SELECT id, username, is_admin, COALESCE(email,''), (email_verified <> 0), totp_enabled
+		SELECT id, username, is_admin, is_support, COALESCE(email,''), (email_verified <> 0), totp_enabled
 		FROM users WHERE id = $1
-	`, userID).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified, &u.TOTPEnabled); err != nil {
+	`, userID).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Support, &u.Email, &u.EmailVerified, &u.TOTPEnabled); err != nil {
 		return User{}, "", false, err
 	}
 	if initialActive.Valid {
@@ -365,7 +395,7 @@ func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassw
 		u.OrgID = &v
 	}
 	if u.IsAdmin {
-		u.Role = RoleAdmin
+		u.Role = u.AdminRole()
 	} else if memCnt == 1 {
 		// Single membership — fetch its role for the User struct.
 		var memRole string
@@ -465,8 +495,9 @@ func ConsumeEmailChangeToken(ctx context.Context, db *sql.DB, token string) (Use
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE users SET
-		  previous_email        = email,
-		  previous_email_set_at = $1,
+		  previous_email          = email,
+		  previous_email_set_at   = $1,
+		  previous_email_verified = email_verified,
 		  email                 = $2,
 		  -- A username that was the email follows it; a chosen one
 		  -- ("boss") stays, or the user could no longer log in with it.
@@ -487,6 +518,94 @@ func ConsumeEmailChangeToken(ctx context.Context, db *sql.DB, token string) (Use
 	return loadUserByID(ctx, db, userID)
 }
 
+// IssueEmailRevertToken mints the one-time link the "your email
+// address was changed" notice carries to the old address, prevEmail.
+// It lives as long as the revert window (ttl). Earlier revert tokens
+// stay: each puts back the address its own notice went to, so a second
+// change can't cancel the first notice's way back.
+func IssueEmailRevertToken(ctx context.Context, db *sql.DB, userID int64, prevEmail string, ttl time.Duration) (string, error) {
+	tok, err := newVerificationToken()
+	if err != nil {
+		return "", err
+	}
+	expiresAt := time.Now().Add(ttl).UTC().Format("2006-01-02 15:04:05")
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO email_verifications(token, user_id, purpose, expires_at, data)
+		VALUES ($1, $2, $3, $4, $5)
+	`, tok, userID, PurposeRevertEmail, expiresAt, prevEmail); err != nil {
+		return "", err
+	}
+	return tok, nil
+}
+
+// ConsumeEmailRevertToken validates a revert_email token and atomically
+// puts the address it was mailed to back on the account (verified: the
+// link reached it; a username that was the email follows it), clears
+// the revert window, drops pending email changes, every session and
+// every API token — whoever changed the address is signed out and
+// loses any token they minted — and deletes the token.
+// A unique-index failure means another account took the address since.
+func ConsumeEmailRevertToken(ctx context.Context, db *sql.DB, token string) (User, error) {
+	if token == "" {
+		return User{}, ErrVerificationUnknown
+	}
+	var (
+		userID    int64
+		purpose   string
+		expiresAt string
+		prevEmail sql.NullString
+	)
+	err := db.QueryRowContext(ctx, `
+		SELECT user_id, purpose, expires_at, data FROM email_verifications WHERE token = $1
+	`, token).Scan(&userID, &purpose, &expiresAt, &prevEmail)
+	if errors.Is(err, sql.ErrNoRows) {
+		return User{}, ErrVerificationUnknown
+	}
+	if err != nil {
+		return User{}, err
+	}
+	if purpose != PurposeRevertEmail || !prevEmail.Valid || prevEmail.String == "" {
+		return User{}, ErrVerificationUnknown
+	}
+	if t, perr := parseSlotTimestamp(expiresAt); perr != nil || time.Now().After(t) {
+		_, _ = db.ExecContext(ctx, `DELETE FROM email_verifications WHERE token = $1`, token)
+		return User{}, ErrVerificationExpired
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE users SET
+		  username                = CASE WHEN username = email THEN $1 ELSE username END,
+		  email                   = $1,
+		  email_verified          = 1,
+		  previous_email          = NULL,
+		  previous_email_set_at   = NULL,
+		  previous_email_verified = NULL
+		WHERE id = $2
+	`, prevEmail.String, userID); err != nil {
+		return User{}, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM email_verifications WHERE token = $1 OR (user_id = $2 AND purpose = $3)`,
+		token, userID, PurposeChangeEmail); err != nil {
+		return User{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID); err != nil {
+		return User{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM mcp_tokens WHERE user_id = $1`, userID); err != nil {
+		return User{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, err
+	}
+	return loadUserByID(ctx, db, userID)
+}
+
 // issueOneShotToken is the shared body of IssueVerificationToken and
 // IssueForgotPasswordToken — same shape, different purpose, different
 // row-cleanup scope. Worth one helper rather than two near-duplicates.
@@ -495,7 +614,13 @@ func issueOneShotToken(ctx context.Context, db *sql.DB, userID int64, purpose st
 	if err != nil {
 		return "", err
 	}
-	expiresAt := time.Now().Add(VerificationTTL).UTC().Format("2006-01-02 15:04:05")
+	ttl := VerificationTTL
+	if purpose == PurposeVerify {
+		ttl = VerifyEmailTTL
+	} else if purpose == PurposeInvite {
+		ttl = InviteTTL
+	}
+	expiresAt := time.Now().Add(ttl).UTC().Format("2006-01-02 15:04:05")
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err

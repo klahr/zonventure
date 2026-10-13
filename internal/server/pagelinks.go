@@ -11,15 +11,19 @@ import (
 
 // unavailablePages lists the public pages that would answer with an
 // error right now: /privacy and /terms until the operator sets the
-// legal identity, /pricing while the override dir ships no pricing.html. Links to
-// them are hidden rather than left to dead-end on a 503 or 404.
-func unavailablePages(legal LegalConfig) []string {
+// legal identity, /pricing while the override dir ships no pricing.html,
+// /store on a server with no home organisation. Links to them are hidden
+// rather than left to dead-end on a 503 or 404.
+func unavailablePages(legal LegalConfig, homeOrg string) []string {
 	var out []string
 	if len(legal.missingRequired()) > 0 {
 		out = append(out, "/privacy", "/terms")
 	}
 	if !hasOverride("pricing.html") {
 		out = append(out, "/pricing")
+	}
+	if homeOrg == "" {
+		out = append(out, "/store")
 	}
 	return out
 }
@@ -41,7 +45,7 @@ const hideLinksScript = `<script>(()=>{const u=%s;const q=u.map(p=>'a[href="'+p+
 // markers (spliceSellerIdentity) on every HTML page. Only HTML is held back, and only an
 // HTML response pays for the availability check; other responses stream
 // straight through.
-func hideUnavailableLinks(current func() LegalConfig) func(http.Handler) http.Handler {
+func hideUnavailableLinks(current func() LegalConfig, homeOrg string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet || strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") {
@@ -55,7 +59,7 @@ func hideUnavailableLinks(current func() LegalConfig) func(http.Handler) http.Ha
 			}
 			legal := current()
 			body := spliceSellerIdentity(bw.buf.Bytes(), legal)
-			if gone := unavailablePages(legal); len(gone) > 0 {
+			if gone := unavailablePages(legal, homeOrg); len(gone) > 0 {
 				list, _ := json.Marshal(gone)
 				script := []byte(strings.Replace(hideLinksScript, "%s", string(list), 1))
 				// Early in <head> — the first "<head" is the real tag, whereas

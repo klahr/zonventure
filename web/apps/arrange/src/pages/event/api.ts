@@ -30,6 +30,8 @@ export interface EventInfo {
   ticket_currency?: string;
   ticket_team_size?: number;
   public_blurb?: string;
+  /** Where teams meet: said in invitations and the calendar entry. */
+  meeting_place?: string;
   has_cover_image?: boolean;
   /**
    * Listing review, for a self-guided event: where its store listing's
@@ -39,8 +41,17 @@ export interface EventInfo {
   listing_review?: "" | "draft" | "pending" | "approved" | "rejected";
   listing_reject_reason?: string;
   listed?: boolean;
+  /** What the store sells a ticket at: the approved version's price. */
+  listed_price_cents?: number;
+  listed_currency?: string;
+  /** Why an approved listing isn't in the store. */
+  store_blocked?: "no_payments" | "connect_required";
+  /** A self-guided event its organiser stopped selling: out of the store, while teams with a ticket play on. */
+  sales_stopped?: boolean;
   /** A hosted event: run from its host page, whose views the event page shows too. */
   party?: boolean;
+  /** The adventure's cheat password, for testing on a phone. Detail only. */
+  cheat_password?: string;
 }
 
 /** internal/admin/ws.go: eventDetailMemberDTO. */
@@ -76,6 +87,8 @@ export interface Team {
 export interface EventGraph {
   puzzle_count: number;
   titles: Record<string, string>;
+  /** The steps "Move team on" can move a team past. */
+  rescuable?: string[];
 }
 
 /** internal/admin/ws.go: eventDetailDTO — GET /events/{id} and the watch push alike. */
@@ -156,7 +169,14 @@ export interface RosterTeam {
 export interface BulkResult {
   created?: number;
   failed?: number;
-  results?: { error?: string }[];
+  /** code "pass_full": the team did not fit the event pass. */
+  results?: { index: number; error?: string; code?: string; team?: { members?: unknown[] } }[];
+}
+
+/** internal/teamimport: a sheet column and what the import made of it. */
+export interface ImportColumn {
+  label: string;
+  role: "team" | "player" | "email" | "ignored";
 }
 
 /** internal/admin/statistics.go: EventStats — anonymous, across every team that played. */
@@ -219,8 +239,11 @@ export const verifyResults = (id: number) => get<ResultsReport>(E(id) + "/result
 export const getStatistics = (id: number, signal?: AbortSignal) => get<EventStats>(E(id) + "/statistics", signal ? { signal } : {});
 
 export const transition = (id: number, action: "start" | "pause" | "resume") => post<void>(`${E(id)}/${action}`);
-export const cancelEvent = (id: number, password: string) => post<void>(E(id) + "/cancel", undefined, pw(password));
+export const cancelEvent = (id: number, password: string, emailTeams = false) =>
+  post<void>(E(id) + "/cancel", emailTeams ? { email_teams: true } : undefined, pw(password));
 export const endEvent = (id: number, password: string) => post<void>(E(id) + "/end", undefined, pw(password));
+/** A hosted event's host link, mailed to its buyer again (never shown here). */
+export const resendHostLink = (id: number) => post<void>(E(id) + "/hosted/resend-host-link");
 export const patchEvent = (id: number, body: Record<string, unknown>) => patch<void>(E(id), body);
 export const sendInvitations = (id: number) =>
   post<{ sent?: number; skipped_no_email?: number; failed?: number }>(E(id) + "/invitations/send", {});
@@ -239,11 +262,13 @@ export const sendMessage = (id: number, text: string, teamIds?: number[]) =>
   post<void>(E(id) + "/messages", { text, ...(teamIds ? { team_ids: teamIds } : {}) });
 export const getFiles = (id: number, signal?: AbortSignal) =>
   get<{ files: EventFile[] | null; max_files: number; max_size: number }>(E(id) + "/files", signal ? { signal } : {});
+/** Unannounced: announceFiles then tells the teams about a whole batch in one message. */
 export const uploadFile = (id: number, file: File) => {
   const form = new FormData();
   form.append("file", file);
-  return request<EventFile>(E(id) + "/files", { method: "POST", form });
+  return request<EventFile>(E(id) + "/files?announce=0", { method: "POST", form });
 };
+export const announceFiles = (id: number, fileIds: number[]) => post<void>(E(id) + "/files/announce", { file_ids: fileIds });
 export const fileURL = (id: number, fileId: number) => `${E(id)}/files/${fileId}`;
 export const deleteFile = (id: number, fileId: number) => request<void>(`${E(id)}/files/${fileId}`, { method: "DELETE" });
 /** internal/admin/print_delivery.go eventPrintMaterial */
@@ -279,7 +304,7 @@ export const bulkTeams = (eventId: number, teams: RosterTeam[]) => post<BulkResu
 export const importTeams = (eventId: number, file: File) => {
   const form = new FormData();
   form.append("file", file);
-  return request<{ format: string; teams: RosterTeam[] | null }>(E(eventId) + "/teams/import", { method: "POST", form });
+  return request<{ format: string; teams: RosterTeam[] | null; skipped_rows?: number[]; columns?: ImportColumn[] }>(E(eventId) + "/teams/import", { method: "POST", form });
 };
 export const patchTeam = (id: number, body: { name?: string; email?: string }) => patch<void>(T(id), body);
 export const deleteTeam = (id: number, password: string) => request<void>(T(id), { method: "DELETE", ...pw(password) });

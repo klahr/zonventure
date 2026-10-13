@@ -1,20 +1,24 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Ban, Coins, ExternalLink, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Ban, Coins, ExternalLink, Pencil, Plus, RefreshCw, Trash2, Users } from "lucide-react";
+import { ApiError, isGlobalAdmin } from "@zonventure/api";
+import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
-import { href, navigate } from "../../router.ts";
+import { CATALOG_ENABLED, href, navigate } from "../../router.ts";
 import { useTopBarTitle } from "../../topbar.tsx";
 import {
-  Button, Card, ErrorBox, HelpPopover, ICON, ImageDrop, Loading, Page, PageHeader, Pill, Table, fmtDateTime, fmtMoney, relTime, useDialogs, useLoad, useToast,
+  Button, Card, Dialog, ErrorBox, HelpPopover, ICON, ImageDrop, Loading, Page, PageHeader, Pill, Table, fmtDateTime, fmtMoney, relTime, useDialogs, useLoad, useToast,
   type Column, type Tone,
 } from "../../ui/index.ts";
 import {
   cancelOrgEvent, connectStatus, deleteLogo, deleteOrganization, getOrganization, getPurchase, grantShare, listCatalog, listOrganizations,
-  listOrgEvents, listPurchases, refreshConnect, refundPurchase, removeMember, revokeShare, setBilled, setPartyAdventures, setPublished, setPublisher, setTrusted, setVerifiedCreator,
-  uploadLogo, verifyEmail, voidPurchase,
-  type Assignment, type CatalogAdventure, type ConnectStatus, type OrgEvent, type OrgMember, type Organization, type Purchase,
+  listOrgEvents, listOrgEventTeams, listPurchases, refreshConnect, resendTeamLinks, refundPurchase, removeMember, revokeShare, setBilled, setPartyAdventures, setPublished, setPublisher, setRequireTotp, setTrusted, setVerifiedCreator,
+  resetUserTOTP, totpAvailable, unvoidPurchase, uploadLogo, verifyEmail, voidPurchase,
+  type Assignment, type CatalogAdventure, type ConnectStatus, type OrgEvent, type OrgMember, type OrgTeam, type Organization, type Purchase,
 } from "./api.ts";
-import { AddMemberDialog, EditPassDialog, GrantPassDialog, GrantSlotsDialog, PickDialog, RenameOrgDialog } from "./OrgDialogs.tsx";
+import { AddMemberDialog, EditPassDialog, GrantPassDialog, GrantSlotsDialog, MarkBilledDialog, PickDialog, RenameOrgDialog, SetPasswordDialog } from "./OrgDialogs.tsx";
 import { OrgLogo } from "./OrgLogo.tsx";
+import { TicketSalesCard } from "../settings/TicketSales.tsx";
+import { stateText } from "../event/util.ts";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
 import "./admin.css";
 
@@ -29,9 +33,11 @@ interface Data {
 type Open =
   | { kind: "rename" }
   | { kind: "add-member" }
+  | { kind: "set-password"; member: OrgMember }
   | { kind: "grant-pass" }
   | { kind: "edit-pass"; pass: Assignment }
   | { kind: "grant-slots"; event: OrgEvent }
+  | { kind: "teams"; event: OrgEvent }
   | { kind: "commission"; candidates: CatalogAdventure[] }
   | { kind: "share"; adventure: CatalogAdventure; orgs: Organization[] };
 
@@ -43,6 +49,7 @@ const live = (e: OrgEvent) => e.state === "scheduled" || e.state === "running" |
  * billing, catalog publishing), people, events, catalog access, event
  * passes and purchases, and deleting it. Running its events is the
  * organisation's own job; the operator only adds players and cancels.
+ * Support sees it all but may only verify emails and reset 2FA.
  */
 export function OrganizationPage({ id }: { id: number }) {
   const t = useT();
@@ -75,6 +82,9 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
   const t = useT();
   const toast = useToast();
   const dialogs = useDialogs();
+  const { state } = useSession();
+  // Full admin; Support reads this page and changes nothing but users' email verification and 2FA.
+  const full = state.status === "authenticated" && isGlobalAdmin(state.user);
   const { org, adventures, events, purchases } = data;
   const [open, setOpen] = useState<Open | null>(null);
   const close = () => setOpen(null);
@@ -95,6 +105,20 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
   const togglePublisher = async () => {
     const next = !org.is_publisher;
     let password: string | undefined;
+    if (next) {
+      // One publisher per instance: name the one holding it instead of a bare refusal.
+      const current = (await listOrganizations().catch(() => [])).find((o) => o.is_publisher && o.id !== org.id);
+      if (current) {
+        toast.err(t.t("{{name}} is the catalog publisher. Stop publishing there first; only one organization can hold it.", { name: current.name }));
+        return;
+      }
+      const go = await dialogs.confirm({
+        title: t.t("Make {{name}} the catalog publisher?", { name: org.name }),
+        message: t.t("Only one organization per server can be the catalog publisher. The adventures you list from it open to every organization."),
+        confirmLabel: t.t("Make publisher"),
+      });
+      if (!go) return;
+    }
     if (!next) {
       const p = await dialogs.password({
         title: t.t("Stop publishing the catalog?"),
@@ -108,13 +132,63 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
     await act(() => setPublisher(org.id, next, password), next ? t.t("Now the catalog publisher") : t.t("No longer the catalog publisher"));
   };
 
+  const toggleVerified = async () => {
+    if (!org.verified_creator) {
+      const ok = await dialogs.confirm({
+        title: t.t("Make {{name}} a verified creator?", { name: org.name }),
+        message: t.t("Everything of theirs waiting for review is approved now, and what they list from here on goes public without review."),
+        confirmLabel: t.t("Verify and approve"),
+      });
+      if (!ok) return;
+    }
+    if (org.verified_creator) {
+      await act(() => setVerifiedCreator(org.id, false), t.t("No longer a verified creator"));
+      return;
+    }
+    try {
+      const r = await setVerifiedCreator(org.id, true);
+      toast.ok(r.approved > 0 ? t.plural(r.approved, { one: t.t("Verified creator: {{n}} waiting listing approved"), other: t.t("Verified creator: {{n}} waiting listings approved") }) : t.t("Now a verified creator"));
+      reload();
+    } catch (e) {
+      toast.err(e);
+    }
+  };
+
+  const toggleRequireTotp = async () => {
+    const next = !org.require_totp;
+    let password: string | undefined;
+    if (next) {
+      const go = await dialogs.confirm({
+        title: t.t("Require two-factor authentication?"),
+        message: t.t("Every member must then set up two-factor authentication: until they do, the console shows them only the setup and their API tokens are refused."),
+        confirmLabel: t.t("Require it"),
+        danger: true,
+      });
+      if (!go) return;
+    }
+    if (!next) {
+      const p = await dialogs.password({
+        title: t.t("Stop requiring two-factor authentication?"),
+        message: t.t("Members may then sign in with a password alone. Enter your password to confirm."),
+        confirmLabel: t.t("Stop requiring"),
+        danger: true,
+      });
+      if (!p) return;
+      password = p;
+    }
+    await act(() => setRequireTotp(org.id, next, password), next ? t.t("Two-factor authentication required") : t.t("Two-factor authentication no longer required"));
+  };
+
   const removeUser = async (m: OrgMember) => {
     if (m.active_events_owned > 0) {
       const go = await dialogs.confirm({
         title: t.t("Remove member with active events?"),
         message: (
           <>
-            {t.t("{{username}} created {{n}} active event(s) in {{org}}.", { username: m.username, n: m.active_events_owned, org: org.name })}{" "}
+            {t.plural(m.active_events_owned, {
+              one: t.t("{{username}} created {{n}} active event in {{org}}.", { username: m.username, org: org.name }),
+              other: t.t("{{username}} created {{n}} active events in {{org}}.", { username: m.username, org: org.name }),
+            })}{" "}
             {t.t("Those events will keep running but lose their original creator from the audit trail. Consider cancelling or finishing them first, or transferring ownership of the org to a different admin who can manage them after removal.")}
           </>
         ),
@@ -140,6 +214,16 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
       confirmLabel: t.t("Verify email"),
     });
     if (go) await act(() => verifyEmail(m.id), t.t("Email verified"));
+  };
+
+  const resetTOTP = async (m: OrgMember) => {
+    const p = await dialogs.password({
+      title: t.t("Reset two-factor sign-in for {{username}}?", { username: m.username }),
+      message: t.t("Turns off {{username}}'s two-factor sign-in, so they sign in with their password alone and can set it up again. Enter your password to confirm.", { username: m.username }),
+      confirmLabel: t.t("Reset 2FA"),
+      danger: true,
+    });
+    if (p) await act(() => resetUserTOTP(m.id, p), t.t("Two-factor sign-in reset"));
   };
 
   const cancelEvent = async (e: OrgEvent) => {
@@ -179,41 +263,59 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
 
   const deleteOrg = async () => {
     if (org.events_running > 0) {
-      toast.err(t.t("Cannot delete: {{n}} event(s) currently running. Stop them first.", { n: org.events_running }));
+      const running = events.filter((e) => e.state === "running").map((e) => e.name || e.adventure_title || e.adventure_slug);
+      const names = running.join(", ") || "—";
+      toast.err(t.plural(org.events_running, {
+        one: t.t("Cannot delete: {{n}} event is running ({{names}}). End or cancel it first; a self-guided store listing counts as running until it is ended.", { names }),
+        other: t.t("Cannot delete: {{n}} events are running ({{names}}). End or cancel them first; a self-guided store listing counts as running until it is ended.", { names }),
+      }));
       return;
     }
-    const summary = t.t("You are about to delete: {{members}} user(s), {{assignments}} event pass(es), {{players}} player(s), {{events}} event(s). This happens immediately and cannot be undone.", {
-      members: org.members.length, assignments: org.assignments.length, players: org.players_total, events: org.events_total,
+    if (org.is_publisher) {
+      toast.err(t.t("Cannot delete the catalog publisher. Untick “Catalog publisher” first."));
+      return;
+    }
+    const n = (k: number, one: string, other: string) => t.plural(k, { one: t.t(one), other: t.t(other) });
+    const summary = t.t("You are about to delete: {{members}}, {{assignments}}, {{players}}, {{events}}. This happens immediately and cannot be undone. Purchase and ticket-sale records are kept for bookkeeping.", {
+      members: n(org.members.length, "{{n}} user", "{{n}} users"),
+      assignments: n(org.assignments.length, "{{n}} event pass", "{{n}} event passes"),
+      players: n(org.players_total, "{{n}} player", "{{n}} players"),
+      events: n(org.events_total, "{{n}} event", "{{n}} events"),
     });
-    const p = await dialogs.password({
-      title: t.t("Delete organization “{{name}}”?", { name: org.name }),
-      message: summary + " " + t.t("Enter your password to confirm."),
-      confirmLabel: t.t("Delete organization"),
-      danger: true,
-    });
-    if (!p) return;
-    try {
-      await deleteOrganization(org.id, p);
-      toast.ok(t.t("Organization deleted"));
-      navigate({ name: "organizations" });
-    } catch (e) {
-      toast.err(e);
+    for (let wrong = false; ; wrong = true) {
+      const p = await dialogs.password({
+        title: t.t("Delete organization “{{name}}”?", { name: org.name }),
+        message: (wrong ? t.t("Wrong password. Try again.") + " " : "") + summary + " " + t.t("Enter your password to confirm."),
+        confirmLabel: t.t("Delete organization"),
+        danger: true,
+      });
+      if (!p) return;
+      try {
+        await deleteOrganization(org.id, p);
+        toast.ok(t.t("Organization deleted"));
+        navigate({ name: "organizations" });
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401 && e.message === "wrong password") continue;
+        toast.err(e);
+      }
+      return;
     }
   };
 
   const commissioned = adventures.filter((a) => (a.shares ?? []).some((s) => s.org_id === org.id));
   const candidates = adventures.filter((a) => !commissioned.includes(a));
+  const passable = [...adventures, ...(org.own_adventures ?? []).filter((o) => !adventures.some((a) => a.slug === o.slug))];
   const passOf = new Map(org.assignments.map((a) => [a.id, a]));
   const shownEvents = new Set(events.map((e) => e.id));
   const more: MenuItem[] = [
-    ...(org.slug ? [{ label: t.t("Open public page"), icon: <ExternalLink size={ICON.sm} aria-hidden />, href: `/o/${encodeURIComponent(org.slug)}`, target: "_blank" }, { separator: true as const }] : []),
-    {
+    ...(org.slug ? [{ label: t.t("Open public page"), icon: <ExternalLink size={ICON.sm} aria-hidden />, href: `/o/${encodeURIComponent(org.slug)}`, target: "_blank" }, ...(full ? [{ separator: true as const }] : [])] : []),
+    ...(full ? [{
       label: t.t("Delete organization"),
       icon: <Trash2 size={ICON.sm} aria-hidden />,
       danger: true,
       title: t.t("Deleting removes every user, event pass, and event in this organization. The action is not reversible."),
       onClick: () => void deleteOrg(),
-    },
+    }] : []),
   ];
 
   return (
@@ -224,7 +326,7 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           <>
             {org.has_logo && <OrgLogo org={org} size={36} />}
             {org.name}
-            <Button variant="ghost" size="icon" aria-label={t.t("Rename")} title={t.t("Rename")} icon={<Pencil size={ICON.md} aria-hidden />} onClick={() => setOpen({ kind: "rename" })} />
+            {full && <Button variant="ghost" size="icon" aria-label={t.t("Rename")} title={t.t("Rename")} icon={<Pencil size={ICON.md} aria-hidden />} onClick={() => setOpen({ kind: "rename" })} />}
           </>
         }
         badges={
@@ -232,7 +334,7 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
             {org.events_running > 0 && <Pill tone="good">{t.t("{{n}} running", { n: org.events_running })}</Pill>}
             {org.trusted && <Pill tone="good">{t.t("Invoice billing")}</Pill>}
             {org.verified_creator && <Pill tone="good">{t.t("Verified creator")}</Pill>}
-            {org.party_adventures && <Pill tone="good">{t.t("Party adventures")}</Pill>}
+            {org.party_adventures && <Pill tone="good">{t.t("Public party creator")}</Pill>}
             {org.is_publisher && <Pill tone="accent">{t.t("Catalog publisher")}</Pill>}
           </>
         }
@@ -245,14 +347,14 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
             <span title={fmtDateTime(org.created_at, t.current())}>{t.t("created {{when}}", { when: relTime(org.created_at, t.current()) })}</span>
           </>
         }
-        actions={<MoreMenu label={t.t("More")} items={more} />}
+        actions={more.length > 0 && <MoreMenu label={t.t("More")} items={more} />}
       />
 
-      <SetupCard org={org} connect={data.connect} onTrusted={() => act(() => setTrusted(org.id, !org.trusted), org.trusted ? t.t("Invoice billing disabled") : t.t("Invoice billing enabled"))} onParty={() => act(() => setPartyAdventures(org.id, !org.party_adventures), org.party_adventures ? t.t("Party adventures disabled") : t.t("Party adventures enabled"))} onVerified={() => act(() => setVerifiedCreator(org.id, !org.verified_creator), org.verified_creator ? t.t("No longer a verified creator") : t.t("Verified creator: their waiting listings are approved"))} onPublisher={togglePublisher} reload={reload} />
+      <SetupCard org={org} connect={data.connect} onTrusted={() => act(() => setTrusted(org.id, !org.trusted), org.trusted ? t.t("Invoice billing disabled") : t.t("Invoice billing enabled"))} onParty={() => act(() => setPartyAdventures(org.id, !org.party_adventures), org.party_adventures ? t.t("Public party creator disabled") : t.t("Public party creator enabled"))} onVerified={toggleVerified} onPublisher={togglePublisher} onRequireTotp={toggleRequireTotp} reload={reload} readOnly={!full} />
 
       <Card
         title={t.t("Users")}
-        actions={<Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={() => setOpen({ kind: "add-member" })}>{t.t("Add user")}</Button>}
+        actions={full && <Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={() => setOpen({ kind: "add-member" })}>{t.t("Add user")}</Button>}
         flush={org.members.length > 0}
       >
         <Table<OrgMember>
@@ -262,20 +364,27 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           empty={<p className="adm-muted">{t.t("No users yet — add one to get started.")}</p>}
           columns={[
             { key: "name", header: t.t("Username"), cell: (m) => <strong>{m.username}</strong> },
-            { key: "role", header: t.t("Role"), cell: (m) => (m.role === "org_admin" ? t.t("Admin") : t.t("Event host")) },
+            { key: "role", header: t.t("Role"), cell: (m) => (m.role === "org_admin" ? t.t("Admin") : m.role === "org_writer" ? t.t("Writer") : t.t("Event host")) },
             {
-              key: "email", header: t.t("Email"), cell: (m) => m.email_verified
-                ? <span className="adm-sub">{t.t("Verified")}</span>
+              key: "email", header: t.t("Email"), cell: (m) => !m.email
+                ? <span className="adm-sub">{t.t("No email")}</span>
+                : m.email_verified
+                ? <span className="adm-inline">{m.email}<span className="adm-sub">{t.t("Verified")}</span></span>
                 : (
                   <span className="adm-inline">
+                    {m.email}
                     <Pill tone="warn">{t.t("Unverified")}</Pill>
-                    <Button size="sm" variant="ghost" title={t.t("Manually verify email (use only after confirming the user out-of-band)")} onClick={() => verify(m)}>{t.t("verify")}</Button>
+                    <Button size="sm" variant="ghost" title={t.t("Manually verify email (use only after confirming the user out-of-band)")} onClick={() => verify(m)}>{t.t("Verify email")}</Button>
                   </span>
                 ),
             },
             {
               key: "x", header: <span className="cs-sr">{t.t("Actions")}</span>, align: "end", cell: (m) => (
-                <Button size="icon" variant="ghost" className="danger" icon={<Trash2 size={ICON.sm} aria-hidden />} aria-label={`${t.t("Remove")} ${m.username}`} title={t.t("Remove")} onClick={() => removeUser(m)} />
+                <span className="adm-inline">
+                  {full && <Button size="sm" variant="ghost" onClick={() => setOpen({ kind: "set-password", member: m })}>{t.t("Set password")}</Button>}
+                  <Button size="sm" variant="ghost" onClick={() => void resetTOTP(m)}>{t.t("Reset 2FA")}</Button>
+                  {full && <Button size="icon" variant="ghost" className="danger" icon={<Trash2 size={ICON.sm} aria-hidden />} aria-label={`${t.t("Remove")} ${m.username}`} title={t.t("Remove")} onClick={() => removeUser(m)} />}
+                </span>
               ),
             },
           ]}
@@ -288,16 +397,16 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           rowKey={(e) => e.id}
           caption={t.t("Events")}
           empty={<p className="adm-muted">{t.t("No events yet.")}</p>}
-          columns={eventColumns(t, {
+          columns={eventColumns(t, (e) => setOpen({ kind: "teams", event: e }), full ? {
             add: (e) => setOpen({ kind: "grant-slots", event: e }),
             cancel: cancelEvent,
             pass: (e) => passOf.get(e.assignment_id),
             editPass: (pass) => setOpen({ kind: "edit-pass", pass }),
-          })}
+          } : null)}
         />
       </Card>
 
-      {org.is_publisher ? (
+      {!CATALOG_ENABLED && commissioned.length === 0 ? null : org.is_publisher && CATALOG_ENABLED ? (
         <Card
           title={
             <span className="adm-inline">
@@ -323,15 +432,15 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
                       <div className="adm-chips adm-shares">
                         <span className="adm-sub">{t.t("Commissioned for")}</span>
                         {(a.shares ?? []).map((s) => (
-                          <Chip key={s.org_id} onRemove={() => revoke(a, s.org_id, s.org_name)} removeLabel={t.t("Revoke share")}>{s.org_name}</Chip>
+                          <Chip key={s.org_id} onRemove={full ? () => revoke(a, s.org_id, s.org_name) : undefined} removeLabel={t.t("Revoke share")}>{s.org_name}</Chip>
                         ))}
                       </div>
                     )}
                   </>
                 ),
               },
-              {
-                key: "x", header: <span className="cs-sr">{t.t("Actions")}</span>, align: "end", cell: (a) => (
+              ...(full ? [{
+                key: "x", header: <span className="cs-sr">{t.t("Actions")}</span>, align: "end" as const, cell: (a: CatalogAdventure) => (
                   <span className="adm-actions">
                     <Button size="sm" onClick={() => act(() => setPublished(a.slug, !a.published), a.published ? t.t("Removed from the catalog") : t.t("Listed in the catalog"))}>
                       {a.published ? t.t("Unlist") : t.t("List in catalog")}
@@ -339,28 +448,28 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
                     <Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={() => openShare(a)}>{t.t("Commission")}</Button>
                   </span>
                 ),
-              },
+              }] : []),
             ]}
           />
         </Card>
       ) : (
         <Card
           title={t.t("Commissioned adventures")}
-          actions={candidates.length > 0 && <Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={() => setOpen({ kind: "commission", candidates })}>{t.t("Commission adventure")}</Button>}
+          actions={full && candidates.length > 0 && <Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={() => setOpen({ kind: "commission", candidates })}>{t.t("Commission adventure")}</Button>}
         >
           {commissioned.length === 0 ? (
             <p className="adm-muted">{t.t("None — commission a catalog adventure to let them run it without buying event passes.")}</p>
           ) : (
             <div className="adm-chips">
               {commissioned.map((a) => (
-                <Chip key={a.slug} onRemove={() => revoke(a, org.id, org.name)} removeLabel={t.t("Revoke share")}>{a.title}</Chip>
+                <Chip key={a.slug} onRemove={full ? () => revoke(a, org.id, org.name) : undefined} removeLabel={t.t("Revoke share")}>{a.title}</Chip>
               ))}
             </div>
           )}
         </Card>
       )}
 
-      <PassesCard org={org} hidden={(x) => shownEvents.has(x.event_id!)} onGrant={() => (adventures.length === 0 ? toast.err(t.t("No adventures loaded")) : setOpen({ kind: "grant-pass" }))} onEdit={(pass) => setOpen({ kind: "edit-pass", pass })} />
+      <PassesCard org={org} hidden={(x) => shownEvents.has(x.event_id!)} readOnly={!full} onGrant={() => (passable.length === 0 ? toast.err(CATALOG_ENABLED ? t.t("There is no adventure to grant an event pass for yet: this organization has published none, and the catalog has none.") : t.t("There is no adventure to grant an event pass for yet: this organization has published none.")) : setOpen({ kind: "grant-pass" }))} onEdit={(pass) => setOpen({ kind: "edit-pass", pass })} />
 
       <Card title={t.t("Purchases")} flush={purchases.length > 0}>
         <Table<Purchase>
@@ -374,16 +483,20 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
             { key: "total", header: t.t("Total"), cell: (p) => <span className="adm-mono">{fmtMoney(p.amount_cents, p.currency || "SEK", t.current())}</span> },
             { key: "state", header: t.t("State"), cell: (p) => <PurchaseState p={p} /> },
             { key: "date", header: t.t("Date"), wide: true, cell: (p) => <span className="adm-sub" title={fmtDateTime(p.created_at, t.current())}>{relTime(p.created_at, t.current())}</span> },
-            { key: "x", header: <span className="cs-sr">{t.t("Actions")}</span>, align: "end", cell: (p) => <PurchaseActions p={p} reload={reload} /> },
+            { key: "x", header: <span className="cs-sr">{t.t("Actions")}</span>, align: "end", cell: (p) => <PurchaseActions p={p} reload={reload} readOnly={!full} /> },
           ]}
         />
       </Card>
 
+      <TicketSalesCard orgId={org.id} />
+
       {open?.kind === "rename" && <RenameOrgDialog org={org} onClose={close} onDone={done} />}
       {open?.kind === "add-member" && <AddMemberDialog org={org} onClose={close} onDone={done} />}
-      {open?.kind === "grant-pass" && <GrantPassDialog org={org} adventures={adventures} onClose={close} onDone={done} />}
-      {open?.kind === "edit-pass" && <EditPassDialog org={org} pass={open.pass} adventures={adventures} onClose={close} onDone={done} />}
+      {open?.kind === "set-password" && <SetPasswordDialog member={open.member} onClose={close} onDone={done} />}
+      {open?.kind === "grant-pass" && <GrantPassDialog org={org} adventures={passable} onClose={close} onDone={done} />}
+      {open?.kind === "edit-pass" && <EditPassDialog org={org} pass={open.pass} adventures={passable} onClose={close} onDone={done} />}
       {open?.kind === "grant-slots" && <GrantSlotsDialog org={org} event={open.event} onClose={close} onDone={done} />}
+      {open?.kind === "teams" && <TeamsDialog org={org} event={open.event} onClose={close} />}
       {open?.kind === "commission" && (
         <PickDialog
           title={t.t("Commission adventure")}
@@ -426,7 +539,8 @@ function eventWhen(t: T, e: OrgEvent): ReactNode {
   return null;
 }
 
-function eventColumns(t: T, on: EventActions): Column<OrgEvent>[] {
+/** `teams` opens an event's teams (full admins and Support); without `on` (Support) the rest is read-only. */
+function eventColumns(t: T, teams: (e: OrgEvent) => void, on: EventActions | null): Column<OrgEvent>[] {
   return [
     {
       key: "name", header: t.t("Event"), cell: (e) => {
@@ -440,22 +554,24 @@ function eventColumns(t: T, on: EventActions): Column<OrgEvent>[] {
         );
       },
     },
-    { key: "state", header: t.t("State"), cell: (e) => <Pill tone={STATE_TONE[e.state] ?? "neutral"}>{t.t(e.state)}</Pill> },
+    // Worded as the event's own page words it: scheduled without a time is started by hand.
+    { key: "state", header: t.t("State"), cell: (e) => <Pill tone={STATE_TONE[e.state] ?? "neutral"}>{stateText(t, e.state === "scheduled" && !e.scheduled_at ? "manual" : e.state)}</Pill> },
     { key: "players", header: t.t("Players"), wide: true, cell: (e) => <span className="adm-mono">{e.max_players ? `${e.player_slots_count || 0} / ${e.max_players}` : e.player_slots_count || 0}</span> },
     {
       key: "x", header: <span className="cs-sr">{t.t("Actions")}</span>, align: "end", cell: (e) => {
-        const pass = on.pass(e);
+        const pass = on?.pass(e);
         const name = e.name || `Event #${e.id}`;
         return (
           <span className="adm-actions adm-actions--icons">
+            <Button size="icon" variant="ghost" icon={<Users size={ICON.sm} aria-hidden />} aria-label={`${t.t("Teams")} · ${name}`} title={t.t("Teams and their links")} onClick={() => teams(e)} />
             {/* Self-guided adventures grow per ticket, not from a pass. */}
-            {live(e) && e.assignment_id > 0 && !e.public_for_sale && (
+            {on && live(e) && e.assignment_id > 0 && !e.public_for_sale && (
               <Button size="icon" variant="ghost" icon={<Coins size={ICON.sm} aria-hidden />} aria-label={`${t.t("Add players")} · ${name}`} title={t.t("Add players to this event's pass on the org's behalf")} onClick={() => on.add(e)} />
             )}
-            {pass && (
+            {on && pass && (
               <Button size="icon" variant="ghost" icon={<Pencil size={ICON.sm} aria-hidden />} aria-label={`${t.t("Edit event pass")} · ${name}`} title={t.t("Click to edit player cap")} onClick={() => on.editPass(pass)} />
             )}
-            {live(e) && (
+            {on && live(e) && (
               <Button size="icon" variant="ghost" className="danger" icon={<Ban size={ICON.sm} aria-hidden />} aria-label={`${t.t("Cancel event")} · ${name}`} title={t.t("Cancel event")} onClick={() => on.cancel(e)} />
             )}
           </span>
@@ -465,10 +581,54 @@ function eventColumns(t: T, on: EventActions): Column<OrgEvent>[] {
   ];
 }
 
-function SetupCard({ org, connect, onTrusted, onParty, onVerified, onPublisher, reload }: { org: Organization; connect: ConnectStatus | null; onTrusted: () => unknown; onParty: () => unknown; onVerified: () => unknown; onPublisher: () => unknown; reload: () => void }) {
+/** One event's teams, for full admins and Support: mail a team its links again. */
+function TeamsDialog({ org, event, onClose }: { org: Organization; event: OrgEvent; onClose: () => void }) {
+  const t = useT();
+  const toast = useToast();
+  const teams = useLoad((s) => listOrgEventTeams(org.id, event.id, s), [org.id, event.id]);
+  const [busy, setBusy] = useState<number | null>(null);
+  const resend = async (team: OrgTeam) => {
+    setBusy(team.id);
+    try {
+      await resendTeamLinks(org.id, team.id);
+      toast.ok(t.t("Links sent to {{email}}.", { email: team.email ?? "" }));
+    } catch (e) {
+      toast.err(e);
+    }
+    setBusy(null);
+  };
+  return (
+    <Dialog title={t.t("Teams in {{event}}", { event: event.name || `Event #${event.id}` })} onClose={onClose} wide footer={<Button onClick={onClose}>{t.t("Close")}</Button>}>
+      {teams.error && !teams.data ? (
+        <ErrorBox message={teams.error} retry={teams.reload} retryLabel={t.t("Retry")} />
+      ) : !teams.data ? (
+        <Loading label={t.t("Loading…")} />
+      ) : (
+        <Table<OrgTeam>
+          rows={teams.data}
+          rowKey={(x) => x.id}
+          caption={t.t("Teams")}
+          empty={<p className="adm-muted">{t.t("No teams yet.")}</p>}
+          columns={[
+            { key: "name", header: t.t("Team"), cell: (x) => <><strong>{x.name}</strong><div className="adm-sub">{x.email || t.t("No contact email")}</div></> },
+            { key: "players", header: t.t("Players"), cell: (x) => <span className="adm-mono">{x.players}</span> },
+            {
+              key: "x", header: <span className="cs-sr">{t.t("Actions")}</span>, align: "end", cell: (x) => (
+                <Button size="sm" loading={busy === x.id} disabled={!x.email || x.players === 0} title={t.t("Mail the team its links again, to its contact email")} onClick={() => void resend(x)}>{t.t("Resend links")}</Button>
+              ),
+            },
+          ]}
+        />
+      )}
+    </Dialog>
+  );
+}
+
+function SetupCard({ org, connect, onTrusted, onParty, onVerified, onPublisher, onRequireTotp, reload, readOnly }: { org: Organization; connect: ConnectStatus | null; onTrusted: () => unknown; onParty: () => unknown; onVerified: () => unknown; onPublisher: () => unknown; onRequireTotp: () => unknown; reload: () => void; readOnly: boolean }) {
   const t = useT();
   const toast = useToast();
   const dialogs = useDialogs();
+  const totp = useLoad((s) => totpAvailable(s), []);
   const [bust, setBust] = useState(0);
   const [busy, setBusy] = useState(false);
 
@@ -508,22 +668,30 @@ function SetupCard({ org, connect, onTrusted, onParty, onVerified, onPublisher, 
             title={t.t("Click to upload a logo")}
             accept="image/png,image/jpeg,image/webp,image/svg+xml"
             busy={busy}
+            disabled={readOnly}
             onFile={(f) => void upload(f)}
             onRemove={() => void remove()}
             removeLabel={t.t("Remove logo")}
           />
         </div>
       </div>
-      <Toggle checked={org.trusted} onChange={onTrusted} label={t.t("Invoice billing")} hint={t.t("Lets the org pay for event passes by invoice instead of via Stripe.")} />
-      <Toggle checked={org.verified_creator} onChange={onVerified} label={t.t("Verified creator")} hint={t.t("Their store listings and party adventures go public without review, and the store shows a Verified creator badge. Turning it on approves what of theirs is waiting.")} />
-      <Toggle checked={org.party_adventures} onChange={onParty} label={t.t("Party adventures")} hint={t.t("Opens the public creator, where anyone makes a party adventure without an account: /app/party/trail/start/{{slug}}.", { slug: org.slug ?? "" })} />
-      <Toggle checked={org.is_publisher} onChange={onPublisher} label={t.t("Catalog publisher")} hint={t.t("The catalog publisher authors the adventures you list in the catalog and commission to other organizations.")} />
-      {connect?.platform_fee_enabled && <ConnectRow org={org} status={connect} reload={reload} />}
+      <Toggle disabled={readOnly} checked={org.trusted} onChange={onTrusted} label={t.t("Invoice billing")} hint={t.t("Lets the org pay for event passes by invoice instead of via Stripe.")} />
+      <Toggle disabled={readOnly} checked={org.verified_creator} onChange={onVerified} label={t.t("Verified creator")} hint={t.t("Their store listings and party adventures go public without review, and the store shows a Verified creator badge. Turning it on approves what of theirs is waiting.")} />
+      <Toggle disabled={readOnly} checked={org.party_adventures} onChange={onParty} label={t.t("Public party creator (no account)")} hint={<>{t.t("Opens the public creator, where anyone makes a party adventure without an account:")} {org.slug && <a href={`/o/${org.slug}/trail`} target="_blank" rel="noreferrer">/o/{org.slug}/trail</a>}</>} />
+      <Toggle
+        disabled={readOnly || !totp.data}
+        checked={org.require_totp}
+        onChange={onRequireTotp}
+        label={t.t("Require two-factor authentication")}
+        hint={totp.data === false ? t.t("Two-factor authentication is not available on this server: set ZV_TOTP_KEY first.") : t.t("Every member must set up two-factor authentication: until they do, the console shows them only the setup and their API tokens are refused. SSO sign-in counts as meeting it. The 2FA column shows who has it on.")}
+      />
+      {(CATALOG_ENABLED || org.is_publisher) && <Toggle disabled={readOnly} checked={org.is_publisher} onChange={onPublisher} label={t.t("Catalog publisher")} hint={t.t("The catalog publisher authors the adventures you list in the catalog and commission to other organizations.")} />}
+      {connect?.platform_fee_enabled && <ConnectRow org={org} status={connect} reload={reload} readOnly={readOnly} />}
     </Card>
   );
 }
 
-function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: () => unknown; label: string; hint: string }) {
+function Toggle({ checked, onChange, label, hint, disabled }: { checked: boolean; onChange: () => unknown; label: string; hint: ReactNode; disabled?: boolean }) {
   const [busy, setBusy] = useState(false);
   return (
     <label className="adm-toggle">
@@ -531,7 +699,7 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
         type="checkbox"
         role="switch"
         checked={checked}
-        disabled={busy}
+        disabled={busy || disabled}
         onChange={async () => { setBusy(true); try { await onChange(); } finally { setBusy(false); } }}
       />
       <span className="adm-setting__text">
@@ -542,7 +710,7 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
   );
 }
 
-function ConnectRow({ org, status, reload }: { org: Organization; status: ConnectStatus; reload: () => void }) {
+function ConnectRow({ org, status, reload, readOnly }: { org: Organization; status: ConnectStatus; reload: () => void; readOnly: boolean }) {
   const t = useT();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -579,7 +747,7 @@ function ConnectRow({ org, status, reload }: { org: Organization; status: Connec
         )}
         {status.synced_at && <span className="adm-sub">{t.t("Last verified {{when}}", { when: fmtDateTime(status.synced_at, t.current()) })}</span>}
       </div>
-      {status.account_id && <Button size="sm" icon={<RefreshCw size={ICON.sm} aria-hidden />} loading={busy} onClick={refresh}>{t.t("Refresh status")}</Button>}
+      {status.account_id && !readOnly && <Button size="sm" icon={<RefreshCw size={ICON.sm} aria-hidden />} loading={busy} onClick={refresh}>{t.t("Refresh status")}</Button>}
     </div>
   );
 }
@@ -589,7 +757,7 @@ function ConnectRow({ org, status, reload }: { org: Organization; status: Connec
  * events list above (`hidden` says which are); the rest are edited from
  * their event's row.
  */
-function PassesCard({ org, hidden, onGrant, onEdit }: { org: Organization; hidden: (a: Assignment) => boolean; onGrant: () => void; onEdit: (a: Assignment) => void }) {
+function PassesCard({ org, hidden, readOnly, onGrant, onEdit }: { org: Organization; hidden: (a: Assignment) => boolean; readOnly: boolean; onGrant: () => void; onEdit: (a: Assignment) => void }) {
   const t = useT();
   const unused = org.assignments.filter((x) => !x.event_id);
   const used = org.assignments.filter((x) => x.event_id && !hidden(x));
@@ -600,19 +768,19 @@ function PassesCard({ org, hidden, onGrant, onEdit }: { org: Organization; hidde
     <Card
       title={t.t("Event passes")}
       subtitle={empty ? undefined : inUseText}
-      actions={<Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={onGrant}>{t.t("Grant event pass")}</Button>}
+      actions={!readOnly && <Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={onGrant}>{t.t("Grant event pass")}</Button>}
     >
       {empty ? (
-        <p className="adm-muted">{inUseText ?? t.t("None — assign an adventure to let them schedule an event.")}</p>
+        <p className="adm-muted">{inUseText ?? t.t("None — grant an event pass to let them schedule an event.")}</p>
       ) : (
         <div className="adm-chips">
           {unused.map((x) => (
-            <button key={x.id} type="button" className="adm-chip adm-chip--button" title={t.t("Click to edit")} onClick={() => onEdit(x)}>
+            <button key={x.id} type="button" className="adm-chip adm-chip--button" title={t.t("Click to edit")} disabled={readOnly} onClick={() => onEdit(x)}>
               {t.t(x.max_players === 1 ? "{{slug}} · {{n}} player" : "{{slug}} · {{n}} players", { slug: x.adventure_title || x.adventure_slug, n: x.max_players })}
             </button>
           ))}
           {used.map((x) => (
-            <button key={x.id} type="button" className="adm-chip adm-chip--button adm-chip--used" title={t.t("Click to edit player cap")} onClick={() => onEdit(x)}>
+            <button key={x.id} type="button" className="adm-chip adm-chip--button adm-chip--used" title={t.t("Click to edit player cap")} disabled={readOnly} onClick={() => onEdit(x)}>
               {t.t("{{slug}} · event #{{event}} · max {{max}}", { slug: x.adventure_title || x.adventure_slug, event: x.event_id!, max: x.max_players })}
             </button>
           ))}
@@ -622,13 +790,15 @@ function PassesCard({ org, hidden, onGrant, onEdit }: { org: Organization; hidde
   );
 }
 
-function Chip({ children, onRemove, removeLabel }: { children: ReactNode; onRemove: () => void; removeLabel: string }) {
+function Chip({ children, onRemove, removeLabel }: { children: ReactNode; onRemove: (() => void) | undefined; removeLabel: string }) {
   return (
     <span className="adm-chip">
       {children}
-      <button type="button" className="adm-chip__x" onClick={onRemove} aria-label={removeLabel} title={removeLabel}>
-        <Trash2 size={ICON.xs} aria-hidden />
-      </button>
+      {onRemove && (
+        <button type="button" className="adm-chip__x" onClick={onRemove} aria-label={removeLabel} title={removeLabel}>
+          <Trash2 size={ICON.xs} aria-hidden />
+        </button>
+      )}
     </span>
   );
 }
@@ -642,18 +812,24 @@ function PurchaseState({ p }: { p: Purchase }) {
   const t = useT();
   if (p.provider === "invoice" && p.state === "paid") {
     if (p.voided_at) return <Pill tone="bad">{t.t("void")}</Pill>;
-    if (p.billed_at) return <Pill tone="good">{t.t("billed")}</Pill>;
-    return <Pill tone="warn">{t.t("to invoice")}</Pill>;
+    if (p.billed_at) return <><Pill tone="good">{t.t("billed")}</Pill>{p.invoice_number && <> {t.t("Invoice {{n}}", { n: p.invoice_number })}</>}</>;
+    return (
+      <>
+        <Pill tone="warn">{t.t("to invoice")}</Pill>
+        {p.event_cancelled && <Pill title={t.t("Decide whether to void it: a pass can be reused.")}>{t.t("event cancelled")}</Pill>}
+      </>
+    );
   }
   const tone: Tone = p.state === "paid" ? "good" : p.state === "pending" ? "warn" : p.state === "refunded" ? "bad" : "neutral";
   return <Pill tone={tone}>{t.t(p.state)}</Pill>;
 }
 
-function PurchaseActions({ p, reload }: { p: Purchase; reload: () => void }) {
+function PurchaseActions({ p, reload, readOnly }: { p: Purchase; reload: () => void; readOnly: boolean }) {
   const t = useT();
   const toast = useToast();
   const dialogs = useDialogs();
   const [busy, setBusy] = useState(false);
+  const [billing, setBilling] = useState(false);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   const money = fmtMoney(p.amount_cents, p.currency || "SEK", t.current());
@@ -674,7 +850,7 @@ function PurchaseActions({ p, reload }: { p: Purchase; reload: () => void }) {
   const voidIt = async () => {
     const go = await dialogs.confirm({
       title: t.t("Void"),
-      message: t.t("Void this purchase so it won't appear on the next invoice? The players stay on the pass; only the billable line is removed."),
+      message: t.t("Void this purchase so it won't appear on the next invoice? The players stay on the pass and its seats stay free of charge; only the billable line is removed. You can undo this."),
       confirmLabel: t.t("Void"),
       danger: true,
     });
@@ -684,20 +860,30 @@ function PurchaseActions({ p, reload }: { p: Purchase; reload: () => void }) {
   // The refund call returns at once; the state flips when Stripe's
   // charge.refunded webhook lands, so poll the row for up to 30 s.
   const refund = async () => {
-    const go = await dialogs.password({
-      title: t.t("Refund"),
-      message: t.t("Refund {{amount}} to the customer? The state flips to \"refunded\" once Stripe confirms.", { amount: money }),
-      confirmLabel: t.t("Refund"),
-      danger: true,
-    });
-    if (!go) return;
-    setBusy(true);
-    try {
-      await refundPurchase(p.id, go);
-    } catch (e) {
-      toast.err(e);
-      setBusy(false);
-      return;
+    // A wrong password asks again rather than dropping the refund.
+    let error: string | undefined;
+    for (;;) {
+      const go = await dialogs.password({
+        title: t.t("Refund"),
+        message: t.t("Refund {{amount}} to the customer? The state flips to \"refunded\" once Stripe confirms.", { amount: money }),
+        confirmLabel: t.t("Refund"),
+        danger: true,
+        ...(error ? { error } : {}),
+      });
+      if (!go) return;
+      setBusy(true);
+      try {
+        await refundPurchase(p.id, go);
+        break;
+      } catch (e) {
+        setBusy(false);
+        if (e instanceof ApiError && e.status === 401) {
+          error = t.t("Wrong password. Try again.");
+          continue;
+        }
+        toast.err(e);
+        return;
+      }
     }
     toast.ok(t.t("Refund initiated. Confirming with Stripe…"));
     const deadline = Date.now() + 30_000;
@@ -719,16 +905,20 @@ function PurchaseActions({ p, reload }: { p: Purchase; reload: () => void }) {
   };
 
   const invoiceOpen = p.provider === "invoice" && p.state === "paid" && !p.voided_at;
+  const receipt = p.invoice_url && <a className="btn sm ghost" href={p.invoice_url} target="_blank" rel="noopener">{t.t("Receipt")}</a>;
+  if (readOnly) return <span className="adm-actions">{receipt}</span>;
   return (
     <span className="adm-actions">
-      {p.invoice_url && <a className="btn sm ghost" href={p.invoice_url} target="_blank" rel="noopener">{t.t("Receipt")}</a>}
+      {receipt}
       {invoiceOpen && (
-        <Button size="sm" disabled={busy} onClick={() => run(() => setBilled(p.id, !p.billed_at), p.billed_at ? t.t("Marked unbilled") : t.t("Marked billed"))}>
+        <Button size="sm" disabled={busy} onClick={() => (p.billed_at ? void run(() => setBilled(p.id, false), t.t("Marked unbilled")) : setBilling(true))}>
           {p.billed_at ? t.t("Unmark billed") : t.t("Mark billed")}
         </Button>
       )}
+      {billing && <MarkBilledDialog purchaseId={p.id} onClose={() => setBilling(false)} onDone={() => { setBilling(false); reload(); }} />}
       {invoiceOpen && !p.billed_at && <Button size="sm" variant="danger" disabled={busy} onClick={voidIt}>{t.t("Void")}</Button>}
-      {p.state === "paid" && p.provider === "stripe" && (p.pre_migration
+      {p.provider === "invoice" && p.voided_at && <Button size="sm" disabled={busy} onClick={() => run(() => unvoidPurchase(p.id), t.t("Void undone"))}>{t.t("Undo void")}</Button>}
+      {p.state === "paid" && (p.provider === "stripe" || p.provider === "simulated") && (p.pre_migration
         ? <span title={t.t("This purchase was imported from a previous zv deployment. Refund it through the pre-migration Stripe dashboard, not this button.")}><Pill>{t.t("Refund via legacy Stripe dashboard")}</Pill></span>
         : <Button size="sm" variant="danger" disabled={busy} onClick={refund}>{t.t("Refund")}</Button>)}
     </span>

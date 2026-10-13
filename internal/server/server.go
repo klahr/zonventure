@@ -25,6 +25,7 @@ import (
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/components"
+	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/mcp"
 	"github.com/klahr/zonventure/internal/metrics"
@@ -136,9 +137,8 @@ type Config struct {
 	TeamImporters *teamimport.Registry
 	// ChangelogURL is the URL the update checker polls to detect
 	// newer releases. Empty falls back to updates.DefaultChangelogURL
-	// (the upstream sourcehut repo's CHANGELOG.md). Set explicitly to
-	// pin a fork or to disable the surface in air-gapped deployments
-	// (the URL "off" is treated as "no checking" — see Updates.Service).
+	// (the upstream CHANGELOG.md). Set explicitly to pin a fork, or to
+	// updates.Off to disable checking (an empty ZV_CHANGELOG_URL).
 	ChangelogURL string
 	// UpdateContext bounds the lifetime of the changelog-polling
 	// goroutine. Pass the same context the rest of the binary uses
@@ -185,6 +185,9 @@ func New(cfg Config) http.Handler {
 	// flaky DB during cutover still serves clean 301s and 503s.
 	settings.LoadRedirectTarget(context.Background(), cfg.DB)
 	settings.LoadMaintenanceMode(context.Background(), cfg.DB)
+	if settings.MaintenanceMode() {
+		logx.Warn("maintenance.on", "pinned_by_env", settings.MaintenancePinnedByEnv(), "msg", "maintenance mode is on: writes are refused until it is turned off")
+	}
 	// Prices are set under Settings → Pricing; the env vars that set
 	// them before are ignored, so say so rather than silently charge
 	// something else.
@@ -222,9 +225,9 @@ func New(cfg Config) http.Handler {
 	// CSP / X-Frame / X-Content-Type-Options. Costs nothing on a 301
 	// where the body is empty anyway; closes a real gap on the 503.
 	r.Use(securityHeaders(cspFor(cfg.Legal.MapTileURL, cfg.Legal.MapStyleURL)))
-	// Hide links to /privacy, /terms and /pricing while they'd answer
-	// 503 / 404 (legal identity unset, landing off).
-	r.Use(hideUnavailableLinks(func() LegalConfig { return legalNow(cfg.Legal) }))
+	// Hide links to /privacy, /terms, /pricing and /store while they'd
+	// answer 503 / 404 (legal identity unset, landing off, no home org).
+	r.Use(hideUnavailableLinks(func() LegalConfig { return legalNow(cfg.Legal) }, cfg.HomeOrg))
 	// Cutover redirect: when the operator has flipped redirect mode,
 	// every non-allowlisted path 301s to the hosted instance so
 	// printed QR codes / emailed magic links keep working.
@@ -248,8 +251,8 @@ func New(cfg Config) http.Handler {
 	// including the static /arrange and /play pages. The HTTP-only
 	// session cookies (zv_session, zv_slot) live alongside it.
 	r.Use(auth.EnsureCSRF(cfg.SecureCookie))
-	r.Use(auth.Middleware(cfg.DB))
-	r.Use(auth.SlotMiddleware(cfg.DB))
+	r.Use(auth.Middleware(cfg.DB, lookupFailed("session lookup failed")))
+	r.Use(auth.SlotMiddleware(cfg.DB, lookupFailed("slot lookup failed")))
 
 	hub := cfg.Hub
 	if hub == nil {
@@ -353,13 +356,19 @@ func New(cfg Config) http.Handler {
 			if stripeprovider.IsTestKey(cfg.StripeSecretKey) && env != "dev" && env != "development" {
 				panic("ZV_STRIPE_SECRET_KEY is a Stripe test-mode key but ZV_ENV is not dev (refusing to take test-mode payments outside a dev environment)")
 			}
+			if !strings.HasPrefix(cfg.StripeSecretKey, "sk_") && !strings.HasPrefix(cfg.StripeSecretKey, "rk_") {
+				logx.Warn("payments.stripe.key", "msg", "ZV_STRIPE_SECRET_KEY does not look like a secret key (sk_… or rk_…): checkouts will fail at Stripe")
+			}
 			paymentProvider = p
+		} else if cfg.StripeSecretKey != "" || cfg.StripeWebhookSecret != "" || cfg.PaymentsProvider != "" {
+			logx.Warn("payments.stripe.incomplete", "msg", "Stripe needs both ZV_STRIPE_SECRET_KEY and ZV_STRIPE_WEBHOOK_SECRET; with one missing, paid checkout stays unavailable",
+				"secret_key_set", cfg.StripeSecretKey != "", "webhook_secret_set", cfg.StripeWebhookSecret != "")
 		}
 	default:
 		// Unknown name — fail loud rather than silently falling
 		// through to "payments disabled" and confusing the
 		// operator about why their checkout flow doesn't work.
-		panic("unknown ZV_PAYMENTS_PROVIDER: " + cfg.PaymentsProvider)
+		panic("unknown ZV_PAYMENTS_PROVIDER: " + cfg.PaymentsProvider + " (valid: stripe, simulated)")
 	}
 	// MailOutbox is the durable retry layer for transactional sends
 	// where a paid user must not be stranded by an SMTP blip
@@ -376,7 +385,9 @@ func New(cfg Config) http.Handler {
 		SellerIdentity: func(lang string) string { return legalNow(cfg.Legal).SellerIdentityText(lang) },
 		Provider:       paymentProvider,
 		SecureCookie:   cfg.SecureCookie,
-		Components:     func() []components.Component { return withLegalComponent(cfg.Components, legalNow(cfg.Legal)) },
+		Components: func() []components.Component {
+			return withSSOComponent(withLegalComponent(cfg.Components, legalNow(cfg.Legal)), cfg.OIDC)
+		},
 		Storage:        store,
 		TOTPKey:        cfg.TOTPKey,
 		TeamImporters:  importers,
@@ -392,10 +403,13 @@ func New(cfg Config) http.Handler {
 	// The listing review log's head, mailed to platform admins daily
 	// when it moved: a copy outside the database.
 	periodic.Start(bgCtx, time.Hour, adminH.AnchorListingLog)
+	// The day-before reminder of a scheduled account deletion.
+	periodic.Start(bgCtx, time.Hour, adminH.SweepDeletionReminders)
 	publicH := &public.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL, Engine: playerH.Engine,
 		SecureCookie: cfg.SecureCookie,
 		Looks:        public.LookAssets{ThemeCover: themeCoverURL, Font: lookFontURL},
+		Payments:     paymentProvider != nil,
 	}
 
 	// Read-only sitemap template + computed version metadata —

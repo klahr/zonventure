@@ -37,8 +37,9 @@ func (s *Server) registerGraphTools() {
 	}
 
 	s.tools.register(ToolDescriptor{
-		Name:  "get_adventure_graph",
-		Scope: scopeRead,
+		Name:     "get_adventure_graph",
+		Audience: audienceAuthor,
+		Scope:    scopeRead,
 		Description: "Load an adventure's draft graph (or its published one if there is no draft), with a fresh validation report, " +
 			"the published version and whether the draft has unpublished changes. " +
 			"Returns 404 with code graph_not_found if the adventure has no graph yet — build one and save it with save_adventure_graph.",
@@ -46,24 +47,27 @@ func (s *Server) registerGraphTools() {
 	}, getAdventureGraph)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "validate_adventure_graph",
-		Scope: scopeRead,
+		Name:     "validate_adventure_graph",
+		Audience: audienceAuthor,
+		Scope:    scopeRead,
 		Description: "Check a graph without saving it. Reports every problem at once — unreachable nodes, nodes that cannot reach an end, " +
 			"unconnected outputs, references to missing nodes/zones/items/counters, regex that does not compile. Run this before save_adventure_graph.",
 		InputSchema: withEnvelope,
 	}, validateAdventureGraph)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "save_adventure_graph",
-		Scope: scopeWrite,
+		Name:     "save_adventure_graph",
+		Audience: audienceAuthor,
+		Scope:    scopeWrite,
 		Description: "Save a graph as the adventure's draft. Drafts may have errors; the returned report lists them. " +
 			"Nothing reaches players until publish_adventure_graph.",
 		InputSchema: withEnvelope,
 	}, saveAdventureGraph)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "publish_adventure_graph",
-		Scope: scopeWrite,
+		Name:     "publish_adventure_graph",
+		Audience: audienceAuthor,
+		Scope:    scopeWrite,
 		Description: "Publish the saved draft as the adventure's next version; events that start afterwards play it. " +
 			"Refused with code graph_invalid and the full report if the draft has errors. Events already running keep their version.",
 		InputSchema: map[string]any{

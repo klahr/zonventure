@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -47,6 +48,51 @@ func TestCancelEvent_FromScheduled(t *testing.T) {
 	if s := arr.do("POST", "/api/admin/events/"+itoa(run.ID)+"/start", nil, nil); s == 204 {
 		t.Fatalf("start of cancelled event succeeded; want non-204")
 	}
+}
+
+// TestEventInviteICS_SequenceBumps checks the .ics SEQUENCE rises when
+// the event is rescheduled or cancelled, so calendar apps take the
+// new entry over the one they hold, and stays put on a no-op save.
+func TestEventInviteICS_SequenceBumps(t *testing.T) {
+	ts, assignmentID, cleanup := newTestServer(t)
+	defer cleanup()
+
+	arr := newClient(t, ts)
+	if s := arr.do("POST", "/api/auth/login",
+		map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
+		t.Fatalf("login = %d", s)
+	}
+	var run struct {
+		ID int64 `json:"id"`
+	}
+	if s := arr.do("POST", "/api/admin/events",
+		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
+		t.Fatalf("create event = %d", s)
+	}
+	path := "/api/admin/events/" + itoa(run.ID)
+	sequence := func(want string) {
+		t.Helper()
+		s, _, body := arr.get(path + "/invite.ics")
+		if s != 200 || !strings.Contains(string(body), "SEQUENCE:"+want+"\r\n") {
+			t.Fatalf("invite.ics = %d, want SEQUENCE:%s; body:\n%s", s, want, body)
+		}
+	}
+	reschedule := func(at string) {
+		t.Helper()
+		if s := arr.do("PATCH", path, map[string]any{"scheduled_at": at}, nil); s != 200 && s != 204 {
+			t.Fatalf("reschedule = %d", s)
+		}
+	}
+	reschedule("2030-05-01T10:00:00Z")
+	sequence("1")
+	reschedule("2030-05-01T10:00:00Z")
+	sequence("1")
+	reschedule("2030-05-02T10:00:00Z")
+	sequence("2")
+	if s := arr.doWithConfirm("POST", path+"/cancel", "s3cret", nil, nil); s != 204 {
+		t.Fatalf("cancel = %d", s)
+	}
+	sequence("3")
 }
 
 // TestCancelEvent_FromRunning verifies cancellation works mid-event

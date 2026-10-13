@@ -78,12 +78,13 @@ export function SessionsCard() {
                 <div key={s.id} className="acct-item">
                   <div className="acct-item__text">
                     <span className="acct-item__name">
-                      {s.user_agent ? shortUA(s.user_agent) : t.t("Unknown device")}
+                      {s.user_agent ? shortUA(s.user_agent, t) : t.t("Unknown device")}
                       {s.current && <Pill tone="good">{t.t("this device")}</Pill>}
                     </span>
                     <span className="acct-item__meta" title={s.user_agent}>
                       {[
-                        s.last_used_at ? t.t("Active {{when}}", { when: relTime(s.last_used_at, loc) }) : t.t("Signed in {{when}}", { when: relTime(s.created_at, loc) }),
+                        t.t("Signed in {{when}}", { when: relTime(s.created_at, loc) }),
+                        s.last_used_at && t.t("Active {{when}}", { when: relTime(s.last_used_at, loc) }),
                         s.ip && t.t("from {{ip}}", { ip: s.ip }),
                         s.expires_at && t.t("expires {{when}}", { when: relTime(s.expires_at, loc) }),
                       ]
@@ -111,7 +112,7 @@ export function SessionsCard() {
   );
 }
 
-const EVENT: Record<string, string> = {
+export const EVENT: Record<string, string> = {
   login: "Sign-in",
   logout: "Sign-out",
   set_password: "Password set",
@@ -124,9 +125,10 @@ const EVENT: Record<string, string> = {
   totp_verify: "2FA code",
   totp_recovery_code_use: "Recovery code used",
   totp_admin_reset: "2FA reset by an admin",
+  org_require_totp: "Organization 2FA requirement",
 };
 
-const REASON: Record<string, string> = {
+export const REASON: Record<string, string> = {
   invalid_credentials: "wrong username or password",
   rate_limited: "too many attempts",
   password_not_set: "no password set",
@@ -134,12 +136,18 @@ const REASON: Record<string, string> = {
   expired_token: "link expired",
   unknown_token: "unknown link",
   admin_manual: "by an admin",
-  totp_required: "waiting for 2FA code",
+  signup: "account created",
+  totp_required: "password correct, waiting for 2FA code",
   totp_invalid: "wrong 2FA code",
   totp_challenge_expired: "2FA step expired",
   recovery_code_invalid: "wrong recovery code",
   totp_admin_reset: "reset by an admin",
+  require_totp_on: "turned on",
+  require_totp_off: "turned off",
 };
+
+/** A failed event, not counting a sign-in's password step that goes on to the 2FA code. */
+export const failed = (e: { ok: boolean; reason?: string }) => !e.ok && e.reason !== "totp_required";
 
 /** The user's own recent auth log, failed sign-ins included; the latest few, the rest on request. */
 export function AuditCard() {
@@ -169,10 +177,10 @@ export function AuditCard() {
                 cell: (e) => (
                   <div className="acct-item__text">
                     <span className="acct-item__name" title={e.event}>
-                      {EVENT[e.event] ? t.t(EVENT[e.event]!) : e.event}
-                      {!e.ok && <Pill tone="bad">{t.t("failed")}</Pill>}
+                      {e.reason === "signup" ? t.t("Account created") : EVENT[e.event] ? t.t(EVENT[e.event]!) : e.event}
+                      {failed(e) && <Pill tone="bad">{t.t("failed")}</Pill>}
                     </span>
-                    {e.reason && e.reason !== "success" && <span className="acct-item__meta">{REASON[e.reason] ? t.t(REASON[e.reason]!) : e.reason}</span>}
+                    {e.reason && e.reason !== "success" && e.reason !== "signup" && <span className="acct-item__meta">{REASON[e.reason] ? t.t(REASON[e.reason]!) : e.reason}</span>}
                   </div>
                 ),
               },
@@ -199,7 +207,7 @@ export function AuditCard() {
  * it (mcpEnabled). The list shows only name, prefix and use; the
  * plaintext is shown once, when the token is made.
  */
-export function McpTokensCard({ mcpEnabled }: { mcpEnabled: boolean }) {
+export function McpTokensCard({ mcpEnabled, admin = false }: { mcpEnabled: boolean; admin?: boolean }) {
   const t = useT();
   const toast = useToast();
   const { confirm } = useDialogs();
@@ -230,10 +238,12 @@ export function McpTokensCard({ mcpEnabled }: { mcpEnabled: boolean }) {
   return (
     <Card
       title={t.t("API tokens")}
-      subtitle={t.t("Long-lived tokens that let scripts, agents and MCP clients act on your behalf: create adventures, run events and more. Send one as an Authorization: Bearer header to /api/admin.")}
+      subtitle={admin
+        ? t.t("Only needed to connect a script or an AI assistant (an MCP client): a token lets it act on your behalf, such as reviewing listings. The tool sends it as an Authorization: Bearer header to /api/admin.")
+        : t.t("Only needed to connect a script or an AI assistant (an MCP client): a token lets it act on your behalf, creating adventures, running events and more. The tool sends it as an Authorization: Bearer header to /api/admin.")}
       actions={<Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating(true)}>{t.t("New token")}</Button>}
     >
-      {mcpEnabled && <Field label={t.t("Point your MCP client at this endpoint and paste a token below as the bearer credential:")}>
+      {mcpEnabled && <Field label={t.t("Point your MCP client at this endpoint, with a token from New token as the bearer credential:")}>
         <div className="acct-copy">
           <input ref={endpointRef} readOnly value={endpoint} onFocus={(e) => e.currentTarget.select()} />
           <Button

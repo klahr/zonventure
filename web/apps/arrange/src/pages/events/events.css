@@ -23,6 +23,8 @@
 .dz .evs-choice.is-on { border-color: var(--dz-accent); background: color-mix(in srgb, var(--dz-accent) 7%, var(--dz-surface)); }
 .dz .evs-choice:focus-within { outline: 2px solid var(--dz-accent); outline-offset: 1px; }
 .dz .evs-choice > input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.dz .evs-choice.is-off { cursor: not-allowed; opacity: 0.55; }
+.dz .evs-choice.is-off:hover { border-color: var(--dz-border); }
 
 .dz .evs-chosen { display: flex; align-items: center; gap: var(--dz-space-3); }
 
@@ -47,6 +49,9 @@
 .dz .evs-attest:has(> input:checked) { border-color: var(--dz-success); background: color-mix(in srgb, var(--dz-success) 8%, var(--dz-surface)); font-weight: 500; }
 .dz .evs-attest:has(> input[aria-invalid="true"]) { border-color: var(--dz-danger); background: color-mix(in srgb, var(--dz-danger) 8%, var(--dz-surface)); }
 .dz .evs-attest:focus-within { outline: 2px solid var(--dz-accent); outline-offset: 2px; }
+.dz .evs-attest-help { font-size: 0.875rem; color: var(--dz-muted); }
+.dz .evs-attest-help > summary { cursor: pointer; }
+.dz .evs-attest-help > p { margin: 0.4rem 0; }
 
 .dz .evs-details { border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); padding: var(--dz-space-2) var(--dz-space-3); }
 .dz .evs-details > summary { cursor: pointer; font-weight: 600; font-size: var(--dz-text-md); color: var(--dz-ink); }

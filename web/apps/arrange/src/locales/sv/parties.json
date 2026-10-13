@@ -30,6 +30,7 @@
   "Set a price before the party adventure can be booked": "Sätt ett pris innan partyäventyret kan bokas",
   "What the children will do, how long it takes, what to bring.": "Vad barnen ska göra, hur lång tid det tar, vad de ska ta med.",
   "{{n}} adventures can't be offered as a party adventure": "{{n}} äventyr kan inte erbjudas som partyäventyr",
+  "{{n}} adventure can't be offered as a party adventure": "{{n}} äventyr kan inte erbjudas som partyäventyr",
   "{{n}} cards to hide": "{{n}} kort att gömma",
   "Games": "Omgångar",
   "Hosted events": "Event med värd",
@@ -54,5 +55,9 @@
   "{{price}} for up to {{n}} teams per game.": "{{price}} för upp till {{n}} lag per omgång.",
   "Starts when the first team joins": "Startar när det första laget ansluter",
   "starts when the first team joins": "startar när det första laget ansluter",
-  "Free for up to {{n}} teams per game.": "Gratis för upp till {{n}} lag per omgång."
+  "Free for up to {{n}} teams per game.": "Gratis för upp till {{n}} lag per omgång.",
+  "This adventure has a place on the map. A party plays it at home or in the park, with a card for each place: check that the story doesn't send the children somewhere they can't go.": "Äventyret har en plats på kartan. Ett party spelas hemma eller i parken, med ett kort för varje plats: kolla att berättelsen inte skickar barnen någonstans dit de inte kan gå.",
+  "This adventure has {{n}} places on the map. A party plays it at home or in the park, with a card for each place: check that the story doesn't send the children somewhere they can't go.": "Äventyret har {{n}} platser på kartan. Ett party spelas hemma eller i parken, med ett kort för varje plats: kolla att berättelsen inte skickar barnen någonstans dit de inte kan gå.",
+  "Offer name (optional)": "Erbjudandets namn (valfritt)",
+  "{{n}} card to hide": "{{n}} kort att gömma"
 }

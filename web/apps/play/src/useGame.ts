@@ -26,10 +26,13 @@ import { downscalePhoto } from "./downscale.ts";
 
 /**
  * "ended" is a finished team whose session the server has since closed —
- * it ends every player session when the event completes. The team keeps
+ * it ends every player session when the event completes — or any team
+ * whose event has ended or been cancelled since. The team keeps
  * its final screen, read-only, instead of being told to sign in again.
  */
 export type GameStatus = "loading" | "signed-out" | "ended" | "ready" | "error";
+
+export type Over = "completed" | "cancelled" | "replaced" | "taken_out" | "game_finished" | null;
 
 export interface Game {
   status: GameStatus;
@@ -39,7 +42,14 @@ export interface Game {
   /** Actions waiting for the network. */
   queued: number;
   online: boolean;
-  act: (a: play.PlayAction) => void;
+  /**
+   * Signed out because the event ended or was cancelled, with nothing kept
+   * to show, or because the player's link was opened on another phone.
+   * A party's team is told the host took it out, or finished the game
+   * before the team did.
+   */
+  over: Over;
+  act:(a: play.PlayAction) => void;
   /** Sends the team's picture for a photo block, then reloads. Throws when it does not arrive. */
   photo: (node: string, block: string, file: File) => Promise<void>;
   refresh: () => void;
@@ -51,6 +61,8 @@ export interface Game {
    * when the server can't be reached, so nothing is forgotten half-way.
    */
   leave: (erase: boolean) => Promise<void>;
+  /** This phone erased the player's play data: the signed-out screen says so. */
+  erased: boolean;
 }
 
 /** How often to retry the outbox while something is queued. */
@@ -134,6 +146,8 @@ export function useGame(t: Translate): Game {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [queued, setQueued] = useState(0);
   const [online, setOnline] = useState(() => navigator.onLine);
+  const [over, setOver] = useState<Over>(null);
+  const [erased, setErased] = useState(false);
   const tRef = useRef(t);
   tRef.current = t;
   const viewRef = useRef(state?.view);
@@ -145,6 +159,10 @@ export function useGame(t: Translate): Game {
   const showView = useCallback((view: play.View | undefined) => {
     if (!view) return;
     seq.current.applied = ++seq.current.next;
+    // A refresh that follows at once (back online: flush, then refresh)
+    // must compare against this view, not the one still on screen, or it
+    // takes our own answer for a teammate's and drops its "Correct!".
+    viewRef.current = view;
     setState((s) => {
       const next = s ? { ...s, view } : s;
       saveLast(next);
@@ -159,13 +177,22 @@ export function useGame(t: Translate): Game {
       outbox.persist();
       setQueued(0);
       const last = loadLast();
-      if (last?.view?.finished) {
+      // The event is over, the team finished or not: it keeps what it had.
+      const over = e.code === "event_cancelled" ? "cancelled" : e.code === "event_ended" || e.code === "game_finished" ? "completed" : null;
+      // A party's team the host took out, or that had not finished when
+      // the host finished the game, gets the party's end screen instead.
+      const party = e.code === "taken_out" || e.code === "game_finished" ? e.code : null;
+      // Another phone took this player's seat: it plays on, this one stops.
+      const replaced = e.code === "session_replaced";
+      if (!replaced && last && party !== "taken_out" && (last.view?.finished || (over && !party))) {
+        if (over) last.event = { ...last.event, state: over };
         setState(last);
         setStatus("ended");
         return true;
       }
       saveLast(null);
       setState(null);
+      setOver(replaced ? "replaced" : party ?? over);
       toWorker({ type: "forget" });
       setStatus("signed-out");
       return true;
@@ -187,7 +214,8 @@ export function useGame(t: Translate): Game {
       // Only from a step the player could act on: leaving a start or a
       // place the team was walking to is the team's own arrival.
       const working = !!prev && (prev.type === "puzzle" || prev.type === "story") && !(prev.zone && !prev.here);
-      if (working && prev?.node && s.view?.node && prev.node !== s.view.node && !s.view.finished) {
+      // The organisers moving the team on says so in its own banner.
+      if (working && prev?.node && s.view?.node && prev.node !== s.view.node && !s.view.finished && !s.moved_on) {
         // A teammate answered: say so, or the step just swaps under the
         // player (and whatever they were typing is gone).
         setFeedback({ tone: "info", text: tRef.current("Your team moved on. Here's the next step.") });
@@ -297,6 +325,8 @@ export function useGame(t: Translate): Game {
         showView(r.view);
         setFeedback(feedbackForResult(action.kind, r, tRef.current));
         setOnline(true);
+        // The adventure's title and intro come with the state, not the view.
+        if (action.kind === "language") void refresh();
       } catch (e) {
         if (fail(e)) return;
         if (e instanceof NetworkError) {
@@ -322,7 +352,7 @@ export function useGame(t: Translate): Game {
         setBusy(false);
       }
     },
-    [fail, showView, flush],
+    [fail, showView, flush, refresh],
   );
 
   // A photo is not queued: it is large, and the player sees at once
@@ -349,6 +379,7 @@ export function useGame(t: Translate): Game {
     currentTeam = null;
     setState(null);
     toWorker({ type: "forget" });
+    setErased(erase);
     setStatus("signed-out");
   }, []);
 
@@ -409,11 +440,13 @@ export function useGame(t: Translate): Game {
     feedback,
     queued,
     online,
+    over,
     act: (a) => void act(a),
     photo,
     refresh: () => void refresh(),
     retry: () => void flush().then(refresh),
     leave,
+    erased,
   };
 }
 

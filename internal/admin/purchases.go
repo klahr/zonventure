@@ -9,6 +9,7 @@ import (
 	"github.com/klahr/zonventure/internal/settings"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
@@ -63,6 +64,7 @@ func topUpAmountCents(p settings.Pricing, addedPlayers int) int {
 type purchaseDTO struct {
 	ID                int64  `json:"id"`
 	OrgID             int64  `json:"org_id"`
+	OrgName           string `json:"org_name,omitempty"`
 	AdventureSlug     string `json:"adventure_slug"`
 	AdventureTitle    string `json:"adventure_title,omitempty"`
 	MaxPlayers        int    `json:"max_players"`
@@ -87,6 +89,9 @@ type purchaseDTO struct {
 	// rows; on Stripe / free / simulated rows the column stays NULL
 	// because there's nothing for an admin to bill afterwards.
 	BilledAt string `json:"billed_at,omitempty"`
+	// InvoiceNumber is the off-platform invoice's number, entered by
+	// the operator with "Mark billed".
+	InvoiceNumber string `json:"invoice_number,omitempty"`
 	// VoidedAt is set by the operator to exclude this purchase from
 	// invoice runs without unwinding the assignment grant. Only
 	// meaningful for provider="invoice" rows.
@@ -98,6 +103,9 @@ type purchaseDTO struct {
 	// when this is true, and the RefundPurchase handler 409s if
 	// called anyway.
 	PreMigration bool `json:"pre_migration,omitempty"`
+	// EventCancelled says the event the pass was used for was cancelled,
+	// for the operator to decide whether to void an invoice. Listing only.
+	EventCancelled bool `json:"event_cancelled,omitempty"`
 }
 
 type createPurchaseRequest struct {
@@ -223,7 +231,10 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		} else if h.paymentsEnabled() {
 			provider = "stripe"
 		} else {
-			httpx.Error(w, http.StatusServiceUnavailable, "payments are not configured on this server")
+			httpx.JSON(w, http.StatusServiceUnavailable, map[string]string{
+				"error": "Paid event passes aren't available on this server. Ask the server operator.",
+				"code":  "payments_unavailable",
+			})
 			return
 		}
 	case "free", "stripe", "invoice":
@@ -535,6 +546,7 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	metrics.PurchaseEvents.WithLabelValues("confirmed_simulated").Inc()
+	h.sendPurchaseReceipt(r.Context(), purchaseID)
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"id": purchaseID, "state": "paid", "assignment_id": assID,
 	})
@@ -546,8 +558,9 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 // invoice, and the purchase drops out of the "to bill" filter on the
 // admin Purchases page.
 //
-// Body: {billed: true|false}. true stamps now_text(); false clears
-// the column. Idempotent on repeat clicks.
+// Body: {billed: true|false, invoice_number?}. true stamps now_text()
+// and records the invoice number; false clears both. Idempotent on
+// repeat clicks.
 func (h *Handlers) SetPurchaseBilled(w http.ResponseWriter, r *http.Request) {
 	purchaseID, err := strconv.ParseInt(chi.URLParam(r, "purchaseID"), 10, 64)
 	if err != nil || purchaseID <= 0 {
@@ -555,10 +568,14 @@ func (h *Handlers) SetPurchaseBilled(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Billed bool `json:"billed"`
+		Billed        bool   `json:"billed"`
+		InvoiceNumber string `json:"invoice_number"`
 	}
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
+	}
+	if !req.Billed {
+		noteAction(r, "unbilled")
 	}
 	var provider string
 	if err := h.DB.QueryRowContext(r.Context(),
@@ -575,20 +592,26 @@ func (h *Handlers) SetPurchaseBilled(w http.ResponseWriter, r *http.Request) {
 			"only invoice purchases can be marked billed")
 		return
 	}
-	var stmt string
-	if req.Billed {
-		stmt = `UPDATE purchases SET billed_at = now_text() WHERE id = $1`
-	} else {
-		stmt = `UPDATE purchases SET billed_at = NULL WHERE id = $1`
+	number := strings.TrimSpace(req.InvoiceNumber)
+	if len(number) > 100 {
+		httpx.Error(w, http.StatusBadRequest, "invoice number is too long")
+		return
 	}
-	if _, err := h.DB.ExecContext(r.Context(), stmt, purchaseID); err != nil {
+	if !req.Billed {
+		number = ""
+	}
+	stmt := `UPDATE purchases SET billed_at = NULL, invoice_number = $2 WHERE id = $1`
+	if req.Billed {
+		stmt = `UPDATE purchases SET billed_at = now_text(), invoice_number = $2 WHERE id = $1`
+	}
+	if _, err := h.DB.ExecContext(r.Context(), stmt, purchaseID, number); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
 	}
 	var billedAt sql.NullString
 	_ = h.DB.QueryRowContext(r.Context(),
 		`SELECT billed_at FROM purchases WHERE id = $1`, purchaseID).Scan(&billedAt)
-	httpx.JSON(w, http.StatusOK, map[string]any{"billed_at": billedAt.String})
+	httpx.JSON(w, http.StatusOK, map[string]any{"billed_at": billedAt.String, "invoice_number": number})
 }
 
 // VoidPurchase marks an invoice purchase as voided ("makulera") so it
@@ -643,6 +666,27 @@ func (h *Handlers) VoidPurchase(w http.ResponseWriter, r *http.Request) {
 	_ = h.DB.QueryRowContext(r.Context(),
 		`SELECT voided_at FROM purchases WHERE id = $1`, purchaseID).Scan(&voidedAt)
 	httpx.JSON(w, http.StatusOK, map[string]any{"voided_at": voidedAt.String})
+}
+
+// UnvoidPurchase undoes VoidPurchase: the row is billable again and
+// shows under "to bill". Admin-only; a no-op on a row that isn't voided.
+func (h *Handlers) UnvoidPurchase(w http.ResponseWriter, r *http.Request) {
+	purchaseID, err := strconv.ParseInt(chi.URLParam(r, "purchaseID"), 10, 64)
+	if err != nil || purchaseID <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "bad purchase id")
+		return
+	}
+	res, err := h.DB.ExecContext(r.Context(),
+		`UPDATE purchases SET voided_at = NULL WHERE id = $1 AND provider = 'invoice'`, purchaseID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		httpx.Error(w, http.StatusNotFound, "purchase not found")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"voided_at": ""})
 }
 
 // GrantSlotsToEvent is the admin-only "add player slots to an org's
@@ -751,22 +795,30 @@ func (h *Handlers) GrantSlotsToEvent(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	query := `
-		SELECT p.id, COALESCE(p.org_id, 0), p.adventure_slug, COALESCE(a.title, ''),
+		SELECT p.id, COALESCE(p.org_id, 0), COALESCE(o.name, ''), p.adventure_slug, COALESCE(a.title, ''),
 		       p.max_players, p.amount_cents, p.currency, p.provider,
 		       COALESCE(p.provider_session_id, ''), p.state, p.assignment_id,
 		       p.top_up_assignment_id,
 		       p.created_at, COALESCE(p.paid_at, ''),
 		       COALESCE(p.stripe_invoice_url, ''),
-		       COALESCE(p.billed_at, ''),
+		       COALESCE(p.billed_at, ''), p.invoice_number,
 		       COALESCE(p.voided_at, ''),
-		       p.pre_migration
+		       p.pre_migration,
+		       EXISTS (SELECT 1 FROM events e WHERE e.assignment_id = p.assignment_id AND e.state = 'cancelled')
 		FROM purchases p
 		LEFT JOIN adventures a ON a.slug = p.adventure_slug
+		LEFT JOIN organizations o ON o.id = p.org_id
 	`
 	var args []any
-	if !isAdmin(me) {
+	if !readsAsAdmin(me) {
 		if !isOrgScoped(me) {
 			httpx.Error(w, http.StatusForbidden, "no org context")
+			return
+		}
+		// Billing is the org admin's: an event host runs events but
+		// doesn't see what the organisation paid or sold.
+		if me.Role != auth.RoleOrgAdmin {
+			httpx.Error(w, http.StatusForbidden, "only an organization admin can see purchases")
 			return
 		}
 		query += ` WHERE p.org_id = $1`
@@ -786,10 +838,10 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 			assignment sql.NullInt64
 			topUp      sql.NullInt64
 		)
-		if err := rows.Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
+		if err := rows.Scan(&d.ID, &d.OrgID, &d.OrgName, &d.AdventureSlug, &d.AdventureTitle,
 			&d.MaxPlayers, &d.AmountCents, &d.Currency, &d.Provider,
 			&d.ProviderSessionID, &d.State, &assignment, &topUp,
-			&d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt, &d.VoidedAt, &d.PreMigration); err != nil {
+			&d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt, &d.InvoiceNumber, &d.VoidedAt, &d.PreMigration, &d.EventCancelled); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -821,21 +873,22 @@ func (h *Handlers) GetPurchase(w http.ResponseWriter, r *http.Request) {
 		topUp      sql.NullInt64
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
-		SELECT p.id, COALESCE(p.org_id, 0), p.adventure_slug, COALESCE(a.title, ''),
+		SELECT p.id, COALESCE(p.org_id, 0), COALESCE(o.name, ''), p.adventure_slug, COALESCE(a.title, ''),
 		       p.max_players, p.amount_cents, p.currency, p.provider,
 		       COALESCE(p.provider_session_id, ''), p.state, p.assignment_id,
 		       p.top_up_assignment_id,
 		       p.created_at, COALESCE(p.paid_at, ''),
 		       COALESCE(p.stripe_invoice_url, ''),
-		       COALESCE(p.billed_at, ''),
+		       COALESCE(p.billed_at, ''), p.invoice_number,
 		       COALESCE(p.voided_at, ''),
 		       p.pre_migration
 		FROM purchases p
 		LEFT JOIN adventures a ON a.slug = p.adventure_slug
+		LEFT JOIN organizations o ON o.id = p.org_id
 		WHERE p.id = $1
-	`, purchaseID).Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
+	`, purchaseID).Scan(&d.ID, &d.OrgID, &d.OrgName, &d.AdventureSlug, &d.AdventureTitle,
 		&d.MaxPlayers, &d.AmountCents, &d.Currency, &d.Provider,
-		&d.ProviderSessionID, &d.State, &assignment, &topUp, &d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt, &d.VoidedAt, &d.PreMigration)
+		&d.ProviderSessionID, &d.State, &assignment, &topUp, &d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt, &d.InvoiceNumber, &d.VoidedAt, &d.PreMigration)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "purchase not found")
 		return
@@ -844,7 +897,7 @@ func (h *Handlers) GetPurchase(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-	if !isAdmin(me) && (me.OrgID == nil || *me.OrgID != d.OrgID) {
+	if !readsAsAdmin(me) && (me.OrgID == nil || *me.OrgID != d.OrgID) {
 		httpx.Error(w, http.StatusForbidden, "not your purchase")
 		return
 	}
@@ -963,7 +1016,7 @@ payBtn.addEventListener('click', async () => {
         sessionStorage.setItem('zv-just-purchased', String(body.assignment_id));
       }
     } catch { /* no-op */ }
-    setTimeout(() => { location.href = '/arrange#adventures'; }, 800);
+    setTimeout(() => { location.href = '/arrange#events'; }, 800);
   } else {
     const t = await r.text();
     result.className = 'err';

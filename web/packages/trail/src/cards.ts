@@ -14,9 +14,21 @@ export interface Card {
   options?: string[];
   correct?: string;
   answers?: string[];
+  /** A template's card not yet changed; CardEditor drops it on the first edit. */
+  example?: boolean;
 }
 
 export const CHOICES = ["1", "X", "2"] as const;
+
+/**
+ * How a mark reads: 1, X and 2 are a Swedish quiz walk's, so the Swedish
+ * catalog turns the keys A, B and C back into them; other languages read
+ * A, B, C. What is stored stays 1, X or 2.
+ */
+export const markLabel = (t: (key: string) => string, mark: string) => {
+  const i = (CHOICES as readonly string[]).indexOf(mark);
+  return i < 0 ? mark : t(["A", "B", "C"][i]!);
+};
 
 export const MAX_CARDS = 40;
 export const MAX_TEXT = 300;

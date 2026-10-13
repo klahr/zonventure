@@ -75,6 +75,28 @@ func TestWrite_OrganizerOptional(t *testing.T) {
 	}
 }
 
+// A cancellation goes out as METHOD:CANCEL, so calendars drop the entry.
+func TestWrite_CancelMethod(t *testing.T) {
+	e := Event{
+		UID:         "event-1@zv",
+		GeneratedAt: time.Now().UTC(),
+		StartAt:     time.Now().UTC(),
+		EndAt:       time.Now().UTC().Add(time.Hour),
+		Title:       "test",
+		Status:      "CANCELLED",
+		Method:      "CANCEL",
+	}
+	var buf bytes.Buffer
+	if err := Write(&buf, e); err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, buf.String(), "METHOD:CANCEL\r\n")
+	mustContain(t, buf.String(), "STATUS:CANCELLED\r\n")
+	if strings.Contains(buf.String(), "METHOD:PUBLISH") {
+		t.Error("a cancellation must not also publish")
+	}
+}
+
 // ----- Bytes returns a sensible byte slice ------------------------
 
 func TestBytes(t *testing.T) {
@@ -224,6 +246,17 @@ func TestPickLocation(t *testing.T) {
 	}
 	if got := pickLocation(nil); got != "" {
 		t.Errorf("nil adventure should yield empty location, got %q", got)
+	}
+}
+
+func TestWithJoinURL(t *testing.T) {
+	e := Event{JoinURL: "https://x.test/play", Description: "Org — Walk\n\nJoin link: https://x.test/play"}
+	got := e.WithJoinURL("https://x.test/team/abc")
+	if got.JoinURL != "https://x.test/team/abc" || got.Description != "Org — Walk\n\nJoin link: https://x.test/team/abc" {
+		t.Errorf("WithJoinURL = %q / %q", got.JoinURL, got.Description)
+	}
+	if e.JoinURL != "https://x.test/play" {
+		t.Error("WithJoinURL changed the original")
 	}
 }
 

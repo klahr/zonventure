@@ -61,6 +61,14 @@ func TestMaintenance_MutationsBlockedReadsPass(t *testing.T) {
 		{"POST migrate maintenance", http.MethodPost, "/api/admin/migrate/maintenance", http.StatusOK, true, false},
 		{"GET migrate export", http.MethodGet, "/api/admin/migrate/export", http.StatusOK, true, false},
 		{"POST migrate import", http.MethodPost, "/api/admin/migrate/import", http.StatusOK, true, false},
+
+		// The platform admin's own settings stay savable.
+		{"PUT legal", http.MethodPut, "/api/admin/legal", http.StatusOK, true, false},
+		{"POST legal preview", http.MethodPost, "/api/admin/legal/preview", http.StatusOK, true, false},
+		{"PUT pricing", http.MethodPut, "/api/admin/pricing", http.StatusOK, true, false},
+		{"PUT signup", http.MethodPut, "/api/admin/settings/signup", http.StatusOK, true, false},
+		{"PUT admin 2FA", http.MethodPut, "/api/admin/settings/admin-totp", http.StatusOK, true, false},
+		{"PUT log level", http.MethodPut, "/api/admin/logs/level", http.StatusOK, true, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -78,7 +86,7 @@ func TestMaintenance_MutationsBlockedReadsPass(t *testing.T) {
 				t.Errorf("expected Retry-After header on 503")
 			}
 			if tc.wantStatus == http.StatusServiceUnavailable &&
-				!strings.Contains(rec.Body.String(), "maintenance") {
+				!strings.Contains(rec.Body.String(), `"code":"maintenance"`) {
 				t.Errorf("503 body should mention maintenance, got %s", rec.Body.String())
 			}
 		})

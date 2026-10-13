@@ -151,7 +151,7 @@ func (h *Handlers) SendDevTicket(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 		return
 	}
-	if err := h.sendTicketTeamLink(r.Context(), eventID, email, token, voucher, "", nil); err != nil {
+	if err := h.sendTicketTeamLink(r.Context(), eventID, email, token, voucher, "", nil, false); err != nil {
 		httpx.ServerErr(w, http.StatusBadGateway, "the email could not be sent", err)
 		return
 	}

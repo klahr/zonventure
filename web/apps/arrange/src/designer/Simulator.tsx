@@ -538,6 +538,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
                 live={false}
                 t={tr}
                 brand={brand}
+                teamName={t.t("Test team")}
                 placeNote={placeNote}
                 {...(pos ? { position: pos } : {})}
                 preview

@@ -1,14 +1,47 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
+import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { Button, Callout, Dialog, Field, ICON, fmtMoney, useToast } from "../../ui/index.ts";
 import {
-  addMember, createAssignment, deleteAssignment, grantSlots, renameOrganization, searchUsers, updateAssignment,
-  type Assignment, type CatalogAdventure, type OrgEvent, type Organization,
+  addMember, createAssignment, deleteAssignment, grantSlots, renameOrganization, searchUsers, setBilled, setUserPassword, updateAssignment,
+  type Assignment, type CatalogAdventure, type OrgEvent, type OrgMember, type Organization,
 } from "./api.ts";
 
 type Done = { onClose: () => void; onDone: () => void };
+
+/** A new password for a user, e.g. one without an email who can't reset it. */
+export function SetPasswordDialog({ member, onClose, onDone }: Done & { member: Pick<OrgMember, "id" | "username"> }) {
+  const t = useT();
+  const toast = useToast();
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!password) return;
+    setBusy(true);
+    try {
+      await setUserPassword(member.id, password);
+      toast.ok(t.t("Password set. Give it to {{username}} in person or by phone.", { username: member.username }));
+      onDone();
+    } catch (e) {
+      toast.err(e);
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog
+      title={t.t("Set a password for {{username}}", { username: member.username })}
+      onClose={onClose}
+      onSubmit={submit}
+      footer={<><Button onClick={onClose}>{t.t("Cancel")}</Button><Button type="submit" variant="primary" loading={busy} disabled={!password}>{t.t("Set password")}</Button></>}
+    >
+      <Field label={t.t("New password")}>
+        <input type="text" autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} required autoFocus />
+      </Field>
+    </Dialog>
+  );
+}
 
 export function RenameOrgDialog({ org, onClose, onDone }: Done & { org: Organization }) {
   const t = useT();
@@ -41,6 +74,37 @@ export function RenameOrgDialog({ org, onClose, onDone }: Done & { org: Organiza
   );
 }
 
+/** Mark an invoice purchase billed, with the off-platform invoice's number the org then sees. */
+export function MarkBilledDialog({ purchaseId, onClose, onDone }: Done & { purchaseId: number }) {
+  const t = useT();
+  const toast = useToast();
+  const [number, setNumber] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    setBusy(true);
+    try {
+      await setBilled(purchaseId, true, number.trim());
+      toast.ok(t.t("Marked billed"));
+      onDone();
+    } catch (e) {
+      toast.err(e);
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog
+      title={t.t("Mark billed")}
+      onClose={onClose}
+      onSubmit={submit}
+      footer={<><Button onClick={onClose}>{t.t("Cancel")}</Button><Button type="submit" variant="primary" loading={busy}>{t.t("Mark billed")}</Button></>}
+    >
+      <Field label={t.t("Invoice number (optional)")} hint={t.t("The org sees it beside the purchase.")}>
+        <input value={number} onChange={(e) => setNumber(e.target.value)} autoFocus maxLength={100} />
+      </Field>
+    </Dialog>
+  );
+}
+
 type Match = { id: number; username: string };
 
 /**
@@ -53,6 +117,7 @@ export function AddMemberDialog({ org, onClose, onDone }: Done & { org: Organiza
   const t = useT();
   const toast = useToast();
   const listId = useId();
+  const emailHint = useId();
   const [username, setUsername] = useState("");
   const [picked, setPicked] = useState<Match | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -60,7 +125,9 @@ export function AddMemberDialog({ org, onClose, onDone }: Done & { org: Organiza
   const [active, setActive] = useState(-1);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("org_member");
+  const [passwordError, setPasswordError] = useState("");
+  // The first admin is the likely first user; after that, least privilege.
+  const [role, setRole] = useState((org.members ?? []).some((m) => m.role === "org_admin") ? "org_member" : "org_admin");
   const [busy, setBusy] = useState(false);
   const last = useRef<{ q: string; users: Match[] }>({ q: "", users: [] });
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -121,17 +188,20 @@ export function AddMemberDialog({ org, onClose, onDone }: Done & { org: Organiza
     }
     setBusy(true);
     try {
+      // The server answers alike for a new account and an invitation.
       await addMember(org.id, body);
-      toast.ok(t.t("User added"));
+      toast.ok(who ? t.t("Invitation sent to {{name}}. They join once they accept.", { name: body.username }) : body.email ? t.t("If this address has an account, they get an invitation; otherwise a new account is created.") : t.t("User added"));
       onDone();
     } catch (e) {
-      toast.err(e);
+      // Said at the field, not in a toast behind the dialog.
+      if (e instanceof ApiError && e.code === "password_too_common") setPasswordError(t.t("That password is too common. Pick something harder to guess."));
+      else toast.err(e);
       setBusy(false);
     }
   };
 
   const status = picked
-    ? t.t("Adding existing user — they keep their current password.")
+    ? t.t("Inviting an existing user — they join once they accept, and keep their password.")
     : username.trim()
       ? t.t("Will create a new account — set an initial password below.")
       : "";
@@ -197,17 +267,19 @@ export function AddMemberDialog({ org, onClose, onDone }: Done & { org: Organiza
       <p className={"adm-status" + (picked ? " is-ok" : "")} aria-live="polite">{status}</p>
       {!picked && (
         <>
-          <Field label={t.t("Email (optional)")} hint={t.t("Lets the user log in with either their username or email, and gives them a contact address for password reset.")}>
-            <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          {/* The hint names the username and password: kept out of the field's name so it is not taken for theirs. */}
+          <Field label={t.t("Email (optional)")} hint={<span id={emailHint}>{t.t("Lets the user log in with either their username or email, and gives them a contact address for password reset.")}</span>}>
+            <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-label={t.t("Email (optional)")} aria-describedby={emailHint} />
           </Field>
-          <Field label={t.t("Password")} hint={t.t("Minimum 8 characters.")}>
-            <input type="password" autoComplete="new-password" minLength={8} required={!!username.trim()} value={password} onChange={(e) => setPassword(e.target.value)} />
+          <Field label={t.t("Password")} hint={t.t("Minimum 8 characters.")} {...(passwordError ? { error: passwordError } : {})}>
+            <input type="password" autoComplete="new-password" minLength={8} required={!!username.trim()} value={password} onChange={(e) => { setPassword(e.target.value); setPasswordError(""); }} />
           </Field>
         </>
       )}
       <Field label={t.t("Role")}>
         <select value={role} onChange={(e) => setRole(e.target.value)}>
           <option value="org_member">{t.t("Event host")}</option>
+          <option value="org_writer">{t.t("Writer")}</option>
           <option value="org_admin">{t.t("Admin")}</option>
         </select>
       </Field>
@@ -215,9 +287,12 @@ export function AddMemberDialog({ org, onClose, onDone }: Done & { org: Organiza
   );
 }
 
-const advLabel = (a: CatalogAdventure) => `${a.title} (${a.slug})`;
+/** An adventure an event pass can be granted for: the catalog's and the org's own published ones. */
+type PassAdventure = Pick<CatalogAdventure, "slug" | "title">;
 
-export function GrantPassDialog({ org, adventures, onClose, onDone }: Done & { org: Organization; adventures: CatalogAdventure[] }) {
+const advLabel = (a: PassAdventure) => `${a.title} (${a.slug})`;
+
+export function GrantPassDialog({ org, adventures, onClose, onDone }: Done & { org: Organization; adventures: PassAdventure[] }) {
   const t = useT();
   const toast = useToast();
   const [slug, setSlug] = useState(adventures[0]?.slug ?? "");
@@ -238,11 +313,12 @@ export function GrantPassDialog({ org, adventures, onClose, onDone }: Done & { o
   };
   return (
     <Dialog
-      title={t.t("Assign adventure to {{name}}", { name: org.name })}
+      title={t.t("Grant an event pass to {{name}}", { name: org.name })}
       onClose={onClose}
       onSubmit={submit}
-      footer={<><Button onClick={onClose}>{t.t("Cancel")}</Button><Button type="submit" variant="primary" loading={busy}>{t.t("Assign")}</Button></>}
+      footer={<><Button onClick={onClose}>{t.t("Cancel")}</Button><Button type="submit" variant="primary" loading={busy}>{t.t("Grant event pass")}</Button></>}
     >
+      <p>{t.t("A free event pass: they can run one event of this adventure. Nothing is charged.")}</p>
       <Field label={t.t("Adventure")}>
         <select value={slug} onChange={(e) => setSlug(e.target.value)} autoFocus>
           {adventures.map((a) => <option key={a.slug} value={a.slug}>{advLabel(a)}</option>)}
@@ -255,7 +331,7 @@ export function GrantPassDialog({ org, adventures, onClose, onDone }: Done & { o
   );
 }
 
-export function EditPassDialog({ org, pass, adventures, onClose, onDone }: Done & { org: Organization; pass: Assignment; adventures: CatalogAdventure[] }) {
+export function EditPassDialog({ org, pass, adventures, onClose, onDone }: Done & { org: Organization; pass: Assignment; adventures: PassAdventure[] }) {
   const t = useT();
   const toast = useToast();
   const used = !!pass.event_id;
@@ -264,7 +340,7 @@ export function EditPassDialog({ org, pass, adventures, onClose, onDone }: Done 
   const [busy, setBusy] = useState(false);
   const options = adventures.some((a) => a.slug === pass.adventure_slug)
     ? adventures
-    : [{ slug: pass.adventure_slug, title: pass.adventure_title || pass.adventure_slug } as CatalogAdventure, ...adventures];
+    : [{ slug: pass.adventure_slug, title: pass.adventure_title || pass.adventure_slug }, ...adventures];
   const submit = async () => {
     const n = Number.parseInt(max, 10);
     if (!(n > 0)) { toast.err(t.t("Max players must be at least 1")); return; }
@@ -337,13 +413,15 @@ export function GrantSlotsDialog({ org, event, onClose, onDone }: Done & { org: 
   const CURRENCY = pricing?.currency || "SEK";
   const trusted = org.trusted;
   const [players, setPlayers] = useState("5");
-  const suggest = (p: string) => String(Math.max(1, Number.parseInt(p, 10) || 0) * PRICE);
+  // Typed in whole currency units (kronor), sent in cents.
+  const suggest = (p: string) => String((Math.max(1, Number.parseInt(p, 10) || 0) * PRICE) / 100);
+  const cents = (p: string) => Math.max(0, Math.round((Number.parseFloat(p) || 0) * 100));
   const [price, setPrice] = useState(trusted ? suggest("5") : "0");
   const [busy, setBusy] = useState(false);
   const title = event.adventure_title || event.adventure_slug || t.t("this event");
   const submit = async () => {
     const added = Math.max(1, Number.parseInt(players, 10) || 0);
-    const amount = trusted ? Math.max(0, Number.parseInt(price, 10) || 0) : 0;
+    const amount = trusted ? cents(price) : 0;
     setBusy(true);
     try {
       await grantSlots(event.id, added, amount);
@@ -367,17 +445,17 @@ export function GrantSlotsDialog({ org, event, onClose, onDone }: Done & { org: 
       <Callout variant="info">
         {trusted
           ? t.t("Adding to \"{{org}}\" — the price below appears on their next invoice. Set it to 0 for a free grant.", { org: org.name })
-          : t.t("\"{{org}}\" is not on invoice billing, so this grant is free. Flip the org's \"Invoice billing\" switch in Organizations to enable priced grants.", { org: org.name })}
+          : t.t("\"{{org}}\" is not on invoice billing, so this grant is free. Turn on its \"Invoice billing\" switch on this page to enable priced grants.", { org: org.name })}
       </Callout>
       <Field label={t.t("Additional players")}>
         <input type="number" min={1} max={500} required autoFocus value={players} onChange={(e) => { setPlayers(e.target.value); if (trusted) setPrice(suggest(e.target.value)); }} />
       </Field>
       {trusted && (
         <Field
-          label={t.t("Price (cents)")}
-          hint={`${fmtMoney(Math.max(0, Number.parseInt(price, 10) || 0), CURRENCY, t.current())} · ${t.t("Whatever you enter here lands on the next invoice. Zero is fine — that's a free goodwill grant.")}`}
+          label={t.t("Price ({{currency}})", { currency: CURRENCY })}
+          hint={`${fmtMoney(cents(price), CURRENCY, t.current())} · ${t.t("Whatever you enter here lands on the next invoice. Zero is fine — that's a free goodwill grant.")}`}
         >
-          <input type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
+          <input type="number" min={0} step={0.01} inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} />
         </Field>
       )}
     </Dialog>

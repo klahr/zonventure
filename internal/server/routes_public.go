@@ -7,6 +7,7 @@ package server
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -75,7 +76,7 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		// every organisation's adventures.
 		r.Get("/store", func(w http.ResponseWriter, req *http.Request) {
 			if cfg.HomeOrg == "" {
-				servePublicPage("web/404.html", http.StatusNotFound)(w, req)
+				render404(w, req)
 				return
 			}
 			redirectKeepingQuery(w, req, "/o/"+url.PathEscape(cfg.HomeOrg))
@@ -119,7 +120,7 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 			// otherwise a typo'd link renders a fully-formed page
 			// with an empty grid, which is worse UX than 404.
 			if !orgSlugExists(req.Context(), cfg.DB, slug) {
-				servePublicPage("web/404.html", http.StatusNotFound)(w, req)
+				render404(w, req)
 				return
 			}
 			org, err := loadOrgProfile(req.Context(), cfg.DB, strings.TrimSpace(slug))
@@ -130,7 +131,13 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 			renderOrgPage(w, req, org)
 		})
 		r.Get("/o/{slug}/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
-			renderStoreEventPage(w, req, cfg.DB, cfg.PublicURL)
+			// A listing that can't be bought (no payment provider, or no
+			// Stripe account under a platform fee) isn't in the store.
+			if id, err := strconv.ParseInt(chi.URLParam(req, "event_id"), 10, 64); err == nil && !publicH.ForSale(req.Context(), id) {
+				render404(w, req)
+				return
+			}
+			renderStoreEventPage(w, req, cfg.DB, cfg.PublicURL, env.simulatedProv != nil)
 		})
 		r.Get("/api/o/{slug}/store/items", publicH.StoreListByOrg)
 		r.Get("/api/o/{slug}/store/items/{event_id}", publicH.StoreEventByOrg)
@@ -157,6 +164,7 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		r.Post("/api/party/{token}/finish-game", adminH.FinishHostedGame)
 		r.Put("/api/party/{token}/hold-results", adminH.PutHoldResults)
 		r.Post("/api/party/{token}/send-player-link", adminH.SendHostedPlayerLink)
+		r.Post("/api/party/{token}/replace-link", adminH.ReplaceHostLink)
 		r.Post("/api/party/{token}/blocks", adminH.AddHostedBlocks)
 		r.Get("/api/party/{token}/cards.pdf", adminH.HostedTrailPDF)
 		r.Get("/api/party/{token}/cards", adminH.GetHostTrail)
@@ -216,15 +224,20 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		// that organisation's. A redemption waits for an organiser to
 		// check the code; see admin/redemptions.go.
 		r.Get("/redeem", func(w http.ResponseWriter, req *http.Request) {
-			renderRedeemPage(w, req, "")
+			renderRedeemPage(w, req, "", "")
 		})
 		r.Get("/o/{slug}/redeem", func(w http.ResponseWriter, req *http.Request) {
 			slug := chi.URLParam(req, "slug")
 			if !orgSlugExists(req.Context(), cfg.DB, slug) {
-				servePublicPage("web/404.html", http.StatusNotFound)(w, req)
+				render404(w, req)
 				return
 			}
-			renderRedeemPage(w, req, slug)
+			org, err := loadOrgProfile(req.Context(), cfg.DB, strings.TrimSpace(slug))
+			if err != nil {
+				http.Error(w, "lookup failed", http.StatusInternalServerError)
+				return
+			}
+			renderRedeemPage(w, req, slug, org.Name)
 		})
 		// Voucher redemption: the /play code box posts a code here and
 		// gets back the team page to go to. Public + rate-limited (the

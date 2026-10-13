@@ -20,6 +20,7 @@ import type {
   AnswerOf,
   ChoiceField,
   LockSymbol,
+  Item,
   ItemSlot,
   MissingHint,
   Trigger,
@@ -34,16 +35,16 @@ import { useSession } from "../session.tsx";
 import { Dialog } from "../ui/dialogs.tsx";
 import { EmailPreview } from "../ui/emailPreview.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
-import { MediaEditor } from "./MediaEditor.tsx";
+import { AdventureSlug, MediaEditor } from "./MediaEditor.tsx";
 import { OpenThemes } from "./ThemesModal.tsx";
 import { BlocksEditor } from "./BlocksEditor.tsx";
-import { Field, ZoneSelect, type ZoneHere } from "./fields.tsx";
+import { Field, ZoneSelect, focusAdded, type ZoneHere } from "./fields.tsx";
 import { AlertTriangle, ChevronLeft, ChevronRight, Eye, Plus, Trash2, X } from "lucide-react";
 import { Button, HelpPopover, ICON } from "./dz/ui.tsx";
 import { STEP, VISIBLE } from "./dz/types.tsx";
 import { ConceptIcon, PART, TRIGGER } from "./dz/concepts.tsx";
 import { ZoneMap } from "./ZoneMap.tsx";
-import { nearLastZone, zoneGroups, zoneName } from "./zones.ts";
+import { nearLastZone, retitle, zoneGroups, zoneName } from "./zones.ts";
 import { MarkdownArea } from "./MarkdownArea.tsx";
 import { SimpleStep } from "./SimpleStep.tsx";
 import { isNarrow } from "./device.ts";
@@ -108,7 +109,7 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
               placeholder={t.t(kind.label)}
               spellCheck={false}
               disabled={readOnly}
-              onChange={(e) => onChange({ ...node, title: e.target.value })}
+              onChange={(e) => onGraphChange(retitle(graph, node, e.target.value, [t.t("Puzzle"), t.t("Story"), t.t("Start"), t.t("Place")]))}
               aria-label={t.t("Title")}
             />
             <span className="inspector-subtitle">{t.t(kind.label)}</span>
@@ -152,7 +153,7 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
           {issues.map((i, k) => (
             <li key={k} className={`issue issue--${i.severity}`}>
               {i.port ? <strong>{portLabel(node, i.port)}: </strong> : null}
-              {i.message}
+              {t.t(i.message)}
             </li>
           ))}
         </ul>
@@ -351,7 +352,7 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
       parts.push(...switchParts(node, graph, onGraphChange, t));
       break;
     case "effect":
-      if (node.effect) parts.push({ id: "effect", title: t.t("Does"), editor: <EffectForm cfg={node.effect} graph={graph} onChange={(effect) => onChange({ ...node, effect })} /> });
+      if (node.effect) parts.push({ id: "effect", title: t.t("Does"), editor: <EffectForm cfg={node.effect} graph={graph} onChange={(effect) => onChange({ ...node, effect })} onNewItem={(item) => onGraphChange(updateNode({ ...graph, items: [...(graph.items ?? []), item] }, node.slug, (n) => ({ ...n, effect: { ...n.effect!, item: item.slug } })))} onGraphChange={onGraphChange} /> });
       break;
     case "end": {
       const end = node.end ?? {};
@@ -361,7 +362,8 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
         editor: (
           <>
             <Field label={t.t("Outcome")}>
-              <select className="field__input" value={end.outcome ?? "complete"} onChange={(e) => onChange({ ...node, end: { ...end, outcome: e.target.value as "complete" | "fail" } })}>
+              <select className="field__input" value={end.outcome ?? ""} onChange={(e) => onChange({ ...node, end: { ...end, outcome: e.target.value as "complete" | "fail" } })}>
+                {!end.outcome && <option value="" disabled>{t.t("Choose: success or failure")}</option>}
                 <option value="complete">{t.t("Success")}</option>
                 <option value="fail">{t.t("Failure")}</option>
               </select>
@@ -572,12 +574,13 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
     case "scan":
       how = {
         title: t.t("QR scan"),
-        hint: t.t("The answer bar is one scan button. Print a QR code of an accepted answer and hang it at the place. Which codes count is set under Answers and next steps. A team whose camera fails can type the code instead."),
+        hint: t.t("The answer bar is one scan button. Print the QR code of an accepted answer (below) and hang it at the place. Which codes count is set under Answers and next steps. A team whose camera fails can type the code instead."),
         summary: <SumRow label={t.t("Button")}>{cfg.bar?.button || t.t("Scan the code")}</SumRow>,
         form: (
           <>
             {toRoutes}
             <BarForm cfg={cfg} onChange={onChange} scan />
+            <AnswerQRs node={node.slug} cfg={cfg} />
           </>
         ),
       };
@@ -713,6 +716,14 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
   parts.push({
     id: "answer",
     ...how,
+    summary: cfg.quiet ? (
+      <>
+        {how.summary}
+        <SumRow label={t.t("After an answer")}>{t.t("Just move on")}</SumRow>
+      </>
+    ) : (
+      how.summary
+    ),
     editor: (
       <>
         <Field label={t.t("How the team answers")}>
@@ -729,6 +740,19 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
           </select>
         </Field>
         {how.form}
+        {usesMatchers(cfg) && !cfg.unanimous && (
+          <Field label={t.t("After an answer")}>
+            <select className="field__input" value={cfg.quiet ? "quiet" : ""} onChange={(e) => onChange(withOptional({ ...cfg }, "quiet", e.target.value === "quiet" || undefined))}>
+              <option value="">{t.t("Show right or wrong")}</option>
+              <option value="quiet">{t.t("Just move on")}</option>
+            </select>
+            {cfg.quiet && (
+              <p className="field__hint">
+                {t.t("Any answer is saved and the team goes on: a right one by its route, a wrong one by the first route below, for no points. The phone says neither; the results show which were right.")}
+              </p>
+            )}
+          </Field>
+        )}
       </>
     ),
   });
@@ -737,7 +761,10 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
   parts.push({
     id: "routes",
     title: t.t("Answers and next steps"),
-    hint: t.t("Where the team goes next. Each route gets its own dot on the card, to connect to a different step."),
+    hint:
+      answer?.kind === "choice"
+        ? t.t("Where the team goes next. Each route gets its own dot on the card, to connect to a different step. An option no route takes counts as a wrong answer.")
+        : t.t("Where the team goes next. Each route gets its own dot on the card, to connect to a different step."),
     count: outputs.length,
     ports: true,
     summary: (
@@ -750,7 +777,9 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
                 : triggerLabel(o)
               : answer?.kind === "tiles" || answer?.kind === "lock" || isGraded(answer) || answer?.kind === "search" || answer?.kind === "questions" || answer?.kind === "items" || answer?.kind === "keys"
                 ? triggerLabel(o)
-                : (o.matchers ?? []).map(matcherLabel).join(" / ") || t.t("no answer yet");
+                : answer?.kind === "choice" && choiceParts(answer, o.matchers)?.some(Boolean)
+                  ? choiceParts(answer, o.matchers)!.map((v, k) => answer.fields[k]!.options.find((x) => x.value === v)?.label || v || "–").join(" · ")
+                  : (o.matchers ?? []).map(matcherLabel).join(" / ") || t.t("no answer yet");
           const extra = [o.points ? t.t("{{n}} p", { n: o.points }) : "", o.zone ? (o.inverted ? t.t("outside {{zone}}", { zone: zoneName(graph, o.zone) }) : t.t("in {{zone}}", { zone: zoneName(graph, o.zone) })) : ""]
             .filter(Boolean)
             .join(" · ");
@@ -814,6 +843,8 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
                   <p className="field__hint">{t.t("Taken when every question is answered and the team continues. Only the first such route is ever taken.")}</p>
                 ) : answer?.kind === "items" ? (
                   <p className="field__hint">{t.t("Taken when every slot holds its item. Only the first such route is ever taken.")}</p>
+                ) : answer?.kind === "choice" && choiceParts(answer, o.matchers) ? (
+                  <ChoiceRoute choice={answer} matchers={o.matchers ?? []} onChange={(matchers) => setOutput(i, { ...o, matchers })} />
                 ) : (
                   <MatcherList matchers={o.matchers ?? []} onChange={(matchers) => setOutput(i, { ...o, matchers })} />
                 )}
@@ -930,7 +961,9 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
         onChange={(next) => onChange(withOptional({ ...cfg }, "hints", next.length ? next : undefined))}
         render={(h, set) => (
           <>
-            <MarkdownArea className="field__input" rows={2} value={h.text} onChange={(e) => set({ ...h, text: e.target.value })} aria-label={t.t("Hint")} />
+            <Field label={t.t("Hint")}>
+              <MarkdownArea className="field__input" rows={2} value={h.text} onChange={(e) => set({ ...h, text: e.target.value })} aria-label={t.t("Hint")} />
+            </Field>
             <div className="box__row">
               <NumberField label={t.t("Available after (s)")} value={h.delay_seconds} onChange={(n) => set(withOptional({ ...h }, "delay_seconds", n))} />
               <NumberField label={t.t("Costs points")} value={h.cost} onChange={(n) => set(withOptional({ ...h }, "cost", n))} />
@@ -1003,7 +1036,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
             </select>
           </Field>
         )}
-        {usesMatchers(cfg) && !cfg.by && (
+        {usesMatchers(cfg) && !cfg.by && !cfg.quiet && (
           <>
             <label className="check">
               <input type="checkbox" checked={!!cfg.unanimous} onChange={(e) => onChange(withOptional({ ...cfg }, "unanimous", e.target.checked || undefined))} />
@@ -1101,6 +1134,44 @@ const MATCHERS: { k: MatcherKind; label: string }[] = [
   { k: "set", label: "Several of a list" },
   { k: "anything", label: "Anything" },
 ];
+
+/**
+ * A choice route's one exact answer as the option picked per question,
+ * "" for one not picked yet. Undefined when the route accepts something
+ * the options can't show, which keeps the plain matcher list.
+ */
+function choiceParts(choice: AnswerOf<"choice">, matchers: Matcher[] | undefined): string[] | undefined {
+  const ms = matchers ?? [];
+  if (ms.length > 1 || (ms[0] && ms[0].kind !== "exact")) return undefined;
+  const value = ms[0]?.value ?? "";
+  const parts = value ? value.split("|") : choice.fields.map(() => "");
+  if (parts.length !== choice.fields.length) return undefined;
+  return parts.every((v, k) => !v || choice.fields[k]!.options.some((o) => o.value === v)) ? parts : undefined;
+}
+
+/** The option that takes a choice route, picked by its label; the value is what is stored. */
+function ChoiceRoute({ choice, matchers, onChange }: { choice: AnswerOf<"choice">; matchers: Matcher[]; onChange: (m: Matcher[]) => void }) {
+  const t = useT();
+  const parts = choiceParts(choice, matchers)!;
+  const set = (k: number, v: string) => {
+    const next = parts.map((x, j) => (j === k ? v : x));
+    onChange([{ ...matchers[0], kind: "exact", value: next.join("|") }]);
+  };
+  return (
+    <>
+      {choice.fields.map((f, k) => (
+        <select key={k} className="field__input" value={parts[k]} onChange={(e) => set(k, e.target.value)} aria-label={f.label || t.t("Option")}>
+          <option value="">{t.t("Choose an option…")}</option>
+          {f.options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {(f.label && choice.fields.length > 1 ? f.label + ": " : "") + (o.label || o.value)}
+            </option>
+          ))}
+        </select>
+      ))}
+    </>
+  );
+}
 
 function MatcherList({ matchers, onChange }: { matchers: Matcher[]; onChange: (m: Matcher[]) => void }) {
   const t = useT();
@@ -1496,10 +1567,21 @@ function nextBranchPort(taken: string[]): string {
 
 // --- effect ----------------------------------------------------------------
 
-function EffectForm({ cfg, graph, onChange }: { cfg: EffectConfig; graph: Graph; onChange: (c: EffectConfig) => void }) {
+function EffectForm({ cfg, graph, onChange, onNewItem, onGraphChange }: { cfg: EffectConfig; graph: Graph; onChange: (c: EffectConfig) => void; onNewItem: (item: Item) => void; onGraphChange: (g: Graph) => void }) {
   const t = useT();
   const openThemes = useContext(OpenThemes);
   const saved = graph.themes ?? [];
+  // An item made here is named here, beside the picker that made it.
+  const [fresh, setFresh] = useState<string | null>(null);
+  const items = graph.items ?? [];
+  const newItem = () => {
+    const used = new Set(items.map((x) => x.slug));
+    let i = 1;
+    while (used.has(`item-${i}`)) i++;
+    setFresh(`item-${i}`);
+    onNewItem({ slug: `item-${i}`, name: "" });
+  };
+  const freshItem = fresh && fresh === cfg.item ? items.find((x) => x.slug === fresh) : undefined;
   return (
     <>
       <Field label={t.t("Does")}>
@@ -1516,9 +1598,15 @@ function EffectForm({ cfg, graph, onChange }: { cfg: EffectConfig; graph: Graph;
       {cfg.kind === "score" && <NumberField label={t.t("Points (negative to deduct)")} value={cfg.points} onChange={(n) => onChange(withOptional({ ...cfg }, "points", n))} />}
       {cfg.kind === "grant_item" && (
         <div className="box__row">
-          <ResourceSelect label={t.t("Item")} value={cfg.item} options={graph.items ?? []} onChange={(item) => onChange({ ...cfg, item })} />
+          <ResourceSelect label={t.t("Item")} value={cfg.item} options={items} onChange={(item) => onChange({ ...cfg, item })} onNew={newItem} newLabel={t.t("New item…")} />
           <NumberField label={t.t("How many")} value={cfg.qty} onChange={(n) => onChange(withOptional({ ...cfg }, "qty", n))} />
         </div>
+      )}
+      {cfg.kind === "grant_item" && freshItem && (
+        <Field label={t.t("Name of the new item")}>
+          <input className="field__input" autoFocus value={freshItem.name ?? ""}
+            onChange={(e) => onGraphChange({ ...graph, items: items.map((x) => (x.slug === freshItem.slug ? { ...x, name: e.target.value } : x)) })} />
+        </Field>
       )}
       {cfg.kind === "counter" && (
         <div className="box__row box__row--wrap">
@@ -1790,9 +1878,10 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
               </button>
             </div>
           ))}
-          <button type="button" className="add-btn" onClick={() => {
+          <button type="button" className="add-btn" onClick={(e) => {
             const label = t.t("Option {{n}}", { n: f.options.length + 1 });
             setField(i, { ...f, options: [...f.options, { value: optionValue(label, f.options), label }] });
+            focusAdded(e.currentTarget.parentElement, ":scope > .box__row");
           }}>
             <Plus size={ICON.sm} aria-hidden="true" />
             {t.t("Add option")}
@@ -1822,6 +1911,25 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
         )}
       </div>
     </>
+  );
+}
+
+/** A printable QR code of each exact accepted answer, drawn from the saved draft. */
+function AnswerQRs({ node, cfg }: { node: string; cfg: PuzzleConfig }) {
+  const t = useT();
+  const slug = useContext(AdventureSlug);
+  const values = [...new Set((cfg.outputs ?? []).flatMap((o) => (o.matchers ?? []).filter((m) => m.kind === "exact" && m.value).map((m) => m.value!)))];
+  if (!slug || values.length === 0) return null;
+  return (
+    <Field label={t.t("QR codes to print")} hint={t.t("Opens a page to print with the code of an accepted answer, labelled with the step and the adventure but not the answer. A new answer shows once the adventure is saved.")}>
+      <div className="box__row box__row--wrap">
+        {values.map((v) => (
+          <a key={v} className="link-btn" href={`/api/admin/adventures/${encodeURIComponent(slug)}/graph/qr?${new URLSearchParams({ node, value: v, sheet: "1" })}`} target="_blank" rel="noreferrer">
+            {t.t("Print QR: {{answer}}", { answer: v })}
+          </a>
+        ))}
+      </div>
+    </Field>
   );
 }
 
@@ -1974,18 +2082,22 @@ function NumberField({ label, value, onChange }: { label: string; value: number 
 }
 
 
-function ResourceSelect({ label, value, options, onChange }: { label: string; value: string | undefined; options: { slug: string; name?: string }[]; onChange: (s: string) => void }) {
+// No slug has spaces, so this never names a real resource.
+const NEW_RESOURCE = " new";
+
+function ResourceSelect({ label, value, options, onChange, onNew, newLabel }: { label: string; value: string | undefined; options: { slug: string; name?: string }[]; onChange: (s: string) => void; onNew?: () => void; newLabel?: string }) {
   const t = useT();
   return (
     <label className="field">
       <span className="field__label">{label}</span>
-      <select className="field__input" value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
+      <select className="field__input" value={value ?? ""} onChange={(e) => (onNew && e.target.value === NEW_RESOURCE ? onNew() : onChange(e.target.value))}>
         <option value="">{t.t("— pick one —")}</option>
         {options.map((o) => (
           <option key={o.slug} value={o.slug}>
             {o.name || o.slug}
           </option>
         ))}
+        {onNew && <option value={NEW_RESOURCE}>{newLabel}</option>}
       </select>
     </label>
   );
@@ -2015,7 +2127,10 @@ function ListEditor<T>({
           </button>
         </div>
       ))}
-      <button type="button" className="add-btn" onClick={() => onChange([...items, make()])}>
+      <button type="button" className="add-btn" onClick={(e) => {
+        onChange([...items, make()]);
+        focusAdded(e.currentTarget.parentElement, ":scope > .list-ed__item");
+      }}>
         <Plus size={ICON.sm} aria-hidden="true" />
         {addLabel}
       </button>

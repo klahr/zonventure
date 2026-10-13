@@ -8,7 +8,7 @@ import { CoverPicker } from "./CoverPicker.tsx";
 import { demoAnswer } from "./blocks/Animation.tsx";
 import { AdventureSlug } from "./MediaEditor.tsx";
 import { adventures, play as playApi } from "@zonventure/api";
-import { useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useContext, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { ICON } from "./dz/ui.tsx";
 import { PanelModal } from "./dz/dialogs.tsx";
@@ -86,23 +86,18 @@ interface Props {
  */
 export function Look({ brand, saving, error, savedThemes, onApply, onAddTheme, onSaveAsTheme, onEditThemes }: Props) {
   const t = useT();
-  const [library, setLibrary] = useState<adventures.OrgTheme[]>([]);
   const [browsing, setBrowsing] = useState(false);
-  useEffect(() => {
-    const ac = new AbortController();
-    // Without the library the starters and the adventure's own remain.
-    adventures.listOrgThemes(ac.signal).then(setLibrary, () => {});
-    return () => ac.abort();
-  }, []);
   const standard = Object.keys(brand).length === 0;
   const matched = savedThemes.find((th) => canon(th.look) === canon(brand));
   const value = standard ? "standard" : matched ? `saved:${matched.slug}` : "custom";
-  const choose = (v: string) => {
+  // An organisation theme comes as the gallery loaded it, so one shared
+  // again since this panel opened applies as it is now.
+  const choose = (v: string, org?: { name: string; look: play.Brand }) => {
     if (v === "standard") return onApply({});
     const [kind, id] = [v.slice(0, v.indexOf(":")), v.slice(v.indexOf(":") + 1)];
     const saved = kind === "saved" ? savedThemes.find((x) => x.slug === id) : undefined;
     if (saved) return onApply(structuredClone(saved.look));
-    const own = kind === "org" ? library.find((x) => String(x.id) === id) : undefined;
+    const own = kind === "org" ? org : undefined;
     const starter = kind === "starter" ? STARTER_THEMES.find((x) => x.id === id) : undefined;
     const picked = own ? { name: own.name, look: own.look } : starter ? { name: t.t(starter.label), look: starter.look as play.Brand } : null;
     if (!picked) return;
@@ -144,8 +139,11 @@ export function Look({ brand, saving, error, savedThemes, onApply, onAddTheme, o
             ownLookHint={false}
             saved={savedThemes}
             selected={standard ? "default" : matched ? `saved-${matched.slug}` : undefined}
-            onPick={(_name, _look, id) => {
-              choose(id === "default" ? "standard" : id.startsWith("saved-") ? `saved:${id.slice(6)}` : id.startsWith("org-") ? `org:${id.slice(4)}` : `starter:${id}`);
+            onPick={(name, look, id) => {
+              choose(
+                id === "default" ? "standard" : id.startsWith("saved-") ? `saved:${id.slice(6)}` : id.startsWith("org-") ? `org:${id.slice(4)}` : `starter:${id}`,
+                id.startsWith("org-") ? { name, look: look as play.Brand } : undefined,
+              );
               setBrowsing(false);
             }}
           />

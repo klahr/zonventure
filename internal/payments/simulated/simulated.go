@@ -150,12 +150,26 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 	return ev, nil
 }
 
-// Refund is a no-op that returns success. Pairs with the
-// charge.refunded webhook event the dev confirm handler can
-// synthesise for testing the refund path.
+// Refund moves no money and delivers the charge.refunded webhook a
+// real provider would send, the way devConfirm delivers the checkout,
+// so the sale flips to refunded and its team loses access. Without a
+// WebhookURL it only returns success.
 func (p *Provider) Refund(ctx context.Context, params payments.RefundParams) (payments.Refund, error) {
 	if params.ChargeID == "" {
 		return payments.Refund{}, errors.New("simulated: missing charge id")
+	}
+	if p.WebhookURL != "" {
+		// The amount isn't known here; 1 of 1 refunded reads as a full
+		// refund, which is the only kind issued.
+		if err := p.deliver(ctx, payments.Event{
+			Provider: "simulated",
+			Type:     payments.EventChargeRefunded,
+			ID:       "sim_evt_" + newSessionID(),
+			Created:  time.Now(),
+			Charge:   &payments.ChargeDetail{ID: params.ChargeID, AmountCents: 1, AmountRefunded: 1, Refunded: true},
+		}); err != nil {
+			return payments.Refund{}, fmt.Errorf("simulated: refund webhook: %w", err)
+		}
 	}
 	return payments.Refund{
 		ID:     "sim_re_" + newSessionID(),

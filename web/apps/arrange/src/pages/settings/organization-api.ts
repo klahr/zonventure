@@ -24,6 +24,8 @@ export type ProfileEdit = Pick<OrgProfile, "tagline" | "public_website"> & {
 
 export const getProfile = (signal?: AbortSignal) => get<OrgProfile>("/api/admin/orgs/me/profile", signal ? { signal } : {});
 export const putProfile = (p: ProfileEdit) => put<OrgProfile>("/api/admin/orgs/me/profile", p);
+/** internal/admin/org_name.go; proposed: it waits for review, name is still the live one. */
+export const putName = (name: string) => put<{ name: string; proposed?: boolean }>("/api/admin/orgs/me/name", { name });
 /** orgSlugDTO, internal/admin/organizations.go. */
 export const putSlug = (slug: string) => put<{ slug: string; store_url: string }>("/api/admin/orgs/me/slug", { slug });
 
@@ -40,3 +42,13 @@ export const getShipCountries = (signal?: AbortSignal) =>
   get<{ countries: string[] }>("/api/admin/orgs/me/ship-countries", signal ? { signal } : {}).then((r) => r.countries);
 export const putShipCountries = (countries: string[]) =>
   put<{ countries: string[] }>("/api/admin/orgs/me/ship-countries", { countries }).then((r) => r.countries);
+
+/** GET/PUT /api/admin/orgs/me/contact — orgContactDTO, internal/admin/org_contact.go. */
+export interface OrgContact {
+  /** "" uses default_contact_email, the first admin's. */
+  contact_email: string;
+  default_contact_email: string;
+  time_zone: string;
+}
+export const getContact = (signal?: AbortSignal) => get<OrgContact>("/api/admin/orgs/me/contact", signal ? { signal } : {});
+export const putContact = (c: Pick<OrgContact, "contact_email" | "time_zone">) => put<OrgContact>("/api/admin/orgs/me/contact", c);

@@ -17,6 +17,7 @@ export interface EventInfo {
   paused_at?: string;
   live_token: string;
   allowed_ops?: string[];
+  public_for_sale?: boolean;
 }
 
 /** internal/admin/ws.go: eventDetailMemberDTO. */
@@ -39,6 +40,8 @@ export interface Team {
   rank?: number;
   node?: string;
   outcome?: string;
+  /** Played a step with the cheat password: unranked. */
+  cheated?: boolean;
 }
 
 /** internal/admin/ws.go: eventDetailDTO — GET /events/{id} and the event_detail push. */

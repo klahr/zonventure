@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/components"
 )
 
@@ -90,6 +91,20 @@ func (c LegalConfig) missingRequired() []string {
 	return missing
 }
 
+// withSSOComponent adds single sign-on, when it is switched on, to the
+// admin's Installed components panel, live: an issuer whose discovery
+// keeps failing shows as off, not only in the log.
+func withSSOComponent(list []components.Component, o *auth.OIDC) []components.Component {
+	if !o.Configured() {
+		return list
+	}
+	comp := components.Component{Name: "sso", Impl: "oidc", Enabled: o.Enabled()}
+	if !comp.Enabled {
+		comp.Notes = "configured, but the issuer doesn't answer discovery: the SSO button stays hidden until it does (auth.oidc.discovery_failed in the log)"
+	}
+	return append(append([]components.Component{}, list...), comp)
+}
+
 // withLegalComponent adds the legal pages to the admin's Installed
 // components panel, so an operator sees that /privacy and /terms are
 // still off (and links to them hidden) before launch.
@@ -133,11 +148,13 @@ func (c LegalConfig) defaulted() LegalConfig {
 	if d.LastUpdated == "" {
 		d.LastUpdated = time.Now().UTC().Format("2006-01-02")
 	}
+	// Optional: a blank one is described, not shown as a placeholder on
+	// the published page.
 	if d.HostingProvider == "" {
-		d.HostingProvider = "[hosting provider: Settings → Legal]"
+		d.HostingProvider = "our hosting provider"
 	}
 	if d.EmailProvider == "" {
-		d.EmailProvider = "[email provider: Settings → Legal]"
+		d.EmailProvider = "our email provider"
 	}
 	if d.MapStyleURL == "" {
 		d.MapStyleURL = defaultMapStyleURL
@@ -213,6 +230,15 @@ func (c LegalConfig) identityLines(lang string) []string {
 		out = append(out, v)
 	}
 	return out
+}
+
+// keptFor is a retention period's clause on /privacy: 0 days means the
+// retention sweeper keeps the data, so the page must not say "0 days".
+func keptFor(days, kept, deleted string) string {
+	if days == "0" {
+		return kept
+	}
+	return strings.ReplaceAll(deleted, "{{DAYS}}", days)
 }
 
 // legalIdentityHTML is {{COMPANY_IDENTITY}} on /privacy and /terms: a
@@ -313,30 +339,50 @@ func spliceSellerIdentity(body []byte, c LegalConfig) []byte {
 // "[company name: Settings → Legal]" visible to real users is worse than 503ing
 // the route until the operator finishes the configuration. The
 // 503 body lists the missing keys so the operator knows what to set.
-func renderLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
+func renderLegalPage(w http.ResponseWriter, name, lang string, cfg LegalConfig) {
 	if missing := cfg.missingRequired(); len(missing) > 0 {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte(legalUnconfiguredHTML(missing)))
+		_, _ = w.Write([]byte(legalUnconfiguredHTML(missing, lang)))
 		return
 	}
 	writeLegalPage(w, name, cfg)
 }
 
+// legalUnconfiguredWords are legalUnconfiguredHTML's words in Swedish;
+// English is the key.
+var legalUnconfiguredWords = map[string]string{
+	"Not configured yet": "Inte inställd än",
+	"This page is not yet configured. The operator must fill in the following under Settings → Legal before /privacy and /terms become available:": "Den här sidan är inte inställd än. Den som driver tjänsten måste fylla i följande under Inställningar → Juridik innan /privacy och /terms blir tillgängliga:",
+	"Open the console": "Öppna konsolen",
+	"company name":     "företagsnamn",
+	"contact email":    "kontaktadress",
+	"jurisdiction":     "jurisdiktion",
+}
+
 // legalUnconfiguredHTML is the page /privacy and /terms show until the
-// operator fills in missing: the site's own look, saying what to set
-// and where.
-func legalUnconfiguredHTML(missing []string) string {
+// operator fills in missing: the site's own look, in lang ("sv", else
+// English), saying what to set and where.
+func legalUnconfiguredHTML(missing []string, lang string) string {
+	if lang != "sv" {
+		lang = "en"
+	}
+	tr := func(s string) string {
+		if v, ok := legalUnconfiguredWords[s]; ok && lang == "sv" {
+			return v
+		}
+		return s
+	}
 	var items strings.Builder
 	for _, m := range missing {
-		items.WriteString("<li>" + html.EscapeString(m) + "</li>")
+		items.WriteString("<li>" + html.EscapeString(tr(m)) + "</li>")
 	}
 	return `<!doctype html>
-<html lang="en"><head>
+<html lang="` + lang + `"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Not configured yet</title>
+<title>` + tr("Not configured yet") + `</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/fontface.css">
 <link rel="stylesheet" href="/assets/page-tokens.css">
@@ -350,10 +396,10 @@ func legalUnconfiguredHTML(missing []string) string {
 </style>
 </head><body>
 <main class="card">
-  <h1>Not configured yet</h1>
-  <p>This page is not yet configured. The operator must fill in the following under Settings → Legal before /privacy and /terms become available:</p>
+  <h1>` + tr("Not configured yet") + `</h1>
+  <p>` + tr("This page is not yet configured. The operator must fill in the following under Settings → Legal before /privacy and /terms become available:") + `</p>
   <ul>` + items.String() + `</ul>
-  <a class="btn primary" href="/arrange">Open the console</a>
+  <a class="btn primary" href="/arrange">` + tr("Open the console") + `</a>
 </main>
 </body></html>
 `
@@ -374,10 +420,13 @@ func writeLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
 		{"{{CONTACT_EMAIL}}", d.ContactEmail},
 		{"{{DPO_EMAIL}}", d.DPOEmail},
 		{"{{JURISDICTION}}", d.Jurisdiction},
-		{"{{LOCATION_RETENTION_DAYS}}", d.LocationRetentionDays},
-		{"{{AUDIT_RETENTION_DAYS}}", d.AuditRetentionDays},
-		{"{{PARTY_RETENTION_DAYS}}", d.PartyRetentionDays},
-		{"{{ADDRESS_RETENTION_DAYS}}", d.AddressRetentionDays},
+		{"{{LOCATION_RETENTION}}", keptFor(d.LocationRetentionDays, "deleted with the event.",
+			"deleted with the event, or after the platform's location-retention window ({{DAYS}} days post-event), whichever comes first.")},
+		{"{{AUDIT_RETENTION}}", keptFor(d.AuditRetentionDays, "kept with no time limit.", "kept for {{DAYS}} days.")},
+		{"{{PARTY_RETENTION}}", keptFor(d.PartyRetentionDays, "is kept with no time limit.",
+			"is deleted {{DAYS}} days after it ends, or when a booked one lapses unplayed.")},
+		{"{{ADDRESS_RETENTION}}", keptFor(d.AddressRetentionDays, "are kept with no time limit.",
+			"are deleted {{DAYS}} days after the letter is posted, or after a gift box redemption is turned down or cancelled.")},
 		{"{{LAST_UPDATED}}", d.LastUpdated},
 		{"{{HOSTING_PROVIDER}}", d.HostingProvider},
 		{"{{EMAIL_PROVIDER}}", d.EmailProvider},

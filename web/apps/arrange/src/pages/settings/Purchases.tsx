@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { Coins } from "lucide-react";
-import { get, post } from "@zonventure/api";
+import { ApiError, get, post } from "@zonventure/api";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { CATALOG_ENABLED, href } from "../../router.ts";
 import { Button, Card, Empty, ErrorBox, ICON, Loading, Pill, Row, Table, fmtDate, fmtDateTime, fmtMoney, useDialogs, useLoad, useToast, type Tone } from "../../ui/index.ts";
 import { SPOTS } from "@zonventure/ui";
+import { MarkBilledDialog } from "../admin/OrgDialogs.tsx";
+import { saveBlob } from "./account-api.ts";
 
 /** purchaseDTO, internal/admin/purchases.go. */
 interface Purchase {
   id: number;
   org_id: number;
+  org_name?: string;
   adventure_slug: string;
   adventure_title?: string;
   max_players: number;
@@ -21,6 +24,7 @@ interface Purchase {
   invoice_url?: string;
   created_at: string;
   billed_at?: string;
+  invoice_number?: string;
   voided_at?: string;
   pre_migration?: boolean;
 }
@@ -55,6 +59,7 @@ export function PurchasesTab() {
   const load = useLoad((signal) => get<{ purchases: Purchase[] | null }>("/api/admin/purchases", { signal }), []);
   const [filter, setFilter] = useState<Filter>(isAdmin ? "tobill" : "all");
   const [busy, setBusy] = useState<number | "portal" | null>(null);
+  const [billing, setBilling] = useState<number | null>(null);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
 
@@ -93,20 +98,30 @@ export function PurchasesTab() {
   };
 
   const refund = async (p: Purchase) => {
-    const pw = await dialogs.password({
-      title: t.t("Refund"),
-      message: t.t('Refund {{amount}} to the customer? The state flips to "refunded" once Stripe confirms.', { amount: money(p) }),
-      confirmLabel: t.t("Refund"),
-      danger: true,
-    });
-    if (!pw) return;
-    setBusy(p.id);
-    try {
-      await post(`/api/admin/purchases/${p.id}/refund`, undefined, { headers: { "X-Confirm-Password": pw } });
-    } catch (e) {
-      toast.err(e);
-      setBusy(null);
-      return;
+    // A wrong password asks again rather than dropping the refund.
+    let error: string | undefined;
+    for (;;) {
+      const pw = await dialogs.password({
+        title: t.t("Refund"),
+        message: t.t('Refund {{amount}} to the customer? The state flips to "refunded" once Stripe confirms.', { amount: money(p) }),
+        confirmLabel: t.t("Refund"),
+        danger: true,
+        ...(error ? { error } : {}),
+      });
+      if (!pw) return;
+      setBusy(p.id);
+      try {
+        await post(`/api/admin/purchases/${p.id}/refund`, undefined, { headers: { "X-Confirm-Password": pw } });
+        break;
+      } catch (e) {
+        setBusy(null);
+        if (e instanceof ApiError && e.status === 401) {
+          error = t.t("Wrong password. Try again.");
+          continue;
+        }
+        toast.err(e);
+        return;
+      }
     }
     toast.ok(t.t("Refund initiated. Confirming with Stripe…"));
     // The refund lands with Stripe's charge.refunded webhook; poll the
@@ -136,12 +151,20 @@ export function PurchasesTab() {
     setTimeout(poll, 2000);
   };
 
+  // The rows the filter shows, for an invoicing spreadsheet.
+  const csv = () => {
+    const cell = (c: string | number) => (/[",\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : String(c));
+    const head = ["id", "org_id", "adventure", "players", "amount", "currency", "provider", "state", "created_at", "billed_at", "voided_at"];
+    const lines = shown.map((p) => [p.id, p.org_id, p.adventure_title || p.adventure_slug, p.max_players, (p.amount_cents / 100).toFixed(2), p.currency, p.provider, p.state, p.created_at, p.billed_at ?? "", p.voided_at ?? ""]);
+    saveBlob(new Blob([[head, ...lines].map((r) => r.map(cell).join(",")).join("\n")], { type: "text/csv" }), `purchases-${filter}.csv`);
+  };
+
   const statePill = (p: Purchase) => {
     // Invoice rows are "paid" in the database from fulfilment, but the
     // org pays later, off-platform; say what is really the case.
     if (p.provider === "invoice" && p.state === "paid") {
       if (p.voided_at) return <Pill tone="bad">{t.t("void")}</Pill>;
-      if (p.billed_at) return <Pill tone="good">{t.t("billed")}</Pill>;
+      if (p.billed_at) return <><Pill tone="good">{t.t("billed")}</Pill>{p.invoice_number && <> {t.t("Invoice {{n}}", { n: p.invoice_number })}</>}</>;
       return <Pill tone="warn">{t.t("to invoice")}</Pill>;
     }
     const tone: Tone = p.state === "paid" ? "good" : p.state === "pending" ? "warn" : p.state === "refunded" ? "bad" : "neutral";
@@ -150,13 +173,17 @@ export function PurchasesTab() {
 
   const actions = (p: Purchase) => {
     const out = [];
+    // Stripe's receipt where it has one; else the server's plain one
+    // (internal/admin/receipts.go), for passes paid through checkout.
     if (p.invoice_url) {
-      out.push(<a key="r" className="btn sm ghost" href={p.invoice_url} target="_blank" rel="noopener">{t.t("Receipt")}</a>);
+      out.push(<a key="r" className="btn sm ghost" href={p.invoice_url} target="_blank" rel="noopener">{t.t("Download receipt")}</a>);
+    } else if ((p.state === "paid" || p.state === "refunded") && p.amount_cents > 0 && p.provider !== "free" && p.provider !== "invoice") {
+      out.push(<a key="r" className="btn sm ghost" href={`/api/admin/purchases/${p.id}/receipt`} download>{t.t("Download receipt")}</a>);
     }
     if (isAdmin && p.provider === "invoice" && p.state === "paid" && !p.voided_at) {
       const next = !p.billed_at;
       out.push(
-        <Button key="b" size="sm" disabled={busy === p.id} onClick={() => void act(p, () => post(`/api/admin/purchases/${p.id}/billed`, { billed: next }), next ? t.t("Marked billed") : t.t("Marked unbilled"))}>
+        <Button key="b" size="sm" disabled={busy === p.id} onClick={() => (next ? setBilling(p.id) : void act(p, () => post(`/api/admin/purchases/${p.id}/billed`, { billed: false }), t.t("Marked unbilled")))}>
           {p.billed_at ? t.t("Unmark billed") : t.t("Mark billed")}
         </Button>,
       );
@@ -169,7 +196,7 @@ export function PurchasesTab() {
             onClick={async () => {
               const yes = await dialogs.confirm({
                 title: t.t("Void"),
-                message: t.t("Void this purchase so it won't appear on the next invoice? The players stay on the pass; only the billable line is removed."),
+                message: t.t("Void this purchase so it won't appear on the next invoice? The players stay on the pass and its seats stay free of charge; only the billable line is removed. You can undo this."),
                 confirmLabel: t.t("Void"),
                 danger: true,
               });
@@ -181,7 +208,14 @@ export function PurchasesTab() {
         );
       }
     }
-    if (isAdmin && p.state === "paid" && p.provider === "stripe") {
+    if (isAdmin && p.provider === "invoice" && p.voided_at) {
+      out.push(
+        <Button key="u" size="sm" disabled={busy === p.id} onClick={() => void act(p, () => post(`/api/admin/purchases/${p.id}/unvoid`), t.t("Void undone"))}>
+          {t.t("Undo void")}
+        </Button>,
+      );
+    }
+    if (isAdmin && p.state === "paid" && (p.provider === "stripe" || p.provider === "simulated")) {
       out.push(
         p.pre_migration ? (
           <Pill key="l" title={t.t("This purchase was imported from a previous zv deployment. Refund it through the pre-migration Stripe dashboard, not this button.")}>
@@ -195,7 +229,12 @@ export function PurchasesTab() {
     return out.length ? <Row gap="sm" end>{out}</Row> : null;
   };
 
-  const empty = (
+  // The platform admin buys nothing and has no adventures to send them to.
+  const empty = isAdmin ? (
+    <Empty title={t.t("No purchases yet.")} illustration={SPOTS.noPurchases}>
+      {t.t("No organization has bought an event pass yet.")}
+    </Empty>
+  ) : (
     <Empty
       title={t.t("No purchases yet.")}
       illustration={SPOTS.noPurchases}
@@ -226,12 +265,14 @@ export function PurchasesTab() {
       }
       actions={
         <>
-          {hasStripePaid && <Button size="sm" loading={busy === "portal"} onClick={() => void portal()}>{t.t("Update payment method")}</Button>}
-          {purchases.length > 0 && <a className="btn sm" href={href({ name: "adventures" })}>{CATALOG_ENABLED ? t.t("Browse catalog") : t.t("Open your adventures")}</a>}
+          {isAdmin && shown.length > 0 && <Button size="sm" onClick={csv}>{t.t("Download CSV")}</Button>}
+          {!isAdmin && hasStripePaid && <Button size="sm" loading={busy === "portal"} onClick={() => void portal()}>{t.t("Update payment method")}</Button>}
+          {!isAdmin && purchases.length > 0 && <a className="btn sm" href={href({ name: "adventures" })}>{CATALOG_ENABLED ? t.t("Browse catalog") : t.t("Open your adventures")}</a>}
         </>
       }
       flush
     >
+      {billing !== null && <MarkBilledDialog purchaseId={billing} onClose={() => setBilling(null)} onDone={() => { setBilling(null); load.reload(); }} />}
       {isAdmin && purchases.length > 0 && (
         <div style={{ padding: "0 var(--dz-space-4)", display: "flex", flexDirection: "column", gap: "var(--dz-space-2)" }}>
           <div className="cs-row cs-row--sm" role="group" aria-label={t.t("Filter")}>
@@ -268,7 +309,7 @@ export function PurchasesTab() {
                 </div>
               ),
             },
-            ...(isAdmin ? [{ key: "org", header: t.t("Org"), wide: true, cell: (p: Purchase) => "#" + p.org_id }] : []),
+            ...(isAdmin ? [{ key: "org", header: t.t("Org"), wide: true, cell: (p: Purchase) => p.org_name || "#" + p.org_id }] : []),
             { key: "players", header: t.t("Players"), align: "end" as const, cell: (p) => p.max_players },
             { key: "total", header: t.t("Total"), align: "end" as const, cell: (p) => money(p) },
             { key: "state", header: t.t("State"), cell: statePill },

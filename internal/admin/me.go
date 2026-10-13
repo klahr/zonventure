@@ -13,11 +13,13 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/settings"
 )
 
 // Account-settings handlers. These all live on /api/admin/me/* and
@@ -45,6 +47,10 @@ func (h *Handlers) ChangeMyPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := auth.ValidatePassword(req.New); err != nil {
+		if errors.Is(err, auth.ErrPasswordTooCommon) {
+			httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": err.Error(), "code": "password_too_common"})
+			return
+		}
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -60,7 +66,7 @@ func (h *Handlers) ChangeMyPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 	if _, err := tx.ExecContext(r.Context(),
-		`UPDATE users SET password_hash = $1, password_is_default = 0 WHERE id = $2`,
+		`UPDATE users SET password_hash = $1, password_is_default = 0, password_set_by_admin = 0 WHERE id = $2`,
 		hash, me.ID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
@@ -94,7 +100,28 @@ func (h *Handlers) ChangeMyPassword(w http.ResponseWriter, r *http.Request) {
 		Event: auth.EventSetPassword, OK: true, UserID: &me.ID, Username: me.Username,
 		IP: auth.ClientIP(r), UserAgent: auth.UserAgent(r), Reason: auth.ReasonSuccess,
 	})
+	h.notifyAccountChanged(r, me.ID, me.Email, emailtpl.ChangedPassword, "", "")
 	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// notifyAccountChanged mails a security notice about what changed to
+// the account's address (to) — the old one for an email change, with
+// revertLink to put it back — so a hijacked session can't change how
+// the account signs in unseen. Best-effort, like the other account
+// emails.
+func (h *Handlers) notifyAccountChanged(r *http.Request, userID int64, to, what, newEmail, revertLink string) {
+	if h.Mailer == nil || to == "" {
+		return
+	}
+	lang := emailtpl.LangFromRequest(r)
+	var own sql.NullString
+	if h.DB.QueryRowContext(r.Context(), `SELECT language FROM users WHERE id = $1`, userID).Scan(&own) == nil && own.Valid {
+		lang = emailtpl.Lang(own.String)
+	}
+	subject, c := emailtpl.AccountChanged(lang, what, newEmail, revertLink, strings.TrimSpace(settings.CurrentLegal().ContactEmail))
+	if err := h.Mailer.Send(r.Context(), emailtpl.Message([]string{to}, subject, emailtpl.Classic, emailtpl.Platform(), c)); err != nil {
+		logx.Warn("admin.me.notice.mail_failed", "user_id", userID, "what", what, "err", err.Error())
+	}
 }
 
 type changeEmailRequest struct {
@@ -104,9 +131,14 @@ type changeEmailRequest struct {
 // ChangeMyEmail issues a change_email token and mails the verify link
 // to the *new* address (proving the user controls it before we flip
 // their login). The actual change happens when the link is clicked
-// and ConfirmEmailChange consumes the token.
+// and ConfirmEmailChange consumes the token. Requires
+// X-Confirm-Password: the email is the password-reset channel, so a
+// stolen session must not be able to move it.
 func (h *Handlers) ChangeMyEmail(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
+	if !h.requirePasswordConfirm(w, r) {
+		return
+	}
 	var req changeEmailRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -204,6 +236,50 @@ func (h *Handlers) ChangeMyUsername(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"id": me.ID, "username": username})
 }
 
+// SetMyDisplayName sets the name the console greets the caller by;
+// empty clears it.
+func (h *Handlers) SetMyDisplayName(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	var req struct {
+		Name string `json:"name"`
+	}
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if utf8.RuneCountInString(name) > auth.MaxDisplayNameLen {
+		httpx.Error(w, http.StatusBadRequest, "name is too long")
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE users SET display_name = NULLIF($1, '') WHERE id = $2`, name, me.ID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]string{"name": name})
+}
+
+// MarkWelcomeSeen records that the console's welcome dialog was shown
+// to the caller, so no other browser shows it again; ForgetWelcomeSeen
+// undoes it, for "Show the welcome again".
+func (h *Handlers) MarkWelcomeSeen(w http.ResponseWriter, r *http.Request) {
+	h.setWelcomeSeen(w, r, true)
+}
+
+func (h *Handlers) ForgetWelcomeSeen(w http.ResponseWriter, r *http.Request) {
+	h.setWelcomeSeen(w, r, false)
+}
+
+func (h *Handlers) setWelcomeSeen(w http.ResponseWriter, r *http.Request, seen bool) {
+	me, _ := auth.FromContext(r.Context())
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE users SET welcome_seen = $1 WHERE id = $2`, seen, me.ID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // buildChangeEmailLink builds the email-change confirmation URL
 // using only the configured publicURL. Request headers are not
 // consulted; see buildResetLink for rationale.
@@ -238,7 +314,7 @@ func (h *Handlers) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
 	if me.Role == auth.RoleAdmin {
 		var others int
 		if err := h.DB.QueryRowContext(r.Context(),
-			`SELECT COUNT(*) FROM users WHERE is_admin = TRUE AND id <> $1`, me.ID).Scan(&others); err != nil {
+			`SELECT COUNT(*) FROM users WHERE is_admin = TRUE AND NOT is_support AND id <> $1`, me.ID).Scan(&others); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 			return
 		}
@@ -251,7 +327,7 @@ func (h *Handlers) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
 
 	scheduled := time.Now().Add(AccountDeletionGracePeriod)
 	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE users SET scheduled_deletion_at = $1 WHERE id = $2`,
+		`UPDATE users SET scheduled_deletion_at = $1, deletion_reminder_sent_at = NULL WHERE id = $2`,
 		scheduled, me.ID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "schedule deletion failed", err)
 		return
@@ -273,6 +349,7 @@ func (h *Handlers) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
 	logx.Info("admin.me.delete.scheduled",
 		"user_id", me.ID, "username", me.Username,
 		"scheduled_for", scheduled.UTC().Format(time.RFC3339))
+	h.sendDeletionMail(r.Context(), me.ID, false)
 	auth.ClearCookie(w, auth.CookieSecure(r, h.SecureCookie))
 	httpx.JSON(w, http.StatusAccepted, map[string]string{
 		"scheduled_deletion_at": scheduled.UTC().Format(time.RFC3339),
@@ -286,7 +363,7 @@ func (h *Handlers) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) CancelMyDeletion(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE users SET scheduled_deletion_at = NULL WHERE id = $1`, me.ID); err != nil {
+		`UPDATE users SET scheduled_deletion_at = NULL, deletion_reminder_sent_at = NULL WHERE id = $1`, me.ID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "cancel failed", err)
 		return
 	}
@@ -430,15 +507,29 @@ type emailChangeRevertStatus struct {
 	Available     bool   `json:"available"`
 	PreviousEmail string `json:"previous_email,omitempty"`
 	ExpiresAt     string `json:"expires_at,omitempty"`
+	// PendingEmail is an address a change waits to be confirmed at,
+	// until PendingExpiresAt; CancelMyEmailChange drops it.
+	PendingEmail     string `json:"pending_email,omitempty"`
+	PendingExpiresAt string `json:"pending_expires_at,omitempty"`
 }
 
 // MyEmailChangeStatus returns the revertability of the most recent
-// email change for the calling user.
+// email change for the calling user, and the change waiting for
+// confirmation, if any.
 func (h *Handlers) MyEmailChangeStatus(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
+	var st emailChangeRevertStatus
+	var pending, pendingExp string
+	if h.DB.QueryRowContext(r.Context(), `
+		SELECT data, expires_at FROM email_verifications
+		WHERE user_id = $1 AND purpose = $2 AND data IS NOT NULL`, me.ID, auth.PurposeChangeEmail).Scan(&pending, &pendingExp) == nil {
+		if t, err := time.Parse("2006-01-02 15:04:05", pendingExp); err == nil && time.Now().Before(t) {
+			st.PendingEmail, st.PendingExpiresAt = pending, t.UTC().Format(time.RFC3339)
+		}
+	}
 	prev, setAt, ok := loadPreviousEmail(r.Context(), h.DB, me.ID)
 	if !ok {
-		httpx.JSON(w, http.StatusOK, emailChangeRevertStatus{Available: false})
+		httpx.JSON(w, http.StatusOK, st)
 		return
 	}
 	expiresAt := setAt.Add(time.Duration(emailRevertWindowDays) * 24 * time.Hour)
@@ -446,14 +537,24 @@ func (h *Handlers) MyEmailChangeStatus(w http.ResponseWriter, r *http.Request) {
 		// Window expired — clear it lazily so the next read is fast.
 		_, _ = h.DB.ExecContext(r.Context(),
 			`UPDATE users SET previous_email = NULL, previous_email_set_at = NULL WHERE id = $1`, me.ID)
-		httpx.JSON(w, http.StatusOK, emailChangeRevertStatus{Available: false})
+		httpx.JSON(w, http.StatusOK, st)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, emailChangeRevertStatus{
-		Available:     true,
-		PreviousEmail: prev,
-		ExpiresAt:     expiresAt.UTC().Format(time.RFC3339),
-	})
+	st.Available, st.PreviousEmail, st.ExpiresAt = true, prev, expiresAt.UTC().Format(time.RFC3339)
+	httpx.JSON(w, http.StatusOK, st)
+}
+
+// CancelMyEmailChange drops the caller's email change waiting for
+// confirmation, so its link no longer works. Idempotent.
+func (h *Handlers) CancelMyEmailChange(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	if _, err := h.DB.ExecContext(r.Context(),
+		`DELETE FROM email_verifications WHERE user_id = $1 AND purpose = $2`, me.ID, auth.PurposeChangeEmail); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "cancel failed", err)
+		return
+	}
+	logx.Info("admin.me.email.change_cancelled", "user_id", me.ID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // RevertMyEmailChange flips the email back to the stored previous
@@ -487,10 +588,12 @@ func (h *Handlers) RevertMyEmailChange(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `
 		UPDATE users SET
-		  email                 = previous_email,
-		  username              = CASE WHEN username = email THEN previous_email ELSE username END,
-		  previous_email        = NULL,
-		  previous_email_set_at = NULL
+		  email                   = previous_email,
+		  username                = CASE WHEN username = email THEN previous_email ELSE username END,
+		  email_verified          = COALESCE(previous_email_verified, email_verified),
+		  previous_email          = NULL,
+		  previous_email_set_at   = NULL,
+		  previous_email_verified = NULL
 		WHERE id = $1
 	`, me.ID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "revert failed")
@@ -498,6 +601,34 @@ func (h *Handlers) RevertMyEmailChange(w http.ResponseWriter, r *http.Request) {
 	}
 	logx.Info("admin.me.email.reverted", "user_id", me.ID, "to", prev)
 	httpx.JSON(w, http.StatusOK, map[string]string{"email": prev})
+}
+
+// RevertEmailChangeByLink consumes the one-time link the "email
+// changed" notice sent to the old address: that address is back on the
+// account, every session is signed out and every API token revoked.
+// Public route, like ConfirmEmailChange: the token is the auth.
+func (h *Handlers) RevertEmailChangeByLink(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token string `json:"token"`
+	}
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	u, err := auth.ConsumeEmailRevertToken(r.Context(), h.DB, strings.TrimSpace(req.Token))
+	switch {
+	case errors.Is(err, auth.ErrVerificationUnknown):
+		httpx.Error(w, http.StatusBadRequest, "this link is invalid or was already used")
+		return
+	case errors.Is(err, auth.ErrVerificationExpired):
+		httpx.Error(w, http.StatusBadRequest, "this link has expired")
+		return
+	case err != nil:
+		logx.Warn("admin.me.email.revert_link_failed", "err", err.Error())
+		httpx.Error(w, http.StatusConflict, "previous email is taken — contact support")
+		return
+	}
+	logx.Info("admin.me.email.reverted_by_link", "user_id", u.ID, "to", u.Email)
+	httpx.JSON(w, http.StatusOK, map[string]string{"email": u.Email})
 }
 
 func loadPreviousEmail(ctx context.Context, db *sql.DB, userID int64) (string, time.Time, bool) {
@@ -552,6 +683,18 @@ func (h *Handlers) ConfirmEmailChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logx.Info("admin.me.email.changed", "user_id", u.ID, "new_email", u.Email)
+	if prev, _, ok := loadPreviousEmail(r.Context(), h.DB, u.ID); ok {
+		// The old address gets a one-time way back, for as long as the
+		// revert window: after a hijack the console's Revert is the
+		// attacker's, and a password reset goes to their address.
+		var revert string
+		if tok, err := auth.IssueEmailRevertToken(r.Context(), h.DB, u.ID, prev, time.Duration(emailRevertWindowDays)*24*time.Hour); err != nil {
+			logx.Warn("admin.me.email.revert_token_failed", "user_id", u.ID, "err", err.Error())
+		} else {
+			revert = strings.TrimRight(h.PublicURL, "/") + "/arrange#revert-email?" + url.Values{"token": []string{tok}}.Encode()
+		}
+		h.notifyAccountChanged(r, u.ID, prev, emailtpl.ChangedEmail, u.Email, revert)
+	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"id": u.ID, "email": u.Email, "username": u.Username,
 	})

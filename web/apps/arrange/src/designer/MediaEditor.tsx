@@ -130,9 +130,18 @@ export function useMediaUpload() {
     if (!files?.length) return added;
     setBusy(true);
     setError(null);
+    let name = "";
     try {
       for (const f of Array.from(files)) {
-        const r = await adventures.uploadMedia(slug, await downscale(f));
+        name = f.name;
+        const file = await downscale(f);
+        // Only a browser that decodes HEIC (Safari) can turn it into a JPEG;
+        // the server cannot read it.
+        if (/^image\/hei[cf]/.test(file.type) || /\.hei[cf]$/i.test(file.name)) {
+          setError(t.t("This browser can't convert HEIC photos. Save the photo as JPEG first, or add it from Safari or an iPhone."));
+          continue;
+        }
+        const r = await adventures.uploadMedia(slug, file);
         // A PDF is a print material's, never a step's.
         if (r.kind === "pdf") {
           setError(t.t("Pick a picture, sound or video."));
@@ -141,7 +150,12 @@ export function useMediaUpload() {
         if (!added.some((m) => m.id === r.id)) added.push({ id: r.id, kind: r.kind });
       }
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : t.t("Could not reach the server. Check your connection."));
+      const mb = e instanceof ApiError && e.code === "media_too_large" ? (e.body as { max_mb?: number } | undefined)?.max_mb : undefined;
+      setError(
+        mb
+          ? t.t("{{name}} is too large. A file can be at most {{mb}} MB.", { name, mb })
+          : e instanceof ApiError ? e.message : t.t("Could not reach the server. Check your connection."),
+      );
     } finally {
       setBusy(false);
     }

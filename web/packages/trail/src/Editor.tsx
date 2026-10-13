@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSyncExternalStore } from "react";
 import type { I18n } from "@zonventure/i18n";
-import { CHOICES, MAX_ANSWERS, MAX_CARDS, MAX_OPTION, MAX_TEXT, asKind, blank, move, numbers, problems, type Card, type Kind, type Problem } from "./cards.ts";
+import { CHOICES, markLabel, MAX_ANSWERS, MAX_CARDS, MAX_OPTION, MAX_TEXT, asKind, blank, move, numbers, problems, type Card, type Kind, type Problem } from "./cards.ts";
 import type { SaveState } from "./save.ts";
 import { Icon } from "./Icons.tsx";
 import { ThemePicker } from "./Themes.tsx";
@@ -99,7 +99,7 @@ export function Editor(props: EditorProps) {
             className="trail-bar__title"
             value={props.title}
             maxLength={120}
-            disabled={readOnly}
+            readOnly={readOnly}
             aria-label={t("Name of the party adventure")}
             onChange={(e) => onChange({ title: e.target.value })}
           />
@@ -163,6 +163,8 @@ export function Editor(props: EditorProps) {
                 canLater={index < cards.length - 1}
                 onEarlier={() => reorder(index, index - 1)}
                 onLater={() => reorder(index, index + 1)}
+                onFirst={() => reorder(index, 0)}
+                onLast={() => reorder(index, cards.length - 1)}
                 onDelete={remove}
               />
             </div>
@@ -247,14 +249,22 @@ export function CardEditor(props: {
   canLater: boolean;
   onEarlier: () => void;
   onLater: () => void;
+  onFirst: () => void;
+  onLast: () => void;
   onDelete: () => void;
 }) {
-  const { t, card, readOnly, onChange } = props;
+  const { t, card, readOnly } = props;
+  // Any edit makes a template's example card the creator's own.
+  const onChange = (c: Card) => {
+    const next = { ...c };
+    delete next.example;
+    props.onChange(next);
+  };
   const has = (code: Problem["code"]) => props.problems.some((p) => p.code === code);
   const need: Record<string, string> = {
     text: card.kind === "info" ? t("Write the text.") : t("Write the question."),
     options: t("Fill in all three options."),
-    correct: t("Tap 1, X or 2 to mark the right option."),
+    correct: t("Tap A, B or C to mark the right option."),
     answers: t("Write the right answer."),
   };
   return (
@@ -298,7 +308,7 @@ export function CardEditor(props: {
             value={card.text}
             rows={2}
             maxLength={MAX_TEXT}
-            disabled={readOnly}
+            readOnly={readOnly}
             placeholder={card.kind === "info" ? t("Write what the teams read here…") : t("Write the question…")}
             aria-label={card.kind === "info" ? t("Text") : t("Question")}
             onChange={(e) => onChange({ ...card, text: e.target.value })}
@@ -308,33 +318,35 @@ export function CardEditor(props: {
               <Icon name="pencil" size={16} />
             </span>
           )}
+          <Room value={card.text} max={MAX_TEXT} />
         </label>
 
         {card.kind === "quiz" && (
           <div className="trail-options">
-            {/* The mark (1, X, 2) is what the paper and the phone show;
-                the tick at the end says which option is right. */}
+            {/* The mark (1, X, 2, or A, B, C) is what the paper and the
+                phone show; the tick at the end says which option is right. */}
             {CHOICES.map((mark, i) => {
               const right = card.correct === mark;
               return (
                 <div className={"trail-option" + (right ? " is-right" : "")} key={mark}>
                   <span className="trail-mark trail-mark--static" aria-hidden="true">
-                    {mark}
+                    {markLabel(t, mark)}
                   </span>
                   <input
                     value={card.options?.[i] ?? ""}
                     maxLength={MAX_OPTION}
-                    disabled={readOnly}
-                    placeholder={t("Option {{c}}", { c: mark })}
-                    aria-label={t("Option {{c}}", { c: mark })}
+                    readOnly={readOnly}
+                    placeholder={t("Option {{c}}", { c: markLabel(t, mark) })}
+                    aria-label={t("Option {{c}}", { c: markLabel(t, mark) })}
                     onChange={(e) => onChange({ ...card, options: (card.options ?? ["", "", ""]).map((o, j) => (j === i ? e.target.value : o)) })}
                   />
+                  <Room value={card.options?.[i] ?? ""} max={MAX_OPTION} />
                   <button
                     type="button"
                     className={"trail-tick" + (right ? " is-right" : "")}
                     aria-pressed={right}
-                    aria-label={t("Mark {{c}} as the right option", { c: mark })}
-                    title={right ? t("Right") : t("Mark {{c}} as the right option", { c: mark })}
+                    aria-label={t("Mark {{c}} as the right option", { c: markLabel(t, mark) })}
+                    title={right ? t("Right") : t("Mark {{c}} as the right option", { c: markLabel(t, mark) })}
                     disabled={readOnly}
                     onClick={() => onChange({ ...card, correct: mark })}
                   >
@@ -357,11 +369,12 @@ export function CardEditor(props: {
                 <input
                   value={a}
                   maxLength={MAX_OPTION}
-                  disabled={readOnly}
+                  readOnly={readOnly}
                   placeholder={i === 0 ? t("The right answer") : t("Another accepted spelling")}
                   aria-label={i === 0 ? t("The right answer") : t("Another accepted spelling")}
                   onChange={(e) => onChange({ ...card, answers: (card.answers ?? [""]).map((x, j) => (j === i ? e.target.value : x)) })}
                 />
+                <Room value={a} max={MAX_OPTION} />
                 {i > 0 && !readOnly && (
                   <button type="button" className="trail-icon-btn" aria-label={t("Remove this spelling")} title={t("Remove this spelling")} onClick={() => onChange({ ...card, answers: (card.answers ?? []).filter((_, j) => j !== i) })}>
                     <Icon name="trash" size={16} />
@@ -395,11 +408,20 @@ export function CardEditor(props: {
 
       {!readOnly && (
         <div className="trail-card__actions">
-          <button type="button" className="trail-tool trail-tool--icon" disabled={!props.canEarlier} onClick={props.onEarlier} title={t("Move earlier")} aria-label={t("Move earlier")}>
-            <Icon name="left" size={20} />
+          {/* Worded, with arrows rather than chevrons: not to be taken for going to another card. */}
+          <button type="button" className="trail-tool trail-tool--icon" disabled={!props.canEarlier} onClick={props.onFirst} title={t("Move to top")} aria-label={t("Move to top")}>
+            <Icon name="moveFirst" size={18} />
           </button>
-          <button type="button" className="trail-tool trail-tool--icon" disabled={!props.canLater} onClick={props.onLater} title={t("Move later")} aria-label={t("Move later")}>
-            <Icon name="right" size={20} />
+          <button type="button" className="trail-tool" disabled={!props.canEarlier} onClick={props.onEarlier} title={t("Move earlier")} aria-label={t("Move earlier")}>
+            <Icon name="moveEarlier" size={18} />
+            {t("Earlier")}
+          </button>
+          <button type="button" className="trail-tool" disabled={!props.canLater} onClick={props.onLater} title={t("Move later")} aria-label={t("Move later")}>
+            {t("Later")}
+            <Icon name="moveLater" size={18} />
+          </button>
+          <button type="button" className="trail-tool trail-tool--icon" disabled={!props.canLater} onClick={props.onLast} title={t("Move to bottom")} aria-label={t("Move to bottom")}>
+            <Icon name="moveLast" size={18} />
           </button>
           <button type="button" className="trail-tool trail-tool--icon trail-tool--danger" onClick={props.onDelete} title={t("Delete card")} aria-label={t("Delete card")}>
             <Icon name="trash" size={20} />
@@ -428,7 +450,7 @@ export function PhonePreview({ t, title, card, number }: { t: T; title: string; 
             <div className="trail-phone__options">
               {CHOICES.map((mark, i) => (
                 <span className="trail-phone__option" key={mark}>
-                  <span className="trail-phone__mark">{mark}</span>
+                  <span className="trail-phone__mark">{markLabel(t, mark)}</span>
                   {card.options?.[i]?.trim() || "…"}
                 </span>
               ))}
@@ -576,5 +598,15 @@ function Timeline(props: {
         )}
       </ol>
     </nav>
+  );
+}
+
+/** A capped field's length against its cap, once it is nearly full: the cap stops typing without a word otherwise. */
+function Room({ value, max }: { value: string; max: number }) {
+  if (value.length < max * 0.8) return null;
+  return (
+    <small className={"trail-room" + (value.length >= max ? " is-full" : "")}>
+      {value.length} / {max}
+    </small>
   );
 }

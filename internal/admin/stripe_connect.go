@@ -63,6 +63,10 @@ type stripeConnectStatusDTO struct {
 	// uses it to suppress the entire Connect panel on self-host
 	// (no platform fee = no marketplace = nothing to onboard).
 	PlatformFeeEnabled bool `json:"platform_fee_enabled"`
+	// PayoutTerms is when the platform pays the org for its ticket
+	// sales while there is no platform fee (Settings → Pricing); empty
+	// shows the built-in terms.
+	PayoutTerms string `json:"payout_terms,omitempty"`
 }
 
 type startStripeConnectResp struct {
@@ -93,7 +97,7 @@ func (h *Handlers) StartStripeConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	if !h.platformFee().Enabled() {
 		httpx.Error(w, http.StatusServiceUnavailable,
-			"marketplace fee is not configured on this server (set ZV_PLATFORM_FEE_PERCENT_BPS / ZV_PLATFORM_FEE_FIXED_CENTS / ZV_PLATFORM_FEE_MIN_CENTS)")
+			"marketplace fee is not configured on this server (set it under Settings → Pricing)")
 		return
 	}
 	mp, ok := h.Provider.(payments.MarketplaceProvider)
@@ -190,7 +194,7 @@ func (h *Handlers) GetStripeConnectStatus(w http.ResponseWriter, r *http.Request
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
-	if !canManageOrgConnect(me, orgID) {
+	if !canManageOrgConnect(me, orgID) && me.Role != auth.RoleSupport {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -335,6 +339,7 @@ func (h *Handlers) loadStripeConnectStatus(ctx context.Context, orgID int64) (st
 		out.SyncedAt = synced.String
 	}
 	out.PlatformFeeEnabled = h.platformFee().Enabled()
+	out.PayoutTerms = h.pricing().PayoutTerms
 	return out, nil
 }
 

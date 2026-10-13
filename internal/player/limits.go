@@ -12,6 +12,8 @@ import (
 //     AnswerWindow. Crucial because puzzle answers are short ("hi",
 //     "blue") and trivially brute-forceable; without a rate cap a
 //     scripted attacker could enumerate the accept list in seconds.
+//     A dev ticket's slot gets DevAnswerBurst: its author walks and
+//     taps fast while testing, and the ticket is not public.
 //
 //   - Location: throttled. At most one ping per LocationMinInterval.
 //     Real clients post every 15 seconds; anything faster than 5s is
@@ -36,6 +38,7 @@ type playLimiter struct {
 
 const (
 	AnswerBurst         = 6
+	DevAnswerBurst      = 30
 	AnswerWindow        = time.Minute
 	LocationMinInterval = 5 * time.Second
 	// MagicLinkBurst caps unique magic-link exchanges from one IP.
@@ -48,9 +51,9 @@ const (
 )
 
 // AllowAnswer returns (ok, retryAfter). ok=false means the slot has
-// exhausted AnswerBurst attempts in AnswerWindow and must wait
-// retryAfter before its next attempt.
-func (l *playLimiter) AllowAnswer(slotID int64) (bool, time.Duration) {
+// exhausted AnswerBurst (DevAnswerBurst for a dev ticket) attempts in
+// AnswerWindow and must wait retryAfter before its next attempt.
+func (l *playLimiter) AllowAnswer(slotID int64, dev bool) (bool, time.Duration) {
 	if l == nil {
 		return true, 0
 	}
@@ -71,7 +74,11 @@ func (l *playLimiter) AllowAnswer(slotID int64) (bool, time.Duration) {
 			pruned = append(pruned, t)
 		}
 	}
-	if len(pruned) >= AnswerBurst {
+	burst := AnswerBurst
+	if dev {
+		burst = DevAnswerBurst
+	}
+	if len(pruned) >= burst {
 		// Lockout until the oldest hit ages out of the window.
 		oldest := pruned[0]
 		retry := AnswerWindow - now.Sub(oldest)

@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Markdown, PlayView, StartCeremony, coverOf, brandVars, formatSeconds, loadFont, metresBetween, useEngineClock, withTheme, type Translate } from "@zonventure/play-ui";
+import { FitMap, Markdown, PlayView, Sheet, StartCeremony, coverOf, brandVars, formatSeconds, loadFont, metresBetween, useEngineClock, withTheme, type Translate } from "@zonventure/play-ui";
 import { play, siteName } from "@zonventure/api";
 import { SPOTS } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import { useGame } from "./useGame.ts";
 import { Inbox } from "./Inbox.tsx";
 import { DevBar } from "./DevBar.tsx";
-import { Menu } from "./Menu.tsx";
+import { Menu, NameField } from "./Menu.tsx";
 import { Files } from "./Files.tsx";
 import { CheatSheet, useSevenTaps } from "./Cheat.tsx";
 import { useGeo, useLiveRefresh } from "./live.ts";
@@ -23,12 +23,46 @@ export function App() {
   const choosing = !view?.roles?.some((r) => r.final) && (view?.blocks ?? []).some((b) => b.kind === "roles" && b.choose && !b.locked);
   const myRoles = (view?.roles?.length ?? 0) > 1 ? (view?.roles ?? []).filter((r) => r.mine && !r.secret && (r.claimed || !choosing)).map((r) => r.name || r.slug) : [];
   const running = s?.event.state === "running";
-  // The team's language for a translated adventure also switches the
-  // app's own words, where the app has them.
-  const teamLang = view?.lang;
+  // The team switching a translated adventure's language also switches
+  // the app's own words, where the app has them. Only a switch: on load
+  // the language this phone chose, or its own, holds.
+  const languages = view?.languages;
+  const teamLang = (languages?.length ?? 0) > 1 ? view?.lang : undefined;
+  const lastTeamLang = useRef(teamLang);
   useEffect(() => {
-    if (teamLang && i18n.available().includes(teamLang) && i18n.current() !== teamLang) i18n.setLocale(teamLang);
+    const prev = lastTeamLang.current;
+    lastTeamLang.current = teamLang;
+    if (prev && teamLang && prev !== teamLang && i18n.available().includes(teamLang)) i18n.setLocale(teamLang);
   }, [teamLang, i18n]);
+  // A translated adventure starts in the phone's language: once per team
+  // on this phone, while the team is still in the main language and has
+  // not begun, so a team that has chosen or is under way keeps its own.
+  const actRef = useRef(game.act);
+  actRef.current = game.act;
+  const teamID = s?.team.id;
+  const begun = !!s?.team.locked;
+  const langKey = languages?.join(",") ?? "";
+  // A store ticket plays in the language its buyer chose at checkout,
+  // and the app's words follow it there rather than the phone's: once
+  // per team on this phone, so a player's own pick in the menu holds.
+  const chosen = s?.team.lang;
+  const playing = teamLang || chosen;
+  useEffect(() => {
+    if (!teamID || !chosen || !playing) return;
+    const key = `zv-play-ui-lang-${teamID}`;
+    if (readFlag(key)) return;
+    writeFlag(key);
+    if (i18n.available().includes(playing)) i18n.setLocale(playing);
+  }, [teamID, chosen, playing, i18n]);
+  useEffect(() => {
+    const langs = langKey ? langKey.split(",") : [];
+    if (!teamID || chosen || langs.length < 2 || !running || begun) return;
+    const key = `zv-play-lang-${teamID}`;
+    if (readFlag(key)) return;
+    writeFlag(key);
+    const want = phoneLanguage(langs);
+    if (want && want !== langs[0] && teamLang === langs[0]) actRef.current({ kind: "language", lang: want });
+  }, [teamID, langKey, running, begun, teamLang, chosen]);
 
   // The welcome a player reads before the first step — once per player,
   // so a reload mid-game goes straight back to it.
@@ -48,16 +82,19 @@ export function App() {
   }, [docTitle]);
 
   // Cheating, for a tester: seven quick taps on the title ask for the
-  // adventure's cheat password. It lives only in memory, for this team,
-  // until a reload or a sign-out.
-  const [cheat, setCheat] = useState<{ team: number; password: string } | null>(null);
+  // adventure's cheat password. It is kept for this team in this browser
+  // session only, so it survives a reload but not closing the tab or a
+  // sign-out.
+  const [cheat, setCheat] = useState<{ team: number; password: string } | null>(readCheat);
   const [cheatOpen, setCheatOpen] = useState(false);
   const cheatPassword = cheat && s && cheat.team === s.team.id ? cheat.password : undefined;
   const tapTitle = useSevenTaps(() => {
     if (s?.event.cheat && !cheatPassword) setCheatOpen(true);
   });
   useEffect(() => {
-    if (game.status === "signed-out") setCheat(null);
+    if (game.status !== "signed-out") return;
+    setCheat(null);
+    writeCheat(null);
   }, [game.status]);
 
   // The whole app wears the palette the play surface does: the
@@ -95,11 +132,13 @@ export function App() {
   // Location only when the adventure has places (or the organiser asked
   // for positions): a quiz-only game shouldn't prompt for it or run GPS.
   // A party's places are cards to scan, never somewhere to reach.
-  const usesLocation = !view?.stations && !!(s?.event.start || view?.zone || view?.starts?.some((o) => o.zone) || view?.watch_position);
+  const usesLocation = !view?.stations && !!(s?.event.start || s?.event.uses_location || view?.zone || view?.starts?.some((o) => o.zone) || view?.watch_position);
 
   // A party's card scanned with the phone's own camera opens
   // /play?station=CODE: take the team there once the game is up.
   const pendingStation = useRef(new URLSearchParams(location.search).get("station"));
+  // Why a link that was just opened signed no one in (see MagicLinkLogin).
+  const [linkProblem] = useState(() => new URLSearchParams(location.search).get("link"));
   useEffect(() => {
     const code = pendingStation.current;
     if (!code || game.status !== "ready" || !running || !view) return;
@@ -112,7 +151,11 @@ export function App() {
   const setShareLocation = (on: boolean) => {
     setShareLocationState(on);
     if (on) clearFlag(SHARE_OFF_KEY);
-    else writeFlag(SHARE_OFF_KEY);
+    else {
+      writeFlag(SHARE_OFF_KEY);
+      // Where the phone last was no longer counts as being there.
+      void play.locationOff().then(game.refresh, () => {});
+    }
   };
   const geo = useGeo(
     game.status === "ready" && running && !view?.finished && !showIntro && usesLocation && shareLocation,
@@ -140,10 +183,33 @@ export function App() {
     return <Screen><p className="app-muted">{t("Loading…")}</p></Screen>;
   }
   if (game.status === "signed-out") {
+    const over = game.over ?? (linkProblem === "cancelled" ? "cancelled" : null);
+    if (over === "replaced") {
+      return (
+        <Screen>
+          <h1>{t("Opened on another phone")}</h1>
+          <p>{t("Your link was opened on another phone, which now plays as you. This phone is signed out. To play here again, open your link on this phone.")}</p>
+        </Screen>
+      );
+    }
+    if (over === "taken_out" || over === "game_finished") {
+      return <PartyEnd reason={over} t={t} />;
+    }
+    if (over) {
+      return (
+        <Screen>
+          <h1>{over === "cancelled" ? t("This event has been cancelled.") : t("This event has ended. Thanks for playing!")}</h1>
+        </Screen>
+      );
+    }
     return (
       <Screen>
         <img className="app-spot" src={SPOTS.invitation} alt="" width={480} height={480} />
         <h1>{t("Open your invitation link")}</h1>
+        {game.erased && <p role="status">{t("Your play data from this event is erased, and your link no longer works.")}</p>}
+        {linkProblem === "invalid" && <p className="app-menu__error" role="alert">{t("That link doesn't work any more. It may have been replaced by a newer one, or its play data erased: use the latest link you were sent, or ask for fresh links below.")}</p>}
+        {linkProblem === "expired" && <p className="app-menu__error" role="alert">{t("That link has expired. Ask your organiser for a new one, or ask for fresh links below.")}</p>}
+        {linkProblem === "busy" && <p className="app-menu__error" role="alert">{t("Too many tries just now. Wait a minute, then open your link again.")}</p>}
         <p>{t("Use the link you were sent to join your team. It signs you in on this phone.")}</p>
         <RecoverLink t={t} />
       </Screen>
@@ -163,9 +229,16 @@ export function App() {
   }
 
   // How far the team is from a place it has to reach.
-  const placeNote = (zone: play.PlayZone): string => {
+  const placeNote = (zone: play.PlayZone): ReactNode => {
     if (!shareLocation) return t("Location sharing is off. Turn it on in the menu so we can tell when you're there.");
-    if (geo.error?.code === 1) return t("Location is blocked for this page. Allow it in your browser's site settings, then reload.");
+    if (geo.error?.code === 1) {
+      return (
+        <>
+          {t("Location is blocked for this page. Allow location for this site in your browser's settings, then reload. Still stuck? Ask the organisers to move your team on.")}{" "}
+          <button type="button" className="pv-btn" onClick={() => location.reload()}>{t("Reload")}</button>
+        </>
+      );
+    }
     if (!geo.pos) return geo.error ? t("Can't find your location right now. Step into the open or wait a moment.") : t("Finding your location…");
     const m = metresBetween(geo.pos.coords.latitude, geo.pos.coords.longitude, zone.lat, zone.lng);
     return m < 1000
@@ -206,7 +279,7 @@ export function App() {
           {cheatPassword && <span className="app-status">{t("Cheating")}</span>}
           {(!game.online || game.queued > 0) && (
             <span className="app-status" role="status">
-              {game.queued > 0 ? t("{{n}} waiting to send", { n: game.queued }) : t("Offline")}
+              {[!game.online ? t("Offline") : null, game.queued > 0 ? t("{{n}} waiting to send", { n: game.queued }) : null].filter(Boolean).join(" · ")}
             </span>
           )}
           <Inbox messages={s.messages ?? []} teamID={s.team.id} t={t} locale={i18n.current()} />
@@ -214,14 +287,19 @@ export function App() {
       </div>
       <main className="app-main" ref={mainRef} tabIndex={-1}>
         {s.event.state === "paused" && <p className="app-banner">{t("The game is paused. Hold on.")}</p>}
-        {game.status === "ended" && <p className="app-banner">{t("This event has ended. Thanks for playing!")}</p>}
+        {game.status === "ended" && s.event.state !== "cancelled" && view?.finished && <p className="app-banner">{t("This event has ended. Thanks for playing!")}</p>}
+        {s.moved_on && view && !view.finished && <p className="app-banner">{t("The organisers moved your team on to this step.")}</p>}
 
-        {showIntro ? (
+        {/* A team that had not finished when the event ended keeps no step to act on. */}
+        {s.event.state === "cancelled" || (game.status === "ended" && !view?.finished) ? (
+          <EventOver state={s} t={t} />
+        ) : showIntro ? (
           <Intro
             state={s}
             t={t}
             usesLocation={usesLocation}
             onDone={dismissIntro}
+            onRenamed={game.refresh}
           />
         ) : view ? (
           <PlayView
@@ -232,7 +310,7 @@ export function App() {
             t={t}
             brand={look}
             {...(s.event.outro_text ? { outro: s.event.outro_text } : {})}
-            {...(s.finish ? { finish: { ...s.finish, provisional: game.status !== "ended" && s.event.state !== "completed" && s.event.state !== "cancelled" } } : {})}
+            {...(s.finish ? { finish: { ...s.finish, provisional: game.status !== "ended" && s.event.state !== "completed" } } : {})}
             {...(zoneNote ? { zoneNote } : {})}
             placeNote={placeNote}
             {...(geo.pos ? { position: { lat: geo.pos.coords.latitude, lng: geo.pos.coords.longitude } } : {})}
@@ -258,7 +336,7 @@ export function App() {
             {...(cheatPassword ? { cheat: cheatPassword } : {})}
           />
         ) : (
-          <Lobby state={s} t={t} locale={i18n.current()} />
+          <Lobby state={s} t={t} locale={i18n.current()} usesLocation={usesLocation} />
         )}
       </main>
       {cheatOpen && (
@@ -267,6 +345,7 @@ export function App() {
           onClose={() => setCheatOpen(false)}
           onUnlocked={(password) => {
             setCheat({ team: s.team.id, password });
+            writeCheat({ team: s.team.id, password });
             setCheatOpen(false);
           }}
         />
@@ -276,16 +355,14 @@ export function App() {
   );
 }
 
-function Lobby({ state, t, locale }: { state: play.PlayState; t: Translate; locale: string }) {
+function Lobby({ state, t, locale, usesLocation }: { state: play.PlayState; t: Translate; locale: string; usesLocation: boolean }) {
   const at = state.event.scheduled_at ? new Date(state.event.scheduled_at) : null;
   const counting = state.event.state === "scheduled" && !!at && !Number.isNaN(at.getTime());
   const now = useEngineClock(state.event.server_now ?? new Date().toISOString(), counting);
   const startsIn = counting && at ? (at.getTime() - now) / 1000 : null;
-  if (state.event.state === "cancelled") {
-    return <p>{t("This event has been cancelled.")}</p>;
-  }
-  if (state.event.state === "completed") {
-    return <p>{t("This event has ended. Thanks for playing!")}</p>;
+  const [mapOpen, setMapOpen] = useState(false);
+  if (state.event.state === "cancelled" || state.event.state === "completed") {
+    return <EventOver state={state} t={t} />;
   }
   const cover = coverOf(state.event.theme, state.event.cover ? `/media/${state.event.cover}` : undefined);
   return (
@@ -307,26 +384,110 @@ function Lobby({ state, t, locale }: { state: play.PlayState; t: Translate; loca
       {state.event.start && (
         <p className="app-lobby__start">
           <strong>{t("Meet at")}</strong>{" "}
-          <a
-            href={`https://www.openstreetmap.org/?mlat=${state.event.start.lat}&mlon=${state.event.start.lng}#map=18/${state.event.start.lat}/${state.event.start.lng}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          {/* On the app's own map: a link out would leave the game. */}
+          <button type="button" className="app-lobby__place" onClick={() => setMapOpen(true)}>
             {state.event.start.label || t("the starting point")}
-          </a>
+          </button>
         </p>
       )}
+      {mapOpen && state.event.start && (
+        <div className="pv app-inbox__pv">
+          <Sheet title={state.event.start.label || t("the starting point")} t={t} onClose={() => setMapOpen(false)}>
+            <div className="pv-sheet__body">
+              <FitMap className="pv-map" zone={{ slug: "start", lat: state.event.start.lat, lng: state.event.start.lng, radius_m: state.event.start.radius_m || 25 }} />
+            </div>
+          </Sheet>
+        </div>
+      )}
       {state.event.start?.radius_m ? <p className="app-muted">{t("You can only begin once you're there.")}</p> : null}
+      {usesLocation && <p className="app-muted">{t("This adventure uses your location to know when your team reaches a place. When your phone asks, allow it.")}</p>}
       <Files files={state.event.files ?? []} t={t} locale={locale} />
       <p className="app-muted">{t("Keep this page open. It will change by itself.")}</p>
     </div>
   );
 }
 
+/**
+ * A party team's end, in the party's look, when the host took it out or
+ * finished the game before it did: no step to keep, and no email to ask
+ * for links again.
+ */
+/** The event's end, cancelled or over, as a card like the lobby's. */
+function EventOver({ state, t }: { state: play.PlayState; t: Translate }) {
+  const cancelled = state.event.state === "cancelled";
+  const cover = coverOf(state.event.theme, state.event.cover ? `/media/${state.event.cover}` : undefined);
+  return (
+    <div className={"app-lobby" + (cover ? " app-lobby--cover" : "")}>
+      {cover && <div className="app-lobby__cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
+      {state.event.adventure_title && <p className="app-muted">{state.event.adventure_title}</p>}
+      <h1>{cancelled ? t("This event has been cancelled.") : t("This event has ended. Thanks for playing!")}</h1>
+      <p>{t("Your team: {{team}}", { team: state.team.name })}</p>
+      {cancelled && <p className="app-muted">{t("Questions? Contact the organisers.")}</p>}
+    </div>
+  );
+}
+
+function PartyEnd({ reason, t }: { reason: play.PartyEnd["reason"]; t: Translate }) {
+  const [end, setEnd] = useState<play.PartyEnd | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    play.getPartyEnd().then(setEnd, () => setFailed(true));
+  }, []);
+  useEffect(() => loadFont(end?.brand?.font), [end?.brand?.font]);
+  useEffect(() => loadFont(end?.brand?.heading_font), [end?.brand?.heading_font]);
+  const cover = end ? coverOf(end.theme, end.cover ? `/media/${end.cover}` : undefined) : undefined;
+  // The session's code can't tell the host finishing the game from it
+  // ending by itself; the server's answer can. Without one, say neither.
+  const why = end?.reason ?? (reason === "taken_out" ? reason : failed ? "game_over" : null);
+  const takenOut = why === "taken_out";
+  const headings: Record<play.PartyEnd["reason"], string> = {
+    taken_out: t("You've been taken out of the game"),
+    game_finished: t("The host has finished the game"),
+    game_over: t("The game is over"),
+  };
+  return (
+    <div className="app" style={brandVars(end?.brand)}>
+      <main className="app-main app-main--center">
+        <div className={"app-lobby" + (cover ? " app-lobby--cover" : "")}>
+          {cover && <div className="app-lobby__cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
+          {end?.adventure_title && <p className="app-muted">{end.adventure_title}</p>}
+          {why ? <h1>{headings[why]}</h1> : <p className="app-muted">{t("Loading…")}</p>}
+          {end && <p>{t("Your team: {{team}}", { team: end.team_name })}</p>}
+          {takenOut && <p className="app-muted">{t("Talk to the host if this was a mistake.")}</p>}
+          {end && !takenOut && (end.held ? (
+            <p>{t("The host will share the results")}</p>
+          ) : (end.points !== undefined || end.rank) ? (
+            <div className="pv-stats">
+              {end.points !== undefined && (
+                <div className="pv-stat">
+                  <div className="pv-stat__v">{Math.round(end.points * 10) / 10}</div>
+                  <div className="pv-stat__l">{t("Points")}</div>
+                </div>
+              )}
+              {end.rank ? (
+                <div className="pv-stat">
+                  <div className="pv-stat__v">
+                    {end.rank}
+                    {end.teams ? <span className="pv-stat__of"> / {end.teams}</span> : null}
+                  </div>
+                  <div className="pv-stat__l">{t("Place")}</div>
+                </div>
+              ) : null}
+            </div>
+          ) : null)}
+        </div>
+      </main>
+    </div>
+  );
+}
+
 /** The welcome before the first step, for a player who joins a game already running. */
-function Intro({ state, t, usesLocation, onDone }: { state: play.PlayState; t: Translate; usesLocation: boolean; onDone: () => void }) {
+function Intro({ state, t, usesLocation, onDone, onRenamed }: { state: play.PlayState; t: Translate; usesLocation: boolean; onDone: () => void; onRenamed: () => void }) {
   // A party's one phone per team plays under the team's own name.
-  const name = state.me?.name !== state.team.name ? state.me?.name : undefined;
+  const own = state.me?.name !== state.team.name ? state.me?.name : undefined;
+  // A ticket's slots are stored as "Player 1".."Player N", or in the buyer's language; show that default in the player's.
+  const numbered = own && /^(?:Player|Spelare) (\d+)$/.exec(own);
+  const name = numbered ? t("Player {{n}}", { n: numbered[1]! }) : own;
   const cover = coverOf(state.event.theme, state.event.cover ? `/media/${state.event.cover}` : undefined);
   return (
     <div className={"app-lobby" + (cover ? " app-lobby--cover" : "")}>
@@ -338,6 +499,12 @@ function Intro({ state, t, usesLocation, onDone }: { state: play.PlayState; t: T
           : t("Your team: {{team}}", { team: state.team.name })}
       </p>
       {state.event.intro_text && <Markdown className="app-lobby__intro" text={state.event.intro_text} />}
+      {/* Until it begins, the team can swap a given name such as "Team 2" for its own. */}
+      {own && !state.team.locked && (
+        <div className="app-lobby__name">
+          <NameField label={t("Team name")} value={state.team.name} t={t} save={play.renameTeam} onSaved={onRenamed} locked={false} hint={t("Everyone on the team sees the change.")} />
+        </div>
+      )}
       {usesLocation && (
         <p className="app-muted">
           {t("This adventure uses your location to know when your team reaches a place. When your phone asks, allow it.")}
@@ -351,6 +518,37 @@ function Intro({ state, t, usesLocation, onDone }: { state: play.PlayState; t: T
 }
 
 const SHARE_OFF_KEY = "zv-play-share-location-off";
+const CHEAT_KEY = "zv-play-cheat";
+
+function readCheat(): { team: number; password: string } | null {
+  try {
+    const c = JSON.parse(sessionStorage.getItem(CHEAT_KEY) ?? "null") as { team?: unknown; password?: unknown } | null;
+    return c && typeof c.team === "number" && typeof c.password === "string" ? { team: c.team, password: c.password } : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCheat(c: { team: number; password: string } | null) {
+  try {
+    if (c) sessionStorage.setItem(CHEAT_KEY, JSON.stringify(c));
+    else sessionStorage.removeItem(CHEAT_KEY);
+  } catch {
+    /* private mode: cheating ends with a reload */
+  }
+}
+
+/** The first of the phone's languages the adventure is in ("en-GB" finds "en"), if any. */
+function phoneLanguage(langs: string[]): string | undefined {
+  const lower = langs.map((l) => l.toLowerCase());
+  for (const tag of navigator.languages ?? []) {
+    const t = tag.toLowerCase();
+    let i = lower.indexOf(t);
+    if (i < 0) i = lower.indexOf(t.split("-")[0] ?? "");
+    if (i >= 0) return langs[i];
+  }
+  return undefined;
+}
 
 function clearFlag(key: string) {
   try {
@@ -394,7 +592,7 @@ function RecoverLink({ t }: { t: Translate }) {
         play.recoverLink(email.trim()).then(() => setState("sent"), () => setState("error"));
       }}
     >
-      <label className="app-menu__label" htmlFor="recover-email">{t("Lost your link? Enter your team's email and we'll send fresh links.")}</label>
+      <label className="app-menu__label" htmlFor="recover-email">{t("Lost your link? Enter your team's email and we'll send your links again.")}</label>
       <div className="app-menu__row">
         <input
           id="recover-email"
@@ -407,7 +605,7 @@ function RecoverLink({ t }: { t: Translate }) {
         />
         <button type="submit" className="pv-btn pv-btn--primary" disabled={state === "sending" || !email.trim()}>{t("Send")}</button>
       </div>
-      {state === "sent" && <p className="app-muted" role="status">{t("If that address belongs to a team, new links are on their way. Check your inbox.")}</p>}
+      {state === "sent" && <p className="app-muted" role="status">{t("If that address belongs to a team in a game that hasn't ended, your links are on their way. Check your inbox.")}</p>}
       {state === "error" && <p className="app-menu__error" role="alert">{t("Couldn't reach the server. Check your connection and try again.")}</p>}
     </form>
   );

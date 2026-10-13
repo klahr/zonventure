@@ -230,7 +230,10 @@ export function initials(name: string): string {
   const parts = (name || "").trim().split(/\s+/).map((p) => p.replace(/[^\p{L}\p{N}]/gu, "")).filter(Boolean);
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
-  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+  // "Team 10" → "T10", so numbered teams don't all read "T1".
+  const last = parts[parts.length - 1]!;
+  if (/^\d{1,2}$/.test(last)) return (parts[0]![0]! + last).toUpperCase();
+  return (parts[0]![0]! + last[0]!).toUpperCase();
 }
 
 /** The loading placeholder for a page or a card. */

@@ -1,5 +1,5 @@
-import { Fragment, useCallback, useLayoutEffect, useRef, useState } from "react";
-import { FIXED_KINDS, blocksOf, isFixed, mediaBlock, moveBlock, needsFile, newBlock, updateNode, withBlocks, type Block, type BlockKind, type FileKind, type Graph, type Node, type Zone } from "@zonventure/graph";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { FIXED_KINDS, addMediaBlocks, blocksOf, freshBlockId, isFixed, moveBlock, needsFile, newBlock, updateNode, withBlocks, type Block, type BlockKind, type FileKind, type Graph, type Node, type Zone } from "@zonventure/graph";
 import { Camera, ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Plus, Power, PowerOff, Sparkles, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { ConfirmModal, DzPortal, ICON, useAnchoredPop, useDismiss } from "./dz/ui.tsx";
@@ -38,6 +38,24 @@ export function BlocksEditor({ blocks, node, graph, onChange, onGraphChange, tex
   latest.current = { list, onChange };
   // The kind the file being picked is for; null takes it from the file.
   const [fileFor, setFileFor] = useState<FileKind | null>(null);
+  // The kind a new block is being picked for, kept as an empty block if
+  // the picker is cancelled; or the empty block a pick fills in.
+  const pending = useRef<FileKind | null>(null);
+  const fillFor = useRef<string | null>(null);
+  useEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    const onCancel = () => {
+      const kind = pending.current;
+      pending.current = null;
+      fillFor.current = null;
+      if (!kind) return;
+      const { list: now, onChange: change } = latest.current;
+      change([...now, { id: freshBlockId(now), kind, media: 0 } as Block]);
+    };
+    el.addEventListener("cancel", onCancel);
+    return () => el.removeEventListener("cancel", onCancel);
+  }, []);
   // A block being dragged by its handle: where it came from, where it
   // would land, and how far it has moved. The rest slide aside to show.
   const [drag, setDrag] = useState<{ from: number; to: number; dy: number; shift: number } | null>(null);
@@ -69,6 +87,8 @@ export function BlocksEditor({ blocks, node, graph, onChange, onGraphChange, tex
     if (kind === "title") return onChange([newBlock(list, kind), ...list]);
     if (!needsFile(kind)) return onChange([...list, newBlock(list, kind)]);
     setFileFor(kind === "image" || kind === "audio" ? null : kind);
+    pending.current = kind;
+    fillFor.current = null;
     if (input.current) {
       input.current.accept = fromCamera ? "image/*" : kind === "image" || kind === "audio" ? "image/*,audio/*" : (ACCEPT[kind] ?? "");
       if (fromCamera) input.current.setAttribute("capture", "environment");
@@ -77,19 +97,31 @@ export function BlocksEditor({ blocks, node, graph, onChange, onGraphChange, tex
     input.current?.click();
   };
 
+  // An empty block's "Add picture": the file picked becomes its file.
+  const fill = (b: Block) => {
+    if (!needsFile(b.kind)) return;
+    setFileFor(b.kind);
+    pending.current = null;
+    fillFor.current = b.id;
+    if (input.current) {
+      input.current.accept = ACCEPT[b.kind] ?? "";
+      input.current.removeAttribute("capture");
+    }
+    input.current?.click();
+  };
+
   const pick = async (files: FileList | null) => {
     const kind = fileFor;
+    const target = fillFor.current;
+    pending.current = null;
+    fillFor.current = null;
     const added = await upload(files);
     if (input.current) input.current.value = "";
     if (!added.length) return;
     const { list: now, onChange: change } = latest.current;
-    let next = now;
-    for (const m of added) {
-      // A film is only ever a video block; a picture for a torch stays a torch.
-      const as: FileKind = m.kind === "video" ? "video" : kind && kind !== "video" && m.kind === "image" ? kind : m.kind;
-      next = [...next, mediaBlock(next, m, as)];
-    }
-    change(next);
+    const m = added[0]!;
+    if (target) return change(now.map((x) => (x.id === target ? ({ ...x, media: m.id, ...(m.alt ? { alt: m.alt } : {}) } as Block) : x)));
+    change(addMediaBlocks(now, added, kind));
   };
 
   const startDrag = (e: React.PointerEvent<HTMLButtonElement>, from: number) => {
@@ -293,7 +325,12 @@ export function BlocksEditor({ blocks, node, graph, onChange, onGraphChange, tex
                 <X size={ICON.sm} />
               </button>
             </div>
-            {!isFolded && body(b, (next) => set(i, next), t, label, graph, node, onGraphChange)}
+            {!isFolded && (needsFile(b.kind) && !(b as { media?: number }).media ? (
+              <button type="button" className="add-btn" onClick={() => fill(b)} disabled={busy || !ready}>
+                <Plus size={ICON.sm} aria-hidden="true" />
+                {ACCEPT[b.kind]?.startsWith("audio") ? t.t("Add sound") : ACCEPT[b.kind]?.startsWith("video") ? t.t("Add film") : t.t("Add picture")}
+              </button>
+            ) : body(b, (next) => set(i, next), t, label, graph, node, onGraphChange))}
             {!isFolded && ruleOpen && <ShowEditor block={b} set={(next) => set(i, next)} graph={graph} t={t} />}
             {!isFolded && animOpen && <AnimationEditor block={b} set={(next) => set(i, next)} t={t} />}
           </div>

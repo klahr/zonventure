@@ -94,7 +94,7 @@ export function Agenda({ events, onStarted }: { events: EventRow[]; onStarted: (
                     <span className="db-agenda__rel">{relTime(r.scheduled_at, loc)}</span>
                   </>
                 ) : (
-                  <span>{t.t("Starts when you start it")}</span>
+                  <span>{r.party ? t.t("Starts when the first team joins") : t.t("Starts when you start it")}</span>
                 )}
               </span>
               <span className="db-agenda__sub">

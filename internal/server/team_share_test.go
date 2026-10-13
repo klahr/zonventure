@@ -76,6 +76,19 @@ func TestTeamShare_PageRendersSlots(t *testing.T) {
 		}
 	}
 
+	// The page speaks the visitor's language, not the adventure's.
+	req, _ := http.NewRequest("GET", ts.URL+"/team/"+team.Token, nil)
+	req.Header.Set("Accept-Language", "sv-SE,sv;q=0.9")
+	if resp, err := anon.c.Do(req); err != nil {
+		t.Fatal(err)
+	} else {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if !strings.Contains(string(b), `<html lang="sv">`) {
+			t.Errorf("a Swedish browser should get the team page in Swedish")
+		}
+	}
+
 	if status, _ := getRaw(t, anon, "/team/doesnotexist"); status != 404 {
 		t.Errorf("unknown team token = %d, want 404", status)
 	}

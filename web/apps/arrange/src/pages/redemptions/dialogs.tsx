@@ -4,6 +4,25 @@ import { Button, Dialog, Field, useToast } from "../../ui/index.ts";
 import { addProduct, createRedemption, updateProduct, type Partner, type PartnerProduct, type Redemption, type SelfGuidedEvent } from "./api.ts";
 import { langName, partnerLabel, regionName, useRedemptionError } from "./shared.ts";
 
+/** Rejecting a code, with an optional reason the customer's email passes on. */
+export function RejectDialog({ email, onClose, onReject }: { email: string; onClose: () => void; onReject: (reason: string) => void }) {
+  const t = useT();
+  const [reason, setReason] = useState("");
+  return (
+    <Dialog
+      title={t.t("Reject this redemption?")}
+      onClose={onClose}
+      onSubmit={() => onReject(reason.trim())}
+      footer={<><Button onClick={onClose}>{t.t("Back")}</Button><Button type="submit" variant="danger" filled>{t.t("Reject")}</Button></>}
+    >
+      <p className="confirm-message">{t.t("{{email}} is told by email that the code couldn't be verified.", { email })}</p>
+      <Field label={t.t("Reason (optional)")} hint={t.t("Included in the email to the customer.")}>
+        <textarea rows={3} maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
+      </Field>
+    </Dialog>
+  );
+}
+
 export function PostDialog({ rd, onClose, onSave }: { rd: Redemption; onClose: () => void; onSave: (b: { post_at: string; posted: boolean; note: string; letter_lang?: string }) => void }) {
   const t = useT();
   const [postAt, setPostAt] = useState(rd.post_at || "");
@@ -44,8 +63,8 @@ function LetterLangField({ langs, value, onChange }: { langs: string[]; value: s
   );
 }
 
-/** Manual entry, for a box redeemed by phone or email. It lands as pending, like one from the public page. */
-export function AddRedemptionDialog({ partners, onClose, onDone }: { partners: Partner[]; onClose: () => void; onDone: () => void }) {
+/** Manual entry, for a box redeemed by phone or email. Staff entries are approved at once; one whose event is closed stays pending. */
+export function AddRedemptionDialog({ partners, onClose, onDone }: { partners: Partner[]; onClose: () => void; onDone: (state: Redemption["state"]) => void }) {
   const t = useT();
   const toast = useToast();
   const errText = useRedemptionError();
@@ -67,7 +86,7 @@ export function AddRedemptionDialog({ partners, onClose, onDone }: { partners: P
   const submit = async () => {
     setBusy(true);
     try {
-      await createRedemption({
+      const rd = await createRedemption({
         product_id: picked ? picked.id : 0,
         box_number: liveit ? f.box.trim() : "",
         security_code: f.code.trim(),
@@ -82,8 +101,8 @@ export function AddRedemptionDialog({ partners, onClose, onDone }: { partners: P
         post_at: f.postAt,
         note: f.note.trim(),
       });
-      toast.ok(t.t("Redemption added"));
-      onDone();
+      toast.ok(rd.state === "approved" ? t.t("Redemption added and approved; its team link is emailed") : t.t("Redemption added"));
+      onDone(rd.state);
     } catch (e) {
       toast.err(errText(e));
       setBusy(false);

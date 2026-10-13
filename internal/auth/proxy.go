@@ -8,6 +8,8 @@ import (
 	"net/netip"
 	"strings"
 	"sync/atomic"
+
+	"github.com/klahr/zonventure/internal/logx"
 )
 
 // trustedProxies holds the set of CIDR ranges the server treats as
@@ -106,6 +108,24 @@ func IsTrustedPeer(r *http.Request) bool {
 		host = r.RemoteAddr
 	}
 	return addrTrusted(host)
+}
+
+// untrustedProxyWarned keeps warnUntrustedProxy to one log line per run.
+var untrustedProxyWarned atomic.Bool
+
+// warnUntrustedProxy logs, once, that forwarded headers arrive from a
+// private or loopback peer ZV_TRUSTED_PROXIES doesn't list: a proxy
+// the list misses, so every client shows as the proxy's address.
+func warnUntrustedProxy(peer string) {
+	addr, err := netip.ParseAddr(peer)
+	if err != nil || !(addr.IsPrivate() || addr.IsLoopback()) {
+		return
+	}
+	if untrustedProxyWarned.Swap(true) {
+		return
+	}
+	logx.Warn("auth.trusted_proxies.no_match", "peer", peer,
+		"msg", "X-Forwarded-For arrives from "+peer+", which ZV_TRUSTED_PROXIES does not list: every client shows as "+peer+" in sessions, rate limits and logs; add the proxy's address (for a compose stack, the network gateway)")
 }
 
 // addrTrusted reports whether host (a bare IP, no port) falls in the

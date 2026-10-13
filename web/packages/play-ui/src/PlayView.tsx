@@ -190,10 +190,11 @@ export function PlayView(props: PlayViewProps) {
 
   return (
     <div ref={rootRef} className={`pv pv--${kind ?? "none"}` + (isHex(brand?.submit_bg) ? " pv--dock-brand" : "") + (leaving ? " is-leaving" : "") + (hasPicture(brand) ? " pv--photo" : "")} data-theme="light" style={style} {...styleAttrs(brand?.style)}>
-      {hasPicture(brand) && <div className="pv-photo" aria-hidden />}
+      {hasPicture(brand) && <div className="pv-backdrop-photo" aria-hidden />}
       <header className="pv-head">
         {!view.hide_score && (
-          <div className="pv-score" aria-label={t("Score")}>
+          <div className="pv-score">
+            <span className="pv-visually-hidden">{t("Score")} </span>
             <span className="pv-score__n">{round(view.score - view.penalty_score)}</span>
             <span className="pv-score__l">{t("pts")}</span>
           </div>
@@ -484,7 +485,8 @@ function ZoneCard({ view, t, note, onStation, busy }: { view: play.View; t: Tran
         {view.here ? "✓" : "⌖"}
       </span>
       <div className="pv-zone__body">
-        <strong>
+        {/* Arriving is announced; the distance under it, which changes every few seconds, is not. */}
+        <strong aria-live="polite">
           {me
             ? t("You are at {{place}}.", { place: name })
             : others
@@ -708,7 +710,7 @@ function PuzzleStep(props: StepProps) {
             {input.at ? "⌖" : "?"}
           </span>
           <div className="pv-zone__body">
-            <strong>{input.at ? t("You are at {{place}}.", { place: input.at }) : t("You're not there yet.")}</strong>
+            <strong role="status">{input.at ? t("You are at {{place}}.", { place: input.at }) : t("You're not there yet.")}</strong>
             {!input.at && props.zoneNote && <span className="pv-zone__note">{props.zoneNote}</span>}
           </div>
         </div>
@@ -1277,7 +1279,7 @@ function EndStep(props: StepProps) {
           <a className="pv-btn pv-btn--primary pv-btn--wide" href={finish.recap_url}>
             {held ? t("See your results") : t("See your team's recap")}
           </a>
-          {finish.provisional && <p className="pv-summary__note">{held ? t("It opens when the game is finished.") : t("It opens when the event ends.")}</p>}
+          {finish.provisional && held && <p className="pv-summary__note">{t("It opens when the game is finished.")}</p>}
         </div>
       )}
       <Bag view={view} t={t} />

@@ -3,6 +3,7 @@ package admin_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,8 +19,8 @@ import (
 )
 
 // TestStoreList_Filtering exercises the listing query: only events
-// with public_for_sale=true AND a non-NULL price AND state in
-// (running, paused) appear. Other rows must NOT leak.
+// with public_for_sale=true AND a non-NULL price AND state running
+// appear: pausing stops the sale. Other rows must NOT leak.
 func TestStoreList_Filtering(t *testing.T) {
 	t.Parallel()
 	db, cleanup := dbtest.Open(t)
@@ -54,9 +55,13 @@ func TestStoreList_Filtering(t *testing.T) {
 	mintEvent("Priced but private", "running", false, intp(2500))
 	mintEvent("Listed but completed", "completed", true, intp(2500))
 	mintEvent("Listed but cancelled", "cancelled", true, intp(2500))
+	stopped := mintEvent("Listed, sales stopped", "running", true, intp(2500))
+	if _, err := db.Exec(`UPDATE events SET sales_stopped = TRUE WHERE id = $1`, stopped); err != nil {
+		t.Fatal(err)
+	}
 	dbtest.ApproveListings(t, db)
 
-	publicH := &public.Handlers{DB: db, Lib: adventure.New(db)}
+	publicH := &public.Handlers{DB: db, Lib: adventure.New(db), Payments: true}
 	r := chi.NewRouter()
 	r.Get("/api/o/{slug}/store/items", publicH.StoreListByOrg)
 
@@ -72,8 +77,8 @@ func TestStoreList_Filtering(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(resp.Items) != 2 {
-		t.Fatalf("expected 2 items (running + paused), got %d: %+v", len(resp.Items), resp.Items)
+	if len(resp.Items) != 1 {
+		t.Fatalf("expected 1 item (running), got %d: %+v", len(resp.Items), resp.Items)
 	}
 	got := map[int64]bool{}
 	for _, it := range resp.Items {
@@ -82,8 +87,33 @@ func TestStoreList_Filtering(t *testing.T) {
 	if !got[listed] {
 		t.Errorf("running listed event missing from /store: %d", listed)
 	}
-	if !got[listedPaused] {
-		t.Errorf("paused listed event missing from /store: %d", listedPaused)
+	if got[listedPaused] {
+		t.Errorf("paused event still in /store: %d", listedPaused)
+	}
+	if got[stopped] {
+		t.Errorf("event that stopped selling still in /store: %d", stopped)
+	}
+
+	// Without a payment provider nothing can be bought, so nothing is listed.
+	noPay := chi.NewRouter()
+	noPay.Get("/api/o/{slug}/store/items", (&public.Handlers{DB: db, Lib: adventure.New(db)}).StoreListByOrg)
+	w = httptest.NewRecorder()
+	noPay.ServeHTTP(w, httptest.NewRequest("GET", "/api/o/acme/store/items", nil))
+	resp.Items = nil
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil || w.Code != http.StatusOK || len(resp.Items) != 0 {
+		t.Errorf("store without payments: %d %s", w.Code, w.Body.String())
+	}
+
+	// Checkout refuses it too.
+	buyH := &admin.Handlers{DB: db, Lib: adventure.New(db), PublicURL: "https://zv.example.com", Provider: &fakeProvider{}}
+	br := chi.NewRouter()
+	br.Post("/api/store/buy", buyH.BuyTicket)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/api/store/buy", strings.NewReader(fmt.Sprintf(`{"event_id": %d, "buyer_email": "ok@example.com"}`, stopped)))
+	req.Header.Set("Content-Type", "application/json")
+	br.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("buying a ticket of a stopped event: %d, want 404; body = %s", w.Code, w.Body.String())
 	}
 }
 
@@ -249,6 +279,61 @@ func TestHandleTicketCheckoutCompleted_HappyPath(t *testing.T) {
 	}
 	if got := len(mailerStub.messages); got != 1 {
 		t.Errorf("messages after replay = %d, want 1 (mail must NOT resend)", got)
+	}
+}
+
+// TestTicketTeamsAreNumbered: a ticket's team is "Team N" in the
+// buyer's language, numbered on from the event's teams, never named
+// after the buyer's email.
+func TestTicketTeamsAreNumbered(t *testing.T) {
+	t.Parallel()
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+
+	var orgID int64
+	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).Scan(&orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO adventures(slug, title, org_id) VALUES ('demo', 'Demo Adv', $1)`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	var eventID int64
+	if err := db.QueryRow(`
+		INSERT INTO events(adventure_slug, org_id, state, live_token, name,
+		                   public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size, public_blurb)
+		VALUES ('demo', $1, 'running', 'lt-' || md5(random()::text), 'X', TRUE, 2500, 'eur', 2, 'B')
+		RETURNING id
+	`, orgID).Scan(&eventID); err != nil {
+		t.Fatal(err)
+	}
+	// "Team 2" is taken by hand already.
+	if _, err := db.Exec(`INSERT INTO teams(event_id, name, token) VALUES ($1, 'Team 2', 'team-tok-' || md5(random()::text))`, eventID); err != nil {
+		t.Fatal(err)
+	}
+	h := &admin.Handlers{DB: db, Lib: adventure.New(db), Mailer: &fakeMailer{}, PublicURL: "https://zv.example.com"}
+	buy := func(email, lang, session string) string {
+		t.Helper()
+		var purchaseID int64
+		if err := db.QueryRow(`
+			INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, stripe_session_id, buyer_lang)
+			VALUES ($1, $2, 2, 2500, 'eur', $3, $4) RETURNING id
+		`, eventID, email, session, lang).Scan(&purchaseID); err != nil {
+			t.Fatal(err)
+		}
+		if err := admin.ExportedHandleTicketCheckoutCompleted(h, context.Background(), buildSessionCompletedEvent(t, purchaseID, session)); err != nil {
+			t.Fatalf("handle: %v", err)
+		}
+		var name string
+		if err := db.QueryRow(`SELECT t.name FROM ticket_purchases p JOIN teams t ON t.id = p.team_id WHERE p.id = $1`, purchaseID).Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		return name
+	}
+	if got := buy("jonas.buyer@example.com", "en", "cs_one"); got != "Team 3" {
+		t.Errorf("first ticket's team = %q, want Team 3", got)
+	}
+	if got := buy("jonas.buyer@example.com", "sv", "cs_two"); got != "Lag 4" {
+		t.Errorf("second ticket's team = %q, want Lag 4", got)
 	}
 }
 

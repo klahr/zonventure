@@ -31,7 +31,7 @@ export const FlasherBlock: Renderer<"flasher"> = ({ block, ctx }) => {
     stop();
     if (!flashes.length) return;
     setPlaying(true);
-    if (buzz && canBuzz) navigator.vibrate(vibratePattern(flashes));
+    if (buzz && canBuzz && !ctx.preview) navigator.vibrate(vibratePattern(flashes));
     const step = (i: number) => {
       if (i >= flashes.length) {
         setLit(false);
@@ -51,16 +51,16 @@ export const FlasherBlock: Renderer<"flasher"> = ({ block, ctx }) => {
       <figcaption className="pv-gadget__caption">
         <span className="pv-gadget__hint">{t("Watch the lamp: short and long flashes spell a message.")}</span>
         <div className="pv-flasher__controls">
-          {!ctx.preview &&
-            (playing ? (
-              <button type="button" className="pv-btn" onClick={stop}>
-                {t("Stop")}
-              </button>
-            ) : (
-              <button type="button" className="pv-btn pv-btn--primary" onClick={play} disabled={!flashes.length}>
-                {t("Play the signal")}
-              </button>
-            ))}
+          {/* The lamp needs no sensor or permission, so a preview plays it too; only the buzz is the phone's. */}
+          {playing ? (
+            <button type="button" className="pv-btn" onClick={stop}>
+              {t("Stop")}
+            </button>
+          ) : (
+            <button type="button" className="pv-btn pv-btn--primary" onClick={play} disabled={!flashes.length}>
+              {t("Play the signal")}
+            </button>
+          )}
           {canBuzz && !ctx.preview && (
             <label className="pv-flasher__buzz">
               <input type="checkbox" checked={buzz} disabled={playing} onChange={(e) => setBuzz(e.target.checked)} />

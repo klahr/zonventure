@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klahr/zonventure/internal/admin"
 )
@@ -154,6 +155,13 @@ func TestHosted_Free(t *testing.T) {
 	w := call(t, f.console, "POST", "/api/admin/adventures/treasure/host", map[string]any{"blocks": 1})
 	if w.Code != http.StatusCreated || !strings.Contains(w.Body.String(), "event_id") {
 		t.Fatalf("free host it: %d %s", w.Code, w.Body)
+	}
+	var name string
+	if err := f.h.DB.QueryRow(`SELECT name FROM events WHERE org_id = $1 AND party ORDER BY id DESC LIMIT 1`, f.orgID).Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(name, strconv.Itoa(time.Now().Year())) || strings.TrimSpace(name) == strconv.Itoa(time.Now().Year()) {
+		t.Errorf("default name = %q, want the adventure's title and the date", name)
 	}
 	m := regexp.MustCompile(`/party/([A-Za-z0-9_-]+)`).FindStringSubmatch(f.mail.messages[len(f.mail.messages)-1].Text)
 	if m == nil {

@@ -20,6 +20,7 @@ export function Join({ token }: { token: string }) {
   const [rolled, setRolled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
 
   useLook(info?.look);
 
@@ -27,7 +28,14 @@ export function Join({ token }: { token: string }) {
     getJoin(token).then(setInfo, (e) => {
       if (e instanceof ApiError && e.status === 404) setGone(true);
     });
-  }, [token]);
+  }, [token, nonce]);
+  // Full, or not set up yet: look again now and then, for when the host adds teams or starts.
+  const waiting = info?.status === "full" || info?.status === "not_ready";
+  useEffect(() => {
+    if (!waiting) return;
+    const id = setInterval(() => setNonce((n) => n + 1), 10_000);
+    return () => clearInterval(id);
+  }, [waiting]);
 
   if (gone) {
     return (
@@ -59,7 +67,7 @@ export function Join({ token }: { token: string }) {
           return;
         }
         setBusy(false);
-        setError(e instanceof ApiError ? e.message : t("Something went wrong. Try again."));
+        setError(e instanceof ApiError ? i18n.tError(e.code, e.message) : t("Something went wrong. Try again."));
       },
     );
   };
@@ -71,7 +79,14 @@ export function Join({ token }: { token: string }) {
       {info.adventure_title !== info.name && <p className="party-eyebrow">{info.adventure_title}</p>}
       <h1>{info.name}</h1>
       {closed ? (
-        <p className="party-note">{closed}</p>
+        <>
+          <p className="party-note">{closed}</p>
+          {waiting && (
+            <button type="button" className="party-btn" onClick={() => setNonce((n) => n + 1)}>
+              {t("Try again")}
+            </button>
+          )}
+        </>
       ) : (
         <form
           className="party-form"

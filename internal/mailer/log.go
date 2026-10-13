@@ -35,9 +35,9 @@ func (LogMailer) Send(_ context.Context, m Message) error {
 		"attachments", attNames,
 		"attachments_bytes", attBytes,
 	)
-	// A second entry at DEBUG carries the full body so devs can
-	// hand-copy verification links from the log when no real SMTP is
-	// configured. Keeps INFO clean for production.
-	logx.Debug("mail.body", "to", m.To, "text", m.Text, "html", m.HTML)
+	// Without SMTP the log is the mailbox: the full body goes out at
+	// INFO so links can be copied from it. The SMTP mailer never logs
+	// bodies, at any level.
+	logx.Info("mail.body", "to", m.To, "text", m.Text, "html", m.HTML)
 	return nil
 }

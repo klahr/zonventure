@@ -73,6 +73,8 @@ func TestPostedTicket(t *testing.T) {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		// The buyer browses in Swedish: their ticket email is in it.
+		req.Header.Set("Accept-Language", "sv-SE")
 		r.ServeHTTP(w, req)
 		return w
 	}
@@ -100,6 +102,11 @@ func TestPostedTicket(t *testing.T) {
 	must(db.QueryRow(`SELECT tp.street_address, t.lang FROM ticket_purchases tp JOIN teams t ON t.id = tp.team_id WHERE tp.id = $1`, purchaseID).Scan(&street, &teamLang))
 	if street != "Storgatan 1" || teamLang != "sv" {
 		t.Errorf("paid purchase: street %q, team language %q", street, teamLang)
+	}
+	var slot string
+	must(db.QueryRow(`SELECT ps.name FROM player_slots ps JOIN ticket_purchases tp ON tp.team_id = ps.team_id WHERE tp.id = $1 ORDER BY ps.id LIMIT 1`, purchaseID).Scan(&slot))
+	if slot != "Spelare 1" {
+		t.Errorf("first player of a Swedish buyer is %q, want Spelare 1", slot)
 	}
 	if len(mail.messages) != 1 || !strings.Contains(mail.messages[0].Text, "Storgatan 1") || !strings.Contains(mail.messages[0].Text, "Kuvertet skickas till") {
 		t.Errorf("ticket email isn't Swedish with the address: %+v", mail.messages)

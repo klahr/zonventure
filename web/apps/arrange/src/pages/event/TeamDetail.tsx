@@ -29,7 +29,7 @@ export function TeamDetailDialog(props: {
   const actions = useTeamActions(props.reload);
   const log = useLoad((s) => api.getActivity(event.id, team.id, s), [event.id, team.id, props.activityKey]);
   const finished = teamProgress(t, props.graph, team).done;
-  const canUnlock = !finished && !!team.node && canDo(event, "unlock_team");
+  const canUnlock = !finished && !!team.node && !!props.graph?.rescuable?.includes(team.node) && canDo(event, "unlock_team");
   // A strict check: the server grants withdraw_team only while the event runs.
   const canWithdraw = (event.allowed_ops ?? []).includes("withdraw_team") && !team.completed_at;
 

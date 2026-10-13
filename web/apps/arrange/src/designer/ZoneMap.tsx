@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Zone } from "@zonventure/graph";
+import type { I18n } from "@zonventure/i18n";
 import { useT } from "../i18n.tsx";
 import { LocateFixed } from "lucide-react";
 import { conceptColor } from "./dz/concepts.tsx";
@@ -74,6 +75,32 @@ const RASTER_STYLE = {
 
 export const STYLE: string | typeof RASTER_STYLE = mapConfig?.style_url || (mapConfig?.tile_url ? RASTER_STYLE : "https://tiles.openfreemap.org/styles/liberty");
 
+/** MapLibre's own control and gesture words, in the console's language. */
+export function mapLocale(t: I18n): Record<string, string> {
+  const touch = t.t("Use two fingers to move the map");
+  // MapLibre takes an iPhone for a Mac; a touch screen has no wheel.
+  const wheel = (key: string) => (isTouch() ? touch : t.t("Use {{key}} + scroll to zoom the map", { key }));
+  return {
+    "NavigationControl.ZoomIn": t.t("Zoom in"),
+    "NavigationControl.ZoomOut": t.t("Zoom out"),
+    "NavigationControl.ResetBearing": t.t("Drag to rotate map, click to reset north"),
+    "FullscreenControl.Enter": t.t("Enter fullscreen"),
+    "FullscreenControl.Exit": t.t("Exit fullscreen"),
+    "AttributionControl.ToggleAttribution": t.t("Show map credits"),
+    "CooperativeGesturesHandler.WindowsHelpText": wheel("Ctrl"),
+    "CooperativeGesturesHandler.MacHelpText": wheel("⌘"),
+    "CooperativeGesturesHandler.MobileHelpText": touch,
+  };
+}
+
+/**
+ * Folds the map credits to their (i) button once the map has drawn: open,
+ * they cover the bottom of a small editing map, where corners and pins go.
+ */
+export function collapseCredits(map: import("maplibre-gl").Map) {
+  map.once("idle", () => map.getContainer().querySelector(".maplibregl-compact-show")?.classList.remove("maplibregl-compact-show"));
+}
+
 export function circleRing(z: Pick<Zone, "lat" | "lng" | "radius_m">): [number, number][] {
   const dLat = z.radius_m / 111320;
   const dLng = z.radius_m / (111320 * Math.cos((z.lat * Math.PI) / 180));
@@ -133,8 +160,9 @@ export function ZoneMap({ zone, onChange, areaOnly, maxCorners }: { zone: Zone; 
         libRef.current = lib;
         // On a touch screen one finger scrolls the page past the map and two
         // move the map, so the map inside a scrolling panel is not a trap.
-        const map = new lib.Map({ container: box.current, style: STYLE, center: [zone.lng, zone.lat], zoom: 17, attributionControl: { compact: true }, cooperativeGestures: isTouch() });
+        const map = new lib.Map({ container: box.current, style: STYLE, center: [zone.lng, zone.lat], zoom: 17, attributionControl: { compact: true }, locale: mapLocale(t), cooperativeGestures: isTouch() });
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
+        collapseCredits(map);
         map.on("load", () => {
           map.addSource("zone", { type: "geojson", data: shape(zoneRef.current) });
           map.addLayer({ id: "zone-fill", type: "fill", source: "zone", paint: { "fill-color": conceptColor("place", "#1b6b43"), "fill-opacity": 0.18 } });

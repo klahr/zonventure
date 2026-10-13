@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 
@@ -35,6 +36,13 @@ import (
 type teamImportPreview struct {
 	Format string            `json:"format"`
 	Teams  []teamimport.Team `json:"teams"`
+	// Skipped are the sheet rows with content that gave no team, such
+	// as a formula cell with no value, for the preview to name.
+	Skipped []int `json:"skipped_rows,omitempty"`
+	// Columns are the sheet's columns and what each became, ignored
+	// ones too, for the preview to show before anything is created.
+	// Empty for a format without columns (IOF XML).
+	Columns []teamimport.Column `json:"columns,omitempty"`
 }
 
 // ImportTeams accepts an uploaded roster file, dispatches to the
@@ -98,7 +106,28 @@ func (h *Handlers) ImportTeams(w http.ResponseWriter, r *http.Request) {
 			"unsupported file format (extension or MIME)")
 		return
 	}
-	teams, err := imp.Parse(bytes.NewReader(body))
+	var (
+		teams   []teamimport.Team
+		columns []teamimport.Column
+	)
+	if si, ok := imp.(teamimport.SheetImporter); ok {
+		var rows [][]string
+		if rows, err = si.ReadRows(bytes.NewReader(body)); err == nil {
+			var sheet teamimport.Sheet
+			sheet, err = teamimport.Read(rows)
+			teams, columns = sheet.Teams, sheet.Columns
+		}
+	} else {
+		teams, err = imp.Parse(bytes.NewReader(body))
+	}
+	// Rows that gave no team don't fail the import: the preview names them.
+	var (
+		skipped     *teamimport.SkippedRows
+		skippedRows []int
+	)
+	if errors.As(err, &skipped) {
+		skippedRows, err = skipped.Rows, nil
+	}
 	if err != nil {
 		// Parse failures are user-visible — the file came from
 		// their machine and they need to know what's wrong with
@@ -113,7 +142,9 @@ func (h *Handlers) ImportTeams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, teamImportPreview{
-		Format: imp.Name(),
-		Teams:  teams,
+		Format:  imp.Name(),
+		Teams:   teams,
+		Skipped: skippedRows,
+		Columns: columns,
 	})
 }

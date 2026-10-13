@@ -11,7 +11,7 @@ import type { EventPrintMaterial } from "./api.ts";
  * or the other way round, without a new version: an envelope emailed for
  * self-printing in summer and posted in winter. No materials, no card.
  */
-export function PrintDeliveryCard({ eventId, materials, reload }: { eventId: number; materials: EventPrintMaterial[]; reload: () => void }) {
+export function PrintDeliveryCard({ eventId, materials, reload, invited }: { eventId: number; materials: EventPrintMaterial[]; reload: () => void; invited?: boolean }) {
   const t = useT();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -36,7 +36,7 @@ export function PrintDeliveryCard({ eventId, materials, reload }: { eventId: num
   };
 
   return (
-    <Card title={t.t("Print materials")} subtitle={t.t("How each of the adventure's print materials reaches a buyer of this event.")}>
+    <Card title={t.t("Print materials")} subtitle={invited ? t.t("How each of the adventure's print materials reaches each team of this event.") : t.t("How each of the adventure's print materials reaches a buyer of this event.")}>
       <ul className="ev-prints">
         {materials.map((m) => (
           <li key={m.id}>
@@ -47,6 +47,7 @@ export function PrintDeliveryCard({ eventId, materials, reload }: { eventId: num
                 <option key={d} value={d}>{d === m.adventure_delivery ? t.t("{{delivery}} (as in the adventure)", { delivery: label[d] }) : label[d]}</option>
               ))}
             </select>
+            {m.delivery !== m.adventure_delivery && <span className="ev-muted">{t.t("Changed for this event")}</span>}
           </li>
         ))}
       </ul>

@@ -33,3 +33,9 @@ test("every effect has its keyframes, and the lists match the graph's", () => {
   assert.deepEqual([...ENTRANCES], [...graph.ENTRANCES]);
   assert.deepEqual([...ATTENTIONS], [...graph.ATTENTIONS]);
 });
+
+test("a flip turns the page in 3D, and fades instead under reduced motion", () => {
+  const css = readFileSync(new URL("./animations.css", import.meta.url), "utf8");
+  assert.match(css, /@keyframes pv-t-flip \{[^\n]*perspective\([^)]*\) rotateY\(-90deg\)/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.pv \.pv-step\.is-entered\[data-transition="flip"\] \{ animation: pv-t-fade [^}]*!important; \}/);
+});

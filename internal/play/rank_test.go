@@ -25,8 +25,7 @@ func TestRankingRule(t *testing.T) {
 		got = append(got, r.Name)
 	}
 	// Points first, finished or not; among the finished on 5, the closer
-	// guess, and no guess last; a team still walking is level with them
-	// all, so it keeps its place by name.
+	// guess, and no guess last; a team still walking comes after them.
 	want := []string{"Leader", "Close", "Slow", "Far", "Nothing", "Walking", "Behind"}
 	for i := range want {
 		if got[i] != want[i] {
@@ -38,7 +37,10 @@ func TestRankingRule(t *testing.T) {
 	if !Ahead(a, b) || Ahead(b, a) {
 		t.Error("the same guess falls back to the earlier finish")
 	}
-	if Ahead(Ranked{Score: 5, Miss: 0}, Ranked{Score: 5, Done: true, Miss: 9}) {
+	if Ahead(Ranked{Score: 5, Miss: 0}, Ranked{Score: 5, Done: true, Miss: 9}) || !Ahead(Ranked{Score: 5, Done: true, Miss: 9}, Ranked{Score: 5, Miss: 0}) {
+		t.Error("on the same points a finished team is ahead of an unfinished one, whatever its guess")
+	}
+	if Ahead(Ranked{Score: 5, Miss: 0}, Ranked{Score: 5, Miss: 9}) {
 		t.Error("a tie-break only counts between finished teams")
 	}
 }

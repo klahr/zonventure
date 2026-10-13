@@ -161,6 +161,21 @@ func TestEdgeIntegrity(t *testing.T) {
 	})
 }
 
+func TestEndOutcomeUnset(t *testing.T) {
+	g := valid3()
+	r := Check(g)
+	assertCode(t, r, "end.outcome.unset")
+	if r.HasErrors() {
+		t.Errorf("an ending without an outcome should warn, not block: %v", r.Errors())
+	}
+	g.Nodes[3].EndCfg = &graph.EndConfig{Outcome: graph.Failed}
+	for _, i := range Check(g).Issues {
+		if i.Code == "end.outcome.unset" {
+			t.Errorf("an ending with an outcome still warns: %v", i)
+		}
+	}
+}
+
 func TestReachabilityAndTermination(t *testing.T) {
 	t.Run("orphan node", func(t *testing.T) {
 		g := valid3()
@@ -842,6 +857,7 @@ func TestNewBlockKinds(t *testing.T) {
 		{ID: "bearing", Kind: graph.BlockBearing, Heading: 400, Text: "West."},
 		{ID: "flasher", Kind: graph.BlockFlasher, Text: "Hej då"},
 		{ID: "vote", Kind: graph.BlockVote, Text: "Which?", Options: []string{"Red"}},
+		{ID: "vote2", Kind: graph.BlockVote, Text: "Which?", Options: []string{"Red", "Blue", " "}},
 		{ID: "spotdiff", Kind: graph.BlockSpotDiff, Media: 1, Spots: []graph.Spot{{X: 0.5, Y: 0.5}}},
 		{ID: "torch", Kind: graph.BlockTorch, Media: 1, Style: "neon"},
 		{ID: "wheel", Kind: graph.BlockCipher, Cipher: "morse", Wheel: true},
@@ -854,11 +870,27 @@ func TestNewBlockKinds(t *testing.T) {
 			codes[i.Code]++
 		}
 	}
-	for _, c := range []string{"block.split.parts", "block.heading", "block.flasher.char", "block.options", "block.other", "block.style", "block.cipher.wheel", "block.card.name", "block.text.empty"} {
+	for _, c := range []string{"block.split.parts", "block.heading", "block.flasher.char", "block.options", "block.options.empty", "block.other", "block.style", "block.cipher.wheel", "block.card.name", "block.text.empty"} {
 		if codes[c] != 1 {
 			t.Errorf("%s reported %d times, want once: %v", c, codes[c], codes)
 		}
 	}
+}
+
+// A block's issue names it as the designer does, not by its kind.
+func TestBlockIssueNamesTheBlock(t *testing.T) {
+	g := graph.Graph{Nodes: []graph.Node{{Slug: "s", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: []graph.Block{
+		{ID: "spotdiff", Kind: graph.BlockSpotDiff, Media: 1, Spots: []graph.Spot{{X: 0.5, Y: 0.5}}},
+	}}}}}
+	for _, i := range Check(&g).Issues {
+		if i.Code == "block.other" {
+			if want := "the spot the difference on this step has no second picture to compare"; i.Message != want {
+				t.Errorf("message = %q, want %q", i.Message, want)
+			}
+			return
+		}
+	}
+	t.Error("no block.other issue")
 }
 
 // A switched-off tie-breaker is a spare: only the one shown ranks, so
@@ -984,6 +1016,20 @@ func TestTogetherChecks(t *testing.T) {
 	assertCode(t, Check(u), "puzzle.unanimous.kind")
 }
 
+// Just moving on is for answers the routes' accepted answers decide, and
+// never waits for every player.
+func TestQuietChecks(t *testing.T) {
+	q := valid3()
+	q.Nodes[1].PuzzleCfg.Quiet = true
+	assertNoCode(t, Check(q), "puzzle.quiet.kind")
+	assertNoCode(t, Check(q), "puzzle.quiet.unanimous")
+	q.Nodes[1].PuzzleCfg.Unanimous = true
+	assertCode(t, Check(q), "puzzle.quiet.unanimous")
+	q.Nodes[1].PuzzleCfg.Unanimous = false
+	q.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerSearch}
+	assertCode(t, Check(q), "puzzle.quiet.kind")
+}
+
 // One role at most is the default, and it is no saboteur's and has no kit.
 func TestDefaultRole(t *testing.T) {
 	g := valid3()
@@ -1089,4 +1135,52 @@ func TestPrintMaterials(t *testing.T) {
 
 	g.PrintMaterials = make([]graph.PrintMaterial, graph.MaxPrintMaterials+1)
 	assertCode(t, Check(g), "print.count")
+}
+
+// A branch puzzle left by its timeout passes through that way for good,
+// so a key granted only behind its answer can never be earned.
+func TestTimeoutKeyUnearnable(t *testing.T) {
+	build := func() *graph.Graph {
+		p := puzzle("tower")
+		p.PuzzleCfg.TimeLimitSeconds = 60
+		p.PuzzleCfg.Outputs = append(p.PuzzleCfg.Outputs, graph.Output{Port: "late", Trigger: graph.OnTimeout})
+		return &graph.Graph{
+			Items: []graph.Item{{Slug: "key", Name: "Key"}},
+			Nodes: []graph.Node{
+				{Slug: "start", Type: graph.Start},
+				{Slug: "hub", Type: graph.Hub, HubCfg: &graph.HubConfig{Policy: graph.PolicyChoice, Home: true,
+					Branches: []graph.Branch{{Port: "a"}, {Port: "b"}}}},
+				p,
+				{Slug: "give", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.GrantItem, Item: "key", Qty: 1}},
+				{Slug: "gate", Type: graph.Gate, GateCfg: &graph.GateConfig{Condition: cond.Predicate{Op: cond.OpItem, Item: "key"}}},
+				{Slug: "end", Type: graph.End},
+			},
+			Edges: []graph.Edge{
+				edge("start", graph.PortOut, "hub"),
+				edge("hub", "a", "tower"),
+				edge("hub", "b", "gate"),
+				edge("tower", "solved", "give"),
+				edge("give", graph.PortOut, "hub"),
+				edge("tower", "late", "hub"),
+				edge("gate", graph.PortPass, "end"),
+				edge("gate", graph.PortFail, "hub"),
+			},
+		}
+	}
+
+	t.Run("timeout skips the only grant", func(t *testing.T) {
+		assertCode(t, Check(build()), "output.timeout.unearnable")
+	})
+	t.Run("timeout leads to the grant", func(t *testing.T) {
+		g := build()
+		g.Edges[5] = edge("tower", "late", "give")
+		assertNoCode(t, Check(g), "output.timeout.unearnable")
+	})
+	t.Run("item granted elsewhere too", func(t *testing.T) {
+		g := build()
+		g.Nodes = append(g.Nodes, graph.Node{Slug: "give2", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.GrantItem, Item: "key", Qty: 1}})
+		g.Edges[0] = edge("start", graph.PortOut, "give2")
+		g.Edges = append(g.Edges, edge("give2", graph.PortOut, "hub"))
+		assertNoCode(t, Check(g), "output.timeout.unearnable")
+	})
 }

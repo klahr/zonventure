@@ -27,6 +27,9 @@ type liveSnap struct {
 		Rank      int      `json:"rank"`
 		Score     *float64 `json:"score"`
 		Withdrawn bool     `json:"withdrawn"`
+		Members   []struct {
+			Username string `json:"username"`
+		} `json:"members"`
 	} `json:"teams"`
 }
 
@@ -76,6 +79,29 @@ func TestLive_WithdrawnTeamsRankLast(t *testing.T) {
 	}
 	if s.Teams[1].Name != "Alpha" || !s.Teams[1].Withdrawn || s.Teams[1].Rank != 2 {
 		t.Errorf("second = %+v, want withdrawn Alpha at rank 2", s.Teams[1])
+	}
+}
+
+// A player who erased their data is not named on the public board.
+func TestLive_LeavesOutForgottenPlayers(t *testing.T) {
+	t.Parallel()
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+	eventID := seedEvent(t, db)
+	var teamID int64
+	if err := db.QueryRow(`INSERT INTO teams(event_id, name, token) VALUES ($1, 'Alpha', 'tok-a') RETURNING id`, eventID).Scan(&teamID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO player_slots(team_id, name, token)
+		VALUES ($1, '(forgotten)', 'slot-gone'), ($1, 'Spelare 2', 'slot-two')
+	`, teamID); err != nil {
+		t.Fatal(err)
+	}
+
+	s := getLive(t, db, eventID)
+	if len(s.Teams) != 1 || len(s.Teams[0].Members) != 1 || s.Teams[0].Members[0].Username != "Spelare 2" {
+		t.Errorf("teams = %+v, want Alpha with only Spelare 2", s.Teams)
 	}
 }
 

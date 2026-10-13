@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CalendarPlus, ChevronLeft, Coins, Eye, Plus } from "lucide-react";
-import { canAuthor } from "@zonventure/api";
+import { canAuthor, runsEvents } from "@zonventure/api";
 import { flagFor } from "@zonventure/i18n";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
@@ -103,7 +103,7 @@ export function CatalogItemPage({ slug }: { slug: string }) {
               {t.t("Preview")}
             </a>
           )}
-          {shared || passes.length > 0 ? (
+          {!user || !runsEvents(user) ? null : shared || passes.length > 0 ? (
             <Button variant="primary" icon={<CalendarPlus size={ICON.md} aria-hidden />} onClick={openSchedule}>{t.t("Schedule event")}</Button>
           ) : (
             <Button icon={<Coins size={ICON.md} aria-hidden />} onClick={openSchedule} title={t.t("Run it as it is: buy an event pass and schedule")}>{t.t("Buy an event pass")}</Button>

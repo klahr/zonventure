@@ -223,6 +223,16 @@ html, body {
   .split { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   .split > .mapwrap { grid-column: 1; }
 }
+/* A phone is held, not watched from across a room: the page scrolls
+   (so no paging), the header stacks, and long names wrap. */
+@media (max-width: 600px) {
+  .app { height: auto; min-height: 100vh; overflow: visible; }
+  .board { overflow: visible; }
+  .split { grid-template-rows: auto 60vh; }
+  .topline { grid-template-columns: 1fr; justify-items: center; gap: .75rem; }
+  .clockwrap { justify-content: center; }
+  .team-name { white-space: normal; overflow-wrap: anywhere; flex-wrap: wrap; }
+}
 .mapwrap {
   display: flex; flex-direction: column;
   border-radius: 18px; overflow: hidden;
@@ -581,10 +591,13 @@ function assignTeamColours(teams) {
 function teamColorFor(id) { return teamColor(teamColourIdx.get(id) ?? 0); }
 
 function teamInitials(name) {
-  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  const parts = (name || '').trim().split(/\s+/).map((p) => p.replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean);
   if (parts.length === 0) return '?';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  // "Team 10" → "T10", so numbered teams don't all read "T1".
+  const last = parts[parts.length - 1];
+  if (/^\d{1,2}$/.test(last)) return (parts[0][0] + last).toUpperCase();
+  return (parts[0][0] + last[0]).toUpperCase();
 }
 
 // applyColors overrides the CSS palette from a per-adventure brand. Same
@@ -742,7 +755,7 @@ function footerTime(data) {
   const time = d && !Number.isNaN(d.getTime())
     ? d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
     : '';
-  return t('server time {{time}}', { time });
+  return t('updated {{time}}', { time });
 }
 
 
@@ -801,7 +814,7 @@ function render() {
   if (isPreStart(data)) {
     root.append(buildPreStart(data));
     root.append(h('div', { class: 'footer' },
-      t('Live · push updates · '),
+      t('Live · '),
       footerTime(data)));
     return;
   }
@@ -856,7 +869,7 @@ function render() {
     root.append(buildBoard(data, existingBoard));
   }
   root.append(h('div', { class: 'footer' },
-    t('Live · push updates · '),
+    t('Live · '),
     footerTime(data)));
 
   // After the DOM mounts, see if the leaderboard overflows the
@@ -1226,8 +1239,8 @@ function buildHeader(data) {
             : data.state === 'scheduled' ? '⏰ '
             : ''),
           tEventState(data.state)),
-        // A party's board shows one game: which, rather than the slug.
-        ' · ', data.round ? t('Game {{n}}', { n: data.round }) : data.adventure_slug),
+        // A party's board shows one game: which. The title above already names the adventure.
+        data.round ? ' · ' : null, data.round ? t('Game {{n}}', { n: data.round }) : null),
     ),
     h('div', { class: 'clockwrap' },
       h('div', { class: 'clock' },
@@ -1411,7 +1424,7 @@ function playStartAnimation() {
 // rendered output. Two snapshots producing the same fingerprint mean
 // the row's DOM doesn't need to be rebuilt — we keep the existing
 // node.
-function teamRowFingerprint(team) {
+function teamRowFingerprint(team, data) {
   const finished = !!team.completed_at;
   const members = (team.members || []).map((m) => m.username).join('|');
   return [
@@ -1420,6 +1433,7 @@ function teamRowFingerprint(team) {
     team.score ?? '',
     team.tiebreak_guess ?? '',
     finished ? 1 : 0,
+    data.state === 'completed' ? 1 : 0,
     team.name,
     team.avatar_url || '',
     members,
@@ -1454,7 +1468,7 @@ function buildBoard(data, existing) {
   data.teams.forEach((team, i) => {
     seen.add(team.id);
     const id = String(team.id);
-    const fp = teamRowFingerprint(team);
+    const fp = teamRowFingerprint(team, data);
     const existingRow = existingRows.get(id);
     if (existingRow && existingRow.dataset.fp === fp) {
       // Reuse — DOM and any in-flight transitions stay intact.
@@ -1518,14 +1532,22 @@ function renderRow(team, idx, data) {
     finished ? h('span', { class: 'finished-pill' }, '✓', t('Finished')) : null,
     team.withdrawn ? h('span', { class: 'withdrawn-pill' }, t('withdrew')) : null,
   ));
-  if ((team.members || []).length) {
-    main.append(h('div', { class: 'members' }, team.members.map((m) => m.username).join(' · ')));
+  // A party team's one player carries the team's name: no second line for it.
+  // Until someone signs in, the slots are only placeholder names.
+  const joined = finished || team.joined;
+  const members = (team.members || []).map((m) => m.username).filter((n) => n !== team.name);
+  if (joined && members.length) {
+    main.append(h('div', { class: 'members' }, members.join(' · ')));
   }
   // The row says whether the team is still out, and after the event
-  // what it guessed for the tie-breaker.
+  // what it guessed for the tie-breaker. A withdrawn team's pill says
+  // it all; one still out when the game ended did not finish.
   main.append(h('div', { class: 'progress' },
     h('div', { class: 'label' },
-      h('span', {}, finished ? t('Complete') : t('Playing')),
+      finished ? h('span', {}, t('Complete'))
+        : team.withdrawn ? null
+        : !joined ? h('span', {}, t('Not joined yet'))
+        : h('span', {}, data.state === 'completed' ? t('Did not finish') : t('Playing')),
       team.tiebreak_guess != null ? h('span', {}, t('Tie-breaker: {{n}}', { n: team.tiebreak_guess })) : null,
     ),
   ));

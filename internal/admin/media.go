@@ -109,7 +109,7 @@ func (h *Handlers) UploadAdventureMedia(w http.ResponseWriter, r *http.Request) 
 	switch {
 	case strings.HasPrefix(mime, "image/"):
 		if int64(len(data)) > maxImageBytes {
-			httpx.Error(w, http.StatusRequestEntityTooLarge, "image too large")
+			mediaTooLarge(w, "picture", maxImageBytes)
 			return
 		}
 		shrunk, newMIME, err := imageutil.ShrinkKeepAlpha(data, imageutil.DefaultMaxDim)
@@ -120,19 +120,19 @@ func (h *Handlers) UploadAdventureMedia(w http.ResponseWriter, r *http.Request) 
 		kind, data, mime = graph.MediaImage, shrunk, newMIME
 	case strings.HasPrefix(mime, "audio/"):
 		if int64(len(data)) > maxAudioBytes {
-			httpx.Error(w, http.StatusRequestEntityTooLarge, "audio too large")
+			mediaTooLarge(w, "sound", maxAudioBytes)
 			return
 		}
 		kind = graph.MediaAudio
 	case strings.HasPrefix(mime, "video/"):
 		if int64(len(data)) > maxVideoBytes {
-			httpx.Error(w, http.StatusRequestEntityTooLarge, "video too large")
+			mediaTooLarge(w, "video", maxVideoBytes)
 			return
 		}
 		kind = graph.MediaVideo
 	case mime == "application/pdf":
 		if int64(len(data)) > maxPDFBytes {
-			httpx.Error(w, http.StatusRequestEntityTooLarge, "PDF too large")
+			mediaTooLarge(w, "PDF", maxPDFBytes)
 			return
 		}
 		kind = graph.MediaPDF
@@ -151,6 +151,17 @@ func (h *Handlers) UploadAdventureMedia(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, v)
+}
+
+// mediaTooLarge refuses an upload over its kind's cap, saying the cap in
+// whole MB (MiB, as the caps are set) so the author knows what fits.
+func mediaTooLarge(w http.ResponseWriter, what string, limit int64) {
+	mb := limit >> 20
+	httpx.JSON(w, http.StatusRequestEntityTooLarge, map[string]any{
+		"error":  "The " + what + " is too large. It can be at most " + strconv.FormatInt(mb, 10) + " MB.",
+		"code":   "media_too_large",
+		"max_mb": mb,
+	})
 }
 
 // putMedia stores content once per adventure: the same bytes again return

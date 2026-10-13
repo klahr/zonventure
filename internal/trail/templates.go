@@ -46,7 +46,7 @@ var templates = map[string]map[string]struct {
 			{kind: Info, text: "Welcome to the birthday adventure! Find the cards in order and answer on your phone."},
 			{kind: Quiz, text: "How old is {name} today?", options: []string{"{age-1}", "{age}", "{age+1}"}, correct: "X"},
 			{kind: Quiz, text: "What is {name's} favourite animal?", options: []string{"Horse", "Cat", "Dog"}, correct: "1"},
-			{kind: Answer, text: "What is the name of {name's} best friend?", answers: []string{"Alva"}},
+			{kind: Answer, text: "What is the name of {name's} best friend?", answers: []string{"{friend}"}},
 		}},
 		"kids": {"Treasure trail", true, []example{
 			{kind: Quiz, text: "How many legs does a spider have?", options: []string{"6", "8", "10"}, correct: "X"},
@@ -72,7 +72,7 @@ var templates = map[string]map[string]struct {
 			{kind: Info, text: "Välkomna till födelsedagsäventyret! Leta upp korten i ordning och svara i mobilen."},
 			{kind: Quiz, text: "Hur gammal är {name} i dag?", options: []string{"{age-1}", "{age}", "{age+1}"}, correct: "X"},
 			{kind: Quiz, text: "Vilket är {name's} favoritdjur?", options: []string{"Häst", "Katt", "Hund"}, correct: "1"},
-			{kind: Answer, text: "Vad heter {name's} bästa kompis?", answers: []string{"Alva"}},
+			{kind: Answer, text: "Vad heter {name's} bästa kompis?", answers: []string{"{friend}"}},
 		}},
 		"kids": {"Skattjakt", true, []example{
 			{kind: Quiz, text: "Hur många ben har en spindel?", options: []string{"6", "8", "10"}, correct: "X"},
@@ -96,7 +96,7 @@ var templates = map[string]map[string]struct {
 }
 
 // NewFromTemplate is the named template in lang ("sv" or "en"), with
-// fresh card ids and the example person; false when there is no such
+// fresh card ids, each card marked Example, and the example person; false when there is no such
 // template.
 func NewFromTemplate(name, lang string) (Template, bool) {
 	return NewFromTemplateFor(name, lang, Person{})
@@ -116,7 +116,7 @@ func NewFromTemplateFor(name, lang string, p Person) (Template, bool) {
 	fill := personFiller(lang, p)
 	out := Template{Name: name, Title: fill(t.title), Kids: t.kids, Person: t.title != fill(t.title), Cards: make([]Card, len(t.cards))}
 	for i, e := range t.cards {
-		c := Card{ID: NewID(), Kind: e.kind, Text: fill(e.text), Correct: e.correct}
+		c := Card{ID: NewID(), Kind: e.kind, Text: fill(e.text), Correct: e.correct, Example: true}
 		for _, o := range e.options {
 			c.Options = append(c.Options, fill(o))
 		}
@@ -129,7 +129,7 @@ func NewFromTemplateFor(name, lang string, p Person) (Template, bool) {
 }
 
 // personFiller writes p into a template's text: {name}, {name's} (the
-// genitive, as lang forms it) and {age}, {age-1}, {age+1}.
+// genitive, as lang forms it), {friend}, and {age}, {age-1}, {age+1}.
 func personFiller(lang string, p Person) func(string) string {
 	name := strings.TrimSpace(p.Name)
 	if name == "" {
@@ -147,7 +147,12 @@ func personFiller(lang string, p Person) func(string) string {
 			gen = name
 		}
 	}
-	r := strings.NewReplacer("{name's}", gen, "{name}", name,
+	// The example best friend, never the birthday child themself.
+	friend := "Alva"
+	if strings.EqualFold(name, friend) {
+		friend = "Elsa"
+	}
+	r := strings.NewReplacer("{name's}", gen, "{name}", name, "{friend}", friend,
 		"{age-1}", strconv.Itoa(age-1), "{age+1}", strconv.Itoa(age+1), "{age}", strconv.Itoa(age))
 	return r.Replace
 }

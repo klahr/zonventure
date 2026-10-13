@@ -129,7 +129,7 @@ func TestMCPFromAdventureToStartedEvents(t *testing.T) {
 	// Scheduled: refused without an event pass, with where to get one;
 	// with a pass, teams invited and the event started.
 	text, isErr := call("create_event", map[string]any{"adventure_slug": "harbour", "attest_no_minors": true})
-	if !isErr || !strings.Contains(text, "event pass") || !strings.Contains(text, "http://zv.test/app/arrange/adventures#/adventures/harbour") {
+	if !isErr || !strings.Contains(text, "event pass") || !strings.Contains(text, "http://zv.test/app/arrange/#/adventures/harbour") {
 		t.Errorf("a scheduled event without a pass: %v %s", isErr, text)
 	}
 	var purchase struct {

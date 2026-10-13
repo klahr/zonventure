@@ -19,7 +19,7 @@ import (
 
 // renderStoreEventPage serves the per-game detail page paired with
 // /store. Returns 404 for events that aren't currently
-// public_for_sale + priced + in running/paused state, so a stale
+// public_for_sale + priced + running, so a stale
 // link doesn't expose past prices or events the operator has
 // unlisted.
 //
@@ -38,11 +38,12 @@ import (
 // (cover URL). Operators who want a richer / branded variant drop
 // their own store-event.html into ZV_WEB_OVERRIDE_DIR; the embedded
 // brand-neutral version is shadowed.
-func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, publicURL string) {
+// simulated says the simulated payment provider takes the payment, not Stripe.
+func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, publicURL string, simulated bool) {
 	idStr := chi.URLParam(r, "event_id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil || id <= 0 {
-		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
+		render404(w, r)
 		return
 	}
 	slugFromURL := strings.TrimSpace(chi.URLParam(r, "slug"))
@@ -95,12 +96,13 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		WHERE e.id = $1
 		  AND e.public_for_sale
 		  AND e.ticket_price_cents IS NOT NULL
-		  AND e.state IN ('running', 'paused')
+		  AND e.state = 'running'
+		  AND NOT e.sales_stopped
 	`, id).Scan(&eventName, &advSlug, &advTitle, &orgName, &orgSlug, &orgVerified, &blurb, &priceCents,
 		&currency, &teamSize, &startLabel, &hasCover, &hasIcon,
 		&brandAccent, &brandAccentSecondary, &brandBackground, &brandText)
 	if errors.Is(err, sql.ErrNoRows) {
-		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
+		renderStoreEventGone(w, r, db, id, slugFromURL)
 		return
 	}
 	if err != nil {
@@ -114,7 +116,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	// product page under this company's URL. The legacy /store/event/{id}
 	// path leaves slugFromURL empty and skips this check.
 	if slugFromURL != "" && slugFromURL != orgSlug {
-		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
+		render404(w, r)
 		return
 	}
 
@@ -182,6 +184,9 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	// and every store surface follows.
 	lang := resolveLang(w, r)
 	s := landingLocales[lang]
+	if !simulated {
+		s.StoreEventTermsHTML = s.StoreEventPaymentByStripe + " " + s.StoreEventTermsHTML
+	}
 	subs := topbarSubs(s, lang)
 	subs = append(subs, storeSubs(s)...)
 
@@ -211,6 +216,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{TEAM_SIZE}}", teamSizeStr},
 		[2]string{"{{TEAM_LABEL}}", html.EscapeString(teamLabel)},
 		[2]string{"{{START_LABEL}}", html.EscapeString(strings.TrimSpace(startLabel.String))},
+		[2]string{"{{START_LABEL_HIDDEN}}", hiddenIf(strings.TrimSpace(startLabel.String) == "")},
 		// COVER_URL lands inside both an HTML attribute AND a CSS
 		// url('…') context; html.EscapeString covers the HTML side
 		// but a `'` would still break out of the CSS quotes once
@@ -328,6 +334,14 @@ func cssURLQuote(u string) string {
 	return string(out)
 }
 
+// hiddenIf is a " hidden" attribute when b, else nothing.
+func hiddenIf(b bool) string {
+	if b {
+		return " hidden"
+	}
+	return ""
+}
+
 func boolAttr(b bool) string {
 	if b {
 		return "true"
@@ -348,4 +362,25 @@ func letterLangsJSON(ctx context.Context, db *sql.DB, eventID int64) string {
 	}
 	b, _ := json.Marshal(langs)
 	return string(b)
+}
+
+// renderStoreEventGone answers a store event that isn't for sale: one
+// with an approved listing that is paused or has stopped selling says
+// so, as its buyers will be back; anything else is not found.
+func renderStoreEventGone(w http.ResponseWriter, r *http.Request, db *sql.DB, id int64, slug string) {
+	var offSale bool
+	_ = db.QueryRowContext(r.Context(), `
+		SELECT EXISTS (
+			SELECT 1 FROM events e
+			JOIN event_listings l ON l.event_id = e.id
+			JOIN organizations o ON o.id = e.org_id
+			WHERE e.id = $1 AND e.public_for_sale AND e.state IN ('running', 'paused')
+			  AND ($2 = '' OR o.slug = $2))
+	`, id, slug).Scan(&offSale)
+	if !offSale {
+		render404(w, r)
+		return
+	}
+	s := landingLocales[resolveLang(w, r)]
+	renderErrorPage(w, r, http.StatusNotFound, s.StoreEventOffSaleHeading, s.StoreEventOffSaleHeading, s.StoreEventNotForSale)
 }

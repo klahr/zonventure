@@ -18,20 +18,19 @@ import (
 //   - Personal (always): user row + active staff sessions + auth_events
 //     for them.
 //   - Organization (org_admin / org_member only): org row, owned
-//     adventures, assignments, purchases, events (with team + slot
-//     summaries; full ping/answer rows are linked by event id but
-//     bundled inline so the file is self-contained).
+//     adventures, assignments, purchases (org_admin only), events
+//     (with team + slot summaries; full ping/answer rows are linked
+//     by event id but bundled inline so the file is self-contained).
 //
 // Global admins have no org affinity, so they only see the personal
 // section. The endpoint is synchronous — at our scale a single
 // org's data fits comfortably in a JSON response. If exports start
 // hitting megabytes we'll move to "email me the link" + S3 later.
 //
-// The org section is intentionally identical for org_admin and
-// org_member because the underlying data is already reachable from
-// each role's GUI: org_member already sees adventures via
-// /api/admin/adventures, events via /api/admin/events, and
-// purchases via the Settings → Purchases tab. The export is a
+// The org section is the same for org_admin and org_member except
+// purchases, which only an org admin may read (ListPurchases): the
+// rest is already reachable from each role's GUI — adventures via
+// /api/admin/adventures, events via /api/admin/events. The export is a
 // convenience aggregation of those existing reads; it does not
 // expand the role's data envelope. If a future GDPR review wants a
 // strict "personal data only" subset, the gate to flip is
@@ -56,7 +55,7 @@ func (h *Handlers) ExportMyData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if me.OrgID != nil {
-		if err := loadOrgExport(r.Context(), h.DB, *me.OrgID, &out); err != nil {
+		if err := loadOrgExport(r.Context(), h.DB, *me.OrgID, me.Role == auth.RoleOrgAdmin, &out); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "org export failed", err)
 			return
 		}
@@ -212,7 +211,7 @@ func loadActiveSessions(ctx context.Context, db *sql.DB, userID int64, out *expo
 	return rows.Err()
 }
 
-func loadOrgExport(ctx context.Context, db *sql.DB, orgID int64, out *exportPayload) error {
+func loadOrgExport(ctx context.Context, db *sql.DB, orgID int64, purchases bool, out *exportPayload) error {
 	var o orgExport
 	if err := db.QueryRowContext(ctx,
 		`SELECT id, name, created_at FROM organizations WHERE id = $1`, orgID).Scan(&o.ID, &o.Name, &o.CreatedAt); err != nil {
@@ -226,8 +225,10 @@ func loadOrgExport(ctx context.Context, db *sql.DB, orgID int64, out *exportPayl
 	if err := loadOrgAssignments(ctx, db, orgID, out); err != nil {
 		return err
 	}
-	if err := loadOrgPurchases(ctx, db, orgID, out); err != nil {
-		return err
+	if purchases {
+		if err := loadOrgPurchases(ctx, db, orgID, out); err != nil {
+			return err
+		}
 	}
 	return loadOrgEvents(ctx, db, orgID, out)
 }

@@ -95,5 +95,8 @@ func registerPaymentWebhookRoutes(r chi.Router, env *routesEnv) {
 	r.Group(func(r chi.Router) {
 		r.Use(auth.RequireCSRF())
 		r.Post("/api/auth/confirm-email-change", adminH.ConfirmEmailChange)
+		// The old address's way back after an email change (the
+		// notice's link): same shape, the token is the auth.
+		r.Post("/api/auth/revert-email-change", adminH.RevertEmailChangeByLink)
 	})
 }

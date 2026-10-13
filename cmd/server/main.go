@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"github.com/klahr/zonventure/internal/settings"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -28,6 +30,7 @@ import (
 	"github.com/klahr/zonventure/internal/retention"
 	"github.com/klahr/zonventure/internal/scheduler"
 	"github.com/klahr/zonventure/internal/server"
+	"github.com/klahr/zonventure/internal/updates"
 	"github.com/klahr/zonventure/internal/webhooks"
 	"github.com/klahr/zonventure/internal/ws"
 )
@@ -52,6 +55,60 @@ func envIntDefault(key string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+// changelogURL reads ZV_CHANGELOG_URL: unset uses the upstream default,
+// set but empty turns update checks off.
+func changelogURL() string {
+	v, set := os.LookupEnv("ZV_CHANGELOG_URL")
+	if set && strings.TrimSpace(v) == "" {
+		return updates.Off
+	}
+	return strings.TrimSpace(v)
+}
+
+// oidcRedirectMismatch reports whether the SSO redirect URL is not
+// the public URL's /auth/oidc/callback, where the callback is served.
+// Without a public URL only the path is checked.
+func oidcRedirectMismatch(redirect, public string) bool {
+	r, err := url.Parse(strings.TrimSpace(redirect))
+	if err != nil || strings.TrimRight(r.Path, "/") != "/auth/oidc/callback" {
+		return true
+	}
+	if strings.TrimSpace(public) == "" {
+		return false
+	}
+	p, err := url.Parse(strings.TrimSpace(public))
+	return err != nil || !strings.EqualFold(r.Scheme, p.Scheme) || !strings.EqualFold(r.Host, p.Host)
+}
+
+// totpKeyOpensStored reports whether key decrypts a stored two-factor
+// secret; true when none is stored or the database can't be asked.
+func totpKeyOpensStored(d *sql.DB, key []byte) bool {
+	var blob []byte
+	err := d.QueryRow(`SELECT totp_secret_encrypted FROM users WHERE totp_secret_encrypted IS NOT NULL LIMIT 1`).Scan(&blob)
+	if err != nil {
+		return true
+	}
+	_, err = auth.OpenSecret(key, blob)
+	return err == nil
+}
+
+// plainHTTPPublicURL reports whether u is an http:// origin on a host
+// other than localhost or a loopback address (legitimate for dev).
+func plainHTTPPublicURL(u string) bool {
+	p, err := url.Parse(strings.TrimSpace(u))
+	if err != nil || !strings.EqualFold(p.Scheme, "http") {
+		return false
+	}
+	h := p.Hostname()
+	if strings.EqualFold(h, "localhost") {
+		return false
+	}
+	if ip := net.ParseIP(h); ip != nil && ip.IsLoopback() {
+		return false
+	}
+	return true
 }
 
 // envTruthy reads a boolean-flavoured env var. Anything in the standard
@@ -211,6 +268,9 @@ func main() {
 	if _, isLog := mail.(mailer.LogMailer); isLog && strings.HasPrefix(os.Getenv("ZV_PUBLIC_URL"), "https://") {
 		logx.Warn("mailer.not_configured", "msg", "ZV_SMTP_HOST is unset: verification, reset and invite mail is only logged, never sent")
 	}
+	if plainHTTPPublicURL(os.Getenv("ZV_PUBLIC_URL")) {
+		logx.Warn("public_url.plain_http", "msg", "ZV_PUBLIC_URL is plain http on a non-local host: links in mail and session cookies travel unencrypted; use https")
+	}
 	// Optional ZV_TOTP_KEY: the AES-256-GCM key wrapping
 	// users.totp_secret_encrypted. When set we surface MFA in the
 	// components panel and accept TOTP enrolments; when missing the
@@ -223,10 +283,13 @@ func main() {
 	} else if !errors.Is(kerr, auth.ErrTOTPKeyMissing) {
 		log.Fatalf("ZV_TOTP_KEY: %v", kerr)
 	}
+	if totpKey != nil && !totpKeyOpensStored(sqlDB, totpKey) {
+		logx.Warn("auth.totp_key.mismatch", "msg", "ZV_TOTP_KEY does not decrypt the stored two-factor secrets: users who set up 2FA can't sign in; restore the key they were enrolled with")
+	}
 	// Optional ZV_OIDC_*: when ZV_OIDC_ENABLED=1 we attempt OpenID
-	// Connect discovery against the configured issuer at boot. Failure
-	// here is fatal so a misconfigured env file fails loudly instead of
-	// presenting a half-broken sign-in flow to the first user. Disabled
+	// Connect discovery against the configured issuer at boot. A config
+	// error is fatal so a misconfigured env file fails loudly; a failed
+	// discovery only hides SSO until a background retry succeeds. Disabled
 	// (the default) leaves SSO endpoints 404'd and the login UI hides
 	// the SSO button.
 	oidcCfg := auth.OIDCConfig{
@@ -242,10 +305,36 @@ func main() {
 	}
 	oidcClient, err := auth.NewOIDC(context.Background(), oidcCfg)
 	if err != nil {
-		log.Fatalf("ZV_OIDC_*: %v", err)
+		// logx rather than log.Fatalf, so the line honours ZV_LOG_FORMAT.
+		logx.Error("auth.oidc.config", "err", err.Error())
+		os.Exit(1)
 	}
 	if oidcClient.Enabled() {
 		logx.Info("auth.oidc.ready", "issuer", oidcCfg.Issuer, "hosted_domain", oidcCfg.HostedDomain)
+	}
+	if oidcClient.Configured() && strings.TrimSpace(oidcCfg.HostedDomain) == "" {
+		logx.Warn("auth.oidc.no_hosted_domain", "msg", "ZV_OIDC_HOSTED_DOMAIN is empty: anyone the issuer signs in gets an account; use a tenant-scoped issuer or set it")
+	}
+	if oidcClient.Configured() && oidcRedirectMismatch(oidcCfg.RedirectURL, *publicURL) {
+		logx.Warn("auth.oidc.redirect_url", "redirect_url", oidcCfg.RedirectURL, "public_url", *publicURL,
+			"msg", "ZV_OIDC_REDIRECT_URL should be ZV_PUBLIC_URL followed by /auth/oidc/callback: the identity provider sends users back to it, so sign-in fails there")
+	}
+	if !oidcClient.Configured() && (oidcCfg.Issuer != "" || oidcCfg.ClientID != "") {
+		logx.Warn("auth.oidc.disabled", "msg", "ZV_OIDC_* settings are present but ZV_OIDC_ENABLED is not set to 1: SSO stays off")
+	}
+	switch p := strings.ToLower(strings.TrimSpace(os.Getenv("ZV_PAYMENTS_PROVIDER"))); p {
+	case "", "stripe":
+		if os.Getenv("ZV_STRIPE_SECRET_KEY") == "" || os.Getenv("ZV_STRIPE_WEBHOOK_SECRET") == "" {
+			logx.Warn("payments.not_configured", "msg", "ZV_STRIPE_SECRET_KEY and ZV_STRIPE_WEBHOOK_SECRET are not both set: tickets and paid event passes can't be sold, only free and invoice flows work")
+		}
+	case "simulated":
+		if env := strings.ToLower(strings.TrimSpace(os.Getenv("ZV_ENV"))); env != "dev" && env != "development" {
+			logx.Error("payments.config", "err", "ZV_PAYMENTS_PROVIDER=simulated requires ZV_ENV=dev (refusing to wire fake payments outside a dev environment)")
+			os.Exit(1)
+		}
+	default:
+		logx.Error("payments.config", "err", fmt.Sprintf("unknown ZV_PAYMENTS_PROVIDER %q (valid: stripe, simulated)", p))
+		os.Exit(1)
 	}
 	// Pay the one-shot decoy-hash construction cost before traffic
 	// lands so the very first /api/auth/login on an unknown user
@@ -299,7 +388,7 @@ func main() {
 		Env:              os.Getenv("ZV_ENV"),
 		Version:          version,
 		WebOverrideDir:   os.Getenv("ZV_WEB_OVERRIDE_DIR"),
-		ChangelogURL:     os.Getenv("ZV_CHANGELOG_URL"),
+		ChangelogURL:     changelogURL(),
 		OIDC:             oidcClient,
 	})
 
@@ -427,7 +516,7 @@ func main() {
 // introduced (e.g. a payments interface, a blob-storage interface);
 // keep entries pure descriptive — no side effects, no DB calls.
 func describeComponents(m mailer.Mailer, stripeKey, stripeWebhookSecret, metricsAddr, paymentsOverride string, totpEnabled bool) []components.Component {
-	mailerImpl, mailerEnabled, mailerNotes := "log", false, "set $ZV_SMTP_HOST to send real mail"
+	mailerImpl, mailerEnabled, mailerNotes := "log", false, "mail is written to the server log, not sent; set $ZV_SMTP_HOST to send real mail"
 	if _, ok := m.(*mailer.SMTPMailer); ok {
 		mailerImpl, mailerEnabled, mailerNotes = "smtp", true, ""
 	}
@@ -436,13 +525,17 @@ func describeComponents(m mailer.Mailer, stripeKey, stripeWebhookSecret, metrics
 	// auto-discover stripe when both creds are present, else fall
 	// back to the in-app simulated/free/invoice flow.
 	stripeOK := stripeKey != "" && stripeWebhookSecret != ""
-	paymentsImpl, paymentsEnabled, paymentsNotes := "simulated-app", true, "set $ZV_STRIPE_SECRET_KEY and $ZV_STRIPE_WEBHOOK_SECRET to enable Stripe"
+	paymentsImpl, paymentsEnabled, paymentsNotes := "none", false, "no payment provider: free and invoice flows only; set $ZV_STRIPE_SECRET_KEY and $ZV_STRIPE_WEBHOOK_SECRET to enable Stripe"
 	switch strings.ToLower(strings.TrimSpace(paymentsOverride)) {
 	case "simulated":
 		paymentsImpl, paymentsEnabled, paymentsNotes = "simulated", true, "DEV ONLY — auto-confirms checkouts in-process; no money moves"
 	case "stripe", "":
 		if stripeOK {
 			paymentsImpl, paymentsEnabled, paymentsNotes = "stripe", true, ""
+		} else if stripeKey != "" {
+			paymentsNotes = "Stripe: secret key set, $ZV_STRIPE_WEBHOOK_SECRET missing — paid checkout is unavailable"
+		} else if stripeWebhookSecret != "" {
+			paymentsNotes = "Stripe: webhook secret set, $ZV_STRIPE_SECRET_KEY missing — paid checkout is unavailable"
 		}
 	}
 	metricsEnabled := metricsAddr != ""
@@ -518,9 +611,11 @@ func seedAdminUser(d *sql.DB, creds string) error {
 	if password == "admin" || password == "rootpw" {
 		isDefault = 1
 	}
+	// The first global admin also reviews store listings, so a fresh
+	// install can approve one; later admins opt in under Reviewers.
 	_, err = d.Exec(`
-		INSERT INTO users(username, password_hash, is_admin, password_is_default)
-		VALUES ($1, $2, TRUE, $3)
+		INSERT INTO users(username, password_hash, is_admin, password_is_default, listing_reviewer)
+		VALUES ($1, $2, TRUE, $3, NOT EXISTS (SELECT 1 FROM users WHERE is_admin))
 		ON CONFLICT(username) DO UPDATE SET
 		  password_hash = excluded.password_hash,
 		  is_admin = TRUE,

@@ -8,11 +8,12 @@ import {
 } from "../../ui/index.ts";
 import { SPOTS } from "@zonventure/ui";
 import { play } from "@zonventure/api";
-import { decide, listPartners, listRedemptions, updatePurchase, updateRedemption, type Redemption } from "./api.ts";
-import { AddRedemptionDialog, PostDialog } from "./dialogs.tsx";
-import { PrintQueueButton } from "./PrintQueue.tsx";
+import { decide, listPartners, listRedemptions, reject, updatePurchase, updateRedemption, type Redemption } from "./api.ts";
+import { AddRedemptionDialog, PostDialog, RejectDialog } from "./dialogs.tsx";
+import { PrintQueueButton, printable } from "./PrintQueue.tsx";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
 import { PartnersCard } from "./Partners.tsx";
+import { TicketSalesCard } from "../settings/TicketSales.tsx";
 import { langName, partnerLabel, regionName, useRedemptionError } from "./shared.ts";
 import "./redemptions.css";
 
@@ -39,7 +40,9 @@ export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
   const [adding, setAdding] = useState(false);
   const counts = list.data?.counts ?? {};
   const canAdd = (partners.data ?? []).some((p) => p.enabled && (p.products ?? []).some((x) => x.enabled));
-  const total = STATES.reduce((a, s) => a + (s === "to_post" || s === "all" ? 0 : counts[s] ?? 0), 0);
+  // Whether there is anything at all: to_post overlaps approved, but also
+  // holds store purchases, which no other state counts.
+  const total = STATES.reduce((a, s) => a + (s === "all" ? 0 : counts[s] ?? 0), 0);
   // Letters print a language at a time: offer the languages the list holds.
   const [lang, setLang] = useState("");
   const all = list.data?.redemptions ?? [];
@@ -71,7 +74,7 @@ export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
           return { id: s, href: href({ name: "redemptions", tab: s }), label: <>{t.t(LABEL[s])}{n > 0 && <span className="rd-count">{n}</span>}</> };
         })}
       />}
-      {(langs.length > 1 || rows.some((r) => (r.print?.length ?? 0) > 0)) && (
+      {(langs.length > 1 || rows.some(printable)) && (
         <div className="rd-toolbar">
           {langs.length > 1 && (
             <label className="rd-filter">
@@ -96,6 +99,8 @@ export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
           {rows.map((rd) => <RedemptionItem key={`${rd.kind}-${rd.id}`} rd={rd} showState={st === "all"} reload={list.reload} />)}
         </ul>
       )}
+      {/* What buyers paid: billing is the org admin's. */}
+      {isOrgAdmin && <TicketSalesCard />}
       {partners.error && !partners.data ? (
         <ErrorBox message={partners.error} retry={partners.reload} retryLabel={t.t("Retry")} />
       ) : partners.data ? (
@@ -105,11 +110,12 @@ export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
         <AddRedemptionDialog
           partners={partners.data}
           onClose={() => setAdding(false)}
-          onDone={() => {
+          onDone={(state) => {
             setAdding(false);
-            // It lands as pending: show that list.
-            if (st === "pending") list.reload();
-            else navigate({ name: "redemptions", tab: "pending" });
+            // Show the list it landed in: approved, or pending if it couldn't be.
+            const to = state === "approved" ? "approved" : "pending";
+            if (st === to) list.reload();
+            else navigate({ name: "redemptions", tab: to });
           }}
         />
       )}
@@ -123,6 +129,7 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
   const dialogs = useDialogs();
   const errText = useRedemptionError();
   const [editing, setEditing] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
   const [busy, setBusy] = useState(false);
   const locale = t.current();
   const purchase = rd.kind === "purchase";
@@ -144,18 +151,13 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
     }
   };
 
-  const act = async (action: "approve" | "reject" | "cancel") => {
-    const email = rd.email || t.t("the customer");
+  const email = rd.email || t.t("the customer");
+  const act = async (action: "approve" | "cancel") => {
     const copy = {
       approve: {
         title: t.t("Approve this redemption?"),
         body: t.t("A team is created on “{{event}}” and its link is emailed to {{email}}. Only approve once you have checked the code in the partner's portal.", { event: rd.event_name || rd.product_name || "", email }),
         btn: t.t("Approve"), danger: false, done: t.t("Approved — the team link is on its way"),
-      },
-      reject: {
-        title: t.t("Reject this redemption?"),
-        body: t.t("{{email}} is told by email that the code couldn't be verified.", { email }),
-        btn: t.t("Reject"), danger: true, done: t.t("Redemption rejected"),
       },
       cancel: rd.state === "approved"
         ? {
@@ -266,7 +268,7 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
         {rd.state === "pending" && (
           <>
             <Button size="sm" disabled={busy} onClick={() => act("approve")}>{t.t("Approve")}</Button>
-            <Button size="sm" disabled={busy} onClick={() => act("reject")}>{t.t("Reject")}</Button>
+            <Button size="sm" disabled={busy} onClick={() => setRejecting(true)}>{t.t("Reject")}</Button>
             {prints}
             <span className="rd-spacer" />
             <MoreMenu size="sm" label={t.t("More")} items={[postItem, postedItem, { separator: true }, cancelItem]} />
@@ -297,6 +299,13 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
           rd={rd}
           onClose={() => setEditing(false)}
           onSave={async (body) => { setEditing(false); await run(() => save(body), t.t("Saved")); }}
+        />
+      )}
+      {rejecting && (
+        <RejectDialog
+          email={email}
+          onClose={() => setRejecting(false)}
+          onReject={async (reason) => { setRejecting(false); await run(() => reject(rd.id, reason), t.t("Redemption rejected")); }}
         />
       )}
     </li>

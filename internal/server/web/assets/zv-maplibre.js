@@ -51,6 +51,9 @@ export function mapStyle() {
 // gestureLocale words the hints a cooperative map shows: how to zoom with
 // the wheel (`wheel`, with {key} for Ctrl or ⌘) and how to pan on a phone.
 export function gestureLocale(wheel, touch) {
+  // MapLibre takes an iPhone ("like Mac OS X") for a Mac; a phone or
+  // tablet has no wheel, so it gets the touch hint either way.
+  if (/iPhone|iPad|iPod|Android/.test(navigator.userAgent)) wheel = touch;
   return {
     'CooperativeGesturesHandler.WindowsHelpText': wheel.replace('{key}', 'Ctrl'),
     'CooperativeGesturesHandler.MacHelpText': wheel.replace('{key}', '⌘'),

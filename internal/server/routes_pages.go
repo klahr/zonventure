@@ -10,6 +10,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"github.com/klahr/zonventure/internal/settings"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/mcp"
 	"github.com/klahr/zonventure/internal/oauth"
 )
@@ -31,19 +33,22 @@ func registerMetaRoutes(r chi.Router, env *routesEnv) {
 	// Health probe used by load balancers and `depends_on: condition:
 	// service_healthy` in compose. Pings the DB so we report unhealthy
 	// when the connection is down — a stuck-but-listening server would
-	// otherwise keep receiving traffic.
+	// otherwise keep receiving traffic. Also reports the build version
+	// and the newest applied migration, for ops checks after an upgrade.
 	r.Get("/api/health", func(w http.ResponseWriter, req *http.Request) {
 		ctx, cancel := context.WithTimeout(req.Context(), time.Second)
 		defer cancel()
-		if err := cfg.DB.PingContext(ctx); err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(`{"status":"db unavailable"}`))
+		var migration sql.NullString
+		if err := cfg.DB.QueryRowContext(ctx, `SELECT max(name) FROM schema_migrations`).Scan(&migration); err != nil {
+			httpx.JSON(w, http.StatusServiceUnavailable, map[string]string{"status": "db unavailable", "version": cfg.Version})
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		out := map[string]string{"status": "ok", "version": cfg.Version, "migration": migration.String}
+		// In redirect mode every page 301s there; say so, for the cutover watch.
+		if target := settings.RedirectTarget(); target != "" {
+			out["redirect_to"] = target
+		}
+		httpx.JSON(w, http.StatusOK, out)
 	})
 
 	// MCP (Model Context Protocol) endpoint. Off by default — flips
@@ -192,7 +197,7 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 		// handler so a crawler hitting an old link gets the same
 		// shape as any other unknown URL.
 		if !hasOverride("pricing.html") {
-			servePublicPage("web/404.html", http.StatusNotFound)(w, req)
+			render404(w, req)
 			return
 		}
 		renderTopbarPage(w, req, "web/pricing.html")
@@ -204,10 +209,10 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 	})
 	r.Get("/shop/*", serveShop)
 
-	r.Get("/privacy", func(w http.ResponseWriter, _ *http.Request) {
-		renderLegalPage(w, "privacy.html", legalNow(cfg.Legal))
+	r.Get("/privacy", func(w http.ResponseWriter, req *http.Request) {
+		renderLegalPage(w, "privacy.html", resolveLang(w, req), legalNow(cfg.Legal))
 	})
-	r.Get("/terms", func(w http.ResponseWriter, _ *http.Request) {
-		renderLegalPage(w, "terms.html", legalNow(cfg.Legal))
+	r.Get("/terms", func(w http.ResponseWriter, req *http.Request) {
+		renderLegalPage(w, "terms.html", resolveLang(w, req), legalNow(cfg.Legal))
 	})
 }

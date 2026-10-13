@@ -6,7 +6,7 @@ import { PanelModal } from "./dz/dialogs.tsx";
 /**
  * The author's dev ticket: a phone link that plays the saved draft live —
  * every save, here or by an assistant through the MCP, shows on the phone
- * within a second, with nothing published. Scan it, or copy the link.
+ * within a couple of seconds, with nothing published. Scan it, open it, or copy the link.
  */
 export function DevTicketModal({ slug, onClose }: { slug: string; onClose: () => void }) {
   const t = useT();
@@ -29,7 +29,7 @@ export function DevTicketModal({ slug, onClose }: { slug: string; onClose: () =>
         {!ticket && !error && <p className="field__hint">{t.t("Making your dev ticket…")}</p>}
         {ticket && (
           <>
-            <p className="field__hint">{t.t("Scan with your phone. It plays the saved draft: every change — yours here, or an assistant's — shows on the phone within a second. Nothing is published, and it never counts as an event.")}</p>
+            <p className="field__hint">{t.t("Scan with your phone. It plays the saved draft: every change — yours here, or an assistant's — shows on the phone within a couple of seconds. Nothing is published, and it never counts as an event.")}</p>
             {token && <img className="devticket__qr" src={`/qr/team/${encodeURIComponent(token)}`} alt={t.t("QR code for the dev ticket")} />}
             <div className="look__actions">
               <input className="field__input" readOnly value={ticket.team_url} onFocus={(e) => e.target.select()} aria-label={t.t("Link")} />
@@ -40,8 +40,11 @@ export function DevTicketModal({ slug, onClose }: { slug: string; onClose: () =>
               >
                 {t.t("Copy link")}
               </button>
+              <a className="btn btn--ghost btn--sm" href={ticket.team_url} target="_blank" rel="noopener noreferrer">
+                {t.t("Open")}
+              </a>
             </div>
-            {ticket.voucher_code && <p className="field__hint">{t.t("Or type the code {{code}} at /play.", { code: ticket.voucher_code })}</p>}
+            {ticket.voucher_code && <p className="field__hint">{t.t("Or open /play on the phone and enter {{code}} as the voucher code.", { code: ticket.voucher_code })}</p>}
             <form
               className="look__actions"
               onSubmit={(e) => {

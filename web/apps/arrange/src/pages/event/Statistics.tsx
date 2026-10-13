@@ -72,9 +72,9 @@ export function StatisticsCard({ stats, error, retry }: { stats: EventStats | nu
           <li>{t.t("{{n}} of {{of}} teams finished", { n: stats.finished, of: stats.teams })}{stats.failed > 0 && " · " + t.t("{{n}} failed", { n: stats.failed })}</li>
           {stats.fastest_seconds !== undefined && <li>{t.t("Fastest {{a}}, slowest {{b}}", { a: time(stats.fastest_seconds), b: time(stats.slowest_seconds) })}</li>}
           {stats.top_score !== undefined && <li>{t.t("Top score {{a}}, median {{b}}", { a: fmtPoints(stats.top_score), b: fmtPoints(stats.median_score) })}</li>}
-          {trickiest && <li>{t.t("Trickiest: {{title}} — {{n}} wrong guesses", { title: trickiest.title, n: trickiest.wrong })}</li>}
+          {trickiest && <li>{trickiest.wrong === 1 ? t.t("Trickiest: {{title}} — 1 wrong guess", { title: trickiest.title }) : t.t("Trickiest: {{title}} — {{n}} wrong guesses", { title: trickiest.title, n: trickiest.wrong })}</li>}
           {quickest && <li>{t.t("Quickest: {{title}} — solved in {{time}}", { title: quickest.title, time: time(quickest.median_seconds) })}</li>}
-          {stats.photos > 0 && <li>{t.t("{{n}} photos taken", { n: stats.photos })}</li>}
+          {stats.photos > 0 && <li>{stats.photos === 1 ? t.t("1 photo taken") : t.t("{{n}} photos taken", { n: stats.photos })}</li>}
         </ul>
         <Table columns={columns} rows={stats.puzzles} rowKey={(p) => p.node} caption={t.t("Puzzles")} />
       </>

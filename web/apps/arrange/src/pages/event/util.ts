@@ -19,9 +19,13 @@ export function runLabel(event: EventInfo): string {
   return event.name ? event.name : `Event #${event.id}`;
 }
 
-/** Manual-start events read as "manual": a scheduled row with no time must not promise one. */
+/**
+ * Manual-start events read as "manual": a scheduled row with no time must
+ * not promise one. A party adventure starts when its first team joins.
+ */
 export function stateLabel(event: EventInfo): string {
-  return event.state === "scheduled" && !event.scheduled_at ? "manual" : event.state;
+  if (event.state === "scheduled" && !event.scheduled_at) return event.party ? "waiting" : "manual";
+  return event.state;
 }
 
 const STATE_TONE: Record<string, Tone> = { running: "good", scheduled: "accent", paused: "warn", completed: "good", cancelled: "bad" };
@@ -33,7 +37,8 @@ export const stateGlyph = (s: string) => (GLYPH[s] ? GLYPH[s] + " " : "");
 
 export function stateText(t: I18n, s: string): string {
   switch (s) {
-    case "manual": return t.t("manual");
+    case "manual": return t.t("not scheduled");
+    case "waiting": return t.t("waiting for the first team");
     case "scheduled": return t.t("scheduled");
     case "running": return t.t("running");
     case "paused": return t.t("paused");

@@ -24,6 +24,8 @@ export interface Round {
   finished_at?: string;
   teams: number;
   players: number;
+  /** A finished game's teams and scores. */
+  results?: Team[];
 }
 
 /** A word the host fills in: internal/admin/party_adapt.go hostValueDTO. */
@@ -84,6 +86,8 @@ export interface HostedEvent {
   /** Each game's results stay off the phones and the live board until the host finishes it. */
   hold_results: boolean;
   teams_limit: number;
+  /** The teams the game being played turned away, full. */
+  turned_away?: number;
   /** The most teams a game can be bought up to. */
   max_teams: number;
   /** What one more block of teams costs (block_cents 0: free). */
@@ -93,6 +97,7 @@ export interface HostedEvent {
   reprint: boolean;
   /** A quiz trail made at the public door: the host link edits it, and from keep_from it may be kept. */
   public_trail?: boolean;
+  trail_id?: number;
   keep_from?: string;
   first_game_at?: string;
   teams: Team[];

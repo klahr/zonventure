@@ -15,15 +15,19 @@ type Named = Pick<Team, "id" | "name" | "email">;
  * Every email the event sends uses the theme: invitations, emails from
  * steps during the game, and these.
  */
-export function EmailsCard({ event, teams, from }: { event: Info; teams: Named[]; from: string }) {
+export function EmailsCard({ event, teams, from, refresh }: { event: Info; teams: Named[]; from: string; refresh: number }) {
   const t = useT();
   const toast = useToast();
-  const state = useLoad((s) => emails.eventEmails(event.id, s), [event.id]);
+  // Re-read with the event's activity: teams added, an address saved, invitations sent.
+  const state = useLoad((s) => emails.eventEmails(event.id, s), [event.id, refresh]);
   const catalog = useLoad(() => emails.themes(), []);
   const [composing, setComposing] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const data = state.data;
-  const themeName = (id: string) => catalog.data?.themes.find((x) => x.id === id)?.name ?? id;
+  const themeName = (id: string) => {
+    const name = catalog.data?.themes.find((x) => x.id === id)?.name;
+    return name ? t.t(name) : id;
+  };
   const setTheme = async (theme: emails.Theme | "") => {
     try {
       await emails.setEventTheme(event.id, theme);
@@ -57,7 +61,7 @@ export function EmailsCard({ event, teams, from }: { event: Info; teams: Named[]
                 <option value="">{data.theme ? t.t("The organisation's") : t.t("The organisation's ({{theme}})", { theme: themeName(data.theme_used) })}</option>
                 {catalog.data?.themes.map((x) => (
                   <option key={x.id} value={x.id}>
-                    {x.name}
+                    {t.t(x.name)}
                   </option>
                 ))}
               </select>

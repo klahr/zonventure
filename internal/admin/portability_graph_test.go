@@ -23,8 +23,17 @@ import (
 // whose picture block shows the same picture.
 func TestPortabilityGraphRoundTrip(t *testing.T) {
 	t.Parallel()
-	db, _, user, pic, snd := graphFixture(t, "graphy")
+	db, advID, user, pic, snd := graphFixture(t, "graphy")
 	ctx := context.Background()
+	// The look travels too: fonts, style, and the style's sound as media.
+	if _, err := db.Exec(`
+		UPDATE adventures SET author = 'Vasteras Turism', font = 'fredoka', heading_font = 'luckiest-guy',
+		       look_style = jsonb_build_object('transition', 'pop', 'cheer_text', 'Snyggt!',
+		           'sound_right', (SELECT id FROM adventure_media WHERE adventure_id = $1 AND kind = 'audio' LIMIT 1))
+		WHERE id = $1
+	`, advID); err != nil {
+		t.Fatal(err)
+	}
 
 	h := &admin.Handlers{DB: db, Lib: adventure.New(db)}
 	r := chi.NewRouter()
@@ -91,16 +100,35 @@ func TestPortabilityGraphRoundTrip(t *testing.T) {
 	if err := db.QueryRow(`SELECT id FROM adventures WHERE slug = 'graphy-imported'`).Scan(&newID); err != nil {
 		t.Fatal(err)
 	}
-	pub, err := graphstore.Published(ctx, db, newID)
-	if err != nil {
-		t.Fatalf("import has no published graph: %v", err)
+	// A draft, to publish when the importer chooses, by the importing org.
+	if _, err := graphstore.Published(ctx, db, newID); !errors.Is(err, graphstore.ErrNotFound) {
+		t.Errorf("import published: %v, want a draft only", err)
 	}
-	assertGraphMediaOwned(t, db, newID, pub.Graph, pic, pic, snd)
+	var author, original string
+	if err := db.QueryRow(`SELECT author, original_author FROM adventures WHERE id = $1`, newID).Scan(&author, &original); err != nil {
+		t.Fatal(err)
+	}
+	if author != "Acme" || original != "Vasteras Turism" {
+		t.Errorf("author %q, originally %q; want Acme, originally Vasteras Turism", author, original)
+	}
 	draft, err := graphstore.LoadDraft(ctx, db, newID)
 	if err != nil {
 		t.Fatalf("import has no draft: %v", err)
 	}
 	assertGraphMediaOwned(t, db, newID, draft.Graph, pic, pic, snd)
+
+	var font, heading, transition, cheer string
+	var soundOwned bool
+	if err := db.QueryRow(`
+		SELECT font, heading_font, look_style->>'transition', look_style->>'cheer_text',
+		       EXISTS (SELECT 1 FROM adventure_media WHERE id = (look_style->>'sound_right')::bigint AND adventure_id = $1 AND kind = 'audio')
+		FROM adventures WHERE id = $1
+	`, newID).Scan(&font, &heading, &transition, &cheer, &soundOwned); err != nil {
+		t.Fatal(err)
+	}
+	if font != "fredoka" || heading != "luckiest-guy" || transition != "pop" || cheer != "Snyggt!" || !soundOwned {
+		t.Errorf("imported look = %q %q %q %q sound owned %v; want the exported one", font, heading, transition, cheer, soundOwned)
+	}
 }
 
 // TestImportClassicEnvelopeRefused refuses an export from the classic

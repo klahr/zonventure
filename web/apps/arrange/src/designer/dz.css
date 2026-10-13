@@ -553,6 +553,20 @@
 .dz .diff-row.changed {
   color: var(--dz-ink);
 }
+/* A changed text, old over new, the words that differ marked. */
+.dz .text-diff {
+  margin: var(--dz-space-1) 0 var(--dz-space-2);
+  font-family: var(--dz-font-sans);
+  white-space: pre-wrap;
+}
+.dz .text-diff__field + .text-diff__field { margin-top: var(--dz-space-2); }
+.dz .text-diff dt { color: var(--dz-muted); }
+.dz .text-diff dd { margin: 2px 0 0; padding: 2px var(--dz-space-2); border-radius: 4px; }
+.dz .text-diff__side { margin-right: var(--dz-space-2); color: var(--dz-muted); font-size: var(--dz-text-sm); }
+.dz .text-diff__del { background: color-mix(in srgb, var(--dz-danger) 8%, transparent); }
+.dz .text-diff__ins { background: color-mix(in srgb, var(--dz-success) 8%, transparent); }
+.dz .text-diff del { color: var(--dz-danger); background: color-mix(in srgb, var(--dz-danger) 18%, transparent); }
+.dz .text-diff ins { color: var(--dz-success); background: color-mix(in srgb, var(--dz-success) 18%, transparent); text-decoration: none; }
 .dz .editor {
   display: grid;
   grid-template-columns: 1fr;
@@ -1160,6 +1174,7 @@
 }
 .dz .history-row-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--dz-space-2);
   font-size: var(--dz-text-sm);
@@ -1181,10 +1196,9 @@
 .dz .history-badge.label {
   display: inline-flex;
   align-items: center;
-  max-width: 16ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--dz-warning);
   background: color-mix(in srgb, var(--dz-warning) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--dz-warning) 32%, transparent);
@@ -1322,10 +1336,10 @@
    laptop-width canvas cannot fit every label, and a strip scrolled to
    "✓ S" reads as broken. Publish and test play keep their words longer. */
 @container editor-canvas (max-width: 1180px) {
-.dz .editor-toolbar .toolbar-scroll .toolbar-label {
+.dz .editor-toolbar .toolbar-scroll :not(.toolbar-main) > .toolbar-label {
     display: none;
   }
-.dz .editor-toolbar .toolbar-scroll button:not(.toolbar-nudge),
+.dz .editor-toolbar .toolbar-scroll button:not(.toolbar-nudge, .toolbar-main),
 .dz .editor-toolbar .toolbar-scroll .editor-saved,
 .dz .editor-toolbar .toolbar-scroll .editor-saving {
     width: 36px;
@@ -1334,14 +1348,26 @@
     justify-content: center;
   }
 }
+/* And wherever the strip itself runs out of room (useTightStrip). */
+.dz .editor-toolbar .toolbar-scroll.is-tight .toolbar-label {
+  display: none;
+}
+.dz .editor-toolbar .toolbar-scroll.is-tight button:not(.toolbar-nudge),
+.dz .editor-toolbar .toolbar-scroll.is-tight .editor-saved,
+.dz .editor-toolbar .toolbar-scroll.is-tight .editor-saving {
+  width: 36px;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+}
 @container editor-canvas (max-width: 960px) {
-.dz .editor-toolbar .toolbar-label {
+.dz .editor-toolbar :not(.toolbar-main) > .toolbar-label {
     display: none;
   }
 .dz .editor-toolbar button.primary .toolbar-label {
     display: inline;
   }
-.dz .editor-toolbar button:not(.primary, .dz .toolbar-nudge) {
+.dz .editor-toolbar button:not(.primary, .dz .toolbar-nudge, .toolbar-main) {
     width: 36px;
     padding: 0;
     gap: 0;

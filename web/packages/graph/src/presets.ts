@@ -11,7 +11,7 @@
 // is created at the drop point already wired in.
 
 import { blocksOf, withBlocks, withFixed } from "./blocks.ts";
-import { freshSlug, portsOf } from "./model.ts";
+import { freshSlug, portsOf, quietInQuizWalk } from "./model.ts";
 import type { Graph, Node, NodeType } from "./types.ts";
 
 export type PresetCategory = "puzzle" | "story" | "flow" | "effect" | "end";
@@ -43,7 +43,7 @@ export const PRESETS: Preset[] = [
     category: "puzzle",
     label: "Puzzle",
     hint: "A question with a typed answer",
-    keywords: "question riddle text answer",
+    keywords: "question riddle text answer qr scan",
     build: () => ({
       type: "puzzle",
       title: "Puzzle",
@@ -417,7 +417,7 @@ export const PRESETS: Preset[] = [
 /** Build a node from a preset at a canvas position. */
 export function nodeFromPreset(g: Graph, preset: Preset, at: { x: number; y: number }): Node {
   const slug = freshSlug(g, preset.type);
-  return withFixed({ ...preset.build(slug), slug, x: Math.round(at.x), y: Math.round(at.y) } as Node);
+  return quietInQuizWalk(g, withFixed({ ...preset.build(slug), slug, x: Math.round(at.x), y: Math.round(at.y) } as Node));
 }
 
 /** What an author may fill in when adding a step, beyond its preset. */

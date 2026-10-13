@@ -335,7 +335,7 @@ func (t *Team) Apply(step walk.Step) {
 			// The quiz walk is marked as the team finishes, never before:
 			// a score that moved with each pick would give the answers away.
 			// So is the accusation, which would give the saboteur away.
-			t.Points += t.Quiz().Points + t.accusePoints()
+			t.Points += t.FinishPoints()
 		}
 		t.Completed = true
 		t.Ending = step.Outcome
@@ -345,6 +345,10 @@ func (t *Team) Apply(step walk.Step) {
 	t.NodePaused = t.Paused
 	t.WalkedMetres = 0
 }
+
+// FinishPoints are what the team scores as it finishes: its quiz walk
+// and its accusations.
+func (t *Team) FinishPoints() float64 { return t.Quiz().Points + t.accusePoints() }
 
 // --- walk.State ----------------------------------------------------------
 
@@ -696,6 +700,12 @@ type Result struct {
 	// Waiting is set when a step done together took the player's part
 	// but waits for the others: keys still to turn, players to agree.
 	Waiting *Together `json:"waiting,omitempty"`
+	// Quiet is set when an answer moved the team on from a step that
+	// says neither right nor wrong (graph.PuzzleConfig.Quiet).
+	Quiet bool `json:"quiet,omitempty"`
+	// NotYet is set when a gate turned the team back to a hub to choose
+	// again: with nothing new on screen, the phone says why.
+	NotYet bool `json:"not_yet,omitempty"`
 
 	// Shared is set when the action changed what other teams' phones
 	// show; Scored when it changed the team's score. Set by the engine.
@@ -788,7 +798,24 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 		if err != nil {
 			return Result{}, nil, err
 		}
-		return Result{Accepted: true, Port: o.Port, Points: points}, step, nil
+		return Result{Accepted: true, Port: o.Port, Points: points, Quiet: cfg.Quiet}, step, nil
+	}
+
+	if cfg.Quiet {
+		// Wrong, but the team moves on as if right, scoring nothing: the
+		// guess counts as a wrong one and the step stays unsolved, so the
+		// results say which it was.
+		for _, o := range answerOrder(cfg) {
+			if !t.outputZoneOK(o) {
+				continue
+			}
+			r.Attempts++
+			step, err := t.leave(n, o.Port, 0)
+			if err != nil {
+				return Result{}, nil, err
+			}
+			return Result{Port: o.Port, Quiet: true}, step, nil
+		}
 	}
 
 	// Wrong. Count it, lock out if configured, and take a pity path if
@@ -967,7 +994,11 @@ func (t *Team) Act(action func() (Result, *walk.Step, error)) (Result, *walk.Ste
 	if t.TimeUpDue() {
 		return t.fireTimeUp()
 	}
-	return action()
+	res, step, err := action()
+	if err == nil && step != nil && step.GateFailed && step.Offer != nil {
+		res.NotYet = true
+	}
+	return res, step, err
 }
 
 // TimeUp moves the team as the time limit says, if it is due — the
@@ -1307,6 +1338,17 @@ func (t *Team) leave(n graph.Node, port string, points float64) (*walk.Step, err
 		return nil, fmt.Errorf("advancing from %s.%s: %w", n.Slug, port, err)
 	}
 	return &step, nil
+}
+
+// CanRescue reports whether Rescue can move a team past n: a puzzle
+// with a skip or an answer route.
+func CanRescue(n graph.Node) bool {
+	if n.Type != graph.Puzzle || n.PuzzleCfg == nil {
+		return false
+	}
+	_, skip := outputFor(n, graph.OnSkip)
+	_, answer := outputFor(n, graph.OnAnswer)
+	return skip || answer
 }
 
 func outputFor(n graph.Node, trig graph.Trigger) (graph.Output, bool) {

@@ -11,7 +11,8 @@ export type ListingKind = "event" | "party" | "org" | "adventure";
 export interface OrgMember {
   id: number;
   username: string;
-  role: "org_admin" | "org_member";
+  role: "org_admin" | "org_member" | "org_writer";
+  email?: string;
   email_verified: boolean;
   active_events_owned: number;
 }
@@ -34,6 +35,8 @@ export interface Organization {
   created_at: string;
   members: OrgMember[];
   assignments: Assignment[];
+  /** The org's published adventures, which an event pass may be granted for besides the catalog's. */
+  own_adventures?: { slug: string; title: string }[];
   players_total: number;
   events_total: number;
   events_running: number;
@@ -43,6 +46,8 @@ export interface Organization {
   party_adventures: boolean;
   /** Listings skip review and the store shows a badge (listing_review.go). */
   verified_creator: boolean;
+  /** Every member must use two-factor authentication. */
+  require_totp: boolean;
 }
 
 /** internal/admin/handlers.go eventDTO, the fields the operator view reads. */
@@ -95,8 +100,11 @@ export interface Purchase {
   created_at: string;
   paid_at?: string;
   billed_at?: string;
+  invoice_number?: string;
   voided_at?: string;
   pre_migration?: boolean;
+  /** The event the pass was used for was cancelled. */
+  event_cancelled?: boolean;
 }
 
 /** internal/admin/stripe_connect.go stripeConnectStatusDTO */
@@ -130,10 +138,17 @@ export const createOrganization = (name: string) => post<Organization>("/api/adm
 export const renameOrganization = (id: number, name: string) => patch<void>(org(id), { name });
 export const setTrusted = (id: number, trusted: boolean) => post<unknown>(`${org(id)}/trusted`, { trusted });
 export const setPartyAdventures = (id: number, enabled: boolean) => post<unknown>(`${org(id)}/party-adventures`, { enabled });
-export const setVerifiedCreator = (id: number, verified: boolean) => post<unknown>(`${org(id)}/verified-creator`, { verified });
+/** `approved` counts the waiting listings that turning it on approved. */
+export const setVerifiedCreator = (id: number, verified: boolean) => post<{ verified_creator: boolean; approved: number }>(`${org(id)}/verified-creator`, { verified });
 export const setPublisher = (id: number, isPublisher: boolean, password?: string) =>
   put<void>(`${org(id)}/publisher`, { is_publisher: isPublisher }, password ? pw(password) : {});
-export const deleteOrganization = (id: number, password: string) => request<void>(org(id), { method: "DELETE", ...pw(password) });
+/** Turning it off needs the password; turning it on doesn't. */
+export const setRequireTotp = (id: number, enabled: boolean, password?: string) =>
+  put<unknown>(`${org(id)}/require-totp`, { enabled }, password ? pw(password) : {});
+/** Whether the server has ZV_TOTP_KEY, so 2FA can be required (settingsResponse). */
+export const totpAvailable = (signal?: AbortSignal) =>
+  get<{ totp_available: boolean }>("/api/admin/settings", signal ? { signal } : {}).then((r) => r.totp_available);
+export const deleteOrganization =(id: number, password: string) => request<void>(org(id), { method: "DELETE", ...pw(password) });
 
 export function uploadLogo(id: number, file: File) {
   const form = new FormData();
@@ -145,10 +160,24 @@ export const deleteLogo = (id: number) => request<void>(`${org(id)}/logo`, { met
 export const searchUsers = (q: string, orgId: number) =>
   get<{ users: { id: number; username: string }[] }>(`/api/admin/users/search?q=${encodeURIComponent(q)}&org_id=${orgId}`).then((r) => r.users ?? []);
 export const addMember = (id: number, body: { username: string; role: string; password?: string; email?: string }) =>
-  post<unknown>(`${org(id)}/members`, body);
+  post<{ status?: string } | undefined>(`${org(id)}/members`, body);
 export const removeMember = (id: number, userId: number, password: string) =>
   request<void>(`${org(id)}/members/${userId}`, { method: "DELETE", ...pw(password) });
+/** internal/admin/party.go adminPartyDTO. */
+export interface HostParty {
+  id: number;
+  name: string;
+  state: string;
+  adventure: string;
+  org_name: string;
+  created_at: string;
+}
+export const partiesByHost = (email: string) =>
+  get<{ parties: HostParty[] | null }>(`/api/admin/parties?email=${encodeURIComponent(email)}`).then((r) => r.parties ?? []);
+export const resendHostLink = (eventId: number, email: string) => post<void>(`/api/admin/parties/${eventId}/resend-host-link`, { email });
 export const verifyEmail = (userId: number) => post<void>(`/api/admin/users/${userId}/verify-email`);
+export const setUserPassword = (userId: number, password: string) => post<void>(`/api/admin/users/${userId}/password`, { password });
+export const resetUserTOTP = (userId: number, password: string) => post<void>(`/api/admin/users/${userId}/totp/disable`, undefined, pw(password));
 
 export const createAssignment = (id: number, adventureSlug: string, maxPlayers: number) =>
   post<Assignment>(`${org(id)}/assignments`, { adventure_slug: adventureSlug, max_players: maxPlayers });
@@ -162,12 +191,25 @@ export const grantSlots = (eventId: number, addedPlayers: number, amountCents: n
 export const cancelOrgEvent = (id: number, eventId: number, password: string) =>
   post<void>(`${org(id)}/events/${eventId}/cancel`, undefined, pw(password));
 
+/** internal/admin/operator_teams.go operatorTeamDTO */
+export interface OrgTeam {
+  id: number;
+  name: string;
+  email?: string;
+  players: number;
+}
+export const listOrgEventTeams = (id: number, eventId: number, signal?: AbortSignal) =>
+  get<{ teams: OrgTeam[] | null }>(`${org(id)}/events/${eventId}/teams`, signal ? { signal } : {}).then((r) => r.teams ?? []);
+/** Mails the team its links again (the invitation email), to its contact email. */
+export const resendTeamLinks = (id: number, teamId: number) => post<unknown>(`${org(id)}/teams/${teamId}/invitations/send`, {});
+
 export const setPublished = (s: string, published: boolean) => put<void>(`/api/admin/catalog/${slug(s)}/published`, { published });
 export const grantShare = (s: string, orgId: number) => post<void>(`/api/admin/catalog/${slug(s)}/shares`, { org_id: orgId });
 export const revokeShare = (s: string, orgId: number) => request<void>(`/api/admin/catalog/${slug(s)}/shares/${orgId}`, { method: "DELETE" });
 
-export const setBilled = (purchaseId: number, billed: boolean) => post<unknown>(`/api/admin/purchases/${purchaseId}/billed`, { billed });
+export const setBilled = (purchaseId: number, billed: boolean, invoiceNumber = "") => post<unknown>(`/api/admin/purchases/${purchaseId}/billed`, { billed, invoice_number: invoiceNumber });
 export const voidPurchase = (purchaseId: number) => post<unknown>(`/api/admin/purchases/${purchaseId}/void`);
+export const unvoidPurchase = (purchaseId: number) => post<unknown>(`/api/admin/purchases/${purchaseId}/unvoid`);
 export const refundPurchase = (purchaseId: number, password: string) => post<unknown>(`/api/admin/purchases/${purchaseId}/refund`, undefined, pw(password));
 
 /** internal/logx/logx.go Entry.MarshalJSON */
@@ -256,6 +298,8 @@ export interface ReviewContent {
   live?: ListingFields;
   texts: ReviewText[];
   media: ReviewMedia[];
+  /** The adventure's step titles, by their index in the texts' "nodes[i]" paths. */
+  step_titles?: string[];
   /** For an organisation page or adventure presentation: what the proposal changes. */
   changes?: ReviewChange[];
 }

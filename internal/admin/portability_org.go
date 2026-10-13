@@ -75,12 +75,34 @@ type orgExportEnvelope struct {
 	Adventures  []orgExportAdvRef     `json:"adventures,omitempty"`
 	Assignments []orgExportAssignment `json:"assignments,omitempty"`
 	Events      []orgExportEvent      `json:"events,omitempty"`
+	// Purchases are the org's invoice purchases not yet billed, so the
+	// money owed moves with the org.
+	Purchases []orgExportPurchase `json:"purchases,omitempty"`
 }
 
+// orgExportOrg carries the org and the flags a platform admin set on
+// it; the import summary lists the flags carried over.
 type orgExportOrg struct {
-	Name     string `json:"name"`
-	LogoFile string `json:"logo_file,omitempty"`
-	LogoMime string `json:"logo_mime,omitempty"`
+	Name            string `json:"name"`
+	LogoFile        string `json:"logo_file,omitempty"`
+	LogoMime        string `json:"logo_mime,omitempty"`
+	Trusted         bool   `json:"trusted,omitempty"`
+	PartyAdventures bool   `json:"party_adventures,omitempty"`
+	VerifiedCreator bool   `json:"verified_creator,omitempty"`
+}
+
+// orgExportPurchase is a paid, unbilled, unvoided invoice purchase.
+type orgExportPurchase struct {
+	AdventureSlug string `json:"adventure_slug"`
+	MaxPlayers    int    `json:"max_players"`
+	AmountCents   int64  `json:"amount_cents"`
+	Currency      string `json:"currency"`
+	CreatedAt     string `json:"created_at,omitempty"`
+	PaidAt        string `json:"paid_at,omitempty"`
+	InvoiceNumber string `json:"invoice_number,omitempty"`
+	AssignmentIdx *int   `json:"assignment_idx,omitempty"`
+	// TopUp: the purchase added players to AssignmentIdx.
+	TopUp bool `json:"top_up,omitempty"`
 }
 
 // orgExportMember captures an org_membership + the underlying user
@@ -205,9 +227,9 @@ func (h *Handlers) ExportOrgEnvelope(ctx context.Context, orgID int64) (orgExpor
 		logoBlob []byte
 	)
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT name, logo_mime_type, logo_content
+		SELECT name, logo_mime_type, logo_content, trusted <> 0, quiz_trail_enabled, verified_creator
 		FROM organizations WHERE id = $1
-	`, orgID).Scan(&env.Org.Name, &logoMime, &logoBlob); err != nil {
+	`, orgID).Scan(&env.Org.Name, &logoMime, &logoBlob, &env.Org.Trusted, &env.Org.PartyAdventures, &env.Org.VerifiedCreator); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return env, nil, fmt.Errorf("org %d: not found", orgID)
 		}
@@ -333,6 +355,9 @@ func (h *Handlers) ExportOrgEnvelope(ctx context.Context, orgID int64) (orgExpor
 	if err := assignRows.Err(); err != nil {
 		return env, nil, fmt.Errorf("assignment rows: %w", err)
 	}
+	if err := h.exportOrgInvoicePurchases(ctx, orgID, &env, assignIdxByID); err != nil {
+		return env, nil, err
+	}
 
 	// 5. Events + nested teams, slots, ticket_purchases.
 	if err := h.exportOrgEvents(ctx, orgID, &env, &files, assignIdxByID); err != nil {
@@ -340,6 +365,42 @@ func (h *Handlers) ExportOrgEnvelope(ctx context.Context, orgID int64) (orgExpor
 	}
 
 	return env, files, nil
+}
+
+// exportOrgInvoicePurchases adds the org's invoice purchases still to
+// bill (the Purchases page's "to bill"), so they aren't lost in a move.
+func (h *Handlers) exportOrgInvoicePurchases(ctx context.Context, orgID int64, env *orgExportEnvelope, assignIdxByID map[int64]int) error {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT adventure_slug, max_players, amount_cents, currency, created_at, COALESCE(paid_at, ''),
+		       invoice_number, assignment_id, top_up_assignment_id IS NOT NULL
+		FROM purchases
+		WHERE org_id = $1 AND provider = 'invoice' AND state = 'paid' AND billed_at IS NULL AND voided_at IS NULL
+		ORDER BY id
+	`, orgID)
+	if err != nil {
+		return fmt.Errorf("load invoice purchases: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			p      orgExportPurchase
+			assign sql.NullInt64
+		)
+		if err := rows.Scan(&p.AdventureSlug, &p.MaxPlayers, &p.AmountCents, &p.Currency, &p.CreatedAt, &p.PaidAt,
+			&p.InvoiceNumber, &assign, &p.TopUp); err != nil {
+			return fmt.Errorf("scan invoice purchase: %w", err)
+		}
+		if assign.Valid {
+			if idx, ok := assignIdxByID[assign.Int64]; ok {
+				p.AssignmentIdx = &idx
+			}
+		}
+		env.Purchases = append(env.Purchases, p)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("invoice purchase rows: %w", err)
+	}
+	return nil
 }
 
 func (h *Handlers) exportOrgEvents(ctx context.Context, orgID int64, env *orgExportEnvelope, files *[]exportFile, assignIdxByID map[int64]int) error {
@@ -639,6 +700,46 @@ type OrgImportSummary struct {
 	Slots       int   `json:"slots"`
 	Purchases   int   `json:"ticket_purchases"`
 	Assignments int   `json:"assignments"`
+	// InvoicePurchases counts the unbilled invoice purchases carried.
+	InvoicePurchases int `json:"invoice_purchases"`
+	// Flags names the org flags carried over ("invoice_billing",
+	// "party_adventures", "verified_creator"), for the destination
+	// admin to review.
+	Flags []string `json:"flags,omitempty"`
+	// NoEmail lists members created without an email: with no password
+	// either, they can't recover access themselves, so an admin sets
+	// one for them.
+	NoEmail []ImportedMember `json:"no_email,omitempty"`
+}
+
+// ImportedMember names a user the import created.
+type ImportedMember struct {
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+}
+
+// checkEventAdventures refuses a bundle with an event whose adventure is
+// neither in the bundle nor on this server, typically another org's
+// catalog adventure: imported, the event could never load its game.
+func checkEventAdventures(ctx context.Context, db *sql.DB, env orgExportEnvelope) error {
+	inBundle := map[string]bool{}
+	for _, a := range env.Adventures {
+		inBundle[a.Slug] = true
+	}
+	for _, ev := range env.Events {
+		if inBundle[ev.AdventureSlug] {
+			continue
+		}
+		var here bool
+		if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM adventures WHERE slug = $1)`, ev.AdventureSlug).Scan(&here); err != nil {
+			return fmt.Errorf("check adventure %s: %w", ev.AdventureSlug, err)
+		}
+		if !here {
+			return badRequestf("the event %q plays the adventure %q, which is not in the bundle and not on this server (a catalog adventure from another organisation is not exported with the org); add that adventure here first, then import again", ev.Name, ev.AdventureSlug)
+		}
+		inBundle[ev.AdventureSlug] = true
+	}
+	return nil
 }
 
 func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSummary, error) {
@@ -652,6 +753,9 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 	}
 	if env.Format != orgExportFormat {
 		return OrgImportSummary{}, badRequestf("unsupported manifest format %q (want %q)", env.Format, orgExportFormat)
+	}
+	if err := checkEventAdventures(ctx, db, env); err != nil {
+		return OrgImportSummary{}, err
 	}
 
 	summary := OrgImportSummary{}
@@ -679,12 +783,22 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 	}
 	var orgID int64
 	if err := db.QueryRowContext(ctx, `
-		INSERT INTO organizations(name, slug, logo_mime_type, logo_content, logo_size_bytes)
-		VALUES ($1, $2, $3, $4, $5) RETURNING id
-	`, resolvedName, slug, sqlNullStr(env.Org.LogoMime), assets[env.Org.LogoFile], int64(len(assets[env.Org.LogoFile]))).Scan(&orgID); err != nil {
+		INSERT INTO organizations(name, slug, logo_mime_type, logo_content, logo_size_bytes,
+			trusted, quiz_trail_enabled, verified_creator)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
+	`, resolvedName, slug, sqlNullStr(env.Org.LogoMime), assets[env.Org.LogoFile], int64(len(assets[env.Org.LogoFile])),
+		boolToInt(env.Org.Trusted), env.Org.PartyAdventures, env.Org.VerifiedCreator).Scan(&orgID); err != nil {
 		return summary, fmt.Errorf("create org: %w", err)
 	}
 	summary.OrgID = orgID
+	for _, f := range []struct {
+		on   bool
+		name string
+	}{{env.Org.Trusted, "invoice_billing"}, {env.Org.PartyAdventures, "party_adventures"}, {env.Org.VerifiedCreator, "verified_creator"}} {
+		if f.on {
+			summary.Flags = append(summary.Flags, f.name)
+		}
+	}
 
 	// Cleanup on later failure: delete the org row so we don't
 	// leave half-imported state behind. CASCADE drops every
@@ -790,6 +904,29 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 		}
 		assignIDByIdx[a.Idx] = newID
 		summary.Assignments++
+	}
+
+	// Unbilled invoice purchases, so the operator here still bills them.
+	for i, p := range env.Purchases {
+		var assignArg, topUpArg any
+		if p.AssignmentIdx != nil {
+			if id, ok := assignIDByIdx[*p.AssignmentIdx]; ok {
+				assignArg = id
+				if p.TopUp {
+					topUpArg = id
+				}
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO purchases(org_id, adventure_slug, max_players, amount_cents, currency,
+				provider, state, created_at, paid_at, invoice_number, assignment_id, top_up_assignment_id, pre_migration)
+			VALUES ($1, $2, $3, $4, $5, 'invoice', 'paid', COALESCE($6, now_text()), $7, $8, $9, $10, TRUE)
+		`, orgID, p.AdventureSlug, p.MaxPlayers, p.AmountCents, defaultStr(p.Currency, "SEK"),
+			sqlNullStr(p.CreatedAt), sqlNullStr(p.PaidAt), p.InvoiceNumber, assignArg, topUpArg); err != nil {
+			cleanupOrg()
+			return summary, fmt.Errorf("create invoice purchase %d: %w", i, err)
+		}
+		summary.InvoicePurchases++
 	}
 
 	// Events + teams + slots + purchases.
@@ -991,7 +1128,7 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 // the user's OrgID, so we synthesise an org_admin pinned to the
 // destination org.
 func importAdventureForOrg(ctx context.Context, db *sql.DB, manifest []byte, assets map[string][]byte, user auth.User) (int64, string, string, error) {
-	return importEnvelopeJSON(ctx, db, manifest, "", user, assets, false)
+	return importEnvelopeJSON(ctx, db, manifest, "", user, assets, false, true)
 }
 
 // buildUserLookup returns a username → user_id map for the freshly-
@@ -1054,6 +1191,9 @@ func importOrgMembers(ctx context.Context, db *sql.DB, orgID int64, members []or
 				VALUES ($1, $2, $3) RETURNING id
 			`, m.Username, sqlNullStr(m.Email), boolToInt(m.EmailVerified)).Scan(&userID); err != nil {
 				return fmt.Errorf("create user %s: %w", m.Username, err)
+			}
+			if m.Email == "" {
+				summary.NoEmail = append(summary.NoEmail, ImportedMember{ID: userID, Username: m.Username})
 			}
 		} else if err != nil {
 			return fmt.Errorf("lookup user %s: %w", m.Username, err)

@@ -198,7 +198,7 @@
 </head>
 <body>
 
-<a class="skip-link" href="#main">Skip to content</a>
+<a class="skip-link" href="#main">{{SKIP_TO_CONTENT}}</a>
 
 <!-- Shared topbar / hamburger / overlay structure. Identical DOM
      contract as landing / pricing; styles in /assets/topbar.css. -->
@@ -248,6 +248,7 @@
     <li><a href="#event-flow">How the event flow fits together</a></li>
     <li><a href="#assignments">Buying event passes</a></li>
     <li><a href="#create-event">Creating an event</a></li>
+    <li><a href="#player-age">The player-age statement</a></li>
     <li><a href="#teams">Adding teams and sharing magic links</a></li>
     <li><a href="#running">Running the event</a></li>
     <li><a href="#webhooks">Webhooks: outbound integrations</a></li>
@@ -273,7 +274,7 @@
   <h3>Four words to know</h3>
   <ul>
     <li><strong>Adventure</strong> — a reusable script. Pages of puzzles in order. Like a book.</li>
-    <li><strong>Event pass</strong> — the right to run an adventure once, for up to N players. You buy these from the Catalog.</li>
+    <li><strong>Event pass</strong> — the right to run an adventure once, for up to N players. You buy one under Live events, when you create the event.</li>
     <li><strong>Event</strong> — one specific playthrough at a specific time. Created with an event pass.</li>
     <li><strong>Team</strong> — a group of players in an event, identified by a team name. Each player gets their own magic-link to log in as part of the team.</li>
   </ul>
@@ -336,7 +337,7 @@
   <p>Delays are measured from when the team arrives at the puzzle, so a stuck team naturally gets help, while a fast team never sees the hints.</p>
 
   <h3>Images</h3>
-  <p>Attach up to a few images per puzzle. They render under the prompt. Photos of the location, illustrations, or visual clues. Each image is capped at 5 MB.</p>
+  <p>Attach up to a few images per puzzle. They render under the prompt. Photos of the location, illustrations, or visual clues. Large photos are resized automatically.</p>
 
   <h3>Location gates</h3>
   <p>Optionally pin the puzzle to a GPS location with a radius. Players can read the prompt anywhere, but they can't submit the answer until they're inside the radius. The map widget in the editor lets you click to place the pin.</p>
@@ -368,13 +369,13 @@
   <h2>Buying event passes</h2>
   <p>An event pass covers one event for up to N players — across however many teams you want to form. Pricing is per player: the first {{FREE_PLAYERS_PER_EVENT}} in any event are free, and each additional player has a fixed cost configured by your operator (currently {{PRICE_PER_EXTRA_PLAYER}}).</p>
   <ol>
-    <li>Click "Catalog" in the sidebar.</li>
+    <li>Click "Live events" in the sidebar, then "Schedule event".</li>
     <li>Pick the adventure you want to run.</li>
     <li>Choose how many players will join (1–500). Buys at or below 15 are free and skip the checkout step entirely.</li>
-    <li>Click "Continue". Paid buys go to Stripe Checkout; free buys land you straight on the new event pass.</li>
-    <li>After payment, you're sent back to the dashboard with a "Schedule now" prompt on the new event pass.</li>
+    <li>Click "Continue to payment". Paid buys go to Stripe Checkout; free buys create the event straight away.</li>
+    <li>After payment, you're sent back with the new event pass ready to schedule.</li>
   </ol>
-  <div class="shot">[Screenshot: the Catalog with adventure cards]</div>
+  <div class="shot">[Screenshot: the schedule-event dialog]</div>
   <div class="callout warn">Refunds: if you bought the wrong event pass, contact support. Refunds are admin-only — they touch real money.</div>
 </section>
 
@@ -390,6 +391,17 @@
   </ol>
   <div class="shot">[Screenshot: the schedule-event dialog]</div>
   <div class="callout">A scheduled event auto-starts the moment its time arrives, even if you've forgotten to click Start. Players who open their magic link at the scheduled minute get going immediately.</div>
+</section>
+
+<section id="player-age">
+  <h2>The player-age statement</h2>
+  <p>Every event asks you to confirm that no one under 13 will play, or that you have parental consent for anyone who will. Players' phones send their location and answers during the game, which is personal data, and children under 13 need a parent's or guardian's consent for that in many countries (for example under COPPA in the U.S. and the GDPR in the EU, where the age is 13 to 16 depending on the country).</p>
+  <ul>
+    <li><strong>What counts as consent:</strong> a parent or guardian agreed, in writing, that their child takes part in the activity and uses the game on a phone. A school's or club's usual permission slip for the outing works when it mentions the game.</li>
+    <li><strong>Who asks for it:</strong> you, the organiser. Keep the slips yourself; Zonventure doesn't collect them.</li>
+    <li><strong>Less data:</strong> let children play in teams on a teacher's or parent's phone, under team names rather than their own.</li>
+  </ul>
+  <p>The rules differ between countries; when in doubt, ask your school or organisation. See also the <a href="/privacy">privacy policy</a>.</p>
 </section>
 
 <section id="teams">
@@ -510,9 +522,9 @@ process(parse_json(body))</pre>
   <p>The Settings page has the operational controls for your own account.</p>
   <ul>
     <li><strong>Change password</strong> — Requires the current password. Other sessions are signed out on success.</li>
-    <li><strong>Change email</strong> — We send a confirmation link to the new address. The change only takes effect when you click it.</li>
+    <li><strong>Change email</strong> — Requires the current password. We send a confirmation link to the new address. The change only takes effect when you click it, and the old address then gets a notice. Password and two-factor changes send a notice too.</li>
     <li><strong>Download my data</strong> — A single JSON file with your account info plus your organization's events, teams, adventures, event passes and purchases. The GDPR-friendly export.</li>
-    <li><strong>Delete account</strong> — If you're the last member, your organization is deleted with you. All events, teams, adventures, event passes. Cannot be undone.</li>
+    <li><strong>Delete account</strong> — Requires your password and signs you out. The deletion happens after a 7-day grace period; log back in before then to cancel. If you're the last member, your organization is deleted with you: all events, teams, adventures, event passes. After the grace period it cannot be undone.</li>
   </ul>
 </section>
 

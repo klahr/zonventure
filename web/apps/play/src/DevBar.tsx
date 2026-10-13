@@ -32,7 +32,7 @@ export function DevBar({ dev, node, t, onMoved }: { dev: NonNullable<play.PlaySt
         {!node && <option value="">{t("At the start")}</option>}
         {dev.steps.map((s, i) => (
           <option key={s.slug} value={s.slug}>
-            {i + 1}. {s.title || s.slug}
+            {i + 1}. {s.title || (s.type === "end" ? t("The end") : s.slug)}
           </option>
         ))}
       </select>

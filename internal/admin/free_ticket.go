@@ -28,7 +28,8 @@ type freeTicketResponse struct {
 // GiveFreeTicket serves POST /api/admin/events/{eventID}/free-ticket: a
 // ticket for someone who plays without paying — a tester, a guest. It
 // makes the same team a store purchase or a gift box does (the event's
-// ticket team size) and sends the same email, with the team link and
+// ticket team size) and sends the same email, worded as a gift from the
+// organisation, with the team link and
 // the voucher code to type at /play. The reply carries both too, for
 // handing over in person when the mail is slow or bounces.
 func (h *Handlers) GiveFreeTicket(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +98,7 @@ func (h *Handlers) GiveFreeTicket(w http.ResponseWriter, r *http.Request) {
 		VoucherCode: auth.FormatVoucherCode(voucher),
 		Emailed:     true,
 	}
-	if err := h.sendTicketTeamLink(ctx, eventID, email, teamToken, voucher, "", nil); err != nil {
+	if err := h.sendTicketTeamLink(ctx, eventID, email, teamToken, voucher, "", nil, true); err != nil {
 		logx.Warn("admin.free_ticket.mail", "event_id", eventID, "team_id", teamID, "err", err.Error())
 		resp.Emailed = false
 	}

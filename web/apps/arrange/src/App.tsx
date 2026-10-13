@@ -5,7 +5,7 @@ import { I18nProvider, useT } from "./i18n.tsx";
 import { SessionProvider, useSession } from "./session.tsx";
 import { Login } from "./Login.tsx";
 import { Shell } from "./Shell.tsx";
-import { ToastProvider, useToast } from "./ui/index.ts";
+import { ToastProvider, fmtDateTime, useToast } from "./ui/index.ts";
 import { rememberAuthorize, resumeAuthorize } from "./pages/authorize/index.tsx";
 
 export function App() {
@@ -22,12 +22,12 @@ export function App() {
 
 /**
  * The one-shot links mails and the server send here — a password reset,
- * an email change, a verified email, a failed single sign-on. Read once
+ * an email change or its undo, a verified email, a failed single sign-on. Read once
  * at load; each is then replaced by the dashboard so a refresh doesn't
  * repeat it. The old console's hashes (#reset?token=…) and this app's
  * (#/reset?token=…) both count.
  */
-function oneShot(): { reset?: string; changeEmail?: string; verified?: boolean; ssoError?: string; cancelled?: boolean } {
+function oneShot(): { reset?: string; changeEmail?: string; revertEmail?: string; verified?: boolean; ssoError?: string; cancelled?: boolean; deletionAt?: string } {
   const h = location.hash.replace(/^#\/?/, "");
   // The classic console's in-app manual is the standalone page now.
   if (h === "manual") location.replace("/manual");
@@ -36,8 +36,12 @@ function oneShot(): { reset?: string; changeEmail?: string; verified?: boolean; 
   if (reset) return { reset: decodeURIComponent(reset[1]!) };
   const ce = h.match(/^change-email\?token=([^&]+)/);
   if (ce) return { changeEmail: decodeURIComponent(ce[1]!) };
+  const re = h.match(/^revert-email\?token=([^&]+)/);
+  if (re) return { revertEmail: decodeURIComponent(re[1]!) };
   if (h === "verify-ok") return { verified: true };
   if (h === "verify-failed") return { verified: false };
+  const del = h.match(/^deletion-scheduled\?at=([^&]+)/);
+  if (del) return { deletionAt: decodeURIComponent(del[1]!) };
   const sso = h.match(/^sso-error=([a-z_]+)$/);
   if (sso) return { ssoError: sso[1]! };
   return {};
@@ -45,7 +49,7 @@ function oneShot(): { reset?: string; changeEmail?: string; verified?: boolean; 
 
 rememberAuthorize();
 const once = oneShot();
-if (once.changeEmail || once.verified !== undefined || once.ssoError || once.cancelled) history.replaceState(null, "", "#/");
+if (once.changeEmail || once.revertEmail || once.verified !== undefined || once.ssoError || once.cancelled || once.deletionAt) history.replaceState(null, "", "#/");
 
 /**
  * Route on session state alone.
@@ -75,13 +79,28 @@ function Gate() {
         (e) => toast.err(e),
       );
     }
+    if (once.revertEmail) {
+      auth.revertEmailChange(once.revertEmail).then(
+        (r) => {
+          toast.ok(t.t("Your email address is {{email}} again, every session was signed out and every API token revoked. Reset your password now if someone else may know it.", { email: r?.email ?? "" }));
+          // This session was signed out too.
+          void refresh();
+        },
+        (e) => toast.err(e),
+      );
+    }
     if (once.verified === true) {
       toast.ok(t.t("Email verified — you can now schedule events and buy event passes."));
       void refresh();
     }
-    if (once.verified === false) toast.err(t.t('Verification link is invalid or has expired. Sign in and tap "Resend email".'));
+    if (once.verified === false) {
+      // Mail scanners and second clicks open the link after it was used.
+      if (state.status === "authenticated" && state.user.email_verified) toast.ok(t.t("Your email is already verified."));
+      else toast.err(t.t('This verification link has expired or was already used. If your email is not verified yet, sign in and tap "Resend email".'));
+    }
     if (once.ssoError) toast.err(ssoMessage(t, once.ssoError));
     if (once.cancelled) toast.ok(t.t("Checkout cancelled — nothing was charged."));
+    if (once.deletionAt) toast.ok(t.t("Your account will be deleted on {{when}}. To keep it, log in before then and tap Cancel deletion.", { when: fmtDateTime(once.deletionAt, t.current()) }));
   }, [announced, state.status, t, toast, refresh]);
 
   const signedIn = (note?: string) => {
@@ -169,7 +188,7 @@ function OrgPicker({ user }: { user: Whoami }) {
             <button key={m.org_id} type="button" className="login__org" onClick={() => void pick(m.org_id)}>
               {m.org_logo_url ? <img src={m.org_logo_url} alt="" /> : <span aria-hidden="true">{(m.org_name || "?").trim().charAt(0).toUpperCase()}</span>}
               <strong>{m.org_name}</strong>
-              <em>{m.role === "org_admin" ? t.t("admin") : t.t("event host")}</em>
+              <em>{m.role === "org_admin" ? t.t("admin") : m.role === "org_writer" ? t.t("writer") : t.t("event host")}</em>
             </button>
           ))}
         </div>

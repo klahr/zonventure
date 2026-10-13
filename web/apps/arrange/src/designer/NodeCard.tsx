@@ -25,7 +25,7 @@ export interface CardData extends Record<string, unknown> {
   leaving?: boolean;
   /** The work on it: status, owner, open conversations. */
   talk?: CardTalk;
-  /** For a crossroads: the title of the puzzle whose answer it reads. */
+  /** For a crossroads: the title of the puzzle whose answer it reads; for Give item, the item's name. */
   sourceTitle?: string;
   /** For a start with a place: its zone, drawn as a map on the card. */
   zone?: Zone;
@@ -52,46 +52,61 @@ export const TYPE_LABEL: Record<Node["type"], string> = {
   end: "End",
 };
 
+/** A hub's policy, in the inspector's words. */
+const POLICY_LABEL: Record<string, string> = {
+  choice: "Team chooses",
+  sequence: "In order",
+  shuffle: "Shuffled per team",
+  spread: "Least busy",
+  capacity: "Capacity limits",
+  random: "Random",
+};
+
+/** Ports with no label of the author's, in the console's words. */
+const PORT_TEXT: Record<string, string> = { out: "next", pass: "passes", fail: "fails", done: "done", "Any other answer": "Any other answer" };
+
 /** One line summarising what the node does, so the canvas reads without opening each card. */
-function summary(n: Node, sourceTitle?: string): string {
+function summary(n: Node, t: ReturnType<typeof useT>, sourceTitle?: string): string {
   switch (n.type) {
     case "puzzle":
-      return textOf(n.puzzle?.blocks).trim() || "No text yet";
+      return textOf(n.puzzle?.blocks).trim() || t.t("No text yet");
     case "story":
-      return textOf(n.story?.blocks).trim() || (n.story?.zone !== undefined ? "Check in at a place" : "No text yet");
+      return textOf(n.story?.blocks).trim() || (n.story?.zone !== undefined ? t.t("Check in at a place") : t.t("No text yet"));
     case "hub": {
-      const policy = n.hub?.policy ?? "choice";
+      const raw = n.hub?.policy ?? "choice";
+      const policy = POLICY_LABEL[raw] ? t.t(POLICY_LABEL[raw]) : raw;
       const req = n.hub?.required;
-      return req ? `${policy} · any ${req}` : `${policy} · all`;
+      return req ? t.t("{{policy}} · any {{n}}", { policy, n: req }) : t.t("{{policy}} · all", { policy });
     }
     case "gate":
-      return n.gate?.condition.op ? "Conditional" : "Always passes";
+      return n.gate?.condition.op ? t.t("Conditional") : t.t("Always passes");
     case "switch": {
       const k = n.switch?.cases?.length ?? 0;
-      return `${k} path${k === 1 ? "" : "s"}, by ${n.switch?.from ? `the answer to “${sourceTitle ?? n.switch.from}”` : "the answer just given"}`;
+      if (!n.switch?.from) return t.t(k === 1 ? "1 path, by the answer just given" : "{{n}} paths, by the answer just given", { n: k });
+      return t.t(k === 1 ? "1 path, by the answer to “{{step}}”" : "{{n}} paths, by the answer to “{{step}}”", { n: k, step: sourceTitle ?? n.switch.from });
     }
     case "effect": {
       const e = n.effect;
       if (!e) return "";
       switch (e.kind) {
         case "score":
-          return `${(e.points ?? 0) >= 0 ? "+" : ""}${e.points ?? 0} points`;
+          return t.t("{{n}} points", { n: `${(e.points ?? 0) >= 0 ? "+" : ""}${e.points ?? 0}` });
         case "grant_item":
-          return `Give ${e.qty ?? 1} × ${e.item || "?"}`;
+          return t.t("Give {{n}} × {{item}}", { n: e.qty ?? 1, item: sourceTitle ?? (e.item || "?") });
         case "counter":
           return `${e.counter || "?"} ${e.op === "set" ? "=" : "+="} ${e.value ?? 0}`;
         case "journal":
-          return `Unlock ${e.journal_entry || "?"}`;
+          return t.t("Unlock {{entry}}", { entry: e.journal_entry || "?" });
         case "email":
-          return `Email ${e.subject || "?"}`;
+          return t.t("Email {{subject}}", { subject: e.subject || "?" });
         case "webhook":
-          return e.url || "Webhook";
+          return e.url || t.t("Webhook");
         case "theme":
-          return `Theme ${e.theme || "?"}`;
+          return t.t("Theme {{theme}}", { theme: e.theme || "?" });
       }
     }
     case "end":
-      return n.end?.outcome === "fail" ? "Failure" : "Success";
+      return n.end?.outcome === "fail" ? t.t("Failure") : t.t("Success");
     default:
       return "";
   }
@@ -116,6 +131,10 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
   const portConcept = (p: string) => {
     const trigger = n.type === "puzzle" ? n.puzzle?.outputs?.find((o) => o.port === p)?.trigger : undefined;
     return trigger ? ` concept--${TRIGGER[trigger]}` : "";
+  };
+  const portText = (p: string) => {
+    const l = portLabel(n, p);
+    return n.type === "puzzle" || !PORT_TEXT[l] ? l : t.t(PORT_TEXT[l]);
   };
 
   return (
@@ -155,12 +174,12 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
         <StepIcon type={n.type} />
         <span className="card__type">{t.t(TYPE_LABEL[n.type])}</span>
         {errors.length > 0 && (
-          <span className="card__badge card__badge--error" title={errors.map((e) => e.message).join("\n")}>
+          <span className="card__badge card__badge--error" title={errors.map((e) => t.t(e.message)).join("\n")}>
             {errors.length}
           </span>
         )}
         {errors.length === 0 && warnings.length > 0 && (
-          <span className="card__badge card__badge--warning" title={warnings.map((e) => e.message).join("\n")}>
+          <span className="card__badge card__badge--warning" title={warnings.map((e) => t.t(e.message)).join("\n")}>
             {warnings.length}
           </span>
         )}
@@ -169,7 +188,7 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
       <div className="card__title">{n.title || n.slug}</div>
       {n.type !== "start" && (
         <div className="card__summary">
-          {n.type === "puzzle" || n.type === "story" ? <MarkdownInline text={summary(n)} /> : summary(n, data.sourceTitle)}
+          {n.type === "puzzle" || n.type === "story" ? <MarkdownInline text={summary(n, t)} /> : summary(n, t, data.sourceTitle)}
         </div>
       )}
       <Thumb node={n} className="card__thumb" />
@@ -201,7 +220,7 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
         <div className="card__ports">
           {ports.map((p) => (
             <div key={p} className={"card__port" + portConcept(p) + (portIssue(p) ? " is-bad" : "")}>
-              <span className="card__port-label">{portLabel(n, p)}</span>
+              <span className="card__port-label">{portText(p)}</span>
               <Handle type="source" position={Position.Right} id={p} className="card__out" />
             </div>
           ))}

@@ -14,7 +14,7 @@ func (s *Server) registerResultsTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "export_event_results_csv",
 		Scope:       scopeRead,
-		Description: "Return the event's final-standings CSV as a text result. Columns: rank, team, members, puzzles_solved, puzzles_total, time. Order matches the public leaderboard. Available once the event has any teams with progress; rows are still emitted for not-yet-finished teams (with an empty time column) so an arranger can pull a snapshot mid-event. Recap PDF stays web-only — see /arrange.",
+		Description: "Return the event's final-standings CSV as a text result. Columns: rank, team, members, points, tiebreak_guess, tiebreak_off_by, finished_at (RFC 3339), time (from the event's first start to the team's finish). Order and ranks match the public leaderboard; teams that never started or withdrew come last with no rank. Rows are still emitted for not-yet-finished teams (with empty finished_at and time) so an arranger can pull a snapshot mid-event. Recap PDF stays web-only — see /arrange.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},

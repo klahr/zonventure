@@ -82,7 +82,7 @@ func (h *Handlers) ListActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
-	if !sameOrg(me, orgID) {
+	if !sameOrg(me, orgID) || !runsEvents(me) {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}

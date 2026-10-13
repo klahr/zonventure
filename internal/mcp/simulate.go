@@ -10,6 +10,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/klahr/zonventure/internal/graph"
@@ -21,13 +22,14 @@ const maxSimulateActions = 200
 
 func (s *Server) registerSimulateTools() {
 	s.tools.register(ToolDescriptor{
-		Name:  "simulate_adventure",
-		Scope: scopeRead,
+		Name:     "simulate_adventure",
+		Audience: audienceAuthor,
+		Scope:    scopeRead,
 		Description: "Play the adventure's saved draft through a list of actions with the same rules a real event runs, and return what happened at each. " +
 			"Nothing is stored. Start with {kind: start}. A team that must choose a start, or begin at the adventure's starting point, then waits at the start: " +
 			"move there and begin {port: <start node slug>}. Then: answer {node, guess}; continue {node}; choose {node, port} at a hub; skip {node}; hint {node}; " +
 			"pick {node, block, choice} for quiz blocks; wait {seconds} jumps the clock; move {zone} puts the team in a zone (or nowhere when empty), " +
-			"move {lat, lng} at a point; language {lang} switches to a translation. Stops at the first refused action. Each step reports the node the team is now at, " +
+			"move {lat, lng} at a point; language {lang} switches to a translation. Stops at the first refused action and says how many after it were not run; a hint before its delay is refused, so wait {seconds} first. Each step reports the node the team is now at, " +
 			"whether an answer was accepted, the port it left by, points, wrong-answer response and hint text.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -150,6 +152,12 @@ func simulateAdventure(ctx context.Context, s *Server, raw json.RawMessage) (Too
 			team = resp.Team
 		}
 	}
-	out, _ := json.Marshal(map[string]any{"steps": steps})
+	res := map[string]any{"steps": steps}
+	// Say so when a refusal left actions unplayed, rather than dropping them quietly.
+	if n := len(a.Actions) - len(steps); n > 0 {
+		res["not_run"] = n
+		res["note"] = fmt.Sprintf("stopped at the refused action; the %d action(s) after it were not run", n)
+	}
+	out, _ := json.Marshal(res)
 	return textResult(string(out)), nil
 }

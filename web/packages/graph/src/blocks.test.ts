@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { blocksOf, freshBlockId, mediaOf, moveBlock, needsFile, newBlock, textOf, upgradeNode, withBlocks } from "./blocks.ts";
+import { addMediaBlocks, blocksOf, freshBlockId, mediaOf, moveBlock, needsFile, newBlock, textOf, upgradeNode, withBlocks } from "./blocks.ts";
 import type { Block, Node } from "./types.ts";
 
 const text = (id: string, t: string): Block => ({ id, kind: "text", text: t });
@@ -23,6 +23,19 @@ test("blocks move, and a new one gets a free id", () => {
   assert.equal(moveBlock(bs, 0, 5), bs, "out of range is no move");
   assert.equal(freshBlockId(bs), "b4");
   assert.equal(freshBlockId([text("b2", "")]), "b3");
+});
+
+test("two pictures picked for spot the difference fill one block", () => {
+  const img = (id: number) => ({ id, kind: "image" as const });
+  assert.deepEqual(addMediaBlocks([], [img(1), img(2)], "spotdiff"), [{ id: "b1", kind: "spotdiff", media: 1, other: 2 }]);
+  assert.deepEqual(addMediaBlocks([], [img(1), img(2), img(3)], "spotdiff"), [
+    { id: "b1", kind: "spotdiff", media: 1, other: 2 },
+    { id: "b2", kind: "spotdiff", media: 3 },
+  ]);
+  assert.deepEqual(addMediaBlocks([], [img(1), img(2)], null), [
+    { id: "b1", kind: "image", media: 1 },
+    { id: "b2", kind: "image", media: 2 },
+  ]);
 });
 
 test("a step's blocks are read, replaced and flattened", () => {

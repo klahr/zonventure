@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 )
 
@@ -64,6 +65,7 @@ type landingStrings struct {
 	// regardless of which is currently active.)
 	LangCode      string
 	LangAriaLabel string // "Language", localized
+	SkipToContent string // the skip link before the topbar
 
 	// <head> meta — these affect SEO, share previews, and tab title.
 	Title         string
@@ -144,6 +146,11 @@ type landingStrings struct {
 	NotFoundBody      string
 	NotFoundCTAHome   string
 	NotFoundCTAManual string
+
+	// The same card when the database can't be reached.
+	UnavailableTitle   string
+	UnavailableHeading string
+	UnavailableBody    string
 
 	// /store + /store/event/{id}. Both pages share the same locale
 	// pool so a translator can update one column and watch every
@@ -226,6 +233,7 @@ type landingStrings struct {
 	StoreEventEmailPlaceholder string
 	StoreEventBuyCTA           string // {{PRICE_DISPLAY}} placeholder is substituted per-event
 	StoreEventTermsHTML        string // contains <a href="/terms">…</a>
+	StoreEventPaymentByStripe  string // before the terms when Stripe takes the payment
 	StoreEventFeature1         string
 	StoreEventFeature2         string // carries `{n}` for team size
 	StoreEventFeature3         string
@@ -250,6 +258,10 @@ type landingStrings struct {
 	// block so client-side messages stay in the user's locale.
 	StoreEventBadEmail   string
 	StoreEventGenericErr string
+	StoreEventNotForSale string
+	// StoreEventOffSaleHeading heads the page of a listing that is
+	// paused or has stopped selling, over StoreEventNotForSale.
+	StoreEventOffSaleHeading string
 
 	// Gift box redemption page (redeem.html).
 	RedeemTitle               string
@@ -285,6 +297,7 @@ type landingStrings struct {
 	RedeemErrEmail            string
 	RedeemErrCode             string
 	RedeemErrUsed             string
+	RedeemErrUsedContact      string
 	RedeemErrProduct          string
 	RedeemErrGeneric          string
 	RedeemErrRateLimited      string
@@ -386,6 +399,7 @@ func topbarSubs(s landingStrings, lang string) [][2]string {
 	return [][2]string{
 		{"{{LANG_CODE}}", s.LangCode},
 		{"{{LANG_ARIA}}", s.LangAriaLabel},
+		{"{{SKIP_TO_CONTENT}}", s.SkipToContent},
 		{"{{NAV_PRIMARY_ARIA}}", s.NavPrimaryARIA},
 		{"{{NAV_TOGGLE_ARIA}}", s.NavToggleARIA},
 		{"{{BRAND_ARIA}}", s.BrandARIA},
@@ -426,7 +440,6 @@ func storeI18nJSON(s landingStrings) string {
 		"mapPanHint":           s.StoreMapPanHint,
 		"cardCTA":              s.StoreCardCTA,
 		"perTicket":            s.StorePerTicket,
-		"perTeam":              s.StorePerTeam,
 		"emptyHeading":         s.StoreEmptyHeading,
 		"emptyBody":            s.StoreEmptyBody,
 		"errorHeading":         s.StoreErrorHeading,
@@ -450,6 +463,7 @@ func storeEventI18nJSON(s landingStrings) string {
 		"toastCancelled": s.StoreToastCancelled,
 		"badEmail":       s.StoreEventBadEmail,
 		"genericErr":     s.StoreEventGenericErr,
+		"notForSale":     s.StoreEventNotForSale,
 	})
 }
 
@@ -615,6 +629,7 @@ func renderOrgPage(w http.ResponseWriter, r *http.Request, org orgProfile) {
 		{"{{ORG_TAGLINE}}", html.EscapeString(strings.TrimSpace(org.Tagline.String))},
 		{"{{ORG_PATH}}", "/o/" + org.Slug},
 		{"{{LOGO_BLOCK}}", org.logoBlock()},
+		{"{{WEBSITE_LINK_BLOCK}}", org.websiteBlock()},
 		{"{{HERO_BG_STYLE}}", org.heroBgStyle()},
 		{"{{ORG_BRAND_OVERRIDES}}", org.brandStyle()},
 		{"{{ORG_VERIFIED}}", boolAttr(org.Verified)},
@@ -667,6 +682,7 @@ func redeemSubs(s landingStrings) [][2]string {
 			"errEmail":       s.RedeemErrEmail,
 			"errCode":        s.RedeemErrCode,
 			"errUsed":        s.RedeemErrUsed,
+			"errUsedContact": s.RedeemErrUsedContact,
 			"errProduct":     s.RedeemErrProduct,
 			"errGeneric":     s.RedeemErrGeneric,
 			"errRateLimited": s.RedeemErrRateLimited,
@@ -677,8 +693,8 @@ func redeemSubs(s landingStrings) [][2]string {
 // renderRedeemPage serves /redeem and /o/{slug}/redeem, where a gift box
 // bought through a partner is redeemed. The per-org page only offers
 // that organisation's products; the options and the form post go to the
-// matching API base.
-func renderRedeemPage(w http.ResponseWriter, r *http.Request, orgSlug string) {
+// matching API base, and names orgName where the bare page names the site.
+func renderRedeemPage(w http.ResponseWriter, r *http.Request, orgSlug, orgName string) {
 	body, err := readWebFile("web/redeem.html")
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -686,6 +702,9 @@ func renderRedeemPage(w http.ResponseWriter, r *http.Request, orgSlug string) {
 	}
 	lang := resolveLang(w, r)
 	s := landingLocales[lang]
+	if orgName != "" {
+		s.RedeemIntro = strings.ReplaceAll(s.RedeemIntro, "{{SITE_NAME}}", html.EscapeString(orgName))
+	}
 	out := string(body)
 	for _, sub := range topbarSubs(s, lang) {
 		out = strings.ReplaceAll(out, sub[0], sub[1])
@@ -711,30 +730,55 @@ func renderRedeemPage(w http.ResponseWriter, r *http.Request, orgSlug string) {
 // strings are localised so SV / future locale visitors don't get
 // English on the failure floor.
 func render404(w http.ResponseWriter, r *http.Request) {
-	body, err := readWebFile("web/404.html")
+	s := landingLocales[resolveLang(w, r)]
+	renderErrorPage(w, r, http.StatusNotFound, s.NotFoundTitle, s.NotFoundHeading, s.NotFoundBody)
+}
+
+// renderErrorPage is the 404 page's card with status and its own text.
+func renderErrorPage(w http.ResponseWriter, r *http.Request, status int, title, heading, body string) {
+	page, err := readWebFile("web/404.html")
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	lang := resolveLang(w, r)
 	s := landingLocales[lang]
 	subs := [][2]string{
 		{"{{LANG_CODE}}", lang},
-		{"{{NOT_FOUND_TITLE}}", s.NotFoundTitle},
-		{"{{NOT_FOUND_HEADING}}", s.NotFoundHeading},
-		{"{{NOT_FOUND_BODY}}", s.NotFoundBody},
+		{"{{STATUS_CODE}}", strconv.Itoa(status)},
+		{"{{NOT_FOUND_TITLE}}", title},
+		{"{{NOT_FOUND_HEADING}}", heading},
+		{"{{NOT_FOUND_BODY}}", body},
 		{"{{NOT_FOUND_CTA_HOME}}", s.NotFoundCTAHome},
 		{"{{NOT_FOUND_CTA_MANUAL}}", s.NotFoundCTAManual},
 	}
-	out := string(body)
+	out := string(page)
 	for _, sub := range subs {
 		out = strings.ReplaceAll(out, sub[0], sub[1])
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Vary", "Cookie, Accept-Language")
 	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusNotFound)
+	w.WriteHeader(status)
 	_, _ = w.Write([]byte(out))
+}
+
+// lookupFailed answers a request whose session or player cookie can't
+// be looked up because the database is down: a page request gets the
+// error page, an API call the JSON error msg.
+func lookupFailed(msg string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		page := (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+			!strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/ws/") &&
+			strings.Contains(r.Header.Get("Accept"), "text/html")
+		if !page {
+			httpx.Error(w, http.StatusInternalServerError, msg)
+			return
+		}
+		s := landingLocales[resolveLang(w, r)]
+		w.Header().Set("Retry-After", "60")
+		renderErrorPage(w, r, http.StatusServiceUnavailable, s.UnavailableTitle, s.UnavailableHeading, s.UnavailableBody)
+	}
 }
 
 // renderTopbarPage reads an embedded HTML template, splices in the

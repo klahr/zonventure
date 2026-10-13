@@ -5,14 +5,17 @@ import (
 	"database/sql"
 	"errors"
 	"strconv"
+	"strings"
 	"sync/atomic"
+	"unicode/utf8"
 )
 
 // Currency is the one currency the platform and its orgs sell in.
 const Currency = "sek"
 
 // Pricing is what the platform charges, edited by the platform admin
-// under Settings → Pricing. Amounts are öre, VAT included.
+// under Settings → Pricing. Amounts are öre, VAT included unless
+// VATExcluded.
 type Pricing struct {
 	// PlayerCents is the event pass: each player slot beyond FreePlayers.
 	PlayerCents int64 `json:"player_cents"`
@@ -23,7 +26,18 @@ type Pricing struct {
 	FeePercentBPS int64 `json:"fee_percent_bps"`
 	FeeFixedCents int64 `json:"fee_fixed_cents"`
 	FeeMinCents   int64 `json:"fee_min_cents"`
+	// VATExcluded says the prices are before VAT; every price shown
+	// says "incl. VAT" or "excl. VAT" after it.
+	VATExcluded bool `json:"vat_excluded"`
+	// PayoutTerms is when and how an org is paid for the tickets it
+	// sells while there is no platform fee (the platform's account
+	// takes the money), shown on the org's Billing page; empty shows
+	// the built-in terms.
+	PayoutTerms string `json:"payout_terms"`
 }
+
+// MaxPayoutTerms is the longest PayoutTerms may be.
+const MaxPayoutTerms = 1000
 
 // DefaultPricing applies to any price never saved.
 var DefaultPricing = Pricing{PlayerCents: 4900, FreePlayers: 15, HostedBlockCents: 14900}
@@ -35,6 +49,8 @@ const (
 	keyFeePercentBPS    = "price_fee_percent_bps"
 	keyFeeFixedCents    = "price_fee_fixed_cents"
 	keyFeeMinCents      = "price_fee_min_cents"
+	keyVATExcluded      = "price_vat_excluded"
+	keyPayoutTerms      = "payout_terms"
 )
 
 func (p *Pricing) fields() []struct {
@@ -80,6 +96,12 @@ func LoadPricing(ctx context.Context, db *sql.DB) {
 				*f.v = n
 			}
 		}
+		if v, err := getString(ctx, db, keyVATExcluded); err == nil {
+			p.VATExcluded = parseBool(v, false)
+		}
+		if v, err := getString(ctx, db, keyPayoutTerms); err == nil {
+			p.PayoutTerms = v
+		}
 	}
 	pricing.Store(&p)
 }
@@ -95,11 +117,15 @@ func (p Pricing) Validate() error {
 	if p.FeePercentBPS > 10000 {
 		return errors.New("the platform fee's percentage must be at most 100 %")
 	}
+	if utf8.RuneCountInString(p.PayoutTerms) > MaxPayoutTerms {
+		return errors.New("the payout terms are too long")
+	}
 	return nil
 }
 
 // SetPricing saves every price in one transaction and puts them in force.
 func SetPricing(ctx context.Context, db *sql.DB, p Pricing) error {
+	p.PayoutTerms = strings.TrimSpace(p.PayoutTerms)
 	if err := p.Validate(); err != nil {
 		return err
 	}
@@ -108,12 +134,19 @@ func SetPricing(ctx context.Context, db *sql.DB, p Pricing) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	values := map[string]string{keyVATExcluded: "0", keyPayoutTerms: p.PayoutTerms}
+	if p.VATExcluded {
+		values[keyVATExcluded] = "1"
+	}
 	for _, f := range p.fields() {
+		values[f.key] = strconv.FormatInt(*f.v, 10)
+	}
+	for k, v := range values {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO settings(key, value, updated_at)
 			VALUES ($1, $2, now_text())
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-		`, f.key, strconv.FormatInt(*f.v, 10)); err != nil {
+		`, k, v); err != nil {
 			return err
 		}
 	}

@@ -43,8 +43,11 @@ func TestOrgPageAndStoreRedirects(t *testing.T) {
 	if code, _, body := get(ts.URL, "/o/testorg"); code != http.StatusOK || !strings.Contains(body, "/api/o/testorg/store") {
 		t.Errorf("/o/{slug} = %d, want the page reading the organisation's adventures", code)
 	}
-	if code, _, _ := get(ts.URL, "/o/no-such-org"); code != http.StatusNotFound {
-		t.Errorf("/o/no-such-org = %d, want 404", code)
+	if _, _, body := get(ts.URL, "/o/testorg"); !strings.Contains(body, "<h1>TestOrg</h1>") || strings.Contains(body, "{{") {
+		t.Errorf("/o/{slug} lacks the organisation's name or has raw placeholders")
+	}
+	if code, _, body := get(ts.URL, "/o/no-such-org"); code != http.StatusNotFound || strings.Contains(body, "{{") {
+		t.Errorf("/o/no-such-org = %d, want a rendered 404", code)
 	}
 	if code, _, _ := get(ts.URL, "/api/store/items"); code == http.StatusOK {
 		t.Errorf("the store of every organisation's adventures still answers")
@@ -52,7 +55,7 @@ func TestOrgPageAndStoreRedirects(t *testing.T) {
 
 	bare, _, cleanup2 := newTestServerWith(t, server.Config{})
 	defer cleanup2()
-	if code, _, _ := get(bare.URL, "/store"); code != http.StatusNotFound {
-		t.Errorf("/store without a home organisation = %d, want 404", code)
+	if code, _, body := get(bare.URL, "/store"); code != http.StatusNotFound || strings.Contains(body, "{{") {
+		t.Errorf("/store without a home organisation = %d, want a rendered 404", code)
 	}
 }

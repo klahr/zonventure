@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/payments"
@@ -38,10 +40,12 @@ type hostedPriceDTO struct {
 	Currency   string `json:"currency"`
 	TeamsPer   int    `json:"teams_per_block"`
 	FreeTeams  int    `json:"free_teams"`
+	// VATExcluded: the price is shown "excl. VAT", else "incl. VAT".
+	VATExcluded bool `json:"vat_excluded"`
 }
 
 func (h *Handlers) hostedPrice() hostedPriceDTO {
-	return hostedPriceDTO{BlockCents: h.hosted().BlockCents, Currency: h.hosted().Currency, TeamsPer: TeamsPerBlock, FreeTeams: FreeTeams}
+	return hostedPriceDTO{BlockCents: h.hosted().BlockCents, Currency: h.hosted().Currency, TeamsPer: TeamsPerBlock, FreeTeams: FreeTeams, VATExcluded: h.pricing().VATExcluded}
 }
 
 // GetHostedPrice is the pass price, for the console's Host it dialog.
@@ -98,14 +102,14 @@ func (h *Handlers) HostAdventure(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
 	var (
-		advID int64
-		title string
+		advID       int64
+		title, lang string
 	)
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT a.id, COALESCE(NULLIF(a.title, ''), a.slug) FROM adventures a
+		SELECT a.id, COALESCE(NULLIF(a.title, ''), a.slug), a.language FROM adventures a
 		WHERE a.slug = $1 AND NOT a.trail_hidden AND (a.org_id = $2
 		   OR EXISTS (SELECT 1 FROM adventure_shares s WHERE s.adventure_slug = a.slug AND s.org_id = $2))
-	`, slug, *me.OrgID).Scan(&advID, &title); err != nil {
+	`, slug, *me.OrgID).Scan(&advID, &title, &lang); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "no such adventure for your organisation")
 			return
@@ -136,7 +140,7 @@ func (h *Handlers) HostAdventure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if name == "" {
-		name = title
+		name = title + " " + trailDate(emailtpl.Lang(lang), time.Now())
 	}
 
 	if h.hosted().Free() || req.Blocks == 0 {
@@ -162,7 +166,7 @@ func (h *Handlers) HostAdventure(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "host failed", err)
 		return
 	}
-	product := fmt.Sprintf("%s — hosted, %d teams per game", title, req.Blocks*TeamsPerBlock)
+	product := fmt.Sprintf("%s — hosted, %d teams per game", name, req.Blocks*TeamsPerBlock)
 	h.startHostedCheckout(w, r, purchaseID, product, amount, me.Email, "/app/arrange/", "")
 }
 
@@ -178,10 +182,13 @@ func (h *Handlers) hostFree(ctx context.Context, orgID int64, slug, name string,
 	if err != nil {
 		return 0, err
 	}
+	if err := h.keepHostToken(ctx, tx, eventID, hostToken); err != nil {
+		return 0, err
+	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
-	if err := h.sendPartyHostLink(ctx, eventID, email, hostToken); err != nil {
+	if err := h.sendPartyHostLink(ctx, eventID, email, hostToken, false); err != nil {
 		logx.Warn("admin.hosted.mail", "event_id", eventID, "err", err.Error())
 	}
 	return eventID, nil
@@ -254,7 +261,8 @@ func (h *Handlers) AddHostedBlocks(w http.ResponseWriter, r *http.Request) {
 		me, _ := auth.FromContext(ctx)
 		email, back = me.Email, fmt.Sprintf("/app/arrange/#/events/%d", eventID)
 	} else if err := h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE((SELECT buyer_email FROM ticket_purchases WHERE event_id = $1 AND kind IN ('party', 'hosted') ORDER BY id LIMIT 1), '')
+		SELECT COALESCE((SELECT buyer_email FROM ticket_purchases WHERE event_id = $1 AND kind IN ('party', 'hosted') ORDER BY id LIMIT 1),
+		                (SELECT email FROM trails WHERE event_id = $1), '')
 	`, p.EventID).Scan(&email); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "add teams failed", err)
 		return
@@ -268,7 +276,13 @@ func (h *Handlers) AddHostedBlocks(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "add teams failed", err)
 		return
 	}
-	product := fmt.Sprintf("%d more teams per game", req.Blocks*TeamsPerBlock)
+	// The total a game then holds: a free event's first block replaces its free teams.
+	var name string
+	if err := h.DB.QueryRowContext(ctx, `SELECT party_name FROM events WHERE id = $1`, p.EventID).Scan(&name); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "add teams failed", err)
+		return
+	}
+	product := emailtpl.T(h.eventLook(ctx, p.EventID).Lang, "%[1]s — more teams, up to %[2]d teams per game", name, teamsLimit(p.Blocks+req.Blocks))
 	h.startHostedCheckout(w, r, purchaseID, product, amount, email, back, "")
 }
 
@@ -303,6 +317,9 @@ func (h *Handlers) fulfilHostedCheckout(ctx context.Context, tx *sql.Tx, event p
 		if eventID, hostToken, err = createHostedEvent(ctx, tx, orgID.Int64, slug, name, 0, blocks, minted.String); err != nil {
 			return fmt.Errorf("hosted create: %w", err)
 		}
+		if err := h.keepHostToken(ctx, tx, eventID, hostToken); err != nil {
+			return err
+		}
 		// A public quiz trail's: it is paid for now.
 		if _, err := attachTrailEvent(ctx, tx, slug, eventID, email, true); err != nil {
 			return fmt.Errorf("trail attach: %w", err)
@@ -332,7 +349,7 @@ func (h *Handlers) fulfilHostedCheckout(ctx context.Context, tx *sql.Tx, event p
 	}
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	if hostToken != "" {
-		if err := h.sendPartyHostLink(ctx, eventID, email, hostToken); err != nil {
+		if err := h.sendPartyHostLink(ctx, eventID, email, hostToken, false); err != nil {
 			logx.Warn("admin.hosted.mail", "purchase_id", purchaseID, "event_id", eventID, "err", err.Error())
 		}
 	}

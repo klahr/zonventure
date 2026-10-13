@@ -11,7 +11,8 @@ import (
 
 // TestRegistry_AudienceGate: a platform admin's token reaches only
 // operator (and shared) tools, an org user's only org (and shared)
-// ones — both in tools/list and at dispatch.
+// ones, a writer's only authoring ones — both in tools/list and at
+// dispatch.
 func TestRegistry_AudienceGate(t *testing.T) {
 	t.Parallel()
 	r := newRegistry()
@@ -22,6 +23,7 @@ func TestRegistry_AudienceGate(t *testing.T) {
 		{Name: "org_tool", Scope: scopeRead},
 		{Name: "admin_tool", Scope: scopeRead, Audience: audienceAdmin},
 		{Name: "any_tool", Scope: scopeRead, Audience: audienceAny},
+		{Name: "author_tool", Scope: scopeRead, Audience: audienceAuthor},
 	} {
 		r.register(d, ok)
 	}
@@ -32,9 +34,13 @@ func TestRegistry_AudienceGate(t *testing.T) {
 		want map[string]bool
 	}{
 		{"admin", auth.User{Role: auth.RoleAdmin, IsAdmin: true},
-			map[string]bool{"org_tool": false, "admin_tool": true, "any_tool": true}},
+			map[string]bool{"org_tool": false, "admin_tool": true, "any_tool": true, "author_tool": false}},
 		{"org_admin", auth.User{Role: auth.RoleOrgAdmin, OrgID: &orgID},
-			map[string]bool{"org_tool": true, "admin_tool": false, "any_tool": true}},
+			map[string]bool{"org_tool": true, "admin_tool": false, "any_tool": true, "author_tool": true}},
+		{"org_member", auth.User{Role: auth.RoleOrgMember, OrgID: &orgID},
+			map[string]bool{"org_tool": true, "admin_tool": false, "any_tool": true, "author_tool": true}},
+		{"org_writer", auth.User{Role: auth.RoleOrgWriter, OrgID: &orgID},
+			map[string]bool{"org_tool": false, "admin_tool": false, "any_tool": false, "author_tool": true}},
 	} {
 		ctx := withScopes(auth.WithUser(context.Background(), c.user), []string{scopeRead})
 		listed := map[string]bool{}

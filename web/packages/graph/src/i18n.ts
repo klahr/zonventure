@@ -29,13 +29,16 @@ export interface AdventureMeta {
 /** One piece of text an author can translate. */
 export interface Translatable {
   key: string;
-  /** What the field is, for the form: "Text", "Reply 2". */
+  /** What the field is, for the form: "Text", "Hint {{i}}" — an English key, filled from vars. */
   label: string;
+  vars?: Record<string, string | number>;
   /** The main-language text, shown beside the translation. */
   main: string;
   multiline?: boolean;
   /** Extra accepted answers, one per line, rather than a translation of text. */
   answers?: boolean;
+  /** Worth translating, but not counted in how far a translation has come: a route's name. */
+  optional?: boolean;
 }
 
 /** Every translatable text of a step, in the order the inspector shows them. */
@@ -66,7 +69,7 @@ export function nodeTexts(n: Node): Translatable[] {
           add(own, "Shown when done", b.text, { multiline: true });
           break;
         case "split":
-          b.parts.forEach((p, i) => add(`${own}:part:${i}`, `Secret part ${i + 1}`, p, { multiline: true }));
+          b.parts.forEach((p, i) => add(`${own}:part:${i}`, "Secret part {{n}}", p, { multiline: true, vars: { n: i + 1 } }));
           break;
         case "call":
           add(`${own}:who`, "Caller", b.who);
@@ -96,7 +99,7 @@ export function nodeTexts(n: Node): Translatable[] {
         case "vote":
         case "draw":
           add(own, b.kind === "vote" ? "Vote question" : "Draw", b.text, { multiline: true });
-          b.options.forEach((o, i) => add(`${own}:option:${i}`, b.kind === "vote" ? `Vote option ${i + 1}` : `Card ${i + 1}`, o));
+          b.options.forEach((o, i) => add(`${own}:option:${i}`, b.kind === "vote" ? "Vote option {{n}}" : "Card {{n}}", o, { vars: { n: i + 1 } }));
           break;
         case "spotdiff":
           (b.spots ?? []).forEach((sp, i) => add(`${own}:spot:${i}`, "Difference", sp.text, { multiline: true }));
@@ -109,7 +112,7 @@ export function nodeTexts(n: Node): Translatable[] {
           break;
         case "quiz":
           add(own, "Quiz question", b.text, { multiline: true });
-          b.options.forEach((o, i) => add(`${own}:option:${i}`, `Quiz answer ${["1", "X", "2"][i]}`, o));
+          b.options.forEach((o, i) => add(`${own}:option:${i}`, "Quiz answer {{n}}", o, { vars: { n: ["1", "X", "2"][i] ?? "" } }));
           break;
         case "tiebreak":
           add(own, "Tie-breaker question", b.text, { multiline: true });
@@ -127,33 +130,33 @@ export function nodeTexts(n: Node): Translatable[] {
   if (p) {
     blocks(p.blocks, "Text");
     for (const o of p.outputs ?? []) {
-      add(`out:${o.port}:label`, `Route “${o.label || o.port}”`, o.label);
+      add(`out:${o.port}:label`, "Route “{{name}}”", o.label, { optional: true, vars: { name: o.label || o.port } });
       // Only a typed answer is words a team could give in another
       // language; a lock's, a choice's or a scanned code's values are
       // what the phone sends.
       if (o.trigger !== "answer" || p.answer) continue;
       // Each kind of matcher keeps its own key, so a translated answer is
       // matched the way the original is.
-      for (const [kind, field, label] of [["exact", "answers", "Answers"], ["contains", "contains", "Words anywhere in the answer"]] as const) {
+      for (const [kind, field, label] of [["exact", "answers", "Answers for “{{name}}”"], ["contains", "contains", "Words anywhere in the answer for “{{name}}”"]] as const) {
         const values = (o.matchers ?? []).filter((m) => m.kind === kind).map((m) => m.value ?? "");
-        if (values.length) add(`out:${o.port}:${field}`, `${label} for “${o.label || o.port}”`, values.join("\n"), { multiline: true, answers: true });
+        if (values.length) add(`out:${o.port}:${field}`, label, values.join("\n"), { multiline: true, answers: true, vars: { name: o.label || o.port } });
       }
     }
     add("bar:placeholder", "Answer bar: placeholder", p.bar?.placeholder);
     add("bar:button", "Answer bar: button", p.bar?.button);
-    (p.responses ?? []).forEach((r, i) => add(`reply:${i}`, `Wrong-answer reply ${i + 1}`, r.text, { multiline: true }));
-    (p.hints ?? []).forEach((h, i) => add(`hint:${i}`, `Hint ${i + 1}`, h.text, { multiline: true }));
+    (p.responses ?? []).forEach((r, i) => add(`reply:${i}`, "Wrong-answer reply {{n}}", r.text, { multiline: true, vars: { n: i + 1 } }));
+    (p.hints ?? []).forEach((h, i) => add(`hint:${i}`, "Hint {{i}}", h.text, { multiline: true, vars: { i: i + 1 } }));
     if (p.answer?.kind === "choice") {
       p.answer.fields.forEach((f, i) => {
-        add(`field:${i}:label`, `Question ${i + 1}`, f.label);
-        for (const o of f.options) add(`field:${i}:opt:${o.value}`, `Question ${i + 1}: option`, o.label || o.value);
+        add(`field:${i}:label`, "Question {{n}}", f.label, { vars: { n: i + 1 } });
+        for (const o of f.options) add(`field:${i}:opt:${o.value}`, "Question {{n}}: option", o.label || o.value, { vars: { n: i + 1 } });
       });
     }
     if (p.answer?.kind === "lock") {
       for (const s of p.answer.symbols) add(`sym:${s.value}`, "Lock symbol", s.label || (s.image ? "" : s.value));
     }
     if (p.answer?.kind === "items") {
-      p.answer.slots.forEach((s, i) => add(`slot:${i}`, `Slot ${i + 1}`, s.label));
+      p.answer.slots.forEach((s, i) => add(`slot:${i}`, "Slot {{n}}", s.label, { vars: { n: i + 1 } }));
     }
   }
   if (n.story) blocks(n.story.blocks, "Text");
@@ -161,8 +164,8 @@ export function nodeTexts(n: Node): Translatable[] {
   if (n.hub) {
     add("hub-text", "Text", n.hub.text, { multiline: true });
     for (const b of n.hub.branches ?? []) {
-      add(`branch:${b.port}:label`, `Branch “${b.label || b.port}”`, b.label);
-      add(`branch:${b.port}:note`, `Branch “${b.label || b.port}”: subtitle`, b.note);
+      add(`branch:${b.port}:label`, "Branch “{{name}}”", b.label, { vars: { name: b.label || b.port } });
+      add(`branch:${b.port}:note`, "Branch “{{name}}”: subtitle", b.note, { vars: { name: b.label || b.port } });
     }
   }
   return out;
@@ -178,8 +181,8 @@ export function adventureTexts(g: Graph, meta: AdventureMeta = {}): Translatable
   if (meta.intro?.trim()) out.push({ key: metaKey("intro"), label: "Introduction", main: meta.intro, multiline: true });
   if (meta.outro?.trim()) out.push({ key: metaKey("outro"), label: "Closing words", main: meta.outro, multiline: true });
   for (const j of g.journal ?? []) {
-    if (j.title?.trim()) out.push({ key: journalKey(j.slug, "title"), label: `Journal: ${j.title}`, main: j.title });
-    if (j.body?.trim()) out.push({ key: journalKey(j.slug, "body"), label: `Journal: ${j.title || j.slug}`, main: j.body, multiline: true });
+    if (j.title?.trim()) out.push({ key: journalKey(j.slug, "title"), label: "Journal: {{name}}", vars: { name: j.title }, main: j.title });
+    if (j.body?.trim()) out.push({ key: journalKey(j.slug, "body"), label: "Journal: {{name}}", vars: { name: j.title || j.slug }, main: j.body, multiline: true });
   }
   for (const s of new Set((g.journal ?? []).map((j) => j.section).filter((x): x is string => !!x))) {
     out.push({ key: sectionKey(s), label: "Journal section", main: s });
@@ -187,9 +190,9 @@ export function adventureTexts(g: Graph, meta: AdventureMeta = {}): Translatable
   for (const z of g.zones ?? []) if (z.name?.trim() && !z.group) out.push({ key: zoneKey(z.slug), label: "Place name", main: z.name });
   for (const r of g.roles ?? []) {
     if (r.name?.trim()) out.push({ key: roleKey(r.slug, "name"), label: "Role", main: r.name });
-    if (r.text?.trim()) out.push({ key: roleKey(r.slug, "text"), label: `Role: ${r.name || r.slug}`, main: r.text, multiline: true });
+    if (r.text?.trim()) out.push({ key: roleKey(r.slug, "text"), label: "Role: {{name}}", vars: { name: r.name || r.slug }, main: r.text, multiline: true });
     (r.goals ?? []).forEach((g, i) => {
-      if (g.text.trim()) out.push({ key: `r:${r.slug}:goal:${i}`, label: `Goal of ${r.name || r.slug}`, main: g.text });
+      if (g.text.trim()) out.push({ key: `r:${r.slug}:goal:${i}`, label: "Goal of {{name}}", vars: { name: r.name || r.slug }, main: g.text });
     });
   }
   if (g.time_limit?.text?.trim()) out.push({ key: TIME_UP_KEY, label: "Time is up: message", main: g.time_limit.text, multiline: true });
@@ -201,20 +204,47 @@ export function allTexts(g: Graph, meta: AdventureMeta = {}): Translatable[] {
   return [...g.nodes.flatMap(nodeTexts), ...adventureTexts(g, meta)];
 }
 
-/** How much of the adventure is translated into lang, 0–1. */
-export function coverage(g: Graph, lang: string, meta: AdventureMeta = {}): number {
-  const all = allTexts(g, meta).filter((t) => !t.answers);
-  if (!all.length) return 1;
-  const tr = g.translations?.[lang] ?? {};
-  return all.filter((t) => tr[t.key]?.trim()).length / all.length;
+/** A short fingerprint of a main text (FNV-1a), kept beside a translation made from it. */
+export function sourceFingerprint(main: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < main.length; i++) h = Math.imul(h ^ main.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(16).padStart(8, "0");
 }
 
-/** The graph with one translation set, or cleared when text is empty. */
-export function setTranslation(g: Graph, lang: string, key: string, text: string): Graph {
+/**
+ * Whether a translation was made from a main text that has changed since.
+ * One saved before fingerprints were kept is taken as up to date.
+ */
+export function isOutdated(g: Graph, lang: string, t: Translatable): boolean {
+  const from = g.translation_sources?.[lang]?.[t.key];
+  return !t.answers && !!g.translations?.[lang]?.[t.key]?.trim() && !!from && from !== sourceFingerprint(t.main);
+}
+
+/** How much of the adventure is translated into lang, 0–1. An outdated translation does not count. */
+export function coverage(g: Graph, lang: string, meta: AdventureMeta = {}): number {
+  const all = allTexts(g, meta).filter((t) => !t.answers && !t.optional);
+  if (!all.length) return 1;
+  const tr = g.translations?.[lang] ?? {};
+  return all.filter((t) => tr[t.key]?.trim() && !isOutdated(g, lang, t)).length / all.length;
+}
+
+/**
+ * The graph with one translation set, made from main, or cleared when text
+ * is empty. Setting the same text again marks it up to date with main.
+ */
+export function setTranslation(g: Graph, lang: string, key: string, text: string, main?: string): Graph {
   const all = { ...(g.translations ?? {}) };
   const one = { ...(all[lang] ?? {}) };
+  const sources = { ...(g.translation_sources ?? {}) };
+  const from = { ...(sources[lang] ?? {}) };
   if (text.trim()) one[key] = text;
   else delete one[key];
+  if (text.trim() && main !== undefined) from[key] = sourceFingerprint(main);
+  else delete from[key];
   all[lang] = one;
-  return { ...g, translations: all };
+  if (Object.keys(from).length) sources[lang] = from;
+  else delete sources[lang];
+  const out: Graph = { ...g, translations: all, translation_sources: sources };
+  if (!Object.keys(sources).length) delete out.translation_sources;
+  return out;
 }

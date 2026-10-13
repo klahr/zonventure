@@ -26,7 +26,8 @@ import (
 )
 
 // ErrNoSchedule indicates the event has neither a scheduled_at nor
-// a started_at — there's nothing meaningful to put on a calendar.
+// a started_at, or is self-guided (public_for_sale) — there's nothing
+// meaningful to put on a calendar.
 // Callers map this to a 400 (or just skip the attachment).
 var ErrNoSchedule = errors.New("icscal: event has no scheduled time")
 
@@ -46,6 +47,9 @@ type Event struct {
 	Description    string // plain text; line breaks become \n in the unfolded value
 	JoinURL        string // shown in DESCRIPTION + emitted as URL property
 	Status         string // CONFIRMED / TENTATIVE / CANCELLED
+	// Method is the iTIP method: PUBLISH when empty; CANCEL takes the
+	// entry off the calendars that hold it.
+	Method string
 }
 
 // BuildForEvent loads the event, its adventure, and the org name,
@@ -61,23 +65,27 @@ func BuildForEvent(ctx context.Context, db *sql.DB, lib *adventure.Library, even
 	var (
 		out      Event
 		slug     string
+		name     string
 		state    string
 		schedRaw sql.NullString
 		startRaw sql.NullString
 		endRaw   sql.NullString
 		creator  sql.NullString
 		orgName  string
+		forSale  bool
+		seq      int
+		meetAt   string
 	)
 	if err := db.QueryRowContext(ctx, `
-		SELECT e.adventure_slug, e.state, e.scheduled_at, e.started_at,
+		SELECT e.adventure_slug, e.name, e.state, e.scheduled_at, e.started_at,
 		       e.completed_at,
 		       COALESCE(u.email, ''),
-		       o.name
+		       o.name, e.public_for_sale, e.ics_sequence, e.meeting_place
 		FROM events e
 		JOIN organizations o ON o.id = e.org_id
 		LEFT JOIN users u ON u.id = e.created_by_user_id
 		WHERE e.id = $1
-	`, eventID).Scan(&slug, &state, &schedRaw, &startRaw, &endRaw, &creator, &orgName); err != nil {
+	`, eventID).Scan(&slug, &name, &state, &schedRaw, &startRaw, &endRaw, &creator, &orgName, &forSale, &seq, &meetAt); err != nil {
 		return out, err
 	}
 	adv := lib.Get(slug)
@@ -85,7 +93,9 @@ func BuildForEvent(ctx context.Context, db *sql.DB, lib *adventure.Library, even
 		return out, fmt.Errorf("icscal: adventure %q not loaded", slug)
 	}
 	startTime, hasStart := PickStart(state, schedRaw.String, startRaw.String)
-	if !hasStart {
+	// A self-guided event is played whenever a team likes: its start
+	// is no date to put on a calendar.
+	if !hasStart || forSale {
 		return out, ErrNoSchedule
 	}
 	endTime, hasEnd := ParseTimestamp(endRaw.String)
@@ -98,26 +108,48 @@ func BuildForEvent(ctx context.Context, db *sql.DB, lib *adventure.Library, even
 
 	out.UID = fmt.Sprintf("event-%d@%s", eventID, hostFromURL(publicURL))
 	out.GeneratedAt = time.Now().UTC()
-	out.SequenceN = 0 // bump source not yet wired; see internal/admin/calendar.go
+	out.SequenceN = seq
 	out.StartAt = startTime.UTC()
 	out.EndAt = endTime.UTC()
-	out.Title = adv.Meta.Title
+	// The event's own name ("Acme team day") is what the invitee knows
+	// it by; the adventure's title stands in when it has none.
+	out.Title = strings.TrimSpace(name)
+	if out.Title == "" {
+		out.Title = adv.Meta.Title
+	}
 	if out.Title == "" {
 		out.Title = sitename.Name() + " event"
 	}
 	out.OrgName = orgName
 	out.OrganizerEmail = strings.TrimSpace(creator.String)
 	out.OrganizerName = orgName
-	out.LocationLabel = pickLocation(adv)
+	// The organiser's meeting place says more than the start's
+	// coordinates.
+	out.LocationLabel = strings.TrimSpace(meetAt)
+	if out.LocationLabel == "" {
+		out.LocationLabel = pickLocation(adv)
+	}
 	out.JoinURL = joinURL(publicURL)
 	out.Description = buildDescription(out.Title, adv.Meta.Description, out.JoinURL, orgName)
+	// A scheduled event is on: the invitee should see it as confirmed,
+	// not "maybe". Only a cancelled one says otherwise.
 	out.Status = "CONFIRMED"
 	if state == "cancelled" {
 		out.Status = "CANCELLED"
-	} else if state == "scheduled" && !startRaw.Valid {
-		out.Status = "TENTATIVE"
 	}
 	return out, nil
+}
+
+// WithJoinURL points the entry, and the link in its description, at u:
+// one team's own page instead of the generic join page.
+func (e Event) WithJoinURL(u string) Event {
+	if e.JoinURL != "" {
+		e.Description = strings.Replace(e.Description, "Join link: "+e.JoinURL, "Join link: "+u, 1)
+	} else {
+		e.Description += "\nJoin link: " + u
+	}
+	e.JoinURL = u
+	return e
 }
 
 // Filename returns a stable filename for the .ics attachment.
@@ -242,7 +274,11 @@ func Write(w io.Writer, e Event) error {
 	line(&b, "VERSION:2.0")
 	line(&b, "PRODID:-//Zonventure//Event Invite//EN")
 	line(&b, "CALSCALE:GREGORIAN")
-	line(&b, "METHOD:PUBLISH")
+	method := "PUBLISH"
+	if m := strings.TrimSpace(e.Method); m != "" {
+		method = m
+	}
+	line(&b, "METHOD:"+method)
 	line(&b, "BEGIN:VEVENT")
 	// UID is server-built ("event-N@host") in current callers — but
 	// run it through Escape regardless so a future hostFromURL change

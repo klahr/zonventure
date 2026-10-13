@@ -1,35 +1,25 @@
 package admin
 
 import (
-	"strings"
 	"testing"
 )
 
-func TestGenerateDuplicateSlug(t *testing.T) {
+func TestDuplicateSlug(t *testing.T) {
 	t.Parallel()
-	got, err := generateDuplicateSlug("office-tour")
-	if err != nil {
-		t.Fatalf("generate: %v", err)
-	}
-	if !strings.HasPrefix(got, "office-tour-") {
-		t.Errorf("expected prefix office-tour-, got %q", got)
-	}
-	suffix := strings.TrimPrefix(got, "office-tour-")
-	if len(suffix) == 0 || len(suffix) > 6 {
-		t.Errorf("suffix length unreasonable: %q", suffix)
-	}
-	if !validSlug(got) {
-		t.Errorf("generated slug failed validation: %q", got)
-	}
-	// Two consecutive calls must produce different suffixes — if they
-	// don't, the random-source isn't doing its job and we'd be racing
-	// the unique index in production.
-	got2, err := generateDuplicateSlug("office-tour")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got == got2 {
-		t.Errorf("two consecutive calls produced the same slug %q — random source broken", got)
+	taken := map[string]bool{"office-tour-copy": true, "office-tour-copy-2": true}
+	isTaken := func(s string) (bool, error) { return taken[s], nil }
+	for source, want := range map[string]string{
+		"office-tour":        "office-tour-copy-3",
+		"office-tour-copy-2": "office-tour-copy-3",
+		"park":               "park-copy",
+	} {
+		got, err := duplicateSlug(source, isTaken)
+		if err != nil || got != want {
+			t.Errorf("duplicateSlug(%q) = %q, %v; want %q", source, got, err, want)
+		}
+		if !validSlug(got) {
+			t.Errorf("%q is not a valid slug", got)
+		}
 	}
 }
 

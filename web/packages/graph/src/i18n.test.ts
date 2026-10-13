@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adventureTexts, allTexts, coverage, blockKey, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey } from "./i18n.ts";
+import { adventureTexts, allTexts, coverage, blockKey, isOutdated, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey } from "./i18n.ts";
 import type { Graph } from "./types.ts";
 
 const g: Graph = {
@@ -28,6 +28,12 @@ test("a step's texts use the engine's keys", () => {
   assert.deepEqual(answers.map((t) => t.main), ["sex\n6", "sexton"], "exact and contains answers are translated apart");
 });
 
+test("a field's label is a translatable key with its values apart", () => {
+  const answers = nodeTexts(g.nodes[1]!).find((t) => t.key === nodeKey("q", "out:solved:answers"))!;
+  assert.equal(answers.label, "Answers for “{{name}}”");
+  assert.deepEqual(answers.vars, { name: "Rätt" });
+});
+
 test("a lock's values are not answers to translate", () => {
   const lock = { slug: "l", type: "puzzle" as const, puzzle: {
     answer: { kind: "lock" as const, wheels: 1, symbols: [{ value: "owl", label: "Uggla" }, { value: "fox" }] },
@@ -44,14 +50,32 @@ test("adventure texts: meta, sections by name", () => {
   assert.ok(keys.includes(sectionKey("Misstänkta")));
 });
 
-test("coverage counts translated texts, not extra answers", () => {
-  const total = allTexts(g).filter((t) => !t.answers).length;
+test("coverage counts translated texts, not extra answers or route names", () => {
+  const total = allTexts(g).filter((t) => !t.answers && !t.optional).length;
+  assert.ok(allTexts(g).find((t) => t.key === nodeKey("q", "out:solved:label"))?.optional);
   assert.equal(coverage(g, "en"), 0);
   let t = setTranslation(g, "en", blockKey("q", "b1"), "How many?");
   t = setTranslation(t, "en", journalKey("carl", "body"), "Works here.");
   assert.equal(coverage(t, "en"), 2 / total);
   t = setTranslation(t, "en", blockKey("q", "b1"), "  ");
   assert.equal(t.translations!.en![blockKey("q", "b1")], undefined, "an emptied translation is removed");
+});
+
+test("a translation of a changed original is outdated and not counted", () => {
+  const text = () => allTexts(t).find((x) => x.key === blockKey("q", "b1"))!;
+  let t = setTranslation(g, "en", blockKey("q", "b1"), "How many?", "Hur många?");
+  const once = coverage(t, "en");
+  assert.ok(once > 0 && !isOutdated(t, "en", text()));
+  t = { ...t, nodes: t.nodes.map((n) => (n.slug === "q" ? { ...n, puzzle: { ...n.puzzle!, blocks: [{ id: "b1", kind: "text" as const, text: "Hur många finns?" }] } } : n)) };
+  assert.ok(isOutdated(t, "en", text()));
+  assert.equal(coverage(t, "en"), 0);
+  t = setTranslation(t, "en", blockKey("q", "b1"), "How many?", text().main);
+  assert.ok(!isOutdated(t, "en", text()), "set again from the new original, it is up to date");
+  assert.equal(coverage(t, "en"), once);
+  t = setTranslation(t, "en", blockKey("q", "b1"), "");
+  assert.equal(t.translation_sources, undefined, "an emptied translation forgets its original");
+  const old = setTranslation(g, "en", blockKey("q", "b1"), "How many?");
+  assert.ok(!isOutdated(old, "en", allTexts(old).find((x) => x.key === blockKey("q", "b1"))!), "one without a fingerprint is taken as up to date");
 });
 
 test("block texts use the engine's block keys", () => {

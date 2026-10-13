@@ -77,7 +77,7 @@
 </head>
 <body>
 
-<a class="skip-link" href="#main">Skip to content</a>
+<a class="skip-link" href="#main">{{SKIP_TO_CONTENT}}</a>
 
 <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
 
@@ -289,9 +289,9 @@
     p.products.forEach(function (pr) {
       var o = document.createElement('option');
       o.value = pr.id;
-      // Two organisations may offer a product of the same name.
-      var dupe = p.products.some(function (x) { return x !== pr && x.name === pr.name; });
-      o.textContent = dupe ? pr.name + ' — ' + pr.org_name : pr.name;
+      // The platform-wide page lists every organisation's products, so
+      // each names whose it is; an organisation's own page needn't.
+      o.textContent = API === '/api/redeem' ? pr.name + ' — ' + pr.org_name : pr.name;
       productSel.append(o);
     });
     showLetter();
@@ -379,6 +379,10 @@
           $('done-letter').hidden = false;
         }
         $('done').hidden = false;
+        return;
+      }
+      if (res.data.reason === 'code_used' && res.data.contact) {
+        err.textContent = t('errUsedContact').replace('{contact}', res.data.contact);
         return;
       }
       err.textContent = t(reasons[res.data.reason] || 'errGeneric');

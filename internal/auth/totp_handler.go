@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
@@ -23,7 +24,7 @@ type loginTOTPRequest struct {
 // from the front-end's perspective this is just the second leg of
 // the login.
 //
-// Per-(ip, challenge) rate-limited via h.TOTPLimiter so a brute-force
+// Per-(ip, user) rate-limited via h.TOTPLimiter so a brute-force
 // attempt against the 6-digit code space gets locked out after a
 // handful of misses without affecting the password limiter.
 func (h *Handlers) LoginTOTP(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +42,15 @@ func (h *Handlers) LoginTOTP(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "code or recovery_code required")
 		return
 	}
-	if ok, retry := h.TOTPLimiter.Allow(ip, req.Challenge); !ok {
+	// Lock out per user, not per challenge: "back to log in" plus the
+	// password mints a fresh challenge, which must not reset the count.
+	limitKey := req.Challenge
+	uid, uidErr := TOTPChallengeUserID(r.Context(), h.DB, req.Challenge)
+	if uidErr == nil {
+		limitKey = "uid:" + strconv.FormatInt(uid, 10)
+	}
+	if ok, retry := h.TOTPLimiter.Allow(ip, limitKey); !ok {
+		metrics.AuthSecondFactor.WithLabelValues("rate_limited").Inc()
 		Record(r.Context(), h.DB, AuditEvent{
 			Event: EventTOTPVerify, OK: false, IP: ip, UserAgent: ua,
 			Reason: ReasonRateLimited,
@@ -72,8 +81,9 @@ func (h *Handlers) LoginTOTP(w http.ResponseWriter, r *http.Request) {
 		})
 		httpx.Error(w, http.StatusBadRequest, "challenge has expired — start over")
 		return
-	case errors.Is(err, ErrTOTPInvalid):
-		_, retry := h.TOTPLimiter.RecordFailure(ip, req.Challenge)
+	case errors.Is(err, ErrTOTPInvalid), errors.Is(err, ErrTOTPReused):
+		_, retry := h.TOTPLimiter.RecordFailure(ip, limitKey)
+		metrics.AuthSecondFactor.WithLabelValues("fail").Inc()
 		Record(r.Context(), h.DB, AuditEvent{
 			Event: EventTOTPVerify, OK: false, IP: ip, UserAgent: ua,
 			Reason: ReasonTOTPInvalid,
@@ -85,15 +95,21 @@ func (h *Handlers) LoginTOTP(w http.ResponseWriter, r *http.Request) {
 			// client sees a simple "wrong code" either way.
 			_ = retry
 		}
-		httpx.Error(w, http.StatusUnauthorized, "invalid code")
+		// A code that was right but already redeemed: the next one works.
+		if errors.Is(err, ErrTOTPReused) {
+			httpx.Error(w, http.StatusUnauthorized, "That code was already used. Wait for the next code in your authenticator app.")
+			return
+		}
+		httpx.Error(w, http.StatusUnauthorized, "Wrong code. Enter the current code from your authenticator app.")
 		return
 	case errors.Is(err, ErrRecoveryCodeInvalid):
-		h.TOTPLimiter.RecordFailure(ip, req.Challenge)
+		h.TOTPLimiter.RecordFailure(ip, limitKey)
+		metrics.AuthSecondFactor.WithLabelValues("fail").Inc()
 		Record(r.Context(), h.DB, AuditEvent{
 			Event: EventTOTPRecoveryCodeUse, OK: false, IP: ip, UserAgent: ua,
 			Reason: ReasonRecoveryCodeInvalid,
 		})
-		httpx.Error(w, http.StatusUnauthorized, "invalid recovery code")
+		httpx.Error(w, http.StatusUnauthorized, "Wrong recovery code, or one that was already used.")
 		return
 	case errors.Is(err, ErrTOTPNotEnrolled):
 		// Race: the user disabled TOTP between login leg 1 and leg 2.
@@ -104,14 +120,19 @@ func (h *Handlers) LoginTOTP(w http.ResponseWriter, r *http.Request) {
 		// Stored ciphertext can't be decrypted with the current key.
 		// Almost always means ZV_TOTP_KEY was rotated/lost. Fail
 		// closed — the operator's audit log will show the pattern.
-		logx.Error("auth.totp.secret_corrupt", "user_id", res.User.ID)
-		httpx.Error(w, http.StatusServiceUnavailable, "totp configuration error")
+		// res is empty on this path, so the user comes from the challenge.
+		logx.Error("auth.totp.secret_corrupt", "user_id", uid,
+			"hint", "the stored 2FA secret does not decrypt with the current ZV_TOTP_KEY; was the key changed or lost (e.g. after a restore)? Recovery codes still work")
+		httpx.JSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "Two-factor sign-in is unavailable on this server. Use a recovery code or contact your admin.",
+			"code":  "totp_unavailable",
+		})
 		return
 	case err != nil:
 		httpx.Error(w, http.StatusInternalServerError, "totp verify failed")
 		return
 	}
-	h.TOTPLimiter.RecordSuccess(ip, req.Challenge)
+	h.TOTPLimiter.RecordSuccess(ip, limitKey)
 	// Reset password limiter too — same successful login, just with
 	// the second factor.
 	h.Limiter.RecordSuccess(ip, res.User.Username)
@@ -126,6 +147,7 @@ func (h *Handlers) LoginTOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	metrics.AuthLogins.WithLabelValues("success").Inc()
+	metrics.AuthSecondFactor.WithLabelValues("success").Inc()
 	verifyEvent := EventTOTPVerify
 	if res.Factor == FactorRecoveryCode {
 		verifyEvent = EventTOTPRecoveryCodeUse

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { CalendarClock, Coins, Download, Flag, MonitorPlay, Moon, Play, Terminal, Trash2 } from "lucide-react";
-import type { Whoami } from "@zonventure/api";
+import { CalendarClock, Coins, Download, Flag, Mail, MonitorPlay, Moon, Play, Terminal, Trash2 } from "lucide-react";
+import { ApiError, type Whoami } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
 import { Button, Callout, Dialog, Field, fmtDateTime, fmtMoney, ICON, toLocalInput, useDialogs, useToast } from "../../ui/index.ts";
@@ -39,25 +39,42 @@ export function LifecycleActions({ event, teams, adventure, user, reload }: { ev
   const pause = async () => {
     const ok = await dialogs.confirm({
       title: t.t("Pause this event?"),
-      message: t.t("Every team will see a 'paused — stand by' card on their next state push. Hint countdowns freeze and answer submissions are refused until you resume."),
+      message: t.t("Every team sees “The game is paused” on their phone. Hint countdowns stop and answers aren't accepted until you resume.") +
+        (quest ? " " + t.t("Nobody can buy a ticket in the store until you resume.") : ""),
       confirmLabel: t.t("Pause"),
     });
     if (ok) await transition("pause");
   };
 
+  // Teams an organiser can email about a change: an invited event's, with a contact email.
+  const emailable = quest || event.party ? 0 : teams.filter((tm) => tm.email?.trim()).length;
+
   const cancel = async () => {
+    const mail = { on: true };
+    const text = event.public_for_sale
+      ? t.t('It leaves the store for good and teams get a "cancelled" screen on their next refresh. Tickets already bought are not refunded, and buyers are not emailed. To stop selling for a while, use Stop selling instead. Enter your password to confirm.')
+      : event.state === "scheduled"
+      ? t.t('The event will be marked cancelled and never start. Teams already invited keep their links but get a "cancelled" screen if they open the app. Enter your password to confirm.')
+      : t.t('The event ends now. Live pings stop, the leaderboard freezes, and teams get a "cancelled" screen on their next refresh. Enter your password to confirm.');
     const password = await dialogs.password({
       title: t.t("Cancel event?"),
-      message: event.state === "scheduled"
-        ? t.t('The event will be marked cancelled and never start. Teams already invited keep their links but get a "cancelled" screen if they open the app. Enter your password to confirm.')
-        : t.t('The event ends now. Live pings stop, the leaderboard freezes, and teams get a "cancelled" screen on their next refresh. Enter your password to confirm.'),
+      message: emailable > 0 ? (
+        <>
+          {text}
+          <br />
+          <label className="ev-check">
+            <input type="checkbox" defaultChecked onChange={(e) => { mail.on = e.target.checked; }} />
+            {t.plural(emailable, { one: t.t("Email the team that the event is cancelled"), other: t.t("Email the {{n}} teams that the event is cancelled") })}
+          </label>
+        </>
+      ) : text,
       cancelLabel: t.t("Keep event"),
       confirmLabel: t.t("Cancel event"),
       danger: true,
     });
     if (!password) return;
     try {
-      await api.cancelEvent(event.id, password);
+      await api.cancelEvent(event.id, password, emailable > 0 && mail.on);
       toast.ok(t.t("Event cancelled"));
       reload();
     } catch (e) {
@@ -69,7 +86,7 @@ export function LifecycleActions({ event, teams, adventure, user, reload }: { ev
     const password = await dialogs.password({
       title: t.t("End event?"),
       message: t.t("The event ends now for every team. Teams still playing keep the points they have, the results and recaps open, and players are signed out. Enter your password to confirm."),
-      cancelLabel: t.t("Keep playing"),
+      cancelLabel: t.t("Keep it running"),
       confirmLabel: t.t("End event"),
       danger: true,
     });
@@ -83,9 +100,19 @@ export function LifecycleActions({ event, teams, adventure, user, reload }: { ev
     }
   };
 
+  const resendHost = async () => {
+    try {
+      await api.resendHostLink(event.id);
+      toast.ok(t.t("Host link sent to the buyer"));
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "no_buyer") toast.err(t.t("Nobody bought this hosted event, so there is no buyer to send the link to."));
+      else toast.err(e);
+    }
+  };
+
   const more: MenuItem[] = [];
   const buttons: React.ReactNode[] = [];
-  const control = { name: "event-control" as const, id: event.id };
+  const control = { name: "event-control" as const, id: event.id, quest };
   if (live) {
     buttons.push(
       <a key="live" className="btn primary" href={href(control)} title={t.t("Live leaderboard, map, and activity")}>
@@ -166,6 +193,9 @@ export function LifecycleActions({ event, teams, adventure, user, reload }: { ev
       title: t.t("Download a calendar invite (.ics) you can forward to participants"),
     });
   }
+  if (event.party && cancellable) {
+    more.push({ label: t.t("Resend host link to buyer"), icon: <Mail size={ICON.sm} aria-hidden />, title: t.t("Emails the buyer their host page link again"), onClick: () => void resendHost() });
+  }
   if (event.state !== "cancelled" && event.live_token) {
     more.push({ label: t.t("Live view screen…"), icon: <MonitorPlay size={ICON.sm} aria-hidden />, title: t.t("Open the link on any screen — no login needed."), onClick: () => setOpen("live-view") });
   }
@@ -186,7 +216,7 @@ export function LifecycleActions({ event, teams, adventure, user, reload }: { ev
         </Dialog>
       )}
       {open === "start" && <StartDialog event={event} teams={teams} onClose={() => setOpen(null)} onStart={() => { setOpen(null); void transition("start"); }} />}
-      {open === "schedule" && <ScheduleDialog event={event} onClose={() => setOpen(null)} onDone={reload} />}
+      {open === "schedule" && <ScheduleDialog event={event} emailable={emailable} onClose={() => setOpen(null)} onDone={reload} />}
       {open === "live-view" && <LiveViewDialog event={event} onChanged={reload} onClose={() => setOpen(null)} />}
       {open === "top-up" && <TopUpDialog event={event} adventure={adventure} user={user} onClose={() => setOpen(null)} onDone={reload} />}
     </>
@@ -207,7 +237,7 @@ export function useInviteAll(event: EventInfo, teams: Team[]) {
           {withEmail === 1
             ? t.t("One team will receive an email with their player links + a calendar invite.")
             : t.t("{{n}} teams will receive an email with their player links + a calendar invite.", { n: withEmail })}{" "}
-          {t.t("Each link is single-use: opening it claims that player's slot. Teams without a contact email are skipped.")}
+          {t.t("Each link signs in as one player, so ask teams not to share them. Teams without a contact email are skipped.")}
         </>
       ),
       confirmLabel: t.t("Send invitations"),
@@ -260,10 +290,12 @@ function StartDialog({ event, teams, onClose, onStart }: { event: EventInfo; tea
   );
 }
 
-function ScheduleDialog({ event, onClose, onDone }: { event: EventInfo; onClose: () => void; onDone: () => void }) {
+function ScheduleDialog({ event, emailable, onClose, onDone }: { event: EventInfo; emailable: number; onClose: () => void; onDone: () => void }) {
   const t = useT();
   const toast = useToast();
   const [when, setWhen] = useState(() => toLocalInput(event.scheduled_at));
+  // A new time sends the invitations again, with the updated calendar invite.
+  const [mail, setMail] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const save = async (iso: string) => {
@@ -271,6 +303,11 @@ function ScheduleDialog({ event, onClose, onDone }: { event: EventInfo; onClose:
     try {
       await api.patchEvent(event.id, { scheduled_at: iso });
       toast.ok(iso ? t.t("Schedule updated") : t.t("Auto-start cleared"));
+      if (iso && mail && emailable > 0) {
+        const r = await api.sendInvitations(event.id);
+        if (r?.failed) toast.err(t.t("Sent {{sent}}, failed {{failed}}, skipped {{skipped}}", { sent: r.sent || 0, failed: r.failed, skipped: r.skipped_no_email || 0 }));
+        else toast.ok(t.t("Sent {{sent}} invitation(s)", { sent: r?.sent || 0 }));
+      }
       onClose();
       onDone();
     } catch (e) {
@@ -301,6 +338,12 @@ function ScheduleDialog({ event, onClose, onDone }: { event: EventInfo; onClose:
       <Field label={t.t("Auto-start at")} error={err}>
         <input type="datetime-local" value={when} autoFocus onChange={(e) => { setWhen(e.target.value); setErr(null); }} />
       </Field>
+      {emailable > 0 && (
+        <label className="ev-check">
+          <input type="checkbox" checked={mail} onChange={(e) => setMail(e.target.checked)} />
+          {t.plural(emailable, { one: t.t("Email the team its invitation again, with the new time"), other: t.t("Email the {{n}} teams their invitations again, with the new time") })}
+        </label>
+      )}
     </Dialog>
   );
 }
@@ -345,25 +388,34 @@ export function RenameDialog({ event, onClose, onDone }: { event: EventInfo; onC
 interface Pricing {
   player_cents?: number;
   currency?: string;
+  vat_excluded?: boolean;
 }
 
 /**
  * Buy more player slots on the event's pass. Top-ups are linear: the
  * free band was spent on the original pass. Trusted orgs may add it to
- * their invoice instead of paying now.
+ * their invoice instead of paying now. initial is how many to offer;
+ * beforeCheckout runs before the page leaves for the payment provider.
  */
-function TopUpDialog({ event, adventure, user, onClose, onDone }: { event: EventInfo; adventure: Adventure | null; user: Whoami; onClose: () => void; onDone: () => void }) {
+export function TopUpDialog({ event, adventure, user, initial, onClose, onDone, beforeCheckout }: { event: EventInfo; adventure: Adventure | null; user: Whoami; initial?: number; onClose: () => void; onDone: () => void; beforeCheckout?: () => void }) {
   const t = useT();
   const toast = useToast();
   const pricing = (user.pricing ?? {}) as Pricing;
   const price = pricing.player_cents || 4900;
   const currency = pricing.currency || "SEK";
   const trusted = !!user.memberships.find((m) => m.org_id === user.org_id)?.trusted;
-  const [n, setN] = useState("5");
+  const dialogs = useDialogs();
+  const [n, setN] = useState(String(initial ?? 5));
   const [busy, setBusy] = useState(false);
   const count = Math.max(1, Number.parseInt(n, 10) || 0);
   const money = (c: number) => fmtMoney(c, currency, t.current());
   const submit = async (provider?: string) => {
+    // An invoice commits the money in one click: say what goes on it first.
+    if (provider === "invoice" && !(await dialogs.confirm({
+      title: t.t("Add to invoice?"),
+      message: t.t("{{amount}} for {{n}} players goes on your organisation's next invoice.", { amount: money(count * price), n: count }),
+      confirmLabel: t.t("Add to invoice"),
+    }))) return;
     setBusy(true);
     try {
       const r = await api.topUp({ adventure_slug: event.adventure_slug, max_players: count, top_up_assignment_id: event.assignment_id, ...(provider ? { provider } : {}) });
@@ -373,7 +425,10 @@ function TopUpDialog({ event, adventure, user, onClose, onDone }: { event: Event
         onDone();
         return;
       }
-      if (r.checkout_url) location.href = r.checkout_url;
+      if (r.checkout_url) {
+        beforeCheckout?.();
+        location.href = r.checkout_url;
+      }
     } catch (e) {
       toast.err(e);
     } finally {
@@ -404,7 +459,7 @@ function TopUpDialog({ event, adventure, user, onClose, onDone }: { event: Event
       <p>
         {t.t("Total: ")}
         <strong>{money(count * price)}</strong>{" "}
-        <span className="ev-muted">{t.t("({{price}} per added player)", { price: money(price) })}</span>
+        <span className="ev-muted">{t.t("({{price}} per added player)", { price: money(price) })} {pricing.vat_excluded ? t.t("excl. VAT") : t.t("incl. VAT")}</span>
       </p>
     </Dialog>
   );

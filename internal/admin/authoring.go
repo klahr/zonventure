@@ -53,8 +53,10 @@ type adventureEditDTO struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Author      string `json:"author"`
-	IntroText   string `json:"intro_text"`
-	OutroText   string `json:"outro_text"`
+	// OriginalAuthor credits who wrote an imported adventure.
+	OriginalAuthor string `json:"original_author,omitempty"`
+	IntroText      string `json:"intro_text"`
+	OutroText      string `json:"outro_text"`
 	// BuyerNote goes to the buyer in the ticket or host email, not to players.
 	BuyerNote string `json:"buyer_note"`
 	// Area is where it is played, as the store card shows it.
@@ -841,7 +843,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		brief, backdrop, style             []byte
 	)
 	if err := db.QueryRowContext(ctx, `
-		SELECT id, slug, title, description, author, intro_text, outro_text, buyer_note, area,
+		SELECT id, slug, title, description, author, original_author, intro_text, outro_text, buyer_note, area,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font,
 		       heading_font, corners, cards, card_outline, backdrop, look_style,
 		       language,
@@ -849,7 +851,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		       published, org_id, strict_assets, COALESCE(cheat_password, ''),
 		       start_lat, start_lng, start_label, start_radius_m, brief
 		FROM adventures WHERE slug = $1
-	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
+	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author, &a.OriginalAuthor,
 		&a.IntroText, &a.OutroText, &a.BuyerNote, &a.Area,
 		&accent, &accent2, &bg, &ink, &submitBG, &a.Font, &a.HeadingFont, &a.Corners, &a.Cards, &a.CardOutline, &backdrop, &style, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets, &a.CheatPassword,
 		&startLat, &startLng, &a.StartLabel, &startRadius, &brief); err != nil {
@@ -907,9 +909,9 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 	// Count events currently running with this adventure. We treat
 	// 'running' as "any change to a puzzle ships immediately to a real
 	// team" — that's the case worth warning about. Scheduled events
-	// haven't pushed state yet, so we leave them out.
+	// haven't pushed state yet, so we leave them out, and an author's dev ticket too.
 	if err := db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND state = 'running'
+		SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND state = 'running' AND NOT dev
 	`, a.Slug).Scan(&a.RunningEventCount); err != nil {
 		return nil, err
 	}

@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -40,14 +42,13 @@ func isASCIIPrintable(s string) bool {
 // boot via Validate so a typo doesn't manifest as a half-broken flow
 // in production.
 //
-// HostedDomain (Google's `hd` claim) is mandatory for two reasons:
-// (1) it locks the deployment to a single Google Workspace tenant, so
-// a misconfigured client_id can't accept logins from arbitrary Gmail
-// users; (2) it lets us safely link by email match on first sign-in,
-// since Google sets email_verified=true for managed-domain users.
+// HostedDomain is optional. When set, a sign-in must carry Google's
+// `hd` claim for it or, for IdPs without `hd` (Entra, Okta), an email
+// at that domain. Leave it empty only with a tenant-scoped issuer,
+// which already restricts who can sign in; boot logs a warning.
 //
 // OrgName names the organisation that JIT-provisioned users join. If
-// empty, the hosted domain is used. The first SSO user becomes the
+// empty, the hosted domain (or else the issuer's host) is used. The first SSO user becomes the
 // org_admin; subsequent users join as org_member.
 type OIDCConfig struct {
 	Enabled      bool
@@ -83,14 +84,19 @@ func (c OIDCConfig) Validate() error {
 	if strings.TrimSpace(c.ClientSecret) == "" {
 		missing = append(missing, "ZV_OIDC_CLIENT_SECRET")
 	}
-	if strings.TrimSpace(c.HostedDomain) == "" {
-		missing = append(missing, "ZV_OIDC_HOSTED_DOMAIN")
-	}
 	if strings.TrimSpace(c.RedirectURL) == "" {
 		missing = append(missing, "ZV_OIDC_REDIRECT_URL")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("oidc: ZV_OIDC_ENABLED=1 but missing %s", strings.Join(missing, ", "))
+	}
+	for _, f := range []struct{ name, value string }{
+		{"ZV_OIDC_ISSUER", c.Issuer},
+		{"ZV_OIDC_REDIRECT_URL", c.RedirectURL},
+	} {
+		if u, err := url.Parse(strings.TrimSpace(f.value)); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return fmt.Errorf("oidc: %s=%q is not an http(s) URL (e.g. https://idp.example.com)", f.name, f.value)
+		}
 	}
 	return nil
 }
@@ -99,17 +105,30 @@ func (c OIDCConfig) Validate() error {
 // returning false means "SSO not configured" — handlers and UI code
 // branch on Enabled() before doing anything else.
 type OIDC struct {
-	cfg      OIDCConfig
-	provider *oidc.Provider
+	cfg  OIDCConfig
+	live atomic.Pointer[oidcLive]
+}
+
+// oidcLive is what discovery yields; nil until it has succeeded.
+type oidcLive struct {
 	verifier *oidc.IDTokenVerifier
 	oauth    *oauth2.Config
 }
+
+// oidcRetryInterval is how often discovery is retried after a failure
+// at boot.
+var oidcRetryInterval = time.Minute
 
 // NewOIDC performs OpenID Connect discovery against the issuer's
 // /.well-known/openid-configuration and builds an ID-token verifier
 // bound to the configured client_id. Returns (nil, nil) when SSO is
 // disabled — callers should treat that as "no SSO" rather than an
 // error so a self-host without SSO continues to boot cleanly.
+//
+// A config error is returned; a failed discovery (IdP outage, DNS,
+// egress firewall) is not: it logs a warning, SSO stays hidden
+// (Enabled is false) and discovery is retried in the background, so
+// password logins and players keep working.
 func NewOIDC(ctx context.Context, cfg OIDCConfig) (*OIDC, error) {
 	if !cfg.Enabled {
 		return nil, nil
@@ -117,11 +136,6 @@ func NewOIDC(ctx context.Context, cfg OIDCConfig) (*OIDC, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	provider, err := oidc.NewProvider(ctx, cfg.Issuer)
-	if err != nil {
-		return nil, fmt.Errorf("oidc: discovery against %s failed: %w", cfg.Issuer, err)
-	}
-	verifier := provider.Verifier(&oidc.Config{ClientID: cfg.ClientID})
 	if cfg.ProviderName == "" {
 		cfg.ProviderName = "google"
 	}
@@ -131,23 +145,60 @@ func NewOIDC(ctx context.Context, cfg OIDCConfig) (*OIDC, error) {
 	if cfg.OrgName == "" {
 		cfg.OrgName = cfg.HostedDomain
 	}
-	return &OIDC{
-		cfg:      cfg,
-		provider: provider,
-		verifier: verifier,
-		oauth: &oauth2.Config{
-			ClientID:     cfg.ClientID,
-			ClientSecret: cfg.ClientSecret,
-			Endpoint:     provider.Endpoint(),
-			RedirectURL:  cfg.RedirectURL,
-			Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
-		},
-	}, nil
+	if cfg.OrgName == "" {
+		if u, err := url.Parse(cfg.Issuer); err == nil && u.Hostname() != "" {
+			cfg.OrgName = u.Hostname()
+		} else {
+			cfg.OrgName = cfg.ProviderName
+		}
+	}
+	o := &OIDC{cfg: cfg}
+	if err := o.discover(ctx); err != nil {
+		logx.Warn("auth.oidc.discovery_failed", "issuer", cfg.Issuer, "err", err.Error(),
+			"msg", "SSO is hidden until the issuer answers; retrying in the background")
+		go o.retryDiscovery(context.WithoutCancel(ctx))
+	}
+	return o, nil
 }
 
-// Enabled tells the rest of the binary whether to surface SSO. Safe
-// to call on a nil receiver.
-func (o *OIDC) Enabled() bool { return o != nil && o.cfg.Enabled }
+func (o *OIDC) discover(ctx context.Context) error {
+	provider, err := oidc.NewProvider(ctx, o.cfg.Issuer)
+	if err != nil {
+		return fmt.Errorf("oidc: discovery against %s failed: %w", o.cfg.Issuer, err)
+	}
+	o.live.Store(&oidcLive{
+		verifier: provider.Verifier(&oidc.Config{ClientID: o.cfg.ClientID}),
+		oauth: &oauth2.Config{
+			ClientID:     o.cfg.ClientID,
+			ClientSecret: o.cfg.ClientSecret,
+			Endpoint:     provider.Endpoint(),
+			RedirectURL:  o.cfg.RedirectURL,
+			Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
+		},
+	})
+	return nil
+}
+
+func (o *OIDC) retryDiscovery(ctx context.Context) {
+	for {
+		time.Sleep(oidcRetryInterval)
+		if err := o.discover(ctx); err != nil {
+			logx.Warn("auth.oidc.discovery_failed", "issuer", o.cfg.Issuer, "err", err.Error())
+			continue
+		}
+		logx.Info("auth.oidc.ready", "issuer", o.cfg.Issuer, "hosted_domain", o.cfg.HostedDomain)
+		return
+	}
+}
+
+// Enabled tells the rest of the binary whether to surface SSO: it is
+// configured and discovery has succeeded. Safe to call on a nil
+// receiver.
+func (o *OIDC) Enabled() bool { return o != nil && o.cfg.Enabled && o.live.Load() != nil }
+
+// Configured reports whether SSO is switched on, even while discovery
+// is still pending. Safe to call on a nil receiver.
+func (o *OIDC) Configured() bool { return o != nil && o.cfg.Enabled }
 
 // ButtonLabel is what the login UI renders inside the SSO button.
 func (o *OIDC) ButtonLabel() string {
@@ -186,7 +237,7 @@ func (o *OIDC) ProviderName() string {
 // the password-login path to redirect SSO-bound users away from
 // password fallback.
 func (o *OIDC) MatchesHostedDomain(email string) bool {
-	if !o.Enabled() {
+	if !o.Enabled() || o.cfg.HostedDomain == "" {
 		return false
 	}
 	at := strings.LastIndex(email, "@")
@@ -235,17 +286,20 @@ func (h *Handlers) OIDCLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setOIDCStateCookie(w, r, state+oidcStateSep+nonce, h.SecureCookie)
-	authURL := h.OIDC.oauth.AuthCodeURL(state,
+	opts := []oauth2.AuthCodeOption{
 		oidc.Nonce(nonce),
-		// `hd` parameter on the auth URL is a hint to Google's account
-		// chooser; the post-callback `hd` claim check is what actually
-		// enforces the domain restriction.
-		oauth2.SetAuthURLParam("hd", h.OIDC.cfg.HostedDomain),
 		// Always show the account picker so a user with multiple
 		// Google accounts in the browser doesn't get auto-signed-in
 		// to the wrong one.
 		oauth2.SetAuthURLParam("prompt", "select_account"),
-	)
+	}
+	if hd := h.OIDC.cfg.HostedDomain; hd != "" {
+		// `hd` parameter on the auth URL is a hint to Google's account
+		// chooser; the post-callback domain check is what actually
+		// enforces the restriction.
+		opts = append(opts, oauth2.SetAuthURLParam("hd", hd))
+	}
+	authURL := h.OIDC.live.Load().oauth.AuthCodeURL(state, opts...)
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
@@ -302,7 +356,8 @@ func (h *Handlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	expectedNonce := parts[1]
 
-	tok, err := h.OIDC.oauth.Exchange(r.Context(), code)
+	live := h.OIDC.live.Load()
+	tok, err := live.oauth.Exchange(r.Context(), code)
 	if err != nil {
 		logx.Warn("auth.oidc.exchange_failed", "err", err.Error(), "ip", ip)
 		Record(r.Context(), h.DB, AuditEvent{
@@ -321,7 +376,7 @@ func (h *Handlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		oidcRedirectErr(w, r, "no_id_token")
 		return
 	}
-	idTok, err := h.OIDC.verifier.Verify(r.Context(), rawID)
+	idTok, err := live.verifier.Verify(r.Context(), rawID)
 	if err != nil {
 		logx.Warn("auth.oidc.verify_failed", "err", err.Error(), "ip", ip)
 		Record(r.Context(), h.DB, AuditEvent{
@@ -348,11 +403,11 @@ func (h *Handlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		oidcRedirectErr(w, r, "nonce_mismatch")
 		return
 	}
-	if !strings.EqualFold(claims.HD, h.OIDC.cfg.HostedDomain) {
+	if !h.OIDC.domainAllowed(claims) {
 		// Defence in depth: the auth-URL `hd` parameter is only a hint;
-		// the post-callback claim is the enforcement point. A user
+		// the post-callback check is the enforcement point. A user
 		// outside the domain who somehow reaches this code path with a
-		// valid Google ID token gets rejected here.
+		// valid ID token gets rejected here.
 		Record(r.Context(), h.DB, AuditEvent{
 			Event: EventLogin, OK: false, Username: claims.Email, IP: ip, UserAgent: ua,
 			Reason: "oidc_hd_mismatch",
@@ -458,6 +513,21 @@ func (h *Handlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- claims, provisioning, helpers ---------------------------------
+
+// domainAllowed enforces HostedDomain: Google's `hd` claim must match,
+// or, for IdPs that send no `hd`, the email's domain must. With no
+// HostedDomain configured every identity the issuer vouches for passes.
+func (o *OIDC) domainAllowed(c oidcClaims) bool {
+	hd := o.cfg.HostedDomain
+	if hd == "" {
+		return true
+	}
+	if c.HD != "" {
+		return strings.EqualFold(c.HD, hd)
+	}
+	at := strings.LastIndex(c.Email, "@")
+	return at >= 0 && strings.EqualFold(strings.TrimSpace(c.Email[at+1:]), hd)
+}
 
 // oidcClaims captures the subset of the ID token we read. Other claims
 // (name, picture, locale) are deliberately ignored — the user record

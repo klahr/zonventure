@@ -18,7 +18,7 @@ export interface SetupStepProps {
  * dashboard until the first event exists: each step one concrete
  * action with its why underneath, ticked off as it gets done.
  */
-export function SetupCard({ lead, steps }: { lead: string; steps: SetupStepProps[] }) {
+export function SetupCard({ lead, steps, foot }: { lead: string; steps: SetupStepProps[]; foot?: ReactNode }) {
   const t = useT();
   const done = steps.filter((s) => s.done).length;
   return (
@@ -33,6 +33,7 @@ export function SetupCard({ lead, steps }: { lead: string; steps: SetupStepProps
           <SetupStep key={i} n={i + 1} {...s} />
         ))}
       </ol>
+      {foot}
     </section>
   );
 }

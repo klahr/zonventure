@@ -17,7 +17,8 @@ import (
 //     /api/version (so monitoring / probes still work even when
 //     mutations are paused), and the admin migrate + maintenance
 //     toggles (so the operator can still manage the flag and run
-//     the bundle export from the GUI without exiting the mode).
+//     the bundle export from the GUI without exiting the mode), and
+//     the platform admin's own settings saves.
 //
 // Use case: an org-bundle export should run against a static
 // snapshot. Maintenance mode is the operator-visible signal to
@@ -43,9 +44,12 @@ func maintenanceFreeze(next http.Handler) http.Handler {
 		w.Header().Set("Retry-After", "60")
 		// JSON shape mirrors httpx.Error so frontend handling stays
 		// uniform — clients see the same `{ "error": "..." }` body
-		// they get from any other 4xx/5xx.
-		httpx.Error(w, http.StatusServiceUnavailable,
-			"instance is in maintenance mode — mutations are paused while the operator runs an export or upgrade")
+		// they get from any other 4xx/5xx — plus the code the player
+		// app turns into its "paused for maintenance" message.
+		httpx.JSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "Saving is paused for maintenance. Try again in a minute.",
+			"code":  "maintenance",
+		})
 	})
 }
 
@@ -58,6 +62,19 @@ func isMaintenanceAllowlisted(path string) bool {
 		"/api/admin/migrate/maintenance",
 		"/api/admin/migrate/export",
 		"/api/admin/migrate/import":
+		return true
+	}
+	// The platform admin's settings (Settings → System, Pricing,
+	// Legal): admins often fix them during a maintenance window, and
+	// they sit outside any organisation's bundle. The routes
+	// themselves are full-admin only.
+	switch path {
+	case "/api/admin/settings/signup",
+		"/api/admin/settings/admin-totp",
+		"/api/admin/pricing",
+		"/api/admin/legal",
+		"/api/admin/legal/preview",
+		"/api/admin/logs/level":
 		return true
 	}
 	// A narrow auth allowlist so a stale-session admin can sign back

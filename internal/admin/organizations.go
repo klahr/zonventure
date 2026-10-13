@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/orgslug"
@@ -24,18 +25,35 @@ type assignmentDTO struct {
 	MaxPlayers     int    `json:"max_players"`
 	CreatedAt      string `json:"created_at"`
 	EventID        *int64 `json:"event_id,omitempty"`
+	// EventCancelled says that event was cancelled: it wasn't held.
+	EventCancelled bool `json:"event_cancelled,omitempty"`
 }
 
 type orgMemberDTO struct {
 	ID            int64  `json:"id"`
 	Username      string `json:"username"`
 	Role          string `json:"role"` // org_admin | org_member
+	Email         string `json:"email,omitempty"`
 	EmailVerified bool   `json:"email_verified"`
+	// TOTPEnabled: the member signs in with two-factor authentication.
+	TOTPEnabled bool `json:"totp_enabled"`
 	// ActiveEventsOwned is the count of non-terminal events
 	// (scheduled / running / paused) this member created in this org.
 	// Surfaced so the remove-member UI can warn that destroying the
 	// member orphans their owned events. 0 means "safe to remove".
 	ActiveEventsOwned int `json:"active_events_owned"`
+}
+
+// pendingInvitationDTO is an invitation to join the organisation that
+// is not yet answered. It names the account by the address it was
+// invited at, never its username: the org's admins typed that address.
+type pendingInvitationDTO struct {
+	UserID    int64  `json:"user_id"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	CreatedAt string `json:"created_at"`
+	// Declined: the person said no. Inviting them again asks anew.
+	Declined bool `json:"declined,omitempty"`
 }
 
 type organizationDTO struct {
@@ -44,13 +62,17 @@ type organizationDTO struct {
 	// Slug powers the per-org store URL (/o/{slug}/store). Auto-derived
 	// from name at creation time, editable by org_admin afterwards.
 	// See internal/orgslug.
-	Slug          string          `json:"slug,omitempty"`
-	CreatedAt     string          `json:"created_at"`
-	Members       []orgMemberDTO  `json:"members"`
-	Assignments   []assignmentDTO `json:"assignments"`
-	PlayersTotal  int             `json:"players_total"`
-	EventsTotal   int             `json:"events_total"`
-	EventsRunning int             `json:"events_running"`
+	Slug        string          `json:"slug,omitempty"`
+	CreatedAt   string          `json:"created_at"`
+	Members     []orgMemberDTO  `json:"members"`
+	Assignments []assignmentDTO `json:"assignments"`
+	// OwnAdventures are the org's published adventures, which the
+	// operator may grant an event pass for besides the catalog's.
+	OwnAdventures   []ownAdventureDTO `json:"own_adventures"`
+	PlayersTotal    int               `json:"players_total"`
+	EventsTotal     int               `json:"events_total"`
+	EventsRunning   int               `json:"events_running"`
+	AdventuresTotal int               `json:"adventures_total"`
 	// HasLogo is true when the org has a brand logo uploaded. The
 	// frontend uses it to decide whether to render the preview vs
 	// an upload placeholder, without speculatively GETting the
@@ -69,6 +91,11 @@ type organizationDTO struct {
 	// VerifiedCreator = the org's listings skip review and the store
 	// shows a badge (listing_review.go). Toggled by global admins only.
 	VerifiedCreator bool `json:"verified_creator"`
+	// RequireTOTP = every member must use two-factor authentication.
+	// Set by the org's admins (SetOrgRequireTOTP).
+	RequireTOTP bool `json:"require_totp"`
+	// Invitations are the pending ones, for whoever manages members.
+	Invitations []pendingInvitationDTO `json:"invitations,omitempty"`
 }
 
 /* ---------------- Admin-only: organizations CRUD ---------------- */
@@ -81,12 +108,13 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM player_slots ps
 		         JOIN teams t ON t.id = ps.team_id
 		         JOIN events ar ON ar.id = t.event_id
-		        WHERE ar.org_id = o.id) AS players_total,
+		        WHERE ar.org_id = o.id AND ar.state <> 'cancelled') AS players_total,
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
+		       (SELECT COUNT(*) FROM adventures a WHERE a.org_id = o.id),
 		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo,
 		       (o.trusted <> 0) AS trusted,
-		       o.is_publisher, o.quiz_trail_enabled, o.verified_creator
+		       o.is_publisher, o.quiz_trail_enabled, o.verified_creator, o.require_totp
 		FROM organizations o
 		ORDER BY LOWER(o.name)
 	`)
@@ -98,7 +126,7 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	out := []organizationDTO{}
 	for rows.Next() {
 		o := organizationDTO{Members: []orgMemberDTO{}, Assignments: []assignmentDTO{}}
-		if err := rows.Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted, &o.IsPublisher, &o.PartyAdventures, &o.VerifiedCreator); err != nil {
+		if err := rows.Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.AdventuresTotal, &o.HasLogo, &o.Trusted, &o.IsPublisher, &o.PartyAdventures, &o.VerifiedCreator, &o.RequireTOTP); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -119,13 +147,15 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 
 // GetOrganization returns a single organization with members, assignments
 // and counts. Callable by a global admin, or by a user who is in that org.
+// An event host (org_member) gets no members or invitations: managing
+// them is the org admins', and the console hides Members from them.
 func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 	id, ok := orgIDFromURL(r)
 	if !ok {
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
-	if me.Role != auth.RoleAdmin {
+	if !readsAsAdmin(me) {
 		if me.OrgID == nil || *me.OrgID != id {
 			httpx.Error(w, http.StatusForbidden, "forbidden")
 			return
@@ -134,19 +164,20 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 	var o organizationDTO
 	o.Members = []orgMemberDTO{}
 	o.Assignments = []assignmentDTO{}
+	o.OwnAdventures = []ownAdventureDTO{}
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT o.id, o.name, o.slug, o.created_at,
 		       (SELECT COUNT(*) FROM player_slots ps
 		         JOIN teams t ON t.id = ps.team_id
 		         JOIN events ar ON ar.id = t.event_id
-		        WHERE ar.org_id = o.id) AS players_total,
+		        WHERE ar.org_id = o.id AND ar.state <> 'cancelled') AS players_total,
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
 		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo,
 		       (o.trusted <> 0) AS trusted,
-		       o.is_publisher, o.quiz_trail_enabled, o.verified_creator
+		       o.is_publisher, o.quiz_trail_enabled, o.verified_creator, o.require_totp
 		FROM organizations o WHERE o.id = $1
-	`, id).Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted, &o.IsPublisher, &o.PartyAdventures, &o.VerifiedCreator)
+	`, id).Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted, &o.IsPublisher, &o.PartyAdventures, &o.VerifiedCreator, &o.RequireTOTP)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "organization not found")
 		return
@@ -155,12 +186,22 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-	if err := h.loadOrgMembers(r.Context(), &o); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "members failed")
-		return
+	if me.Role != auth.RoleOrgMember && me.Role != auth.RoleOrgWriter {
+		if err := h.loadOrgMembers(r.Context(), &o); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "members failed")
+			return
+		}
+		if err := h.loadOrgInvitations(r.Context(), &o); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "invitations failed")
+			return
+		}
 	}
 	if err := h.loadOrgAssignments(r.Context(), &o); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "assignments failed")
+		return
+	}
+	if err := h.loadOwnAdventures(r.Context(), &o); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "adventures failed")
 		return
 	}
 	httpx.JSON(w, http.StatusOK, o)
@@ -257,6 +298,7 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusConflict, "name already used")
 		return
 	}
+	noteTarget(r, req.Name)
 	httpx.JSON(w, http.StatusCreated, organizationDTO{
 		ID: id, Name: req.Name, Slug: slug, Members: []orgMemberDTO{}, Assignments: []assignmentDTO{},
 	})
@@ -423,6 +465,7 @@ func (h *Handlers) SetOrgTrusted(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusNotFound, "organization not found")
 		return
 	}
+	noteAction(r, onOff(req.Trusted))
 	httpx.JSON(w, http.StatusOK, map[string]any{"trusted": req.Trusted})
 }
 
@@ -449,6 +492,7 @@ func (h *Handlers) SetOrgPartyAdventures(w http.ResponseWriter, r *http.Request)
 		httpx.Error(w, http.StatusNotFound, "organization not found")
 		return
 	}
+	noteAction(r, onOff(req.Enabled))
 	httpx.JSON(w, http.StatusOK, map[string]any{"enabled": req.Enabled})
 }
 
@@ -484,28 +528,38 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 
 type createOrgMemberRequest struct {
 	Username string `json:"username"`
-	Email    string `json:"email"` // optional; only consumed on the new-user branch
-	Password string `json:"password"`
-	Role     string `json:"role"` // org_admin | org_member
+	Email    string `json:"email"`    // required from an org admin; a global admin may name a username instead
+	Password string `json:"password"` // a global admin's alternative to inviting a new user by email
+	Role     string `json:"role"`     // org_admin | org_member | org_writer
 }
 
-// CreateOrgMember adds a new user into an organization as either org_admin
-// or org_member. Callable by global admin, or by an org_admin of the same
-// organization. The user's initial password is set here (the seed admin
-// flow is out-of-band for admins, but these are ordinary org accounts).
-// CreateOrgMember adds a user to this organisation. Two flows behind
+// orgRole reports whether role is one an organisation's member may hold.
+func orgRole(role string) bool {
+	return role == auth.RoleOrgAdmin || role == auth.RoleOrgMember || role == auth.RoleOrgWriter
+}
+
+// CreateOrgMember adds a user to this organisation. Callable by global
+// admin, or by an org_admin of the same organization. Two flows behind
 // one endpoint:
 //
-//   - Username doesn't exist yet → create the user (legacy path) AND
-//     insert the org_memberships row. Password is required.
-//   - Username exists → only insert the org_memberships row (the user
-//     is already onboarded; this just grants an additional org). Any
-//     password supplied in the request is ignored — we don't want
-//     admins accidentally resetting someone's credentials by clicking
-//     "Add to org".
+//   - The email address is an existing account's → invite them: an
+//     org_invitations row the user accepts or declines from their
+//     console (AcceptOrgInvitation), plus an email. No membership
+//     until they accept. The username and password in the request are
+//     ignored — we don't want admins accidentally resetting someone's
+//     credentials by clicking "Add to org".
+//   - Otherwise → create the user with the username and no password,
+//     and invite them the same way: the email's link lets them choose
+//     their password, then they accept from their console. A global
+//     admin may instead give an initial password, which creates the
+//     user AND the org_memberships row at once.
 //
-// Refuses to add admins (Role == admin) — admins are global and have
-// no memberships. Returns 409 if the user is already a member.
+// An existing account is found only by its exact email address, and
+// the answer is the same 202 either way, so an org admin can't probe
+// which addresses have accounts. A global admin, who sees every
+// account anyway, may also name an existing account by username (the
+// Organizations page's typeahead). Inviting an admin account does
+// nothing; an existing member is a 409.
 func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 	orgID, ok := orgIDFromURL(r)
 	if !ok {
@@ -532,73 +586,93 @@ func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "email must contain @")
 		return
 	}
-	if req.Role != auth.RoleOrgAdmin && req.Role != auth.RoleOrgMember {
-		httpx.Error(w, http.StatusBadRequest, "role must be 'org_admin' or 'org_member'")
+	// A new user is invited by email to set their own password; only a
+	// global admin may set one for them instead.
+	invite := me.Role != auth.RoleAdmin || req.Password == ""
+	if me.Role != auth.RoleAdmin && req.Email == "" {
+		httpx.Error(w, http.StatusBadRequest, "email required")
+		return
+	}
+	if !orgRole(req.Role) {
+		httpx.Error(w, http.StatusBadRequest, "role must be 'org_admin', 'org_member' or 'org_writer'")
 		return
 	}
 
 	// Resolve the user — nil row → new-user flow, populated row →
-	// add-existing-user-to-org flow.
+	// invite-existing-user flow.
 	var (
 		existingID      int64
 		existingIsAdmin bool
+		lookupErr       = sql.ErrNoRows
 	)
-	lookupErr := h.DB.QueryRowContext(r.Context(),
-		`SELECT id, is_admin FROM users WHERE username = $1`, req.Username,
-	).Scan(&existingID, &existingIsAdmin)
+	if req.Email != "" {
+		lookupErr = h.DB.QueryRowContext(r.Context(),
+			`SELECT id, is_admin FROM users WHERE email = $1`, req.Email,
+		).Scan(&existingID, &existingIsAdmin)
+	} else if me.Role == auth.RoleAdmin {
+		lookupErr = h.DB.QueryRowContext(r.Context(),
+			`SELECT id, is_admin FROM users WHERE username = $1`, req.Username,
+		).Scan(&existingID, &existingIsAdmin)
+	}
 	if lookupErr != nil && !errors.Is(lookupErr, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-	if lookupErr == nil {
-		if existingIsAdmin {
-			httpx.Error(w, http.StatusBadRequest, "admins are not org members")
+	if lookupErr != nil && invite && req.Email == "" {
+		httpx.Error(w, http.StatusBadRequest, "email or password required for new users")
+		return
+	}
+	if lookupErr != nil && !invite {
+		if err := auth.ValidatePassword(req.Password); err != nil {
+			if errors.Is(err, auth.ErrPasswordTooCommon) {
+				httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": err.Error(), "code": "password_too_common"})
+				return
+			}
+			httpx.Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		// Only accounts that belong to no other organisation can be
-		// added directly: a person who signed up and is still in the
-		// lobby. Pulling in an account that already belongs to another
-		// org without that person's say-so would hand this org's admin
-		// a foothold on a login they use elsewhere (and, combined with
-		// the credential-reset endpoints, a takeover). Adding an
-		// existing member of another org needs an invitation the person
-		// accepts — a flow that does not exist yet, so refuse for now.
-		var otherOrgs int
+	}
+	if lookupErr == nil {
+		if existingIsAdmin {
+			// Admins are global and have no memberships.
+			httpx.JSON(w, http.StatusAccepted, map[string]string{"status": "sent"})
+			return
+		}
+		// An existing account joins only when its owner says yes:
+		// pulling a login in without their say-so would hand this
+		// org's admin a foothold on it (and, with the credential-reset
+		// endpoints, a takeover). So record an invitation they accept
+		// or decline from their console.
+		var member bool
 		if err := h.DB.QueryRowContext(r.Context(),
-			`SELECT COUNT(*) FROM org_memberships WHERE user_id = $1 AND org_id <> $2`,
-			existingID, orgID).Scan(&otherOrgs); err != nil {
+			`SELECT EXISTS (SELECT 1 FROM org_memberships WHERE user_id = $1 AND org_id = $2)`,
+			existingID, orgID).Scan(&member); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 			return
 		}
-		if otherOrgs > 0 {
-			httpx.Error(w, http.StatusConflict, "that user already belongs to another organisation and must accept an invitation to join")
-			return
-		}
-		// Insert only the membership row — no password reset, no
-		// account changes. Conflict on (user_id, org_id) means
-		// already a member of this org.
-		res, err := h.DB.ExecContext(r.Context(), `
-			INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, $3)
-			ON CONFLICT (user_id, org_id) DO NOTHING
-		`, existingID, orgID, req.Role)
-		if err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "membership insert failed")
-			return
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
+		if member {
 			httpx.Error(w, http.StatusConflict, "user is already a member of this organization")
 			return
 		}
-		httpx.JSON(w, http.StatusCreated, orgMemberDTO{ID: existingID, Username: req.Username, Role: req.Role})
+		if _, err := h.DB.ExecContext(r.Context(), `
+			INSERT INTO org_invitations(user_id, org_id, role, invited_by_user_id, email) VALUES ($1, $2, $3, $4, NULLIF($5, ''))
+			ON CONFLICT (user_id, org_id) DO UPDATE SET role = excluded.role, invited_by_user_id = excluded.invited_by_user_id, email = excluded.email,
+			    declined_at = NULL, created_at = CASE WHEN org_invitations.declined_at IS NULL THEN org_invitations.created_at ELSE now_text() END
+		`, existingID, orgID, req.Role, me.ID, req.Email); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "invitation insert failed")
+			return
+		}
+		h.sendOrgInvitation(r, existingID, orgID)
+		httpx.JSON(w, http.StatusAccepted, map[string]string{"status": "sent"})
 		return
 	}
 
-	// New-user flow. Password is required since we're creating the
-	// account from scratch.
-	if req.Password == "" {
-		httpx.Error(w, http.StatusBadRequest, "password required for new users")
+	if invite {
+		h.inviteNewOrgMember(w, r, orgID, req)
 		return
 	}
+
+	// New-user flow with a password set by a global admin.
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "hash failed")
@@ -611,24 +685,19 @@ func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 	var id int64
-	// Email is optional. When supplied, mark it pre-verified the same
-	// way migration 0004 grandfathered admin-created users — the org
-	// admin is creating the account on the user's behalf and takes
-	// responsibility for the address. Without this, the new account
-	// would default to email_verified = 0 and be locked out of
-	// money-touching actions until it could verify, which makes no
-	// sense for an org-admin-provisioned user.
+	// Email is optional. When supplied it stays unverified and the
+	// user gets the verification mail at once, so a mistyped address
+	// is caught before password resets go to it. Without SMTP the
+	// mail goes to the log, where the operator finds the link.
 	var emailParam any
-	emailVerified := 0
 	if req.Email != "" {
 		emailParam = req.Email
-		emailVerified = 1
 	}
 	if err := tx.QueryRowContext(r.Context(), `
-		INSERT INTO users(username, email, email_verified, password_hash, created_by_user_id, created_by_org_id)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO users(username, email, email_verified, password_hash, password_set_by_admin, created_by_user_id, created_by_org_id)
+		VALUES ($1, $2, 0, $3, 1, $4, $5)
 		RETURNING id
-	`, req.Username, emailParam, emailVerified, hash, me.ID, orgID).Scan(&id); err != nil {
+	`, req.Username, emailParam, hash, me.ID, orgID).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusConflict, "username or email not available")
 		return
 	}
@@ -642,7 +711,10 @@ func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "commit failed")
 		return
 	}
-	httpx.JSON(w, http.StatusCreated, orgMemberDTO{ID: id, Username: req.Username, Role: req.Role})
+	if req.Email != "" {
+		h.sendVerification(r, id, req.Email)
+	}
+	httpx.JSON(w, http.StatusAccepted, map[string]string{"status": "sent"})
 }
 
 // DeleteOrgMember removes an org user. Global admin, or an org_admin of the
@@ -752,6 +824,178 @@ func (h *Handlers) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
+// WithdrawOrgInvitation drops a pending invitation to join this
+// organisation, so accepting it no longer works. Global admin, or an
+// org_admin of the same org.
+func (h *Handlers) WithdrawOrgInvitation(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := orgIDFromURL(r)
+	if !ok {
+		return
+	}
+	userID, ok := userIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad user id")
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	if me.Role != auth.RoleAdmin {
+		if me.Role != auth.RoleOrgAdmin || me.OrgID == nil || *me.OrgID != orgID {
+			httpx.Error(w, http.StatusForbidden, "forbidden")
+			return
+		}
+	}
+	res, err := h.DB.ExecContext(r.Context(),
+		`DELETE FROM org_invitations WHERE user_id = $1 AND org_id = $2`, userID, orgID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "withdraw failed")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		httpx.Error(w, http.StatusNotFound, "no such invitation")
+		return
+	}
+	logx.Info("admin.org_invitation.withdrawn", "user_id", userID, "org_id", orgID, "by", me.ID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type setOrgMemberRoleRequest struct {
+	Role string `json:"role"` // org_admin | org_member | org_writer
+}
+
+// SetOrgMemberRole changes a member's role in this organisation in
+// place (Settings → Members). Global admin, or an org_admin of the
+// same org, with X-Confirm-Password. Nobody changes their own role
+// (TransferOwnership is how an admin steps down), and the last admin
+// can't be demoted, so the org is never left without one.
+func (h *Handlers) SetOrgMemberRole(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePasswordConfirm(w, r) {
+		return
+	}
+	orgID, ok := orgIDFromURL(r)
+	if !ok {
+		return
+	}
+	userID, ok := userIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad user id")
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	if me.Role != auth.RoleAdmin {
+		if me.Role != auth.RoleOrgAdmin || me.OrgID == nil || *me.OrgID != orgID {
+			httpx.Error(w, http.StatusForbidden, "forbidden")
+			return
+		}
+	}
+	if me.ID == userID {
+		httpx.Error(w, http.StatusConflict, "cannot change your own role")
+		return
+	}
+	var req setOrgMemberRoleRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if !orgRole(req.Role) {
+		httpx.Error(w, http.StatusBadRequest, "role must be 'org_admin', 'org_member' or 'org_writer'")
+		return
+	}
+	tx, err := h.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "begin tx failed")
+		return
+	}
+	defer tx.Rollback() //nolint:errcheck
+	var was string
+	err = tx.QueryRowContext(r.Context(),
+		`SELECT role FROM org_memberships WHERE user_id = $1 AND org_id = $2 FOR UPDATE`, userID, orgID).Scan(&was)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "user not in this organization")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if was == auth.RoleOrgAdmin && req.Role != auth.RoleOrgAdmin {
+		var admins int
+		if err := tx.QueryRowContext(r.Context(),
+			`SELECT COUNT(*) FROM org_memberships WHERE org_id = $1 AND role = $2`, orgID, auth.RoleOrgAdmin).Scan(&admins); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+			return
+		}
+		if admins <= 1 {
+			httpx.Error(w, http.StatusConflict, "an organization needs at least one admin")
+			return
+		}
+	}
+	if _, err := tx.ExecContext(r.Context(),
+		`UPDATE org_memberships SET role = $1 WHERE user_id = $2 AND org_id = $3`, req.Role, userID, orgID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "role change failed", err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "commit failed")
+		return
+	}
+	logx.Info("admin.org_member.role_changed", "user_id", userID, "org_id", orgID, "from", was, "to", req.Role, "by", me.ID)
+	httpx.JSON(w, http.StatusOK, map[string]string{"role": req.Role})
+}
+
+/* ---------------- Two-factor requirement ---------------- */
+
+// SetOrgRequireTOTP flips whether every member of the organisation
+// must use two-factor authentication (auth.RequireTOTPSetup enforces
+// it). An admin of that organisation acting in it may, and so may a
+// full global admin (the route logs that in the admin action log).
+// Turning it on needs ZV_TOTP_KEY, else nobody could comply, and the
+// actor's own 2FA; turning it off needs the actor's password. Either
+// way it goes in the org's Settings → Audit.
+func (h *Handlers) SetOrgRequireTOTP(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := orgIDFromURL(r)
+	if !ok {
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	if me.Role != auth.RoleAdmin && (me.Role != auth.RoleOrgAdmin || me.OrgID == nil || *me.OrgID != orgID) {
+		httpx.Error(w, http.StatusForbidden, "only an organization's admins choose whether its members need two-factor authentication")
+		return
+	}
+	var req setBoolRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if req.Enabled && h.TOTPKey == nil {
+		httpx.Error(w, http.StatusConflict, "two-factor authentication is not available on this server")
+		return
+	}
+	if req.Enabled && refuseWithoutOwnTOTP(w, me) {
+		return
+	}
+	if !req.Enabled && !h.requirePasswordConfirm(w, r) {
+		return
+	}
+	noteAction(r, onOff(req.Enabled))
+	res, err := h.DB.ExecContext(r.Context(),
+		`UPDATE organizations SET require_totp = $1 WHERE id = $2`, req.Enabled, orgID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "saving failed", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		httpx.Error(w, http.StatusNotFound, "organization not found")
+		return
+	}
+	reason := auth.ReasonRequireTOTPOff
+	if req.Enabled {
+		reason = auth.ReasonRequireTOTPOn
+	}
+	auth.Record(r.Context(), h.DB, auth.AuditEvent{
+		Event: auth.EventOrgRequireTOTP, OK: true, UserID: &me.ID, Username: me.Username,
+		IP: auth.ClientIP(r), UserAgent: auth.UserAgent(r), Reason: reason, OrgID: &orgID,
+	})
+	httpx.JSON(w, http.StatusOK, map[string]bool{"require_totp": req.Enabled})
+}
+
 /* ---------------- Transfer of ownership ---------------- */
 
 type transferOwnershipRequest struct {
@@ -850,7 +1094,7 @@ func (h *Handlers) CreateAssignment(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if h.Lib.Get(req.AdventureSlug) == nil || !h.isCatalogSlug(r.Context(), req.AdventureSlug) {
+	if !h.passableSlug(r.Context(), orgID, req.AdventureSlug) {
 		httpx.Error(w, http.StatusBadRequest, "unknown adventure")
 		return
 	}
@@ -922,7 +1166,7 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusConflict, "cannot change the adventure of a used event pass")
 			return
 		}
-		if h.Lib.Get(*req.AdventureSlug) == nil || !h.isCatalogSlug(r.Context(), *req.AdventureSlug) {
+		if !h.passableSlug(r.Context(), orgID, *req.AdventureSlug) {
 			httpx.Error(w, http.StatusBadRequest, "unknown adventure")
 			return
 		}
@@ -1024,12 +1268,30 @@ func (h *Handlers) ListMyAssignments(w http.ResponseWriter, r *http.Request) {
 type adminDTO struct {
 	ID       int64  `json:"id"`
 	Username string `json:"username"`
+	// Role is auth.RoleAdmin or auth.RoleSupport.
+	Role string `json:"role"`
+	// TOTPEnabled: the admin signs in with two-factor authentication.
+	TOTPEnabled bool `json:"totp_enabled"`
+	// HasEmail: the admin has an address a reset link can go to.
+	HasEmail bool `json:"has_email"`
 }
 
-// ListAdmins returns every global admin. Admin-only.
+// adminRoleSupport maps a requested admin role to users.is_support.
+// ok is false for anything but auth.RoleAdmin and auth.RoleSupport.
+func adminRoleSupport(role string) (support, ok bool) {
+	switch role {
+	case auth.RoleAdmin:
+		return false, true
+	case auth.RoleSupport:
+		return true, true
+	}
+	return false, false
+}
+
+// ListAdmins returns every global admin with their role. Admin-only.
 func (h *Handlers) ListAdmins(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT id, username FROM users WHERE is_admin = TRUE ORDER BY LOWER(username)
+		SELECT id, username, is_support, totp_enabled, COALESCE(email, '') <> '' FROM users WHERE is_admin = TRUE ORDER BY LOWER(username)
 	`)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "list failed")
@@ -1039,10 +1301,12 @@ func (h *Handlers) ListAdmins(w http.ResponseWriter, r *http.Request) {
 	out := []adminDTO{}
 	for rows.Next() {
 		var a adminDTO
-		if err := rows.Scan(&a.ID, &a.Username); err != nil {
+		var support bool
+		if err := rows.Scan(&a.ID, &a.Username, &support, &a.TOTPEnabled, &a.HasEmail); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
+		a.Role = auth.User{Support: support}.AdminRole()
 		out = append(out, a)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"admins": out})
@@ -1051,6 +1315,8 @@ func (h *Handlers) ListAdmins(w http.ResponseWriter, r *http.Request) {
 type createAdminRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	// Role is auth.RoleAdmin (the default) or auth.RoleSupport.
+	Role string `json:"role"`
 }
 
 // CreateAdmin adds another global admin. Admin-only, cookie-only
@@ -1070,6 +1336,18 @@ func (h *Handlers) CreateAdmin(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "username and password required")
 		return
 	}
+	if req.Role == "" {
+		req.Role = auth.RoleAdmin
+	}
+	support, ok := adminRoleSupport(req.Role)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "role must be admin or support")
+		return
+	}
+	if err := auth.ValidatePassword(req.Password); err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "hash failed")
@@ -1077,13 +1355,14 @@ func (h *Handlers) CreateAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	var id int64
 	if err := h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO users(username, password_hash, is_admin) VALUES ($1, $2, TRUE)
+		INSERT INTO users(username, password_hash, is_admin, is_support) VALUES ($1, $2, TRUE, $3)
 		RETURNING id
-	`, req.Username, hash).Scan(&id); err != nil {
+	`, req.Username, hash, support).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusConflict, "username not available")
 		return
 	}
-	httpx.JSON(w, http.StatusCreated, adminDTO{ID: id, Username: req.Username})
+	noteTarget(r, req.Username)
+	httpx.JSON(w, http.StatusCreated, adminDTO{ID: id, Username: req.Username, Role: req.Role})
 }
 
 // DeleteAdmin removes another admin. Refuses to delete the caller and
@@ -1134,6 +1413,93 @@ func (h *Handlers) DeleteAdmin(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
+// SetAdminRole makes another global admin a full admin or Support.
+// Admin-only, cookie-only and reauthed with X-Confirm-Password like
+// CreateAdmin. Refuses the caller's own role, so a full admin remains.
+func (h *Handlers) SetAdminRole(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePasswordConfirm(w, r) {
+		return
+	}
+	id, ok := userIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad user id")
+		return
+	}
+	var req struct {
+		Role string `json:"role"`
+	}
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	support, ok := adminRoleSupport(req.Role)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "role must be admin or support")
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	if me.ID == id {
+		httpx.Error(w, http.StatusConflict, "cannot change your own role")
+		return
+	}
+	res, err := h.DB.ExecContext(r.Context(),
+		`UPDATE users SET is_support = $1 WHERE id = $2 AND is_admin = TRUE`, support, id)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		httpx.Error(w, http.StatusNotFound, "not an admin")
+		return
+	}
+	noteAction(r, auth.User{Support: support}.AdminRole())
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// SendAdminResetLink mails a global admin the reset link "Forgot
+// password" sends, to their own address. It never sets the password:
+// the admin chooses it from the link. Admin-only, cookie-only.
+func (h *Handlers) SendAdminResetLink(w http.ResponseWriter, r *http.Request) {
+	id, ok := userIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad user id")
+		return
+	}
+	var email string
+	err := h.DB.QueryRowContext(r.Context(),
+		`SELECT COALESCE(email, '') FROM users WHERE id = $1 AND is_admin = TRUE`, id).Scan(&email)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "not an admin")
+		return
+	}
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+		return
+	}
+	if email == "" {
+		httpx.Error(w, http.StatusConflict, "this admin has no email address")
+		return
+	}
+	if h.PublicURL == "" {
+		httpx.Error(w, http.StatusConflict, "ZV_PUBLIC_URL is not set, so a reset link would not work")
+		return
+	}
+	tok, err := auth.IssueForgotPasswordToken(r.Context(), h.DB, id)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "token issue failed", err)
+		return
+	}
+	lang := h.userLang(r, id)
+	subject, c := emailtpl.PasswordReset(lang, auth.ResetLink(h.PublicURL, tok))
+	c.Picture = emailtpl.House(h.PublicURL, lang, emailtpl.PictureReset)
+	if err := h.send(r.Context(), "password_reset", emailtpl.Message([]string{email}, subject, emailtpl.Classic, emailtpl.Platform(), c)); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "sending failed", err)
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	logx.Info("admin.admins.reset_link", "user_id", id, "by", me.ID)
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
 /* ---------------- Internal loaders ---------------- */
 
 func (h *Handlers) loadOrgMembers(ctx context.Context, o *organizationDTO) error {
@@ -1144,7 +1510,7 @@ func (h *Handlers) loadOrgMembers(ctx context.Context, o *organizationDTO) error
 	// in a non-terminal state — used by the UI to warn before
 	// removing a member who would otherwise orphan live events.
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT u.id, u.username, m.role, (u.email_verified <> 0),
+		SELECT u.id, u.username, m.role, COALESCE(u.email, ''), (u.email_verified <> 0), u.totp_enabled,
 		       (SELECT COUNT(*) FROM events e
 		          WHERE e.org_id = $1
 		            AND e.created_by_user_id = u.id
@@ -1159,12 +1525,33 @@ func (h *Handlers) loadOrgMembers(ctx context.Context, o *organizationDTO) error
 	defer rows.Close()
 	for rows.Next() {
 		var m orgMemberDTO
-		if err := rows.Scan(&m.ID, &m.Username, &m.Role, &m.EmailVerified, &m.ActiveEventsOwned); err != nil {
+		if err := rows.Scan(&m.ID, &m.Username, &m.Role, &m.Email, &m.EmailVerified, &m.TOTPEnabled, &m.ActiveEventsOwned); err != nil {
 			return err
 		}
 		o.Members = append(o.Members, m)
 	}
 	return nil
+}
+
+func (h *Handlers) loadOrgInvitations(ctx context.Context, o *organizationDTO) error {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT i.user_id, COALESCE(i.email, u.username), i.role, i.created_at, i.declined_at IS NOT NULL
+		FROM org_invitations i JOIN users u ON u.id = i.user_id
+		WHERE i.org_id = $1
+		ORDER BY i.created_at, i.user_id
+	`, o.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var inv pendingInvitationDTO
+		if err := rows.Scan(&inv.UserID, &inv.Email, &inv.Role, &inv.CreatedAt, &inv.Declined); err != nil {
+			return err
+		}
+		o.Invitations = append(o.Invitations, inv)
+	}
+	return rows.Err()
 }
 
 func (h *Handlers) loadOrgAssignments(ctx context.Context, o *organizationDTO) error {
@@ -1176,9 +1563,49 @@ func (h *Handlers) loadOrgAssignments(ctx context.Context, o *organizationDTO) e
 	return nil
 }
 
+type ownAdventureDTO struct {
+	Slug  string `json:"slug"`
+	Title string `json:"title"`
+}
+
+func (h *Handlers) loadOwnAdventures(ctx context.Context, o *organizationDTO) error {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT slug, title FROM adventures
+		WHERE org_id = $1 AND published_graph_id IS NOT NULL AND NOT trail_hidden
+		ORDER BY title, slug
+	`, o.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a ownAdventureDTO
+		if err := rows.Scan(&a.Slug, &a.Title); err != nil {
+			return err
+		}
+		o.OwnAdventures = append(o.OwnAdventures, a)
+	}
+	return rows.Err()
+}
+
+// passableSlug reports whether the operator may grant orgID an event
+// pass for slug: a catalog adventure, or one of the org's own published
+// ones (loadOwnAdventures).
+func (h *Handlers) passableSlug(ctx context.Context, orgID int64, slug string) bool {
+	if h.isCatalogSlug(ctx, slug) {
+		return true
+	}
+	var own bool
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM adventures
+		  WHERE slug = $1 AND org_id = $2 AND published_graph_id IS NOT NULL AND NOT trail_hidden)
+	`, slug, orgID).Scan(&own)
+	return err == nil && own
+}
+
 func (h *Handlers) listAssignments(ctx context.Context, orgID int64) ([]assignmentDTO, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT aa.id, aa.adventure_slug, aa.max_players, aa.created_at, ar.id
+		SELECT aa.id, aa.adventure_slug, aa.max_players, aa.created_at, ar.id, COALESCE(ar.state = 'cancelled', false)
 		FROM adventure_assignments aa
 		LEFT JOIN events ar ON ar.assignment_id = aa.id
 		WHERE aa.org_id = $1
@@ -1194,7 +1621,7 @@ func (h *Handlers) listAssignments(ctx context.Context, orgID int64) ([]assignme
 			as      assignmentDTO
 			eventID sql.NullInt64
 		)
-		if err := rows.Scan(&as.ID, &as.AdventureSlug, &as.MaxPlayers, &as.CreatedAt, &eventID); err != nil {
+		if err := rows.Scan(&as.ID, &as.AdventureSlug, &as.MaxPlayers, &as.CreatedAt, &eventID, &as.EventCancelled); err != nil {
 			return nil, err
 		}
 		if eventID.Valid {

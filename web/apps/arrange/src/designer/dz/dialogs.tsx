@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { GitCompare, Rocket, X } from "lucide-react";
-import { diffIsEmpty, type GraphDiff } from "@zonventure/graph";
+import { diffIsEmpty, wordDiff, type GraphDiff, type TextChange } from "@zonventure/graph";
 import { useT } from "../../i18n.tsx";
 import { Button, Callout, DzPortal, ICON, Notice, useEscapeToClose } from "./ui.tsx";
 
@@ -123,6 +123,7 @@ export function DiffDialog({
                 {diff.changed.map((s) => (
                   <li key={`c-${s.slug}`} className="diff-row changed">
                     ~ {t.t("Step changed: {{name}} ({{what}})", { name: s.title, what: s.fields.map((f) => t.t(f)).join(", ") })}
+                    {s.texts.length > 0 && <TextChanges changes={s.texts} before={t.t("Published")} after={t.t("Draft")} />}
                   </li>
                 ))}
                 {diff.addedEdges.map((k) => (
@@ -160,6 +161,34 @@ export function DiffDialog({
         </div>
       </div>
     </DzPortal>
+  );
+}
+
+/**
+ * A step's texts in two versions, field by field: the old with the words
+ * that went struck through, the new with the words that came marked.
+ */
+export function TextChanges({ changes, before, after }: { changes: TextChange[]; before: string; after: string }) {
+  const t = useT();
+  return (
+    <dl className="text-diff">
+      {changes.map((c) => {
+        const parts = wordDiff(c.before, c.after);
+        const side = (label: string, text: string, Mark: "del" | "ins") => (
+          <dd className={`text-diff__${Mark}`}>
+            <span className="text-diff__side">{label}</span>
+            {text ? parts.map((p, i) => (p.op === "same" ? <span key={i}>{p.text}</span> : p.op === Mark ? <Mark key={i}>{p.text}</Mark> : null)) : <em>{t.t("(empty)")}</em>}
+          </dd>
+        );
+        return (
+          <div key={c.key} className="text-diff__field">
+            <dt>{t.t(c.label, c.vars)}</dt>
+            {side(before, c.before, "del")}
+            {side(after, c.after, "ins")}
+          </div>
+        );
+      })}
+    </dl>
   );
 }
 

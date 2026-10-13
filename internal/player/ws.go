@@ -77,7 +77,7 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 			// a misbehaving (or malicious) client can't spam junk
 			// frames cost-free. Logged at debug for the operator
 			// to spot pattern abuse.
-			h.rateLimiter().AllowAnswer(slot.ID)
+			h.rateLimiter().AllowAnswer(slot.ID, slot.Dev)
 			logx.Debug("player.ws.unknown_kind", "slot", slot.ID, "kind", msg.Kind)
 		}
 	}

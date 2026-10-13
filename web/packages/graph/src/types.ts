@@ -31,6 +31,8 @@ export interface Graph {
   journal_by_unlock?: boolean;
   /** Keep the team's running score off its phone; points still count. */
   hide_score?: boolean;
+  /** A quiz walk (made as a party adventure): the end screen lists its typed answers with its quiz picks, and new puzzles just move on. */
+  quiz_puzzles?: boolean;
   /** After `seconds` from its start, the team is moved to `to` and shown `text`. */
   time_limit?: TimeLimit;
   /** Designer-only grouping boxes drawn behind steps. */
@@ -43,6 +45,8 @@ export interface Graph {
   language?: string;
   /** Other languages: language → field key → text. See i18n.ts. */
   translations?: Record<string, Record<string, string>>;
+  /** The fingerprint of the main text each translation was made from, keyed as translations. See i18n.ts. */
+  translation_sources?: Record<string, Record<string, string>>;
   /** PDFs that come with the adventure on paper; players never see them. */
   print_materials?: PrintMaterial[];
 }
@@ -380,6 +384,8 @@ export interface PuzzleConfig {
   repeatable?: boolean;
   /** A right answer counts once every player has given one leading the same way. Only where usesMatchers. */
   unanimous?: boolean;
+  /** Any answer moves on without a word of right or wrong; a wrong one by the first answer route, for no points. Only where usesMatchers, not with unanimous. */
+  quiet?: boolean;
   /** The role whose player alone answers. Not with unanimous or a two-key launch. */
   by?: string;
   /** Another way of answering than typing; absent is a typed answer. */

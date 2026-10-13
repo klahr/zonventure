@@ -2,6 +2,7 @@ import { Plus, X } from "lucide-react";
 import { ICON } from "../dz/ui.tsx";
 import { withField, type Editor, type EditorProps, type T } from "./types.ts";
 import { MarkdownArea } from "../MarkdownArea.tsx";
+import { focusAdded } from "../fields.tsx";
 
 /** A list of texts that keeps at least `min`: a split secret's parts, a vote's options, a draw's cards. */
 function TextList({ items, set, min, rows, placeholder, label, addLabel, t }: { items: string[]; set: (next: string[]) => void; min: number; rows: number; placeholder: string; label: (i: number) => string; addLabel: string; t: T }) {
@@ -22,7 +23,16 @@ function TextList({ items, set, min, rows, placeholder, label, addLabel, t }: { 
           </button>
         </div>
       ))}
-      <button type="button" className="add-btn" onClick={() => set([...items, ""])}>
+      <button type="button" className="add-btn" onClick={(e) => {
+        // A blank row is filled before another is added: blanks would show as empty buttons.
+        const blank = items.findIndex((s) => !s.trim());
+        if (blank >= 0) {
+          e.currentTarget.parentElement?.querySelectorAll<HTMLElement>(":scope > .list-ed__item")[blank]?.querySelector<HTMLElement>("input, textarea")?.focus();
+          return;
+        }
+        set([...items, ""]);
+        focusAdded(e.currentTarget.parentElement, ":scope > .list-ed__item");
+      }}>
         <Plus size={ICON.sm} aria-hidden="true" />
         {addLabel}
       </button>

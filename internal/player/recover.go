@@ -17,18 +17,16 @@ import (
 
 // RecoverLinkRequest is the body of POST /api/player/recover-link.
 // The team's contact email is the only input — server looks up
-// every still-active slot tied to teams with that email and re-mints
-// each slot's magic-link token, then mails the fresh links to the
-// same address. The reset of claimed_at is cosmetic (the timestamp
-// is no longer a gate) — it just keeps the audit column reading
-// "claimed when the new link was first opened" rather than
-// "claimed by whoever opened the dead link".
+// every still-active slot tied to teams with that email and mails
+// each slot's current magic link to the same address.
 type RecoverLinkRequest struct {
 	Email string `json:"email"`
 }
 
-// RecoverLink rotates magic-link tokens for every slot whose team
-// carries the supplied contact email, then mails the fresh links.
+// RecoverLink mails the current magic link of every slot whose team
+// carries the supplied contact email. It never replaces them: anyone
+// who knows a team's address may ask, and a reset would sign the team
+// out. Organisers rotate links from the console.
 // Always returns 204 regardless of whether the email matched any
 // team — that's the email-enumeration defence; an attacker can't
 // learn whether a given address is associated with an event by
@@ -65,7 +63,7 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 	// been cancelled — there's nothing to recover into a finished
 	// event, and re-emailing dead links would be confusing UX.
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT ps.id, ps.name, t.name, e.name, e.id
+		SELECT ps.token, ps.name, t.name, e.name, e.id
 		FROM player_slots ps
 		JOIN teams t ON t.id = ps.team_id
 		JOIN events e ON e.id = t.event_id
@@ -78,7 +76,7 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type slotRow struct {
-		ID         int64
+		Token      string
 		PlayerName string
 		TeamName   string
 		EventName  string
@@ -87,7 +85,7 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 	var slots []slotRow
 	for rows.Next() {
 		var s slotRow
-		if err := rows.Scan(&s.ID, &s.PlayerName, &s.TeamName, &s.EventName, &s.EventID); err != nil {
+		if err := rows.Scan(&s.Token, &s.PlayerName, &s.TeamName, &s.EventName, &s.EventID); err != nil {
 			rows.Close()
 			httpx.JSON(w, http.StatusNoContent, nil)
 			return
@@ -96,11 +94,6 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 
-	// Mint new tokens, persist them, build the email body. We do
-	// the rotation even if Mailer fails — the new tokens going to
-	// stderr (LogMailer fallback) is still useful for self-host
-	// debugging, and the old tokens are now dead either way so a
-	// retry with a fresh request would just rotate again.
 	type freshLink struct {
 		Player  string
 		Team    string
@@ -110,29 +103,12 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 	}
 	var links []freshLink
 	for _, s := range slots {
-		tok, err := auth.NewSlotToken()
-		if err != nil {
-			continue
-		}
-		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE player_slots SET token = $1, claimed_at = NULL WHERE id = $2`,
-			tok, s.ID); err != nil {
-			continue
-		}
-		// Drop any existing slot sessions for this slot. Without this
-		// step a previously-claimed device keeps a valid session cookie
-		// (LookupSlot joins by slot_id, not the magic token), so the
-		// recover-link email's "old links are now dead" promise would
-		// only kill future claims, not active ones. Mirrors the admin
-		// rotate path in admin/teams.go.
-		_, _ = h.DB.ExecContext(r.Context(),
-			`DELETE FROM slot_sessions WHERE slot_id = $1`, s.ID)
 		base := strings.TrimRight(h.PublicURL, "/")
 		// Origin-relative fallback for misconfigured self-host:
 		// the email body becomes useless to the recipient, which
 		// nudges the operator to set ZV_PUBLIC_URL — same posture
 		// as buildResetLink.
-		url := base + "/play?t=" + tok
+		url := base + "/play?t=" + s.Token
 		links = append(links, freshLink{
 			Player: s.PlayerName, Team: s.TeamName, Event: s.EventName, EventID: s.EventID,
 			URL: url,
@@ -145,7 +121,9 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 			players[i] = emailtpl.PlayerLink{Team: l.Team, Player: l.Player, Event: l.Event, URL: l.URL}
 		}
 		// In the look of the organisation that runs the first game.
+		// In the language of whoever asked, on the play page.
 		lk := emailtpl.Lookup(r.Context(), h.DB, h.PublicURL, 0, links[0].EventID)
+		lk.Lang = emailtpl.LangFromRequest(r)
 		subject, content := emailtpl.PlayLinks(lk.Lang, players, lk.Brand.Name)
 		content.Picture = lk.Cover
 		// Build one .ics per unique event referenced by the

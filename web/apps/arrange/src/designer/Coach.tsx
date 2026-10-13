@@ -338,9 +338,14 @@ export function Coach({
             <X size={ICON.md} />
           </Button>
         </header>
-        <div className="coach__bar" role="progressbar" aria-valuemin={0} aria-valuemax={steps.length} aria-valuenow={i}>
-          <span style={{ width: `${(i / steps.length) * 100}%` }} />
-        </div>
+        {/* One dot per step: steps passed by because they were done already show ticked, so the count can jump. */}
+        <ol className="coach__dots" role="progressbar" aria-valuemin={0} aria-valuemax={steps.length} aria-valuenow={i}>
+          {steps.map((s, k) => (
+            <li key={s.id} className={k < i ? "is-done" : k === i ? "is-at" : undefined}>
+              {k < i && <Check size={8} strokeWidth={4} aria-hidden />}
+            </li>
+          ))}
+        </ol>
         {finished ? (
           <p className="coach__body">
             {upNext ? t.t("Next up: {{title}}. {{blurb}}", { title: upNext.title, blurb: upNext.blurb }) : t.t("That was the last one: you know your way around the designer now.")}
@@ -481,9 +486,31 @@ export function TutorialList({
 
 /** The list put away: a pill that brings it back, or the lesson paused. */
 export function TutorialPill({ label, onClick }: { label: string; onClick: () => void }) {
+  // Clear of the app's sidebar, whose account block sits in the same
+  // corner, and of the canvas's zoom buttons beside it.
+  const [left, setLeft] = useState<number>();
+  useLayoutEffect(() => {
+    const bar = document.querySelector(".shell__sidebar");
+    if (!bar) return;
+    const place = () => {
+      const right = Math.max(0, ...[bar, document.querySelector(".react-flow__controls")].map((el) => {
+        const r = el?.getBoundingClientRect();
+        return r && r.width > 0 && r.right > 0 ? r.right : 0;
+      }));
+      setLeft(right > 0 ? right + 16 : undefined);
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(bar);
+    window.addEventListener("resize", place);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", place);
+    };
+  }, []);
   return (
     <DzPortal>
-      <button type="button" className="coach-pill" onClick={onClick}>
+      <button type="button" className="coach-pill" style={left === undefined ? undefined : { left }} onClick={onClick}>
         <GraduationCap size={ICON.sm} aria-hidden />
         <span>{label}</span>
       </button>

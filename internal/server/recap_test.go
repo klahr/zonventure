@@ -186,6 +186,20 @@ func TestRecap(t *testing.T) {
 		}
 	})
 
+	// A team that never joined has no time of its own: the event's
+	// start and end are not it.
+	t.Run("never joined shows no time", func(t *testing.T) {
+		teamID := seedRecapEvent(t, db, orgID, "completed", "rt-absent")
+		if _, err := db.Exec(`UPDATE events SET started_at = to_char(now() - interval '1 hour', 'YYYY-MM-DD HH24:MI:SS') WHERE id = (SELECT event_id FROM teams WHERE id = $1)`, teamID); err != nil {
+			t.Fatal(err)
+		}
+		status, body := readRecap(t, ts.URL, "rt-absent")
+		var got recapPreview
+		if status != http.StatusOK || json.Unmarshal(body, &got) != nil || got.DurationSeconds != 0 {
+			t.Fatalf("recap = %d %s, want 200 with no duration", status, body)
+		}
+	})
+
 	// The visibility gate covers both terminal states. A cancelled event
 	// ("snowed out") still has a worth-keeping memory of how far the
 	// team got.

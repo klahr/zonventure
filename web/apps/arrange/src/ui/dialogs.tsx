@@ -63,6 +63,8 @@ interface ConfirmOpts {
   confirmLabel: string;
   cancelLabel?: string;
   danger?: boolean;
+  /** Password dialog only: why the last try failed, shown under the field. */
+  error?: string;
 }
 
 interface Dialogs {
@@ -140,7 +142,8 @@ function PasswordDialog({ o, onDone }: { o: ConfirmOpts; onDone: (v: string | nu
       {o.message && <p className="confirm-message">{o.message}</p>}
       <div className="sf-field">
         <div className="label-row"><label htmlFor="cs-confirm-pw">{t.t("Your password")}</label></div>
-        <input id="cs-confirm-pw" ref={input} type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+        <input id="cs-confirm-pw" ref={input} type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} {...(o.error ? { "aria-invalid": true, "aria-describedby": "cs-confirm-pw-err" } : {})} />
+        {o.error && <span id="cs-confirm-pw-err" className="cs-field__error" role="alert">{o.error}</span>}
       </div>
     </Dialog>
   );

@@ -24,23 +24,26 @@ var slugOnly = map[string]any{
 
 func (s *Server) registerDevTools() {
 	s.tools.register(ToolDescriptor{
-		Name:  "create_dev_ticket",
-		Scope: scopeWrite,
+		Name:     "create_dev_ticket",
+		Audience: audienceAuthor,
+		Scope:    scopeWrite,
 		Description: "Get the author's dev ticket for an adventure: a link to open on their phone that plays the saved DRAFT, live. " +
 			"Every change you save (edit_adventure_graph, save_adventure_graph, the designer) shows on the phone within a second — nothing to publish, no event to restart. " +
 			"Write the link in the chat for the author to open on the phone. The same ticket comes back each time. Dev tickets are free, never listed among events, never ranked.",
 		InputSchema: slugOnly,
 	}, createDevTicket)
 	s.tools.register(ToolDescriptor{
-		Name:  "get_dev_screen",
-		Scope: scopeRead,
+		Name:     "get_dev_screen",
+		Audience: audienceAuthor,
+		Scope:    scopeRead,
 		Description: "What the author's dev phone shows right now: the step (its slug) and its screen — text, pictures, the answer box. " +
 			"Use it to know what \"this\" means when the author, standing there, says \"change this text\" — then change it with edit_adventure_graph set_text, which edits this step when no slug is given.",
 		InputSchema: slugOnly,
 	}, getDevScreen)
 	s.tools.register(ToolDescriptor{
-		Name:  "dev_go_to",
-		Scope: scopeWrite,
+		Name:     "dev_go_to",
+		Audience: audienceAuthor,
+		Scope:    scopeWrite,
 		Description: "Move the author's dev phone to a step of the draft — back to one already played, or on to one not reached — and play it afresh (its attempts, hints and outcome forgotten). " +
 			"Name a puzzle, story, hub or end by its slug.",
 		InputSchema: map[string]any{
@@ -54,6 +57,7 @@ func (s *Server) registerDevTools() {
 	}, devGoTo)
 	s.tools.register(ToolDescriptor{
 		Name:        "dev_reset",
+		Audience:    audienceAuthor,
 		Scope:       scopeWrite,
 		Description: "Start the author's dev phone over from the beginning of the draft, its progress forgotten.",
 		InputSchema: slugOnly,

@@ -268,7 +268,7 @@ type photoReply struct {
 func (h *Handlers) PostPlayPhoto(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	slot, _ := auth.SlotFromContext(ctx)
-	if ok, retry := h.rateLimiter().AllowAnswer(slot.ID); !ok {
+	if ok, retry := h.rateLimiter().AllowAnswer(slot.ID, slot.Dev); !ok {
 		writeRateLimited(w, retry)
 		return
 	}

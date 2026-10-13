@@ -232,11 +232,14 @@ type printLink struct {
 
 // printLinks lists what the organiser prints for an order in lang: the
 // version's materials the event posts or keeps for organisers, each in
-// lang, else in the main language, else in any it has.
-func printLinks(g *graph.Graph, o printmat.Overrides, lang string) []printLink {
+// lang, else in the main language, else in any it has. owed is an order
+// that gave an address, so a letter is posted to it: it keeps the
+// adventure's posted materials after the event switches them to emailed.
+func printLinks(g *graph.Graph, o printmat.Overrides, lang string, owed bool) []printLink {
 	out := []printLink{}
-	for _, pm := range printmat.Effective(g, o) {
-		if pm.Delivery != graph.DeliveryPosted && pm.Delivery != graph.DeliveryOrganiser {
+	for i, pm := range printmat.Effective(g, o) {
+		posted := pm.Delivery == graph.DeliveryPosted || owed && g.PrintMaterials[i].Delivery == graph.DeliveryPosted
+		if !posted && pm.Delivery != graph.DeliveryOrganiser {
 			continue
 		}
 		if l, id := printmat.File(pm, lang, g.Language); id > 0 {
@@ -309,8 +312,10 @@ const maxRedeemField = 200
 
 // createRedemption validates req and stores it as a pending redemption.
 // orgID, when non-zero, confines the product to that organisation;
-// createdBy is the organiser entering it, nil for a buyer.
-func (h *Handlers) createRedemption(ctx context.Context, req RedeemRequest, orgID int64, createdBy *int64) (int64, *redeemError) {
+// createdBy is the organiser entering it, nil for a buyer. buyerLang is
+// the language the buyer redeemed in, which the mails to them follow;
+// empty for an organiser's entry.
+func (h *Handlers) createRedemption(ctx context.Context, req RedeemRequest, orgID int64, createdBy *int64, buyerLang string) (int64, *redeemError) {
 	for _, f := range []*string{&req.Name, &req.Email, &req.StreetAddress, &req.Address2, &req.PostalCode, &req.City, &req.Note} {
 		*f = strings.TrimSpace(*f)
 	}
@@ -382,11 +387,11 @@ func (h *Handlers) createRedemption(ctx context.Context, req RedeemRequest, orgI
 	var id int64
 	err = h.DB.QueryRowContext(ctx, `
 		INSERT INTO partner_redemptions(partner_id, product_id, product_name, kind, box_number, security_code,
-		    name, email, street_address, address_2, postal_code, city, country, letter_lang, post_at, note, created_by_user_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		    name, email, street_address, address_2, postal_code, city, country, letter_lang, post_at, note, created_by_user_id, buyer_lang)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		RETURNING id
 	`, partnerID, req.ProductID, productName, kind, box, code, req.Name, req.Email, req.StreetAddress,
-		req.Address2, req.PostalCode, req.City, country, letterLang, postAt, req.Note, createdBy).Scan(&id)
+		req.Address2, req.PostalCode, req.City, country, letterLang, postAt, req.Note, createdBy, buyerLang).Scan(&id)
 	if isUniqueViolation(err) {
 		return 0, &redeemError{http.StatusConflict, "code_used", "this code has already been redeemed"}
 	}
@@ -394,7 +399,9 @@ func (h *Handlers) createRedemption(ctx context.Context, req RedeemRequest, orgI
 		logx.Warn("admin.redeem.insert", "err", err.Error())
 		return 0, &redeemError{http.StatusInternalServerError, "", "save failed"}
 	}
-	h.notifyNewRedemption(ctx, id, productOrg)
+	if createdBy == nil {
+		h.notifyNewRedemption(ctx, id, productOrg)
+	}
 	return id, nil
 }
 
@@ -525,7 +532,16 @@ func (h *Handlers) redeem(w http.ResponseWriter, r *http.Request, orgID int64) {
 	}
 	// A buyer never sets the organiser's fields.
 	req.PostAt, req.Note = "", ""
-	id, rerr := h.createRedemption(r.Context(), req, orgID, nil)
+	id, rerr := h.createRedemption(r.Context(), req, orgID, nil, emailtpl.LangFromRequest(r))
+	if rerr != nil && rerr.reason == "code_used" {
+		// The page tells the buyer whom to write to about it.
+		var contact string
+		_ = h.DB.QueryRowContext(r.Context(), `
+			SELECT `+emailtpl.ContactSQL+` FROM partner_products pp JOIN partners p ON p.id = pp.partner_id JOIN organizations o ON o.id = p.org_id WHERE pp.id = $1
+		`, req.ProductID).Scan(&contact)
+		httpx.JSON(w, rerr.status, map[string]string{"error": rerr.msg, "reason": rerr.reason, "contact": contact})
+		return
+	}
 	if rerr != nil {
 		rerr.write(w)
 		return
@@ -970,13 +986,13 @@ func (d *redemptionDTO) fillVersion(ctx context.Context, q graphstore.Querier, v
 		return err
 	}
 	d.LetterLanguages = graphLanguages(g)
-	d.Print = printLinks(g, printmat.Parse(d.printDelivery), d.LetterLang)
+	d.Print = printLinks(g, printmat.Parse(d.printDelivery), d.LetterLang, d.StreetAddress != "")
 	return nil
 }
 
 // ListRedemptions returns the organisation's redemptions in one state
 // (pending by default, or all) with a count per state. to_post is those
-// still to be posted: pending or approved, not yet marked posted, the
+// still to be posted: approved, not yet marked posted, the
 // ones to post first first.
 func (h *Handlers) ListRedemptions(w http.ResponseWriter, r *http.Request) {
 	_, orgID, ok := redemptionOrg(w, r, false)
@@ -1074,10 +1090,10 @@ func (h *Handlers) ListRedemptions(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"redemptions": out, "counts": counts})
 }
 
-// redemptionToPost picks the redemptions still to post: pending or
-// approved, with an address (asked only when a letter is posted), not
-// yet posted.
-const redemptionToPost = `r.state IN ('pending', 'approved') AND r.street_address <> '' AND r.posted_at IS NULL`
+// redemptionToPost picks the redemptions still to post: approved (a
+// pending code isn't checked yet), with an address (asked only when a
+// letter is posted), not yet posted.
+const redemptionToPost = `r.state = 'approved' AND r.street_address <> '' AND r.posted_at IS NULL`
 
 // postedPurchase picks the store purchases with a letter to post: paid
 // tickets whose checkout collected an address, which it does only when
@@ -1089,7 +1105,7 @@ const postedPurchase = `tp.kind = 'ticket' AND tp.state = 'paid' AND tp.street_a
 // toPost, only purchase id when it isn't 0.
 func (h *Handlers) purchaseOrders(ctx context.Context, orgID int64, toPost bool, id int64) ([]redemptionDTO, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT tp.id, tp.event_id, COALESCE(NULLIF(e.name, ''), a.title, e.adventure_slug),
+		SELECT tp.id, tp.event_id, COALESCE(NULLIF(e.name, ''), a.title, e.adventure_slug), COALESCE(NULLIF(a.title, ''), e.adventure_slug),
 		       tp.buyer_email, tp.ship_name, tp.street_address, tp.address_2, tp.postal_code, tp.city, tp.country,
 		       tp.letter_lang, tp.post_at, COALESCE(tp.posted_at, ''), tp.note, COALESCE(tp.paid_at, tp.created_at),
 		       COALESCE(tp.team_id, 0), COALESCE(t.name, ''), COALESCE(e.graph_id, 0), e.print_delivery
@@ -1108,19 +1124,19 @@ func (h *Handlers) purchaseOrders(ctx context.Context, orgID int64, toPost bool,
 	var out []redemptionDTO
 	for rows.Next() {
 		d := redemptionDTO{Kind: "purchase", State: "paid", PartnerKind: "store"}
-		if err := rows.Scan(&d.ID, &d.EventID, &d.EventName, &d.Email, &d.Name, &d.StreetAddress, &d.Address2,
+		if err := rows.Scan(&d.ID, &d.EventID, &d.EventName, &d.ProductName, &d.Email, &d.Name, &d.StreetAddress, &d.Address2,
 			&d.PostalCode, &d.City, &d.Country, &d.LetterLang, &d.PostAt, &d.PostedAt, &d.Note, &d.CreatedAt,
 			&d.TeamID, &d.TeamName, &d.graphID, &d.printDelivery); err != nil {
 			return nil, err
 		}
-		d.ProductName = d.EventName
 		out = append(out, d)
 	}
 	return out, rows.Err()
 }
 
 // CreateRedemption is an organiser entering a box redemption taken by
-// phone or email. It lands as pending, like a buyer's.
+// phone or email. Review checks customers, not staff, so it is approved
+// at once; one that can't be (its event closed) stays pending.
 func (h *Handlers) CreateRedemption(w http.ResponseWriter, r *http.Request) {
 	me, orgID, ok := redemptionOrg(w, r, false)
 	if !ok {
@@ -1130,10 +1146,15 @@ func (h *Handlers) CreateRedemption(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	id, rerr := h.createRedemption(r.Context(), req, orgID, &me.ID)
+	id, rerr := h.createRedemption(r.Context(), req, orgID, &me.ID, "")
 	if rerr != nil {
 		rerr.write(w)
 		return
+	}
+	if rerr, err := h.approveRedemption(r.Context(), id, me.ID); err != nil {
+		logx.Warn("admin.redemption.auto_approve", "redemption_id", id, "err", err.Error())
+	} else if rerr != nil {
+		logx.Info("admin.redemption.auto_approve", "redemption_id", id, "reason", rerr.reason)
 	}
 	h.writeRedemption(w, r, http.StatusCreated, id)
 }
@@ -1183,71 +1204,76 @@ func (h *Handlers) ApproveRedemption(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ctx := r.Context()
-	tx, err := h.DB.BeginTx(ctx, nil)
+	rerr, err := h.approveRedemption(r.Context(), id, me.ID)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
 		return
 	}
+	if rerr != nil {
+		rerr.write(w)
+		return
+	}
+	h.writeRedemption(w, r, http.StatusOK, id)
+}
+
+// approveRedemption approves pending redemption id for user by. One that
+// can't be approved gives a redeemError; a failure, err.
+func (h *Handlers) approveRedemption(ctx context.Context, id, by int64) (*redeemError, error) {
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
 	defer tx.Rollback() //nolint:errcheck
 	var (
-		state, email, kind, eventState, letterLang string
-		eventID                                    int64
-		teamSize                                   int
+		state, email, kind, eventState, letterLang, mailLang string
+		eventID                                              int64
+		teamSize                                             int
 	)
 	// A product deleted since (with its event, say) leaves nothing to
 	// approve into: that reads as a closed event.
 	if err := tx.QueryRowContext(ctx, `
 		SELECT r.state, r.email, r.kind, COALESCE(pp.event_id, 0), COALESCE(pp.team_size, 0), COALESCE(e.state, ''),
-		       r.letter_lang
+		       r.letter_lang, `+redemptionMailLang+`
 		FROM partner_redemptions r
 		LEFT JOIN partner_products pp ON pp.id = r.product_id
 		LEFT JOIN events e ON e.id = pp.event_id
 		WHERE r.id = $1 FOR UPDATE OF r
-	`, id).Scan(&state, &email, &kind, &eventID, &teamSize, &eventState, &letterLang); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
-		return
+	`, id).Scan(&state, &email, &kind, &eventID, &teamSize, &eventState, &letterLang, &mailLang); err != nil {
+		return nil, err
 	}
 	if state != "pending" {
-		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "redemption is " + state, "reason": "not_pending"})
-		return
+		return &redeemError{http.StatusConflict, "not_pending", "redemption is " + state}, nil
 	}
 	if eventState != "running" {
-		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the product's event isn't running", "reason": "event_closed"})
-		return
+		return &redeemError{http.StatusConflict, "event_closed", "the product's event isn't running"}, nil
 	}
 	teamID, teamToken, voucher, err := createTicketTeam(ctx, tx, eventID, email, teamSize)
 	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
-		return
+		return nil, err
 	}
 	// The team starts in the letter's language; it can still switch.
 	if _, err := tx.ExecContext(ctx, `UPDATE teams SET lang = $1 WHERE id = $2`, letterLang, teamID); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
-		return
+		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE player_slots SET expires_at = $1 WHERE team_id = $2`,
 		time.Now().UTC().Add(redemptionSlotTTL).Format("2006-01-02 15:04:05"), teamID); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
-		return
+		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE partner_redemptions
 		   SET state = 'approved', team_id = $1, decided_by_user_id = $2, decided_at = now_text()
 		 WHERE id = $3
-	`, teamID, me.ID, id); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
-		return
+	`, teamID, by, id); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
-		return
+		return nil, err
 	}
-	if err := h.sendRedemptionApproved(ctx, eventID, email, kind, letterLang, teamToken, voucher); err != nil {
+	if err := h.sendRedemptionApproved(ctx, eventID, email, kind, mailLang, teamToken, voucher); err != nil {
 		logx.Warn("admin.redemption.approve.mail", "redemption_id", id, "team_id", teamID, "err", err.Error())
 	}
 	logx.Info("admin.redemption.approved", "redemption_id", id, "team_id", teamID)
-	h.writeRedemption(w, r, http.StatusOK, id)
+	return nil, nil
 }
 
 // RejectRedemption turns down a code the partner doesn't recognise. The
@@ -1261,13 +1287,25 @@ func (h *Handlers) RejectRedemption(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var email, kind, letterLang string
+	// An optional reason, passed on to the customer.
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if r.ContentLength > 0 && !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	if len(req.Reason) > 1000 {
+		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "the reason is too long", "reason": "missing_field"})
+		return
+	}
+	var email, kind, mailLang string
 	err := h.DB.QueryRowContext(r.Context(), `
 		UPDATE partner_redemptions
 		   SET state = 'rejected', decided_by_user_id = $1, decided_at = now_text()
 		 WHERE id = $2 AND state = 'pending'
-		RETURNING email, kind, letter_lang
-	`, me.ID, id).Scan(&email, &kind, &letterLang)
+		RETURNING email, kind, `+redemptionMailLang+`
+	`, me.ID, id).Scan(&email, &kind, &mailLang)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "redemption isn't pending", "reason": "not_pending"})
 		return
@@ -1276,8 +1314,8 @@ func (h *Handlers) RejectRedemption(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "reject failed", err)
 		return
 	}
-	h.sendRedemptionMail(r.Context(), "redemption_rejected", letterLang, []string{email}, func(lang string) (string, emailtpl.Content) {
-		return emailtpl.BoxRejected(lang, partnerNames[kind])
+	h.sendRedemptionMail(r.Context(), "redemption_rejected", mailLang, []string{email}, func(lang string) (string, emailtpl.Content) {
+		return emailtpl.BoxRejected(lang, partnerNames[kind], req.Reason, h.orgContact(r.Context(), orgID))
 	}, id, orgID)
 	h.writeRedemption(w, r, http.StatusOK, id)
 }
@@ -1302,15 +1340,15 @@ func (h *Handlers) CancelRedemption(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 	var (
-		email, kind, letterLang string
-		teamID                  sql.NullInt64
+		email, kind, mailLang string
+		teamID                sql.NullInt64
 	)
 	err = tx.QueryRowContext(ctx, `
 		UPDATE partner_redemptions
 		   SET state = 'cancelled', decided_by_user_id = $1, decided_at = now_text()
 		 WHERE id = $2 AND state IN ('pending', 'approved')
-		RETURNING email, kind, team_id, letter_lang
-	`, me.ID, id).Scan(&email, &kind, &teamID, &letterLang)
+		RETURNING email, kind, team_id, `+redemptionMailLang+`
+	`, me.ID, id).Scan(&email, &kind, &teamID, &mailLang)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "redemption can't be cancelled", "reason": "not_cancellable"})
 		return
@@ -1340,7 +1378,7 @@ func (h *Handlers) CancelRedemption(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "cancel failed", err)
 		return
 	}
-	h.sendRedemptionMail(ctx, "redemption_cancelled", letterLang, []string{email}, func(lang string) (string, emailtpl.Content) {
+	h.sendRedemptionMail(ctx, "redemption_cancelled", mailLang, []string{email}, func(lang string) (string, emailtpl.Content) {
 		return emailtpl.BoxCancelled(lang, partnerNames[kind])
 	}, id, orgID)
 	h.writeRedemption(w, r, http.StatusOK, id)
@@ -1546,6 +1584,7 @@ func (h *Handlers) sendRedemptionApproved(ctx context.Context, eventID int64, em
 	subject, c := emailtpl.BoxConfirmed(l.Lang, partnerNames[kind], publicURL+"/team/"+teamToken, publicURL+"/play", auth.FormatVoucherCode(voucher), l.Brand.Name)
 	c = l.withBuyerNote(c)
 	c = emailtpl.WithPrints(c, h.printEmailLinks(ctx, eventID, publicURL, teamToken))
+	c = emailtpl.WithContact(c, l.Contact)
 	c.Picture = l.Cover
 	msg := l.message([]string{email}, subject, c)
 	if h.MailOutbox != nil {
@@ -1568,8 +1607,12 @@ func addressLines(name, street, address2, postal, city string) []string {
 	return out
 }
 
+// redemptionMailLang is the language of the mails to a redemption's
+// buyer: the one they redeemed in, else the posted letter's.
+const redemptionMailLang = `COALESCE(NULLIF(buyer_lang, ''), letter_lang)`
+
 // sendRedemptionReceived tells a buyer their code has arrived and where
-// their envelope goes, in the event's look and the envelope's language.
+// their envelope goes, in the event's look and the buyer's language.
 // Organisers entering a redemption by hand have the buyer on the phone,
 // so only the public form sends it.
 func (h *Handlers) sendRedemptionReceived(ctx context.Context, id int64) {
@@ -1578,7 +1621,7 @@ func (h *Handlers) sendRedemptionReceived(ctx context.Context, id int64) {
 		eventID, orgID                                          int64
 	)
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT r.email, r.kind, r.letter_lang, r.name, r.street_address, r.address_2, r.postal_code, r.city,
+		SELECT r.email, r.kind, COALESCE(NULLIF(r.buyer_lang, ''), r.letter_lang), r.name, r.street_address, r.address_2, r.postal_code, r.city,
 		       COALESCE(pp.event_id, 0), p.org_id
 		FROM partner_redemptions r JOIN partners p ON p.id = r.partner_id
 		LEFT JOIN partner_products pp ON pp.id = r.product_id
@@ -1599,7 +1642,7 @@ func (h *Handlers) sendRedemptionReceived(ctx context.Context, id int64) {
 	if street != "" {
 		address = addressLines(name, street, address2, postal, city)
 	}
-	subject, c := emailtpl.BoxReceived(l.Lang, partnerNames[kind], address)
+	subject, c := emailtpl.BoxReceived(l.Lang, partnerNames[kind], address, l.Contact)
 	c.Picture = l.Cover
 	msg := l.message([]string{email}, subject, c)
 	var err error

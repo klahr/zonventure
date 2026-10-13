@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Copy, ExternalLink } from "lucide-react";
 import { useT } from "../../i18n.tsx";
-import { Button, Dialog, fmtDateTime, ICON, toDate, useToast } from "../../ui/index.ts";
+import { Button, Dialog, fmtDateTime, ICON, toDate, useDialogs, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
 import type { EventInfo, Team } from "./api.ts";
 import { copyText, downloadBlob, liveURL, memberURL, members, teamURL } from "./util.ts";
@@ -32,6 +32,32 @@ export function LinkField({ url, label, small }: { url: string; label: string; s
   );
 }
 
+/**
+ * Copy text, or, when the browser blocks the clipboard, show it in a
+ * dialog to select and copy by hand.
+ */
+export function useCopyOrShow() {
+  const t = useT();
+  const toast = useToast();
+  const dialogs = useDialogs();
+  return async (text: string, done: string) => {
+    if (await copyText(text)) {
+      toast.ok(done);
+      return;
+    }
+    await dialogs.confirm({
+      title: t.t("Copy by hand"),
+      message: (
+        <>
+          {t.t("The browser blocked the clipboard. Select the text below and copy it.")}
+          <textarea className="ev-copybox" readOnly rows={Math.min(8, text.split("\n").length)} value={text} aria-label={t.t("Text to copy")} onFocus={(e) => e.currentTarget.select()} />
+        </>
+      ),
+      confirmLabel: t.t("Done"),
+    });
+  };
+}
+
 /** "expired" once past, "expires in Nd" inside a week; nothing otherwise. */
 export function ExpiryHint({ expiresAt }: { expiresAt: string | undefined }) {
   const t = useT();
@@ -55,10 +81,10 @@ const csvCell = (c: string) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` 
 export function useCopyLinks(teams: Team[]) {
   const t = useT();
   const toast = useToast();
+  const copy = useCopyOrShow();
   const captains = async () => {
     const txt = teams.map((tm) => `${tm.name}\t${teamURL(tm)}`).join("\n");
-    if (await copyText(txt)) toast.ok(t.t("Copied {{n}} captain links", { n: teams.length }));
-    else toast.err(t.t("Clipboard blocked — select and copy by hand"));
+    await copy(txt, t.t("Copied {{n}} captain links", { n: teams.length }));
   };
   const csv = async () => {
     const lines = [["team", "member", "url"]];

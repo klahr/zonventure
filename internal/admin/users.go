@@ -23,11 +23,14 @@ type userSearchMatch struct {
 	Username string `json:"username"`
 }
 
-// SearchUsers powers the typeahead in the "Add user to org" modal.
-// Returns up to 10 username matches for a prefix query, excluding
-// global admins (they don't fit the per-org role model) and
-// optionally users who are already members of a target org. Auth:
-// admin or org_admin, mirroring CreateOrgMember's envelope.
+// SearchUsers powers the typeahead in the Organizations page's "Add
+// user" modal. Returns up to 10 username matches for a prefix query,
+// excluding global admins (they don't fit the per-org role model) and
+// optionally users who are already members of a target org. Global
+// admin only: an org admin finds an existing account solely by its
+// exact email address in CreateOrgMember, which doesn't say whether
+// it exists — any lookup here would tell them which usernames and
+// addresses on the instance have accounts.
 //
 // Username is a CITEXT column so LIKE is case-insensitive without
 // extra ILIKE / LOWER() decoration. The pattern is ESCAPE-quoted so
@@ -35,7 +38,7 @@ type userSearchMatch struct {
 // fishing expedition.
 func (h *Handlers) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
-	if me.Role != auth.RoleAdmin && me.Role != auth.RoleOrgAdmin {
+	if me.Role != auth.RoleAdmin {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -48,6 +51,7 @@ func (h *Handlers) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	escape := strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
 	pattern := escape.Replace(q) + "%"
+	match := `u.username LIKE $1 ESCAPE '\'`
 
 	var orgID int64
 	if v := r.URL.Query().Get("org_id"); v != "" {
@@ -62,7 +66,7 @@ func (h *Handlers) SearchUsers(w http.ResponseWriter, r *http.Request) {
 		rows, err = h.DB.QueryContext(r.Context(), `
 			SELECT u.id, u.username FROM users u
 			WHERE u.is_admin = FALSE
-			  AND u.username LIKE $1 ESCAPE '\'
+			  AND `+match+`
 			  AND NOT EXISTS (
 			    SELECT 1 FROM org_memberships m WHERE m.user_id = u.id AND m.org_id = $2
 			  )
@@ -70,9 +74,9 @@ func (h *Handlers) SearchUsers(w http.ResponseWriter, r *http.Request) {
 		`, pattern, orgID)
 	} else {
 		rows, err = h.DB.QueryContext(r.Context(), `
-			SELECT id, username FROM users
-			WHERE is_admin = FALSE AND username LIKE $1 ESCAPE '\'
-			ORDER BY LOWER(username) LIMIT 10
+			SELECT u.id, u.username FROM users u
+			WHERE u.is_admin = FALSE AND `+match+`
+			ORDER BY LOWER(u.username) LIMIT 10
 		`, pattern)
 	}
 	if err != nil {
@@ -124,7 +128,20 @@ func orgAdminMayManageCredentials(ctx context.Context, db *sql.DB, orgID, target
 
 const confirmHeader = "X-Confirm-Password"
 
+type confirmedKey struct{}
+
+// WithConfirmed marks an in-process call as confirmed by the user in
+// place of re-entering the password: the MCP tools pass it on an explicit
+// confirm: true, so a token never has to carry the account password. Only
+// Go code can set it; an HTTP request cannot.
+func WithConfirmed(ctx context.Context) context.Context {
+	return context.WithValue(ctx, confirmedKey{}, true)
+}
+
 func (h *Handlers) requirePasswordConfirm(w http.ResponseWriter, r *http.Request) bool {
+	if ok, _ := r.Context().Value(confirmedKey{}).(bool); ok {
+		return true
+	}
 	me, _ := auth.FromContext(r.Context())
 	pw := r.Header.Get(confirmHeader)
 	if pw == "" {
@@ -201,7 +218,7 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT (avatar_mime_type IS NOT NULL)::int, published, org_id, language,
-		       (SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND state = 'running'),
+		       (SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND state = 'running' AND NOT dev),
 		       a.trail_cards IS NOT NULL, `+lookCoverSQL("a")+`
 		FROM adventures a WHERE a.slug = $1
 	`, slug).Scan(&hasAvatar, &publishedInt, &ownerOrg, &language, &runningN, &isTrail, &theme, &cover)
@@ -302,6 +319,9 @@ type graphSummary struct {
 	StoryCount  int                `json:"story_count"`
 	Zones       []graph.Zone       `json:"zones"`
 	HasQuiz     bool               `json:"has_quiz,omitempty"`
+	// Languages are the main language and its translations, absent
+	// without any (graph.Languages).
+	Languages []string `json:"languages,omitempty"`
 }
 
 type graphSummaryStep struct {
@@ -326,7 +346,7 @@ func publishedGraphSummary(ctx context.Context, db *sql.DB, advID int64) (*graph
 	if err != nil {
 		return nil, err
 	}
-	s := &graphSummary{Steps: []graphSummaryStep{}, Zones: []graph.Zone{}}
+	s := &graphSummary{Steps: []graphSummaryStep{}, Zones: []graph.Zone{}, Languages: st.Graph.Languages()}
 	if st.Graph.Zones != nil {
 		s.Zones = st.Graph.Zones
 	}
@@ -421,7 +441,7 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
-	case me.IsAdmin:
+	case me.Role == auth.RoleAdmin:
 		if targetIsAdmin && me.ID != id {
 			httpx.Error(w, http.StatusForbidden, "admin-on-admin reset is not supported")
 			return
@@ -467,7 +487,7 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE users SET password_hash = $1, password_is_default = 0 WHERE id = $2`,
+		`UPDATE users SET password_hash = $1, password_is_default = 0, password_set_by_admin = 1 WHERE id = $2`,
 		hash, id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return

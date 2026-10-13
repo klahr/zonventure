@@ -98,7 +98,7 @@ function EndpointRow({ ep, onEdit, onSecret, reload }: { ep: WebhookEndpoint; on
   const rotate = async () => {
     const ok = await dialogs.confirm({
       title: t.t("Rotate secret?"),
-      message: t.t("This invalidates the current secret immediately. Deploy the new secret to your verifier first if you want zero downtime."),
+      message: t.t("The current secret stops working at once, and you see the new one only after rotating: deliveries fail verification until your verifier has it."),
       confirmLabel: t.t("Rotate secret"),
       danger: true,
     });
@@ -218,6 +218,7 @@ function WebhookForm({ kinds, existing, onClose, onSaved }: { kinds: string[]; e
         onSaved(r?.secret);
       }
     } catch (e) {
+      // The server's refusals of the URL (internal/admin/webhooks.go) are in the catalogue.
       setErr(errorText(e));
       setBusy(false);
     }
@@ -241,7 +242,7 @@ function WebhookForm({ kinds, existing, onClose, onSaved }: { kinds: string[]; e
       <Field label={t.t("Name")}>
         <input type="text" placeholder={t.t("e.g. prod-slack")} value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
-      <Field label={t.t("Endpoint URL")} hint={t.t("Must be https. Localhost is allowed for development.")}>
+      <Field label={t.t("Endpoint URL")} hint={t.t("Must be an https address reachable from the internet.")}>
         <input type="url" required autoFocus placeholder="https://example.com/webhook" value={url} onChange={(e) => setUrl(e.target.value)} />
       </Field>
       <fieldset className="wh-fieldset">
@@ -285,6 +286,7 @@ function SecretReveal({ title, secret, onClose }: { title: string; secret: strin
       <p className="wh-warn">{t.t("This is the only time the secret will be shown. Store it somewhere safe.")}</p>
       <pre className="wh-secret">{secret}</pre>
       <p className="wh-muted wh-small">{t.t('Configure your verifier with this value. Compute HMAC-SHA256 over the raw request body and compare to the X-Zv-Signature header (after stripping the "sha256=" prefix).')}</p>
+      <p className="wh-muted wh-small">{t.t("A delivery can arrive more than once, after a retry or a replay. Skip any whose X-Zv-Delivery-Id header you have already handled: there is no timestamp header, so the delivery id is how you spot a repeat.")}</p>
     </Dialog>
   );
 }

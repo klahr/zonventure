@@ -249,9 +249,9 @@ const storeItemSelect = `
 
 // storeItemRowFilterBase is the always-on portion of the listing
 // WHERE clause. A row is "for sale right now" when the event is
-// publicly listed, has a non-NULL price, and is in a state where
-// fresh tickets make sense — running or paused. 'pending',
-// 'scheduled', 'completed', 'cancelled' are deliberately excluded.
+// publicly listed, has a non-NULL price, is running and still selling:
+// stopping sales or pausing an event takes it down, and 'pending',
+// 'scheduled', 'completed', 'cancelled' are deliberately excluded too.
 // storeItemSelect's join on event_listings adds the last condition: a
 // platform admin approved it (listing review). What the card shows and
 // what a ticket costs come from that approved copy; the draft's price
@@ -260,7 +260,8 @@ const storeItemSelect = `
 const storeItemRowFilterBase = `
 	WHERE e.public_for_sale
 	  AND e.ticket_price_cents IS NOT NULL
-	  AND e.state IN ('running', 'paused')
+	  AND e.state = 'running'
+	  AND NOT e.sales_stopped
 `
 
 // storeItemRowFilter returns the WHERE clause to use given the
@@ -268,14 +269,27 @@ const storeItemRowFilterBase = `
 // hosted instance's marketplace mode), the listing also requires
 // the org to have completed Stripe Connect onboarding so the
 // purchase flow can actually take a payment. Self-host (no fee,
-// no marketplace) renders the base filter only.
+// no marketplace) renders the base filter only. A server with no
+// payment provider lists nothing: no ticket could be bought.
 func (h *Handlers) storeItemRowFilter() string {
+	if !h.Payments {
+		return storeItemRowFilterBase + `
+		  AND FALSE
+		`
+	}
 	if h.platformFee().Enabled() {
 		return storeItemRowFilterBase + `
 		  AND o.stripe_connect_charges_enabled
 		`
 	}
 	return storeItemRowFilterBase
+}
+
+// ForSale reports whether eventID is in the store right now and can be
+// bought, by the same rules as the store's listings.
+func (h *Handlers) ForSale(ctx context.Context, eventID int64) bool {
+	_, err := h.loadStoreItem(ctx, eventID)
+	return err == nil
 }
 
 func (h *Handlers) loadStoreItem(ctx context.Context, eventID int64) (StoreItemDTO, error) {

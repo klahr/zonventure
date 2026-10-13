@@ -76,7 +76,7 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
       <ul className="party-points">
         <li>{t("Played at home, in the garden or in a park: you print the cards and hide them.")}</li>
         <li>{t("Each team plays on a phone. No app and no accounts.")}</li>
-        <li>{t("Start whenever you like within 60 days of booking.")}</li>
+        <li>{t("Start whenever you like within 60 days of booking. From the first game, play as many games as you like for 14 days.")}</li>
       </ul>
       {cancelled && <p className="party-note">{t("The payment was cancelled. Nothing was charged.")}</p>}
       {!offer.payments_open ? (
@@ -95,6 +95,15 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
               </button>
             </div>
             <small className="party-muted">{t("Up to {{n}} children.", { n: offer.max_kids })}</small>
+            {offer.teams > 0 && (
+              <small className="party-muted">
+                {t("The children play in teams, with one phone per team. A game has room for {{max}} teams, so {{kids}} children can play as up to {{teams}} teams.", {
+                  kids,
+                  teams: Math.min(kids, offer.teams),
+                  max: offer.teams,
+                })}
+              </small>
+            )}
           </label>
           <label className="party-field">
             <span>{t("Name of the party (optional)")}</span>
@@ -151,7 +160,7 @@ export function Resend() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
-  if (sent) return <p className="party-note">{t("If that email booked a party, a new link is on its way. Older links stop working.")}</p>;
+  if (sent) return <p className="party-note">{t("If that email has a party, its link is on its way.")}</p>;
   return (
     <form
       className="party-inline"

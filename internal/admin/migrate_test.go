@@ -436,3 +436,26 @@ func TestMigrate_RedirectModeToggle(t *testing.T) {
 		t.Errorf("settings.RedirectTarget after disable: got %q, want empty", got)
 	}
 }
+
+// An env pin turns the stored toggle off: after unsetting it and
+// starting again, maintenance is off, as the UI says.
+func TestMigrate_MaintenancePinClearsToggle(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	t.Cleanup(cleanup)
+	ctx := context.Background()
+	t.Setenv("ZV_MAINTENANCE_MODE", "")
+	if err := settings.SetMaintenanceMode(ctx, db, true); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = settings.SetMaintenanceMode(ctx, db, false) })
+	t.Setenv("ZV_MAINTENANCE_MODE", "1")
+	settings.LoadMaintenanceMode(ctx, db)
+	if !settings.MaintenanceMode() {
+		t.Fatal("pinned on: maintenance off")
+	}
+	t.Setenv("ZV_MAINTENANCE_MODE", "")
+	settings.LoadMaintenanceMode(ctx, db)
+	if settings.MaintenanceMode() {
+		t.Error("pin removed and started again: maintenance still on")
+	}
+}

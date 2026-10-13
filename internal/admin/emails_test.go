@@ -326,7 +326,7 @@ func TestEmails_SendMeATest(t *testing.T) {
 	if s := do(t, r, "POST", "/api/admin/email-test", map[string]string{"sample": "team_invitation", "lang": "sv"}, nil); s != 200 {
 		t.Fatalf("sample test = %d", s)
 	}
-	if m := mail.msgs[0]; m.To[0] != "tester@acme.com" || m.Subject != "[Test] Dina laglänkar till Zonventure" || m.HTML == "" {
+	if m := mail.msgs[0]; m.To[0] != "tester@acme.com" || m.Subject != "[Test] Dina laglänkar till Acme" || m.HTML == "" {
 		t.Errorf("sample = %v %q", m.To, m.Subject)
 	}
 	if s := do(t, r, "POST", "/api/admin/email-test", map[string]string{"subject": "Hi {{team}}", "body": "See you"}, nil); s != 200 || mail.msgs[1].Subject != "[Test] Hi The Seagulls" {

@@ -13,24 +13,36 @@ export function eventLabel(e: Pick<EventRow, "id" | "name">): string {
 
 /**
  * An event state as a pill. A scheduled event with no time set is one
- * the arranger starts by hand, so it reads "manual" rather than
- * promising a schedule.
+ * the arranger starts by hand, so it reads "not scheduled" rather than
+ * promising a schedule; a hosted one starts when its first team joins.
  */
 const STATE: Record<string, { tone: Tone; label: string }> = {
   running: { tone: "good", label: "running" },
   scheduled: { tone: "accent", label: "scheduled" },
-  manual: { tone: "neutral", label: "manual" },
+  manual: { tone: "neutral", label: "not scheduled" },
+  hosted: { tone: "neutral", label: "not started" },
   paused: { tone: "warn", label: "paused" },
   completed: { tone: "good", label: "completed" },
   cancelled: { tone: "bad", label: "cancelled" },
 };
 
-export function StatePill({ event }: { event: Pick<EventRow, "state" | "scheduled_at"> }) {
+export function StatePill({ event }: { event: Pick<EventRow, "state" | "scheduled_at" | "party"> }) {
   const t = useT();
-  const key = event.state === "scheduled" && !event.scheduled_at ? "manual" : event.state;
+  const key = event.state === "scheduled" && !event.scheduled_at ? (event.party ? "hosted" : "manual") : event.state;
   const s = STATE[key];
   if (!s) return <Pill>{event.state}</Pill>;
   return <Pill tone={s.tone}>{t.t(s.label)}</Pill>;
+}
+
+/** Where a self-guided event stands in the store: up, in review, turned down, stopped, kept out, or not submitted. */
+export function StorePill({ event }: { event: Pick<EventRow, "listing_review" | "listed" | "sales_stopped" | "store_blocked"> }) {
+  const t = useT();
+  if (event.listing_review === "rejected") return <Pill tone="bad">{t.t("Not approved")}</Pill>;
+  if (event.listing_review === "pending") return <Pill tone="accent">{t.t("In review")}</Pill>;
+  if (event.listed && event.sales_stopped) return <Pill tone="warn">{t.t("Sales stopped")}</Pill>;
+  if (event.listed && event.store_blocked) return <Pill tone="bad">{t.t("Not in the store")}</Pill>;
+  if (event.listed) return <Pill tone="good">{t.t("In the store")}</Pill>;
+  return <Pill tone="warn">{t.t("Not submitted")}</Pill>;
 }
 
 /** The event's adventure's icon, else its look's cover; none when it has neither. */

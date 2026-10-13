@@ -35,7 +35,9 @@ const (
 )
 
 // Card is one card of a trail. Options and Correct are a quiz's; Answers
-// the accepted spellings of an answer card's answer.
+// the accepted spellings of an answer card's answer. Example marks a
+// template's card the creator hasn't changed yet; the creator clears it
+// on the first edit.
 type Card struct {
 	ID      string   `json:"id"`
 	Kind    Kind     `json:"kind"`
@@ -43,6 +45,7 @@ type Card struct {
 	Options []string `json:"options,omitempty"`
 	Correct string   `json:"correct,omitempty"`
 	Answers []string `json:"answers,omitempty"`
+	Example bool     `json:"example,omitempty"`
 }
 
 // Limits on a trail and its cards.
@@ -144,8 +147,9 @@ func Problems(cards []Card) []Problem {
 // question itself is on paper, and the number names it on the result
 // screen — and whose answer counts at the end, as a tipspromenad's
 // does. An answer card is a puzzle the team answers once, asked the
-// same way: right scores a point, wrong goes on all the same, and the
-// end screen lists it with the quiz cards (graph.QuizPuzzles). An info
+// same way, that says neither right nor wrong (graph.PuzzleConfig.Quiet):
+// right scores a point, wrong goes on all the same, and the end screen
+// lists it with the quiz cards (graph.QuizPuzzles). An info
 // card is a story with its text.
 func Compile(cards []Card, lang string) *graph.Graph {
 	w := words(lang)
@@ -155,7 +159,7 @@ func Compile(cards []Card, lang string) *graph.Graph {
 		g.Edges = append(g.Edges, graph.Edge{From: from, FromPort: port, To: to})
 	}
 	add(graph.Node{Slug: "start", Type: graph.Start})
-	prev, ports := "start", []string{graph.PortOut}
+	prev, port := "start", graph.PortOut
 	n := 0
 	for _, c := range cards {
 		slug := "card-" + c.ID
@@ -175,11 +179,9 @@ func Compile(cards []Card, lang string) *graph.Graph {
 				}
 			}
 			node = graph.Node{Slug: slug, Type: graph.Puzzle, Title: fmt.Sprintf(w.card, n), PuzzleCfg: &graph.PuzzleConfig{
-				Blocks: []graph.Block{{ID: "t", Kind: graph.BlockText, Text: fmt.Sprintf(w.ask, n)}},
-				Outputs: []graph.Output{
-					{Port: "right", Trigger: graph.OnAnswer, Matchers: ms, Points: 1},
-					{Port: "wrong", Trigger: graph.OnAttempts, AfterAttempts: 1},
-				},
+				Blocks:  []graph.Block{{ID: "t", Kind: graph.BlockText, Text: fmt.Sprintf(w.ask, n)}},
+				Outputs: []graph.Output{{Port: "right", Trigger: graph.OnAnswer, Matchers: ms, Points: 1}},
+				Quiet:   true,
 			}}
 		default:
 			node = graph.Node{Slug: slug, Type: graph.Story, Title: w.info, StoryCfg: &graph.StoryConfig{
@@ -187,22 +189,16 @@ func Compile(cards []Card, lang string) *graph.Graph {
 			}}
 		}
 		add(node)
-		for _, p := range ports {
-			link(prev, p, slug)
-		}
-		prev = slug
+		link(prev, port, slug)
+		prev, port = slug, graph.PortOut
 		if c.Kind == Answer {
-			ports = []string{"right", "wrong"}
-		} else {
-			ports = []string{graph.PortOut}
+			port = "right"
 		}
 	}
 	add(graph.Node{Slug: "end", Type: graph.End, EndCfg: &graph.EndConfig{
 		Blocks: []graph.Block{{ID: "t", Kind: graph.BlockText, Text: w.done}},
 	}})
-	for _, p := range ports {
-		link(prev, p, "end")
-	}
+	link(prev, port, "end")
 	return g
 }
 

@@ -117,7 +117,7 @@ function horizonSVG(b: play.Backdrop, grid: string, sun: string, palette: string
 
 /**
  * A picture backdrop. The player paints it on a layer of its own
- * (.pv-photo, PlayView), since CSS cannot blur a background image; the
+ * (.pv-backdrop-photo, PlayView), since CSS cannot blur a background image; the
  * same image as a plain background serves a thumbnail, which has no
  * such layer and is never blurred. The URL is play.mediaURL's.
  */

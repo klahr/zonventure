@@ -105,6 +105,7 @@ func TestSummariseDetail_LeaderboardOrdering(t *testing.T) {
 	t.Parallel()
 	var d eventDetailForSummary
 	d.Event.State = "running"
+	d.Event.ScheduledAt = "2026-10-20 07:00:00"
 	d.Event.AllowedOps = []string{"pause", "cancel"}
 	d.Teams = []summaryTeam{
 		{ID: 1, Name: "Slow"},
@@ -115,6 +116,10 @@ func TestSummariseDetail_LeaderboardOrdering(t *testing.T) {
 		{ID: 6, Name: "Tail", Rank: 4},
 	}
 	s := summariseDetail(d)
+	// In RFC 3339, as create_event returns it, not a bare UTC time.
+	if s.ScheduledAt != "2026-10-20T07:00:00Z" {
+		t.Errorf("scheduled_at=%q, want 2026-10-20T07:00:00Z", s.ScheduledAt)
+	}
 	if s.CompletedCount != 1 {
 		t.Errorf("completed_count=%d, want 1", s.CompletedCount)
 	}

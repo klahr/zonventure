@@ -10,13 +10,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/teamimport"
 )
 
 // ExportEventResults writes a CSV of the event's final standings. Columns:
-// rank, team, members, puzzles_solved, puzzles_total, time. The order
+// rank, team, members, points, tiebreak_guess, tiebreak_off_by,
+// finished_at (in the organisation's time zone, with its offset), time,
+// status (finished, playing, did not finish, withdrawn, not started). The order
 // and ranking rules mirror the public leaderboard's so a TV shot and
 // the exported file agree.
 //
@@ -50,13 +53,24 @@ func (h *Handlers) exportGraphResults(w http.ResponseWriter, r *http.Request, ev
 		httpx.ServerErr(w, http.StatusInternalServerError, "ranking failed", err)
 		return
 	}
-	var started sql.NullTime
-	if err := h.DB.QueryRowContext(ctx, `SELECT MIN(started_at) FROM team_graph_state WHERE event_id = $1`, eventID).Scan(&started); err != nil {
+	var (
+		started   sql.NullTime
+		state, tz string
+	)
+	if err := h.DB.QueryRowContext(ctx, `
+		SELECT (SELECT MIN(started_at) FROM team_graph_state WHERE event_id = e.id), e.state, o.time_zone
+		FROM events e JOIN organizations o ON o.id = e.org_id WHERE e.id = $1`, eventID).Scan(&started, &state, &tz); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
+	loc := emailtpl.Location(tz)
+	unfinished := "did not finish"
+	switch state {
+	case "scheduled", "running", "paused":
+		unfinished = "playing"
+	}
 	idle, err := h.DB.QueryContext(ctx, `
-		SELECT t.id, t.name FROM teams t
+		SELECT t.id, t.name, t.withdrawn_at IS NOT NULL FROM teams t
 		WHERE t.event_id = $1 AND (t.withdrawn_at IS NOT NULL OR NOT EXISTS (SELECT 1 FROM team_graph_state s WHERE s.team_id = t.id AND NOT s.cheated))
 		ORDER BY LOWER(t.name)`, eventID)
 	if err != nil {
@@ -64,13 +78,14 @@ func (h *Handlers) exportGraphResults(w http.ResponseWriter, r *http.Request, ev
 		return
 	}
 	type unranked struct {
-		id   int64
-		name string
+		id        int64
+		name      string
+		withdrawn bool
 	}
 	var rest []unranked
 	for idle.Next() {
 		var u unranked
-		if err := idle.Scan(&u.id, &u.name); err != nil {
+		if err := idle.Scan(&u.id, &u.name, &u.withdrawn); err != nil {
 			idle.Close()
 			return
 		}
@@ -87,7 +102,7 @@ func (h *Handlers) exportGraphResults(w http.ResponseWriter, r *http.Request, ev
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="event-%d-results.csv"`, eventID))
 	cw := csv.NewWriter(w)
 	defer cw.Flush()
-	_ = cw.Write([]string{"rank", "team", "members", "points", "tiebreak_guess", "tiebreak_off_by", "finished_at", "time"})
+	_ = cw.Write([]string{"rank", "team", "members", "points", "tiebreak_guess", "tiebreak_off_by", "finished_at", "time", "status"})
 	num := func(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 	for _, t := range ranked {
 		rank := 1
@@ -101,19 +116,24 @@ func (h *Handlers) exportGraphResults(w http.ResponseWriter, r *http.Request, ev
 		if t.Guess != nil {
 			guess, off = num(*t.Guess), num(t.Miss)
 		}
-		finished, elapsed := "", ""
+		finished, elapsed, status := "", "", unfinished
 		if t.Done {
-			finished = t.CompletedAt.UTC().Format(time.RFC3339)
+			status = "finished"
+			finished = t.CompletedAt.In(loc).Format(time.RFC3339)
 			if started.Valid {
 				elapsed = t.CompletedAt.Sub(started.Time).Round(time.Second).String()
 			}
 		}
 		// Names are defanged on the way out.
-		_ = cw.Write([]string{strconv.Itoa(rank), teamimport.SanitizeCellValue(t.Name), teamimport.SanitizeCellValue(members), num(t.Score), guess, off, finished, elapsed})
+		_ = cw.Write([]string{strconv.Itoa(rank), teamimport.SanitizeCellValue(t.Name), teamimport.SanitizeCellValue(members), num(t.Score), guess, off, finished, elapsed, status})
 	}
 	for _, u := range rest {
 		members, _ := h.teamMemberNames(ctx, u.id)
-		_ = cw.Write([]string{"", teamimport.SanitizeCellValue(u.name), teamimport.SanitizeCellValue(members), "", "", "", "", ""})
+		status := "not started"
+		if u.withdrawn {
+			status = "withdrawn"
+		}
+		_ = cw.Write([]string{"", teamimport.SanitizeCellValue(u.name), teamimport.SanitizeCellValue(members), "", "", "", "", "", status})
 	}
 }
 

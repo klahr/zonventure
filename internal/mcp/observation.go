@@ -56,7 +56,7 @@ func (s *Server) registerObservationTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "get_event_state_summary",
 		Scope:       scopeRead,
-		Description: "Compact poll-friendly summary of one event's progress. Returns: state, allowed_ops (legal next transitions), teams_count, completed_count, withdrawn_count, leaderboard (top 5 teams by rank, with score, current step and completion / withdrawal flags). Use as the heartbeat in a 'wait for this event to finish' loop — much smaller payload than get_event.",
+		Description: "Compact poll-friendly summary of one event's progress. Returns: state, allowed_ops (the team and schedule edits the state allows; the lifecycle moves each state allows — start, pause, resume, end, cancel — are in describe_event_lifecycle), teams_count, completed_count, withdrawn_count, leaderboard (top 5 teams by rank, with score, current step and completion / withdrawal flags). Use as the heartbeat in a 'wait for this event to finish' loop — much smaller payload than get_event.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},
@@ -231,10 +231,10 @@ func getEventStateSummary(ctx context.Context, s *Server, raw json.RawMessage) (
 func summariseDetail(d eventDetailForSummary) eventStateSummary {
 	out := eventStateSummary{
 		State:       d.Event.State,
-		ScheduledAt: d.Event.ScheduledAt,
-		StartedAt:   d.Event.StartedAt,
-		CompletedAt: d.Event.CompletedAt,
-		CancelledAt: d.Event.CancelledAt,
+		ScheduledAt: utcISO(d.Event.ScheduledAt),
+		StartedAt:   utcISO(d.Event.StartedAt),
+		CompletedAt: utcISO(d.Event.CompletedAt),
+		CancelledAt: utcISO(d.Event.CancelledAt),
 		AllowedOps:  d.Event.AllowedOps,
 		TeamsCount:  len(d.Teams),
 	}

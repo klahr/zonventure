@@ -20,6 +20,7 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#0b1020">
 <link rel="stylesheet" href="/assets/fontface.css">
+<script src="/i18n.js"></script>
 <style>
   :root{
     --bg:#0b1020; --bg2:#121a35; --ink:#eef2ff; --ink-soft:#aab3d4;
@@ -177,21 +178,22 @@
         </svg>
       </div>
 
-      <h1>Your adventure<br>awaits</h1>
-      <p class="sub">Someone set a real-world quest in motion. Enter your voucher code to pick it up and start playing — on foot, on your phone, at your own pace.</p>
+      <h1 id="title">Your adventure<br>awaits</h1>
+      <p class="sub" id="sub">Someone set a real-world quest in motion. Enter your voucher code to pick it up and start playing — on foot, on your phone, at your own pace.</p>
 
       <form class="card" id="form" autocomplete="off" novalidate>
-        <label for="code">Voucher code</label>
+        <label for="code" id="code-label">Voucher code</label>
         <div class="field">
           <input id="code" name="code" type="text" inputmode="latin" autocapitalize="characters"
                  spellcheck="false" placeholder="XXXXXX" maxlength="6" aria-describedby="msg">
         </div>
-        <button class="go" id="go" type="submit"><span class="spin" aria-hidden="true"></span><span class="lbl">Start the adventure</span></button>
+        <button class="go" id="go" type="submit"><span class="spin" aria-hidden="true"></span><span class="lbl" id="go-label">Start the adventure</span></button>
         <p class="msg" id="msg" role="status" aria-live="polite"></p>
       </form>
 
-      <p class="hint">Got a magic link in your email instead? Just open it — it takes you straight in.</p>
-      <p class="curio">New here? <a href="/">See what {{SITE_NAME}} is</a> · <a href="/manual">How it works</a></p>
+      <p class="hint" id="hint-link">Got a magic link in your email instead? Just open it — it takes you straight in.</p>
+      <p class="hint"><span id="hint-lost">Playing an event? Lost your link?</span> <a href="/app/play/" id="hint-lost-link">Get it again by email</a></p>
+      <p class="curio"><span id="curio-new">New here?</span> <a href="/" id="curio-what">See what {{SITE_NAME}} is</a> · <a href="/manual" id="curio-how">How it works</a></p>
     </section>
   </main>
 
@@ -214,6 +216,22 @@
     }
   }catch(e){}
 
+  // The page in the phone's language, as the player app is.
+  var t=window.zvI18n ? zvI18n.t : function(s, v){ return v ? s.replace(/\{\{\s*site\s*\}\}/g, v.site) : s; };
+  var site="{{SITE_NAME}}";
+  [["title", t("Your adventure awaits")],
+   ["sub", t("Someone set a real-world quest in motion. Enter your voucher code to pick it up and start playing — on foot, on your phone, at your own pace.")],
+   ["code-label", t("Voucher code")],
+   ["go-label", t("Start the adventure")],
+   ["hint-link", t("Got a magic link in your email instead? Just open it — it takes you straight in.")],
+   ["hint-lost", t("Playing an event? Lost your link?")],
+   ["hint-lost-link", t("Get it again by email")],
+   ["curio-new", t("New here?")],
+   ["curio-what", t("See what {{site}} is", {site: site})],
+   ["curio-how", t("How it works")]
+  ].forEach(function(e){ document.getElementById(e[0]).textContent=e[1]; });
+  document.title=t("Play") + " · " + site;
+
   var form=document.getElementById("form"), input=document.getElementById("code"),
       go=document.getElementById("go"), msg=document.getElementById("msg");
 
@@ -235,8 +253,8 @@
   // Pre-seed a message when a code in an emailed link didn't match.
   try{
     var p=new URLSearchParams(location.search);
-    if(p.get("voucher")==="invalid") fail("That code didn't match. Check it and try again.");
-    else if(p.get("voucher")==="busy") say("One moment — too many tries just now. Try again shortly.","bad");
+    if(p.get("voucher")==="invalid") fail(t("That code didn't match. Check it and try again."));
+    else if(p.get("voucher")==="busy") say(t("One moment — too many tries just now. Try again shortly."),"bad");
   }catch(e){}
 
   var busy=false;
@@ -244,7 +262,7 @@
     ev.preventDefault();
     if(busy) return;
     var code=input.value.replace(/[^0-9A-Za-z]/g,"");
-    if(code.length<6){ fail("Enter the 6-character code from your card or email."); return; }
+    if(code.length<6){ fail(t("Enter the 6-character code from your card or email.")); return; }
     busy=true; go.classList.add("loading"); go.disabled=true; say("");
     fetch("/api/play/voucher",{
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -252,7 +270,7 @@
     }).then(function(r){ return r.json().then(function(b){ return {s:r.status,b:b}; }); })
       .then(function(res){
         if(res.s===200 && res.b && res.b.team_url){
-          input.classList.add("ok"); say("Unlocking…","ok");
+          input.classList.add("ok"); say(t("Unlocking…"),"ok");
           var url=res.b.team_url;
           var reduce=false;
           try{ reduce=matchMedia("(prefers-reduced-motion: reduce)").matches; }catch(e){}
@@ -266,12 +284,12 @@
           return;
         }
         busy=false; go.classList.remove("loading"); go.disabled=false;
-        if(res.s===429) fail("Too many tries. Give it a minute, then try again.");
-        else fail((res.b && res.b.error) || "That code isn't valid. Check it and try again.");
+        if(res.s===429) fail(t("Too many tries. Give it a minute, then try again."));
+        else fail(t("That code isn't valid. Check it and try again."));
       })
       .catch(function(){
         busy=false; go.classList.remove("loading"); go.disabled=false;
-        fail("Couldn't reach the server. Check your connection and try again.");
+        fail(t("Couldn't reach the server. Check your connection and try again."));
       });
   });
 

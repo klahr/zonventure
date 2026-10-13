@@ -67,6 +67,10 @@ type ReviewContent struct {
 	Live           *listingFieldsDTO `json:"live,omitempty"`
 	Texts          []ReviewText      `json:"texts"`
 	Media          []ReviewMedia     `json:"media"`
+	// StepTitles names the adventure's steps by their index in Texts'
+	// "nodes[i]" paths, so the console can label a text "Step 3 · Bridge".
+	// For display only: snapshotFrom leaves it out of the fingerprint.
+	StepTitles []string `json:"step_titles,omitempty"`
 	// Changes is what a proposal (an organisation's page, an
 	// adventure's presentation) changes: each field as it is and as
 	// proposed. Texts and Media are the page as it would be.
@@ -93,7 +97,7 @@ func reviewMediaURL(kind string, id int64, ref string) string {
 //
 // GET /api/admin/listing-reviews/{kind}/{id}
 func (h *Handlers) GetListingReview(w http.ResponseWriter, r *http.Request) {
-	me, ok := reviewer(w, r)
+	me, ok := listingReader(w, r)
 	if !ok {
 		return
 	}
@@ -137,7 +141,7 @@ var servedRevision = map[string]string{
 		(SELECT string_agg(f.id::text || ':' || md5(f.content), ',' ORDER BY f.id) FROM event_files f
 		 WHERE f.event_id = l.event_id AND f.approved_at IS NOT NULL))::text) FROM event_listings l WHERE l.event_id = $1`,
 	listingParty: `SELECT md5(row(l.blurb, l.base_cents, l.per_kid_cents, l.currency, l.max_kids,
-		l.graph_id)::text) FROM party_offer_listings l WHERE l.offer_id = $1`,
+		l.graph_id)::text || l.name) FROM party_offer_listings l WHERE l.offer_id = $1`,
 }
 
 // contentOf gathers a listing's content: its draft, or with served what
@@ -170,8 +174,8 @@ func (h *Handlers) contentOf(ctx context.Context, kind string, id int64, served 
 		COALESCE(l.currency, ''), COALESCE(l.team_size, 0), 0, l.cover_mime_type IS NOT NULL, l.graph_id`
 	joins := `JOIN adventures a ON a.slug = e.adventure_slug LEFT JOIN event_listings l ON l.event_id = e.id`
 	if kind == listingParty {
-		draftCols = `'', o.blurb, o.base_cents, o.per_kid_cents, o.currency, 0, o.max_kids, FALSE,
-		l.offer_id IS NOT NULL, '', COALESCE(l.blurb, ''), COALESCE(l.base_cents, 0), COALESCE(l.per_kid_cents, 0),
+		draftCols = `o.name, o.blurb, o.base_cents, o.per_kid_cents, o.currency, 0, o.max_kids, FALSE,
+		l.offer_id IS NOT NULL, COALESCE(l.name, ''), COALESCE(l.blurb, ''), COALESCE(l.base_cents, 0), COALESCE(l.per_kid_cents, 0),
 		COALESCE(l.currency, ''), 0, COALESCE(l.max_kids, 0), FALSE, l.graph_id`
 		joins = `LEFT JOIN party_offer_listings l ON l.offer_id = o.id`
 	}
@@ -281,6 +285,21 @@ func (h *Handlers) contentOf(ctx context.Context, kind string, id int64, served 
 			return c, err
 		}
 		c.Texts = append(c.Texts, texts...)
+		for _, n := range stored.Graph.Nodes {
+			title := strings.TrimSpace(n.Title)
+			if title == "" {
+				title = n.Slug
+			}
+			c.StepTitles = append(c.StepTitles, title)
+		}
+		for _, pm := range stored.Graph.PrintMaterials {
+			for lang, m := range pm.Files {
+				if _, ok := where[m]; !ok {
+					mediaIDs = append(mediaIDs, m)
+					where[m] = fmt.Sprintf("Print material: %s (%s, %s)", pm.Name, pm.Delivery, lang)
+				}
+			}
+		}
 		for _, m := range stored.Graph.MediaIDs() {
 			if _, ok := where[m]; !ok {
 				mediaIDs = append(mediaIDs, m)
@@ -396,6 +415,7 @@ var graphWiringKeys = map[string]bool{
 	"id": true, "slug": true, "port": true, "from": true, "to": true, "from_port": true,
 	"kind": true, "type": true, "trigger": true, "zone": true, "item": true, "group": true,
 	"lang": true, "mode": true, "start": true, "condition": true, "section": true,
+	"translation_sources": true,
 }
 
 var (
@@ -409,7 +429,7 @@ var (
 //
 // GET /api/admin/listing-reviews/{kind}/{id}/media/{ref}
 func (h *Handlers) GetListingReviewMedia(w http.ResponseWriter, r *http.Request) {
-	if _, ok := reviewer(w, r); !ok {
+	if _, ok := listingReader(w, r); !ok {
 		return
 	}
 	kind, id, ok := listingParams(w, r)

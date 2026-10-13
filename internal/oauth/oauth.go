@@ -313,7 +313,10 @@ func (s *Server) Request(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u, _ := url.Parse(a.RedirectURI)
-	httpx.JSON(w, http.StatusOK, map[string]any{"client_name": c.name, "redirect_host": u.Host, "scopes": scopes})
+	// Only an allowlisted https host vouches for who the client is; any
+	// local app can register a loopback redirect under any name.
+	verified := u.Scheme == "https"
+	httpx.JSON(w, http.StatusOK, map[string]any{"client_name": c.name, "redirect_host": u.Host, "verified": verified, "scopes": scopes})
 }
 
 // Approve records the signed-in user's answer and returns where the

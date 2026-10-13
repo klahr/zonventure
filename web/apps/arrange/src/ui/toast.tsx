@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { ApiError } from "@zonventure/api";
 import { AlertCircle, CheckCircle2, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { errorText } from "./load.ts";
@@ -13,9 +14,11 @@ interface ToastApi {
   ok: (text: string) => void;
   /** Show an error; an Error or ApiError shows its message. */
   err: (e: unknown) => void;
+  /** Dismiss every toast, as when moving to a screen they aren't about. */
+  clear: () => void;
 }
 
-const Ctx = createContext<ToastApi>({ ok: () => {}, err: () => {} });
+const Ctx = createContext<ToastApi>({ ok: () => {}, err: () => {}, clear: () => {} });
 
 /** How long a toast stays: errors twice as long, as they need reading. */
 const TOAST_MS = { ok: 3500, err: 7000 } as const;
@@ -30,13 +33,14 @@ const LEAVE_MS = 180;
  * screen readers, confirmations polite.
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const i18n = useT();
   const [list, setList] = useState<Toast[]>([]);
   const drop = useCallback((id: number) => setList((l) => l.filter((t) => t.id !== id)), []);
   const push = useCallback((tone: Toast["tone"], text: string) => {
     const id = Date.now() + Math.random();
     setList((l) => [...l.slice(-2), { id, tone, text }]);
   }, []);
-  const api: ToastApi = { ok: (t) => push("ok", t), err: (e) => push("err", typeof e === "string" ? e : errorText(e)) };
+  const api: ToastApi = { ok: (t) => push("ok", t), err: (e) => push("err", typeof e === "string" ? e : e instanceof ApiError ? i18n.tError(e.code, e.message) : errorText(e)), clear: () => setList([]) };
   return (
     <Ctx.Provider value={api}>
       {children}

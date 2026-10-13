@@ -74,6 +74,27 @@ func TestEventVersionUpdate(t *testing.T) {
 		t.Errorf("before approval new teams start on %v, want version 2 (%d)", playing, v2)
 	}
 
+	// Two teams placed on version 2: one hasn't made a move, one has.
+	team := func(name string) int64 {
+		t.Helper()
+		var id int64
+		if err := db.QueryRow(`INSERT INTO teams(event_id, name, token, recap_token) VALUES ($1, $2, $3, $4) RETURNING id`,
+			eventID, name, "tok-"+name, "recap-"+name).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO team_graph_state(team_id, event_id, graph_id, current_node) VALUES ($1, $2, $3, 'first')`, id, eventID, v2); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO team_node_state(team_id, node) VALUES ($1, 'first')`, id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	idle, begun := team("idle"), team("begun")
+	if _, err := db.Exec(`UPDATE team_node_state SET attempts = 1 WHERE team_id = $1`, begun); err != nil {
+		t.Fatal(err)
+	}
+
 	// A verified creator's submission is approved at once, and moves it.
 	if _, err := db.Exec(`UPDATE organizations SET verified_creator = TRUE WHERE id = $1`, orgID); err != nil {
 		t.Fatal(err)
@@ -87,6 +108,16 @@ func TestEventVersionUpdate(t *testing.T) {
 	}
 	if playing.Int64 != v3 || listed.Int64 != v3 {
 		t.Errorf("after approval the event plays %v and lists %v, want version 3 (%d)", playing, listed, v3)
+	}
+	// The idle team is placed again, on version 3, when it next opens
+	// its link; the one that began keeps version 2.
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM team_graph_state WHERE team_id = $1`, idle).Scan(&n); err != nil || n != 0 {
+		t.Errorf("idle team still placed (%d, %v), want unplaced", n, err)
+	}
+	var kept int64
+	if err := db.QueryRow(`SELECT graph_id FROM team_graph_state WHERE team_id = $1`, begun).Scan(&kept); err != nil || kept != v2 {
+		t.Errorf("team that began plays %d (%v), want version 2 (%d)", kept, err, v2)
 	}
 	v = versionView{}
 	if s := boss.do("GET", path, nil, &v); s != 200 || v.Version != 3 || v.Next != 0 || v.CanUpdate {

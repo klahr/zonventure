@@ -1,4 +1,4 @@
-import { get, post, request, type RequestOptions } from "@zonventure/api";
+import { get, post, put, request, type RequestOptions } from "@zonventure/api";
 
 /** internal/admin/me.go: sessionDTO */
 export interface Session {
@@ -43,7 +43,10 @@ export interface McpTokenCreated extends McpToken {
 export interface TotpStatus {
   enabled: boolean;
   enrolled_at?: string;
+  recovery_codes_left: number;
   server_ready: boolean;
+  /** Who requires it of this user, so it can't be turned off. */
+  required_by?: "org" | "admin";
 }
 
 /** internal/admin/me_totp.go: totpSetupResponse */
@@ -58,6 +61,9 @@ export interface EmailRevertStatus {
   available: boolean;
   previous_email?: string;
   expires_at?: string;
+  /** A change waiting for confirmation at this address, until pending_expires_at. */
+  pending_email?: string;
+  pending_expires_at?: string;
 }
 
 const pw = (password: string) => ({ headers: { "X-Confirm-Password": password } });
@@ -83,6 +89,9 @@ export const account = {
   changePassword: (current: string, next: string) => post<void>("/api/admin/me/password", { current, new: next }),
 
   changeUsername: (username: string) => post<{ id: number; username: string }>("/api/admin/me/username", { username }),
+  setDisplayName: (name: string) => put<{ name: string }>("/api/admin/me/display-name", { name }),
+  welcomeSeen: () => post<void>("/api/admin/me/welcome-seen"),
+  forgetWelcomeSeen: () => del<void>("/api/admin/me/welcome-seen"),
 
   uploadAvatar: (file: File) => {
     const form = new FormData();
@@ -91,13 +100,14 @@ export const account = {
   },
   removeAvatar: () => del<void>("/api/admin/me/avatar"),
 
-  changeEmail: (newEmail: string) => post<unknown>("/api/admin/me/email", { new_email: newEmail }),
+  changeEmail: (newEmail: string, password: string) => post<unknown>("/api/admin/me/email", { new_email: newEmail }, pw(password)),
   emailRevertStatus: (signal: AbortSignal) => get<EmailRevertStatus>("/api/admin/me/email/revert-status", { signal }),
   revertEmail: () => post<{ email: string }>("/api/admin/me/email/revert"),
+  cancelEmailChange: () => del<void>("/api/admin/me/email/pending"),
   resendVerification: () => post<unknown>("/api/auth/resend-verification"),
 
   /** 202 with the scheduled time; the server drops every session. */
-  scheduleDeletion: (password: string) => del<unknown>("/api/admin/me", pw(password)),
+  scheduleDeletion: (password: string) => del<{ scheduled_deletion_at: string }>("/api/admin/me", pw(password)),
   cancelDeletion: () => post<void>("/api/admin/me/cancel-deletion"),
 
   createOrg: (name: string) => post<unknown>("/api/admin/me/organizations", { name }),
@@ -137,16 +147,21 @@ export function saveBlob(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** "macOS · Chrome" from a User-Agent, good enough for a glance. */
-export function shortUA(ua: string | undefined): string {
+/**
+ * "macOS · Chrome" from a User-Agent, good enough for a glance; a
+ * client that is neither a known system nor a known browser (a script)
+ * shows its own first word, "curl/8.5.0".
+ */
+export function shortUA(ua: string | undefined, t: { t: (s: string) => string }): string {
   if (!ua) return "";
-  let os = "Other";
+  if (!/Windows|Macintosh|Mac OS X|Android|iPhone|iPad|iOS|Linux|Edg\/|Chrome\/|Firefox\/|Safari\//.test(ua)) return ua.split(" ")[0]!;
+  let os = t.t("Other system");
   if (/Windows/.test(ua)) os = "Windows";
   else if (/Macintosh|Mac OS X/.test(ua)) os = "macOS";
   else if (/Android/.test(ua)) os = "Android";
   else if (/iPhone|iPad|iOS/.test(ua)) os = "iOS";
   else if (/Linux/.test(ua)) os = "Linux";
-  let browser = "Browser";
+  let browser = t.t("Browser");
   if (/Edg\//.test(ua)) browser = "Edge";
   else if (/Chrome\//.test(ua)) browser = "Chrome";
   else if (/Firefox\//.test(ua)) browser = "Firefox";

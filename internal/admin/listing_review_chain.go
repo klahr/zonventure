@@ -270,9 +270,9 @@ func (h *Handlers) verifyChain(ctx context.Context) (chainReport, error) {
 
 // VerifyListingLog recomputes the review log's hash chain and says
 // where it doesn't add up. Compare head_hash with the last one mailed
-// to the platform's admins. Listing reviewers only.
+// to the platform's admins. Listing reviewers and global admins only.
 func (h *Handlers) VerifyListingLog(w http.ResponseWriter, r *http.Request) {
-	if _, ok := reviewer(w, r); !ok {
+	if _, ok := listingReader(w, r); !ok {
 		return
 	}
 	rep, err := h.verifyChain(r.Context())
@@ -334,7 +334,7 @@ func (h *Handlers) AnchorListingLog(ctx context.Context) {
 	if lastHead == head && problems == 0 {
 		return
 	}
-	to, err := h.emailsOf(ctx, `SELECT email FROM users WHERE is_admin AND COALESCE(email, '') <> ''`)
+	to, err := h.emailsOf(ctx, `SELECT email FROM users WHERE is_admin AND NOT is_support AND COALESCE(email, '') <> ''`)
 	if err != nil || len(to) == 0 {
 		return
 	}

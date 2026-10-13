@@ -77,3 +77,21 @@ func TestRawHTMLEscaped(t *testing.T) {
 		t.Fatalf("raw <script> leaked into output: %s", got)
 	}
 }
+
+// TestText checks the plain-text form an email's text part gets: no
+// Markdown syntax left, links readable, list markers kept.
+func TestText(t *testing.T) {
+	cases := []struct{ src, want string }{
+		{"Ditt lag **Team \\*1** är redo.\n\n- **Anna**: [https://x.test/a](https://x.test/a)\n- **Bo**: [hem](https://x.test/b)\n\nKlart.",
+			"Ditt lag Team *1 är redo.\n\n- Anna: https://x.test/a\n- Bo: hem (https://x.test/b)\n\nKlart."},
+		{"## Rubrik\n\n1. *ett*\n2. `två`\n\n> citat\n> rad", "Rubrik\n\n1. ett\n2. två\n\n> citat\n> rad"},
+		{"a &lt; b &amp; c", "a < b & c"},
+		{"| a | b |\n| --- | --- |\n| 1 | 2 |", "a | b\n1 | 2"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := Text(c.src); got != c.want {
+			t.Errorf("Text(%q) =\n%q\nwant\n%q", c.src, got, c.want)
+		}
+	}
+}

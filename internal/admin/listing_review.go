@@ -70,8 +70,10 @@ const eventListingRevision = `md5(row(e.name, e.public_blurb, e.ticket_price_cen
 	e.cover_image_mime_type, md5(e.cover_image_content), COALESCE(e.next_graph_id, e.graph_id),
 	(SELECT string_agg(f.id::text || ':' || md5(f.content), ',' ORDER BY f.id) FROM event_files f WHERE f.event_id = e.id))::text)`
 
+// The offer's name is appended outside row(), so a draft without one
+// keeps the revision it had before offers had names.
 const partyListingRevision = `md5(row(o.blurb, o.base_cents, o.per_kid_cents, o.currency, o.max_kids,
-	a.published_graph_id)::text)`
+	a.published_graph_id)::text || o.name)`
 
 // eventUnchanged and partyUnchanged say a draft is what is approved.
 const eventUnchanged = `COALESCE(l.event_id IS NOT NULL
@@ -84,7 +86,7 @@ const eventUnchanged = `COALESCE(l.event_id IS NOT NULL
 	AND NOT EXISTS (SELECT 1 FROM event_files f WHERE f.event_id = e.id AND f.approved_at IS NULL), FALSE)`
 
 const partyUnchanged = `COALESCE(l.offer_id IS NOT NULL
-	AND l.blurb = o.blurb AND l.base_cents = o.base_cents
+	AND l.name = o.name AND l.blurb = o.blurb AND l.base_cents = o.base_cents
 	AND l.per_kid_cents = o.per_kid_cents AND l.currency = o.currency
 	AND l.max_kids = o.max_kids
 	AND l.graph_id IS NOT DISTINCT FROM a.published_graph_id, FALSE)`
@@ -368,6 +370,10 @@ func (h *Handlers) approveEventListing(ctx context.Context, q execer, eventID, r
 		UPDATE event_files SET approved_at = now() WHERE event_id = $1 AND approved_at IS NULL`, eventID); err != nil {
 		return err
 	}
+	// Teams that haven't made a move yet play the approved version.
+	if err := unplaceIdleTeams(ctx, q, eventID); err != nil {
+		return err
+	}
 	_, err := q.ExecContext(ctx, `
 		UPDATE events SET listing_review = 'approved', listing_reviewed_at = now(),
 		       listing_reviewed_by = $2, listing_reject_reason = '',
@@ -381,11 +387,11 @@ func (h *Handlers) approveEventListing(ctx context.Context, q execer, eventID, r
 func (h *Handlers) approvePartyListing(ctx context.Context, q execer, offerID, reviewer int64) error {
 	by := sql.NullInt64{Int64: reviewer, Valid: reviewer > 0}
 	if _, err := q.ExecContext(ctx, `
-		INSERT INTO party_offer_listings (offer_id, blurb, base_cents, per_kid_cents, currency, max_kids, graph_id, approved_at, approved_by)
-		SELECT o.id, o.blurb, o.base_cents, o.per_kid_cents, o.currency, o.max_kids, a.published_graph_id, now(), $2
+		INSERT INTO party_offer_listings (offer_id, name, blurb, base_cents, per_kid_cents, currency, max_kids, graph_id, approved_at, approved_by)
+		SELECT o.id, o.name, o.blurb, o.base_cents, o.per_kid_cents, o.currency, o.max_kids, a.published_graph_id, now(), $2
 		FROM party_offers o JOIN adventures a ON a.slug = o.adventure_slug WHERE o.id = $1
 		ON CONFLICT (offer_id) DO UPDATE SET
-		    blurb = EXCLUDED.blurb, base_cents = EXCLUDED.base_cents, per_kid_cents = EXCLUDED.per_kid_cents,
+		    name = EXCLUDED.name, blurb = EXCLUDED.blurb, base_cents = EXCLUDED.base_cents, per_kid_cents = EXCLUDED.per_kid_cents,
 		    currency = EXCLUDED.currency, max_kids = EXCLUDED.max_kids, graph_id = EXCLUDED.graph_id,
 		    approved_at = EXCLUDED.approved_at, approved_by = EXCLUDED.approved_by
 	`, offerID, by); err != nil {
@@ -437,7 +443,7 @@ const isoTime = `'YYYY-MM-DD"T"HH24:MI:SS"Z"'`
 // ListListingReviews lists what waits for review, oldest first, but
 // for the reviewer's own organisations'. Listing reviewers only.
 func (h *Handlers) ListListingReviews(w http.ResponseWriter, r *http.Request) {
-	me, ok := reviewer(w, r)
+	me, ok := listingReader(w, r)
 	if !ok {
 		return
 	}
@@ -506,8 +512,8 @@ func (h *Handlers) pendingListings(ctx context.Context, reviewerID int64) ([]lis
 		SELECT o.id, `+partyListingRevision+`, to_char(o.listing_submitted_at AT TIME ZONE 'UTC', `+isoTime+`),
 		       g.id, g.name, COALESCE(g.slug, ''), o.adventure_slug, COALESCE(NULLIF(a.title, ''), o.adventure_slug),
 		       COALESCE(u.username, ''),
-		       o.blurb, o.base_cents, o.per_kid_cents, o.currency, o.max_kids, COALESCE(a.published_graph_id, 0),
-		       l.offer_id IS NOT NULL, COALESCE(l.blurb, ''), COALESCE(l.base_cents, 0), COALESCE(l.per_kid_cents, 0),
+		       o.name, o.blurb, o.base_cents, o.per_kid_cents, o.currency, o.max_kids, COALESCE(a.published_graph_id, 0),
+		       l.offer_id IS NOT NULL, COALESCE(l.name, ''), COALESCE(l.blurb, ''), COALESCE(l.base_cents, 0), COALESCE(l.per_kid_cents, 0),
 		       COALESCE(l.currency, ''), COALESCE(l.max_kids, 0), COALESCE(l.graph_id, 0)
 		FROM party_offers o
 		JOIN organizations g ON g.id = o.org_id
@@ -529,8 +535,8 @@ func (h *Handlers) pendingListings(ctx context.Context, reviewerID int64) ([]lis
 		)
 		if err := rows.Scan(&d.ID, &d.Revision, &d.SubmittedAt, &d.OrgID, &d.OrgName, &d.OrgSlug,
 			&d.AdventureSlug, &d.AdventureTitle, &d.AttestedBy,
-			&d.Draft.Blurb, &d.Draft.PriceCents, &d.Draft.PerKidCents, &d.Draft.Currency, &d.Draft.MaxKids, &d.Draft.GraphID,
-			&isLive, &live.Blurb, &live.PriceCents, &live.PerKidCents, &live.Currency, &live.MaxKids, &live.GraphID); err != nil {
+			&d.Draft.Name, &d.Draft.Blurb, &d.Draft.PriceCents, &d.Draft.PerKidCents, &d.Draft.Currency, &d.Draft.MaxKids, &d.Draft.GraphID,
+			&isLive, &live.Name, &live.Blurb, &live.PriceCents, &live.PerKidCents, &live.Currency, &live.MaxKids, &live.GraphID); err != nil {
 			return nil, err
 		}
 		d.Kind = listingParty
@@ -599,7 +605,7 @@ type listingLogDTO struct {
 // through. ?via=mcp narrows it to decisions made through API tokens.
 // Listing reviewers only.
 func (h *Handlers) ListListingLog(w http.ResponseWriter, r *http.Request) {
-	if _, ok := reviewer(w, r); !ok {
+	if _, ok := listingReader(w, r); !ok {
 		return
 	}
 	via := r.URL.Query().Get("via")
@@ -666,14 +672,25 @@ func (h *Handlers) RejectListing(w http.ResponseWriter, r *http.Request) {
 }
 
 // reviewer is the caller when a platform admin made them a listing
-// reviewer; otherwise it answers 403.
+// reviewer; otherwise it answers 403. Support never decides, even if
+// made a reviewer.
 func reviewer(w http.ResponseWriter, r *http.Request) (auth.User, bool) {
 	me, ok := auth.FromContext(r.Context())
-	if !ok || !me.ListingReviewer {
+	if !ok || !me.ListingReviewer || me.Role == auth.RoleSupport {
 		httpx.JSON(w, http.StatusForbidden, map[string]string{"error": "only listing reviewers review listings", "code": "not_reviewer"})
 		return me, false
 	}
 	return me, true
+}
+
+// listingReader is the caller when they may read the review queue and
+// its log: a listing reviewer, or any global admin (full or Support),
+// who reads but decides only when also a reviewer.
+func listingReader(w http.ResponseWriter, r *http.Request) (auth.User, bool) {
+	if me, ok := auth.FromContext(r.Context()); ok && readsAsAdmin(me) {
+		return me, true
+	}
+	return reviewer(w, r)
 }
 
 // ownOrg reports whether the reviewer belongs to the organisation: no
@@ -877,6 +894,8 @@ func (h *Handlers) SetListingReviewer(w http.ResponseWriter, r *http.Request) {
 	}
 	me, _ := auth.FromContext(r.Context())
 	logx.Info("admin.listing.reviewer", "user_id", id, "reviewer", req.Reviewer, "by", me.ID)
+	noteTarget(r, strings.TrimSpace(req.Username))
+	noteAction(r, onOff(req.Reviewer))
 	httpx.JSON(w, http.StatusOK, map[string]any{"id": id, "reviewer": req.Reviewer})
 }
 
@@ -908,23 +927,27 @@ func (h *Handlers) SetOrgVerifiedCreator(w http.ResponseWriter, r *http.Request)
 		httpx.Error(w, http.StatusNotFound, "organization not found")
 		return
 	}
+	approved := 0
 	if req.Verified {
-		if err := h.approveWaitingListings(ctx, id); err != nil {
+		if approved, err = h.approveWaitingListings(ctx, id); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "approving waiting listings failed", err)
 			return
 		}
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"verified_creator": req.Verified})
+	noteAction(r, onOff(req.Verified))
+	httpx.JSON(w, http.StatusOK, map[string]any{"verified_creator": req.Verified, "approved": approved})
 }
 
 // approveWaitingListings approves an organisation's pending listings,
-// as their submissions would have been had it been verified then.
-func (h *Handlers) approveWaitingListings(ctx context.Context, orgID int64) error {
+// as their submissions would have been had it been verified then, and
+// says how many it approved.
+func (h *Handlers) approveWaitingListings(ctx context.Context, orgID int64) (int, error) {
+	approved := 0
 	for _, kind := range []string{listingEvent, listingParty, listingOrg, listingAdventure} {
 		t := listingTables(kind)
 		tx, err := h.DB.BeginTx(ctx, nil)
 		if err != nil {
-			return err
+			return approved, err
 		}
 		rows, err := tx.QueryContext(ctx, `
 			SELECT `+t.alias+`.id, `+t.revision+`, `+t.graph+` FROM `+t.from+`
@@ -932,7 +955,7 @@ func (h *Handlers) approveWaitingListings(ctx context.Context, orgID int64) erro
 			FOR UPDATE OF `+t.lock, orgID)
 		if err != nil {
 			tx.Rollback()
-			return err
+			return approved, err
 		}
 		type waiting struct {
 			id      int64
@@ -945,7 +968,7 @@ func (h *Handlers) approveWaitingListings(ctx context.Context, orgID int64) erro
 			if err := rows.Scan(&x.id, &x.rev, &x.graphID); err != nil {
 				rows.Close()
 				tx.Rollback()
-				return err
+				return approved, err
 			}
 			list = append(list, x)
 		}
@@ -953,59 +976,63 @@ func (h *Handlers) approveWaitingListings(ctx context.Context, orgID int64) erro
 		for _, x := range list {
 			if err := h.approve(ctx, tx, kind, x.id, 0); err != nil {
 				tx.Rollback()
-				return err
+				return approved, err
 			}
 			if err := h.logListing(ctx, tx, kind, x.id, orgID, "approved", "auto", 0, x.rev, x.graphID, "", decisionSignature{}); err != nil {
 				tx.Rollback()
-				return err
+				return approved, err
 			}
 		}
 		if err := tx.Commit(); err != nil {
-			return err
+			return approved, err
 		}
+		approved += len(list)
 	}
-	return nil
+	return approved, nil
 }
 
 /* ---------------- emails ---------------- */
 
 // notifyListingSubmitted tells the platform's admins a listing waits.
 func (h *Handlers) notifyListingSubmitted(ctx context.Context, orgID int64) {
-	to, err := h.emailsOf(ctx, `SELECT email FROM users WHERE is_admin AND COALESCE(email, '') <> ''`)
+	l := h.orgLook(ctx, 0)
+	byLang, err := h.emailsByLang(ctx, l.Lang, `SELECT email, language FROM users WHERE is_admin AND NOT is_support AND COALESCE(email, '') <> ''`)
 	if err != nil {
 		logx.Warn("admin.listing.notify", "org_id", orgID, "err", err.Error())
 		return
 	}
-	if len(to) == 0 {
+	if len(byLang) == 0 {
 		return
 	}
 	var org string
 	_ = h.DB.QueryRowContext(ctx, `SELECT name FROM organizations WHERE id = $1`, orgID).Scan(&org)
-	l := h.orgLook(ctx, 0)
-	subject, c := emailtpl.ListingWaiting(l.Lang, org, h.arrangeLink("#listing-reviews"))
-	if err := h.send(ctx, "listing_submitted", l.message(to, subject, c)); err != nil {
-		logx.Warn("admin.listing.notify", "org_id", orgID, "err", err.Error())
+	for lang, to := range byLang {
+		subject, c := emailtpl.ListingWaiting(lang, org, h.arrangeLink("#listing-reviews"))
+		if err := h.send(ctx, "listing_submitted", l.message(to, subject, c)); err != nil {
+			logx.Warn("admin.listing.notify", "org_id", orgID, "err", err.Error())
+		}
 	}
 }
 
 // notifyListingDecided tells the organisation's admins what became of
 // their listing.
 func (h *Handlers) notifyListingDecided(ctx context.Context, kind string, id, orgID int64, approved bool, reason string) {
-	to, err := h.emailsOf(ctx, `
-		SELECT u.email FROM org_memberships m JOIN users u ON u.id = m.user_id
+	l := h.orgLook(ctx, orgID)
+	byLang, err := h.emailsByLang(ctx, l.Lang, `
+		SELECT u.email, u.language FROM org_memberships m JOIN users u ON u.id = m.user_id
 		WHERE m.org_id = $1 AND m.role = 'org_admin' AND COALESCE(u.email, '') <> ''`, orgID)
 	if err != nil {
 		logx.Warn("admin.listing.notify", "kind", kind, "id", id, "err", err.Error())
 		return
 	}
-	if len(to) == 0 {
+	if len(byLang) == 0 {
 		return
 	}
 	var what, link string
 	switch kind {
 	case listingOrg:
 		_ = h.DB.QueryRowContext(ctx, `SELECT name FROM organizations WHERE id = $1`, orgID).Scan(&what)
-		link = h.arrangeLink("")
+		link = h.arrangeLink("#/settings/organization")
 	case listingAdventure:
 		var slug string
 		_ = h.DB.QueryRowContext(ctx, `
@@ -1017,7 +1044,7 @@ func (h *Handlers) notifyListingDecided(ctx context.Context, kind string, id, or
 			SELECT COALESCE(NULLIF(e.name, ''), a.title, e.adventure_slug)
 			FROM events e LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
 			WHERE e.id = $1`, id).Scan(&what)
-		link = h.arrangeLink("#/events/" + strconv.FormatInt(id, 10))
+		link = h.arrangeLink("#/quests/" + strconv.FormatInt(id, 10))
 	default:
 		_ = h.DB.QueryRowContext(ctx, `
 			SELECT COALESCE(NULLIF(a.title, ''), o.adventure_slug)
@@ -1025,19 +1052,52 @@ func (h *Handlers) notifyListingDecided(ctx context.Context, kind string, id, or
 			WHERE o.id = $1`, id).Scan(&what)
 		link = h.arrangeLink("#parties")
 	}
-	l := h.orgLook(ctx, orgID)
-	var (
-		subject string
-		c       emailtpl.Content
-	)
-	if approved {
-		subject, c = emailtpl.ListingApproved(l.Lang, what, link)
-	} else {
-		subject, c = emailtpl.ListingRejected(l.Lang, what, reason, link)
+	for lang, to := range byLang {
+		var (
+			subject string
+			c       emailtpl.Content
+		)
+		switch {
+		case kind == listingOrg && approved:
+			subject, c = emailtpl.OrgPageApproved(lang, what, link)
+		case kind == listingOrg:
+			subject, c = emailtpl.OrgPageRejected(lang, what, reason, link)
+		case approved:
+			subject, c = emailtpl.ListingApproved(lang, what, link)
+		default:
+			subject, c = emailtpl.ListingRejected(lang, what, reason, link)
+		}
+		if err := h.send(ctx, "listing_"+map[bool]string{true: "approved", false: "rejected"}[approved], l.message(to, subject, c)); err != nil {
+			logx.Warn("admin.listing.notify", "kind", kind, "id", id, "err", err.Error())
+		}
 	}
-	if err := h.send(ctx, "listing_"+map[bool]string{true: "approved", false: "rejected"}[approved], l.message(to, subject, c)); err != nil {
-		logx.Warn("admin.listing.notify", "kind", kind, "id", id, "err", err.Error())
+}
+
+// emailsByLang runs a query of an email and a nullable language column
+// and groups the addresses by the language each recipient uses the
+// console in; one who never chose gets fallback.
+func (h *Handlers) emailsByLang(ctx context.Context, fallback, q string, args ...any) (map[string][]string, error) {
+	rows, err := h.DB.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
 	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var (
+			e    string
+			lang sql.NullString
+		)
+		if err := rows.Scan(&e, &lang); err != nil {
+			return nil, err
+		}
+		l := fallback
+		if lang.Valid && lang.String != "" {
+			l = emailtpl.Lang(lang.String)
+		}
+		out[l] = append(out[l], e)
+	}
+	return out, rows.Err()
 }
 
 // emailsOf runs a query of one email column.

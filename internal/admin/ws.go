@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/play"
 	"net/http"
@@ -52,8 +53,9 @@ func SetWatchAccessRecheck(d time.Duration) time.Duration {
 //	server → {"kind":"watch_error","data":{"error":"…"}}    auth failure
 //
 //	client → {"kind":"watch_adventure","data":{"slug":"…"}}  the designer
-//	server → {"kind":"graph_saved","data":{saved_at, by, user_id, assistant, touched, note}}
-//	                                                       its draft was saved
+//	server → {"kind":"graph_saved","data":{saved_at, by, user_id, assistant, touched, note, kept}}
+//	                                                       its draft was saved; kept {user_id, steps}:
+//	                                                       whose steps it overwrote after a conflict
 //
 // Whatever is watched, the watcher is present on it (ws.Peer):
 //
@@ -156,7 +158,7 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 			conn.SendKind("watch_error", map[string]any{"error": "lookup failed"})
 			return
 		}
-		if !sameOrg(me, orgID) {
+		if !sameOrg(me, orgID) || !runsEvents(me) {
 			conn.SendKind("watch_error", map[string]any{"error": "forbidden"})
 			return
 		}
@@ -200,7 +202,7 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return true
 			}
-			return ok && sameOrg(u, orgID)
+			return ok && sameOrg(u, orgID) && runsEvents(u)
 		}
 
 		// Each view is built once per event and shared by every watcher
@@ -379,11 +381,12 @@ type eventDetailDTO struct {
 
 // eventGraphDTO is what the console needs of an event's graph to show it:
 // its puzzle count, each step's title for the activity feed and team
-// rows, and its zones for the map.
+// rows, its zones for the map, and the steps a team can be moved past.
 type eventGraphDTO struct {
 	PuzzleCount int               `json:"puzzle_count"`
 	Titles      map[string]string `json:"titles"`
 	Zones       []graph.Zone      `json:"zones"`
+	Rescuable   []string          `json:"rescuable"`
 }
 
 type eventDetailTeamDTO struct {
@@ -439,6 +442,10 @@ func (h *Handlers) eventGraph(ctx context.Context, slug string, graphID int64) (
 	return st.Graph, err
 }
 
+// teamNameOrder lists teams by name with their numbers in order:
+// "Team 2" before "Team 10", which plain ORDER BY t.name puts first.
+const teamNameOrder = `regexp_replace(t.name, '\d+', '', 'g'), length(substring(t.name from '\d+')), t.name`
+
 // buildEventDetail assembles the event-with-teams-and-slots payload, for
 // the HTTP EventDetail handler and the watch_event push alike.
 func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDetailDTO, error) {
@@ -448,9 +455,10 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		priceCents  sql.NullInt64
 		secretRoles bool
 		graphID     int64
+		connect     bool
 	)
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT ar.id, ar.name, ar.adventure_slug, ar.state,
+		SELECT ar.id, ar.name, ar.adventure_slug, COALESCE(adv.title, ''), ar.state,
 		       COALESCE(ar.scheduled_at,''), COALESCE(ar.started_at,''),
 		       COALESCE(ar.completed_at, ''), COALESCE(ar.cancelled_at, ''),
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
@@ -466,18 +474,28 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		       ar.paused_seconds, COALESCE(ar.paused_at, ''),
 		       ar.secret_roles, COALESCE(ar.graph_id, 0), ar.party,
 		       COALESCE(ar.listing_review, ''), ar.listing_reject_reason,
-		       EXISTS (SELECT 1 FROM event_listings l WHERE l.event_id = ar.id)
+		       l.event_id IS NOT NULL, COALESCE(l.price_cents, 0), COALESCE(l.currency, ''),
+		       COALESCE(o.stripe_connect_charges_enabled, FALSE),
+		       ar.sales_stopped,
+		       COALESCE(adv.cheat_password, ''), ar.meeting_place
 		FROM events ar
+		LEFT JOIN organizations o ON o.id = ar.org_id
+		LEFT JOIN event_listings l ON l.event_id = ar.id
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
+		LEFT JOIN adventures adv ON adv.slug = ar.adventure_slug
 		WHERE ar.id = $1
-	`, eventID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
+	`, eventID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.AdventureTitle, &d.State, &d.ScheduledAt, &d.StartedAt,
 		&d.CompletedAt, &d.CancelledAt,
 		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
 		&d.LiveToken, &showMap, &d.TeamsCount, &d.PlayerSlotsCount,
 		&d.PublicForSale, &priceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.PublicBlurb,
 		&d.HasCoverImage, &d.PausedSeconds, &d.PausedAt, &secretRoles, &graphID, &d.Party,
-		&d.ListingReview, &d.ListingRejectReason, &d.Listed); err != nil {
+		&d.ListingReview, &d.ListingRejectReason, &d.Listed, &d.ListedPriceCents, &d.ListedCurrency, &connect,
+		&d.SalesStopped, &d.CheatPassword, &d.MeetingPlace); err != nil {
 		return eventDetailDTO{}, err
+	}
+	if d.PublicForSale && d.Listed {
+		d.StoreBlocked = h.storeBlocked(connect)
 	}
 	// Only an adventure with a saboteur has the setting to show.
 	if g, err := h.eventGraph(ctx, d.AdventureSlug, graphID); err == nil && len(g.SecretRoles()) > 0 {
@@ -496,7 +514,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		       COALESCE(t.withdrawn_at, ''),
 		       t.token, COALESCE(t.recap_token, ''),
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
-		FROM teams t WHERE t.event_id = $1 ORDER BY t.name
+		FROM teams t WHERE t.event_id = $1 ORDER BY `+teamNameOrder+`
 	`, eventID)
 	if err != nil {
 		return eventDetailDTO{}, err
@@ -577,7 +595,7 @@ func (h *Handlers) addGraphDetail(ctx context.Context, d *eventDetailDTO) error 
 	`, d.Event.ID).Scan(&graphID); err != nil {
 		return err
 	}
-	gd := &eventGraphDTO{Titles: map[string]string{}, Zones: []graph.Zone{}}
+	gd := &eventGraphDTO{Titles: map[string]string{}, Zones: []graph.Zone{}, Rescuable: []string{}}
 	d.Graph = gd
 	if !graphID.Valid {
 		return nil
@@ -594,6 +612,9 @@ func (h *Handlers) addGraphDetail(ctx context.Context, d *eventDetailDTO) error 
 		gd.Titles[n.Slug] = title
 		if n.Type == graph.Puzzle {
 			gd.PuzzleCount++
+		}
+		if session.CanRescue(n) {
+			gd.Rescuable = append(gd.Rescuable, n.Slug)
 		}
 	}
 	if st.Graph.Zones != nil {

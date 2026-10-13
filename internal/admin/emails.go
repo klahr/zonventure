@@ -27,6 +27,7 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/icscal"
 	"github.com/klahr/zonventure/internal/logx"
 	mailerpkg "github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/ws"
@@ -44,6 +45,10 @@ type look struct {
 	Cover emailtpl.Picture
 	// BuyerNote is the adventure author's word to its buyer.
 	BuyerNote string
+	// Contact is the organisation's contact address, its emails'
+	// Reply-To; TimeZone the one their times are written in.
+	Contact  string
+	TimeZone string
 }
 
 // eventLook is an event's: its theme, else its organisation's.
@@ -53,7 +58,7 @@ func (h *Handlers) eventLook(ctx context.Context, eventID int64) look {
 	_ = h.DB.QueryRowContext(ctx, `
 		SELECT COALESCE(NULLIF(e.name, ''), a.title, e.adventure_slug), COALESCE(a.buyer_note, '') FROM events e LEFT JOIN adventures a ON a.slug = e.adventure_slug WHERE e.id = $1
 	`, eventID).Scan(&name, &note)
-	return look{Theme: lk.Theme, Brand: lk.Brand, Event: name, Lang: lk.Lang, Cover: lk.Cover, BuyerNote: note}
+	return look{Theme: lk.Theme, Brand: lk.Brand, Event: name, Lang: lk.Lang, Cover: lk.Cover, BuyerNote: note, Contact: lk.Contact, TimeZone: lk.TimeZone}
 }
 
 // withBuyerNote adds the adventure's note to a buyer's email body.
@@ -67,7 +72,7 @@ func (l look) withBuyerNote(c emailtpl.Content) emailtpl.Content {
 // orgLook is an organisation's, for what no event sends.
 func (h *Handlers) orgLook(ctx context.Context, orgID int64) look {
 	lk := emailtpl.Lookup(ctx, h.DB, h.PublicURL, orgID, 0)
-	return look{Theme: lk.Theme, Brand: lk.Brand, Lang: lk.Lang}
+	return look{Theme: lk.Theme, Brand: lk.Brand, Lang: lk.Lang, Contact: lk.Contact, TimeZone: lk.TimeZone}
 }
 
 // house is a house picture for an email, none without a public URL.
@@ -81,7 +86,9 @@ func (h *Handlers) emailCover(ctx context.Context, lang, slug string) emailtpl.P
 }
 
 func (l look) message(to []string, subject string, c emailtpl.Content) mailerpkg.Message {
-	return emailtpl.Message(to, subject, l.Theme, l.Brand, c)
+	msg := emailtpl.Message(to, subject, l.Theme, l.Brand, c)
+	msg.ReplyTo = l.Contact
+	return msg
 }
 
 var bareURL = regexp.MustCompile(`https?://[^\s<>()]+[^\s<>().,;:!?]`)
@@ -91,7 +98,10 @@ var bareURL = regexp.MustCompile(`https?://[^\s<>()]+[^\s<>().,;:!?]`)
 func (l look) themedText(msg mailerpkg.Message) mailerpkg.Message {
 	body := bareURL.ReplaceAllStringFunc(emailtpl.Lines(msg.Text), func(u string) string { return "[" + u + "](" + u + ")" })
 	out := l.message(msg.To, msg.Subject, emailtpl.Content{Lang: l.Lang, Heading: msg.Subject, Body: body})
-	out.Attachments, out.ReplyTo = msg.Attachments, msg.ReplyTo
+	out.Attachments = msg.Attachments
+	if msg.ReplyTo != "" {
+		out.ReplyTo = msg.ReplyTo
+	}
 	return out
 }
 
@@ -182,8 +192,9 @@ func (h *Handlers) samplePreview(w http.ResponseWriter, r *http.Request, kind st
 var coverKinds = map[string]bool{"team_invitation": true, "game_email": true, "team_link": true, "play_links": true}
 
 // previewCover is the cover a preview shows: the event's adventure's,
-// else a starter theme's as a sample. Without a public URL it points at
-// this site, where the console's preview frame finds it.
+// else none: an organisation's look is its logo and colours, not a
+// themed picture it never chose. Without a public URL it points at this
+// site, where the console's preview frame finds it.
 func (h *Handlers) previewCover(r *http.Request, eventID int64, lang string) emailtpl.Picture {
 	base := h.PublicURL
 	if strings.TrimSpace(base) == "" {
@@ -195,7 +206,7 @@ func (h *Handlers) previewCover(r *http.Request, eventID int64, lang string) ema
 			return emailtpl.CoverFor(r.Context(), h.DB, base, lang, slug)
 		}
 	}
-	return emailtpl.ThemeCover(base, lang, "pirate")
+	return emailtpl.Picture{}
 }
 
 // sampleForEvent is a kind's sample with the event's own name.
@@ -598,6 +609,61 @@ func (h *Handlers) EmailTeams(w http.ResponseWriter, r *http.Request) {
 	activity.Record(r.Context(), h.DB, eventID, nil, activity.UserActor(me.ID), "email.sent", map[string]any{"subject": req.Subject, "sent": sent, "skipped": skipped})
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusOK, map[string]any{"id": id, "sent": sent, "skipped": skipped})
+}
+
+// emailTeamsCancelled tells every team of an event with a contact email
+// that the event is cancelled, and returns how many were sent.
+// Best effort: a failure is logged, not returned.
+func (h *Handlers) emailTeamsCancelled(ctx context.Context, eventID int64) int {
+	if h.MailOutbox == nil && h.Mailer == nil {
+		return 0
+	}
+	rows, err := h.DB.QueryContext(ctx, `SELECT id, name, TRIM(email) FROM teams WHERE event_id = $1 AND TRIM(COALESCE(email, '')) <> '' ORDER BY id`, eventID)
+	if err != nil {
+		logx.Warn("admin.emails.cancelled", "event", eventID, "err", err.Error())
+		return 0
+	}
+	type team struct {
+		id          int64
+		name, email string
+	}
+	var teams []team
+	for rows.Next() {
+		var t team
+		if err := rows.Scan(&t.id, &t.name, &t.email); err != nil {
+			break
+		}
+		teams = append(teams, t)
+	}
+	rows.Close()
+	l := h.eventLook(ctx, eventID)
+	// The calendar entry the invitations put in calendars, cancelled. The
+	// outbox holds no attachments, so with one the mail goes straight out.
+	var cancel []mailerpkg.Attachment
+	if evt, err := icscal.BuildForEvent(ctx, h.DB, h.Lib, eventID, h.PublicURL); err == nil && h.Mailer != nil {
+		evt.Method, evt.Status = "CANCEL", "CANCELLED"
+		if b, err := icscal.Bytes(evt); err == nil {
+			cancel = []mailerpkg.Attachment{{Filename: icscal.Filename(eventID), ContentType: "text/calendar; method=CANCEL; charset=UTF-8", Bytes: b}}
+		}
+	}
+	sent := 0
+	for _, t := range teams {
+		subject, c := emailtpl.EventCancelled(l.Lang, t.name, l.Event, l.Brand.Name, l.Contact)
+		msg := l.message([]string{t.email}, subject, c)
+		var err error
+		if cancel != nil {
+			msg.Attachments = cancel
+			err = h.Mailer.Send(ctx, msg)
+		} else {
+			err = h.send(ctx, "event_cancelled", msg)
+		}
+		if err != nil {
+			logx.Warn("admin.emails.cancelled", "event", eventID, "team", t.id, "err", err.Error())
+			continue
+		}
+		sent++
+	}
+	return sent
 }
 
 // The notification emails a designer can turn off.

@@ -75,11 +75,19 @@ type Pricing struct {
 	PlayerCents         int    `json:"player_cents"`
 	FreePlayersPerEvent int    `json:"free_players_per_event"`
 	Currency            string `json:"currency"`
+	// VATExcluded: prices are shown "excl. VAT", else "incl. VAT".
+	VATExcluded bool `json:"vat_excluded"`
+	// The platform fee on what orgs sell (payments.PlatformFee), so a
+	// price field can say what the org receives. All 0 is none.
+	FeePercentBPS int64 `json:"fee_percent_bps"`
+	FeeFixedCents int64 `json:"fee_fixed_cents"`
+	FeeMinCents   int64 `json:"fee_min_cents"`
 }
 
 func currentPricing() Pricing {
 	p := settings.CurrentPricing()
-	return Pricing{PlayerCents: int(p.PlayerCents), FreePlayersPerEvent: int(p.FreePlayers), Currency: strings.ToUpper(settings.Currency)}
+	return Pricing{PlayerCents: int(p.PlayerCents), FreePlayersPerEvent: int(p.FreePlayers), Currency: strings.ToUpper(settings.Currency),
+		VATExcluded: p.VATExcluded, FeePercentBPS: p.FeePercentBPS, FeeFixedCents: p.FeeFixedCents, FeeMinCents: p.FeeMinCents}
 }
 
 type loginRequest struct {
@@ -102,6 +110,10 @@ type membershipDTO struct {
 	Trusted bool `json:"trusted,omitempty"`
 	// IsPublisher: the org authors the platform catalog.
 	IsPublisher bool `json:"is_publisher,omitempty"`
+	// SoleMember: nobody else is in the org, so deleting the account deletes it.
+	SoleMember bool `json:"sole_member,omitempty"`
+	// VerifiedCreator: its listings are approved as they are submitted.
+	VerifiedCreator bool `json:"verified_creator,omitempty"`
 }
 
 type whoamiResponse struct {
@@ -127,6 +139,10 @@ type whoamiResponse struct {
 	// self-host operators who skim the docs need a louder nudge
 	// than a footnote in docs/selfhosting.md.
 	PasswordIsDefault bool `json:"password_is_default,omitempty"`
+	// TOTPSetupRequired: an organisation of the user's, or the admin
+	// switch, requires 2FA and they have none, so the console shows
+	// only the setup (see RequireTOTPSetup).
+	TOTPSetupRequired bool `json:"totp_setup_required,omitempty"`
 	// ListingReviewer: a platform admin made the user a listing
 	// reviewer, so the console shows the review queue.
 	ListingReviewer bool `json:"listing_reviewer,omitempty"`
@@ -135,8 +151,36 @@ type whoamiResponse struct {
 	// Instance-wide, not per-user, but bootstrapped here so the
 	// frontend doesn't need a second fetch.
 	MCPEnabled bool `json:"mcp_enabled,omitempty"`
+	// Maintenance: writes are paused instance-wide.
+	Maintenance bool `json:"maintenance,omitempty"`
+	// PublicURL is ZV_PUBLIC_URL, for the full platform admin only: the
+	// console warns when the browser's address differs, since mail
+	// links are built from it.
+	PublicURL string `json:"public_url,omitempty"`
+	// Language is the one the user last chose in the console (and
+	// gets notifications in), absent until they choose; the console
+	// starts in it.
+	Language string `json:"language,omitempty"`
 	// AvatarURL is the user's own picture, absent while they have none.
 	AvatarURL string `json:"avatar_url,omitempty"`
+	// PasswordSetByAdmin: an admin chose the current password, so the
+	// console asks the user to choose their own.
+	PasswordSetByAdmin bool `json:"password_set_by_admin,omitempty"`
+	// OrgInvitations are the organisations waiting for the user to
+	// accept or decline joining them.
+	OrgInvitations []orgInvitationDTO `json:"org_invitations,omitempty"`
+	// DisplayName is the name the console greets them by, absent while
+	// they have given none.
+	DisplayName string `json:"display_name,omitempty"`
+	// WelcomeSeen: the console's welcome dialog was shown to them, on
+	// any device.
+	WelcomeSeen bool `json:"welcome_seen,omitempty"`
+}
+
+type orgInvitationDTO struct {
+	OrgID   int64  `json:"org_id"`
+	OrgName string `json:"org_name"`
+	Role    string `json:"role"`
 }
 
 func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
@@ -148,10 +192,18 @@ func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
 		PasswordIsDefault: u.PasswordIsDefault,
 		ListingReviewer:   u.ListingReviewer,
 		MCPEnabled:        h.MCPEnabled,
+		Maintenance:       settings.MaintenanceMode(),
 		AvatarURL:         AvatarURLs(ctx, h.DB, []int64{u.ID})[u.ID],
+	}
+	if u.Role == RoleAdmin {
+		resp.PublicURL = h.PublicURL
 	}
 	if u.ScheduledDeletionAt != nil {
 		resp.ScheduledDeletionAt = u.ScheduledDeletionAt.UTC().Format(time.RFC3339)
+	}
+	_ = h.DB.QueryRowContext(ctx, `SELECT password_set_by_admin <> 0, COALESCE(language, ''), COALESCE(display_name, ''), welcome_seen FROM users WHERE id = $1`, u.ID).Scan(&resp.PasswordSetByAdmin, &resp.Language, &resp.DisplayName, &resp.WelcomeSeen)
+	if h.TOTPKey != nil {
+		resp.TOTPSetupRequired, _ = TOTPSetupRequired(ctx, h.DB, u)
 	}
 	// Admins (Role == RoleAdmin) have no memberships — skip the
 	// query rather than running a guaranteed-empty SELECT every
@@ -163,13 +215,25 @@ func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
 			for _, m := range mems {
 				dto := membershipDTO{
 					OrgID: m.OrgID, OrgName: m.OrgName, Role: m.Role,
-					Trusted: m.Trusted, IsPublisher: m.IsPublisher,
+					Trusted: m.Trusted, IsPublisher: m.IsPublisher, SoleMember: m.SoleMember, VerifiedCreator: m.VerifiedCreator,
 				}
 				if m.HasLogo {
 					dto.OrgLogoURL = "/org-logo/" + strconv.FormatInt(m.OrgID, 10)
 				}
 				resp.Memberships = append(resp.Memberships, dto)
 			}
+		}
+		if rows, err := h.DB.QueryContext(ctx, `
+			SELECT i.org_id, o.name, i.role FROM org_invitations i
+			JOIN organizations o ON o.id = i.org_id
+			WHERE i.user_id = $1 AND i.declined_at IS NULL ORDER BY i.created_at, i.org_id`, u.ID); err == nil {
+			for rows.Next() {
+				var inv orgInvitationDTO
+				if rows.Scan(&inv.OrgID, &inv.OrgName, &inv.Role) == nil {
+					resp.OrgInvitations = append(resp.OrgInvitations, inv)
+				}
+			}
+			_ = rows.Close()
 		}
 	}
 	return resp

@@ -36,7 +36,7 @@ export function ResultsRecordCard({ eventId }: { eventId: number }) {
       {report && (
         <div role="status">
           {report.ok ? (
-            <p><Pill tone="good">{t.t("Intact")}</Pill> {t.t("All {{n}} entries add up, and every team's result is the one recorded.", { n: report.entries })}</p>
+            <p><Pill tone="good">{t.t("Unchanged")}</Pill> {t.t("Nothing was changed after the fact: all {{n}} entries check out, and every team's result is what was recorded during the game.", { n: report.entries })}</p>
           ) : (
             <>
               <p><Pill tone="bad">{t.t("Changed")}</Pill> {t.t("The results were changed outside the game:")}</p>
@@ -51,7 +51,7 @@ export function ResultsRecordCard({ eventId }: { eventId: number }) {
               </ul>
             </>
           )}
-          <p>{report.sealed ? t.t("The event's results fingerprint:") : t.t("The record so far (the event hasn't ended):")}</p>
+          <p>{report.sealed ? t.t("Reference code for these results, to quote if a result is ever questioned:") : t.t("Reference code so far (it is final once the event ends):")}</p>
           <p><code className="ev-hash">{report.fingerprint || "—"}</code></p>
         </div>
       )}

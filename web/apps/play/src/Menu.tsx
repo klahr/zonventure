@@ -247,12 +247,12 @@ function Roles(props: { roles: play.RoleView[]; choosing: boolean; t: Translate;
 }
 
 /** Why the names and the picture can no longer be changed here. */
-const lockedNote = (t: Translate) => t("Fixed now that your team has begun. Ask the organisers if it needs changing.");
+const lockedNote = (t: Translate) => t("Your name, the team name and the team picture are fixed now that your team has begun. Ask the organisers if one needs changing.");
 
 /** A refusal because the team has begun: the state is behind, so refresh it. */
 const isLocked = (err: unknown) => err instanceof ApiError && err.code === "team_started";
 
-function NameField(props: {
+export function NameField(props: {
   label: string;
   value: string;
   hint: string;

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AdventureMeta, Graph, Node, Translatable } from "@zonventure/graph";
-import { adventureTexts, coverage, nodeTexts, setTranslation } from "@zonventure/graph";
+import { adventureTexts, coverage, isOutdated, nodeTexts, setTranslation } from "@zonventure/graph";
 import { Languages, X } from "lucide-react";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { useT } from "../i18n.tsx";
@@ -62,7 +62,7 @@ function TextRows({ texts, graph, lang, onGraphChange, readOnly }: { texts: Tran
     <div className="tr-rows">
       {texts.map((x) => (
         <label key={x.key} className="field tr-row">
-          <span className="field__label">{t.t(x.label)}</span>
+          <span className="field__label">{t.t(x.label, x.vars)}</span>
           <span className="tr-row__main">{x.main}</span>
           {x.multiline ? (
             <textarea
@@ -71,7 +71,7 @@ function TextRows({ texts, graph, lang, onGraphChange, readOnly }: { texts: Tran
               value={tr[x.key] ?? ""}
               placeholder={x.answers ? t.t("More accepted answers, one per line") : t.t("Leave empty to show the original")}
               disabled={readOnly}
-              onChange={(e) => onGraphChange(setTranslation(graph, lang, x.key, e.target.value))}
+              onChange={(e) => onGraphChange(setTranslation(graph, lang, x.key, e.target.value, x.main))}
             />
           ) : (
             <input
@@ -79,10 +79,21 @@ function TextRows({ texts, graph, lang, onGraphChange, readOnly }: { texts: Tran
               value={tr[x.key] ?? ""}
               placeholder={t.t("Leave empty to show the original")}
               disabled={readOnly}
-              onChange={(e) => onGraphChange(setTranslation(graph, lang, x.key, e.target.value))}
+              onChange={(e) => onGraphChange(setTranslation(graph, lang, x.key, e.target.value, x.main))}
             />
           )}
+          {isOutdated(graph, lang, x) && (
+            <span className="field__hint tr-row__outdated">
+              {t.t("Outdated: the original has changed since this was translated.")}{" "}
+              {!readOnly && (
+                <button type="button" className="link-btn" onClick={() => onGraphChange(setTranslation(graph, lang, x.key, tr[x.key] ?? "", x.main))}>
+                  {t.t("Still right")}
+                </button>
+              )}
+            </span>
+          )}
           {x.answers && <span className="field__hint">{t.t("A team answering in this language may give these too; the original answers still count.")}</span>}
+          {x.optional && <span className="field__hint">{t.t("Optional: not counted in the % translated.")}</span>}
         </label>
       ))}
     </div>
@@ -90,7 +101,7 @@ function TextRows({ texts, graph, lang, onGraphChange, readOnly }: { texts: Tran
 }
 
 /** The inspector while translating: the step's texts, original beside translation. */
-export function TranslateStep({ node, graph, lang, onGraphChange, onClose, readOnly }: { node: Node; graph: Graph; lang: string; onGraphChange: (g: Graph) => void; onClose: () => void; readOnly?: boolean }) {
+export function TranslateStep({ node, graph, meta, lang, onGraphChange, onClose, readOnly }: { node: Node; graph: Graph; meta: AdventureMeta; lang: string; onGraphChange: (g: Graph) => void; onClose: () => void; readOnly?: boolean }) {
   const t = useT();
   const kind = STEP[node.type];
   const Icon = kind.icon;
@@ -115,6 +126,11 @@ export function TranslateStep({ node, graph, lang, onGraphChange, onClose, readO
       <div className="inspector-body">
         <div className="insp">
           <TextRows texts={nodeTexts(node)} graph={graph} lang={lang} onGraphChange={onGraphChange} {...(readOnly ? { readOnly } : {})} />
+          {/* The adventure's own texts count too; here they are found without leaving the steps. */}
+          <details className="box">
+            <summary>{t.t("Title, journal, places and messages in {{lang}}", { lang: languageName(lang) })}</summary>
+            <TextRows texts={adventureTexts(graph, meta)} graph={graph} lang={lang} onGraphChange={onGraphChange} {...(readOnly ? { readOnly } : {})} />
+          </details>
         </div>
       </div>
     </>
@@ -174,7 +190,9 @@ export function LanguagesSettings({ graph, main, meta, onChange, onMainChange, e
               if (!window.confirm(t.t("Remove the {{lang}} translation? Its texts are deleted.", { lang: languageName(l) }))) return;
               const next = { ...(graph.translations ?? {}) };
               delete next[l];
-              onChange({ ...graph, translations: next });
+              const sources = { ...(graph.translation_sources ?? {}) };
+              delete sources[l];
+              onChange({ ...graph, translations: next, translation_sources: sources });
               if (editing === l) onEditing(main);
             }}
           >

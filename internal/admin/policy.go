@@ -42,8 +42,8 @@ func AuthorizeAdventureRead(ctx context.Context, db *sql.DB, slug string, user a
 }
 
 // AuthorizeAdventureEdit is the canAuthor counterpart: passes only
-// for callers who can mutate authored content (org_admins of the
-// owning org). org_member is rejected — they can
+// for callers who can mutate authored content (org_admins and
+// org_writers of the owning org). org_member is rejected — they can
 // run events but not rewrite puzzle copy. Same error contract as
 // AuthorizeAdventureRead.
 func AuthorizeAdventureEdit(ctx context.Context, db *sql.DB, slug string, user auth.User) (int64, sql.NullInt64, error) {
@@ -70,8 +70,9 @@ func AuthorizeAdventureEdit(ctx context.Context, db *sql.DB, slug string, user a
  * orphan library puzzles:
  *
  *   owner = org X  → org-owned. Visible to every user of org X.
- *                    Authoring (write) requires org_admin in that org
- *                    — see canAuthor below. org_member sees the row
+ *                    Authoring (write) requires org_admin or
+ *                    org_writer in that org — see canAuthor below.
+ *                    org_writer does nothing else (writerMay). org_member sees the row
  *                    but can't edit puzzle content; they can still run
  *                    events, manage teams, and intervene live. The
  *                    split exists so a corporate customer can hand
@@ -90,12 +91,23 @@ func AuthorizeAdventureEdit(ctx context.Context, db *sql.DB, slug string, user a
 // isAdmin reports whether the caller is a global admin.
 func isAdmin(u auth.User) bool { return u.Role == auth.RoleAdmin }
 
+// readsAsAdmin reports whether the caller sees what a global admin
+// sees: a full admin, or Support (read-only, see auth.RoleSupport).
+func readsAsAdmin(u auth.User) bool { return isAdmin(u) || u.Role == auth.RoleSupport }
+
 // canAuthor returns true when the caller may modify authored content
-// (adventures, pages, hints, accept-lists, puzzle media): org_admin in
-// the owning org. org_member is intentionally rejected — they can see
-// and use the adventure to run events, but not rewrite its content.
+// (adventures, pages, hints, accept-lists, puzzle media): org_admin or
+// org_writer in the owning org. org_member is intentionally rejected —
+// they can see and use the adventure to run events, but not rewrite
+// its content.
 func canAuthor(u auth.User, ownerOrg sql.NullInt64) bool {
-	return u.Role == auth.RoleOrgAdmin && canEditOwned(u, ownerOrg)
+	return (u.Role == auth.RoleOrgAdmin || u.Role == auth.RoleOrgWriter) && canEditOwned(u, ownerOrg)
+}
+
+// runsEvents reports whether the caller may run the organisation's
+// events and teams: org_admin and org_member, not org_writer.
+func runsEvents(u auth.User) bool {
+	return u.Role == auth.RoleOrgAdmin || u.Role == auth.RoleOrgMember
 }
 
 // canEditOwned is the "any member of the owning org" gate kept for

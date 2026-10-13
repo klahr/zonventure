@@ -76,6 +76,12 @@ export function QuickPalette({ graph, from, choosePort = false, at, bounds, onPi
   const [port, setPort] = useState(from?.side === "output" ? from.port : undefined);
   const [phase, setPhase] = useState<Phase>(choosePort && ports.length > 1 ? "port" : "type");
   const [query, setQuery] = useState("");
+  // Typing in the port phase narrows the outputs by name.
+  const [portQuery, setPortQuery] = useState("");
+  const portNeedle = portQuery.trim().toLowerCase();
+  const shownPorts = portNeedle
+    ? ports.filter((p) => (from?.side === "output" ? portLabel(from.node, p) : p).toLowerCase().includes(portNeedle))
+    : ports;
   const [active, setActive] = useState(() => (phase === "port" ? Math.max(0, ports.indexOf(port ?? "")) : 0));
   const [preset, setPreset] = useState<Preset | null>(null);
   const [fill, setFill] = useState<StepFill>({});
@@ -157,11 +163,14 @@ export function QuickPalette({ graph, from, choosePort = false, at, bounds, onPi
     return [...scored, ...matchedExisting];
   }, [graph, drag, query, t]);
 
-  const count = phase === "port" ? ports.length : phase === "type" ? rows.length : 0;
+  const count = phase === "port" ? shownPorts.length : phase === "type" ? rows.length : 0;
 
   useEffect(() => {
     if (phase === "type") setActive(0);
   }, [query, phase]);
+  useEffect(() => {
+    if (phase === "port" && portNeedle) setActive(0);
+  }, [portNeedle, phase]);
 
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
@@ -217,7 +226,7 @@ export function QuickPalette({ graph, from, choosePort = false, at, bounds, onPi
           e.preventDefault();
           const now = e.ctrlKey || e.metaKey;
           if (phase === "port") {
-            const p = ports[active];
+            const p = shownPorts[active];
             if (p) {
               setPort(p);
               setPhase("type");
@@ -253,7 +262,7 @@ export function QuickPalette({ graph, from, choosePort = false, at, bounds, onPi
   const heading = (g: Row["group"]) =>
     g === "suggested" ? t.t("Suggested") : g === "existing" ? t.t("Existing steps") : t.t("Everything");
 
-  const shownPort = phase === "port" ? ports[active] : port;
+  const shownPort = phase === "port" ? shownPorts[active] : port;
   const where =
     from?.side === "output" && choosePort
       ? ports.length > 1 && shownPort
@@ -292,7 +301,15 @@ export function QuickPalette({ graph, from, choosePort = false, at, bounds, onPi
           {phase === "text" ? (
             <textarea id="qp-input" ref={inputRef} rows={4} value={fill.text ?? ""} onChange={(e) => setField("text")(e.target.value)} />
           ) : phase === "port" ? (
-            <input id="qp-input" ref={inputRef} readOnly value={from?.side === "output" && shownPort ? portLabel(from.node, shownPort) : ""} />
+            <input
+              id="qp-input"
+              ref={inputRef}
+              value={portQuery}
+              onChange={(e) => setPortQuery(e.target.value)}
+              placeholder={from?.side === "output" && shownPort ? portLabel(from.node, shownPort) : ""}
+              spellCheck={false}
+              autoComplete="off"
+            />
           ) : phase === "type" ? (
             <input
               id="qp-input"
@@ -323,7 +340,7 @@ export function QuickPalette({ graph, from, choosePort = false, at, bounds, onPi
         </div>
         {phase === "port" && (
           <div className="qp__list" ref={listRef} role="listbox">
-            {ports.map((p, i) => (
+            {shownPorts.map((p, i) => (
               <button
                 key={p}
                 type="button"

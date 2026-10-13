@@ -36,7 +36,7 @@
 </style>
 </head><body>
 
-<a class="skip-link" href="#main">Skip to content</a>
+<a class="skip-link" href="#main">{{SKIP_TO_CONTENT}}</a>
 
 <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
 
@@ -97,7 +97,8 @@
   <li><strong>Operational logs</strong>: login successes/failures, IPs,
       access timestamps. Used to detect abuse and investigate issues.</li>
   <li><strong>Email-verification and password-reset tokens</strong>,
-      one-shot, expire in 1 hour, deleted on use.</li>
+      one-shot, expire in 24 hours (email verification) or 1 hour
+      (password reset), deleted on use.</li>
 </ul>
 
 <h2>What we DON'T collect</h2>
@@ -114,14 +115,10 @@
   <li>Account data: until you delete the account. Deletion has a
       7-day grace window during which you can cancel by logging back
       in; after that the data is permanently removed.</li>
-  <li>Player location pings &amp; answers: deleted with the event, or
-      after the platform's location-retention window
-      ({{LOCATION_RETENTION_DAYS}} days post-event by default), whichever
-      comes first.</li>
+  <li>Player location pings &amp; answers: {{LOCATION_RETENTION}}</li>
   <li>Party adventures booked for children: the whole party adventure —
-      teams, player names, answers and photos — is deleted
-      {{PARTY_RETENTION_DAYS}} days after it ends, or when a booked one
-      lapses unplayed. The payment record is kept for bookkeeping, without
+      teams, player names, answers and photos — {{PARTY_RETENTION}}
+      The payment record is kept for bookkeeping, without
       the booker's email.</li>
   <li>Party adventures made without an account: an unpaid draft is deleted
       30 days after it was last changed. A paid one — its cards, teams,
@@ -132,11 +129,10 @@
       Email links expire after an hour; a sign-in on a browser after
       30 days.</li>
   <li>Postal addresses for letters we post to you: the name and address
-      are deleted {{ADDRESS_RETENTION_DAYS}} days after the letter is
-      posted, or after a gift box redemption is turned down or cancelled.
-      The order is kept for bookkeeping.</li>
-  <li>Audit logs: kept for {{AUDIT_RETENTION_DAYS}} days.</li>
-  <li>Verification / reset tokens: 1 hour or until used.</li>
+      {{ADDRESS_RETENTION}} The order is kept for bookkeeping.</li>
+  <li>Audit logs: {{AUDIT_RETENTION}}</li>
+  <li>Verification / reset tokens: 24 hours (verification) or 1 hour
+      (reset), or until used.</li>
 </ul>
 
 <h2>Your rights</h2>

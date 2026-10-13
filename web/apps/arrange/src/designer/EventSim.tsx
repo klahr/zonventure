@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, play } from "@zonventure/api";
-import { nodeBySlug, type Envelope, type Graph } from "@zonventure/graph";
+import { nodeBySlug, portLabel, type Envelope, type Graph } from "@zonventure/graph";
 import { formatSeconds } from "@zonventure/play-ui";
 import { Pause, Play, RotateCcw, Shuffle } from "lucide-react";
 import { useT } from "../i18n.tsx";
-import { STYLE, loadMapLibre, shape } from "./ZoneMap.tsx";
+import { STYLE, loadMapLibre, mapLocale, shape } from "./ZoneMap.tsx";
 import { conceptColor } from "./dz/concepts.tsx";
 import { ICON } from "./dz/ui.tsx";
 import { DEFAULT_CENTRE } from "./zones.ts";
@@ -167,6 +167,13 @@ export function EventSim({ slug, graph, envelope }: Props) {
   }, [playing, speed, result]);
 
   const titleOf = useCallback((s?: string) => (s ? nodeBySlug(graph, s)?.title || s : ""), [graph]);
+  const portOf = useCallback(
+    (s: string | undefined, port: string) => {
+      const n = s ? nodeBySlug(graph, s) : undefined;
+      return n ? portLabel(n, port) : port;
+    },
+    [graph],
+  );
 
   return (
     <div className="esim">
@@ -256,7 +263,7 @@ export function EventSim({ slug, graph, envelope }: Props) {
             <TeamMap graph={graph} result={result} clock={clock} chosen={chosen} />
             <div className="esim__panes">
               <Standings result={result} clock={clock} chosen={chosen} onChoose={setChosen} titleOf={titleOf} />
-              <Feed result={result} clock={clock} titleOf={titleOf} />
+              <Feed result={result} clock={clock} titleOf={titleOf} portOf={portOf} />
             </div>
             <StepTable result={result} titleOf={titleOf} />
           </>
@@ -331,7 +338,7 @@ function TeamMap({ graph, result, clock, chosen }: { graph: Graph; result: play.
       .then((lib) => {
         if (cancelled || !box.current) return;
         const first = zones[0] ?? DEFAULT_CENTRE;
-        const map = new lib.Map({ container: box.current, style: STYLE, center: [first.lng, first.lat], zoom: 14, attributionControl: { compact: true } });
+        const map = new lib.Map({ container: box.current, style: STYLE, center: [first.lng, first.lat], zoom: 14, attributionControl: { compact: true }, locale: mapLocale(t) });
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         map.on("load", () => {
           const empty = { type: "FeatureCollection" as const, features: [] };
@@ -428,6 +435,12 @@ function TeamMap({ graph, result, clock, chosen }: { graph: Graph; result: play.
   return <div className="esim__map" ref={box} />;
 }
 
+/** A bot team's name: the simulator numbers them "Team 1", "Team 2", …. */
+function teamName(name: string, t: ReturnType<typeof useT>): string {
+  const m = /^Team (\d+)$/.exec(name);
+  return m ? t.t("Team {{n}}", { n: m[1]! }) : name;
+}
+
 function Standings({
   result,
   clock,
@@ -462,7 +475,7 @@ function Standings({
           <li key={r.i}>
             <button type="button" className={"esim__team" + (chosen === r.i ? " is-on" : "")} onClick={() => onChoose(chosen === r.i ? null : r.i)} title={t.t("Pace {{pace}} m/s · skill {{skill}} · patience {{patience}}", { pace: r.team.pace, skill: r.team.skill, patience: r.team.patience })}>
               <span className="esim__dot" style={{ background: colour(r.i) }} />
-              <span className="esim__name">{r.team.name}</span>
+              <span className="esim__name">{teamName(r.team.name, t)}</span>
               <span className="esim__where">{r.finished ? t.t("Finished") : r.team.stalled && !at.has(r.i) ? t.t("Stuck") : titleOf(at.get(r.i))}</span>
               <span className="esim__score">{Math.round(r.score)}</span>
             </button>
@@ -473,7 +486,7 @@ function Standings({
   );
 }
 
-function Feed({ result, clock, titleOf }: { result: play.EventSimResult; clock: number; titleOf: (s?: string) => string }) {
+function Feed({ result, clock, titleOf, portOf }: { result: play.EventSimResult; clock: number; titleOf: (s?: string) => string; portOf: (s: string | undefined, port: string) => string }) {
   const t = useT();
   const lines = useMemo(() => {
     const evs = result.events ?? [];
@@ -483,7 +496,7 @@ function Feed({ result, clock, titleOf }: { result: play.EventSimResult; clock: 
   }, [result, clock]);
 
   const say = (e: play.EventSimEvent): string | null => {
-    const team = e.team >= 0 ? (result.teams[e.team]?.name ?? "") : "";
+    const team = e.team >= 0 ? teamName(result.teams[e.team]?.name ?? "", t) : "";
     const step = titleOf(e.node);
     switch (e.kind) {
       case "start":
@@ -509,7 +522,7 @@ function Feed({ result, clock, titleOf }: { result: play.EventSimResult; clock: 
       case "timeup":
         return t.t("{{team}}’s time is up.", { team });
       case "choose":
-        return t.t("{{team}} chose “{{port}}” at {{step}}.", { team, port: e.text ?? "", step });
+        return t.t("{{team}} chose “{{port}}” at {{step}}.", { team, port: portOf(e.node, e.text ?? ""), step });
       case "back":
         return t.t("{{team}} went back from {{step}}.", { team, step });
       case "leave":
@@ -527,7 +540,7 @@ function Feed({ result, clock, titleOf }: { result: play.EventSimResult; clock: 
       case "forced":
         return t.t("{{team}} passed {{step}}: its answer is a pattern a bot cannot type.", { team, step });
       case "stalled":
-        return t.t("{{team}} is stuck at {{step}}: {{why}}", { team, step, why: e.text ?? "" });
+        return t.t("{{team}} is stuck at {{step}}: {{why}}", { team, step, why: t.t(e.text ?? "") });
       case "finish":
         return t.t("{{team}} finished.", { team });
     }

@@ -61,8 +61,11 @@ func TestRegistryCall_ScopeGate(t *testing.T) {
 		return textResult("ok"), nil
 	})
 
-	// read-only token: read tool runs, write tool refused.
+	// read-only token: read tool runs, write tool refused and not listed.
 	ctx := withScopes(context.Background(), []string{"read"})
+	if l := r.list(ctx); len(l) != 1 || l[0].Name != "fake_read" {
+		t.Errorf("read-only tools/list = %v, want only fake_read", l)
+	}
 
 	res, err := r.call(ctx, nil, "fake_read", nil)
 	if err != nil {

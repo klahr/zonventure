@@ -170,6 +170,29 @@ export function mediaBlock(blocks: Block[], m: Media, kind: FileKind = m.kind): 
   return { id: freshBlockId(blocks), kind, media: m.id, ...(m.alt ? { alt: m.alt } : {}) } as Block;
 }
 
+/**
+ * The blocks with a block added per file picked for a kind (null: each
+ * file as itself). Spot the difference takes two pictures, so a pick of
+ * several fills each block's first and other picture in turn.
+ */
+export function addMediaBlocks(blocks: Block[], files: Media[], kind: FileKind | null): Block[] {
+  let next = blocks;
+  for (let i = 0; i < files.length; i++) {
+    const m = files[i]!;
+    // A file stays the kind it was picked for when that kind takes it — a
+    // picture for a torch stays a torch, a sound for a call a call.
+    const as: FileKind = kind && FILE_KINDS[kind] === m.kind ? kind : m.kind;
+    const b = mediaBlock(next, m, as);
+    const other = as === "spotdiff" ? files[i + 1] : undefined;
+    if (b.kind === "spotdiff" && other?.kind === "image") {
+      b.other = other.id;
+      i++;
+    }
+    next = [...next, b];
+  }
+  return next;
+}
+
 /** A new compass or map, on the zone given or none yet. */
 export function placeBlock(blocks: Block[], kind: "compass" | "map", zone = ""): Block {
   return { id: freshBlockId(blocks), kind, zone };

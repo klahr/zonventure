@@ -374,6 +374,10 @@ export interface Result {
   hint?: string;
   /** The time limit moved the team instead of the action asked for. */
   time_up?: boolean;
+  /** The answer moved the team on from a step that says neither right nor wrong. */
+  quiet?: boolean;
+  /** A gate turned the team back to the hub to choose again. */
+  not_yet?: boolean;
   view: View;
 }
 
@@ -535,9 +539,10 @@ export interface PlayState {
   /**
    * avatar_url is the team's picture, if it has one. locked: the team
    * has begun, so its players can no longer change their names or the
-   * picture (the organisers still can).
+   * picture (the organisers still can). lang: a store ticket's language,
+   * chosen by its buyer at checkout; the app's words follow it, not the phone.
    */
-  team: { id: number; name: string; token: string; avatar_url?: string; locked?: boolean };
+  team: { id: number; name: string; token: string; avatar_url?: string; locked?: boolean; lang?: string };
   /** The signed-in player: one slot of the team. */
   me?: { id: number; name?: string };
   event: {
@@ -562,6 +567,8 @@ export interface PlayState {
     outro_text?: string;
     /** Where the team should meet. radius_m is set when the team can only begin within it. */
     start?: { lat: number; lng: number; label?: string; radius_m?: number };
+    /** The adventure has places to reach, so the phone may ask where it is on some step. */
+    uses_location?: boolean;
     /** What the organisers left for the players to download: rules, a map to print. */
     files?: EventFile[];
   };
@@ -578,6 +585,8 @@ export interface PlayState {
   messages: EventMessage[];
   /** Set for a dev ticket, playing the draft as it is edited: the draft's steps to jump to. */
   dev?: { steps: { slug: string; title?: string; type: string }[] };
+  /** The organisers moved the team onto the step it is on. */
+  moved_on?: boolean;
 }
 
 /** eventfile.File — a file the organisers left for the event's players. */
@@ -612,6 +621,25 @@ export interface EventMessage {
 }
 
 export const getPlay = (opts?: RequestOptions) => get<PlayState>("/api/player/play", opts);
+
+/** player.PartyEnd — why the host ended a party team's session, and its result. */
+export interface PartyEnd {
+  /** game_over: the game ended without the host (idle, or the party's days over). */
+  reason: "taken_out" | "game_finished" | "game_over";
+  team_name: string;
+  adventure_title?: string;
+  theme?: string;
+  cover?: number;
+  brand?: Brand;
+  /** A finished game's result; absent while the host holds the results (`held`). */
+  points?: number;
+  /** Place among the game's teams, of `teams`. */
+  rank?: number;
+  teams?: number;
+  held?: boolean;
+}
+
+export const getPartyEnd = () => get<PartyEnd>("/api/player/party-end");
 
 /** Send the team's picture for a photo block. It waits for the organisers' review. */
 export function uploadPhoto(node: string, block: string, file: Blob) {
@@ -771,6 +799,8 @@ export interface LocationPing {
  * for zones.
  */
 export const postLocation = (ping: LocationPing) => post<void>("/api/player/location", ping);
+/** Location sharing turned off: the phone's earlier fixes stop placing the player. */
+export const locationOff = () => post<void>("/api/player/location/off");
 
 /** Check a cheat password before turning cheating on. 403 bad_password when it is wrong. */
 export const unlockCheat = (password: string) => post<void>("/api/player/play/unlock", { password });

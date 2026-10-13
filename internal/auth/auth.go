@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/klahr/zonventure/internal/logx"
@@ -29,10 +30,17 @@ const (
 	// RoleOrgAdmin has every org_member power plus the right to invite and
 	// remove members of their own organization.
 	RoleOrgAdmin = "org_admin"
+	// RoleOrgWriter authors the organization's adventures (create, edit,
+	// publish) and nothing else: no events, members, billing or store.
+	RoleOrgWriter = "org_writer"
 	// RoleAdmin is the global tier: creates and manages organizations, mints
 	// assignments, curates the catalog, and administers other admins.
 	// Belongs to no organization, and authors nothing / runs no events.
 	RoleAdmin = "admin"
+	// RoleSupport is a global admin with the fixed Support role: reads
+	// the whole admin console but may only verify emails, resend host
+	// links and reset two-factor sign-in. Derived from users.is_support.
+	RoleSupport = "support"
 	// RoleLobby is an authenticated user with no organization memberships
 	// — sat in the "lobby" until they create their own org or accept an
 	// invitation. The dashboard renders an empty-state for these users
@@ -93,7 +101,10 @@ type User struct {
 	ID       int64
 	Username string
 	IsAdmin  bool
-	Role     string
+	// Support is set for a global admin with the Support role (Role is
+	// then RoleSupport).
+	Support bool
+	Role    string
 	// ListingReviewer may review what organisations put up for sale
 	// (listing review): granted per user by a platform admin.
 	ListingReviewer bool
@@ -127,6 +138,18 @@ type User struct {
 	// a publicly-reachable box is a takeover. Cleared in every
 	// password-update path.
 	PasswordIsDefault bool
+	// ViaSSO is true when the session was minted by an SSO (OIDC)
+	// sign-in, which satisfies a two-factor requirement on its own.
+	ViaSSO bool
+}
+
+// AdminRole is the Role of a global admin: RoleSupport when they hold
+// the Support role, else RoleAdmin.
+func (u User) AdminRole() string {
+	if u.Support {
+		return RoleSupport
+	}
+	return RoleAdmin
 }
 
 // Factor names a single authentication factor that contributed to
@@ -212,18 +235,18 @@ func VerifyPassword(ctx context.Context, db *sql.DB, identifier, password string
 	// case) keeps the behaviour callers had before email-as-login was
 	// allowed. Both columns are CITEXT so the compare is case-insensitive.
 	row := db.QueryRowContext(ctx, `
-		SELECT id, username, is_admin, password_hash, COALESCE(email,''),
+		SELECT id, username, is_admin, is_support, password_hash, COALESCE(email,''),
 		       (email_verified <> 0), totp_enabled, password_is_default
 		FROM users WHERE username = $1
 	`, identifier)
-	err := row.Scan(&u.ID, &u.Username, &u.IsAdmin, &hash, &u.Email,
+	err := row.Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Support, &hash, &u.Email,
 		&u.EmailVerified, &u.TOTPEnabled, &pwIsDefault)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = db.QueryRowContext(ctx, `
-			SELECT id, username, is_admin, password_hash, COALESCE(email,''),
+			SELECT id, username, is_admin, is_support, password_hash, COALESCE(email,''),
 			       (email_verified <> 0), totp_enabled, password_is_default
 			FROM users WHERE email = $1 AND email IS NOT NULL
-		`, identifier).Scan(&u.ID, &u.Username, &u.IsAdmin, &hash, &u.Email,
+		`, identifier).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Support, &hash, &u.Email,
 			&u.EmailVerified, &u.TOTPEnabled, &pwIsDefault)
 	}
 	u.PasswordIsDefault = pwIsDefault != 0
@@ -271,7 +294,7 @@ func VerifyPassword(ctx context.Context, db *sql.DB, identifier, password string
 		u.OrgID = &v
 	}
 	if u.IsAdmin {
-		u.Role = RoleAdmin
+		u.Role = u.AdminRole()
 	} else {
 		u.Role = role
 	}
@@ -290,13 +313,18 @@ func VerifyPassword(ctx context.Context, db *sql.DB, identifier, password string
 // only-membership pin for single-org users, an invalid value for
 // multi-org users (the UI picker fires on first load) and admins.
 //
-// factors is currently observational — it is recorded in audit log
-// entries by the calling handler but not yet persisted on the
-// session row. Reserved for the future per-user "require TOTP
-// regardless of backend" policy.
+// factors is recorded in audit log entries by the calling handler;
+// the session row keeps only whether an IdP produced it
+// (sessions.via_sso), which a two-factor requirement accepts.
 func CompleteLogin(ctx context.Context, w sessionWriter, u User, factors []Factor, ua, ip string, activeOrgID sql.NullInt64) (string, error) {
-	_ = factors // reserved for future use; see doc comment.
-	return newSession(ctx, w, u.ID, ua, ip, activeOrgID)
+	token, err := newSession(ctx, w, u.ID, ua, ip, activeOrgID)
+	if err != nil || !slices.Contains(factors, FactorIdPPrimary) {
+		return token, err
+	}
+	if _, err := w.ExecContext(ctx, `UPDATE sessions SET via_sso = TRUE WHERE token = $1`, token); err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 // SetInitialPassword assigns a first password to an account that was
@@ -309,8 +337,8 @@ func SetInitialPassword(ctx context.Context, db *sql.DB, username, password stri
 		hash sql.NullString
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, is_admin, password_hash, COALESCE(email,''), (email_verified <> 0) FROM users WHERE username = $1
-	`, username).Scan(&u.ID, &u.Username, &u.IsAdmin, &hash, &u.Email, &u.EmailVerified)
+		SELECT id, username, is_admin, is_support, password_hash, COALESCE(email,''), (email_verified <> 0) FROM users WHERE username = $1
+	`, username).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Support, &hash, &u.Email, &u.EmailVerified)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, "", ErrInvalidCredentials
 	}
@@ -328,7 +356,7 @@ func SetInitialPassword(ctx context.Context, db *sql.DB, username, password stri
 	// password for the first time, so the "you're still on the seeded
 	// default" banner is no longer relevant.
 	if _, err := db.ExecContext(ctx,
-		`UPDATE users SET password_hash = $1, password_is_default = 0 WHERE id = $2`,
+		`UPDATE users SET password_hash = $1, password_is_default = 0, password_set_by_admin = 0 WHERE id = $2`,
 		h, u.ID); err != nil {
 		return User{}, "", err
 	}
@@ -341,7 +369,7 @@ func SetInitialPassword(ctx context.Context, db *sql.DB, username, password stri
 		u.OrgID = &v
 	}
 	if u.IsAdmin {
-		u.Role = RoleAdmin
+		u.Role = u.AdminRole()
 	} else {
 		u.Role = role
 	}
@@ -504,16 +532,16 @@ func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 	var pwIsDefault int
 	var lastUsedRaw sql.NullString
 	err := db.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.is_admin, m.role, s.active_org_id,
+		SELECT u.id, u.username, u.is_admin, u.is_support, m.role, s.active_org_id,
 		       COALESCE(u.email,''), (u.email_verified <> 0),
 		       u.scheduled_deletion_at, u.totp_enabled, u.password_is_default,
-		       s.expires_at, s.last_used_at, u.listing_reviewer
+		       s.expires_at, s.last_used_at, u.listing_reviewer, s.via_sso
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		LEFT JOIN org_memberships m ON m.user_id = u.id AND m.org_id = s.active_org_id
 		WHERE s.token = $1
-	`, token).Scan(&u.ID, &u.Username, &u.IsAdmin, &membRole, &activeOrgID,
+	`, token).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Support, &membRole, &activeOrgID,
 		&u.Email, &u.EmailVerified, &schedDel, &u.TOTPEnabled, &pwIsDefault,
-		&expires, &lastUsedRaw, &u.ListingReviewer)
+		&expires, &lastUsedRaw, &u.ListingReviewer, &u.ViaSSO)
 	u.PasswordIsDefault = pwIsDefault != 0
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, false, nil
@@ -526,22 +554,26 @@ func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 		u.OrgID = &v
 	}
 	if u.IsAdmin {
-		u.Role = RoleAdmin
+		u.Role = u.AdminRole()
 	} else if membRole.Valid {
 		u.Role = membRole.String
 	} else {
 		// Non-admin with no active-org membership row: either they're
 		// org-less (lobby) or their session's active_org_id points
 		// at an org they no longer belong to (kicked, multi-org with
-		// stale pin). Cheap follow-up COUNT distinguishes — zero
-		// memberships = lobby; positive = picker (Role stays empty
-		// so the UI fires its org-switch flow).
-		var memCnt int
-		_ = db.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM org_memberships WHERE user_id = $1`,
-			u.ID).Scan(&memCnt)
-		if memCnt == 0 {
-			u.Role = RoleLobby
+		// stale pin). Resolve as a fresh login would — zero
+		// memberships = lobby; exactly one = pin the session to it, so
+		// a user added to an org while logged in needn't log in again;
+		// several = picker (Role stays empty so the UI fires its
+		// org-switch flow).
+		if only, role, err := resolveInitialActiveOrg(ctx, db, u.ID); err == nil {
+			u.Role = role
+			if only.Valid {
+				v := only.Int64
+				u.OrgID = &v
+				_, _ = db.ExecContext(ctx,
+					`UPDATE sessions SET active_org_id = $1 WHERE token = $2`, v, token)
+			}
 		}
 	}
 	if schedDel.Valid {
@@ -671,6 +703,11 @@ type Membership struct {
 	// IsPublisher marks the org that authors the platform catalog; its
 	// members get authoring-first onboarding rather than "buy a pass".
 	IsPublisher bool
+	// SoleMember: the user is the org's only member, so deleting the
+	// account deletes the org too (retention.pruneScheduledDeletions).
+	SoleMember bool
+	// VerifiedCreator: the org's listings go public without review.
+	VerifiedCreator bool
 }
 
 // ListMemberships returns every (org, role) the user belongs to,
@@ -681,7 +718,8 @@ func ListMemberships(ctx context.Context, db *sql.DB, userID int64) ([]Membershi
 	rows, err := db.QueryContext(ctx, `
 		SELECT m.org_id, o.name, m.role,
 		       (o.logo_mime_type IS NOT NULL)::int AS has_logo,
-		       o.trusted, o.is_publisher
+		       o.trusted, o.is_publisher, o.verified_creator,
+		       NOT EXISTS (SELECT 1 FROM org_memberships x WHERE x.org_id = m.org_id AND x.user_id <> m.user_id)
 		FROM org_memberships m
 		JOIN organizations o ON o.id = m.org_id
 		WHERE m.user_id = $1
@@ -698,7 +736,7 @@ func ListMemberships(ctx context.Context, db *sql.DB, userID int64) ([]Membershi
 			hasLogo int
 			trusted int
 		)
-		if err := rows.Scan(&m.OrgID, &m.OrgName, &m.Role, &hasLogo, &trusted, &m.IsPublisher); err != nil {
+		if err := rows.Scan(&m.OrgID, &m.OrgName, &m.Role, &hasLogo, &trusted, &m.IsPublisher, &m.VerifiedCreator, &m.SoleMember); err != nil {
 			return nil, err
 		}
 		m.HasLogo = hasLogo != 0

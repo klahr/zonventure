@@ -96,6 +96,51 @@ func TestImportTeams(t *testing.T) {
 		}
 	})
 
+	// A class list's preview says what became of each column, a parent's
+	// email among the ignored; the team's own email survives the bulk
+	// create.
+	t.Run("columns and team email", func(t *testing.T) {
+		arr := boss.in(t)
+		body := []byte("First name,Last name,Group,Parent email,Email\nAda,Lind,Red,mum@x.test,red@x.test\n")
+		status, raw := uploadFile(t, arr,
+			"/api/admin/events/"+itoa(eventID)+"/teams/import",
+			"class.csv", "text/csv", body)
+		if status != 200 {
+			t.Fatalf("import = %d, body=%s", status, raw)
+		}
+		var preview struct {
+			Teams []struct {
+				Name        string   `json:"name"`
+				MemberNames []string `json:"member_names"`
+				Email       string   `json:"email"`
+			} `json:"teams"`
+			Columns []struct {
+				Label string `json:"label"`
+				Role  string `json:"role"`
+			} `json:"columns"`
+		}
+		if err := json.Unmarshal(raw, &preview); err != nil {
+			t.Fatalf("unmarshal preview: %v", err)
+		}
+		if len(preview.Columns) != 5 || preview.Columns[3].Role != "ignored" || preview.Columns[4].Role != "email" {
+			t.Errorf("columns = %+v", preview.Columns)
+		}
+		if len(preview.Teams) != 1 || preview.Teams[0].Email != "red@x.test" {
+			t.Fatalf("teams = %+v", preview.Teams)
+		}
+		var out struct {
+			Results []struct {
+				Team *struct {
+					Email string `json:"email"`
+				} `json:"team"`
+				Error string `json:"error"`
+			} `json:"results"`
+		}
+		if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/teams/bulk", map[string]any{"teams": preview.Teams}, &out); s != 200 || len(out.Results) != 1 || out.Results[0].Team == nil || out.Results[0].Team.Email != "red@x.test" {
+			t.Errorf("bulk = %d %+v", s, out.Results)
+		}
+	})
+
 	// Confirms the handler 415s (rather than 5xx) when neither the
 	// filename nor the MIME maps to a registered importer. The UI uses
 	// the 415 to surface a clear "we don't know this format" message.

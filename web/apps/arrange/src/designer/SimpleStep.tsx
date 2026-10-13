@@ -6,6 +6,7 @@ import { useT } from "../i18n.tsx";
 import { Field, ZoneSelect } from "./fields.tsx";
 import { useMediaUpload } from "./MediaEditor.tsx";
 import { isTouch } from "./device.ts";
+import { retitle } from "./zones.ts";
 import { Button, ICON } from "./dz/ui.tsx";
 import { MarkdownArea } from "./MarkdownArea.tsx";
 
@@ -51,7 +52,7 @@ export function SimpleStep({ node, graph, onChange, onGraphChange, onMore, onDel
           className="field__input"
           value={DEFAULT_TITLES.has(node.title ?? "") ? "" : (node.title ?? "")}
           placeholder={node.type === "puzzle" ? t.t("e.g. The big oak") : t.t("e.g. Welcome")}
-          onChange={(e) => onChange({ ...node, title: e.target.value })}
+          onChange={(e) => onGraphChange(retitle(graph, node, e.target.value, [t.t("Place")]))}
         />
       </Field>
 

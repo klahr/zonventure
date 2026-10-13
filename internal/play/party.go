@@ -10,6 +10,7 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graphstore"
+	"github.com/klahr/zonventure/internal/results"
 )
 
 // ErrUnknownStation means a scanned or typed code is none of the party's
@@ -28,6 +29,52 @@ func ResultsHeld(ctx context.Context, q Querier, teamID int64) (bool, error) {
 		FROM teams t JOIN events e ON e.id = t.event_id WHERE t.id = $1
 	`, teamID).Scan(&held)
 	return held, err
+}
+
+// SettleRound scores, for each team of the event's game that had not
+// finished when it ended, what it would have scored at the finish (see
+// session.Team.FinishPoints): answers it picked still count. Call it in
+// the transaction that ends the game, which also signs its teams out, so
+// none of them finishes after.
+func (e *Engine) SettleRound(ctx context.Context, tx *sql.Tx, eventID int64, round int) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT s.team_id FROM team_graph_state s JOIN teams t ON t.id = s.team_id
+		WHERE t.event_id = $1 AND t.round = $2 AND s.completed_at IS NULL
+	`, eventID, round)
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		s, err := e.loadCore(ctx, tx, id, true)
+		if err != nil {
+			return err
+		}
+		p := s.FinishPoints()
+		if p == 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE team_graph_state SET score = score + $1, updated_at = now() WHERE team_id = $2`, p, id); err != nil {
+			return fmt.Errorf("settling score: %w", err)
+		}
+		if _, err := results.AppendTeam(ctx, tx, id, results.ScoreAdjusted, map[string]any{"delta": p, "reason": "game ended"}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // pinParty stores the graph a game of a party event plays, made from

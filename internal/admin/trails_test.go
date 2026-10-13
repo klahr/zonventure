@@ -47,8 +47,17 @@ func TestTrail_Theme(t *testing.T) {
 	f.trailRoutes()
 	slug := f.newTrail(t, "birthday")
 	path := "/api/admin/adventures/" + slug + "/cards/theme"
+	transition := func() string {
+		t.Helper()
+		var s string
+		_ = f.h.DB.QueryRow(`SELECT COALESCE(look_style->>'transition', '') FROM adventures WHERE slug = $1`, slug).Scan(&s)
+		return s
+	}
+	if s := transition(); s != "flip" {
+		t.Errorf("a new trail's transition = %q, want flip", s)
+	}
 	look := map[string]any{"accent": "#e91e63", "accent_secondary": "#ff9800", "background": "#fff8f0", "text": "#3b1d2a",
-		"heading_font": "chewy", "backdrop": map[string]any{"kind": "confetti", "opacity": 0.5, "scale": 100}}
+		"heading_font": "chewy", "backdrop": map[string]any{"kind": "confetti", "opacity": 0.5, "scale": 100}, "style": map[string]any{"transition": "zoom"}}
 	if w := call(t, f.console, "PUT", path, map[string]any{"id": "party", "look": look}); w.Code != http.StatusNoContent {
 		t.Fatalf("theme: %d %s", w.Code, w.Body)
 	}
@@ -56,6 +65,9 @@ func TestTrail_Theme(t *testing.T) {
 	_ = f.h.DB.QueryRow(`SELECT accent_color, COALESCE(heading_font, '') FROM adventures WHERE slug = $1`, slug).Scan(&accent, &font)
 	if accent != "#e91e63" || font != "chewy" {
 		t.Errorf("look saved: accent %q heading font %q", accent, font)
+	}
+	if s := transition(); s != "flip" {
+		t.Errorf("a themed trail's transition = %q, want flip whatever the theme's", s)
 	}
 	if v := f.trail(t, slug); v.Theme != "party" {
 		t.Errorf("theme = %q", v.Theme)
@@ -225,9 +237,28 @@ func TestTrail_HostedGame(t *testing.T) {
 		t.Fatalf("score: %+v %v", ranked, err)
 	}
 
+	// A team still out when the host finishes keeps the answers it picked.
+	if w := f.join(t, player, "Älgar", 2); w.Code != http.StatusCreated {
+		t.Fatalf("join: %d %s", w.Code, w.Body)
+	}
+	var lateID int64
+	if err := f.h.DB.QueryRow(`SELECT id FROM teams WHERE name = 'Älgar'`).Scan(&lateID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Snapshot(ctx, lateID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Pick(ctx, lateID, quiz1, "q", "X"); err != nil { // right, not moved on
+		t.Fatal(err)
+	}
+
 	// Between games the cards change; the next game plays them.
 	if w := call(t, f.public, "POST", "/api/party/"+host+"/finish-game", nil); w.Code != http.StatusNoContent {
 		t.Fatalf("finish: %d", w.Code)
+	}
+	var late float64
+	if err := f.h.DB.QueryRow(`SELECT score FROM team_graph_state WHERE team_id = $1`, lateID).Scan(&late); err != nil || late != 1 {
+		t.Errorf("unfinished team's score = %v %v, want its right pick", late, err)
 	}
 	v.Cards[0].Text = "Hur många ben har en bläckfisk?"
 	v.Cards[0].Options = []string{"6", "8", "10"}
@@ -264,10 +295,14 @@ func TestTrail_PDF(t *testing.T) {
 	defer cleanup()
 	f.trailRoutes()
 	slug := f.newTrail(t, "birthday")
-	for _, q := range []string{"", "?answers=1"} {
+	for q, file := range map[string]string{"": "elsa-fyller-8-kort.pdf", "?answers=1": "elsa-fyller-8-facit.pdf"} {
 		w := call(t, f.console, "GET", "/api/admin/adventures/"+slug+"/cards.pdf"+q, nil)
 		if w.Code != http.StatusOK || !strings.HasPrefix(w.Body.String(), "%PDF") || w.Header().Get("Content-Type") != "application/pdf" {
 			t.Fatalf("pdf %q: %d %.40s", q, w.Code, w.Body)
+		}
+		// Named after the title and in its language.
+		if got := w.Header().Get("Content-Disposition"); !strings.Contains(got, `filename="`+file+`"`) {
+			t.Errorf("pdf %q: %s", q, got)
 		}
 	}
 	v := f.trail(t, slug)

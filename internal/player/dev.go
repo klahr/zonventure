@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/play"
@@ -22,7 +23,7 @@ type PlayDev struct {
 	Steps []DevStep `json:"steps"`
 }
 
-// DevStep is a step a dev team may be put on, in the draft's order.
+// DevStep is a step a dev team may be put on, in route order.
 type DevStep struct {
 	Slug  string `json:"slug"`
 	Title string `json:"title,omitempty"`
@@ -43,12 +44,45 @@ func devInfo(ctx context.Context, db *sql.DB, eventID int64) (*PlayDev, error) {
 		return nil, err
 	}
 	out := &PlayDev{Steps: []DevStep{}}
-	for _, n := range s.Graph.Nodes {
+	for _, n := range routeOrder(s.Graph) {
 		if play.Visible(n.Type) {
 			out.Steps = append(out.Steps, DevStep{Slug: n.Slug, Title: n.Title, Type: string(n.Type)})
 		}
 	}
 	return out, nil
+}
+
+// routeOrder lists the nodes as a team meets them: breadth-first from the
+// starts along each node's ports in turn, then any node no route reaches,
+// in the draft's order.
+func routeOrder(g *graph.Graph) []graph.Node {
+	out := make([]graph.Node, 0, len(g.Nodes))
+	seen := map[string]bool{}
+	var queue []string
+	for _, n := range g.Starts() {
+		seen[n.Slug] = true
+		queue = append(queue, n.Slug)
+	}
+	for len(queue) > 0 {
+		n, ok := g.Node(queue[0])
+		queue = queue[1:]
+		if !ok {
+			continue
+		}
+		out = append(out, n)
+		for _, p := range n.Ports() {
+			if to, ok := g.Target(n.Slug, p); ok && !seen[to] {
+				seen[to] = true
+				queue = append(queue, to)
+			}
+		}
+	}
+	for _, n := range g.Nodes {
+		if !seen[n.Slug] {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // DevGoTo serves POST /api/player/dev/goto {node}: a dev team's phone

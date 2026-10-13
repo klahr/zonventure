@@ -88,6 +88,14 @@ export function useTrailSave(api: TrailApi, initial: TrailDoc) {
     [flush, stopped],
   );
 
+  // A save that failed offline goes again once the connection is back.
+  useEffect(() => {
+    if (state !== "failed") return;
+    const retry = () => void flush();
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, [state, flush]);
+
   // Leaving with changes unsaved asks first.
   useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {

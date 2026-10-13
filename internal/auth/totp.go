@@ -16,6 +16,7 @@ import (
 	"github.com/klahr/zonventure/internal/tokenx"
 
 	"github.com/klahr/zonventure/internal/sitename"
+	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 )
 
@@ -58,6 +59,7 @@ var (
 	ErrTOTPNotEnrolled     = errors.New("totp not enrolled")
 	ErrTOTPAlreadyEnrolled = errors.New("totp already enrolled")
 	ErrTOTPInvalid         = errors.New("invalid totp code")
+	ErrTOTPReused          = errors.New("totp code already used")
 	ErrChallengeUnknown    = errors.New("totp challenge unknown")
 	ErrChallengeExpired    = errors.New("totp challenge expired")
 	ErrRecoveryCodeInvalid = errors.New("recovery code invalid")
@@ -94,6 +96,13 @@ func LoadTOTPKey() ([]byte, error) {
 	}
 	return b, nil
 }
+
+// SealSecret encrypts a short secret with key (ZV_TOTP_KEY), the way
+// TOTP secrets are kept, for other secrets the server must read back.
+func SealSecret(key []byte, secret string) ([]byte, error) { return encryptTOTPSecret(key, secret) }
+
+// OpenSecret reverses SealSecret.
+func OpenSecret(key, blob []byte) (string, error) { return decryptTOTPSecret(key, blob) }
 
 // encryptTOTPSecret wraps the base32 secret with AES-256-GCM. The
 // 12-byte random nonce is prepended to the ciphertext so the BYTEA
@@ -194,7 +203,8 @@ func EnrolConfirm(ctx context.Context, db *sql.DB, key []byte, userID int64, cod
 	if enabled {
 		return nil, ErrTOTPAlreadyEnrolled
 	}
-	if !totp.Validate(strings.TrimSpace(code), secret) {
+	step := matchTOTPStep(code, secret, time.Now())
+	if step < 0 {
 		return nil, ErrTOTPInvalid
 	}
 	codes, hashes, err := generateRecoveryCodes()
@@ -207,7 +217,7 @@ func EnrolConfirm(ctx context.Context, db *sql.DB, key []byte, userID int64, cod
 	}
 	defer tx.Rollback() //nolint:errcheck
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE users SET totp_enabled = TRUE, totp_enrolled_at = now_text() WHERE id = $1`, userID); err != nil {
+		`UPDATE users SET totp_enabled = TRUE, totp_enrolled_at = now_text(), totp_last_step = $2 WHERE id = $1`, userID, step); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx,
@@ -237,7 +247,7 @@ func DisableTOTP(ctx context.Context, db *sql.DB, userID int64) error {
 	}
 	defer tx.Rollback() //nolint:errcheck
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE users SET totp_secret_encrypted = NULL, totp_enabled = FALSE, totp_enrolled_at = NULL WHERE id = $1
+		UPDATE users SET totp_secret_encrypted = NULL, totp_enabled = FALSE, totp_enrolled_at = NULL, totp_last_step = NULL WHERE id = $1
 	`, userID); err != nil {
 		return err
 	}
@@ -358,8 +368,21 @@ func ConsumeTOTPChallenge(ctx context.Context, db *sql.DB, key []byte, token, co
 		if !enabled {
 			return TOTPChallengeResult{}, ErrTOTPNotEnrolled
 		}
-		if !totp.Validate(strings.TrimSpace(code), secret) {
+		step := matchTOTPStep(code, secret, time.Now())
+		if step < 0 {
 			return TOTPChallengeResult{}, ErrTOTPInvalid
+		}
+		// Each time step redeems once per user: a code seen on the
+		// wire (or over a shoulder) can't open a second session.
+		res, err := db.ExecContext(ctx, `
+			UPDATE users SET totp_last_step = $2
+			WHERE id = $1 AND (totp_last_step IS NULL OR totp_last_step < $2)
+		`, userID, step)
+		if err != nil {
+			return TOTPChallengeResult{}, err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return TOTPChallengeResult{}, ErrTOTPReused
 		}
 		factor = FactorTOTP
 	case strings.TrimSpace(recoveryCode) != "":
@@ -379,6 +402,32 @@ func ConsumeTOTPChallenge(ctx context.Context, db *sql.DB, key []byte, token, co
 		return TOTPChallengeResult{}, err
 	}
 	return TOTPChallengeResult{User: u, Origin: origin, Factor: factor}, nil
+}
+
+// matchTOTPStep returns the 30 s time step code is valid for — the
+// current one or a neighbour, the same ±1 skew totp.Validate allows —
+// or -1 when it matches none.
+func matchTOTPStep(code, secret string, now time.Time) int64 {
+	code = strings.TrimSpace(code)
+	for _, skew := range []int64{0, -1, 1} {
+		t := now.Add(time.Duration(skew) * 30 * time.Second)
+		ok, err := totp.ValidateCustom(code, secret, t, totp.ValidateOpts{
+			Period: 30, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1,
+		})
+		if err == nil && ok {
+			return t.Unix() / 30
+		}
+	}
+	return -1
+}
+
+// TOTPChallengeUserID returns the user a pending challenge belongs to,
+// so the verify handler can rate-limit per user rather than per token.
+func TOTPChallengeUserID(ctx context.Context, db *sql.DB, token string) (int64, error) {
+	var userID int64
+	err := db.QueryRowContext(ctx,
+		`SELECT user_id FROM auth_totp_challenges WHERE token = $1`, token).Scan(&userID)
+	return userID, err
 }
 
 // loadTOTPSecret fetches and decrypts the user's TOTP secret. Used
@@ -535,10 +584,10 @@ func loadUserByID(ctx context.Context, db *sql.DB, userID int64) (User, error) {
 	var u User
 	var pwIsDefault int
 	if err := db.QueryRowContext(ctx, `
-		SELECT id, username, is_admin, COALESCE(email,''), (email_verified <> 0),
+		SELECT id, username, is_admin, is_support, COALESCE(email,''), (email_verified <> 0),
 		       totp_enabled, password_is_default
 		FROM users WHERE id = $1
-	`, userID).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified,
+	`, userID).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Support, &u.Email, &u.EmailVerified,
 		&u.TOTPEnabled, &pwIsDefault); err != nil {
 		return User{}, err
 	}
@@ -552,7 +601,7 @@ func loadUserByID(ctx context.Context, db *sql.DB, userID int64) (User, error) {
 		u.OrgID = &v
 	}
 	if u.IsAdmin {
-		u.Role = RoleAdmin
+		u.Role = u.AdminRole()
 	} else {
 		u.Role = role
 	}
@@ -565,6 +614,8 @@ func loadUserByID(ctx context.Context, db *sql.DB, userID int64) (User, error) {
 type TOTPStatus struct {
 	Enabled    bool
 	EnrolledAt string
+	// RecoveryLeft counts the recovery codes not used yet.
+	RecoveryLeft int
 }
 
 // LoadTOTPStatus returns the current TOTP state for a user. Used by
@@ -573,11 +624,14 @@ func LoadTOTPStatus(ctx context.Context, db *sql.DB, userID int64) (TOTPStatus, 
 	var (
 		enabled bool
 		at      sql.NullString
+		left    int
 	)
-	if err := db.QueryRowContext(ctx,
-		`SELECT totp_enabled, totp_enrolled_at FROM users WHERE id = $1`, userID,
-	).Scan(&enabled, &at); err != nil {
+	if err := db.QueryRowContext(ctx, `
+		SELECT totp_enabled, totp_enrolled_at,
+		       (SELECT count(*) FROM user_recovery_codes WHERE user_id = users.id AND used_at IS NULL)
+		FROM users WHERE id = $1`, userID,
+	).Scan(&enabled, &at, &left); err != nil {
 		return TOTPStatus{}, err
 	}
-	return TOTPStatus{Enabled: enabled, EnrolledAt: at.String}, nil
+	return TOTPStatus{Enabled: enabled, EnrolledAt: at.String, RecoveryLeft: left}, nil
 }

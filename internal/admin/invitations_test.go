@@ -183,6 +183,17 @@ func TestSendEventInvitations_HappyPath(t *testing.T) {
 	if !strings.HasPrefix(string(att.Bytes), "BEGIN:VCALENDAR\r\n") {
 		t.Errorf("attachment bytes don't look like an .ics: prefix=%q", att.Bytes[:min(40, len(att.Bytes))])
 	}
+	// The send is on the event's record: its emails and its activity.
+	var mails, sent, logged int
+	if err := db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(sent), 0) FROM event_emails WHERE event_id = $1`, eventID).Scan(&mails, &sent); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM event_activity WHERE event_id = $1 AND kind = 'invitations.sent'`, eventID).Scan(&logged); err != nil {
+		t.Fatal(err)
+	}
+	if mails != 1 || sent != 2 || logged != 1 {
+		t.Errorf("recorded %d emails reaching %d teams and %d activity rows, want 1, 2, 1", mails, sent, logged)
+	}
 }
 
 // TestSendEventInvitations_NoMailer falls back to 503 when the
@@ -336,6 +347,37 @@ func TestSendTeamInvitation_HappyPath(t *testing.T) {
 	}
 	if len(got.Attachments) != 1 || !strings.HasPrefix(got.Attachments[0].ContentType, "text/calendar") {
 		t.Errorf("expected one text/calendar attachment, got %+v", got.Attachments)
+	}
+	// The start in the organisation's time zone (Europe/Stockholm by
+	// default), and replies go to its contact: its admin, as it set none.
+	if !strings.Contains(got.Text, "It starts Friday 1 May 2026, 12:00 (CEST).") {
+		t.Errorf("body lacks the start time; body =\n%s", got.Text)
+	}
+	if got.ReplyTo != "boss@acme.com" {
+		t.Errorf("reply-to = %q, want the org admin", got.ReplyTo)
+	}
+
+	// Moved and given a meeting place, the event's invitation says the
+	// time changed, and where to meet, in the mail and the calendar entry.
+	if _, err := db.Exec(`UPDATE events SET scheduled_at = '2026-05-02 08:30:00', meeting_place = 'By the fountain' WHERE id = $1`, eventID); err != nil {
+		t.Fatal(err)
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("POST", "/api/admin/teams/"+itoa64(teamID)+"/invitations/send", strings.NewReader("{}")))
+	if w.Code != http.StatusOK || len(mailerStub.messages) != 2 {
+		t.Fatalf("resend = %d, %d messages", w.Code, len(mailerStub.messages))
+	}
+	again := mailerStub.messages[1]
+	if !strings.HasPrefix(again.Subject, "New time: ") || !strings.Contains(again.Text, "The time has changed: it now starts Saturday 2 May 2026, 10:30 (CEST).") || !strings.Contains(again.Text, "Meeting place: By the fountain") {
+		t.Errorf("resent invitation = %q\n%s", again.Subject, again.Text)
+	}
+	if len(again.Attachments) != 1 || !strings.Contains(string(again.Attachments[0].Bytes), "LOCATION:By the fountain") {
+		t.Errorf("calendar entry lacks the meeting place: %+v", again.Attachments)
+	}
+	// Sent again at the same time, it is the plain invitation.
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/admin/teams/"+itoa64(teamID)+"/invitations/send", strings.NewReader("{}")))
+	if third := mailerStub.messages[2]; strings.HasPrefix(third.Subject, "New time") || !strings.Contains(third.Text, "It starts Saturday 2 May 2026, 10:30 (CEST).") {
+		t.Errorf("unchanged resend = %q\n%s", third.Subject, third.Text)
 	}
 }
 

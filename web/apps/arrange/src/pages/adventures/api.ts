@@ -31,6 +31,8 @@ export interface Assignment {
   max_players: number;
   created_at: string;
   event_id?: number;
+  /** That event was cancelled. */
+  event_cancelled?: boolean;
 }
 
 /** internal/graph: Zone */
@@ -50,6 +52,8 @@ export interface GraphSummary {
   story_count: number;
   zones: Zone[];
   has_quiz?: boolean;
+  /** The main language first, then its translations; absent without any. */
+  languages?: string[];
 }
 
 /** internal/admin/users.go: AdventureDetail (a map, not a struct). */
@@ -87,6 +91,8 @@ export interface AdventureEdit {
   title: string;
   description: string;
   author: string;
+  /** Who wrote it, when it was imported from elsewhere. */
+  original_author?: string;
   intro_text: string;
   outro_text: string;
   buyer_note: string;
@@ -176,8 +182,8 @@ export const updateAdventure = (slug: string, body: AdventurePatch) =>
 export const deleteAdventure = (slug: string, password: string) =>
   request<void>(adv(slug), { method: "DELETE", headers: { "X-Confirm-Password": password } });
 
-/** internal/admin/duplicate.go: a copy in the caller's org, "<title> (copy)" by default. */
-export const duplicateAdventure = (slug: string) => post<{ slug: string; title?: string }>(adv(slug) + "/duplicate", {});
+/** internal/admin/duplicate.go: a copy in the caller's org, "<title> (copy)" unless named. */
+export const duplicateAdventure = (slug: string, title?: string) => post<{ slug: string; title?: string }>(adv(slug) + "/duplicate", title ? { title } : {});
 
 export const exportURL = (slug: string) => adv(slug) + "/export";
 

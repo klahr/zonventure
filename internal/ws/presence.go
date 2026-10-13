@@ -139,6 +139,16 @@ func (h *Hub) Focus(topic, id, focus string) {
 		if focus != "" {
 			now := time.Now()
 			peer.FocusSince = &now
+			// The same person there already — a socket that dropped and is
+			// not yet gone, or another tab — keeps their place: a page back
+			// from going offline would otherwise come after whoever opened
+			// the step meanwhile, while its old socket still held it for
+			// them, and each would wait on the other.
+			for _, o := range p.rooms[topic] {
+				if o.ID != id && o.UserID == peer.UserID && o.Kind == peer.Kind && o.Focus == focus && o.FocusSince != nil && o.FocusSince.Before(*peer.FocusSince) {
+					peer.FocusSince = o.FocusSince
+				}
+			}
 		}
 		p.rooms[topic][id] = peer
 	}

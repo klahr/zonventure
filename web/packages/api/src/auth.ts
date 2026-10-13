@@ -22,12 +22,16 @@ export const loginTOTP = (challenge: string, answer: { code: string } | { recove
 /** Whether sign-up is open, and the single sign-on button if configured. */
 export const signupConfig = () => get<SignupConfig>("/api/auth/signup-config");
 
-export const signup = (body: { email: string; org_name: string; personal: boolean; password: string; terms_accepted: boolean }) =>
+export const signup = (body: { email: string; name: string; org_name: string; personal: boolean; password: string; terms_accepted: boolean }) =>
   post<void>("/api/auth/signup", body);
 
 /** Confirm an email change from the link in the mail. */
 export const confirmEmailChange = (token: string) =>
   post<{ email?: string }>("/api/auth/confirm-email-change", { token });
+
+/** The "email changed" notice's link: puts the old address back and signs out every session. */
+export const revertEmailChange = (token: string) =>
+  post<{ email?: string }>("/api/auth/revert-email-change", { token });
 
 export const logout = () => post<void>("/api/auth/logout");
 

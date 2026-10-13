@@ -5,7 +5,7 @@ import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { href } from "../../router.ts";
 import { TopBarPortal, useTopBarTitle } from "../../topbar.tsx";
-import { Button, Callout, Card, ErrorBox, fmtDateTime, ICON, Loading, Page, PageHeader, Pill, PresenceBar, relTime, useEventWatch, useLoad, usePresence } from "../../ui/index.ts";
+import { Button, Callout, Card, ErrorBox, fmtDateTime, ICON, Loading, Page, PageHeader, Pill, PresenceBar, relTime, useEventWatch, useLoad, usePresence, zoneSuffix } from "../../ui/index.ts";
 import * as api from "./api.ts";
 import type { Activity, EventDetail } from "./api.ts";
 import { ActivityFeed } from "./Activity.tsx";
@@ -14,7 +14,7 @@ import { MessagesCard, PhotosCard } from "./Messages.tsx";
 import { FilesCard } from "./Files.tsx";
 import { PrintDeliveryCard } from "./PrintDelivery.tsx";
 import { NewTeamsDialog } from "./NewTeams.tsx";
-import { ConnectBanner, QuickStats, ResultsCard, SecretRolesCard, StoreCard } from "./Overview.tsx";
+import { AdventureVersion, CheatCard, ConnectBanner, MeetingPlaceCard, QuickStats, ResultsCard, SecretRolesCard, StoreCard } from "./Overview.tsx";
 import { TeamDetailDialog } from "./TeamDetail.tsx";
 import { TeamEditDialog } from "./TeamEdit.tsx";
 import { TeamsCard } from "./Teams.tsx";
@@ -22,7 +22,7 @@ import { EmailsCard } from "./Emails.tsx";
 import { HostedCards } from "./Hosted.tsx";
 import { StatisticsCard } from "./Statistics.tsx";
 import { ResultsRecordCard } from "./ResultsRecord.tsx";
-import { isQuest, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
+import { isLive, isQuest, isTerminal, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
 import "./event.css";
 
 type Open = null | { kind: "rename" } | { kind: "new-team" } | { kind: "team"; id: number } | { kind: "edit-team"; id: number };
@@ -110,7 +110,7 @@ export function EventPage({ id }: { id: number }) {
       : event.started_at
         ? t.t("Started {{when}}", { when: fmtDateTime(event.started_at, loc) })
         : event.scheduled_at
-          ? t.t("Auto-start {{when}}", { when: fmtDateTime(event.scheduled_at, loc) }) + " · " + relTime(event.scheduled_at, loc)
+          ? t.t("Auto-start {{when}}", { when: fmtDateTime(event.scheduled_at, loc) + zoneSuffix() }) + " · " + relTime(event.scheduled_at, loc)
           : event.party
             ? t.t("Starts when the first team joins")
             : t.t("Not scheduled — starts when you start it");
@@ -146,6 +146,12 @@ export function EventPage({ id }: { id: number }) {
           subtitle={
             <span className="ev-sub">
               <a href={href({ name: "adventure", slug: event.adventure_slug })}>{adv?.title || event.adventure_title || event.adventure_slug}</a>
+              {!quest && (event.state === "scheduled" || event.state === "running" || event.state === "paused") && (
+                <>
+                  <span aria-hidden>·</span>
+                  <AdventureVersion eventId={event.id} />
+                </>
+              )}
               <span aria-hidden>·</span>
               <span>{when}</span>
             </span>
@@ -160,7 +166,10 @@ export function EventPage({ id }: { id: number }) {
       {event.party && <HostedCards eventId={event.id} refresh={activityKey} />}
       {quest && <ConnectBanner event={event} status={connect.data ?? null} user={user} />}
       {quest && <StoreCard key={event.id} event={event} onSaved={detail.reload} />}
+      {prints.data && <PrintDeliveryCard eventId={id} materials={prints.data} reload={prints.reload} invited={!event.public_for_sale && !event.party} />}
+      {!quest && !event.party && !isTerminal(event) && <MeetingPlaceCard key={`meet-${event.id}`} event={event} onSaved={detail.reload} />}
       {event.has_secret_roles && <SecretRolesCard key={`secret-${event.id}`} event={event} onSaved={detail.reload} />}
+      {event.cheat_password && !isTerminal(event) && <CheatCard password={event.cheat_password} />}
       <ResultsCard event={event} teams={teams} />
       {played && <StatisticsCard stats={stats.data} error={stats.error} retry={stats.reload} />}
       {played && <ResultsRecordCard eventId={id} />}
@@ -179,21 +188,20 @@ export function EventPage({ id }: { id: number }) {
           />
         </div>
         <div className="ev-col">
-          <EmailsCard event={event} teams={teams} from={orgName} />
+          <EmailsCard event={event} teams={teams} from={orgName} refresh={activityKey} />
           {messages.data && <MessagesCard event={event} teams={teams} messages={messages.data.messages ?? []} reload={messages.reload} />}
           {files.data && <FilesCard event={event} files={files.data.files ?? []} maxFiles={files.data.max_files} maxSize={files.data.max_size} reload={files.reload} />}
-          {prints.data && <PrintDeliveryCard eventId={id} materials={prints.data} reload={prints.reload} />}
           {photos.data && <PhotosCard event={event} graph={graph} photos={photos.data.photos ?? []} challenges={photos.data.challenges ?? 0} reload={() => { photos.reload(); reload(); }} />}
           <Card title={t.t("Event log")}>
             <div className="ev-scroll">
-              {activity.error ? <ErrorBox message={activity.error} retry={activity.reload} retryLabel={t.t("Retry")} /> : !activity.data ? <Loading label={t.t("Loading…")} /> : <ActivityFeed items={activity.data} event={event} graph={graph} />}
+              {activity.error ? <ErrorBox message={activity.error} retry={activity.reload} retryLabel={t.t("Retry")} /> : !activity.data ? <Loading label={t.t("Loading…")} /> : <ActivityFeed items={activity.data} event={{ adventure_slug: event.adventure_slug, adventure_title: adv?.title || event.adventure_title || "" }} graph={graph} />}
             </div>
           </Card>
         </div>
       </div>
 
       {open?.kind === "rename" && <RenameDialog event={event} onClose={() => setOpen(null)} onDone={reload} />}
-      {open?.kind === "new-team" && <NewTeamsDialog eventId={event.id} teams={teams} onClose={() => setOpen(null)} onDone={reload} />}
+      {open?.kind === "new-team" && <NewTeamsDialog eventId={event.id} teams={teams} seatsLeft={event.max_players > 0 ? Math.max(0, event.max_players - (event.player_slots_count || 0)) : null} lang={adv?.language} topUp={event.assignment_id && !isQuest(event) && (event.state === "scheduled" || isLive(event)) ? { event, adventure: adv, user } : null} onClose={() => setOpen(null)} onDone={reload} />}
       {open?.kind === "team" && openTeam && (
         <TeamDetailDialog
           event={event}

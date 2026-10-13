@@ -54,6 +54,8 @@ function forget() {
 interface AuthRequest {
   client_name: string;
   redirect_host: string;
+  /** False for a local app: its name is whatever it registered with. */
+  verified: boolean;
   scopes: string[];
 }
 
@@ -94,15 +96,20 @@ export function AuthorizePage() {
   else {
     const r = load.data;
     const writes = r.scopes.includes("write");
+    const client = r.verified ? r.client_name : t.t("An unverified app calling itself “{{name}}”", { name: r.client_name });
     body = (
       <Card>
         <div className="az">
           <KeyRound size={32} aria-hidden className="az__icon" />
           <p className="az__lead">
             {writes
-              ? t.t("{{client}} wants to build and run adventures as you: read and change adventures, events and teams in your organization.", { client: r.client_name })
-              : t.t("{{client}} wants to read your adventures, events and teams as you. It can't change anything.", { client: r.client_name })}
+              ? t.t("{{client}} wants to build and run adventures as you: read and change adventures, events and teams in your organization.", { client })
+              : t.t("{{client}} wants to read your adventures, events and teams as you. It can't change anything.", { client })}
           </p>
+          {!r.verified && (
+            <p className="az__warn">{t.t("Only allow it if you started this connection yourself, on this computer. It returns to {{host}}.", { host: r.redirect_host })}</p>
+          )}
+          {memberships.length === 1 && <p className="az__muted">{t.t("It works in {{org}} only.", { org: memberships[0]!.org_name })}</p>}
           {memberships.length > 1 && (
             <Field label={t.t("Organization")} hint={t.t("The assistant works in this organization only. Connect again to use another.")}>
               <select value={org} onChange={(e) => setOrg(Number(e.target.value))}>

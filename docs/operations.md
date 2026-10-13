@@ -120,18 +120,47 @@ user's TOTP secret at rest:
 ```sh
 # Generate once and store like a database credential — losing this
 # locks every enrolled user out and forces them to re-enrol.
-ZV_TOTP_KEY=$(openssl rand -base64 32) zv
+openssl rand -base64 32
 ```
+
+Put the printed value in your environment file (`.env`, a systemd
+`EnvironmentFile=`, your secret store) as `ZV_TOTP_KEY=<value>` and
+start `zv` with it. Never generate it in the start command itself
+(`ZV_TOTP_KEY=$(openssl rand …) zv`): that makes a new key on every
+start.
 
 When unset, the enrolment surface is disabled (the Settings card shows
 a placeholder explaining why) and the login flow stays password-only —
 existing users keep working unchanged.
+
+The same key seals each party's host link, so "Email me the host page"
+can send the link the host already has. Without the key no link is
+kept: that mail sends a new link and the old one stops working.
 
 When set, the Settings → Two-factor authentication card lets each user
 register an authenticator app (1Password, Bitwarden, Aegis, Google
 Authenticator, …). Confirmed enrolment also generates ten single-use
 recovery codes; the user must save them at that moment because the
 plaintext is only displayed once.
+
+Two-factor can also be required. An org admin turns on "Require
+two-factor authentication" in Settings → Members for every member of
+that organisation (a full admin can do the same on the organisation's
+admin page); a full admin turns on "Require two-factor
+authentication for admins" in Settings → System for every global admin
+and Support user. A covered user without 2FA can still sign in with
+their password, but the console shows only the setup until they have
+enrolled and saved their recovery codes, and their API tokens (MCP and
+`/api/admin` bearer) get `403 totp_setup_required`. Belonging to any
+organisation that requires it is enough. A session from SSO sign-in
+counts as meeting the requirement. Settings → Members and Settings →
+Admins show who has 2FA on. While 2FA is required of a user they
+cannot turn it off themselves (regenerating recovery codes still
+works). Turning a requirement off asks for the actor's password;
+turning it on does not. Both switches need `ZV_TOTP_KEY`; without it
+they are greyed out and nothing is enforced. The org switch appears in
+that organisation's Settings → Audit (who, when, on or off); changes
+by a global admin also go in the admin action log.
 
 A user who has lost both the device and the recovery codes can ask
 an admin or org_admin in their org to factory-reset the second factor
@@ -142,7 +171,12 @@ and the target.
 
 Backups must include the value of `ZV_TOTP_KEY` alongside the database
 dump: a restored database paired with a different key is equivalent to
-losing the key entirely. Treat the key like a database credential —
+losing the key entirely. The server does not check this at boot: users
+see "Two-factor sign-in is unavailable on this server" at the code step,
+and the log shows `auth.totp.secret_corrupt` with the user id. Recovery
+codes are hashed, not encrypted, so they still sign users in with the
+wrong key — restore the right key, or let affected users in with a
+recovery code. Treat the key like a database credential —
 keep it in the same secrets store, never in the repo, never in CI logs.
 
 ## Metrics
@@ -169,6 +203,9 @@ Collectors emitted today:
 - `zv_http_request_duration_seconds_bucket{method, route}` — request
   latency histogram with sane web-app buckets.
 - `zv_auth_logins_total{result}` — login attempts (`success`/`fail`).
+- `zv_auth_second_factor_total{result}` — two-factor sign-in attempts
+  (`success`/`fail`/`rate_limited`); a wrong TOTP or recovery code
+  counts here, not in `zv_auth_logins_total`.
 - `zv_purchase_events_total{event}` — purchase lifecycle events:
   `created`, `confirmed_simulated`, `confirmed_stripe`, `refunded`.
 
@@ -200,7 +237,10 @@ ZV_LOG_FORMAT=json zv 2>&1 | tee zv.log
 ```
 
 The admin UI's live log stream uses its own JSON envelope and is
-unaffected.
+unaffected. It holds only recent entries in memory, so it starts empty
+after a restart; for anything older use `docker compose logs app` (or
+your aggregator). Logs → Server level changes the level until the next
+restart, which goes back to INFO.
 
 ## Retention
 
@@ -221,9 +261,9 @@ after they end, when a booked one passes its 60-day validity unstarted,
 or that many days after its days of play if it was somehow never ended.
 The ticket purchase stays, its email blanked.
 
-Quiz trails made at the public door (`/o/{slug}/trail`, on an org with
-`organizations.quiz_trail_enabled`, set by a site admin in the
-database) are hidden adventures of that org with a `trails` row. An
+Party adventures made at the public door (`/o/{slug}/trail`, on an org
+whose **Party adventures** switch a global admin has turned on in
+Organizations) are hidden adventures of that org with a `trails` row. An
 hourly sweeper (`SweepTrails`) deletes an unpaid draft 30 days after its
 last edit, deletes a paid one — adventure, event and trail — once its
 event has ended or lapsed unplayed (mailing the buyer that it is gone),

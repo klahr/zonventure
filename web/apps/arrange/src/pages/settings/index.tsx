@@ -1,3 +1,4 @@
+import { canAuthor, readsAsAdmin } from "@zonventure/api";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
@@ -31,36 +32,44 @@ export function SettingsPage({ tab }: { tab?: string | undefined }) {
   const u = state.user;
   const admin = u.role === "admin";
   const orgAdmin = u.role === "org_admin";
-  const orgUser = !admin && u.memberships.length > 0;
+  const setupOnly = !!u.password_is_default || !!u.totp_setup_required;
   const tabs = [
     { id: "organization", label: t.t("Organization"), visible: orgAdmin },
     { id: "account", label: t.t("Account"), visible: true },
     { id: "members", label: t.t("Members"), visible: orgAdmin },
-    { id: "themes", label: t.t("Themes"), visible: orgAdmin },
+    { id: "themes", label: t.t("Themes"), visible: canAuthor(u) },
     { id: "admins", label: t.t("Admins"), visible: admin },
-    { id: "audit", label: t.t("Audit"), visible: orgAdmin || admin },
-    { id: "purchases", label: t.t("Purchases"), visible: orgUser },
+    { id: "audit", label: t.t("Audit"), visible: orgAdmin || readsAsAdmin(u) },
+    { id: "purchases", label: t.t("Purchases"), visible: orgAdmin || admin },
     { id: "billing", label: t.t("Billing"), visible: orgAdmin },
     { id: "pricing", label: t.t("Pricing"), visible: admin },
     { id: "legal", label: t.t("Legal"), visible: admin },
     { id: "system", label: t.t("System"), visible: admin },
     { id: "migration", label: t.t("Migration"), visible: admin },
     { id: "software-update", label: t.t("Software update"), visible: admin },
-    { id: "integrations", label: t.t("Integrations"), visible: orgUser },
-  ].filter((x) => x.visible);
-  const current = tabs.find((x) => x.id === tab)?.id ?? tabs[0]!.id;
+    { id: "integrations", label: t.t("Integrations"), visible: orgAdmin },
+  ];
+  const visible = tabs.filter((x) => x.visible && (!setupOnly || x.id === "account"));
+  const current = visible.find((x) => x.id === tab)?.id ?? visible[0]!.id;
+  // A known tab this role may not open says so, as other pages do.
+  const refused = tabs.some((x) => x.id === tab && !x.visible);
   return (
     <Page>
       <PageHeader title={t.t("Settings")} />
+      {refused && (
+        <div className="alert alert--warn" role="status">
+          {t.t("That settings page isn't open to your account.")}
+        </div>
+      )}
       <div className="st-tabs">
-        <Tabs label={t.t("Settings")} current={current} tabs={tabs.map((x) => ({ ...x, href: href({ name: "settings", tab: x.id }) }))} />
+        <Tabs label={t.t("Settings")} current={current} tabs={visible.map((x) => ({ ...x, href: href({ name: "settings", tab: x.id }) }))} />
       </div>
-      <SettingsTab id={current} />
+      <SettingsTab id={current} admin={admin} />
     </Page>
   );
 }
 
-function SettingsTab({ id }: { id: string }) {
+function SettingsTab({ id, admin }: { id: string; admin: boolean }) {
   switch (id) {
     case "organization":
       return <OrganizationTab />;
@@ -76,7 +85,8 @@ function SettingsTab({ id }: { id: string }) {
       return (
         <>
           <PurchasesTab />
-          <TicketSalesCard />
+          {/* An organisation's ticket sales are under Orders; here, the platform's. */}
+          {admin && <TicketSalesCard />}
         </>
       );
     case "billing":

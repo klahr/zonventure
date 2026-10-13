@@ -23,6 +23,8 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 	// ended, when the endpoints below refuse the session.
 	r.With(auth.RequireSlotOrEnded, auth.RequireCSRF()).Post("/api/player/logout", playerH.Logout)
 	r.With(auth.RequireSlotOrEnded, auth.RequireCSRF()).Post("/api/player/forget", playerH.Forget)
+	// Why the host ended a party team's session, and its result.
+	r.With(auth.RequireSlotOrEnded).Get("/api/player/party-end", playerH.GetPartyEnd)
 
 	// Player (slot-authenticated). Mutations under CSRF; the GET reads
 	// stay open since they're idempotent and can't damage state.
@@ -46,6 +48,7 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 		r.Post("/items/give", playerH.PostGiveItem)
 		r.Post("/items/receive", playerH.PostReceiveItem)
 		r.Post("/location", playerH.PostLocation)
+		r.Post("/location/off", playerH.PostLocationOff)
 		// Player-driven slot rename — the arranger's pre-set name is
 		// often a placeholder ("Player 3"). Letting the player put
 		// their own name on the leaderboard improves engagement.

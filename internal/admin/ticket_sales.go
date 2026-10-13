@@ -39,6 +39,12 @@ type ticketSaleDTO struct {
 	CreatedAt   string `json:"created_at"`
 	PaidAt      string `json:"paid_at,omitempty"`
 	RefundedAt  string `json:"refunded_at,omitempty"`
+	// RefundPending is a refund asked of the provider that its webhook
+	// has not confirmed yet.
+	RefundPending bool `json:"refund_pending,omitempty"`
+	// Abandoned is a checkout still pending a day after it began: the
+	// buyer left it, and the list keeps it out of sight unless asked.
+	Abandoned bool `json:"abandoned,omitempty"`
 }
 
 // ticketSaleOrg is the org a ticket_purchases row belongs to: the
@@ -47,7 +53,8 @@ type ticketSaleDTO struct {
 const ticketSaleOrg = `COALESCE(e.org_id, o.org_id, p.buyer_org_id)`
 
 // ListTicketSales returns the ticket purchases visible to the caller:
-// the platform admin sees every org's, an org user their own org's.
+// the platform admin sees every org's, or one org's with ?org_id=, an
+// org user their own org's.
 //
 // GET /api/admin/ticket-purchases
 func (h *Handlers) ListTicketSales(w http.ResponseWriter, r *http.Request) {
@@ -58,7 +65,9 @@ func (h *Handlers) ListTicketSales(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(NULLIF(a.title, ''), a.slug, ''), COALESCE(org.name, ''),
 		       p.buyer_email, p.team_size, p.blocks, p.amount_cents, p.currency, p.application_fee_cents,
 		       COALESCE(p.stripe_charge_id, '') <> '', COALESCE(p.stripe_invoice_url, ''),
-		       p.created_at, COALESCE(p.paid_at, ''), COALESCE(p.refunded_at, '')
+		       p.created_at, COALESCE(p.paid_at, ''), COALESCE(p.refunded_at, ''),
+		       p.state = 'paid' AND p.refund_requested_at IS NOT NULL,
+		       p.state = 'pending' AND p.created_at < to_char((now() - interval '24 hours') AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
 		FROM ticket_purchases p
 		LEFT JOIN events e ON e.id = p.event_id
 		LEFT JOIN party_offers o ON o.id = p.party_offer_id
@@ -66,13 +75,27 @@ func (h *Handlers) ListTicketSales(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN organizations org ON org.id = ` + ticketSaleOrg + `
 	`
 	var args []any
-	if !isAdmin(me) {
+	if !readsAsAdmin(me) {
 		if !isOrgScoped(me) {
 			httpx.Error(w, http.StatusForbidden, "no org context")
 			return
 		}
+		// Billing is the org admin's: an event host runs events but
+		// doesn't see what the organisation paid or sold.
+		if me.Role != auth.RoleOrgAdmin {
+			httpx.Error(w, http.StatusForbidden, "only an organization admin can see purchases")
+			return
+		}
 		query += ` WHERE ` + ticketSaleOrg + ` = $1`
 		args = append(args, *me.OrgID)
+	} else if v := r.URL.Query().Get("org_id"); v != "" {
+		orgID, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			httpx.Error(w, http.StatusBadRequest, "bad org_id")
+			return
+		}
+		query += ` WHERE ` + ticketSaleOrg + ` = $1`
+		args = append(args, orgID)
 	}
 	query += ` ORDER BY p.created_at DESC, p.id DESC`
 	rows, err := h.DB.QueryContext(r.Context(), query, args...)
@@ -89,11 +112,11 @@ func (h *Handlers) ListTicketSales(w http.ResponseWriter, r *http.Request) {
 		)
 		if err := rows.Scan(&d.ID, &d.Kind, &d.State, &d.EventID, &d.EventName, &d.AdventureTitle, &d.OrgName,
 			&d.BuyerEmail, &d.TeamSize, &d.Blocks, &d.AmountCents, &d.Currency, &d.FeeCents,
-			&hasCharge, &d.InvoiceURL, &d.CreatedAt, &d.PaidAt, &d.RefundedAt); err != nil {
+			&hasCharge, &d.InvoiceURL, &d.CreatedAt, &d.PaidAt, &d.RefundedAt, &d.RefundPending, &d.Abandoned); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "list failed", err)
 			return
 		}
-		d.Refundable = d.State == "paid" && hasCharge && d.AmountCents > 0 &&
+		d.Refundable = d.State == "paid" && !d.RefundPending && hasCharge && d.AmountCents > 0 &&
 			(isAdmin(me) || me.Role == auth.RoleOrgAdmin && sellerRefundable(d.Kind, d.FeeCents))
 		d.Teams = d.Blocks * TeamsPerBlock
 		out = append(out, d)
@@ -114,8 +137,8 @@ func (h *Handlers) ListTicketSales(w http.ResponseWriter, r *http.Request) {
 // fee, so the buyer gets everything back and nobody keeps any of it.
 //
 // Refunds touch real money: the platform admin refunds any sale, an
-// org admin only their own org's tickets and parties sold through its
-// connected account (see sellerRefundable). Reauth: X-Confirm-Password.
+// org admin only their own org's tickets and parties (see
+// sellerRefundable). Reauth: X-Confirm-Password.
 //
 // POST /api/admin/ticket-purchases/{purchaseID}/refund
 func (h *Handlers) RefundTicketSale(w http.ResponseWriter, r *http.Request) {
@@ -155,7 +178,7 @@ func (h *Handlers) RefundTicketSale(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !isAdmin(me) && (!isOrgScoped(me) || !orgID.Valid || orgID.Int64 != *me.OrgID || !sellerRefundable(kind, fee)) {
-		httpx.Error(w, http.StatusForbidden, "only the platform can refund this sale")
+		httpx.Error(w, http.StatusForbidden, "only the platform operator can refund this sale: ask them")
 		return
 	}
 	if state != "paid" {
@@ -169,6 +192,19 @@ func (h *Handlers) RefundTicketSale(w http.ResponseWriter, r *http.Request) {
 	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
+	// One refund per sale: a second click, or a second admin, while the
+	// first waits for the provider's webhook must not cut another.
+	res, err := h.DB.ExecContext(r.Context(), `
+		UPDATE ticket_purchases SET refund_requested_at = now_text()
+		 WHERE id = $1 AND state = 'paid' AND refund_requested_at IS NULL`, purchaseID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "refund failed", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "a refund of this purchase is already under way", "code": "refund_pending"})
+		return
+	}
 	rf, err := h.Provider.Refund(r.Context(), payments.RefundParams{
 		ChargeID:             chargeID.String,
 		RefundApplicationFee: fee > 0,
@@ -177,6 +213,10 @@ func (h *Handlers) RefundTicketSale(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		logx.Error("payments.ticket_refund.new_failed",
 			"ticket_purchase_id", purchaseID, "charge_id", chargeID.String, "err", err.Error())
+		if _, cerr := h.DB.ExecContext(r.Context(), `
+			UPDATE ticket_purchases SET refund_requested_at = NULL WHERE id = $1 AND state = 'paid'`, purchaseID); cerr != nil {
+			logx.Warn("payments.ticket_refund.unclaim", "ticket_purchase_id", purchaseID, "err", cerr.Error())
+		}
 		httpx.Error(w, http.StatusBadGateway, "refund failed")
 		return
 	}
@@ -191,11 +231,12 @@ func (h *Handlers) RefundTicketSale(w http.ResponseWriter, r *http.Request) {
 }
 
 // sellerRefundable reports whether an org admin may refund a sale
-// themselves: a ticket or party sold through the org's connected
-// account, which a platform fee marks. Refunding it reverses the
-// transfer, so the org pays it back, not the platform. Hosted passes
-// and sales that settled on the platform account stay with the
-// platform admin.
+// themselves: a ticket or party they sold through their own connected
+// account (a platform fee marks it), since their buyers are theirs to
+// serve and the refund reverses the transfer, so the org pays it back.
+// A sale that settled on the platform account is the platform's money,
+// and hosted passes the org bought are the platform's sale: both stay
+// with the platform admin.
 func sellerRefundable(kind string, feeCents int64) bool {
 	return (kind == "ticket" || kind == "party") && feeCents > 0
 }

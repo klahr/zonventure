@@ -46,6 +46,16 @@ func parsePlayTime(s string) (time.Time, error) {
 	return time.Time{}, errors.New("unrecognised time format")
 }
 
+// wireTime is a stored UTC timestamp as RFC 3339, so the phone reads it
+// as UTC rather than as its own local time. Unparseable values pass
+// through as they are.
+func wireTime(s string) string {
+	if t, err := parsePlayTime(s); err == nil {
+		return t.Format(time.RFC3339)
+	}
+	return s
+}
+
 // Handlers bundles the dependencies the player endpoints need.
 type Handlers struct {
 	DB           *sql.DB
@@ -103,7 +113,7 @@ func (h *Handlers) MagicLinkLogin(w http.ResponseWriter, r *http.Request) bool {
 			Event: auth.EventMagicLink, OK: false, IP: ip, UserAgent: ua,
 			Reason: auth.ReasonRateLimited,
 		})
-		http.Redirect(w, r, "/play?link=busy", http.StatusFound)
+		http.Redirect(w, r, "/app/play/?link=busy", http.StatusFound)
 		return true
 	}
 	slot, session, err := auth.LoginSlotByToken(r.Context(), h.DB, token)
@@ -117,21 +127,23 @@ func (h *Handlers) MagicLinkLogin(w http.ResponseWriter, r *http.Request) bool {
 			Reason: reason,
 		})
 		// The link of a finished event has done its job: its holder
-		// wants the team's recap, not a sign-in error.
+		// wants the team's recap, not a sign-in error. A cancelled
+		// event's has no recap to show; the player app says so.
+		link := "invalid"
 		if errors.Is(err, auth.ErrSlotTokenExpired) {
-			if recap := h.recapForExpiredLink(r.Context(), token); recap != "" {
+			link = "expired"
+			recap, state := h.recapForExpiredLink(r.Context(), token)
+			if state == "cancelled" {
+				link = "cancelled"
+			} else if recap != "" {
 				http.Redirect(w, r, "/recap/"+recap, http.StatusFound)
 				return true
 			}
 		}
-		// Drop the token from the address bar and tell the /play page why
+		// Drop the token from the address bar and tell the player app why
 		// no one is signed in, so it can say so instead of asking the
 		// player to open the very link they just opened.
-		link := "invalid"
-		if errors.Is(err, auth.ErrSlotTokenExpired) {
-			link = "expired"
-		}
-		http.Redirect(w, r, "/play?link="+link, http.StatusFound)
+		http.Redirect(w, r, "/app/play/?link="+link, http.StatusFound)
 		return true
 	}
 	auth.Record(r.Context(), h.DB, auth.AuditEvent{
@@ -147,20 +159,20 @@ func (h *Handlers) MagicLinkLogin(w http.ResponseWriter, r *http.Request) bool {
 }
 
 // recapForExpiredLink is the recap token of the team behind an expired
-// magic link, when its event is over; empty otherwise.
-func (h *Handlers) recapForExpiredLink(ctx context.Context, magic string) string {
-	var recap string
+// magic link and its event's state, when the event is over; empty
+// otherwise.
+func (h *Handlers) recapForExpiredLink(ctx context.Context, magic string) (recap, state string) {
 	err := h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE(t.recap_token, '')
+		SELECT COALESCE(t.recap_token, ''), ar.state
 		FROM player_slots ps
 		JOIN teams t ON t.id = ps.team_id
 		JOIN events ar ON ar.id = t.event_id
 		WHERE ps.token = $1 AND ar.state IN ('completed', 'cancelled')
-	`, magic).Scan(&recap)
+	`, magic).Scan(&recap, &state)
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	return recap
+	return recap, state
 }
 
 // Logout clears the slot session.
@@ -501,32 +513,49 @@ func (h *Handlers) recordLocation(ctx context.Context, slot auth.Slot, req Locat
 // missing-row cases default to "plausible" — this is a cheating
 // gate, not a hard correctness gate, so failing open is the right
 // posture if the DB read flakes.
+//
+// The ping before the latest counts too: when the latest was itself the
+// jump (a stray fix let through after a quiet spell), the phone's honest
+// fixes agree with the one before it, and must not be refused until the
+// stray one ages out. A spoofer gains nothing: the ping before a jump let
+// through after a quiet spell is outside the window anyway, as it was
+// when the jump itself was let through.
 func plausibleNextPing(ctx context.Context, db *sql.DB, slotID int64, lat, lng float64) bool {
-	var (
-		lastLat, lastLng float64
-		serverTS         string
-	)
-	err := db.QueryRowContext(ctx, `
+	rows, err := db.QueryContext(ctx, `
 		SELECT lat, lng, server_ts FROM location_pings
 		WHERE slot_id = $1
-		ORDER BY server_ts DESC
-		LIMIT 1
-	`, slotID).Scan(&lastLat, &lastLng, &serverTS)
-	if err != nil {
-		// No prior ping (or DB hiccup) — let it through. The first
-		// ping has nothing to anchor against.
-		return true
-	}
-	prev, err := parsePlayTime(serverTS)
+		ORDER BY server_ts DESC, id DESC
+		LIMIT 2
+	`, slotID)
 	if err != nil {
 		return true
 	}
-	elapsed := time.Since(prev).Seconds()
-	if elapsed < minLookbackForSpeedSec || elapsed > maxLookbackForSpeedSec {
-		return true
+	defer rows.Close()
+	seen := false
+	for rows.Next() {
+		var (
+			lastLat, lastLng float64
+			serverTS         string
+		)
+		if err := rows.Scan(&lastLat, &lastLng, &serverTS); err != nil {
+			return true
+		}
+		seen = true
+		prev, err := parsePlayTime(serverTS)
+		if err != nil {
+			return true
+		}
+		elapsed := time.Since(prev).Seconds()
+		if elapsed < minLookbackForSpeedSec || elapsed > maxLookbackForSpeedSec {
+			return true
+		}
+		if haversineMeters(lat, lng, lastLat, lastLng)/elapsed <= maxPlausibleSpeedMS {
+			return true
+		}
 	}
-	d := haversineMeters(lat, lng, lastLat, lastLng)
-	return d/elapsed <= maxPlausibleSpeedMS
+	// No prior ping (or DB hiccup) — let it through. The first ping has
+	// nothing to anchor against.
+	return !seen || rows.Err() != nil
 }
 
 // PostLocation records a GPS ping for the slot's team.
@@ -547,6 +576,22 @@ func (h *Handlers) PostLocation(w http.ResponseWriter, r *http.Request) {
 	}
 	h.publishPing(slot)
 	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// PostLocationOff records that the player turned location sharing off:
+// their earlier fixes stop placing them, so the place they were at no
+// longer counts once the phone has moved on. Sharing again places them
+// by the new fixes.
+//
+// POST /api/player/location/off
+func (h *Handlers) PostLocationOff(w http.ResponseWriter, r *http.Request) {
+	slot, _ := auth.SlotFromContext(r.Context())
+	if _, err := h.DB.ExecContext(r.Context(), `UPDATE player_slots SET location_off_at = now_text() WHERE id = $1`, slot.ID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "saving failed", err)
+		return
+	}
+	h.publishPing(slot)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // publishPing tells the team's other phones (a teammate may have brought

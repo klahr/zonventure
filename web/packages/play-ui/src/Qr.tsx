@@ -137,8 +137,11 @@ function Scanner({ t, onClose, onScan }: { t: Translate; onClose: () => void; on
           timer = setTimeout(() => void tick(), 250);
         };
         void tick();
-      } catch {
-        if (!stopped) setStatus(tRef.current("The camera is not available. Allow camera access, or type the answer."));
+      } catch (e) {
+        if (stopped) return;
+        // No camera at all: asking to allow it would send the player looking for a setting.
+        const none = e instanceof DOMException && (e.name === "NotFoundError" || e.name === "OverconstrainedError");
+        setStatus(none ? tRef.current("This phone has no camera to use. Type the code instead.") : tRef.current("The camera is not available. Allow camera access, or type the answer."));
       }
     })();
 

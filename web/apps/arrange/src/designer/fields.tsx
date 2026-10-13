@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { isPolygon, type Graph, type Zone } from "@zonventure/graph";
-import { LocateFixed, MapPin } from "lucide-react";
+import { LocateFixed, Map as MapIcon, MapPin } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { ICON } from "./dz/ui.tsx";
-import { locate, zoneAt } from "./zones.ts";
+import { locate, nearLastZone, zoneAt } from "./zones.ts";
+import { ZoneMap } from "./ZoneMap.tsx";
 
 export function Field({ label, hint, children }: { label: string; hint?: string | undefined; children: ReactNode }) {
   return (
@@ -13,6 +14,20 @@ export function Field({ label, hint, children }: { label: string; hint?: string 
       {hint && <span className="field__hint">{hint}</span>}
     </label>
   );
+}
+
+/**
+ * After an "Add …" button, put the caret in the row it added so typing
+ * goes there: the first text field of the list's last `item` row.
+ */
+export function focusAdded(list: Element | null, item: string) {
+  requestAnimationFrame(() => {
+    const rows = list?.querySelectorAll(item);
+    const row = rows?.[rows.length - 1];
+    const field = row?.querySelector<HTMLInputElement | HTMLTextAreaElement>("input:not([type=checkbox]):not([type=radio]), textarea");
+    field?.focus();
+    field?.select();
+  });
 }
 
 /**
@@ -44,6 +59,17 @@ export function ZoneSelect({ graph, label, value, onChange, empty, here, onNew }
   const chosen = zones.find((z) => z.slug === value);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; warn?: boolean } | null>(null);
+  // The zone's map, drawn on from a desk: the chosen zone, or a new one
+  // beside the adventure's last place.
+  const [drawing, setDrawing] = useState(false);
+  const draw = () => {
+    if (!here) return;
+    if (!chosen) {
+      const z = zoneAt(zones, here.name || t.t("Place"), nearLastZone(zones));
+      here.set([...zones, z], z.slug);
+    }
+    setDrawing((d) => !d || !chosen);
+  };
 
   // Pin a new zone, or move the chosen one, to where the phone is.
   const pin = async (move: boolean) => {
@@ -96,7 +122,12 @@ export function ZoneSelect({ graph, label, value, onChange, empty, here, onNew }
                 {t.t("Move it here")}
               </button>
             )}
+            <button type="button" className="link-btn" aria-pressed={drawing && !!chosen} onClick={draw}>
+              <MapIcon size={ICON.sm} aria-hidden="true" />
+              {t.t("Draw on map")}
+            </button>
           </div>
+          {drawing && chosen && <ZoneMap key={chosen.slug} zone={chosen} onChange={(nz) => here.set(zones.map((z) => (z.slug === nz.slug ? nz : z)), nz.slug)} />}
           {chosen && !isPolygon(chosen) && (
             <div className="seg zone-here__size" role="group" aria-label={t.t("Size")}>
               {[...new Set([...SIZES, chosen.radius_m])].sort((a, b) => a - b).map((m) => (
@@ -107,7 +138,7 @@ export function ZoneSelect({ graph, label, value, onChange, empty, here, onNew }
             </div>
           )}
           {note && <span className={"field__hint" + (note.warn ? " zone-here__warn" : "")}>{note.text}</span>}
-          {!chosen && !note && <span className="field__hint">{t.t("Stand at the spot and tap Mark where I stand. The team must be within the circle to answer.")}</span>}
+          {!chosen && !note && <span className="field__hint">{t.t("Stand at the spot and tap Mark where I stand, or draw the place on the map. The team must be inside it to answer.")}</span>}
         </div>
       )}
     </>

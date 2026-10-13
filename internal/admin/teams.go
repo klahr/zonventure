@@ -57,7 +57,7 @@ func (h *Handlers) authorizeTeam(w http.ResponseWriter, r *http.Request, teamID 
 		return 0, 0, false
 	}
 	me, _ := auth.FromContext(r.Context())
-	if !sameOrg(me, orgID) {
+	if !sameOrg(me, orgID) || !runsEvents(me) {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return 0, 0, false
 	}
@@ -409,7 +409,7 @@ func (h *Handlers) rescueGraphTeam(w http.ResponseWriter, r *http.Request, event
 	err := h.DB.QueryRowContext(r.Context(),
 		`SELECT current_node, completed_at FROM team_graph_state WHERE team_id = $1`, teamID).Scan(&current, &completed)
 	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusConflict, "this team hasn't started yet")
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "this team hasn't started yet", "code": "team_not_started"})
 		return
 	}
 	if err != nil {
@@ -417,7 +417,7 @@ func (h *Handlers) rescueGraphTeam(w http.ResponseWriter, r *http.Request, event
 		return
 	}
 	if completed.Valid {
-		httpx.Error(w, http.StatusConflict, "team already finished")
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "team already finished", "code": "team_finished"})
 		return
 	}
 	node := req.Node
@@ -427,10 +427,10 @@ func (h *Handlers) rescueGraphTeam(w http.ResponseWriter, r *http.Request, event
 	res, err := h.Engine.Rescue(r.Context(), teamID, node)
 	switch {
 	case errors.Is(err, session.ErrStale):
-		httpx.Error(w, http.StatusConflict, "the team has moved on since you looked; refresh and try again")
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team has moved on since you looked; refresh and try again", "code": "team_moved"})
 		return
 	case errors.Is(err, session.ErrWrongNode), errors.Is(err, session.ErrNotAllowed):
-		httpx.Error(w, http.StatusConflict, "the team isn't on a puzzle it can be moved past")
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team isn't on a puzzle it can be moved past", "code": "not_rescuable"})
 		return
 	case err != nil:
 		httpx.ServerErr(w, http.StatusInternalServerError, "move failed", err)
@@ -438,7 +438,7 @@ func (h *Handlers) rescueGraphTeam(w http.ResponseWriter, r *http.Request, event
 	}
 	me, _ := auth.FromContext(r.Context())
 	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamUnlocked,
-		map[string]any{"node": node, "port": res.Port, "by_arranger": true})
+		map[string]any{"node": node, "port": res.Port, "to": res.View.Node, "by_arranger": true})
 	if res.View.Finished {
 		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamCompleted,
 			map[string]any{"outcome": res.View.Outcome, "by_arranger": true})

@@ -200,7 +200,7 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
           <ConceptIcon {...RESOURCE.items} />
           {t.t("Items")}
         </h3>
-        <p className="field__hint">{t.t("Things the team collects and can look at, for the story. To send teams different ways, a gate checks what they have done instead.")}</p>
+        <p className="field__hint">{t.t("Things the team collects and can look at. To send teams different ways, a gate can check “Has an item”.")}</p>
         {items.map((it, i) => (
           <div key={it.slug} className="box__row">
             <input className="field__input" value={it.name ?? ""} placeholder={it.slug} aria-label={t.t("Name")}

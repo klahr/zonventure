@@ -55,6 +55,15 @@ var AuthLogins = prometheus.NewCounterVec(prometheus.CounterOpts{
 	Help: "Login attempts, labeled by outcome (success/fail).",
 }, []string{"result"})
 
+// AuthSecondFactor counts second-factor (TOTP or recovery code)
+// attempts at sign-in, kept apart from AuthLogins so that series keeps
+// its meaning. Result is "success", "fail" (wrong code) or
+// "rate_limited", so brute force against 2FA is visible.
+var AuthSecondFactor = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "zv_auth_second_factor_total",
+	Help: "Two-factor sign-in attempts, labeled by outcome (success/fail/rate_limited).",
+}, []string{"result"})
+
 // PurchaseEvents counts purchase lifecycle transitions: "created",
 // "confirmed_simulated", "confirmed_stripe", "refunded".
 var PurchaseEvents = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -67,6 +76,7 @@ func init() {
 		HTTPRequests,
 		HTTPDuration,
 		AuthLogins,
+		AuthSecondFactor,
 		PurchaseEvents,
 	)
 }

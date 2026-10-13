@@ -161,6 +161,100 @@ func TestOrgBundle_SlugCollision(t *testing.T) {
 	}
 }
 
+// The org's flags and its unbilled invoice purchases move with it;
+// billed and voided ones stay behind. The summary lists the flags.
+func TestOrgBundle_CarriesFlagsAndUnbilledInvoices(t *testing.T) {
+	t.Parallel()
+	db, orgID, _, _, h := orgFixture(t)
+	ctx := context.Background()
+	mustExec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustExec(`UPDATE organizations SET trusted = 1, verified_creator = TRUE WHERE id = $1`, orgID)
+	mustExec(`
+		INSERT INTO purchases(org_id, adventure_slug, max_players, amount_cents, currency, provider, state, paid_at,
+			assignment_id, top_up_assignment_id, billed_at, voided_at)
+		SELECT $1, 'treasure', 10, 49000, 'SEK', 'invoice', 'paid', now_text(), a.id, a.id, b, v
+		FROM adventure_assignments a,
+		     (VALUES (NULL, NULL), (now_text(), NULL), (NULL, now_text())) AS x(b, v)
+		WHERE a.org_id = $1`, orgID)
+
+	env, files, err := h.ExportOrgEnvelope(ctx, orgID)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	var zipBuf bytes.Buffer
+	if err := admin.WriteOrgBundle(&zipBuf, env, files); err != nil {
+		t.Fatalf("write bundle: %v", err)
+	}
+	mustExec(`DELETE FROM organizations WHERE id = $1`, orgID)
+	summary, err := admin.ImportOrgBundle(ctx, db, zipBuf.Bytes())
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if summary.InvoicePurchases != 1 || strings.Join(summary.Flags, ",") != "invoice_billing,verified_creator" {
+		t.Fatalf("summary = %+v", summary)
+	}
+	var (
+		trusted         int
+		party, verified bool
+		amount          int64
+		topUpMatches    bool
+	)
+	if err := db.QueryRow(`SELECT trusted, quiz_trail_enabled, verified_creator FROM organizations WHERE id = $1`, summary.OrgID).
+		Scan(&trusted, &party, &verified); err != nil {
+		t.Fatal(err)
+	}
+	if trusted != 1 || party || !verified {
+		t.Errorf("flags: trusted %d, party %v, verified %v", trusted, party, verified)
+	}
+	if err := db.QueryRow(`
+		SELECT p.amount_cents, p.top_up_assignment_id = a.id
+		FROM purchases p JOIN adventure_assignments a ON a.id = p.assignment_id
+		WHERE p.org_id = $1 AND p.provider = 'invoice' AND p.billed_at IS NULL`, summary.OrgID).Scan(&amount, &topUpMatches); err != nil {
+		t.Fatalf("imported invoice purchase: %v", err)
+	}
+	if amount != 49000 || !topUpMatches {
+		t.Errorf("imported invoice purchase: amount %d, top-up kept %v", amount, topUpMatches)
+	}
+}
+
+// An event whose adventure is neither in the bundle nor on the
+// destination (another org's catalog adventure) is refused up front:
+// imported, its players could never load the game.
+func TestOrgBundle_RefusesEventWithoutAdventure(t *testing.T) {
+	t.Parallel()
+	db, orgID, _, _, h := orgFixture(t)
+	ctx := context.Background()
+
+	env, files, err := h.ExportOrgEnvelope(ctx, orgID)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	if len(env.Events) == 0 {
+		t.Fatal("fixture has no event")
+	}
+	env.Events[0].AdventureSlug = "someone-elses-catalog-adventure"
+	var zipBuf bytes.Buffer
+	if err := admin.WriteOrgBundle(&zipBuf, env, files); err != nil {
+		t.Fatalf("write bundle: %v", err)
+	}
+	_, err = admin.ImportOrgBundle(ctx, db, zipBuf.Bytes())
+	if err == nil || !strings.Contains(err.Error(), "someone-elses-catalog-adventure") {
+		t.Fatalf("import: want a refusal naming the missing adventure, got %v", err)
+	}
+	var orgCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM organizations WHERE name LIKE 'Acme%'`).Scan(&orgCount); err != nil {
+		t.Fatalf("orgs count: %v", err)
+	}
+	if orgCount != 1 {
+		t.Errorf("orgs after refused import: got %d, want 1", orgCount)
+	}
+}
+
 // TestOrgBundle_RejectsBadManifest covers the importer's input-
 // validation posture: a non-zip body, a zip without org.json, and
 // a manifest with the wrong format string all reject as 400-class

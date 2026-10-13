@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, NetworkError } from "@zonventure/api";
+import { NetworkError } from "@zonventure/api";
+import { translate } from "../i18n.tsx";
 
 export interface Load<T> {
   data: T | null;
@@ -49,9 +50,16 @@ export function useLoad<T>(fetcher: (signal: AbortSignal) => Promise<T>, deps: u
   return { data, error, loading, reload, set: setData };
 }
 
-/** A message for a failed request, fit to show the user. */
+/**
+ * A message for a failed request, fit to show the user. Most server
+ * messages are lowercase English; the catalog translates the known
+ * ones, and either way the message starts with a capital.
+ */
 export function errorText(e: unknown): string {
-  if (e instanceof ApiError) return e.message;
-  if (e instanceof NetworkError) return "Could not reach the server. Check your connection.";
-  return e instanceof Error ? e.message : String(e);
+  if (e instanceof NetworkError) return translate("Could not reach the server. Check your connection.");
+  return sentence(translate(e instanceof Error ? e.message : String(e)));
+}
+
+function sentence(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }

@@ -111,6 +111,29 @@ func TestBulkCreateTeams(t *testing.T) {
 		}
 	})
 
+	// A team the pass (20 players, 8 in use) has no seats for comes back
+	// coded, for the console to offer "Add seats and retry".
+	t.Run("pass full is coded", func(t *testing.T) {
+		arr := boss.in(t)
+		names := make([]string, 13)
+		for i := range names {
+			names[i] = "p" + itoa(int64(i))
+		}
+		var resp struct {
+			Results []struct {
+				Error string `json:"error"`
+				Code  string `json:"code"`
+			} `json:"results"`
+		}
+		body := map[string]any{"teams": []map[string]any{{"name": "Zeta", "member_names": names}}}
+		if s := arr.do("POST", "/api/admin/events/"+itoa(run.ID)+"/teams/bulk", body, &resp); s != 200 {
+			t.Fatalf("bulk = %d", s)
+		}
+		if len(resp.Results) != 1 || resp.Results[0].Code != "pass_full" || resp.Results[0].Error == "" {
+			t.Fatalf("results = %+v, want one pass_full", resp.Results)
+		}
+	})
+
 	// Enforces the 200-team cap.
 	t.Run("rejects huge batch", func(t *testing.T) {
 		arr := boss.in(t)

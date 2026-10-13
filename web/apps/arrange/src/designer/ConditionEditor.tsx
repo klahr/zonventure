@@ -48,6 +48,20 @@ const OPS: { op: Op; label: string; group: string }[] = [
   { op: "weekday", label: "Weekday", group: "Place & time" },
 ];
 
+/** What the number in a comparison counts, shown before it. */
+const AMOUNT: Partial<Record<Op, string>> = {
+  attempts: "Wrong guesses",
+  item: "How many",
+  counter: "Value",
+  score: "Points",
+  elapsed: "Seconds",
+  node_elapsed: "Seconds",
+  team_size: "Players",
+  players_in_zone: "Players",
+  walked: "Metres",
+  time_of_day: "Time",
+};
+
 const CMPS: { cmp: Cmp; label: string }[] = [
   { cmp: "gte", label: "≥" },
   { cmp: "gt", label: ">" },
@@ -83,7 +97,7 @@ export function ConditionEditor({ value, onChange, graph, depth = 0, forPlayer =
     if (!n) return [];
     if (n.type === "puzzle") return (n.puzzle?.outputs ?? []).map((o) => ({ port: o.port, label: o.label || o.port }));
     if (n.type === "hub") return (n.hub?.branches ?? []).map((b) => ({ port: b.port, label: b.label || b.port }));
-    return [{ port: "out", label: "continue" }];
+    return [{ port: "out", label: t.t("Continue") }];
   };
 
   // The steps with a random draw, and the draws and cards of one.
@@ -210,6 +224,7 @@ export function ConditionEditor({ value, onChange, graph, depth = 0, forPlayer =
 
       {["attempts", "item", "counter", "score", "elapsed", "node_elapsed", "team_size", "players_in_zone", "walked", "time_of_day"].includes(value.op) && (
         <div className="cond__cmp">
+          <span className="cond__what">{t.t(AMOUNT[value.op] ?? "Value")}</span>
           <select className="field__input" value={value.cmp ?? "gte"} onChange={(e) => set({ cmp: e.target.value as Cmp })} aria-label={t.t("Comparison")}>
             {CMPS.map((c) => (
               <option key={c.cmp} value={c.cmp}>
@@ -225,7 +240,7 @@ export function ConditionEditor({ value, onChange, graph, depth = 0, forPlayer =
               type="number"
               value={value.n ?? (value.op === "item" || value.op === "players_in_zone" ? 1 : 0)}
               onChange={(e) => set({ n: Number(e.target.value) })}
-              aria-label={t.t("Value")}
+              aria-label={t.t(AMOUNT[value.op] ?? "Value")}
             />
           )}
         </div>

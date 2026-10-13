@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/httpx"
 
 	"github.com/pquerna/otp"
@@ -20,9 +21,13 @@ import (
 // internal/admin/users.go:requirePasswordConfirm).
 
 type totpStatusResponse struct {
-	Enabled     bool   `json:"enabled"`
-	EnrolledAt  string `json:"enrolled_at,omitempty"`
-	ServerReady bool   `json:"server_ready"`
+	Enabled      bool   `json:"enabled"`
+	EnrolledAt   string `json:"enrolled_at,omitempty"`
+	RecoveryLeft int    `json:"recovery_codes_left"`
+	ServerReady  bool   `json:"server_ready"`
+	// RequiredBy says who requires it of the user ("org" or "admin",
+	// auth.TOTPRequiredBy), so the UI doesn't offer turning it off.
+	RequiredBy string `json:"required_by,omitempty"`
 }
 
 // TOTPStatus reports whether the calling user has TOTP enabled, when
@@ -38,11 +43,17 @@ func (h *Handlers) TOTPStatus(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-	httpx.JSON(w, http.StatusOK, totpStatusResponse{
-		Enabled:     st.Enabled,
-		EnrolledAt:  st.EnrolledAt,
-		ServerReady: h.TOTPKey != nil,
-	})
+	resp := totpStatusResponse{
+		Enabled:      st.Enabled,
+		EnrolledAt:   st.EnrolledAt,
+		RecoveryLeft: st.RecoveryLeft,
+		ServerReady:  h.TOTPKey != nil,
+	}
+	// Without a TOTP key nothing is enforced (auth.RequireTOTPSetup).
+	if h.TOTPKey != nil {
+		resp.RequiredBy, _ = auth.TOTPRequiredBy(r.Context(), h.DB, me)
+	}
+	httpx.JSON(w, http.StatusOK, resp)
 }
 
 type totpSetupResponse struct {
@@ -149,7 +160,7 @@ func (h *Handlers) ConfirmTOTP(w http.ResponseWriter, r *http.Request) {
 			Event: auth.EventTOTPConfirm, OK: false, UserID: &me.ID, Username: me.Username,
 			IP: auth.ClientIP(r), UserAgent: auth.UserAgent(r), Reason: auth.ReasonTOTPInvalid,
 		})
-		httpx.Error(w, http.StatusUnauthorized, "invalid code")
+		httpx.Error(w, http.StatusUnauthorized, "Wrong code. Enter the current code from your authenticator app.")
 		return
 	case err != nil:
 		httpx.Error(w, http.StatusInternalServerError, "confirm failed")
@@ -159,6 +170,7 @@ func (h *Handlers) ConfirmTOTP(w http.ResponseWriter, r *http.Request) {
 		Event: auth.EventTOTPConfirm, OK: true, UserID: &me.ID, Username: me.Username,
 		IP: auth.ClientIP(r), UserAgent: auth.UserAgent(r), Reason: auth.ReasonSuccess,
 	})
+	h.notifyAccountChanged(r, me.ID, me.Email, emailtpl.ChangedTOTPOn, "", "")
 	httpx.JSON(w, http.StatusOK, totpConfirmResponse{RecoveryCodes: codes})
 }
 
@@ -174,6 +186,29 @@ func (h *Handlers) ConfirmTOTP(w http.ResponseWriter, r *http.Request) {
 // accidentally log themselves out, drop everything else.
 func (h *Handlers) DisableTOTP(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
+	// While 2FA is required of the user it stays on. Without a TOTP key
+	// nothing is enforced (auth.RequireTOTPSetup), so nor is this.
+	if h.TOTPKey != nil {
+		by, err := auth.TOTPRequiredBy(r.Context(), h.DB, me)
+		if err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "two-factor check failed")
+			return
+		}
+		switch by {
+		case auth.TOTPRequiredByOrg:
+			httpx.JSON(w, http.StatusConflict, map[string]string{
+				"error": "Your organization requires two-factor authentication.",
+				"code":  "totp_required_by_org",
+			})
+			return
+		case auth.TOTPRequiredByAdmin:
+			httpx.JSON(w, http.StatusConflict, map[string]string{
+				"error": "Two-factor authentication is required for admins.",
+				"code":  "totp_required_for_admins",
+			})
+			return
+		}
+	}
 	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
@@ -202,6 +237,7 @@ func (h *Handlers) DisableTOTP(w http.ResponseWriter, r *http.Request) {
 		Event: auth.EventTOTPDisable, OK: true, UserID: &me.ID, Username: me.Username,
 		IP: auth.ClientIP(r), UserAgent: auth.UserAgent(r), Reason: auth.ReasonSuccess,
 	})
+	h.notifyAccountChanged(r, me.ID, me.Email, emailtpl.ChangedTOTPOff, "", "")
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 

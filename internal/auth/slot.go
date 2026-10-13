@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/klahr/zonventure/internal/httpx"
@@ -21,8 +22,20 @@ type Slot struct {
 	TeamID  int64
 	EventID int64
 	// Ended says the slot's event has ended. Such a session only erases
-	// or signs out; see RequireSlotOrEnded.
-	Ended bool
+	// or signs out; see RequireSlotOrEnded. Cancelled says it ended by
+	// being cancelled.
+	Ended     bool
+	Cancelled bool
+	// Party says the slot is a hosted party's team; Withdrawn that the
+	// team was taken out. Together they say why a party session ended.
+	Party     bool
+	Withdrawn bool
+	// Replaced says the player's link was opened on another phone since,
+	// which took the seat over; see activateSlotSession.
+	Replaced bool
+	// Dev says the slot plays an author's dev ticket.
+	Dev    bool
+	active bool
 }
 
 const (
@@ -58,7 +71,7 @@ type slotCtxKey struct{}
 // a player shares the link to a teammate, consuming the token before
 // the human ever taps it. The remaining defences are: 144-bit token
 // entropy, expires_at, the per-IP rate limit on the exchange, and the
-// arranger's ability to rotate via the lost-link flow.
+// arranger's ability to rotate links from the console.
 //
 // claimed_at is still stamped (on first claim) as forensic record of
 // when the slot first activated, but is never read as a gate.
@@ -155,12 +168,14 @@ func LookupSlot(ctx context.Context, db *sql.DB, token string) (Slot, bool, erro
 		expires string
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT ps.id, ps.name, ps.team_id, t.event_id, ss.expires_at, ss.ended
+		SELECT ps.id, ps.name, ps.team_id, t.event_id, ss.expires_at, ss.ended, e.state = 'cancelled',
+		       e.party, t.withdrawn_at IS NOT NULL, ss.replaced, ss.active, e.dev
 		FROM slot_sessions ss
 		JOIN player_slots ps ON ps.id = ss.slot_id
 		JOIN teams t ON t.id = ps.team_id
+		JOIN events e ON e.id = t.event_id
 		WHERE ss.token = $1
-	`, token).Scan(&s.ID, &s.Name, &s.TeamID, &s.EventID, &expires, &s.Ended)
+	`, token).Scan(&s.ID, &s.Name, &s.TeamID, &s.EventID, &expires, &s.Ended, &s.Cancelled, &s.Party, &s.Withdrawn, &s.Replaced, &s.active, &s.Dev)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Slot{}, false, nil
 	}
@@ -175,6 +190,25 @@ func LookupSlot(ctx context.Context, db *sql.DB, token string) (Slot, bool, erro
 	return s, true, nil
 }
 
+// activateSlotSession makes a session the slot's one active phone the
+// first time the player app uses it, and marks every other session of
+// the slot replaced. Opening a player's link on a second phone thus
+// takes the seat over and signs the first phone out. It waits for the
+// app's first API call rather than the link exchange, so a link
+// previewer or mail scanner fetching the URL takes nothing over.
+func activateSlotSession(ctx context.Context, db *sql.DB, token string) error {
+	_, err := db.ExecContext(ctx, `
+		WITH a AS (
+			UPDATE slot_sessions SET active = true
+			WHERE token = $1 AND NOT active AND NOT replaced
+			RETURNING slot_id
+		)
+		UPDATE slot_sessions SET replaced = true
+		WHERE slot_id IN (SELECT slot_id FROM a) AND token <> $1
+	`, token)
+	return err
+}
+
 // LogoutSlot invalidates a slot session.
 func LogoutSlot(ctx context.Context, db *sql.DB, token string) error {
 	if token == "" {
@@ -186,8 +220,8 @@ func LogoutSlot(ctx context.Context, db *sql.DB, token string) error {
 
 // SlotMiddleware attaches the Slot identified by the SlotCookieName cookie
 // (if any) to the request context. Endpoints that require a slot should
-// compose this with RequireSlot.
-func SlotMiddleware(db *sql.DB) func(http.Handler) http.Handler {
+// compose this with RequireSlot. lookupFailed is as Middleware's.
+func SlotMiddleware(db *sql.DB, lookupFailed http.HandlerFunc) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			c, err := r.Cookie(SlotCookieName)
@@ -196,6 +230,10 @@ func SlotMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 				return
 			}
 			s, ok, err := LookupSlot(r.Context(), db, c.Value)
+			if err != nil && lookupFailed != nil {
+				lookupFailed(w, r)
+				return
+			}
 			if err != nil {
 				httpx.Error(w, http.StatusInternalServerError, "slot lookup failed")
 				return
@@ -205,7 +243,15 @@ func SlotMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 			switch {
 			case ok && s.Ended:
 				r = r.WithContext(context.WithValue(r.Context(), endedSlotCtxKey{}, s))
+			case ok && s.Replaced:
+				r = r.WithContext(context.WithValue(r.Context(), replacedSlotCtxKey{}, s))
 			case ok:
+				if !s.active && (strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/")) {
+					if err := activateSlotSession(r.Context(), db, c.Value); err != nil {
+						httpx.Error(w, http.StatusInternalServerError, "slot lookup failed")
+						return
+					}
+				}
 				r = r.WithContext(WithSlot(r.Context(), s))
 			}
 			next.ServeHTTP(w, r)
@@ -213,15 +259,43 @@ func SlotMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 	}
 }
 
-// RequireSlot refuses requests that have no authenticated slot.
+// RequireSlot refuses requests that have no authenticated slot. A
+// session its event's end closed is told so by code, for the player app
+// to say the event is over rather than ask for the link again. A
+// party's team is told whether the host took it out or finished the
+// game, the only two ways a party session ends short of a cancel.
 func RequireSlot(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := SlotFromContext(r.Context()); !ok {
-			httpx.Error(w, http.StatusUnauthorized, "open your magic link to log in")
+			if s, ended := r.Context().Value(endedSlotCtxKey{}).(Slot); ended {
+				code := "event_ended"
+				switch {
+				case s.Cancelled:
+					code = "event_cancelled"
+				case s.Party && s.Withdrawn:
+					code = "taken_out"
+				case s.Party:
+					code = "game_finished"
+				}
+				httpx.JSON(w, http.StatusUnauthorized, map[string]string{"error": "this event has ended", "code": code})
+				return
+			}
+			refuseSlot(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// refuseSlot answers a request without a usable slot session: a phone
+// whose seat was taken over is told so by code, for the player app to
+// say the link was opened on another phone.
+func refuseSlot(w http.ResponseWriter, r *http.Request) {
+	if _, ok := r.Context().Value(replacedSlotCtxKey{}).(Slot); ok {
+		httpx.JSON(w, http.StatusUnauthorized, map[string]string{"error": "opened on another phone", "code": "session_replaced"})
+		return
+	}
+	httpx.Error(w, http.StatusUnauthorized, "open your magic link to log in")
 }
 
 // RequireSlotOrEnded is RequireSlot that also takes a session whose
@@ -232,7 +306,7 @@ func RequireSlotOrEnded(next http.Handler) http.Handler {
 		if _, ok := SlotFromContext(r.Context()); !ok {
 			s, ended := r.Context().Value(endedSlotCtxKey{}).(Slot)
 			if !ended {
-				httpx.Error(w, http.StatusUnauthorized, "open your magic link to log in")
+				refuseSlot(w, r)
 				return
 			}
 			r = r.WithContext(WithSlot(r.Context(), s))
@@ -243,6 +317,9 @@ func RequireSlotOrEnded(next http.Handler) http.Handler {
 
 // endedSlotCtxKey holds a session whose event has ended.
 type endedSlotCtxKey struct{}
+
+// replacedSlotCtxKey holds a session another phone took over.
+type replacedSlotCtxKey struct{}
 
 // WithSlot returns a new context carrying s.
 func WithSlot(ctx context.Context, s Slot) context.Context {

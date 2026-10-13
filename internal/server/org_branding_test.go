@@ -63,3 +63,17 @@ func TestOrgBrandStyleBlock_NoStyleTagWhenAllDefault(t *testing.T) {
 		t.Errorf("default override leaked a <style> tag: %q", got)
 	}
 }
+
+// TestHeroBgStyle_UsesOrgColours pins the /o/{slug} hero gradient to
+// the org's own accents, falling back to the platform magenta.
+func TestHeroBgStyle_UsesOrgColours(t *testing.T) {
+	p := orgProfile{ID: 6, HasCover: true}
+	p.Accent.String, p.Accent2.String = "#1f6b3a", "#c90"
+	got := p.heroBgStyle()
+	if !strings.Contains(got, "linear-gradient(135deg, rgba(31,107,58,.6), rgba(204,153,0,.5))") {
+		t.Errorf("org colours missing: %q", got)
+	}
+	if got := (orgProfile{ID: 6, HasCover: true}).heroBgStyle(); !strings.Contains(got, "rgba(173,19,87,.6), rgba(226,64,128,.5)") {
+		t.Errorf("default colours missing: %q", got)
+	}
+}

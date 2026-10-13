@@ -3,10 +3,11 @@ import { Copy, Eye } from "lucide-react";
 import type { Whoami } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
-import { Button, Callout, Card, Field, fmtDateTime, ICON, ImageDrop, ListingStatus, SubmitListingDialog, canSubmitListing, relTime, Row, Stat, Stats, toDate, useLoad, useToast } from "../../ui/index.ts";
+import { Button, Callout, Card, Field, fmtDateTime, fmtMoney, ICON, ImageDrop, ListingStatus, SubmitListingDialog, canSubmitListing, platformFeeOn, relTime, Row, Stat, Stats, toDate, useLoad, useToast } from "../../ui/index.ts";
+import { useSession } from "../../session.tsx";
 import * as api from "./api.ts";
 import type { ConnectStatus, EventInfo, Team } from "./api.ts";
-import { copyText, fmtElapsedShort, fmtPoints, members, recapURL, teamStuck } from "./util.ts";
+import { copyText, fmtElapsedShort, fmtPoints, joinedCount, members, recapURL, teamStuck } from "./util.ts";
 
 /**
  * The three numbers that matter in this phase. Before the start: teams,
@@ -75,6 +76,8 @@ export function ResultsCard({ event, teams }: { event: EventInfo; teams: Team[] 
   const t = useT();
   const toast = useToast();
   if (event.state !== "completed" && event.state !== "cancelled") return null;
+  // Cancelled before it began: there are no standings or recaps to show.
+  if (!event.started_at) return null;
   const locale = t.current();
   const recap = (tm: Team) =>
     tm.recap_token ? (
@@ -83,16 +86,16 @@ export function ResultsCard({ event, teams }: { event: EventInfo; teams: Team[] 
         {t.t("Recap")}
       </a>
     ) : null;
-  const ranked = teams.filter((tm) => tm.rank).sort((a, b) => (a.rank || 0) - (b.rank || 0) || a.name.localeCompare(b.name));
+  const ranked = teams.filter((tm) => tm.rank).sort((a, b) => (a.rank || 0) - (b.rank || 0) || a.name.localeCompare(b.name, undefined, { numeric: true }));
   const rows: { key: number; rank: string; name: string; meta: string; dnf?: boolean; link: React.ReactNode }[] = [
     ...ranked.map((tm) => ({
       key: tm.id,
       rank: "#" + tm.rank,
       name: tm.name,
-      meta: t.t("{{n}} points", { n: fmtPoints(tm.score) }) + " · " + (tm.completed_at ? t.t("finished {{when}}", { when: fmtDateTime(tm.completed_at, locale) }) : t.t("did not finish")),
+      meta: t.t("{{n}} points", { n: fmtPoints(tm.score) }) + " · " + (tm.completed_at ? t.t("finished {{when}}", { when: fmtDateTime(tm.completed_at, locale) }) : joinedCount(tm) === 0 ? t.t("never joined") : t.t("did not finish")),
       link: recap(tm),
     })),
-    ...teams.filter((tm) => !tm.rank).map((tm) => ({ key: tm.id, rank: "—", name: tm.name, meta: tm.withdrawn_at ? t.t("withdrew") : tm.cheated ? t.t("cheated") : t.t("did not start"), dnf: true, link: null })),
+    ...teams.filter((tm) => !tm.rank).map((tm) => ({ key: tm.id, rank: "—", name: tm.name, meta: tm.withdrawn_at ? t.t("withdrew") : tm.cheated ? t.t("cheated") : joinedCount(tm) === 0 ? t.t("never joined") : t.t("did not start"), dnf: true, link: null })),
   ];
   const copyAll = async () => {
     const lines = teams.filter((tm) => tm.recap_token).map((tm) => `${tm.name}\t${recapURL(tm.recap_token!)}`);
@@ -147,8 +150,8 @@ export function ConnectBanner({ event, status, user }: { event: EventInfo; statu
 
 /**
  * A quest's store settings: ticket price, currency, team size, blurb and
- * cover. Whether it is listed follows its state (running/paused →
- * listed), so there is no listing switch here.
+ * cover. Whether it is listed follows its state (running → listed,
+ * paused → not), so there is no listing switch here.
  */
 /**
  * The adventure's saboteur, on or off for this event: off for a school
@@ -185,6 +188,61 @@ export function SecretRolesCard({ event, onSaved }: { event: EventInfo; onSaved:
   );
 }
 
+/** Where teams meet, said in their invitations and the calendar entry. */
+export function MeetingPlaceCard({ event, onSaved }: { event: EventInfo; onSaved: () => void }) {
+  const t = useT();
+  const toast = useToast();
+  const [place, setPlace] = useState(event.meeting_place || "");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api.patchEvent(event.id, { meeting_place: place.trim() });
+      toast.ok(t.t("Saved"));
+      onSaved();
+    } catch (e) {
+      toast.err(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card title={t.t("Meeting place")} subtitle={t.t("Where teams meet before the start. Invitations and the calendar entry say it; leave it empty to give only the start's map position.")}>
+      <form onSubmit={(e) => { e.preventDefault(); void save(); }}>
+        <Row>
+          <input value={place} maxLength={200} aria-label={t.t("Meeting place")} placeholder={t.t("e.g. By the fountain in the main square")} onChange={(e) => setPlace(e.target.value)} />
+          <Button type="submit" size="sm" loading={busy} disabled={place.trim() === (event.meeting_place || "")}>{t.t("Save")}</Button>
+        </Row>
+      </form>
+    </Card>
+  );
+}
+
+/** The adventure's cheat password and how to use it, read-only: set in the adventure's details. */
+export function CheatCard({ password }: { password: string }) {
+  const t = useT();
+  const [shown, setShown] = useState(false);
+  return (
+    <Card title={t.t("Testing on a phone")}>
+      <Row>
+        <span>{t.t("Cheat password")}:</span>
+        <code>{shown ? password : "•".repeat(Math.min(password.length, 12))}</code>
+        <Button size="sm" variant="ghost" onClick={() => setShown((v) => !v)}>{shown ? t.t("Hide password") : t.t("Show password")}</Button>
+      </Row>
+      <p className="ev-muted">{t.t("On the phone, tap the adventure's title 7 times and enter the password: every answer then counts as right, for no points, and the team is left out of the rankings. It belongs to the adventure, so every event of it shares it; change it in the adventure's details.")}</p>
+    </Card>
+  );
+}
+
+/** Which adventure version an event plays, and the latest published, read-only. */
+export function AdventureVersion({ eventId }: { eventId: number }) {
+  const t = useT();
+  const v = useLoad((s) => api.getEventVersion(eventId, s), [eventId]).data;
+  if (!v?.latest) return null;
+  if (!v.version) return <span>{t.t("Starts on version {{n}}", { n: v.latest })}</span>;
+  return <span>{v.version === v.latest ? t.t("Version {{n}}", { n: v.version }) : t.t("Version {{n}} (latest {{latest}})", { n: v.version, latest: v.latest })}</span>;
+}
+
 export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () => void }) {
   const t = useT();
   const toast = useToast();
@@ -197,6 +255,19 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
   const [submitting, setSubmitting] = useState(false);
   const version = useLoad((s) => api.getEventVersion(event.id, s), [event.id, event.listing_review]);
   const [moving, setMoving] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const toggleSales = async () => {
+    setStopping(true);
+    try {
+      await api.patchEvent(event.id, { sales_stopped: !event.sales_stopped });
+      toast.ok(event.sales_stopped ? t.t("Selling again") : t.t("Sales stopped"));
+      onSaved();
+    } catch (e) {
+      toast.err(e);
+    } finally {
+      setStopping(false);
+    }
+  };
   const update = async () => {
     setMoving(true);
     try {
@@ -211,6 +282,12 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
     }
   };
   const v = version.data;
+  // What the org keeps of a ticket once the platform fee is taken.
+  const { state: session } = useSession();
+  const fees = session.status === "authenticated" ? (session.user.pricing ?? {}) as Parameters<typeof platformFeeOn>[0] : {};
+  const typed = Math.round(Number.parseFloat(price) * 100);
+  const fee = typed > 0 ? platformFeeOn(fees, typed) : 0;
+  const receive = fee > 0 ? t.t("You receive {{amount}} per ticket after the platform fee of {{fee}}.", { amount: fmtMoney(typed - fee, event.ticket_currency || "SEK", t.current()), fee: fmtMoney(fee, event.ticket_currency || "SEK", t.current()) }) : undefined;
 
   const save = async () => {
     const major = price.trim();
@@ -249,19 +326,43 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
       toast.err(e);
     }
   };
+  const perTicket = (cents: number, cur?: string) => t.t("{{price}} per ticket", { price: fmtMoney(cents, cur || "SEK", t.current()) });
+  // The store sells at the approved price until a changed one is approved.
+  const live = event.listed && event.listed_price_cents ? event.listed_price_cents : 0;
+  const subtitle = live
+    ? perTicket(live, event.listed_currency) +
+      (event.ticket_price_cents && event.ticket_price_cents !== live ? " · " + t.t("{{price}} after review", { price: perTicket(event.ticket_price_cents, event.ticket_currency) }) : "")
+    : saved ? perTicket(event.ticket_price_cents ?? 0, event.ticket_currency) : t.t("No ticket price set yet — players can't buy until you save one.");
+  // "Live in the store" only when it is: paused, stopped and unbuyable listings aren't.
+  const outOfStore = event.state === "paused" || event.sales_stopped || !!event.store_blocked;
   return (
-    <Card
-      title={t.t("Self-guided adventure details")}
-      subtitle={saved ? t.t("{{price}} {{cur}} per ticket", { price: saved, cur: (event.ticket_currency || "sek").toUpperCase() }) : t.t("No ticket price set yet — players can't buy until you save one.")}
-    >
-      <ListingStatus kind="store" review={event.listing_review} reason={event.listing_reject_reason} listed={event.listed} />
+    <Card title={t.t("Self-guided adventure details")} subtitle={subtitle}>
+      {event.state === "paused" && event.listed && <Callout variant="warning">{t.t("Paused: not in the store until you resume.")}</Callout>}
+      {!(outOfStore && event.listing_review === "approved") && (
+        <ListingStatus kind="store" review={event.listing_review} reason={event.listing_reject_reason} listed={event.listed} />
+      )}
+      {event.listed && !event.sales_stopped && event.store_blocked === "connect_required" && (
+        <Callout variant="danger">{t.t("Not in the store: with the platform fee, tickets are sold through your own Stripe account. Connect one under Settings → Billing and it is back in the store.")}</Callout>
+      )}
+      {event.listed && !event.sales_stopped && event.store_blocked === "no_payments" && (
+        <Callout variant="danger">{t.t("Not in the store: this server takes no payments, so nobody could buy a ticket. Ask the server's operator to set up payments.")}</Callout>
+      )}
+      {event.sales_stopped && <Callout variant="warning">{t.t("Sales stopped: not in the store and nobody can buy a ticket. Teams that have one play on.")}</Callout>}
+      <Row>
+        <Button size="sm" loading={stopping} onClick={() => void toggleSales()}>{event.sales_stopped ? t.t("Resume selling") : t.t("Stop selling")}</Button>
+        {!event.sales_stopped && <span className="ev-muted">{t.t("Takes it out of the store without pausing the teams that are playing.")}</span>}
+      </Row>
       {v?.can_update && (
         <Callout variant="info">
           <Row>
-            <span>{t.t("Version {{latest}} of the adventure is published; new teams of this event start on version {{version}}.", { latest: v.latest, version: v.version })}</span>
+            <span>
+              {event.listed
+                ? t.t("Version {{latest}} of the adventure is published; new teams of this event start on version {{version}}.", { latest: v.latest, version: v.version })
+                : t.t("Version {{latest}} of the adventure is published; this listing is still on version {{version}}.", { latest: v.latest, version: v.version })}
+            </span>
             <Button size="sm" loading={moving} onClick={() => void update()}>{t.t("Update to version {{n}}", { n: v.latest })}</Button>
           </Row>
-          {v.reviewed && <span className="ev-muted">{t.t("It goes through review like any change to the listing: new teams move once it is approved. Teams already playing keep their version.")}</span>}
+          {v.reviewed && <span className="ev-muted">{t.t("It goes through review like any change to the listing: once it is approved, new teams and teams that haven't made a move yet play it. Teams already playing keep their version.")}</span>}
         </Callout>
       )}
       {v?.next ? (
@@ -293,14 +394,14 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
         </div>
       </Row>
       <Row>
-        <Field label={t.t("Price (kr)")}>
+        <Field label={t.t("Ticket price (SEK)")} hint={receive}>
           <input type="number" step="0.01" min="0" placeholder="199" className="ev-w8" value={price} onChange={(e) => setPrice(e.target.value)} />
         </Field>
-        <Field label={t.t("Team size")}>
+        <Field label={t.t("Players per ticket")}>
           <input type="number" min="1" max="50" className="ev-w5" value={size} onChange={(e) => setSize(e.target.value)} />
         </Field>
       </Row>
-      <Field label={t.t("Blurb (shown on the store card)")}>
+      <Field label={t.t("Public description")}>
         <textarea rows={2} maxLength={1000} placeholder={t.t("Two-hour treasure hunt around the old town.")} value={blurb} onChange={(e) => setBlurb(e.target.value)} />
       </Field>
       <Row>

@@ -115,7 +115,16 @@ const (
 // a coherent reason instead of a torrent of EOF-style noise.
 var errRepeatTooLarge = errors.New("teamimport/ods: row/column repeat count exceeds limit (refusing amplification)")
 
-func (impl) Parse(r io.Reader) ([]teamimport.Team, error) {
+func (i impl) Parse(r io.Reader) ([]teamimport.Team, error) {
+	rows, err := i.ReadRows(r)
+	if err != nil {
+		return nil, err
+	}
+	return teamimport.Rows(rows)
+}
+
+// ReadRows reads the first sheet's rows.
+func (impl) ReadRows(r io.Reader) ([][]string, error) {
 	// archive/zip needs a ReaderAt + size, so buffer the whole
 	// upload first. ODS rosters are tiny — a 5 MiB cap upstream in
 	// the handler is the size budget we live within here.
@@ -184,7 +193,7 @@ func (lt *limitTrip) Read(p []byte) (int, error) {
 // parseContent walks content.xml as a stream — easier on memory
 // than full Unmarshal, and lets us bail at end-of-first-table
 // without parsing the rest of the document.
-func parseContent(r io.Reader) ([]teamimport.Team, error) {
+func parseContent(r io.Reader) ([][]string, error) {
 	dec := xml.NewDecoder(r)
 	var (
 		rows         [][]string
@@ -247,7 +256,7 @@ func parseContent(r io.Reader) ([]teamimport.Team, error) {
 			}
 		}
 	}
-	return shapeRows(rows), nil
+	return rows, nil
 }
 
 // flattenCells expands repeated-cell run lengths into a flat slice
@@ -307,56 +316,4 @@ func isAllEmpty(cells []string) bool {
 		}
 	}
 	return true
-}
-
-// shapeRows is the same row-to-Team transform CSV uses — kept
-// inline rather than imported across packages so the importer is
-// truly self-contained, the cost being a few duplicated lines.
-func shapeRows(rows [][]string) []teamimport.Team {
-	if len(rows) == 0 {
-		return nil
-	}
-	if isHeader(rows[0]) {
-		rows = rows[1:]
-	}
-	out := make([]teamimport.Team, 0, len(rows))
-	for _, row := range rows {
-		for i := len(row) - 1; i >= 0; i-- {
-			if strings.TrimSpace(row[i]) == "" {
-				row = row[:i]
-			} else {
-				break
-			}
-		}
-		if len(row) == 0 {
-			continue
-		}
-		name := strings.TrimSpace(row[0])
-		if name == "" {
-			continue
-		}
-		// CSV-injection defang — see teamimport.SanitizeCellValue.
-		name = teamimport.SanitizeCellValue(name)
-		members := make([]string, 0, len(row)-1)
-		for _, m := range row[1:] {
-			m = strings.TrimSpace(m)
-			if m != "" {
-				members = append(members, teamimport.SanitizeCellValue(m))
-			}
-		}
-		out = append(out, teamimport.Team{Name: name, MemberNames: members})
-	}
-	return out
-}
-
-func isHeader(row []string) bool {
-	if len(row) == 0 {
-		return false
-	}
-	first := strings.ToLower(strings.TrimSpace(row[0]))
-	switch first {
-	case "team", "team name", "name", "lag", "lagnamn":
-		return true
-	}
-	return false
 }

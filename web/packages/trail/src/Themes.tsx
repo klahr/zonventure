@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { I18n } from "@zonventure/i18n";
 import { THEME_COVERS } from "@zonventure/play-ui";
-import { CHOICES } from "./cards.ts";
+import { CHOICES, markLabel } from "./cards.ts";
 import { Icon } from "./Icons.tsx";
 import { TRAIL_THEMES, themeById, themeStyle, type TrailTheme } from "./themes.ts";
 
@@ -59,7 +59,7 @@ export function PaperPreview({ i18n, text, options, correct, number }: { i18n: I
       <div className="trail-options">
         {CHOICES.map((mark, i) => (
           <div className={"trail-option" + (mark === correct ? " is-right" : "")} key={mark}>
-            <span className={"trail-mark" + (mark === correct ? " is-right" : "")}>{mark}</span>
+            <span className={"trail-mark" + (mark === correct ? " is-right" : "")}>{markLabel(t, mark)}</span>
             <span className="trail-option__text">{options[i]}</span>
           </div>
         ))}

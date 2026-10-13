@@ -139,6 +139,7 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 		WHERE e.id = $1
 		  AND e.public_for_sale
 		  AND e.ticket_price_cents IS NOT NULL
+		  AND NOT e.sales_stopped
 	`, req.EventID).Scan(&advSlug, &eventName, &advTitle, &priceCents, &currency, &teamSize, &state); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "event not for sale")
@@ -199,9 +200,9 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 
 	var purchaseID int64
 	if err := h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, application_fee_cents, letter_lang)
-		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
-	`, req.EventID, email, teamSize, priceCents.Int64, currency, applicationFee, letterLang).Scan(&purchaseID); err != nil {
+		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, application_fee_cents, letter_lang, buyer_lang)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
+	`, req.EventID, email, teamSize, priceCents.Int64, currency, applicationFee, letterLang, emailtpl.LangFromRequest(r)).Scan(&purchaseID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "purchase create failed", err)
 		return
 	}
@@ -303,6 +304,7 @@ func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
 		  AND e.org_id = $2
 		  AND e.public_for_sale
 		  AND e.ticket_price_cents IS NOT NULL
+		  AND NOT e.sales_stopped
 	`, req.EventID, orgID).Scan(&advSlug, &eventName, &advTitle, &priceCents, &currency, &teamSize, &state); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "event not for sale")
@@ -350,9 +352,9 @@ func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
 
 	var purchaseID int64
 	if err := h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, application_fee_cents, letter_lang)
-		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
-	`, req.EventID, email, teamSize, priceCents.Int64, currency, applicationFee, letterLang).Scan(&purchaseID); err != nil {
+		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, application_fee_cents, letter_lang, buyer_lang)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
+	`, req.EventID, email, teamSize, priceCents.Int64, currency, applicationFee, letterLang, emailtpl.LangFromRequest(r)).Scan(&purchaseID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "purchase create failed", err)
 		return
 	}
@@ -505,11 +507,12 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 		offerID    sql.NullInt64
 		partyName  string
 		letterLang string
+		buyerLang  string
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT COALESCE(event_id, 0), buyer_email, team_size, state, kind, party_offer_id, party_name, letter_lang
+		SELECT COALESCE(event_id, 0), buyer_email, team_size, state, kind, party_offer_id, party_name, letter_lang, buyer_lang
 		FROM ticket_purchases WHERE id = $1 FOR UPDATE
-	`, purchaseID).Scan(&eventID, &buyerEmail, &teamSize, &state, &kind, &offerID, &partyName, &letterLang); err != nil {
+	`, purchaseID).Scan(&eventID, &buyerEmail, &teamSize, &state, &kind, &offerID, &partyName, &letterLang, &buyerLang); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -536,7 +539,7 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 		return nil
 	}
 
-	teamID, teamToken, voucher, err := createTicketTeam(ctx, tx, eventID, buyerEmail, teamSize)
+	teamID, teamToken, voucher, err := createTicketTeamIn(ctx, tx, eventID, buyerEmail, teamSize, buyerLang)
 	if err != nil {
 		return fmt.Errorf("ticket team create: %w", err)
 	}
@@ -576,7 +579,13 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 	// Email the team link. Best-effort: a send failure leaves the
 	// purchase in a paid-but-not-emailed state, which the operator
 	// can re-send via the existing per-team SendTeamInvitation route.
-	if err := h.sendTicketTeamLink(ctx, eventID, buyerEmail, teamToken, voucher, letterLang, address); err != nil {
+	// The email is in the language the buyer browsed in; the game
+	// starts in the letter's, the adventure's language they chose.
+	mailLang := buyerLang
+	if mailLang == "" {
+		mailLang = letterLang
+	}
+	if err := h.sendTicketTeamLink(ctx, eventID, buyerEmail, teamToken, voucher, mailLang, address, false); err != nil {
 		logx.Warn("admin.store.ticket.mail",
 			"purchase_id", purchaseID, "team_id", teamID, "err", err.Error())
 	}
@@ -585,12 +594,28 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 	return nil
 }
 
-// createTicketTeam inserts the team + N slots inside the webhook's
-// transaction and returns the team's share token. Slots are pre-named
-// "Player 1".."Player N" — the buyer (team captain) opens the team
-// link, claims their own slot, and shares the remaining slots from
-// inside the app via the team-share QR.
+// createTicketTeam is createTicketTeamIn with the slots named in the
+// event's own language, for a recipient whose language isn't known.
 func createTicketTeam(ctx context.Context, tx *sql.Tx, eventID int64, buyerEmail string, teamSize int) (teamID int64, teamToken, voucherCode string, err error) {
+	return createTicketTeamIn(ctx, tx, eventID, buyerEmail, teamSize, "")
+}
+
+// createTicketTeamIn inserts the team + N slots inside the webhook's
+// transaction and returns the team's share token. Slots are pre-named
+// "Player 1".."Player N" in lang (the event's language when empty) —
+// the buyer (team captain) opens the team link, claims their own slot,
+// and shares the remaining slots from inside the app via the
+// team-share QR.
+func createTicketTeamIn(ctx context.Context, tx *sql.Tx, eventID int64, buyerEmail string, teamSize int, lang string) (teamID int64, teamToken, voucherCode string, err error) {
+	if lang == "" {
+		var l sql.NullString
+		_ = tx.QueryRowContext(ctx, `
+			SELECT COALESCE(a.language, o.language) FROM events e
+			JOIN organizations o ON o.id = e.org_id
+			LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
+			WHERE e.id = $1`, eventID).Scan(&l)
+		lang = emailtpl.Lang(l.String)
+	}
 	if teamSize < 1 {
 		teamSize = 1
 	}
@@ -602,7 +627,7 @@ func createTicketTeam(ctx context.Context, tx *sql.Tx, eventID int64, buyerEmail
 	if err != nil {
 		return 0, "", "", fmt.Errorf("recap token: %w", err)
 	}
-	teamName, err := uniqueTicketTeamName(ctx, tx, eventID, buyerEmail)
+	teamName, err := uniqueTicketTeamName(ctx, tx, eventID, lang)
 	if err != nil {
 		return 0, "", "", fmt.Errorf("team name: %w", err)
 	}
@@ -624,7 +649,7 @@ func createTicketTeam(ctx context.Context, tx *sql.Tx, eventID int64, buyerEmail
 		if err != nil {
 			return 0, "", "", fmt.Errorf("slot token: %w", err)
 		}
-		name := fmt.Sprintf("Player %d", i)
+		name := emailtpl.T(lang, "Player %d", i)
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO player_slots(team_id, name, token, expires_at) VALUES ($1, $2, $3, $4)`,
 			teamID, name, tok, expiresAt); err != nil {
@@ -658,40 +683,44 @@ func uniqueVoucherCode(ctx context.Context, q interface {
 	return "", errors.New("could not allocate a unique voucher code")
 }
 
-// uniqueTicketTeamName picks a team name unique within the event.
-// Default base is the local-part of the buyer email; on collision
-// we suffix " (2)", " (3)", … so a buyer who buys a second ticket
-// for the same event lands on a fresh row instead of erroring.
-func uniqueTicketTeamName(ctx context.Context, tx *sql.Tx, eventID int64, buyerEmail string) (string, error) {
-	base := buyerEmail
-	if at := strings.IndexByte(base, '@'); at > 0 {
-		base = base[:at]
+// uniqueTicketTeamName picks a team name unique within the event:
+// "Team 1", "Team 2", … in lang, numbered on from the event's teams. A
+// buyer's email never names a team, as it would show on the leaderboard
+// and in exports; the players rename their team before they begin.
+func uniqueTicketTeamName(ctx context.Context, tx *sql.Tx, eventID int64, lang string) (string, error) {
+	// Buyers paying at the same moment would pick the same number: one
+	// at a time per event. Two-key advisory locks don't share the space
+	// of the one-key locks results and play take.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('ticket_team_name'), $1::int)`, eventID); err != nil {
+		return "", err
 	}
-	base = strings.TrimSpace(base)
-	if base == "" {
-		base = "ticket"
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM teams WHERE event_id = $1`, eventID).Scan(&n); err != nil {
+		return "", err
 	}
-	candidate := base
-	for n := 2; n < 100; n++ {
+	for i := n + 1; i < n+100; i++ {
+		// A number taken in any language is taken: no "Team 3" beside "Lag 3".
+		names := make([]string, len(emailtpl.Languages))
+		for j, l := range emailtpl.Languages {
+			names[j] = emailtpl.T(l, "Team %d", i)
+		}
 		var taken bool
 		if err := tx.QueryRowContext(ctx,
-			`SELECT EXISTS(SELECT 1 FROM teams WHERE event_id = $1 AND name = $2)`,
-			eventID, candidate).Scan(&taken); err != nil {
+			`SELECT EXISTS(SELECT 1 FROM teams WHERE event_id = $1 AND name = ANY($2))`,
+			eventID, names).Scan(&taken); err != nil {
 			return "", err
 		}
 		if !taken {
-			return candidate, nil
+			return emailtpl.T(lang, "Team %d", i), nil
 		}
-		candidate = fmt.Sprintf("%s (%d)", base, n)
 	}
-	// Fall back to a token-suffixed name; almost certainly unique
-	// and the only way this branch triggers is a buyer running 100
-	// purchases against the same event.
+	// Fall back to a token-suffixed name: only an event whose teams
+	// took a hundred numbers in a row by hand gets here.
 	tok, err := auth.NewSlotToken()
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s-%s", base, tok[:6]), nil
+	return fmt.Sprintf("%s-%s", emailtpl.T(lang, "Team %d", n+1), tok[:6]), nil
 }
 
 // sendTicketTeamLink emails the buyer a single team-share URL. Quests
@@ -712,7 +741,7 @@ func uniqueTicketTeamName(ctx context.Context, tx *sql.Tx, eventID int64, buyerE
 //
 // lang, when set, is the language of the buyer's posted letter, which
 // their email is written in too; address is where it is posted.
-func (h *Handlers) sendTicketTeamLink(ctx context.Context, eventID int64, buyerEmail, teamToken, voucher, lang string, address []string) error {
+func (h *Handlers) sendTicketTeamLink(ctx context.Context, eventID int64, buyerEmail, teamToken, voucher, lang string, address []string, gift bool) error {
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	if publicURL == "" {
 		return errors.New("ticket email requires PublicURL")
@@ -722,10 +751,17 @@ func (h *Handlers) sendTicketTeamLink(ctx context.Context, eventID int64, buyerE
 		l.Lang = lang
 	}
 	subject, c := emailtpl.TeamLink(l.Lang, publicURL+"/team/"+teamToken, publicURL+"/play", auth.FormatVoucherCode(voucher), l.Brand.Name)
+	if gift {
+		subject, c = emailtpl.AsGift(l.Lang, l.Brand.Name, l.Event, c)
+	}
 	c = l.withBuyerNote(c)
 	c = emailtpl.WithFiles(c, h.fileLinks(ctx, eventID, publicURL, teamToken))
 	c = emailtpl.WithPrints(c, h.printEmailLinks(ctx, eventID, publicURL, teamToken))
-	c = emailtpl.WithEnvelope(c, address)
+	if len(address) > 0 {
+		c = emailtpl.WithEnvelope(c, address, l.Contact)
+	} else {
+		c = emailtpl.WithContact(c, l.Contact)
+	}
 	c.Picture = l.Cover
 	if h.SellerIdentity != nil {
 		if seller := h.SellerIdentity(l.Lang); seller != "" {

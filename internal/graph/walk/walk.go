@@ -98,6 +98,8 @@ type Step struct {
 	// "Do at least three of the eight stations" needs both to be
 	// possible, so the choice belongs to the player.
 	CanFinish bool
+	// GateFailed is set when the walk left a gate by PortFail.
+	GateFailed bool
 	// Finished is set when the team reached an End.
 	Finished bool
 	Outcome  graph.Outcome
@@ -271,6 +273,7 @@ func walkTo(g *graph.Graph, s State, step Step, next string) (Step, error) {
 			if node.GateCfg == nil || cond.Eval(node.GateCfg.Condition, s) {
 				p = graph.PortPass
 			}
+			step.GateFailed = step.GateFailed || p == graph.PortFail
 			next, ok = g.Target(node.Slug, p)
 			if !ok {
 				return step, fmt.Errorf("%w: %s.%s", ErrDanglingPort, node.Slug, p)

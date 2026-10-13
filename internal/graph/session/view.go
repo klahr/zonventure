@@ -965,7 +965,9 @@ func (t *Team) view() View {
 				zc := z
 				v.Zone, v.Here = &zc, t.InZone(slug)
 				if t.Viewer != nil {
-					me := t.Here(slug)
+					// A team of one has no teammate: where the team is, they are,
+					// even when the fix that put it there is not their phone's.
+					me := t.Here(slug) || v.Here && len(t.Players) == 1
 					v.HereMe, v.HereCount = &me, t.PlayersInZone(slug)
 				}
 			}

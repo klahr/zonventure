@@ -62,6 +62,8 @@
 .dz .acct-banner--danger { border-color: color-mix(in srgb, var(--dz-danger) 40%, var(--dz-border)); background: color-mix(in srgb, var(--dz-danger) 8%, var(--dz-surface)); }
 .dz .acct-banner__text { min-width: 0; flex: 1 1 20rem; }
 .dz .acct-banner__text span { color: var(--dz-ink-soft); }
+/* A reminder, not a blocker: one short line on a phone, on every page. */
+@media (max-width: 720px) { .dz .acct-banner--compact { flex-wrap: nowrap; padding: var(--dz-space-2) var(--dz-space-3); } .dz .acct-banner--compact .acct-banner__text { flex-basis: auto; } .dz .acct-banner--compact .acct-banner__more { display: none; } }
 .dz .acct-banner__act { display: flex; align-items: center; gap: var(--dz-space-2); flex-wrap: wrap; }
 .dz .acct-banner__status { font-size: var(--dz-text-xs); color: var(--dz-muted); }
 .dz .acct-banner__status.is-err { color: var(--dz-danger); }

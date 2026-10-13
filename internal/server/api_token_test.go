@@ -77,6 +77,12 @@ func TestAPIToken_AdminREST(t *testing.T) {
 			map[string]string{"current": "s3cret", "new": "0therPassw0rd!"}, 403},
 		{"token cannot change username", rw, "POST", "/api/admin/me/username",
 			map[string]string{"username": "renamed"}, 403},
+		{"token can list webhooks", rw, "GET", "/api/admin/webhooks", nil, 200},
+		{"token cannot create webhooks", rw, "POST", "/api/admin/webhooks",
+			map[string]any{"url": "https://example.com/hook", "event_kinds": []string{"purchase.paid"}}, 403},
+		{"token cannot edit webhooks", rw, "PATCH", "/api/admin/webhooks/1",
+			map[string]any{"active": false}, 403},
+		{"token cannot rotate webhook secrets", rw, "POST", "/api/admin/webhooks/1/rotate-secret", nil, 403},
 	}
 	for _, c := range cases {
 		if s := bearer(t, ts, c.tok, c.method, c.path, c.body); s != c.want {

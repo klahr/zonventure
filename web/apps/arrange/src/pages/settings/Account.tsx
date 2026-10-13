@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from "react";
 import { BookOpen, Monitor, Moon, Plus, Sparkles, Sun, type LucideIcon } from "lucide-react";
-import type { Whoami } from "@zonventure/api";
+import { readsAsAdmin, type Whoami } from "@zonventure/api";
 import { readTheme, setTheme, type Theme } from "@zonventure/ui";
 import { useSession } from "../../session.tsx";
-import { useT } from "../../i18n.tsx";
+import { chooseLocale, useT } from "../../i18n.tsx";
 import { navigate } from "../../router.ts";
 import { Avatar, Button, Card, Dialog, Field, errorText, useToast } from "../../ui/index.ts";
 import { account } from "./account-api.ts";
@@ -11,7 +11,7 @@ import { SignInCard } from "./account-security.tsx";
 import { AuditCard, McpTokensCard, SessionsCard } from "./account-activity.tsx";
 import { DeleteCard, DownloadsCard } from "./account-data.tsx";
 import { NotificationsCard } from "./account-notifications.tsx";
-import { AvatarCard } from "./account-avatar.tsx";
+import { AvatarCard, NameCard } from "./account-avatar.tsx";
 import "./account.css";
 
 /**
@@ -24,26 +24,39 @@ export function AccountTab() {
   const { state } = useSession();
   if (state.status !== "authenticated") return null;
   const user = state.user;
+  // The server refuses everything but the password change, or the
+  // required 2FA setup, meanwhile.
+  if (user.password_is_default || user.totp_setup_required) {
+    return (
+      <div className="acct">
+        <Section title={t.t("Sign-in and security")}>
+          <SignInCard user={user} />
+        </Section>
+      </div>
+    );
+  }
   return (
     <div className="acct">
       <Section title={t.t("Profile and preferences")}>
         <AvatarCard user={user} />
+        <NameCard user={user} />
         <RoleCard user={user} />
         <AppearanceCard />
         <HelpCard user={user} />
-        <NotificationsCard />
+        {/* Every notification is about authoring adventures, which the platform admin doesn't do. */}
+        {!readsAsAdmin(user) && <NotificationsCard />}
       </Section>
 
       <Section title={t.t("Sign-in and security")}>
         <SignInCard user={user} />
         <div className="acct-span"><SessionsCard /></div>
-        <div className="acct-span"><McpTokensCard mcpEnabled={!!user.mcp_enabled} /></div>
+        <div className="acct-span"><McpTokensCard mcpEnabled={!!user.mcp_enabled} admin={readsAsAdmin(user)} /></div>
         <div className="acct-span"><AuditCard /></div>
       </Section>
 
       <Section title={t.t("Your data")}>
         {/* The bundle carries answer keys, buyers' emails and slot links: admins only. */}
-        <DownloadsCard bundle={user.role === "org_admin"} />
+        <DownloadsCard bundle={user.role === "org_admin"} admin={readsAsAdmin(user)} />
         <DeleteCard user={user} />
       </Section>
     </div>
@@ -61,7 +74,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 /** Not in any organisation yet: signed up without one, or left the last. */
 export function isLobby(u: Whoami): boolean {
-  return u.role !== "admin" && u.memberships.length === 0;
+  return !readsAsAdmin(u) && u.memberships.length === 0;
 }
 
 /**
@@ -78,12 +91,18 @@ function RoleCard({ user }: { user: Whoami }) {
   if (user.role === "admin") {
     label = t.t("Global admin");
     blurb = t.t("You manage the organizations on this instance, curate the catalog, and keep an eye on the system. Authoring and running events is up to the organizations. Treat this like a root password.");
+  } else if (user.role === "support") {
+    label = t.t("Support");
+    blurb = t.t("You see the organizations, their events and the logs. You can verify a user's email, resend a lost host link or a team's links and reset a user's two-factor sign-in; everything else, such as purchases, pricing and system settings, is up to a global admin.");
   } else if (lobby) {
     label = t.t("No organization yet");
     blurb = t.t("You're signed in but not part of any organization. Create one (you'll be its admin) or wait for an invitation.");
   } else if (user.role === "org_admin") {
     label = t.t("Organization admin");
     blurb = t.t("You can manage members, purchases, branding, and settings for your organization. Run events too.");
+  } else if (user.role === "org_writer") {
+    label = t.t("Writer");
+    blurb = t.t("You can create, edit and publish your organization's adventures. Running events, members and billing are up to others.");
   } else {
     label = t.t("Event host");
     blurb = t.t("You can run events in your organization. Authoring adventures and managing members is reserved for admins.");
@@ -105,7 +124,7 @@ function RoleCard({ user }: { user: Whoami }) {
         )}
       </div>
       {/* Admins have their own flow on the Organizations page. */}
-      {user.role !== "admin" && (
+      {!readsAsAdmin(user) && (
         <div>
           <Button size="sm" variant={lobby ? "primary" : "secondary"} icon={<Plus size={14} aria-hidden />} onClick={() => setCreating(true)}>
             {lobby ? t.t("Create an organization") : t.t("Create another organization")}
@@ -199,7 +218,7 @@ function AppearanceCard() {
         <span className="acct-pref__label" id="acct-lang">{t.t("Language")}</span>
         <div className="acct-choice" role="radiogroup" aria-labelledby="acct-lang">
           {t.available().map((l) => (
-            <button key={l} type="button" role="radio" aria-checked={t.current() === l} lang={l} onClick={() => t.setLocale(l)}>
+            <button key={l} type="button" role="radio" aria-checked={t.current() === l} lang={l} onClick={() => chooseLocale(l)}>
               {LANGUAGE[l] ?? l.toUpperCase()}
             </button>
           ))}
@@ -216,18 +235,27 @@ function AppearanceCard() {
  */
 function HelpCard({ user }: { user: Whoami }) {
   const t = useT();
-  const again = () => {
+  const toast = useToast();
+  const { refresh } = useSession();
+  const again = async () => {
     try {
       localStorage.removeItem("zv_onboarded_" + user.id);
     } catch {
       /* storage blocked: the dashboard will not know it was seen either */
+    }
+    try {
+      await account.forgetWelcomeSeen();
+      await refresh();
+    } catch (e) {
+      toast.err(errorText(e));
+      return;
     }
     navigate({ name: "dashboard" });
   };
   return (
     <Card title={t.t("Help")} subtitle={t.t("Step-by-step walk-through of authoring adventures, scheduling events, adding teams, and integrating.")}>
       <div className="cs-row cs-row--sm">
-        <Button icon={<Sparkles size={14} aria-hidden />} onClick={again}>{t.t("Show the welcome again")}</Button>
+        <Button icon={<Sparkles size={14} aria-hidden />} onClick={() => void again()}>{t.t("Show the welcome again")}</Button>
         <a className="acct-linkbtn" href="/manual" target="_blank" rel="noopener">
           <BookOpen size={14} aria-hidden style={{ marginRight: 6 }} />
           {t.t("Open the manual")}

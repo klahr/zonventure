@@ -1,4 +1,19 @@
-import type { Graph, Zone } from "@zonventure/graph";
+import type { Graph, Node, Zone } from "@zonventure/graph";
+
+/**
+ * The graph with a step retitled. The zone the step stands in follows the
+ * new title while the zone still has no name, the step's old title, or
+ * one of `fallbacks` (what "Mark where I stand" names it for a step
+ * without a title): once the author renames the zone, it keeps its own name.
+ */
+export function retitle(graph: Graph, node: Node, title: string, fallbacks: string[] = []): Graph {
+  const old = node.title ?? "";
+  const zoneSlug = node.puzzle?.zone ?? node.story?.zone ?? node.start?.zone;
+  const follows = (z: Zone) => z.slug === zoneSlug && (!z.name || z.name === old || fallbacks.includes(z.name));
+  const nodes = graph.nodes.map((n) => (n.slug === node.slug ? { ...node, title } : n));
+  if (!graph.zones?.some(follows)) return { ...graph, nodes };
+  return { ...graph, nodes, zones: graph.zones.map((z) => (follows(z) ? { ...z, name: title } : z)) };
+}
 
 /** A zone's name for display, or its slug when it has none. */
 export function zoneName(graph: Graph, slug: string): string {
@@ -39,7 +54,7 @@ export function locate(t: { t: (s: string) => string }): Promise<Here> {
     navigator.geolocation.getCurrentPosition(
       (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.max(1, Math.round(p.coords.accuracy)) }),
       (e) => reject(new Error(locationError(e, t))),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   });
 }

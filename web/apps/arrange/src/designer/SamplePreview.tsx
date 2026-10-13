@@ -15,6 +15,13 @@ const BEZEL = 8;
 const SCALE = 0.55;
 const nowhere = () => {};
 
+/** The player app's words in the console's language, for a phone preview. */
+export function usePhoneT() {
+  const t = useT();
+  const lang = t.current() in PHONE_CATALOGS ? t.current() : "en";
+  return useMemo(() => new I18n(PHONE_CATALOGS, lang).t, [lang]);
+}
+
 /**
  * A look on a phone without an adventure: one made-up puzzle — a title,
  * a story, a note and the answer bar — in the player's own PlayView, so
@@ -23,8 +30,7 @@ const nowhere = () => {};
  */
 export function SamplePreview({ brand }: { brand: play.Brand }) {
   const t = useT();
-  const lang = t.current() in PHONE_CATALOGS ? t.current() : "en";
-  const tr = useMemo(() => new I18n(PHONE_CATALOGS, lang).t, [lang]);
+  const tr = usePhoneT();
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   useEffect(() => {
     const act = (e: Event) => {

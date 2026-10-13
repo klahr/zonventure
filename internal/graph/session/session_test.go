@@ -11,6 +11,7 @@ import (
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/cond"
 	"github.com/klahr/zonventure/internal/graph/match"
+	"github.com/klahr/zonventure/internal/graph/walk"
 )
 
 var t0 = time.Date(2026, 9, 22, 10, 0, 0, 0, time.UTC)
@@ -96,6 +97,62 @@ func TestWrongAnswerLadderAndStale(t *testing.T) {
 	}
 	if _, _, err := tm.Answer("walk", "x"); !errors.Is(err, ErrStale) {
 		t.Errorf("acting on a node the team is not at = %v, want ErrStale", err)
+	}
+}
+
+// A quiet step moves the team on at any answer: a right one by its own
+// route for its points, a wrong one by the first answer route for none,
+// with no reply, lockout or tries-based route. Which it was is kept: the
+// step solved and the answer recorded only when right, the wrong guess
+// counted.
+func TestQuietAnswerMovesOn(t *testing.T) {
+	quiet := func(t *testing.T) *Team {
+		t.Helper()
+		g := hunt()
+		cfg := g.Nodes[1].PuzzleCfg
+		cfg.Quiet, cfg.LockoutSeconds = true, 30
+		cfg.Outputs = append(cfg.Outputs, graph.Output{Port: "pity", Trigger: graph.OnAttempts, AfterAttempts: 1})
+		g.Edges = append(g.Edges, graph.Edge{From: "door", FromPort: "pity", To: "end"})
+		tm, _, err := Start(g, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tm
+	}
+	cases := []struct {
+		guess, port, next string
+		points            float64
+		right             bool
+	}{
+		{"left", "left", "end", 10, true},
+		{"right", "right", "walk", 5, true},
+		{"up", "left", "end", 0, false},
+	}
+	for _, c := range cases {
+		t.Run(c.guess, func(t *testing.T) {
+			tm := quiet(t)
+			res, step, err := tm.Answer("door", c.guess)
+			if err != nil || step == nil {
+				t.Fatalf("res=%+v step=%v err=%v", res, step, err)
+			}
+			if !res.Quiet || res.Accepted != c.right || res.Port != c.port || res.Points != c.points || res.Response != "" || res.BlockedUntil != nil {
+				t.Errorf("result = %+v", res)
+			}
+			tm.Apply(*step)
+			if tm.Current != c.next && !(c.next == "end" && tm.Completed) {
+				t.Errorf("moved to %q, want %q", tm.Current, c.next)
+			}
+			if tm.Score() != c.points {
+				t.Errorf("score = %v, want %v", tm.Score(), c.points)
+			}
+			r, wrong := tm.Nodes["door"], 1
+			if c.right {
+				wrong = 0
+			}
+			if _, answered := tm.AnswerTo("door"); r.Solved != c.right || answered != c.right || r.Attempts != wrong || r.Outcome != c.port {
+				t.Errorf("record = %+v", r)
+			}
+		})
 	}
 }
 
@@ -1384,6 +1441,12 @@ func TestHereMe(t *testing.T) {
 	if v := tm.View(); v.HereMe != nil {
 		t.Errorf("the team as a whole has no one phone: %v", v.HereMe)
 	}
+	// Alone, with the team placed by a fix that is not this phone's.
+	solo := together(t, graph.PuzzleConfig{Zone: "east"}, zones, 1)
+	solo.Phones = []Position{east}
+	if v := solo.as(1, nil).View(); !v.Here || v.HereMe == nil || !*v.HereMe {
+		t.Errorf("a team of one is never told a teammate is there: here %v, me %v", v.Here, v.HereMe)
+	}
 }
 
 // A unanimous answer counts once every player has given a right one that
@@ -1650,5 +1713,43 @@ func TestAnswerToken(t *testing.T) {
 	tm.Apply(*next)
 	if got := tm.View().Blocks[0].Text; got != "Bye! /Tomtebisse" {
 		t.Errorf("text = %q, want the answer filled in and an unknown step empty", got)
+	}
+}
+
+// A gate that turns the team back to the hub says so: nothing else on
+// the phone changes.
+func TestFailedGateBackToHubSaysNotYet(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "hub", Type: graph.Hub, HubCfg: &graph.HubConfig{Policy: graph.PolicyChoice, Required: 1, Branches: []graph.Branch{
+				{Port: "tower", Label: "Tower"}, {Port: "garden", Label: "Garden"},
+			}}},
+			{Slug: "key", Type: graph.Story},
+			{Slug: "locked", Type: graph.Gate, GateCfg: &graph.GateConfig{Condition: cond.Predicate{Op: cond.OpSolved, Node: "key"}}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "hub"},
+			{From: "hub", FromPort: "tower", To: "key"},
+			{From: "key", FromPort: "out", To: "hub"},
+			{From: "hub", FromPort: "garden", To: "locked"},
+			{From: "locked", FromPort: graph.PortPass, To: "end"},
+			{From: "locked", FromPort: graph.PortFail, To: "hub"},
+			{From: "hub", FromPort: graph.PortDone, To: "end"},
+		},
+	}
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, st, err := tm.Act(func() (Result, *walk.Step, error) { return tm.Choose("hub", "garden") })
+	if err != nil || st == nil || st.To != "hub" || !res.NotYet {
+		t.Fatalf("a failed gate back at the hub is a not-yet: %+v %+v %v", res, st, err)
+	}
+	tm.Apply(*st)
+	res, st, err = tm.Act(func() (Result, *walk.Step, error) { return tm.Choose("hub", "tower") })
+	if err != nil || st == nil || st.To != "key" || res.NotYet {
+		t.Fatalf("a branch with no gate is not: %+v %+v %v", res, st, err)
 	}
 }

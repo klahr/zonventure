@@ -75,9 +75,23 @@ function useWatch(watch: string | null, onMessage: (m: WatchMessage) => void): L
         retry = Math.min(retry * 2, 30_000);
       };
     };
+    // A socket can take a while to notice the network is gone; the browser knows at once.
+    const offline = () => setState("reconnecting");
+    const online = () => {
+      if (ws?.readyState === WebSocket.OPEN) setState("live");
+      else if (!ws || ws.readyState === WebSocket.CLOSED) {
+        clearTimeout(timer);
+        retry = 1000;
+        connect();
+      }
+    };
+    window.addEventListener("offline", offline);
+    window.addEventListener("online", online);
     connect();
     return () => {
       closed = true;
+      window.removeEventListener("offline", offline);
+      window.removeEventListener("online", online);
       clearTimeout(timer);
       ws?.close();
       socket.current = null;

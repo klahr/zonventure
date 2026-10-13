@@ -64,13 +64,16 @@ func (h *Handlers) engine() *play.Engine {
 
 // PlayTeam is the team as the player app shows it. Locked says the team
 // has begun (play.TeamBegun), so its players can no longer change their
-// names or its picture; organisers still can.
+// names or its picture; organisers still can. Lang is the language a
+// store ticket's buyer chose at checkout (the posted letter's): the
+// app's words follow it rather than the phone's, as the adventure does.
 type PlayTeam struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`
 	Token     string `json:"token"`
 	AvatarURL string `json:"avatar_url,omitempty"`
 	Locked    bool   `json:"locked,omitempty"`
+	Lang      string `json:"lang,omitempty"`
 }
 
 // PlayEvent is the event as the player app shows it.
@@ -91,6 +94,10 @@ type PlayEvent struct {
 	OutroText string `json:"outro_text,omitempty"`
 	// Start is where the team should meet, when the author set it.
 	Start *PlayStart `json:"start,omitempty"`
+	// UsesLocation says the adventure has places to reach, so the phone
+	// may ask where it is at some point: the app explains why before
+	// the browser asks, whichever step the team is on.
+	UsesLocation bool `json:"uses_location,omitempty"`
 	// ServerNow lets the lobby count down to ScheduledAt against the
 	// server's clock rather than the phone's.
 	ServerNow string `json:"server_now,omitempty"`
@@ -131,7 +138,7 @@ type PlayFinish struct {
 	Teams int `json:"teams,omitempty"`
 	// Seconds is how long the team took, start to finish.
 	Seconds int `json:"seconds,omitempty"`
-	// RecapURL is the team's recap page. It opens once the event ends.
+	// RecapURL is the team's recap page. It opens once the team finished.
 	RecapURL string `json:"recap_url,omitempty"`
 }
 
@@ -158,6 +165,9 @@ type PlayState struct {
 	Messages []eventmsg.Message `json:"messages"`
 	// Dev is set for a dev ticket, playing the draft as it is edited.
 	Dev *PlayDev `json:"dev,omitempty"`
+	// MovedOn says the organisers moved the team onto the step it is on,
+	// for the app to say so rather than swap the step silently.
+	MovedOn bool `json:"moved_on,omitempty"`
 }
 
 // GetPlay returns the team's current state.
@@ -184,7 +194,7 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 		Team: PlayTeam{ID: tc.TeamID, Name: tc.TeamName, Token: tc.TeamToken, AvatarURL: teamAvatarURL(tc)},
 		Me:   PlayMe{ID: slot.ID, Name: slot.Name},
 		Event: PlayEvent{
-			ID: tc.EventID, State: tc.RunState, ScheduledAt: tc.ScheduledAt.String, OrgName: tc.OrgName,
+			ID: tc.EventID, State: tc.RunState, ScheduledAt: wireTime(tc.ScheduledAt.String), OrgName: tc.OrgName,
 			ServerNow: time.Now().UTC().Format(time.RFC3339),
 		},
 	}
@@ -196,6 +206,10 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	out.Event.AdventureTitle, out.Event.IntroText, out.Event.OutroText = look.title, look.intro, look.outro
 	out.Event.Start = look.start
 	out.Event.Cheat = look.cheat
+	if out.Event.UsesLocation, err = eventUsesLocation(ctx, h.DB, tc.EventID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading adventure failed", err)
+		return
+	}
 	out.Event.Theme = look.theme
 	if s := look.brand.Style; s != nil {
 		out.Event.Cover = s.Cover
@@ -228,6 +242,12 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if out.Team.Locked, err = play.TeamBegun(ctx, h.DB, tc.TeamID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading team failed", err)
+		return
+	}
+	if err = h.DB.QueryRowContext(ctx, `
+		SELECT COALESCE((SELECT letter_lang FROM ticket_purchases WHERE event_id = $1 AND team_id = $2 AND kind = 'ticket' ORDER BY id LIMIT 1), '')
+	`, tc.EventID, tc.TeamID).Scan(&out.Team.Lang); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading team failed", err)
 		return
 	}
@@ -269,6 +289,18 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 			httpx.ServerErr(w, http.StatusInternalServerError, "loading media failed", err)
 			return
 		}
+		if !view.Finished && view.Node != "" {
+			var to sql.NullString
+			err = h.DB.QueryRowContext(ctx, `
+				SELECT payload::jsonb->>'to' FROM event_activity
+				WHERE team_id = $1 AND kind = $2
+				ORDER BY created_at DESC, id DESC LIMIT 1`, tc.TeamID, activity.TeamUnlocked).Scan(&to)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				httpx.ServerErr(w, http.StatusInternalServerError, "loading game failed", err)
+				return
+			}
+			out.MovedOn = to.String == view.Node
+		}
 		if view.Finished {
 			if out.Finish, err = h.finishOf(ctx, tc.EventID, tc.TeamID); err != nil {
 				httpx.ServerErr(w, http.StatusInternalServerError, "loading result failed", err)
@@ -304,16 +336,49 @@ func (h *Handlers) finishOf(ctx context.Context, eventID, teamID int64) (*PlayFi
 	if completed.Valid && completed.Time.After(started) {
 		f.Seconds = int(completed.Time.Sub(started).Seconds())
 	}
-	ranked, err := h.engine().EventRanking(ctx, eventID)
-	if err != nil {
+	if f.Rank, f.Teams, err = h.gameRank(ctx, eventID, teamID); err != nil {
 		return nil, err
 	}
-	for i, r := range ranked {
+	return &f, nil
+}
+
+// gameRank is the team's place among the ranked teams of its own game,
+// of how many: a party's earlier games do not count. Rank is 0 when the
+// team is not ranked.
+func (h *Handlers) gameRank(ctx context.Context, eventID, teamID int64) (rank, teams int, err error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT o.id FROM teams t JOIN teams o ON o.event_id = t.event_id AND o.round IS NOT DISTINCT FROM t.round
+		WHERE t.id = $1`, teamID)
+	if err != nil {
+		return 0, 0, err
+	}
+	game := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, 0, err
+		}
+		game[id] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, 0, err
+	}
+	ranked, err := h.engine().EventRanking(ctx, eventID)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, r := range ranked {
+		if !game[r.TeamID] {
+			continue
+		}
+		teams++
 		if r.TeamID == teamID {
-			f.Rank, f.Teams = i+1, len(ranked)
+			rank = teams
 		}
 	}
-	return &f, nil
+	return rank, teams, nil
 }
 
 // adventureLook reads what the player app shows of the adventure itself.
@@ -373,6 +438,26 @@ func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
 	return l, err
 }
 
+// eventUsesLocation reports whether the event's adventure has zones the
+// teams walk to: the graph it plays, or before the start the one it
+// will. A party's zones played as cards are not places to reach.
+func eventUsesLocation(ctx context.Context, db *sql.DB, eventID int64) (bool, error) {
+	var uses bool
+	err := db.QueryRowContext(ctx, `
+		SELECT COALESCE(jsonb_typeof(g.graph -> 'zones') = 'array' AND jsonb_array_length(g.graph -> 'zones') > 0
+		                AND NOT COALESCE((g.graph ->> 'stations')::boolean, false)
+		                AND NOT (e.party AND e.party_mode = 'qr'), false)
+		FROM events e
+		JOIN adventures a ON a.slug = e.adventure_slug
+		JOIN adventure_graphs g ON g.id = COALESCE(e.graph_id, e.base_graph_id, a.published_graph_id)
+		WHERE e.id = $1
+	`, eventID).Scan(&uses)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return uses, err
+}
+
 // PlayActionRequest is the body of POST /api/player/play/{action}.
 type PlayActionRequest struct {
 	Node  string `json:"node"`
@@ -426,7 +511,7 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 	// A cheat checks a password, and a station a card's code, so they
 	// share the answers' budget: that is what stops guessing them.
 	if action == "answer" || action == "cheat" || action == "station" {
-		if ok, retry := h.rateLimiter().AllowAnswer(slot.ID); !ok {
+		if ok, retry := h.rateLimiter().AllowAnswer(slot.ID, slot.Dev); !ok {
 			writeRateLimited(w, retry)
 			return
 		}
@@ -552,7 +637,7 @@ func (h *Handlers) PostPlayUnlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slot, _ := auth.SlotFromContext(ctx)
-	if ok, retry := h.rateLimiter().AllowAnswer(slot.ID); !ok {
+	if ok, retry := h.rateLimiter().AllowAnswer(slot.ID, slot.Dev); !ok {
 		writeRateLimited(w, retry)
 		return
 	}
@@ -690,4 +775,102 @@ func stationCode(s string) string {
 		}
 	}
 	return s
+}
+
+// PartyEnd is the body of GET /api/player/party-end: what a party team's
+// phone shows once its session ended before the team finished.
+type PartyEnd struct {
+	// Reason is "taken_out" (the host took the team out), "game_finished"
+	// (the host finished the game) or "game_over" (the game ended without
+	// the host: idle, or the party's days over).
+	Reason         string `json:"reason"`
+	TeamName       string `json:"team_name"`
+	AdventureTitle string `json:"adventure_title,omitempty"`
+	// Theme, Cover and Brand are the party's look.
+	Theme string            `json:"theme,omitempty"`
+	Cover int64             `json:"cover,omitempty"`
+	Brand *adventure.Colors `json:"brand,omitempty"`
+	// Points, Rank and Teams are the team's result in its game, for a
+	// finished game whose results are not held (Held). Rank is 0 when
+	// the team is not ranked.
+	Points *float64 `json:"points,omitempty"`
+	Rank   int      `json:"rank,omitempty"`
+	Teams  int      `json:"teams,omitempty"`
+	Held   bool     `json:"held,omitempty"`
+}
+
+// GetPartyEnd tells a party team whose session the host ended why, and
+// its result. Only for such a session: it runs under
+// auth.RequireSlotOrEnded.
+//
+// GET /api/player/party-end
+func (h *Handlers) GetPartyEnd(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	slot, _ := auth.SlotFromContext(ctx)
+	if !slot.Party || !slot.Ended || slot.Cancelled {
+		httpx.Error(w, http.StatusNotFound, "no party end")
+		return
+	}
+	tc, err := loadTeam(ctx, h.DB, slot)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading team failed", err)
+		return
+	}
+	out := PartyEnd{Reason: "game_finished", TeamName: tc.TeamName}
+	if slot.Withdrawn {
+		out.Reason = "taken_out"
+	}
+	look, err := adventureLook(ctx, h.DB, tc.AdventureSlug)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading adventure failed", err)
+		return
+	}
+	out.AdventureTitle, out.Theme = look.title, look.theme
+	if s := look.brand.Style; s != nil {
+		out.Cover = s.Cover
+	}
+	if !look.brand.Empty() {
+		out.Brand = &look.brand
+	}
+	if slot.Withdrawn {
+		httpx.JSON(w, http.StatusOK, out)
+		return
+	}
+	// Only the host pressing "Finish game" says so; a game the sweeper
+	// ended (idle, or the party's days over) is just over.
+	var byHost bool
+	if err := h.DB.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM event_activity a JOIN teams t ON t.event_id = a.event_id
+		               WHERE t.id = $1 AND a.kind = 'round.finished'
+		                 AND (a.payload::jsonb->>'round')::int = t.round AND a.payload::jsonb->>'by' = 'host')`,
+		tc.TeamID).Scan(&byHost); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading result failed", err)
+		return
+	}
+	if !byHost {
+		out.Reason = "game_over"
+	}
+	if out.Held, err = play.ResultsHeld(ctx, h.DB, tc.TeamID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading result failed", err)
+		return
+	}
+	if out.Held {
+		httpx.JSON(w, http.StatusOK, out)
+		return
+	}
+	view, err := h.engine().Snapshot(ctx, tc.TeamID)
+	if err != nil && !errors.Is(err, play.ErrNoGraph) {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading result failed", err)
+		return
+	}
+	// An adventure that keeps the score out of sight still ranks.
+	if !view.HideScore {
+		points := view.Score - view.PenaltyScore
+		out.Points = &points
+	}
+	if out.Rank, out.Teams, err = h.gameRank(ctx, tc.EventID, tc.TeamID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading result failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }

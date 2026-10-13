@@ -6,14 +6,17 @@ import "@zonventure/play-ui/play-ui.css";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { href } from "../../router.ts";
-import { Button, Dialog, Field, useToast } from "../../ui/index.ts";
+import { Button, Dialog, Field, HelpPopover, useToast } from "../../ui/index.ts";
 import { PointMap } from "../../designer/PointMap.tsx";
-import { PhoneFrame } from "../../designer/SamplePreview.tsx";
+import { PhoneFrame, usePhoneT } from "../../designer/SamplePreview.tsx";
 import { StarterGallery } from "../../designer/StarterGallery.tsx";
 import { saveTutorial } from "../../designer/tutorial.ts";
 import { createAdventure, orgName, updateAdventure } from "./api.ts";
 import { slugFrom, useGuardedClose } from "./dialogs.tsx";
 import "./new-adventure.css";
+
+/** The distance a required start asks for, as Edit details offers by default. */
+const START_RADIUS = 50;
 
 const SLUG = /^[a-z0-9-]+$/;
 
@@ -49,6 +52,7 @@ type Step = 0 | 1 | 2 | 3;
  */
 export default function NewAdventure({ onClose, tutorial = false }: { onClose: () => void; tutorial?: boolean }) {
   const t = useT();
+  const tr = usePhoneT();
   const [example] = useState(() => (tutorial ? exampleOf(t) : null));
   const toast = useToast();
   const { state } = useSession();
@@ -63,6 +67,7 @@ export default function NewAdventure({ onClose, tutorial = false }: { onClose: (
   const [audience, setAudience] = useState<(typeof AUDIENCES)[number]["value"] | "">(example ? "families" : "");
   const [theme, setTheme] = useState<{ id: string; name: string; look: ThemeLook }>(example?.theme ?? { id: "default", name: "", look: DEFAULT_LOOK as ThemeLook });
   const [start, setStart] = useState<{ lat: number; lng: number } | null>(null);
+  const [requireStart, setRequireStart] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [busy, setBusy] = useState(false);
   const close = useGuardedClose(!!(title || pitch) && !example, t.t("Discard this adventure?"), onClose);
@@ -109,7 +114,7 @@ export default function NewAdventure({ onClose, tutorial = false }: { onClose: (
     try {
       await updateAdventure(made, {
         language,
-        ...(start ? { start_lat: start.lat, start_lng: start.lng } : {}),
+        ...(start ? { start_lat: start.lat, start_lng: start.lng, ...(requireStart ? { start_radius_m: START_RADIUS } : {}) } : {}),
         brief: { ...(audience ? { audience } : {}), ...(pitch.trim() ? { premise: pitch.trim() } : {}) },
       });
       await adventures.saveBrand(made, theme.look as play.Brand);
@@ -228,6 +233,13 @@ export default function NewAdventure({ onClose, tutorial = false }: { onClose: (
                   <Button onClick={() => setStart(null)}>{t.t("No starting point")}</Button>
                 </div>
               )}
+              {start && (
+                <label className="newadv__check">
+                  <input type="checkbox" checked={requireStart} onChange={(e) => setRequireStart(e.target.checked)} />
+                  <span>{t.t("Teams must be at the starting point to begin")}</span>
+                  <HelpPopover label={t.t("Teams must be at the starting point to begin")} body={t.t("The start stays locked on the phones until a player on the team is within {{n}} metres of the starting point. Change the distance later in Edit details.", { n: START_RADIUS })} />
+                </label>
+              )}
             </>
           )}
           {step === 3 && (
@@ -251,7 +263,10 @@ export default function NewAdventure({ onClose, tutorial = false }: { onClose: (
               <dt>{t.t("The look")}</dt>
               <dd>{theme.id === "default" ? t.t("Default look") : theme.name}</dd>
               <dt>{t.t("Where it starts")}</dt>
-              <dd>{start ? `${start.lat.toFixed(5)}, ${start.lng.toFixed(5)}` : t.t("Not set yet")}</dd>
+              <dd>
+                {start ? `${start.lat.toFixed(5)}, ${start.lng.toFixed(5)}` : t.t("Not set yet")}
+                {start && requireStart && ` · ${t.t("teams must be there to begin")}`}
+              </dd>
               <dt>{t.t("Link name")}</dt>
               <dd>
                 <code>{slug}</code>
@@ -261,7 +276,7 @@ export default function NewAdventure({ onClose, tutorial = false }: { onClose: (
         </div>
         <aside className="newadv__preview" aria-label={t.t("Preview")}>
           <PhoneFrame>
-            <PlayView view={view} live={false} preview brand={theme.look as play.Brand} feedback={feedback} onAction={() => {}} />
+            <PlayView view={view} live={false} preview brand={theme.look as play.Brand} feedback={feedback} onAction={() => {}} t={tr} />
           </PhoneFrame>
           <div className="newadv__try">
             <Button onClick={() => setFeedback({ tone: "good", text: t.t("Correct!"), burst: { kind: "celebrate", head: t.t("Correct!") } })}>{t.t("Try a right answer")}</Button>

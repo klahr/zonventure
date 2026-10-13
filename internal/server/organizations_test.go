@@ -3,6 +3,7 @@ package server_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -218,26 +219,59 @@ func TestOrganizations(t *testing.T) {
 	})
 
 	t.Run("members create and remove", func(t *testing.T) {
-		// org_admin "boss" can add and remove members in their own org.
+		// org_admin "boss" can add and remove members in their own org;
+		// a global admin may still create one with a password.
 		boss := newClient(t, ts)
 		if s := boss.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 			t.Fatalf("login = %d", s)
 		}
+		root := newClient(t, ts)
+		login(t, root, "root", "rootpw")
 
-		var added struct {
-			ID   int64  `json:"id"`
-			Role string `json:"role"`
+		body := map[string]string{"username": "newbie", "password": "longpw01", "role": "org_member"} // gitleaks:allow (test fixture)
+		if s := root.do("POST", "/api/admin/organizations/"+itoa(orgID)+"/members", body, nil); s != 202 {
+			t.Fatalf("add member = %d, want 202", s)
 		}
-		body := map[string]string{"username": "newbie", "password": "longpw01", "role": "org_member"}
-		if s := boss.do("POST", "/api/admin/organizations/"+itoa(orgID)+"/members", body, &added); s != 201 {
-			t.Fatalf("add member = %d, want 201", s)
+		// An org admin invites by email; without one there is no one to invite.
+		if s := boss.do("POST", "/api/admin/organizations/"+itoa(orgID)+"/members", map[string]string{"username": "noaddress", "role": "org_member"}, nil); s != 400 {
+			t.Fatalf("org admin adding without email = %d, want 400", s)
 		}
-		if added.Role != "org_member" || added.ID == 0 {
-			t.Fatalf("unexpected: %+v", added)
+		var added struct{ ID int64 }
+		if err := db.QueryRow(`SELECT u.id FROM users u JOIN org_memberships m ON m.user_id = u.id WHERE u.username = 'newbie' AND m.org_id = $1 AND m.role = 'org_member'`, orgID).Scan(&added.ID); err != nil {
+			t.Fatalf("newbie membership: %v", err)
+		}
+
+		// An event host reads the org but not its members.
+		newbie := newClient(t, ts)
+		if s := newbie.do("POST", "/api/auth/login", map[string]string{"username": "newbie", "password": "longpw01"}, nil); s != 200 { // gitleaks:allow (test fixture)
+			t.Fatalf("newbie login = %d", s)
+		}
+		var seen struct {
+			Members []struct {
+				Username string `json:"username"`
+			} `json:"members"`
+		}
+		if s := newbie.do("GET", "/api/admin/organizations/"+itoa(orgID), nil, &seen); s != 200 || len(seen.Members) != 0 {
+			t.Fatalf("event host's org = %d %+v, want 200 and no members", s, seen.Members)
+		}
+		if s := boss.do("GET", "/api/admin/organizations/"+itoa(orgID), nil, &seen); s != 200 || len(seen.Members) < 2 {
+			t.Fatalf("org admin's org = %d %+v, want the members", s, seen.Members)
+		}
+
+		// A common password is refused, like a self-service change.
+		weak := map[string]string{"username": "weakling", "password": "password1", "role": "org_member"}
+		if s := root.do("POST", "/api/admin/organizations/"+itoa(orgID)+"/members", weak, nil); s != 400 {
+			t.Fatalf("common password = %d, want 400", s)
+		}
+
+		// An org admin can't look users up at all: it would tell them
+		// which usernames and addresses have accounts.
+		if s := boss.do("GET", "/api/admin/users/search?q=NEWBIE", nil, nil); s != 403 {
+			t.Fatalf("org admin search = %d, want 403", s)
 		}
 
 		// Bad role → 400.
-		bad := map[string]string{"username": "x", "password": "longpw01", "role": "wizard"}
+		bad := map[string]string{"username": "x", "email": "x@example.test", "role": "wizard"}
 		if s := boss.do("POST", "/api/admin/organizations/"+itoa(orgID)+"/members", bad, nil); s != 400 {
 			t.Fatalf("bad role = %d, want 400", s)
 		}
@@ -257,6 +291,175 @@ func TestOrganizations(t *testing.T) {
 		if s := boss.doWithConfirm("DELETE", "/api/admin/organizations/"+itoa(orgID)+"/members/"+itoa(added.ID),
 			"s3cret", nil, nil); s != 204 {
 			t.Fatalf("remove member = %d, want 204", s)
+		}
+	})
+
+	t.Run("existing account is invited, not added", func(t *testing.T) {
+		var otherOrgID int64
+		if err := db.QueryRow(`SELECT id FROM organizations WHERE name = 'OtherOrg'`).Scan(&otherOrgID); err != nil {
+			t.Fatalf("lookup other: %v", err)
+		}
+		boss := newClient(t, ts)
+		if s := boss.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
+			t.Fatalf("login = %d", s)
+		}
+		root := newClient(t, ts)
+		if s := root.do("POST", "/api/auth/login", map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+			t.Fatalf("root login = %d", s)
+		}
+		body := map[string]string{"username": "joiner", "password": "longpw01", "role": "org_member", "email": "joiner@example.test"} // gitleaks:allow (test fixture)
+		var created map[string]any
+		if s := root.do("POST", "/api/admin/organizations/"+itoa(orgID)+"/members", body, &created); s != 202 {
+			t.Fatalf("add member = %d, want 202", s)
+		}
+		var byAdmin, verified, tokens int
+		if err := db.QueryRow(`SELECT password_set_by_admin, email_verified, (SELECT COUNT(*) FROM email_verifications v WHERE v.user_id = users.id AND v.purpose = 'verify') FROM users WHERE username = 'joiner'`).Scan(&byAdmin, &verified, &tokens); err != nil || byAdmin != 1 {
+			t.Fatalf("password_set_by_admin = %d (%v), want 1", byAdmin, err)
+		}
+		// The address is stored unverified and the verification mail goes out at once.
+		if verified != 0 || tokens != 1 {
+			t.Fatalf("email_verified = %d, verify tokens = %d; want 0 and 1", verified, tokens)
+		}
+
+		// OtherOrg's admin adds by joiner's address: an invitation,
+		// answered exactly like creating a new account. A username
+		// alone never finds an existing account for an org admin.
+		other := newClient(t, ts)
+		var otherBossID int64
+		if err := db.QueryRow(`INSERT INTO users(username, password_hash, email_verified) SELECT 'otherboss', password_hash, 1 FROM users WHERE username = 'boss' RETURNING id`).Scan(&otherBossID); err != nil {
+			t.Fatalf("seed otherboss: %v", err)
+		}
+		if _, err := db.Exec(`INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_admin')`, otherBossID, otherOrgID); err != nil {
+			t.Fatalf("seed otherboss membership: %v", err)
+		}
+		if s := other.do("POST", "/api/auth/login", map[string]string{"username": "otherboss", "password": "s3cret"}, nil); s != 200 { // gitleaks:allow (test fixture)
+			t.Fatalf("otherboss login = %d", s)
+		}
+		byName := map[string]string{"username": "joiner", "role": "org_member"}
+		if s := other.do("POST", "/api/admin/organizations/"+itoa(otherOrgID)+"/members", byName, nil); s != 400 {
+			t.Fatalf("org admin adding by username alone = %d, want 400 (email required)", s)
+		}
+		byEmail := map[string]string{"username": "whatever", "password": "longpw01", "role": "org_member", "email": "JOINER@example.test"} // gitleaks:allow (test fixture)
+		var invitedAnswer map[string]any
+		if s := other.do("POST", "/api/admin/organizations/"+itoa(otherOrgID)+"/members", byEmail, &invitedAnswer); s != 202 || fmt.Sprint(invitedAnswer) != fmt.Sprint(created) {
+			t.Fatalf("invite by email = %d %v, want 202 %v", s, invitedAnswer, created)
+		}
+		var org struct {
+			Invitations []struct {
+				UserID int64  `json:"user_id"`
+				Email  string `json:"email"`
+			} `json:"invitations"`
+		}
+		if s := other.do("GET", "/api/admin/organizations/"+itoa(otherOrgID), nil, &org); s != 200 || len(org.Invitations) != 1 || org.Invitations[0].Email != "JOINER@example.test" {
+			t.Fatalf("pending invitations = %d %+v, want joiner's, by the address typed", s, org.Invitations)
+		}
+		// Withdrawn, it no longer works.
+		if s := boss.do("DELETE", "/api/admin/organizations/"+itoa(otherOrgID)+"/invitations/"+itoa(org.Invitations[0].UserID), nil, nil); s != 403 {
+			t.Fatalf("another org's admin withdrawing = %d, want 403", s)
+		}
+		if s := other.do("DELETE", "/api/admin/organizations/"+itoa(otherOrgID)+"/invitations/"+itoa(org.Invitations[0].UserID), nil, nil); s != 204 {
+			t.Fatalf("withdraw = %d, want 204", s)
+		}
+		joinerEarly := newClient(t, ts)
+		if s := joinerEarly.do("POST", "/api/auth/login", map[string]string{"username": "joiner", "password": "longpw01"}, nil); s != 200 { // gitleaks:allow (test fixture)
+			t.Fatalf("joiner login = %d", s)
+		}
+		if s := joinerEarly.do("POST", "/api/admin/me/org-invitations/"+itoa(otherOrgID)+"/accept", nil, nil); s != 404 {
+			t.Fatalf("accepting a withdrawn invitation = %d, want 404", s)
+		}
+		// Declined, it stays on the org's list marked so, and leaves the
+		// person's; inviting again asks anew.
+		if s := other.do("POST", "/api/admin/organizations/"+itoa(otherOrgID)+"/members", byEmail, nil); s != 202 {
+			t.Fatalf("invite again = %d, want 202", s)
+		}
+		if s := joinerEarly.do("POST", "/api/admin/me/org-invitations/"+itoa(otherOrgID)+"/decline", nil, nil); s != 204 {
+			t.Fatalf("decline = %d, want 204", s)
+		}
+		var declinedOrg struct {
+			Invitations []struct {
+				Declined bool `json:"declined"`
+			} `json:"invitations"`
+		}
+		if s := other.do("GET", "/api/admin/organizations/"+itoa(otherOrgID), nil, &declinedOrg); s != 200 || len(declinedOrg.Invitations) != 1 || !declinedOrg.Invitations[0].Declined {
+			t.Fatalf("after decline = %d %+v, want one declined", s, declinedOrg.Invitations)
+		}
+		var declinedWho struct {
+			Invitations []struct{} `json:"org_invitations"`
+		}
+		if s := joinerEarly.do("GET", "/api/auth/whoami", nil, &declinedWho); s != 200 || len(declinedWho.Invitations) != 0 {
+			t.Fatalf("whoami after decline = %d %+v, want no invitation", s, declinedWho)
+		}
+		if s := joinerEarly.do("POST", "/api/admin/me/org-invitations/"+itoa(otherOrgID)+"/accept", nil, nil); s != 404 {
+			t.Fatalf("accepting a declined invitation = %d, want 404", s)
+		}
+		if s := other.do("POST", "/api/admin/organizations/"+itoa(otherOrgID)+"/members", byEmail, nil); s != 202 {
+			t.Fatalf("re-invite after decline = %d, want 202", s)
+		}
+		var reinvited struct {
+			Invitations []struct {
+				Declined bool `json:"declined"`
+			} `json:"invitations"`
+		}
+		if s := other.do("GET", "/api/admin/organizations/"+itoa(otherOrgID), nil, &reinvited); s != 200 || len(reinvited.Invitations) != 1 || reinvited.Invitations[0].Declined {
+			t.Fatalf("after re-invite = %d %+v, want one pending", s, reinvited.Invitations)
+		}
+		if s := other.do("DELETE", "/api/admin/organizations/"+itoa(otherOrgID)+"/invitations/"+itoa(org.Invitations[0].UserID), nil, nil); s != 204 {
+			t.Fatalf("withdraw again = %d, want 204", s)
+		}
+
+		// A global admin may still name an existing account by username.
+		invite := map[string]string{"username": "joiner", "role": "org_admin"}
+		if s := root.do("POST", "/api/admin/organizations/"+itoa(otherOrgID)+"/members", invite, nil); s != 202 {
+			t.Fatalf("invite = %d, want 202", s)
+		}
+		var n int
+		_ = db.QueryRow(`SELECT COUNT(*) FROM org_memberships m JOIN users u ON u.id = m.user_id WHERE u.username = 'joiner' AND m.org_id = $1`, otherOrgID).Scan(&n)
+		if n != 0 {
+			t.Fatalf("member before accepting")
+		}
+
+		joiner := newClient(t, ts)
+		if s := joiner.do("POST", "/api/auth/login", map[string]string{"username": "joiner", "password": "longpw01"}, nil); s != 200 {
+			t.Fatalf("joiner login = %d", s)
+		}
+		var who struct {
+			Invitations []struct {
+				OrgID int64  `json:"org_id"`
+				Role  string `json:"role"`
+			} `json:"org_invitations"`
+			ByAdmin bool `json:"password_set_by_admin"`
+		}
+		if s := joiner.do("GET", "/api/auth/whoami", nil, &who); s != 200 || len(who.Invitations) != 1 || who.Invitations[0].OrgID != otherOrgID || !who.ByAdmin {
+			t.Fatalf("whoami = %d %+v", s, who)
+		}
+		if s := joiner.do("POST", "/api/admin/me/org-invitations/"+itoa(otherOrgID)+"/accept", nil, nil); s != 200 {
+			t.Fatalf("accept = %d, want 200", s)
+		}
+		var role string
+		if err := db.QueryRow(`SELECT m.role FROM org_memberships m JOIN users u ON u.id = m.user_id WHERE u.username = 'joiner' AND m.org_id = $1`, otherOrgID).Scan(&role); err != nil || role != "org_admin" {
+			t.Fatalf("membership after accept = %q (%v)", role, err)
+		}
+		if s := joiner.do("POST", "/api/admin/me/org-invitations/"+itoa(otherOrgID)+"/decline", nil, nil); s != 404 {
+			t.Fatalf("decline after accept = %d, want 404", s)
+		}
+		if s := root.do("POST", "/api/admin/organizations/"+itoa(otherOrgID)+"/members", invite, nil); s != 409 {
+			t.Fatalf("re-invite member = %d, want 409", s)
+		}
+	})
+
+	t.Run("whoami carries the chosen language", func(t *testing.T) {
+		boss := newClient(t, ts)
+		if s := boss.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 { // gitleaks:allow (test fixture)
+			t.Fatalf("login = %d", s)
+		}
+		if s := boss.do("PUT", "/api/admin/me/language", map[string]string{"language": "sv"}, nil); s != 204 {
+			t.Fatalf("set language = %d", s)
+		}
+		var who struct {
+			Language string `json:"language"`
+		}
+		if s := boss.do("GET", "/api/auth/whoami", nil, &who); s != 200 || who.Language != "sv" {
+			t.Fatalf("whoami = %d language %q, want sv", s, who.Language)
 		}
 	})
 
@@ -302,6 +505,10 @@ func TestOrganizations(t *testing.T) {
 
 		var second struct {
 			ID int64 `json:"id"`
+		}
+		// A common password is refused for an admin too.
+		if s := root.doWithConfirm("POST", "/api/admin/admins", "rootpw", map[string]string{"username": "weak", "password": "password1"}, nil); s != 400 {
+			t.Fatalf("common-password admin = %d, want 400", s)
 		}
 		body := map[string]string{"username": "second", "password": "secondpw"}
 		// Creating an admin requires password re-confirmation, like deleting one.

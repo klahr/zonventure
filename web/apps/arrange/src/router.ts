@@ -28,8 +28,9 @@ export type Route =
   | { name: "catalog" }
   | { name: "catalog-item"; slug: string }
   | { name: "events" }
-  | { name: "event"; id: number }
-  | { name: "event-control"; id: number }
+  /** quest: a self-guided event, opened from (and kept under) Self-guided. */
+  | { name: "event"; id: number; quest?: boolean }
+  | { name: "event-control"; id: number; quest?: boolean }
   | { name: "quests" }
   | { name: "parties"; slug?: string }
   | { name: "redemptions"; tab?: string }
@@ -93,7 +94,8 @@ export function parseRoute(hash: string): Route {
     }
     case "quests": {
       const id = num(arg);
-      return id ? { name: "event", id } : { name: "quests" };
+      if (!id) return { name: "quests" };
+      return sub === "control" ? { name: "event-control", id, quest: true } : { name: "event", id, quest: true };
     }
     // "#/parties/<slug>" opens that adventure's offer over the list.
     case "parties":
@@ -163,9 +165,9 @@ export function href(r: Route): string {
     case "events":
       return "#/events";
     case "event":
-      return `#/events/${r.id}`;
+      return r.quest ? `#/quests/${r.id}` : `#/events/${r.id}`;
     case "event-control":
-      return `#/events/${r.id}/control`;
+      return r.quest ? `#/quests/${r.id}/control` : `#/events/${r.id}/control`;
     case "quests":
       return "#/quests";
     case "parties":

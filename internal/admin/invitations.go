@@ -5,12 +5,16 @@ import (
 	"errors"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"net/http"
+	"net/url"
 	"strings"
 
+	"github.com/klahr/zonventure/internal/activity"
+	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/icscal"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/mailer"
+	"github.com/klahr/zonventure/internal/ws"
 )
 
 // SendEventInvitations triggers an outbound email to every team in
@@ -45,22 +49,13 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Build the .ics once — every team's email gets the same
-	// attachment, since they're all attending the same event. A
-	// missing schedule (event not yet planned) just drops the
+	// Build the .ics once; each team's copy then links to its own team
+	// page. A missing schedule (event not yet planned) just drops the
 	// attachment; the magic links still go out so an arranger can
 	// pre-distribute before scheduling.
-	var icsAttach []mailer.Attachment
-	if evt, err := icscal.BuildForEvent(r.Context(), h.DB, h.Lib, eventID, h.PublicURL); err == nil {
-		if bytes, berr := icscal.Bytes(evt); berr == nil {
-			icsAttach = []mailer.Attachment{{
-				Filename:    icscal.Filename(eventID),
-				ContentType: "text/calendar; method=PUBLISH; charset=UTF-8",
-				Bytes:       bytes,
-			}}
-		}
-	} else if !errors.Is(err, icscal.ErrNoSchedule) {
-		logx.Warn("admin.invitations.ics", "event", eventID, "err", err.Error())
+	evt, icsErr := icscal.BuildForEvent(r.Context(), h.DB, h.Lib, eventID, h.PublicURL)
+	if icsErr != nil && !errors.Is(icsErr, icscal.ErrNoSchedule) {
+		logx.Warn("admin.invitations.ics", "event", eventID, "err", icsErr.Error())
 	}
 
 	// Pull every team's contact + slot tokens. One row per slot;
@@ -68,7 +63,7 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 	// teams without an email are surfaced so we can count them as
 	// `skipped_no_email` rather than silently dropping.
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT t.id, t.name, COALESCE(t.email, ''), t.token, ps.name, ps.token
+		SELECT t.id, t.name, COALESCE(t.email, ''), t.token, COALESCE(t.invited_start, ''), ps.name, ps.token
 		FROM teams t
 		LEFT JOIN player_slots ps ON ps.team_id = t.id
 		WHERE t.event_id = $1
@@ -81,11 +76,12 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 	defer rows.Close()
 
 	type teamInfo struct {
-		ID    int64
-		Name  string
-		Email string
-		Token string
-		Slots []invitationSlot
+		ID      int64
+		Name    string
+		Email   string
+		Token   string
+		Invited string
+		Slots   []invitationSlot
 	}
 	var (
 		teams []*teamInfo
@@ -97,16 +93,17 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 			tname  string
 			temail string
 			ttoken string
+			tinv   string
 			pname  *string
 			ptoken *string
 		)
-		if err := rows.Scan(&tid, &tname, &temail, &ttoken, &pname, &ptoken); err != nil {
+		if err := rows.Scan(&tid, &tname, &temail, &ttoken, &tinv, &pname, &ptoken); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "team scan failed")
 			return
 		}
 		t, ok := byID[tid]
 		if !ok {
-			t = &teamInfo{ID: tid, Name: tname, Email: strings.TrimSpace(temail), Token: ttoken}
+			t = &teamInfo{ID: tid, Name: tname, Email: strings.TrimSpace(temail), Token: ttoken, Invited: tinv}
 			byID[tid] = t
 			teams = append(teams, t)
 		}
@@ -122,6 +119,7 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 	)
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	l := h.eventLook(r.Context(), eventID)
+	start, place := h.inviteWhen(r.Context(), eventID)
 	for _, t := range teams {
 		if t.Email == "" {
 			skippedNoEmail++
@@ -135,13 +133,15 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 			skippedNoEmail++
 			continue
 		}
-		if err := sendOneInvitation(r.Context(), h.Mailer, l, t.Name, t.Email, publicURL, t.Slots, h.fileLinks(r.Context(), eventID, publicURL, t.Token), icsAttach); err != nil {
+		if err := sendOneInvitation(r.Context(), h.Mailer, l, t.Name, t.Email, publicURL, t.Slots, h.fileLinks(r.Context(), eventID, publicURL, t.Token), teamICS(evt, icsErr, eventID, publicURL, t.Token), start, place, t.Invited); err != nil {
 			logx.Warn("admin.invitations.send", "event", eventID, "team", t.ID, "err", err.Error())
 			failed++
 			continue
 		}
+		h.markInvited(r.Context(), t.ID, start)
 		sent++
 	}
+	h.recordInvitations(r.Context(), eventID, nil, l, sent, skippedNoEmail)
 
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"sent":             sent,
@@ -168,6 +168,13 @@ func (h *Handlers) SendTeamInvitation(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad team id")
 		return
 	}
+	h.sendTeamInvitation(w, r, teamID, 0)
+}
+
+// sendTeamInvitation mails one team its links. operatorOrg is 0 for an
+// org user (the authorize-event gate); for the platform operator it is
+// the org in the URL, which the team's event must belong to.
+func (h *Handlers) sendTeamInvitation(w http.ResponseWriter, r *http.Request, teamID, operatorOrg int64) {
 	if h.Mailer == nil {
 		httpx.Error(w, http.StatusServiceUnavailable, "no mailer configured")
 		return
@@ -179,14 +186,20 @@ func (h *Handlers) SendTeamInvitation(w http.ResponseWriter, r *http.Request) {
 		teamName string
 		teamMail string
 		teamTok  string
+		invited  string
 	)
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT event_id, name, COALESCE(email, ''), token FROM teams WHERE id = $1`, teamID).
-		Scan(&eventID, &teamName, &teamMail, &teamTok); err != nil {
+		`SELECT event_id, name, COALESCE(email, ''), token, COALESCE(invited_start, '') FROM teams WHERE id = $1`, teamID).
+		Scan(&eventID, &teamName, &teamMail, &teamTok, &invited); err != nil {
 		httpx.Error(w, http.StatusNotFound, "team not found")
 		return
 	}
-	if _, ok := h.authorizeEvent(w, r, eventID); !ok {
+	if operatorOrg == 0 {
+		if _, ok := h.authorizeEvent(w, r, eventID); !ok {
+			return
+		}
+	} else if org, err := h.eventOrg(r.Context(), eventID); err != nil || org != operatorOrg {
+		httpx.Error(w, http.StatusNotFound, "team not found")
 		return
 	}
 	teamMail = strings.TrimSpace(teamMail)
@@ -223,26 +236,59 @@ func (h *Handlers) SendTeamInvitation(w http.ResponseWriter, r *http.Request) {
 	// resend rather than cached, since arrangers may be re-sending
 	// after a reschedule and the file should reflect the latest
 	// scheduled_at.
-	var icsAttach []mailer.Attachment
-	if evt, err := icscal.BuildForEvent(r.Context(), h.DB, h.Lib, eventID, h.PublicURL); err == nil {
-		if bytes, berr := icscal.Bytes(evt); berr == nil {
-			icsAttach = []mailer.Attachment{{
-				Filename:    icscal.Filename(eventID),
-				ContentType: "text/calendar; method=PUBLISH; charset=UTF-8",
-				Bytes:       bytes,
-			}}
-		}
-	} else if !errors.Is(err, icscal.ErrNoSchedule) {
-		logx.Warn("admin.invitations.team.ics", "event", eventID, "team", teamID, "err", err.Error())
+	evt, icsErr := icscal.BuildForEvent(r.Context(), h.DB, h.Lib, eventID, h.PublicURL)
+	if icsErr != nil && !errors.Is(icsErr, icscal.ErrNoSchedule) {
+		logx.Warn("admin.invitations.team.ics", "event", eventID, "team", teamID, "err", icsErr.Error())
 	}
 
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
-	if err := sendOneInvitation(r.Context(), h.Mailer, h.eventLook(r.Context(), eventID), teamName, teamMail, publicURL, slots, h.fileLinks(r.Context(), eventID, publicURL, teamTok), icsAttach); err != nil {
+	l := h.eventLook(r.Context(), eventID)
+	start, place := h.inviteWhen(r.Context(), eventID)
+	if err := sendOneInvitation(r.Context(), h.Mailer, l, teamName, teamMail, publicURL, slots, h.fileLinks(r.Context(), eventID, publicURL, teamTok), teamICS(evt, icsErr, eventID, publicURL, teamTok), start, place, invited); err != nil {
 		logx.Warn("admin.invitations.team.send", "event", eventID, "team", teamID, "err", err.Error())
 		httpx.ServerErr(w, http.StatusBadGateway, "send failed", err)
 		return
 	}
+	h.markInvited(r.Context(), teamID, start)
+	h.recordInvitations(r.Context(), eventID, &teamID, l, 1, 0)
 	httpx.JSON(w, http.StatusOK, map[string]any{"sent": 1})
+}
+
+// recordInvitations puts invitations that went out on the event's
+// record, as EmailTeams does an arranger's email: in the emails sent to
+// its teams, and in its activity (for one team, under that team).
+func (h *Handlers) recordInvitations(ctx context.Context, eventID int64, teamID *int64, l look, sent, skipped int) {
+	if sent == 0 {
+		return
+	}
+	me, _ := auth.FromContext(ctx)
+	subject, _ := emailtpl.TeamInvitation(l.Lang, "", l.Event, l.Brand.Name, nil, false)
+	if _, err := h.DB.ExecContext(ctx, `
+		INSERT INTO event_emails (event_id, subject, body, theme, sent_by, sent, skipped) VALUES ($1, $2, '', $3, $4, $5, $6)
+	`, eventID, subject, string(l.Theme), me.ID, sent, skipped); err != nil {
+		logx.Warn("admin.invitations.record", "event", eventID, "err", err.Error())
+	}
+	activity.Record(ctx, h.DB, eventID, teamID, activity.UserActor(me.ID), "invitations.sent", map[string]any{"sent": sent, "skipped": skipped})
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
+}
+
+// inviteWhen is what an event's invitations say of when and where: its
+// scheduled start (UTC, as stored; "" without one, or for a self-guided
+// event, played whenever a team likes) and its meeting place.
+func (h *Handlers) inviteWhen(ctx context.Context, eventID int64) (start, place string) {
+	var forSale bool
+	if err := h.DB.QueryRowContext(ctx, `SELECT COALESCE(scheduled_at, ''), meeting_place, public_for_sale FROM events WHERE id = $1`, eventID).Scan(&start, &place, &forSale); err != nil || forSale {
+		return "", strings.TrimSpace(place)
+	}
+	return start, strings.TrimSpace(place)
+}
+
+// markInvited remembers the start a team's invitation stated, so one sent
+// after the event moves says the time changed.
+func (h *Handlers) markInvited(ctx context.Context, teamID int64, start string) {
+	if _, err := h.DB.ExecContext(ctx, `UPDATE teams SET invited_start = NULLIF($2, '') WHERE id = $1`, teamID, start); err != nil {
+		logx.Warn("admin.invitations.mark", "team", teamID, "err", err.Error())
+	}
 }
 
 // invitationSlot is the (player, token) pair the email body
@@ -264,15 +310,43 @@ func sendOneInvitation(
 	slots []invitationSlot,
 	files []emailtpl.FileLink,
 	atts []mailer.Attachment,
+	start, place, invited string,
 ) error {
 	players := make([]emailtpl.PlayerLink, len(slots))
 	for i, s := range slots {
 		players[i] = emailtpl.PlayerLink{Team: teamName, Player: s.Player, URL: publicURL + "/play?t=" + s.Token}
 	}
 	subject, c := emailtpl.TeamInvitation(l.Lang, teamName, l.Event, l.Brand.Name, players, len(atts) > 0)
+	when := ""
+	if t, ok := icscal.ParseTimestamp(start); ok {
+		when = emailtpl.When(l.Lang, t, l.TimeZone)
+	}
+	subject, c = emailtpl.WithSchedule(subject, c, l.Event, when, place, invited != "" && start != "" && invited != start)
 	c = emailtpl.WithFiles(c, files)
 	c.Picture = l.Cover
 	msg := l.message([]string{teamEmail}, subject, c)
 	msg.Attachments = atts
 	return m.Send(ctx, msg)
+}
+
+// teamICS is the calendar attachment for one team's invitation: the
+// event's entry, linking to that team's own page rather than the
+// generic /play. Nil when the event has no schedule to put on a
+// calendar (buildErr) or the entry can't be rendered.
+func teamICS(evt icscal.Event, buildErr error, eventID int64, publicURL, teamToken string) []mailer.Attachment {
+	if buildErr != nil {
+		return nil
+	}
+	if publicURL != "" {
+		evt = evt.WithJoinURL(publicURL + "/team/" + url.PathEscape(teamToken))
+	}
+	b, err := icscal.Bytes(evt)
+	if err != nil {
+		return nil
+	}
+	return []mailer.Attachment{{
+		Filename:    icscal.Filename(eventID),
+		ContentType: "text/calendar; method=PUBLISH; charset=UTF-8",
+		Bytes:       b,
+	}}
 }

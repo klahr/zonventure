@@ -49,6 +49,45 @@ func TestPresenceJoinFocusLeave(t *testing.T) {
 	}
 }
 
+// A page back from going offline joins again as a new peer while its old
+// socket lingers. Opening the step again it keeps its place, rather than
+// coming after someone who opened it meanwhile — whom the old socket
+// still holds it against.
+func TestPresenceRejoinKeepsFocusPlace(t *testing.T) {
+	h := ws.NewHub()
+	ch, unsub := h.Subscribe(ws.LiveTopic("adventure:1"))
+	defer unsub()
+	last := func() []ws.Peer {
+		t.Helper()
+		var ps []ws.Peer
+		for {
+			select {
+			case b := <-ch:
+				ps = peersOf(t, b)
+			case <-time.After(50 * time.Millisecond):
+				return ps
+			}
+		}
+	}
+
+	h.Join("adventure:1", ws.Peer{ID: "c1", UserID: 7, Name: "anna", Kind: ws.PeerHuman})
+	h.Focus("adventure:1", "c1", "intro")
+	time.Sleep(5 * time.Millisecond)
+	h.Join("adventure:1", ws.Peer{ID: "c2", UserID: 8, Name: "bo", Kind: ws.PeerHuman})
+	h.Focus("adventure:1", "c2", "intro")
+	time.Sleep(5 * time.Millisecond)
+	h.Join("adventure:1", ws.Peer{ID: "c3", UserID: 7, Name: "anna", Kind: ws.PeerHuman})
+	h.Focus("adventure:1", "c3", "intro")
+
+	at := map[string]time.Time{}
+	for _, p := range last() {
+		at[p.ID] = *p.FocusSince
+	}
+	if !at["c3"].Equal(at["c1"]) || !at["c3"].Before(at["c2"]) {
+		t.Fatalf("anna's new page opened intro at %v, her old at %v, bo at %v", at["c3"], at["c1"], at["c2"])
+	}
+}
+
 func TestPresenceVisitExpires(t *testing.T) {
 	h := ws.NewHub()
 	ch, unsub := h.Subscribe(ws.LiveTopic("adventure:2"))

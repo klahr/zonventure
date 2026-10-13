@@ -19,6 +19,7 @@ interface HostedPrice {
   currency: string;
   teams_per_block: number;
   free_teams: number;
+  vat_excluded?: boolean;
 }
 
 const MAX_BLOCKS = 10;
@@ -155,10 +156,10 @@ export function HostItDialog({
             {n === 0
               ? t.t("Free for up to {{n}} teams per game.", { n: p.free_teams })
               : p.block_cents > 0
-                ? t.t("{{price}} for up to {{n}} teams per game.", {
+                ? `${t.t("{{price}} for up to {{n}} teams per game.", {
                     price: fmtMoney(cost, p.currency, loc),
                     n: n * p.teams_per_block,
-                  })
+                  })} ${p.vat_excluded ? t.t("Excl. VAT.") : t.t("Incl. VAT.")}`
                 : t.t("Free on this server, for up to {{n}} teams per game.", {
                     n: n * p.teams_per_block,
                   })}

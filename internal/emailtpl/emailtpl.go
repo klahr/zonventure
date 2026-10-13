@@ -45,9 +45,9 @@ type ThemeInfo struct {
 
 // Themes are the ones an organisation can pick from, the default first.
 var Themes = []ThemeInfo{
-	{Classic, "Classic", "A clean card on a soft background, the logo on top and a coloured edge."},
+	{Classic, "Classic", "A clean card on a soft background, the logo on top and a colored edge."},
 	{Adventure, "Adventure", "Parchment and a serif heading, like a page from the game's own journal."},
-	{Bold, "Bold", "A full-width band in your colour with the logo, and a large heading."},
+	{Bold, "Bold", "A full-width band in your color with the logo, and a large heading."},
 	{Minimal, "Minimal", "Plain text on white with a small logo: reads like a personal note."},
 }
 
@@ -296,7 +296,7 @@ func Text(c Content) string {
 		b.WriteString(c.Heading + "\r\n\r\n")
 	}
 	if c.Body != "" {
-		b.WriteString(strings.ReplaceAll(strings.TrimSpace(c.Body), "\n", "\r\n") + "\r\n")
+		b.WriteString(strings.ReplaceAll(mdx.Text(c.Body), "\n", "\r\n") + "\r\n")
 	}
 	if c.Quote != "" {
 		b.WriteString("\r\n")
@@ -350,7 +350,20 @@ type Look struct {
 	// Cover is the event's adventure's picture for its players' emails
 	// (coverOf); none without an event or a public URL.
 	Cover Picture
+	// Contact is the organisation's contact address (ContactSQL): its
+	// emails' Reply-To.
+	Contact string
+	// TimeZone is the organisation's, for the times its emails state.
+	TimeZone string
 }
+
+// AdminEmailSQL is an organisation's first admin's address, o its row:
+// its contact address when it set none.
+const AdminEmailSQL = `(SELECT u.email FROM org_memberships m JOIN users u ON u.id = m.user_id WHERE m.org_id = o.id AND m.role = 'org_admin' AND COALESCE(u.email, '') <> '' ORDER BY m.user_id LIMIT 1)`
+
+// ContactSQL is an organisation's contact address, o its row: the one it
+// set, else its first admin's.
+const ContactSQL = `COALESCE(NULLIF(o.contact_email, ''), ` + AdminEmailSQL + `, '')`
 
 // Lookup returns the look an organisation's emails go out in; with an
 // event, its theme wins where it has one and its adventure's language is
@@ -366,21 +379,23 @@ func Lookup(ctx context.Context, q Querier, publicURL string, orgID, eventID int
 		logoVer                   string
 		slug, theme               string
 		ownCover                  bool
+		contact, tz               string
 	)
 	var err error
 	if eventID > 0 {
 		err = q.QueryRowContext(ctx, `
 			SELECT o.id, o.name, e.email_theme, o.email_theme, o.accent_color, o.accent_secondary_color, o.background_color, o.text_color,
-			       COALESCE(left(md5(o.logo_content), 8), ''), COALESCE(a.language, o.language), `+coverColumns+`
+			       COALESCE(left(md5(o.logo_content), 8), ''), COALESCE(a.language, o.language), `+coverColumns+`,
+			       `+ContactSQL+`, o.time_zone
 			FROM events e JOIN organizations o ON o.id = e.org_id LEFT JOIN adventures a ON a.slug = e.adventure_slug
 			WHERE e.id = $1
-		`, eventID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &logoVer, &lang, &slug, &theme, &ownCover)
+		`, eventID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &logoVer, &lang, &slug, &theme, &ownCover, &contact, &tz)
 	} else if orgID > 0 {
 		err = q.QueryRowContext(ctx, `
 			SELECT o.id, o.name, NULL, o.email_theme, o.accent_color, o.accent_secondary_color, o.background_color, o.text_color,
-			       COALESCE(left(md5(o.logo_content), 8), ''), o.language
+			       COALESCE(left(md5(o.logo_content), 8), ''), o.language, `+ContactSQL+`, o.time_zone
 			FROM organizations o WHERE o.id = $1
-		`, orgID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &logoVer, &lang)
+		`, orgID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &logoVer, &lang, &contact, &tz)
 	} else {
 		return Look{Theme: Classic, Brand: Platform(), Lang: "en"}
 	}
@@ -400,7 +415,7 @@ func Lookup(ctx context.Context, q Querier, publicURL string, orgID, eventID int
 	if !Valid(t) {
 		t = Classic
 	}
-	lk := Look{Theme: t, Brand: b, Lang: Lang(lang.String)}
+	lk := Look{Theme: t, Brand: b, Lang: Lang(lang.String), Contact: contact, TimeZone: tz}
 	if eventID > 0 {
 		lk.Cover = coverOf(publicURL, lk.Lang, slug, theme, ownCover)
 	}

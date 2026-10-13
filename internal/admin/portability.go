@@ -16,8 +16,9 @@ package admin
 // naming the file each of its media ids is in. An export from the
 // classic editor — pages and no graph — is refused.
 //
-// Language, strict_assets, start_*, intro/outro and the colour palette
-// all round-trip; what stays behind: the org id,
+// Language, strict_assets, start_*, intro/outro and the look (colours,
+// fonts, backdrop, style, its media with the graph's) all round-trip;
+// what stays behind: the org id,
 // shares, assignments, events / runs (those are deployment-local), and
 // the cheat password, a secret of the instance it was set on.
 
@@ -31,11 +32,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graphstore"
@@ -82,6 +85,7 @@ type exportAdventureDTO struct {
 	Title                string          `json:"title"`
 	Description          string          `json:"description"`
 	Author               string          `json:"author,omitempty"`
+	OriginalAuthor       string          `json:"original_author,omitempty"`
 	IntroText            string          `json:"intro_text,omitempty"`
 	OutroText            string          `json:"outro_text,omitempty"`
 	BuyerNote            string          `json:"buyer_note,omitempty"`
@@ -97,7 +101,16 @@ type exportAdventureDTO struct {
 	BackgroundColor      string          `json:"background_color,omitempty"`
 	TextColor            string          `json:"text_color,omitempty"`
 	SubmitBgColor        string          `json:"submit_bg_color,omitempty"`
+	Font                 string          `json:"font,omitempty"`
+	HeadingFont          string          `json:"heading_font,omitempty"`
+	Corners              string          `json:"corners,omitempty"`
+	Cards                string          `json:"cards,omitempty"`
+	CardOutline          bool            `json:"card_outline,omitempty"`
 	Avatar               *exportAssetRef `json:"avatar,omitempty"`
+	// Backdrop and Style name media by the exporting instance's ids, in
+	// GraphMedia with the graph's.
+	Backdrop *adventure.Backdrop `json:"backdrop,omitempty"`
+	Style    *adventure.Style    `json:"style,omitempty"`
 	// Lanes and Pages are what the classic editor exported. They are
 	// read only to refuse such an export that has no graph.
 	Lanes []json.RawMessage `json:"lanes,omitempty"`
@@ -185,17 +198,20 @@ func (h *Handlers) buildExport(ctx context.Context, advID int64) (exportEnvelope
 		startLat, startLng, startRadius    sql.NullFloat64
 		avatarMime                         sql.NullString
 		avatarContent                      []byte
+		backdrop, style                    []byte
 	)
 	err := h.DB.QueryRowContext(ctx, `
-		SELECT slug, title, description, author, intro_text, outro_text, buyer_note, area,
+		SELECT slug, title, description, author, original_author, intro_text, outro_text, buyer_note, area,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
+		       font, heading_font, corners, cards, card_outline, backdrop, look_style,
 		       language, strict_assets,
 		       start_lat, start_lng, start_label, start_radius_m,
 		       avatar_mime_type, avatar_content
 		FROM adventures WHERE id = $1
-	`, advID).Scan(&adv.Slug, &adv.Title, &adv.Description, &adv.Author,
+	`, advID).Scan(&adv.Slug, &adv.Title, &adv.Description, &adv.Author, &adv.OriginalAuthor,
 		&adv.IntroText, &adv.OutroText, &adv.BuyerNote, &adv.Area,
 		&accent, &accent2, &bg, &ink, &submitBG,
+		&adv.Font, &adv.HeadingFont, &adv.Corners, &adv.Cards, &adv.CardOutline, &backdrop, &style,
 		&adv.Language, &adv.StrictAssets,
 		&startLat, &startLng, &adv.StartLabel, &startRadius,
 		&avatarMime, &avatarContent)
@@ -207,6 +223,16 @@ func (h *Handlers) buildExport(ctx context.Context, advID int64) (exportEnvelope
 	adv.BackgroundColor = bg.String
 	adv.TextColor = ink.String
 	adv.SubmitBgColor = submitBG.String
+	if backdrop != nil {
+		if err := json.Unmarshal(backdrop, &adv.Backdrop); err != nil {
+			return env, nil, fmt.Errorf("decoding backdrop: %w", err)
+		}
+	}
+	if style != nil {
+		if err := json.Unmarshal(style, &adv.Style); err != nil {
+			return env, nil, fmt.Errorf("decoding look_style: %w", err)
+		}
+	}
 	if startLat.Valid {
 		v := startLat.Float64
 		adv.StartLat = &v
@@ -234,29 +260,37 @@ func (h *Handlers) buildExport(ctx context.Context, advID int64) (exportEnvelope
 	if err != nil {
 		return env, nil, err
 	}
+	var mediaIDs []int64
 	if g != nil {
 		env.Graph = &graph.Envelope{Format: graph.FormatV2, Graph: *g}
-		for _, id := range g.MediaIDs() {
-			if id == 0 {
-				continue
-			}
-			var (
-				kind    string
-				mime    string
-				content []byte
-			)
-			if err := h.DB.QueryRowContext(ctx, `
-				SELECT kind, mime_type, content FROM adventure_media
-				WHERE id = $1 AND adventure_id = $2
-			`, id, advID).Scan(&kind, &mime, &content); err != nil {
-				return env, nil, fmt.Errorf("load graph media %d: %w", id, err)
-			}
-			name := fmt.Sprintf("g%d%s", id, extForMime(mime))
-			files = append(files, exportFile{name: name, bytes: content})
-			env.GraphMedia = append(env.GraphMedia, exportGraphMedia{
-				ID: id, Kind: graph.MediaKind(kind), File: name, MimeType: mime,
-			})
+		mediaIDs = g.MediaIDs()
+	}
+	// The look's picture, cover and sounds go with the graph's media.
+	for _, id := range (adventure.Colors{Backdrop: adv.Backdrop, Style: adv.Style}).MediaIDs() {
+		if !slices.Contains(mediaIDs, id) {
+			mediaIDs = append(mediaIDs, id)
 		}
+	}
+	for _, id := range mediaIDs {
+		if id == 0 {
+			continue
+		}
+		var (
+			kind    string
+			mime    string
+			content []byte
+		)
+		if err := h.DB.QueryRowContext(ctx, `
+			SELECT kind, mime_type, content FROM adventure_media
+			WHERE id = $1 AND adventure_id = $2
+		`, id, advID).Scan(&kind, &mime, &content); err != nil {
+			return env, nil, fmt.Errorf("load graph media %d: %w", id, err)
+		}
+		name := fmt.Sprintf("g%d%s", id, extForMime(mime))
+		files = append(files, exportFile{name: name, bytes: content})
+		env.GraphMedia = append(env.GraphMedia, exportGraphMedia{
+			ID: id, Kind: graph.MediaKind(kind), File: name, MimeType: mime,
+		})
 	}
 	return env, files, nil
 }
@@ -322,7 +356,7 @@ func (h *Handlers) ImportAdventure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
-	advID, slug, title, err := importEnvelopeJSON(r.Context(), h.DB, manifestJSON, r.URL.Query().Get("slug"), me, assets, false)
+	advID, slug, title, err := importEnvelopeJSON(r.Context(), h.DB, manifestJSON, r.URL.Query().Get("slug"), me, assets, false, false)
 	if err != nil {
 		// Validation failures and missing-asset references read as
 		// "the client sent a bad archive" — 400 carries that. Any
@@ -367,7 +401,7 @@ func (h *Handlers) ImportAdventure(w http.ResponseWriter, r *http.Request) {
 // multipart handler maps that back to a 400, callers outside HTTP
 // land can ignore the status and treat any error as fatal.
 func ImportEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, overrideSlug string, user auth.User) (advID int64, slug, title string, err error) {
-	return importEnvelopeJSON(ctx, db, manifestJSON, overrideSlug, user, nil, false)
+	return importEnvelopeJSON(ctx, db, manifestJSON, overrideSlug, user, nil, false, false)
 }
 
 // ExportAdventureEnvelopeJSON returns the manifest JSON for the
@@ -460,7 +494,11 @@ func splitImportZip(data []byte) (manifestJSON []byte, assets map[string][]byte,
 // surface validation failures (slug uniqueness, bad language tag,
 // missing lane refs) without persisting the partial work — same
 // code path, just no commit.
-func importEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, overrideSlug string, user auth.User, assets map[string][]byte, dryRun bool) (int64, string, string, error) {
+//
+// The adventure lands as a draft, its author the importing org (the
+// original author kept as credit), unless publish: moving a whole org
+// keeps its adventures as they were.
+func importEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, overrideSlug string, user auth.User, assets map[string][]byte, dryRun, publish bool) (int64, string, string, error) {
 	dec := json.NewDecoder(bytes.NewReader(manifestJSON))
 	dec.DisallowUnknownFields()
 	var env exportEnvelope
@@ -492,6 +530,14 @@ func importEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, ov
 		return 0, "", "", fmt.Errorf("tx: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck
+	if !publish && org.Valid {
+		var name string
+		if err := tx.QueryRowContext(ctx, `SELECT name FROM organizations WHERE id = $1`, org.Int64).Scan(&name); err != nil {
+			return 0, "", "", fmt.Errorf("org name: %w", err)
+		}
+		env.Adventure.OriginalAuthor = importedCredit(env.Adventure, name)
+		env.Adventure.Author = name
+	}
 	advID, err := importAdventureRow(ctx, tx, slug, env.Adventure, org, user.ID)
 	if err != nil {
 		return 0, "", "", conflictf("import: %s", err.Error())
@@ -518,10 +564,14 @@ func importEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, ov
 			}
 		}
 	}
+	var mediaIDs map[int64]int64
 	if env.Graph != nil {
-		if err := importGraph(ctx, tx, advID, user.ID, env.Graph, env.GraphMedia, assets); err != nil {
+		if mediaIDs, err = importGraph(ctx, tx, advID, user.ID, env.Graph, env.GraphMedia, assets, publish); err != nil {
 			return 0, "", "", err
 		}
+	}
+	if err := importLook(ctx, tx, advID, env.Adventure, mediaIDs); err != nil {
+		return 0, "", "", err
 	}
 	if dryRun {
 		// Deferred Rollback wipes the tx; ids/slug/title returned
@@ -561,22 +611,73 @@ func importAdventureRow(ctx context.Context, tx *sql.Tx, slug string, adv export
 	if r := adv.StartRadiusM; r != nil && *r >= MinStartRadiusM && *r <= MaxStartRadiusM {
 		startRadius = *r
 	}
+	// A font or shape this instance does not know falls back to the default.
+	known := func(v string, ok bool) string {
+		if !ok {
+			return ""
+		}
+		return v
+	}
+	_, fontOK := adventure.Fonts[adv.Font]
+	_, headingOK := adventure.Fonts[adv.HeadingFont]
 	var id int64
 	err := tx.QueryRowContext(ctx, `
-		INSERT INTO adventures(slug, title, description, author, intro_text, outro_text,
+		INSERT INTO adventures(slug, title, description, author, original_author, intro_text, outro_text,
 		                       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		                       language, strict_assets,
 		                       start_lat, start_lng, start_label, start_radius_m,
-		                       org_id, created_by_user_id, buyer_note, area)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+		                       org_id, created_by_user_id, buyer_note, area,
+		                       font, heading_font, corners, cards, card_outline)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
+		        $22, $23, $24, $25, $26, $27)
 		RETURNING id
-	`, slug, adv.Title, adv.Description, adv.Author, adv.IntroText, adv.OutroText,
+	`, slug, adv.Title, adv.Description, adv.Author, adv.OriginalAuthor, adv.IntroText, adv.OutroText,
 		nullIfEmpty(adv.AccentColor), nullIfEmpty(adv.AccentSecondaryColor),
 		nullIfEmpty(adv.BackgroundColor), nullIfEmpty(adv.TextColor), nullIfEmpty(adv.SubmitBgColor),
 		lang, adv.StrictAssets,
 		startLat, startLng, adv.StartLabel, startRadius,
-		orgArg, userID, adv.BuyerNote, adv.Area).Scan(&id)
+		orgArg, userID, adv.BuyerNote, adv.Area,
+		known(adv.Font, fontOK), known(adv.HeadingFont, headingOK),
+		known(adv.Corners, adventure.Corners[adv.Corners]), known(adv.Cards, adventure.Cards[adv.Cards]), adv.CardOutline).Scan(&id)
 	return id, err
+}
+
+// importLook writes the adventure's backdrop and style, their media ids
+// mapped to the files just imported; one the archive did not carry is
+// dropped.
+func importLook(ctx context.Context, tx *sql.Tx, advID int64, adv exportAdventureDTO, ids map[int64]int64) error {
+	b, s := adv.Backdrop, adv.Style
+	if b != nil && b.Kind == "picture" {
+		if b.Media = ids[b.Media]; b.Media == 0 {
+			b = nil
+		}
+	}
+	if s != nil {
+		s.SoundRight, s.SoundWrong, s.Cover = ids[s.SoundRight], ids[s.SoundWrong], ids[s.Cover]
+	}
+	var backdrop, style any
+	if b != nil && b.Kind != "" {
+		if err := b.Validate(); err != nil {
+			return badRequestf("backdrop %s", err.Error())
+		}
+		j, _ := json.Marshal(b)
+		backdrop = string(j)
+	}
+	if s != nil {
+		if err := s.Validate(); err != nil {
+			return badRequestf("style %s", err.Error())
+		}
+		if j, _ := json.Marshal(s); string(j) != "{}" {
+			style = string(j)
+		}
+	}
+	if backdrop == nil && style == nil {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE adventures SET backdrop = $1, look_style = $2 WHERE id = $3`, backdrop, style, advID); err != nil {
+		return fmt.Errorf("write look: %w", err)
+	}
+	return nil
 }
 
 // safeRasterMIME reports whether a MIME is a raster image type that is
@@ -597,9 +698,10 @@ func safeRasterMIME(m string) bool {
 // importGraph stores the envelope's media as the new adventure's, points
 // the graph at them, and saves it as the draft and publishes it. A graph
 // that does not validate — an exported draft may not — stays a draft.
-func importGraph(ctx context.Context, tx *sql.Tx, advID, userID int64, env *graph.Envelope, media []exportGraphMedia, assets map[string][]byte) error {
+// It returns the archive's media ids mapped to the new ones.
+func importGraph(ctx context.Context, tx *sql.Tx, advID, userID int64, env *graph.Envelope, media []exportGraphMedia, assets map[string][]byte, publish bool) (map[int64]int64, error) {
 	if env.Format != graph.FormatV2 {
-		return badRequestf("unknown graph format: %s", env.Format)
+		return nil, badRequestf("unknown graph format: %s", env.Format)
 	}
 	g := &env.Graph
 	g.Normalize()
@@ -608,21 +710,21 @@ func importGraph(ctx context.Context, tx *sql.Tx, advID, userID int64, env *grap
 		switch m.Kind {
 		case graph.MediaImage, graph.MediaAudio, graph.MediaVideo:
 			if !strings.HasPrefix(m.MimeType, string(m.Kind)+"/") {
-				return badRequestf("graph media %q: mime type %q is not %s", m.File, m.MimeType, m.Kind)
+				return nil, badRequestf("graph media %q: mime type %q is not %s", m.File, m.MimeType, m.Kind)
 			}
 		case graph.MediaPDF:
 			if m.MimeType != "application/pdf" {
-				return badRequestf("graph media %q: mime type %q is not a PDF", m.File, m.MimeType)
+				return nil, badRequestf("graph media %q: mime type %q is not a PDF", m.File, m.MimeType)
 			}
 		default:
-			return badRequestf("graph media %q has unknown kind %q", m.File, m.Kind)
+			return nil, badRequestf("graph media %q has unknown kind %q", m.File, m.Kind)
 		}
 		b, ok := assets[m.File]
 		if !ok {
-			return badRequestf("graph media %q missing from archive", m.File)
+			return nil, badRequestf("graph media %q missing from archive", m.File)
 		}
 		if m.Kind == graph.MediaPDF && http.DetectContentType(b) != "application/pdf" {
-			return badRequestf("graph media %q is not a PDF", m.File)
+			return nil, badRequestf("graph media %q is not a PDF", m.File)
 		}
 		mime := m.MimeType
 		if m.Kind == graph.MediaImage {
@@ -635,12 +737,12 @@ func importGraph(ctx context.Context, tx *sql.Tx, advID, userID int64, env *grap
 			if shrunk, newMIME, serr := imageutil.ShrinkKeepAlpha(b, imageutil.DefaultMaxDim); serr == nil {
 				b, mime = shrunk, newMIME
 			} else if !safeRasterMIME(m.MimeType) {
-				return badRequestf("graph media %q: %s", m.File, serr.Error())
+				return nil, badRequestf("graph media %q: %s", m.File, serr.Error())
 			}
 		}
 		id, err := insertGraphMedia(ctx, tx, advID, userID, m.Kind, mime, b)
 		if err != nil {
-			return fmt.Errorf("insert graph media %q: %w", m.File, err)
+			return nil, fmt.Errorf("insert graph media %q: %w", m.File, err)
 		}
 		ids[m.ID] = id
 	}
@@ -648,18 +750,34 @@ func importGraph(ctx context.Context, tx *sql.Tx, advID, userID int64, env *grap
 	// happen to name a row just inserted, and show the wrong file.
 	for _, id := range g.MediaIDs() {
 		if _, ok := ids[id]; !ok && id != 0 {
-			return badRequestf("graph refers to media %d not in graph_media", id)
+			return nil, badRequestf("graph refers to media %d not in graph_media", id)
 		}
 	}
 	remapGraphMedia(g, ids)
 	if _, _, err := graphstore.SaveDraft(ctx, tx, advID, userID, g); err != nil {
-		return fmt.Errorf("save graph draft: %w", err)
+		return nil, fmt.Errorf("save graph draft: %w", err)
+	}
+	if !publish {
+		return ids, nil
 	}
 	var invalid *graphstore.InvalidError
 	if _, _, err := graphstore.Publish(ctx, tx, advID, userID, g, ""); err != nil && !errors.As(err, &invalid) {
-		return fmt.Errorf("publish graph: %w", err)
+		return nil, fmt.Errorf("publish graph: %w", err)
 	}
-	return nil
+	return ids, nil
+}
+
+// importedCredit is who to credit as an import's original author: the
+// first one an earlier import kept, else the manifest's author, unless
+// that is the importing org itself.
+func importedCredit(adv exportAdventureDTO, org string) string {
+	if adv.OriginalAuthor != "" {
+		return adv.OriginalAuthor
+	}
+	if strings.TrimSpace(adv.Author) == strings.TrimSpace(org) {
+		return ""
+	}
+	return adv.Author
 }
 
 /* ---------------- Helpers ---------------- */

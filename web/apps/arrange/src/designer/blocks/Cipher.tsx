@@ -53,6 +53,9 @@ export const CipherEditor: Editor<"cipher"> = ({ block, set, t }) => (
         <span>{t.t("Show as a wheel the team turns")}</span>
       </label>
     )}
+    {block.cipher === "caesar" && block.wheel && (
+      <p className="field__hint">{t.t("The wheel starts at shift 0: turning it to shift {{n}} is the team's to find.", { n: block.shift ?? 3 })}</p>
+    )}
     {block.cipher === "custom" && (
       <textarea
         className="field__input blk-cipher__key"

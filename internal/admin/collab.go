@@ -323,12 +323,12 @@ func (h *Handlers) loadCollab(ctx context.Context, advID int64) (collabDTO, erro
 }
 
 // adventurePeople are who may author the adventure: its organisation's
-// admins. They are who can be mentioned and given a step.
+// admins and writers. They are who can be mentioned and given a step.
 func (h *Handlers) adventurePeople(ctx context.Context, advID int64) ([]userRef, error) {
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT u.id, u.username
 		FROM adventures a
-		JOIN org_memberships m ON m.org_id = a.org_id AND m.role = 'org_admin'
+		JOIN org_memberships m ON m.org_id = a.org_id AND m.role IN ('org_admin', 'org_writer')
 		JOIN users u ON u.id = m.user_id
 		WHERE a.id = $1
 		ORDER BY LOWER(u.username)

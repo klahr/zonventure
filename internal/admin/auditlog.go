@@ -38,7 +38,7 @@ type auditEventDTO struct {
 // pass ?before_id=<last_seen_id> to fetch the next page.
 func (h *Handlers) ListAuthEvents(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
-	if me.Role != auth.RoleAdmin && me.Role != auth.RoleOrgAdmin {
+	if !readsAsAdmin(me) && me.Role != auth.RoleOrgAdmin {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -76,8 +76,10 @@ func (h *Handlers) ListAuthEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	if me.Role == auth.RoleOrgAdmin && me.OrgID != nil {
 		// Org-scoped view: caller sees only events for users who
-		// have a membership in the caller's currently-active org.
-		add("e.user_id IS NOT NULL AND EXISTS (SELECT 1 FROM org_memberships m WHERE m.user_id = e.user_id AND m.org_id = $"+strconv.Itoa(idx)+")", *me.OrgID)
+		// have a membership in the caller's currently-active org, and
+		// events about the org itself (org_id).
+		n := strconv.Itoa(idx)
+		add("(e.org_id = $"+n+" OR (e.user_id IS NOT NULL AND EXISTS (SELECT 1 FROM org_memberships m WHERE m.user_id = e.user_id AND m.org_id = $"+n+")))", *me.OrgID)
 		idx++
 	}
 	if beforeID > 0 {

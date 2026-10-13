@@ -54,7 +54,7 @@ export function KeepPage({ token }: { token: string }) {
       <PageHeader title={t.t("Keep {{title}}", { title: load.data.title })} />
       <Card>
         <p>{t.t("The party adventure and its {{n}} cards become an adventure of your organisation, to edit, print and host whenever you like.", { n: load.data.cards })}</p>
-        <p>{t.t("Its admin page and the games played so far end now. Their summaries were mailed to {{email}}.", { email: load.data.email })}</p>
+        <p>{t.t("Its host page and the games played so far end now. Their summaries were mailed to {{email}}.", { email: load.data.email })}</p>
         {error && <ErrorBox message={error} />}
         <Row>
           <Button variant="primary" filled loading={busy} onClick={() => void keep()}>

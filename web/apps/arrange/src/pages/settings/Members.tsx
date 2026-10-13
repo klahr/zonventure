@@ -1,10 +1,13 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ArrowRightLeft, Plus, Trash2 } from "lucide-react";
+import { ApiError } from "@zonventure/api";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
-import { Button, Card, Dialog, Empty, ErrorBox, Field, HelpPopover, ICON, Loading, Pill, Table, errorText, useDialogs, useLoad, useToast } from "../../ui/index.ts";
+import { navigate } from "../../router.ts";
+import { Button, Card, Dialog, Empty, ErrorBox, Field, HelpPopover, ICON, Loading, Pill, Table, errorText, fmtDate, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 import { MoreMenu } from "../event/Menu.tsx";
-import { addMember, getOrg, removeMember, searchUsers, transferOwnership, type OrgDetail, type OrgMember, type UserMatch } from "./members-api.ts";
+import { addMember, getOrg, removeMember, setMemberRole, setRequireTotp, transferOwnership, withdrawInvitation, type OrgDetail, type OrgInvitation, type OrgMember } from "./members-api.ts";
+import { account } from "./account-api.ts";
 import "./members-add.css";
 
 /** The org's users: add or invite, remove, and hand the org over. */
@@ -25,7 +28,7 @@ export function MembersTab() {
   const org = load.data;
   const members = org.members ?? [];
   const others = members.filter((m) => m.id !== me.id);
-  const roleLabel = (r: string) => (r === "org_admin" ? t.t("admin") : t.t("event host"));
+  const roleLabel = (r: string) => (r === "org_admin" ? t.t("admin") : r === "org_writer" ? t.t("writer") : t.t("event host"));
 
   const remove = async (m: OrgMember) => {
     if (m.active_events_owned > 0) {
@@ -44,19 +47,58 @@ export function MembersTab() {
       });
       if (!go) return;
     }
-    const pw = await dialogs.password({
-      title: t.t("Remove {{username}}?", { username: m.username }),
-      message: t.t("Removes {{username}} from {{org}}. Enter your password to confirm.", { username: m.username, org: org.name }),
-      confirmLabel: t.t("Remove"),
-      danger: true,
-    });
-    if (!pw) return;
-    try {
-      await removeMember(org.id, m.id, pw);
-      toast.ok(t.t("Removed"));
-      load.reload();
-    } catch (e) {
-      toast.err(e);
+    // A wrong password asks again rather than dropping the removal.
+    let error: string | undefined;
+    for (;;) {
+      const pw = await dialogs.password({
+        title: t.t("Remove {{username}}?", { username: m.username }),
+        message: t.t("Removes {{username}} from {{org}}. Enter your password to confirm.", { username: m.username, org: org.name }),
+        confirmLabel: t.t("Remove"),
+        danger: true,
+        ...(error ? { error } : {}),
+      });
+      if (!pw) return;
+      try {
+        await removeMember(org.id, m.id, pw);
+        toast.ok(t.t("Removed"));
+        load.reload();
+        return;
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) {
+          error = t.t("Wrong password. Try again.");
+          continue;
+        }
+        toast.err(e);
+        return;
+      }
+    }
+  };
+
+  const changeRole = async (m: OrgMember, role: string) => {
+    if (role === m.role) return;
+    // A wrong password asks again rather than dropping the change.
+    let error: string | undefined;
+    for (;;) {
+      const pw = await dialogs.password({
+        title: t.t("Make {{username}} {{role}}?", { username: m.username, role: roleLabel(role) }),
+        message: t.t("Changes what {{username}} can do in {{org}} at once. Enter your password to confirm.", { username: m.username, org: org.name }),
+        confirmLabel: t.t("Change role"),
+        ...(error ? { error } : {}),
+      });
+      if (!pw) return;
+      try {
+        await setMemberRole(org.id, m.id, role, pw);
+        toast.ok(t.t("Role changed"));
+        load.reload();
+        return;
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) {
+          error = t.t("Wrong password. Try again.");
+          continue;
+        }
+        toast.err(e);
+        return;
+      }
     }
   };
 
@@ -69,7 +111,7 @@ export function MembersTab() {
           <>
             <HelpPopover
               label={t.t("About roles")}
-              body={`${t.t("Admin")}: ${t.t("Run events, manage teams, plus invite/remove users and change billing.")} ${t.t("Event host")}: ${t.t("Run events and manage teams. Cannot invite users or touch billing.")}`}
+              body={`${t.t("Admin")}: ${t.t("Run events, manage teams, plus invite/remove users and change billing.")} ${t.t("Event host")}: ${t.t("Run events and manage teams. Cannot invite users or touch billing.")} ${t.t("Writer")}: ${t.t("Create, edit and publish adventures. Cannot run events, invite users or touch billing.")}`}
             />
             {me.role === "org_admin" && others.length > 0 && (
               <MoreMenu label={t.t("More")} items={[{ label: t.t("Transfer ownership…"), icon: <ArrowRightLeft size={ICON.sm} aria-hidden />, onClick: () => setTransferring(true) }]} />
@@ -89,20 +131,38 @@ export function MembersTab() {
               key: "user",
               header: t.t("Username"),
               cell: (m) => (
-                <>
+                <span className="mb-user">
                   <strong>{m.username}</strong>
                   {m.id === me.id && <span className="mb-muted"> {t.t("(you)")}</span>}
-                </>
+                </span>
               ),
             },
-            { key: "role", header: t.t("Role"), cell: (m) => <Pill tone={m.role === "org_admin" ? "accent" : "neutral"}>{roleLabel(m.role)}</Pill> },
+            {
+              key: "role",
+              header: t.t("Role"),
+              cell: (m) =>
+                m.id === me.id ? (
+                  <Pill tone={m.role === "org_admin" ? "accent" : "neutral"}>{roleLabel(m.role)}</Pill>
+                ) : (
+                  <select value={m.role} aria-label={t.t("Role of {{username}}", { username: m.username })} onChange={(e) => void changeRole(m, e.target.value)}>
+                    <option value="org_admin">{t.t("Admin")}</option>
+                    <option value="org_member">{t.t("Event host")}</option>
+                    <option value="org_writer">{t.t("Writer")}</option>
+                  </select>
+                ),
+            },
+            {
+              key: "totp",
+              header: t.t("2FA"),
+              cell: (m) => (m.totp_enabled ? <Pill tone="good">{t.t("on")}</Pill> : <Pill tone={org.require_totp ? "warn" : "neutral"}>{t.t("off")}</Pill>),
+            },
             {
               key: "actions",
               header: <span className="cs-sr">{t.t("Actions")}</span>,
               align: "end",
               cell: (m) =>
                 m.id === me.id ? null : (
-                  <Button size="sm" variant="ghost" icon={<Trash2 size={ICON.sm} aria-hidden />} aria-label={t.t("Remove {{username}}?", { username: m.username })} title={t.t("Remove")} onClick={() => void remove(m)}>
+                  <Button size="sm" variant="ghost" className="mb-remove" icon={<Trash2 size={ICON.sm} aria-hidden />} aria-label={t.t("Remove {{username}}?", { username: m.username })} title={t.t("Remove")} onClick={() => void remove(m)}>
                     <span className="mb-btn-text">{t.t("Remove")}</span>
                   </Button>
                 ),
@@ -110,6 +170,15 @@ export function MembersTab() {
           ]}
         />
       </Card>
+      <InvitationsCard org={org} onChange={load.reload} />
+      <RequireTotpCard
+        org={org}
+        onChange={async (on) => {
+          load.set({ ...org, require_totp: on });
+          // Turning it on may now require it of this admin too.
+          await refresh();
+        }}
+      />
       {adding && <AddMemberDialog org={org} onClose={() => setAdding(false)} onAdded={() => { setAdding(false); load.reload(); }} />}
       {transferring && (
         <TransferDialog
@@ -118,6 +187,8 @@ export function MembersTab() {
           onClose={() => setTransferring(false)}
           onDone={async () => {
             setTransferring(false);
+            // Members is an admin's tab: land where the new event host can stay.
+            navigate({ name: "settings", tab: "account" });
             await refresh();
             load.reload();
           }}
@@ -128,98 +199,158 @@ export function MembersTab() {
 }
 
 /**
- * Add a user. Typing an existing username (picked from the suggestions,
- * or typed exactly) adds that account as is; anything else creates a
- * new account, which needs an initial password.
+ * Whether every member must use two-factor authentication. Greyed out
+ * when the server has no ZV_TOTP_KEY, since then nobody could set it up.
+ */
+function RequireTotpCard({ org, onChange }: { org: OrgDetail; onChange: (on: boolean) => Promise<void> }) {
+  const t = useT();
+  const toast = useToast();
+  const dialogs = useDialogs();
+  const status = useLoad((s) => account.totp(s), []);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const available = !!status.data?.server_ready;
+  const label = t.t("Require two-factor authentication");
+  const flip = async (on: boolean) => {
+    let pw: string | undefined;
+    if (on) {
+      const go = await dialogs.confirm({
+        title: t.t("Require two-factor authentication?"),
+        message: t.t("Every member must then set up two-factor authentication: until they do, the console shows them only the setup and their API tokens are refused."),
+        confirmLabel: t.t("Require it"),
+        danger: true,
+      });
+      if (!go) return;
+    }
+    // A wrong password asks again rather than dropping the change.
+    let error: string | undefined;
+    for (;;) {
+      if (!on) {
+        const p = await dialogs.password({
+          title: t.t("Stop requiring two-factor authentication?"),
+          message: t.t("Members may then sign in with a password alone. Enter your password to confirm."),
+          confirmLabel: t.t("Stop requiring"),
+          danger: true,
+          ...(error ? { error } : {}),
+        });
+        if (!p) return;
+        pw = p;
+      }
+      setBusy(true);
+      setErr("");
+      try {
+        const r = await setRequireTotp(org.id, on, pw);
+        await onChange(!!r?.require_totp);
+        toast.ok(r?.require_totp ? t.t("Two-factor authentication is now required.") : t.t("Two-factor authentication is no longer required."));
+        return;
+      } catch (e) {
+        if (!on && e instanceof ApiError && e.status === 401) {
+          error = t.t("Wrong password. Try again.");
+          continue;
+        }
+        setErr(errorText(e));
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
+  };
+  return (
+    <Card title={t.t("Two-factor authentication")}>
+      <div className="cs-row cs-row--sm">
+        <label className="mb-check">
+          <input type="checkbox" checked={org.require_totp} disabled={busy || !available} onChange={(e) => void flip(e.target.checked)} />
+          <span>{label}</span>
+        </label>
+        <HelpPopover label={t.t("About “{{name}}”", { name: label })} body={t.t("Every member must set up two-factor authentication: until they do, the console shows them only the setup and their API tokens are refused. SSO sign-in counts as meeting it. The 2FA column shows who has it on.")} />
+      </div>
+      {status.data && !available && <p className="mb-mode">{t.t("Two-factor authentication is not available on this server: set ZV_TOTP_KEY first.")}</p>}
+      {err && <p className="mb-err" role="status">{err}</p>}
+    </Card>
+  );
+}
+
+/** Invitations no one has answered yet; withdrawing one makes it stop working. */
+function InvitationsCard({ org, onChange }: { org: OrgDetail; onChange: () => void }) {
+  const t = useT();
+  const toast = useToast();
+  const dialogs = useDialogs();
+  const invitations = org.invitations ?? [];
+  if (invitations.length === 0) return null;
+  const roleLabel = (r: string) => (r === "org_admin" ? t.t("admin") : r === "org_writer" ? t.t("writer") : t.t("event host"));
+  const withdraw = async (inv: OrgInvitation) => {
+    const go = await dialogs.confirm({
+      title: t.t("Withdraw the invitation to {{email}}?", { email: inv.email }),
+      message: t.t("The invitation stops working. You can invite them again later."),
+      confirmLabel: t.t("Withdraw"),
+      danger: true,
+    });
+    if (!go) return;
+    try {
+      await withdrawInvitation(org.id, inv.user_id);
+      toast.ok(t.t("Invitation withdrawn"));
+      onChange();
+    } catch (e) {
+      toast.err(e);
+    }
+  };
+  return (
+    <Card title={t.t("Pending invitations")} subtitle={t.t("They join once they accept.")} flush>
+      <Table
+        caption={t.t("Pending invitations")}
+        rows={invitations}
+        rowKey={(i) => i.user_id}
+        columns={[
+          { key: "email", header: t.t("Email"), cell: (i) => <span className="mb-user">{i.email}{i.declined && <> <Pill tone="warn">{t.t("Declined")}</Pill></>}</span> },
+          { key: "role", header: t.t("Role"), cell: (i) => <Pill tone={i.role === "org_admin" ? "accent" : "neutral"}>{roleLabel(i.role)}</Pill> },
+          { key: "sent", header: t.t("Sent"), cell: (i) => fmtDate(i.created_at, t.current()) },
+          {
+            key: "actions",
+            header: <span className="cs-sr">{t.t("Actions")}</span>,
+            align: "end",
+            cell: (i) => (
+              <Button size="sm" variant="ghost" className="mb-remove" icon={<Trash2 size={ICON.sm} aria-hidden />} aria-label={t.t("Withdraw the invitation to {{email}}?", { email: i.email })} title={t.t("Withdraw")} onClick={() => void withdraw(i)}>
+                <span className="mb-btn-text">{t.t("Withdraw")}</span>
+              </Button>
+            ),
+          },
+        ]}
+      />
+    </Card>
+  );
+}
+
+/**
+ * Add a user. An email address that has an account invites that account
+ * (it joins once its owner accepts, and keeps its password); otherwise a
+ * new account is created with the username, invited the same way, and
+ * its owner chooses the password from the invitation email. The
+ * dialog never says which, and nor does the server: that would tell an
+ * org admin which addresses on the instance have accounts.
  */
 function AddMemberDialog({ org, onClose, onAdded }: { org: OrgDetail; onClose: () => void; onAdded: () => void }) {
   const t = useT();
   const toast = useToast();
-  const listID = useId();
+  const emailHint = useId();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState("org_member");
-  const [picked, setPicked] = useState<UserMatch | null>(null);
-  const [matches, setMatches] = useState<UserMatch[]>([]);
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(-1);
+  // The first admin is the likely first user; after that, least privilege.
+  const [role, setRole] = useState((org.members ?? []).some((m) => m.role === "org_admin") ? "org_member" : "org_admin");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const input = useRef<HTMLInputElement>(null);
-  // The query the current `matches` answer, so blur/submit can tell a
-  // stale list from a fresh one.
-  const answered = useRef("");
-  const pending = useRef<Promise<UserMatch[]> | null>(null);
 
   useEffect(() => input.current?.focus(), []);
 
-  const lookup = (q: string): Promise<UserMatch[]> => {
-    if (q.length < 2) {
-      answered.current = q;
-      setMatches([]);
-      return Promise.resolve([]);
-    }
-    if (q === answered.current) return Promise.resolve(matches);
-    const p = searchUsers(q, org.id)
-      .then((r) => r.users ?? [])
-      .catch(() => [] as UserMatch[])
-      .then((users) => {
-        if (input.current && input.current.value.trim() === q) {
-          answered.current = q;
-          setMatches(users);
-        }
-        return users;
-      });
-    pending.current = p;
-    return p;
-  };
-
-  useEffect(() => {
-    const q = username.trim();
-    if (picked) return;
-    const timer = setTimeout(() => void lookup(q), 200);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [username, picked]);
-
-  // An exact (case-insensitive) match counts as picked, snapped to the
-  // account's own spelling.
-  const autoPick = async (): Promise<UserMatch | null> => {
-    if (picked) return picked;
-    const q = username.trim();
-    if (!q) return null;
-    const list = await lookup(q);
-    const hit = list.find((u) => u.username.toLowerCase() === q.toLowerCase()) ?? null;
-    if (hit) choose(hit);
-    return hit;
-  };
-
-  const choose = (u: UserMatch) => {
-    setPicked(u);
-    setUsername(u.username);
-    setOpen(false);
-    setActive(-1);
-  };
-
   const submit = async () => {
     const name = username.trim();
-    if (!name || busy) return;
-    const existing = await autoPick();
-    const body: { username: string; role: string; password?: string; email?: string } = { username: existing?.username ?? name, role };
-    if (!existing) {
-      if (!password) {
-        setErr(t.t("Set a password for the new account, or pick an existing user from the suggestions."));
-        return;
-      }
-      body.password = password;
-      if (email.trim()) body.email = email.trim();
-    }
+    const to = email.trim();
+    if (!name || !to || busy) return;
     setBusy(true);
     setErr("");
     try {
-      await addMember(org.id, body);
-      toast.ok(t.t("User added"));
+      await addMember(org.id, { username: name, role, email: to });
+      toast.ok(t.t("Invitation sent to {{email}}.", { email: to }));
       onAdded();
     } catch (e) {
       setErr(errorText(e));
@@ -227,13 +358,6 @@ function AddMemberDialog({ org, onClose, onAdded }: { org: OrgDetail; onClose: (
       setBusy(false);
     }
   };
-
-  const showList = open && !picked && matches.length > 0 && username.trim().length >= 2;
-  const mode = picked
-    ? { tone: "ok", text: t.t("Adding existing user — they keep their current password.") }
-    : username.trim()
-      ? { tone: "muted", text: t.t("Will create a new account — set an initial password below.") }
-      : null;
 
   return (
     <Dialog
@@ -243,87 +367,20 @@ function AddMemberDialog({ org, onClose, onAdded }: { org: OrgDetail; onClose: (
       footer={
         <>
           <Button onClick={onClose}>{t.t("Cancel")}</Button>
-          <Button type="submit" variant="primary" loading={busy} disabled={!username.trim()}>{t.t("Add")}</Button>
+          <Button type="submit" variant="primary" loading={busy} disabled={!username.trim() || !email.trim()}>{t.t("Send invitation")}</Button>
         </>
       }
     >
-      <div className="mb-combo">
-        <Field label={t.t("Username")}>
-          <input
-            ref={input}
-            value={username}
-            required
-            autoComplete="off"
-            spellCheck={false}
-            role="combobox"
-            aria-autocomplete="list"
-            aria-expanded={showList}
-            aria-controls={listID}
-            aria-activedescendant={showList && active >= 0 ? `${listID}-${active}` : undefined}
-            onChange={(e) => {
-              setUsername(e.target.value);
-              setPicked(null);
-              setOpen(true);
-              setActive(-1);
-            }}
-            onFocus={() => setOpen(true)}
-            onBlur={() => {
-              setTimeout(() => setOpen(false), 100);
-              void autoPick();
-            }}
-            onKeyDown={(e) => {
-              if (!showList) return;
-              if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setActive((i) => Math.min(matches.length - 1, i + 1));
-              } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setActive((i) => Math.max(0, i - 1));
-              } else if (e.key === "Enter" && active >= 0) {
-                e.preventDefault();
-                choose(matches[active]!);
-              } else if (e.key === "Escape") {
-                e.stopPropagation();
-                setOpen(false);
-              }
-            }}
-          />
-        </Field>
-        {showList && (
-          <ul id={listID} className="mb-suggest" role="listbox" aria-label={t.t("Username")}>
-            {matches.map((u, i) => (
-              <li
-                key={u.id}
-                id={`${listID}-${i}`}
-                role="option"
-                aria-selected={i === active}
-                className={i === active ? "is-active" : undefined}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  choose(u);
-                }}
-                onMouseEnter={() => setActive(i)}
-              >
-                {u.username}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      {mode && <p className={"mb-mode" + (mode.tone === "ok" ? " is-ok" : "")} aria-live="polite">{mode.text}</p>}
-      {!picked && (
-        <>
-          <Field label={t.t("Email (optional)")} hint={t.t("Lets the user log in with either their username or email, and gives them a contact address for password reset.")}>
-            <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </Field>
-          <Field label={t.t("Password")} hint={t.t("Minimum 8 characters.")}>
-            <input type="password" autoComplete="new-password" minLength={8} required={!!username.trim()} value={password} onChange={(e) => setPassword(e.target.value)} />
-          </Field>
-        </>
-      )}
+      <Field label={t.t("Email")} hint={<span id={emailHint}>{t.t("They get an invitation by email. Someone new chooses their own password from it; an existing account accepts when they next sign in.")}</span>}>
+        <input ref={input} type="email" required autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} aria-label={t.t("Email")} aria-describedby={emailHint} />
+      </Field>
+      <Field label={t.t("Username")} hint={t.t("For someone new: the name they sign in with.")}>
+        <input value={username} required autoComplete="off" spellCheck={false} onChange={(e) => setUsername(e.target.value)} />
+      </Field>
       <Field label={t.t("Role")}>
         <select value={role} onChange={(e) => setRole(e.target.value)}>
           <option value="org_member">{t.t("Event host")}</option>
+          <option value="org_writer">{t.t("Writer")}</option>
           <option value="org_admin">{t.t("Admin")}</option>
         </select>
       </Field>
@@ -352,7 +409,7 @@ function TransferDialog({ org, others, onClose, onDone }: { org: OrgDetail; othe
     setBusy(true);
     try {
       await transferOwnership(org.id, id, pw);
-      toast.ok(t.t("Ownership transferred."));
+      toast.ok(t.t("Ownership transferred. You are now an event host in {{name}}.", { name: org.name }));
       onDone();
     } catch (e) {
       toast.err(e);
@@ -372,7 +429,7 @@ function TransferDialog({ org, others, onClose, onDone }: { org: OrgDetail; othe
         </>
       }
     >
-      <p className="confirm-message">{t.t("The chosen user becomes an admin and you become a regular member. Both changes happen in one step.")}</p>
+      <p className="confirm-message">{t.t("The chosen user becomes an admin and you become an event host. Both changes happen in one step.")}</p>
       <Field label={t.t("Promote to admin")}>
         <select value={to} required onChange={(e) => setTo(e.target.value)}>
           {others.map((m) => (

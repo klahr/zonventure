@@ -224,13 +224,24 @@ describe("persistence", () => {
       host_values: [{ slug: "name", label: "Name" }],
       journal_by_unlock: true,
       hide_score: true,
+      quiz_puzzles: true,
       time_limit: { seconds: 60, to: "end" },
       frames: [{ id: "f", x: 0, y: 0, width: 10, height: 10 }],
       language: "sv",
       translations: { en: { "meta:title": "T" } },
+      translation_sources: { en: { "meta:title": "0badf00d" } },
       print_materials: [{ id: "letter", name: "Letter", delivery: "posted", files: { sv: 1 } }],
     };
     assert.deepEqual(Object.keys(cleanGraph(full)).sort(), Object.keys(full).sort());
+  });
+
+  // A quiz walk opened in the designer: new puzzles just move on, as its
+  // cards do; any other adventure's still say right or wrong.
+  test("newNode makes a quiz walk's puzzles just move on", () => {
+    const quiz = { ...linear3(), quiz_puzzles: true };
+    assert.equal(newNode(quiz, "puzzle", { x: 0, y: 0 }).puzzle?.quiet, true);
+    assert.equal(newNode(linear3(), "puzzle", { x: 0, y: 0 }).puzzle?.quiet, undefined);
+    assert.equal(newNode(quiz, "story", { x: 0, y: 0 }).puzzle, undefined);
   });
 
   test("differs notices content and layout changes, not identity", () => {
@@ -447,5 +458,11 @@ describe("withAnswerKind", () => {
     assert.deepEqual(scan.outputs, typed.outputs);
     assert.deepEqual(scan.bar, withBar.bar);
     assert.equal(withAnswerKind(withBar, "lock").bar, undefined);
+  });
+
+  test("just moving on stays with a kind that can be wrong, and goes with one that can't", () => {
+    const quiet: PuzzleConfig = { ...typed, quiet: true };
+    assert.equal(withAnswerKind(quiet, "choice").quiet, true);
+    assert.equal(withAnswerKind(quiet, "search").quiet, undefined);
   });
 });

@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { ApiError } from "@zonventure/api";
-import { useT } from "../../i18n.tsx";
-import { Button, Dialog, errorText, Field, useDialogs, useToast } from "../../ui/index.ts";
+import { ApiError, type Whoami } from "@zonventure/api";
+import { contentT, useT } from "../../i18n.tsx";
+import { Button, Callout, Dialog, errorText, Field, useDialogs, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
-import type { BulkResult, RosterTeam, Team } from "./api.ts";
+import type { Adventure, BulkResult, EventInfo, ImportColumn, RosterTeam, Team } from "./api.ts";
+import { TopUpDialog } from "./Lifecycle.tsx";
 
 type Mode = "single" | "bulk" | "roster" | "import";
 
@@ -25,18 +26,37 @@ export function parseRoster(text: string): RosterTeam[] {
   return out;
 }
 
+/** Teams that didn't fit the event pass while its seats are bought on the payment provider's page. */
+const retryKey = (eventId: number) => `zv-seat-retry-${eventId}`;
+
+function takeRetry(eventId: number): RosterTeam[] | null {
+  try {
+    const raw = sessionStorage.getItem(retryKey(eventId));
+    sessionStorage.removeItem(retryKey(eventId));
+    const list = raw ? (JSON.parse(raw) as RosterTeam[]) : null;
+    return Array.isArray(list) && list.length ? list : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Add teams four ways: one team with its players, many placeholder
  * teams at once, a pasted roster, or an uploaded file (CSV, Excel,
- * OpenDocument, IOF XML) the server reads and previews. Rosters and
- * files land through the same /teams/bulk writer.
+ * OpenDocument, IOF XML) the server reads and previews column by column
+ * before anything is created. Rosters and files land through the same
+ * /teams/bulk writer; teams the event pass had no seats for can be
+ * retried once seats are added (topUp, when the pass has a cap).
  */
-export function NewTeamsDialog({ eventId, teams, onClose, onDone }: { eventId: number; teams: Team[]; onClose: () => void; onDone: () => void }) {
+export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, topUp, onClose, onDone }: { eventId: number; teams: Team[]; seatsLeft: number | null; lang?: string | undefined; topUp: { event: EventInfo; adventure: Adventure | null; user: Whoami } | null; onClose: () => void; onDone: () => void }) {
   const t = useT();
+  const ct = contentT(lang);
   const toast = useToast();
   const dialogs = useDialogs();
   const existing = new Set(teams.map((tm) => tm.name));
-  const [mode, setMode] = useState<Mode>("single");
+  // Teams left over from before the payment page come back ready to create.
+  const [restored] = useState(() => takeRetry(eventId));
+  const [mode, setMode] = useState<Mode>(restored ? "import" : "single");
   const [busy, setBusy] = useState(false);
   // single
   const [name, setName] = useState("");
@@ -46,13 +66,17 @@ export function NewTeamsDialog({ eventId, teams, onClose, onDone }: { eventId: n
   // bulk
   const [count, setCount] = useState("5");
   const [per, setPer] = useState("3");
-  const [teamPrefix, setTeamPrefix] = useState("Team");
-  const [playerPrefix, setPlayerPrefix] = useState("Player");
+  // Names players see, so in the adventure's language.
+  const [teamPrefix, setTeamPrefix] = useState(() => ct("Team"));
+  const [playerPrefix, setPlayerPrefix] = useState(() => ct("Player"));
   // roster
   const [roster, setRoster] = useState("");
   // import
-  const [imported, setImported] = useState<{ format: string; teams: RosterTeam[] } | null>(null);
-  const [importMsg, setImportMsg] = useState<{ text: string; err?: boolean } | null>(null);
+  const [imported, setImported] = useState<{ format: string; teams: RosterTeam[]; columns: ImportColumn[] } | null>(restored ? { format: "", teams: restored, columns: [] } : null);
+  const [importMsg, setImportMsg] = useState<{ text: string; err?: boolean } | null>(restored ? { text: t.t("These teams didn't fit the event pass. Create them now that seats are added.") } : null);
+  // Teams the pass had no seats for, and how many seats they lack.
+  const [retry, setRetry] = useState<{ teams: RosterTeam[]; need: number } | null>(null);
+  const [buying, setBuying] = useState(false);
 
   const nameErr = !name.trim() ? (touched.name ? t.t("Team name required.") : null) : existing.has(name.trim()) ? t.t('A team named "{{name}}" already exists in this event.', { name: name.trim() }) : null;
   const namesErr = touched.names && splitNames(names).length === 0 ? t.t("Add at least one member — each line becomes a player slot.") : null;
@@ -74,8 +98,13 @@ export function NewTeamsDialog({ eventId, teams, onClose, onDone }: { eventId: n
       const players = list.reduce((n, tm) => n + (tm.member_names ?? []).length, 0);
       const head = list.slice(0, 3).map((tm) => tm.name).join(", ");
       const names = list.length > 3 ? t.t("{{head}}, +{{n}} more", { head, n: list.length - 3 }) : head;
-      setImported({ format: body.format, teams: list });
-      setImportMsg({ text: t.t("Recognised as {{fmt}}", { fmt: body.format }) + ": " + sizes(list.length, players) + " — " + names });
+      setImported({ format: body.format, teams: list, columns: body.columns ?? [] });
+      // The pass caps player seats; teams past it would fail to import.
+      const over = seatsLeft !== null && players > seatsLeft ? " " + t.t("Only {{n}} player seats are left on the event pass, so teams past them won't be imported.", { n: seatsLeft }) : "";
+      // Rows with content that gave no team, such as a formula cell with no value.
+      const rows = body.skipped_rows ?? [];
+      const skipped = rows.length ? " " + t.t("Skipped rows without a team name: {{rows}}.", { rows: rows.join(", ") }) : "";
+      setImportMsg({ text: t.t("Recognised as {{fmt}}", { fmt: body.format }) + ": " + sizes(list.length, players) + " — " + names + over + skipped, ...(over || skipped ? { err: true } : {}) });
     } catch (e) {
       setImportMsg({ text: e instanceof ApiError ? e.message : errorText(e), err: true });
     }
@@ -86,22 +115,47 @@ export function NewTeamsDialog({ eventId, teams, onClose, onDone }: { eventId: n
   const createdText = (n: number) => t.plural(n, { one: t.t("Created {{n}} team"), other: t.t("Created {{n}} teams") });
   const importedText = (n: number) => t.plural(n, { one: t.t("Imported {{n}} team"), other: t.t("Imported {{n}} teams") });
 
-  const reportBulk = (r: BulkResult, ok: (n: number) => string, partKey: string) => {
+  const reportBulk = (r: BulkResult, ok: (n: number) => string, partKey: string, note = "") => {
     const created = r.created || 0, failed = r.failed || 0;
-    if (failed === 0) toast.ok(ok(created));
-    else toast.err(t.t(partKey, { c: created, f: failed, err: r.results?.find((x) => x.error)?.error || "" }));
+    if (failed === 0) toast.ok(ok(created) + note);
+    // Every distinct reason, not just the first failed row's.
+    else toast.err(t.t(partKey, { c: created, f: failed, err: [...new Set(r.results?.flatMap((x) => (x.error ? [x.error] : [])))].join("; ") }) + note);
+  };
+  // Columns the file had that no team got, named after the import.
+  const ignoredNote = () => {
+    const cols = (imported?.columns ?? []).filter((c) => c.role === "ignored").map((c) => c.label || "?");
+    return cols.length ? " " + t.t("Not imported: {{cols}}.", { cols: cols.join(", ") }) : "";
+  };
+
+  /**
+   * Create a roster's teams. Teams the pass had no seats for stay in the
+   * dialog, with how many seats they lack, for "Add seats and retry";
+   * false then keeps the dialog open.
+   */
+  const runBulk = async (list: RosterTeam[], ok: (n: number) => string, partKey: string, note = "") => {
+    const r = await api.bulkTeams(eventId, list);
+    reportBulk(r, ok, partKey, note);
+    const full = (r.results ?? []).filter((x) => x.code === "pass_full").flatMap((x) => (list[x.index] ? [list[x.index]!] : []));
+    if (full.length === 0 || !topUp) return true;
+    const placed = (r.results ?? []).reduce((n, x) => n + (x.team?.members?.length ?? 0), 0);
+    const left = Math.max(0, (seatsLeft ?? 0) - placed);
+    setRetry({ teams: full, need: Math.max(1, full.reduce((n, tm) => n + tm.member_names.length, 0) - left) });
+    if ((r.created || 0) > 0) onDone();
+    return false;
   };
 
   const submit = async () => {
     setBusy(true);
     try {
-      if (mode === "import") {
+      if (retry) {
+        if (!(await runBulk(retry.teams, importedText, "Imported {{c}}, {{f}} failed: {{err}}"))) return;
+      } else if (mode === "import") {
         if (!imported?.teams.length) return toast.err(t.t("Pick a file with at least one team first"));
-        reportBulk(await api.bulkTeams(eventId, imported.teams), importedText, "Imported {{c}}, {{f}} failed: {{err}}");
+        if (!(await runBulk(imported.teams, importedText, "Imported {{c}}, {{f}} failed: {{err}}", ignoredNote()))) return;
       } else if (mode === "roster") {
         if (parsed.length === 0) return toast.err(t.t("Add at least one team line"));
         if (offender) return toast.err(t.t("“{{name}}” has no players", { name: offender.name }));
-        reportBulk(await api.bulkTeams(eventId, parsed), createdText, "Created {{c}}, {{f}} failed: {{err}}");
+        if (!(await runBulk(parsed, createdText, "Created {{c}}, {{f}} failed: {{err}}"))) return;
       } else if (mode === "single") {
         setTouched({ name: true, names: true });
         const n = name.trim(), list = splitNames(names);
@@ -111,7 +165,7 @@ export function NewTeamsDialog({ eventId, teams, onClose, onDone }: { eventId: n
       } else {
         const T = Math.max(1, Number.parseInt(count, 10) || 0);
         const P = Math.max(1, Number.parseInt(per, 10) || 0);
-        const tp = teamPrefix.trim() || "Team", pp = playerPrefix.trim() || "Player";
+        const tp = teamPrefix.trim() || ct("Team"), pp = playerPrefix.trim() || ct("Player");
         // Step over names already in the event so a second run doesn't fail every create.
         let created = 0, failed = 0, last = "", idx = 1;
         while (created < T && idx < 10_000) {
@@ -150,6 +204,34 @@ export function NewTeamsDialog({ eventId, teams, onClose, onDone }: { eventId: n
     { key: "import", label: t.t("Upload file") },
   ];
   const T = Number.parseInt(count, 10) || 0, P = Number.parseInt(per, 10) || 0;
+  const roleLabel: Record<ImportColumn["role"], string> = {
+    team: t.t("Team name"),
+    player: t.t("Player"),
+    email: t.t("Team email"),
+    ignored: t.t("Not imported"),
+  };
+  const PREVIEW_ROWS = 8;
+
+  if (buying && retry && topUp) {
+    return (
+      <TopUpDialog
+        event={topUp.event}
+        adventure={topUp.adventure}
+        user={topUp.user}
+        initial={retry.need}
+        onClose={() => setBuying(false)}
+        // Paid at once (an invoice, a free pass): create the teams now.
+        onDone={() => void submit()}
+        beforeCheckout={() => {
+          try {
+            sessionStorage.setItem(retryKey(eventId), JSON.stringify(retry.teams));
+          } catch {
+            /* private mode: the file is uploaded again */
+          }
+        }}
+      />
+    );
+  }
 
   return (
     <Dialog
@@ -174,13 +256,26 @@ export function NewTeamsDialog({ eventId, teams, onClose, onDone }: { eventId: n
         ))}
       </fieldset>
 
+      {retry && (
+        <Callout variant="warning">
+          <p>
+            {t.plural(retry.teams.length, {
+              one: t.t("{{n}} team didn't fit the event pass: {{names}}.", { names: retry.teams.map((tm) => tm.name).join(", ") }),
+              other: t.t("{{n}} teams didn't fit the event pass: {{names}}.", { names: retry.teams.map((tm) => tm.name).join(", ") }),
+            })}{" "}
+            {t.plural(retry.need, { one: t.t("They need {{n}} more player seat."), other: t.t("They need {{n}} more player seats.") })}
+          </p>
+          {topUp && <Button size="sm" variant="primary" onClick={() => setBuying(true)}>{t.t("Add seats and retry")}</Button>}
+        </Callout>
+      )}
+
       {mode === "single" && (
         <>
           <Field label={t.t("Team name")} error={nameErr}>
-            <input value={name} autoFocus onChange={(e) => setName(e.target.value)} onBlur={() => setTouched((s) => ({ ...s, name: true }))} />
+            <input value={name} autoFocus onChange={(e) => setName(e.target.value)} onBlur={() => name && setTouched((s) => ({ ...s, name: true }))} />
           </Field>
           <Field label={t.t("Members — one per line, or paste CSV")} error={namesErr} hint={t.t("Each line becomes a player slot with its own magic-link token.")}>
-            <textarea rows={5} placeholder={"alice\nbob\ncharlie"} value={names} onChange={(e) => setNames(e.target.value)} onBlur={() => setTouched((s) => ({ ...s, names: true }))} />
+            <textarea rows={5} placeholder={"alice\nbob\ncharlie"} value={names} onChange={(e) => setNames(e.target.value)} onBlur={() => names && setTouched((s) => ({ ...s, names: true }))} />
           </Field>
           <Field label={t.t("Captain email (optional)")} hint={t.t("Used by the arranger only — never shown on the team's share page.")}>
             <input type="email" placeholder="captain@example.org" autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -220,11 +315,74 @@ export function NewTeamsDialog({ eventId, teams, onClose, onDone }: { eventId: n
         <Field
           label={t.t("Roster file")}
           error={importMsg?.err ? importMsg.text : null}
-          hint={importMsg && !importMsg.err ? importMsg.text : t.t("Supported: CSV, Excel (.xlsx), OpenDocument (.ods), IOF XML. First column is the team name; the rest become player slots.")}
+          hint={importMsg && !importMsg.err ? importMsg.text : t.t("Supported: CSV, Excel (.xlsx), OpenDocument (.ods), IOF XML. First column is the team name; the rest become player slots. A class list with First name, Last name and Group columns is grouped by Group.")}
         >
           <input type="file" accept=".csv,.ods,.xlsx,.xml" onChange={(e) => void readFile(e.target.files?.[0])} />
         </Field>
       )}
+
+      {mode === "import" && !retry && imported && imported.teams.length > 0 && (
+        <ImportPreview imported={imported} roleLabel={roleLabel} rows={PREVIEW_ROWS} />
+      )}
     </Dialog>
+  );
+}
+
+/**
+ * What an uploaded file will create, before Create: which column became
+ * what (ignored ones too), and the first teams with their players and
+ * email.
+ */
+function ImportPreview({ imported, roleLabel, rows }: { imported: { teams: RosterTeam[]; columns: ImportColumn[] }; roleLabel: Record<ImportColumn["role"], string>; rows: number }) {
+  const t = useT();
+  const ignored = imported.columns.some((c) => c.role === "ignored");
+  const rest = imported.teams.length - rows;
+  return (
+    <>
+      {imported.columns.length > 0 && (
+        <div className="cs-table-wrap">
+          <table className="cs-table">
+            <caption className="cs-sr">{t.t("Detected columns")}</caption>
+            <thead>
+              <tr>
+                <th scope="col">{t.t("Column")}</th>
+                <th scope="col">{t.t("Imported as")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {imported.columns.map((c, i) => (
+                <tr key={i}>
+                  <td>{c.label || t.t("Column {{n}}", { n: i + 1 })}</td>
+                  <td className={c.role === "ignored" ? "ev-muted" : undefined}>{roleLabel[c.role]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {ignored && <p className="ev-muted">{t.t("Columns marked Not imported are left out. A parent's email address is never imported.")}</p>}
+      <div className="cs-table-wrap">
+        <table className="cs-table">
+          <caption className="cs-sr">{t.t("Teams to create")}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{t.t("Team name")}</th>
+              <th scope="col">{t.t("Players")}</th>
+              <th scope="col">{t.t("Team email")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {imported.teams.slice(0, rows).map((tm, i) => (
+              <tr key={i}>
+                <td>{tm.name}</td>
+                <td>{tm.member_names.join(", ")}</td>
+                <td>{tm.email || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rest > 0 && <p className="ev-muted">{t.plural(rest, { one: t.t("+{{n}} more team"), other: t.t("+{{n}} more teams") })}</p>}
+    </>
   );
 }

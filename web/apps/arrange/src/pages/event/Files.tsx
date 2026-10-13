@@ -39,19 +39,21 @@ export function FilesCard({ event, files, maxFiles, maxSize, reload }: { event: 
     const room = maxFiles - files.length;
     if (picked.length > room) toast.err(t.t("An event can have at most {{n}} files.", { n: maxFiles }));
     setBusy(true);
-    let added = 0;
+    const ids: number[] = [];
     for (const f of picked.slice(0, room)) {
       if (f.size > maxSize) {
         toast.err(t.t("{{name}} is too large. A file can be at most {{mb}} MB.", { name: f.name, mb: Math.floor(maxSize / (1 << 20)) }));
         continue;
       }
       try {
-        await api.uploadFile(event.id, f);
-        added++;
+        ids.push((await api.uploadFile(event.id, f)).id);
       } catch (e) {
         toast.err(e);
       }
     }
+    // One message to the teams for the whole batch, not one per file.
+    if (ids.length > 0) await api.announceFiles(event.id, ids).catch((e: unknown) => toast.err(e));
+    const added = ids.length;
     setBusy(false);
     if (added > 0) {
       // On an event sold in the store a new file waits for review with the listing.
@@ -117,7 +119,7 @@ export function FilesCard({ event, files, maxFiles, maxSize, reload }: { event: 
           ))}
         </ul>
       )}
-      {canAdd && <p className="ev-muted ev-small">{t.t("PDF, pictures, text or Office documents, up to {{mb}} MB each.", { mb: Math.floor(maxSize / (1 << 20)) })}</p>}
+      {canAdd && <p className="ev-muted ev-small">{t.t("PDF, pictures, text or Office documents: up to {{n}} files, {{mb}} MB each.", { n: maxFiles, mb: Math.floor(maxSize / (1 << 20)) })}</p>}
       {event.public_for_sale && (
         <p className="ev-muted ev-small">{t.t("This event is sold in the store, so a new file reaches players once the listing is approved with it. Deleting a file takes it away at once.")}</p>
       )}

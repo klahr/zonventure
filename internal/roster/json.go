@@ -21,6 +21,7 @@ type jsonRoster struct {
 type jsonTeam struct {
 	Name        string   `json:"name"`
 	MemberNames []string `json:"member_names"`
+	Email       string   `json:"email,omitempty"`
 }
 
 // Parse decodes one jsonRoster envelope. The body-size cap is the
@@ -35,7 +36,7 @@ func (JSONImporter) Parse(r io.Reader) ([]TeamInput, error) {
 	}
 	out := make([]TeamInput, 0, len(body.Teams))
 	for _, t := range body.Teams {
-		out = append(out, TeamInput{Name: t.Name, MemberNames: t.MemberNames})
+		out = append(out, TeamInput{Name: t.Name, MemberNames: t.MemberNames, Email: t.Email})
 	}
 	return out, nil
 }

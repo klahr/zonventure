@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { play } from "@zonventure/api";
+import { ApiError, play } from "@zonventure/api";
 
 /**
  * Refetch whenever the server says something changed.
@@ -93,13 +93,24 @@ export function useGeo(enabled: boolean, waitingForZone: boolean, refresh: () =>
 
   useEffect(() => {
     if (!enabled || !("geolocation" in navigator)) return;
+    let trailing: ReturnType<typeof setTimeout> | undefined;
+    let latest: GeolocationPosition | undefined;
+    let stopped = false;
     const report = (pos: GeolocationPosition, force: boolean) => {
+      latest = pos;
       setGeo({ pos, error: null });
       const gap = waitingRef.current ? 3_000 : 15_000;
       const now = Date.now();
       // A fix a kilometre wide says nothing about where the team is.
       if (pos.coords.accuracy > 1_000) return;
-      if (!force && now - last.current < gap) return;
+      clearTimeout(trailing);
+      if (!force && now - last.current < gap) {
+        // Sent when the gap ends rather than dropped: the fix that
+        // arrives at the place may be the last one a phone standing
+        // still there gives.
+        trailing = setTimeout(() => report(pos, true), gap - (now - last.current));
+        return;
+      }
       last.current = now;
       const c = pos.coords;
       void play
@@ -114,8 +125,15 @@ export function useGeo(enabled: boolean, waitingForZone: boolean, refresh: () =>
         .then(() => {
           if (waitingRef.current) refreshRef.current();
         })
-        .catch(() => {
-          /* offline: the next fix tries again */
+        .catch((e: unknown) => {
+          // Too soon after the last report: send this fix again once the
+          // server allows, unless a newer one has come meanwhile. Any other
+          // failure (offline) waits for the next fix.
+          if (!(e instanceof ApiError) || e.status !== 429 || latest !== pos || stopped) return;
+          clearTimeout(trailing);
+          trailing = setTimeout(() => {
+            if (latest === pos) report(pos, true);
+          }, Math.min(Math.max(e.retryAfter ?? 2, 1), 30) * 1000);
         });
     };
     const onError = (error: GeolocationPositionError) => setGeo((g) => ({ ...g, error }));
@@ -135,8 +153,10 @@ export function useGeo(enabled: boolean, waitingForZone: boolean, refresh: () =>
       });
     }, HEARTBEAT_MS / 3);
     return () => {
+      stopped = true;
       navigator.geolocation.clearWatch(id);
       clearInterval(heartbeat);
+      clearTimeout(trailing);
     };
   }, [enabled]);
 

@@ -23,10 +23,11 @@ import (
 
 func (s *Server) registerMediaTools() {
 	s.tools.register(ToolDescriptor{
-		Name:  "get_upload_link",
-		Scope: scopeWrite,
+		Name:     "get_upload_link",
+		Audience: audienceAuthor,
+		Scope:    scopeWrite,
 		Description: "Get a link for adding a file without sending its bytes through this chat — the way to add pictures from a phone. " +
-			"for: picture (default) adds a step's picture, sound or video to the adventure's media; icon sets the adventure's icon; event_cover sets an event's cover (event_id). " +
+			"for: picture (default) adds a file to the adventure's media: a step's picture, sound or video, or a print material's PDF (the page offers pictures, sounds and videos; send a PDF with curl); icon sets the adventure's icon; event_cover sets an event's cover (event_id). " +
 			"Write the link in the chat: the user taps it, picks the file and comes back. Then, for a picture, list_adventure_media gives its id to use in a block. " +
 			"With a shell you can also send the file yourself: curl -sS -F file=@/path/to/photo.jpg '<link>'. The link expires after 30 minutes.",
 		InputSchema: map[string]any{
@@ -40,16 +41,18 @@ func (s *Server) registerMediaTools() {
 	}, getUploadLink)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "list_adventure_media",
-		Scope: scopeRead,
+		Name:     "list_adventure_media",
+		Audience: audienceAuthor,
+		Scope:    scopeRead,
 		Description: "The adventure's uploaded pictures, sounds, videos and PDFs, newest first: {id, kind, mime_type, size_bytes, uploaded_at}. " +
 			"Use it to find the id of a file the user just uploaded through get_upload_link.",
 		InputSchema: slugOnly,
 	}, listAdventureMedia)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "upload_adventure_media",
-		Scope: scopeWrite,
+		Name:     "upload_adventure_media",
+		Audience: audienceAuthor,
+		Scope:    scopeWrite,
 		Description: "Upload an image, audio, video or PDF file to a graph adventure and get back its media {id, kind, mime_type, size_bytes}. " +
 			`Reference it with edit_adventure_graph: a block takes the id ({"id":"b2","kind":"image","media":<id>,"alt":"…"}); a hint's media and an answer's image take {"id":<id>,"kind":"image"}; a PDF goes only in a print material (put_print_material). ` +
 			"Bytes travel base64-encoded in the call, which is only reliable for small files: prefer get_upload_link. " +
@@ -149,7 +152,7 @@ func getUploadLink(ctx context.Context, s *Server, raw json.RawMessage) (ToolCal
 		return errorResult("cannot make an upload link: " + err.Error()), nil
 	}
 	link := base + "/api/media-upload/" + secret
-	what := map[string]string{admin.UploadMedia: "a picture, sound or video", admin.UploadIcon: "the adventure's icon", admin.UploadEventCover: "the event's cover"}[purpose]
+	what := map[string]string{admin.UploadMedia: "a picture, sound, video or PDF", admin.UploadIcon: "the adventure's icon", admin.UploadEventCover: "the event's cover"}[purpose]
 	return textResult(fmt.Sprintf("Upload link for %s (30 minutes): %s\nWrite it in the chat for the user to tap; or, with a shell: curl -sS -F file=@/path/to/file '%s'", what, link, link)), nil
 }
 

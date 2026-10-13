@@ -124,6 +124,8 @@ export function withAnswerKind(p: PuzzleConfig, kind: AnswerKind | undefined): P
   const keep = usesMatchers(next);
   // Everyone giving the same answer needs an answer to give.
   if (!keep) delete next.unanimous;
+  // So does moving on at any answer: the others are never wrong.
+  if (!keep) delete next.quiet;
   // A launch is every player's, never one role's.
   if (kind === "keys") delete next.by;
   let i = 0;
@@ -291,7 +293,13 @@ export function freshSlug(g: Graph, type: NodeType): string {
 
 /** A new node of the given type with sensible, valid-shaped defaults. */
 export function newNode(g: Graph, type: NodeType, at: { x: number; y: number }): Node {
-  return withFixed(bareNode(g, type, at));
+  return quietInQuizWalk(g, withFixed(bareNode(g, type, at)));
+}
+
+/** A new puzzle in a quiz walk just moves on, as its cards do, where it can. */
+export function quietInQuizWalk(g: Graph, n: Node): Node {
+  if (!g.quiz_puzzles || n.type !== "puzzle" || !n.puzzle || !usesMatchers(n.puzzle) || n.puzzle.unanimous) return n;
+  return { ...n, puzzle: { ...n.puzzle, quiet: true } };
 }
 
 function bareNode(g: Graph, type: NodeType, at: { x: number; y: number }): Node {
@@ -324,7 +332,7 @@ function bareNode(g: Graph, type: NodeType, at: { x: number; y: number }): Node 
     case "switch":
       return { ...base, title: "Crossroads", switch: { cases: [{ port: "a", label: "A" }] } };
     case "end":
-      return { ...base, title: "End", end: { outcome: "complete" } };
+      return { ...base, title: "End", end: {} };
     case "start":
       return { ...base, title: "Start" };
   }
@@ -536,9 +544,11 @@ export function cleanGraph(g: Graph): Graph {
   if (g.host_values?.length) out.host_values = g.host_values;
   if (g.journal_by_unlock) out.journal_by_unlock = true;
   if (g.hide_score) out.hide_score = true;
+  if (g.quiz_puzzles) out.quiz_puzzles = true;
   if (g.time_limit) out.time_limit = g.time_limit;
   if (g.language) out.language = g.language;
   if (g.translations && Object.keys(g.translations).length) out.translations = g.translations;
+  if (g.translation_sources && Object.keys(g.translation_sources).length) out.translation_sources = g.translation_sources;
   if (g.print_materials?.length) out.print_materials = g.print_materials;
   if (g.frames?.length) out.frames = g.frames.map((f) => ({ ...f, x: Math.round(f.x), y: Math.round(f.y), width: Math.round(f.width), height: Math.round(f.height) }));
   return out;

@@ -81,12 +81,15 @@ short tour:
 | `ZV_SMTP_*` | SMTP relay for verification + reset mail (optional) | unset |
 | _Legal pages, retention_ | Set under **Settings → Legal** (platform admin): company, contacts, jurisdiction, sub-processors, days data is kept, lawyer review. The old `ZV_COMPANY_*`, `ZV_CONTACT_EMAIL`, `ZV_DPO_EMAIL`, `ZV_JURISDICTION`, `ZV_HOSTING_PROVIDER`, `ZV_EMAIL_PROVIDER`, `ZV_LEGAL_*` and `ZV_*_RETENTION_DAYS` are copied in once on the first start after upgrading, then ignored | — |
 | `ZV_STRIPE_SECRET_KEY` / `ZV_STRIPE_WEBHOOK_SECRET` | Real payments + Customer Portal (optional). Prices — event pass, hosted pass, platform fee — are set by the platform admin under **Settings → Pricing**, in SEK including VAT; without Stripe nothing is charged | unset |
+| `ZV_TRUSTED_PROXIES` | Comma-separated IPs/CIDRs of the reverse proxies whose `X-Forwarded-For` / `X-Forwarded-Proto` are honoured. Empty ignores them. See [Reverse proxy](#reverse-proxy-tls-termination) | unset |
 | `ZV_TOTP_KEY` | 32-byte base64 key wrapping each user's TOTP secret at rest. Set to enable opt-in 2FA. **Treat like a database password** — losing it forces every enrolled user to re-enrol | unset |
 | `ZV_OIDC_ENABLED` | `1` enables single sign-on (see [Single sign-on (Google Workspace)](#single-sign-on-google-workspace)) | unset |
-| `ZV_OIDC_ISSUER` / `ZV_OIDC_CLIENT_ID` / `ZV_OIDC_CLIENT_SECRET` / `ZV_OIDC_HOSTED_DOMAIN` / `ZV_OIDC_REDIRECT_URL` | OIDC client config; required when SSO is enabled | unset |
-| `ZV_OIDC_ORG_NAME` | Organisation that JIT-provisioned SSO users join. Defaults to `ZV_OIDC_HOSTED_DOMAIN` | unset |
+| `ZV_OIDC_ISSUER` / `ZV_OIDC_CLIENT_ID` / `ZV_OIDC_CLIENT_SECRET` / `ZV_OIDC_REDIRECT_URL` | OIDC client config; required when SSO is enabled | unset |
+| `ZV_OIDC_HOSTED_DOMAIN` | Only users of this domain may sign in via SSO (Google `hd` claim, or the email domain for IdPs without `hd`). Optional; leave empty only with a tenant-scoped issuer | unset |
+| `ZV_OIDC_ORG_NAME` | Organisation that JIT-provisioned SSO users join. Defaults to `ZV_OIDC_HOSTED_DOMAIN`, else the issuer's host | unset |
 | `ZV_DB_MAX_OPEN_CONNS` / `ZV_DB_MAX_IDLE_CONNS` | Postgres pool sizing; bump for managed clusters with high `max_connections` | `25` / `5` |
 | `ZV_WEB_OVERRIDE_DIR` | Path to a directory of HTML / JSON files that shadow the embedded pages; its `landing.html` and `pricing.html` turn on the public `/` and `/pricing` — see [Custom landing page](#custom-landing-page) | unset (use embedded) |
+| `ZV_CHANGELOG_URL` | Changelog that Settings → Software update fetches once a day (an outbound request) to spot new releases. Set it empty to turn the check off, or point it at a fork's `CHANGELOG.md` | unset (upstream `CHANGELOG.md` on raw.githubusercontent.com) |
 | `ZV_MCP_ENABLED` | `1` mounts the `POST /mcp` endpoint so users can connect Claude / other MCP clients to author adventures — see [mcp.md](mcp.md) | unset (off) |
 | `ZV_OAUTH_REDIRECT_HOSTS` | Extra hosts (comma-separated) MCP clients may return to after signing in with OAuth. Claude's (`claude.ai`, `claude.com`) and loopback are always allowed. OAuth is on with `ZV_MCP_ENABLED` and a real `ZV_PUBLIC_URL` | unset |
 
@@ -127,16 +130,24 @@ users at the box:
 1. **Change the admin password.** Log in as `admin` / `admin`, change
    it under your account menu. Then either drop `ZV_SEED_ADMIN` from
    `.env` or set it to your real credentials — either way it becomes
-   a no-op once any admin exists.
+   a no-op once any admin exists. Public sign-up starts off on a new
+   server; turn it on under Settings → System when visitors may create
+   their own accounts.
 2. **Change `POSTGRES_PASSWORD`.** It's used internally between the
    two containers, but a stray `docker compose port db 5432` makes it
    reachable. Pick something long and unique.
 3. **Set `ZV_PUBLIC_URL`** to your real `https://…` origin — it goes
    into outbound email links.
 4. **Wire `ZV_SMTP_*`** so signup verification + forgot-password
-   actually leave the box. Without it, mail lands in
-   `docker compose logs app`. Postmark, SendGrid, SES (SMTP
-   interface), and Mailgun all work; anything that speaks SMTP does.
+   actually leave the box. Without it nothing is sent: each mail is
+   only logged, and the log is the mailbox. `docker compose logs app`
+   (or Logs in the console) shows a `mail.send` line with the recipient
+   and subject and a `mail.body` line with the full body, so you can
+   copy a verification or reset link out of it. Anyone who can read the
+   log can use those links, so wire SMTP before real users sign up.
+   Once SMTP is configured, mail bodies are never logged, at any level.
+   Postmark, SendGrid, SES (SMTP interface), and Mailgun
+   all work; anything that speaks SMTP does.
 5. **Front the app with TLS.** Caddy is the lowest-friction option:
 
    ```caddy
@@ -146,8 +157,15 @@ users at the box:
    ```
 
    nginx works too — full snippet at the bottom of this doc.
-6. **Set `ZV_LOG_FORMAT=json`** if you ship logs to an aggregator.
-7. **Schedule a backup.** The app image has no `pg_dump`, so dump from
+   Then **set `ZV_TRUSTED_PROXIES`** to the address the proxy reaches
+   the app from (see [Reverse proxy](#reverse-proxy-tls-termination)),
+   or cookies never get `Secure` and every user shares one IP.
+6. **Fill in Settings → Legal** (company, contact email,
+   jurisdiction). Until then `/privacy` and `/terms` answer 503.
+7. **Set `ZV_TOTP_KEY`** to enable two-factor sign-in, and back it up
+   with the database credentials.
+8. **Set `ZV_LOG_FORMAT=json`** if you ship logs to an aggregator.
+9. **Schedule a backup.** The app image has no `pg_dump`, so dump from
    the `db` container, with the same flags as `zv -backup`:
 
    ```sh
@@ -157,8 +175,11 @@ users at the box:
 
    Drop that into cron or a systemd timer. Off-host the result, and
    restore as in [operations.md → Restore](operations.md#restore).
-8. **Optionally bind `ZV_METRICS_ADDR=127.0.0.1:9100`** if you scrape
-   with Prometheus from a sidecar.
+10. **Optionally set `ZV_METRICS_ADDR=:9100`** if you scrape with
+   Prometheus. Inside the container `127.0.0.1` is the container's own
+   loopback, so bind `:9100` and publish the port on the host's
+   loopback from `compose.override.yaml` (`"127.0.0.1:9100:9100"`, see
+   `compose.override.example.yaml`).
 
 ## Day-to-day commands
 
@@ -280,7 +301,8 @@ Overrides are loaded at startup and cached for the process lifetime
 
 ## Upgrades
 
-Take a backup first (see the backup recipe in the pre-flight checklist), then:
+Take a backup first (see the backup recipe in the pre-flight checklist);
+`make upgrade` neither takes nor checks one. Then:
 
 ```sh
 make upgrade
@@ -291,7 +313,8 @@ That fetches release tags, checks out the newest one, and rebuilds the
 string. The data volume is untouched and embedded migrations run on
 next start.
 
-Equivalent without `make`:
+Equivalent without `make` (add your own `-p` / `-f` flags here if you
+start the stack with them; `make upgrade` runs plain `docker compose`):
 
 ```sh
 git fetch --tags
@@ -319,7 +342,18 @@ old.
 ## Reverse proxy (TLS termination)
 
 The app speaks plain HTTP and reads `X-Forwarded-Proto: https` to
-flip session cookies to `Secure` automatically. WebSockets need the
+flip session cookies to `Secure` automatically — but only from a
+proxy listed in `ZV_TRUSTED_PROXIES`. Until it is set, forwarded
+headers are ignored: cookies stay non-`Secure` and every user shares
+the proxy's IP for rate limiting and the audit log. With the app in
+this compose stack, requests arrive from the compose network's
+gateway (e.g. `172.25.0.1`), not `127.0.0.1`, so list that address:
+
+```sh
+docker network inspect <project>_default -f '{{(index .IPAM.Config 0).Gateway}}'
+```
+
+[`.env.example`](../.env.example) has more examples. WebSockets need the
 proxy to forward the `Upgrade` + `Connection` headers — required
 for `/ws/play`, `/ws/arrange`, and `/ws/live`.
 
@@ -496,6 +530,16 @@ ZV_OIDC_ORG_NAME=Acme Corp                  # optional; defaults to the hosted d
 
 The app validates the config at boot. Missing or malformed values
 abort startup with a clear error — no half-broken sign-in surface.
+An unreachable issuer does not: the app starts with the SSO button
+hidden, logs `auth.oidc.discovery_failed`, and retries once a minute
+until discovery succeeds, so password sign-in, players and running
+events stay up through an IdP outage.
+
+For Microsoft Entra, Okta or another IdP without Google's `hd` claim,
+`ZV_OIDC_HOSTED_DOMAIN` is checked against the email's domain. You
+can leave it empty when the issuer is tenant-scoped (Entra:
+`https://login.microsoftonline.com/<tenant-id>/v2.0`); boot then logs
+a warning, since every user that issuer signs in gets an account.
 
 ### What changes for users
 
@@ -530,15 +574,17 @@ abort startup with a clear error — no half-broken sign-in surface.
 
 - **`ZV_OIDC_*: oidc: ZV_OIDC_ENABLED=1 but missing …` at boot** —
   fill in the listed env vars; they're required only when SSO is on.
-- **Discovery fails at boot** — the host can't reach
+- **Discovery fails at boot** (`auth.oidc.discovery_failed`, no SSO
+  button) — the host can't reach
   `https://accounts.google.com/.well-known/openid-configuration`. Check
-  egress firewall / proxy.
+  egress firewall / proxy; the button appears once a retry succeeds.
 - **`/arrange#sso-error=state_mismatch`** — the user's browser sent a
   different / stale state cookie back. Usually a browser-extension
   cookie wipe, or two tabs racing through sign-in. Have the user
   retry in a single tab.
 - **`/arrange#sso-error=domain_not_allowed`** — the IdP returned an
-  `hd` claim that doesn't match `ZV_OIDC_HOSTED_DOMAIN`. Confirm both
+  `hd` claim (or, without one, an email domain) that doesn't match
+  `ZV_OIDC_HOSTED_DOMAIN`. Confirm both
   the env value and that the user is in the right Workspace.
 
 ### Disabling SSO
@@ -551,15 +597,20 @@ re-enabling SSO later picks up where it left off.
 ## Troubleshooting
 
 - **App restarts in a loop** — `docker compose logs app`. Most likely
-  causes: DATABASE_URL points at an unreachable Postgres, or
-  `ZV_SEED_ADMIN` is malformed (must be `username:password`).
+  causes: DATABASE_URL points at an unreachable Postgres,
+  `ZV_SEED_ADMIN` is malformed (must be `username:password`), an
+  incomplete `ZV_OIDC_*` configuration, or an invalid
+  `ZV_PAYMENTS_PROVIDER`. The log's last ERROR line names it.
 - **WebSockets disconnect after ~60 s** — your reverse proxy is
   closing idle upgrades. Bump `proxy_read_timeout` (nginx) or your
   proxy's equivalent. Compose's bundled stack is fine.
 - **Verification emails don't arrive** — without `ZV_SMTP_*` set,
-  Zonventure prints them to stderr. `docker compose logs app | grep mail`.
-- **"no postgres DSN"** — `DATABASE_URL` not propagated. Confirm with
-  `docker compose exec app env | grep DATABASE_URL`.
+  Zonventure logs each mail instead of sending it: the recipient and
+  subject on a `mail.send` line, the body with its link on a
+  `mail.body` line (see the pre-flight checklist). `docker compose logs app | grep mail`.
+- **"no postgres DSN"** — `DATABASE_URL` not propagated. The app image
+  has no shell, so check the resolved config instead:
+  `docker compose config | grep DATABASE_URL`.
 - **Uploads fail at >5 MB** — raise `ZV_MAX_IMAGE_BYTES` (in bytes).
 
 ## Building from source (without Docker)
@@ -640,11 +691,13 @@ ships in three pieces:
 ### GUI cutover (recommended)
 
 1. Sign in as a global admin on the old instance and open
-   the **Migrate** page in the admin nav.
-2. Click **Export bundle** and save the resulting
+   **Settings → Migration**.
+2. Pick the organisation, enter the new instance's URL (e.g.
+   `https://new.example.com`) and click **Start migration**. This
+   pauses writes (maintenance mode) and downloads
    `zonventure-org-<name>-<date>.zip`.
-3. On the new instance, a global admin uploads the bundle via the
-   **Import bundle** button on the same page.
+3. On the new instance, a global admin opens **Settings → Migration**
+   and uploads the bundle with **Import bundle**.
 4. If the new instance sells tickets through Stripe Connect, have
    the org admin complete Connect onboarding there (the bundle
    clears the old Stripe identifiers — you re-onboard against the
@@ -653,14 +706,17 @@ ships in three pieces:
    future events don't double-fire. The redirect-mode endpoint
    acknowledges any in-flight redeliveries with 200 OK so Stripe
    stops retrying — that's a backstop, not a substitute.
-6. Back on the old instance, click **Switch to redirect mode**,
-   paste the new instance's URL (e.g. `https://new.example.com`),
-   and confirm. Every page on the old instance now 301s to the same
-   path on the new one — no restart needed.
+6. Back on the old instance, click **I've uploaded the bundle — flip
+   redirect now** and confirm. Every page on the old instance now 301s to the same
+   path on the new one — no restart needed. Redirect mode covers the whole
+   instance, so other orgs on it are redirected too (the confirm names any
+   that have data). The console (`/arrange`) and its sign-in and admin APIs
+   keep being served, so you can sign in and turn redirect mode off again.
 7. Leave the old instance running for the cutover window (90 days is
    a reasonable default — long enough that printed materials and
    in-flight emails resolve cleanly). Monitor `/api/health` to
-   confirm the instance is alive but redirecting.
+   confirm the instance is alive but redirecting: while it redirects,
+   the answer carries `"redirect_to"` with the destination.
 8. After the window, shut the old instance down. Existing tokens
    stay valid on the new instance.
 

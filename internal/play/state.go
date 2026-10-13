@@ -27,6 +27,11 @@ import (
 // one phone's ping with another's says nothing about either.
 const maxPingGapSeconds = 120.0
 
+// MaxPingSpeedMS is maxPlausibleSpeedMS in internal/player: a move between
+// two pings faster than this is a GPS jump, not a walk, so it counts
+// toward no distance walked.
+const MaxPingSpeedMS = 60.0
+
 // phoneFreshSeconds is how recently a phone must have reported to count
 // as standing where it last was, for conditions on where the players
 // are. Phones report every 15 seconds, and every 3 while a step waits on
@@ -52,7 +57,8 @@ type fix struct {
 }
 
 // fixes is the latest trustworthy ping of each of the team's phones, in
-// slot order.
+// slot order. A phone that turned location sharing off has none from
+// before then.
 func fixes(ctx context.Context, q Querier, teamID int64) ([]fix, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT s.id, p.lat, p.lng, p.server_ts
@@ -60,6 +66,7 @@ func fixes(ctx context.Context, q Querier, teamID int64) ([]fix, error) {
 		CROSS JOIN LATERAL (
 			SELECT lat, lng, server_ts, id FROM location_pings
 			WHERE slot_id = s.id AND (accuracy IS NULL OR accuracy <= $2)
+			  AND (s.location_off_at IS NULL OR server_ts > s.location_off_at)
 			ORDER BY server_ts DESC, id DESC
 			LIMIT 2
 		) p

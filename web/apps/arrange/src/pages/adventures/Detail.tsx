@@ -1,6 +1,6 @@
 import { Suspense, lazy, useState, type ReactNode } from "react";
 import { CalendarPlus, ChevronLeft, Coins, Compass, Copy, Download, ExternalLink, ListOrdered, MapPin, PartyPopper, Pencil, Play, Trash2, Workflow } from "lucide-react";
-import { ApiError, request } from "@zonventure/api";
+import { ApiError, request, runsEvents } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { useTopBarTitle } from "../../topbar.tsx";
@@ -90,7 +90,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
     if (copying) return;
     setCopying(true);
     try {
-      const r = await duplicateAdventure(a.slug);
+      const r = await duplicateAdventure(a.slug, t.t("{{name}} (copy)", { name: a.title }));
       toast.ok(t.t("Duplicated. This is the copy — rename it under Edit details."));
       location.hash = href({ name: "adventure", slug: r.slug });
     } catch (e) {
@@ -144,7 +144,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
   }
   if (shared) pills.push(<Pill key="shared" tone="accent" title={t.t("Commissioned for your organization")}>{t.t("Shared")}</Pill>);
   if (passes.length) pills.push(<Pill key="passes" tone="accent">{t.plural(passes.length, { one: t.t("{{n}} event pass ready"), other: t.t("{{n}} event passes ready") })}</Pill>);
-  if (a.language) pills.push(<LanguagePill key="lang" code={a.language} />);
+  for (const code of a.graph?.languages ?? (a.language ? [a.language] : [])) pills.push(<LanguagePill key={`lang-${code}`} code={code} />);
   if ((a.running_event_count ?? 0) > 0)
     pills.push(<Pill key="run" tone="warn">{t.plural(a.running_event_count!, { one: t.t("1 event running now"), other: t.t("{{n}} events running now") })}</Pill>);
 
@@ -153,7 +153,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
     more.push(
       { label: t.t("Edit details"), icon: <Pencil size={ICON.sm} aria-hidden />, title: t.t("Title, short name, description, intro, start and cover"), onClick: () => setEditing(true) },
       { label: t.t("Duplicate"), icon: <Copy size={ICON.sm} aria-hidden />, title: t.t("Make an independent copy in your organization"), onClick: () => void duplicate() },
-      { label: t.t("Export"), icon: <Download size={ICON.sm} aria-hidden />, href: exportURL(a.slug), download: `${a.slug}.zvadv.zip`, title: t.t("Download this adventure as a portable .zip") },
+      { label: t.t("Export"), icon: <Download size={ICON.sm} aria-hidden />, href: exportURL(a.slug), download: `${a.slug}.zvadv.zip`, title: t.t("Download this adventure as a portable .zip, its pictures and sounds included") },
       { separator: true },
       { label: t.t("Delete adventure"), icon: <Trash2 size={ICON.sm} aria-hidden />, danger: true, title: t.t("Delete the adventure and all its puzzles. An adventure that has had events can’t be deleted."), onClick: () => void remove() },
     );
@@ -196,7 +196,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
             {t.t("Open designer")}
           </a>
         ))}
-      {own || shared || passes.length ? (
+      {!user || !runsEvents(user) ? null : own || shared || passes.length ? (
         !designed && (
           <Button variant={a.mine_to_edit ? "secondary" : "primary"} icon={<CalendarPlus size={ICON.md} aria-hidden />} onClick={openSchedule}>
             {t.t("Schedule event")}
@@ -212,12 +212,12 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
           {t.t("Test play")}
         </Button>
       )}
-      {(a.mine_to_edit || shared) && !designed && (
+      {(a.mine_to_edit || shared) && !designed && !!user && runsEvents(user) && (
         <Button icon={<Compass size={ICON.md} aria-hidden />} title={t.t("New self-guided adventure")} onClick={() => setSelling(true)}>
           {t.t("Self-guided adventure")}
         </Button>
       )}
-      {(a.mine_to_edit || shared) && !designed && (
+      {(a.mine_to_edit || shared) && !designed && !!user && runsEvents(user) && (
         <Button icon={<PartyPopper size={ICON.md} aria-hidden />} title={t.t("Run it yourself, game after game, from a host page")} onClick={() => setHosting(true)}>
           {t.t("Host it")}
         </Button>
@@ -302,7 +302,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
               {g.steps.map((s, i) => (
                 <li key={s.slug + i} className="adv-step">
                   <Pill tone={s.type === "puzzle" ? "accent" : "neutral"}>{stepKind(t, s.type)}</Pill>
-                  <strong>{s.title || s.slug}</strong>
+                  {s.title && <strong>{s.title}</strong>}
                   {s.zone && zoneNames.has(s.zone) && (
                     <span className="adv-muted adv-step__zone">
                       <MapPin size={ICON.xs} aria-hidden />

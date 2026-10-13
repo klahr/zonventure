@@ -2,12 +2,11 @@ package admin
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/base32"
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -88,7 +87,11 @@ func (h *Handlers) DuplicateAdventure(w http.ResponseWriter, r *http.Request) {
 
 	newSlug := strings.TrimSpace(deref(req.Slug))
 	if newSlug == "" {
-		s, err := generateDuplicateSlug(sourceSlug)
+		s, err := duplicateSlug(sourceSlug, func(s string) (bool, error) {
+			var taken bool
+			err := h.DB.QueryRowContext(r.Context(), `SELECT EXISTS (SELECT 1 FROM adventures WHERE slug = $1)`, s).Scan(&taken)
+			return taken, err
+		})
 		if err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "slug generation failed")
 			return
@@ -120,8 +123,7 @@ type duplicateAdventureRequest struct {
 	// clone uses "<source-title> (copy)".
 	Title *string `json:"title,omitempty"`
 	// Slug overrides the cloned adventure's slug. When empty the
-	// server generates "<source>-<random6>" — predictable shape,
-	// collision-free in practice.
+	// server picks "<source>-copy", then "-copy-2" and on.
 	Slug *string `json:"slug,omitempty"`
 }
 
@@ -310,23 +312,26 @@ func cloneGraph(ctx context.Context, tx *sql.Tx, sourceAdvID, newAdvID, byUserID
 	return nil
 }
 
-// generateDuplicateSlug returns "<source>-<random6>". The random
-// suffix is base32-lowercase from 4 bytes of crypto rand, giving
-// ~32^6 ≈ 10^9 collision space — high enough that we don't bother
-// probing for uniqueness before insert; if a collision somehow
-// happens, the unique-index returns 409 to the caller.
-func generateDuplicateSlug(source string) (string, error) {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+// duplicateSlug is the first free of "<source>-copy", "<source>-copy-2",
+// …, counted from the source without its own "-copy" ending, so a copy
+// of a copy is numbered rather than "-copy-copy". Two duplicates racing
+// for the same slug meet the unique index, which returns 409.
+func duplicateSlug(source string, taken func(string) (bool, error)) (string, error) {
+	stem := copyEnding.ReplaceAllString(source, "") + "-copy"
+	for i := 1; i <= 1000; i++ {
+		s := stem
+		if i > 1 {
+			s = fmt.Sprintf("%s-%d", stem, i)
+		}
+		t, err := taken(s)
+		if err != nil || !t {
+			return s, err
+		}
 	}
-	suffix := strings.ToLower(strings.TrimRight(
-		base32.StdEncoding.EncodeToString(b), "="))
-	if len(suffix) > 6 {
-		suffix = suffix[:6]
-	}
-	return source + "-" + suffix, nil
+	return "", errSlugTaken
 }
+
+var copyEnding = regexp.MustCompile(`-copy(-[0-9]+)?$`)
 
 // isUniqueViolation matches the Postgres error string for a
 // constraint violation — pgx surfaces it as a wrapped error whose

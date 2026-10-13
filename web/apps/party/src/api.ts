@@ -10,6 +10,8 @@ export interface Offer {
   per_kid_cents: number;
   currency: string;
   max_kids: number;
+  /** How many teams a game of the booked party takes. */
+  teams: number;
   org_name: string;
   org_slug: string;
   payments_open: boolean;

@@ -43,8 +43,8 @@ An event moves through five named states. Most authoring happens in **scheduled*
 | running → paused       | pause_event   | Players see a "paused" banner; answers/movement aren't recorded. For Quests, pausing also delists from /store (no new ticket sales) without ending the quest. |
 | paused → running       | resume_event  | Same elapsed clock; team progress untouched.                           |
 | running → completed    | (automatic)   | When the last non-withdrawn team finishes.                             |
-| running / paused → completed | end_event | End now: unfinished teams keep their progress, results and recaps open, players are signed out. Requires the user's password. |
-| any non-terminal → cancelled | cancel_event | Allowed from scheduled, running, paused. Requires the user's password. |
+| running / paused → completed | end_event | End now: unfinished teams keep their progress, results and recaps open, players are signed out. Requires confirm: true. |
+| any non-terminal → cancelled | cancel_event | Allowed from scheduled, running, paused. Requires confirm: true. |
 
 ## What's editable in each state
 
@@ -83,7 +83,7 @@ The MCP surface has no streaming. To watch a live event, poll:
 
 ## Security boundaries
 
-- ` + "`end_event`" + `, ` + "`cancel_event`" + ` and ` + "`delete_team`" + ` require the caller's password (passed as ` + "`password`" + `, forwarded as X-Confirm-Password). The API token alone cannot cancel or destroy.
+- ` + "`end_event`" + `, ` + "`cancel_event`" + ` and ` + "`delete_team`" + ` need ` + "`confirm: true`" + `: ask the user before passing it. Never ask for their password.
 - ` + "`grant_slots_to_event`" + ` is admin-only and refused at the MCP layer when the token's user isn't a global admin.
 - A global admin's token reaches only the operator tools (` + "`grant_slots_to_event`" + `, the purchase reads, listing review, this reference): authoring and running events belong to org users.
 - ` + "`submit_listing_for_review`" + ` needs ` + "`attest: true`" + `, the user's own confirmation that the content follows the terms: ask them first. Decisions made through ` + "`approve_listing`" + ` / ` + "`reject_listing`" + ` are logged as an assistant's, for the console's spot-checks.
@@ -93,7 +93,7 @@ The MCP surface has no streaming. To watch a live event, poll:
 
 A self-guided adventure (a Quest) is an event with ` + "`public_for_sale: true`" + ` — set once at create_event, immutable thereafter. update_event refuses to flip the flag with a 409. Practical consequences for the LLM:
 
-- A quest is listed at /store once it's in ` + "`running`" + ` or ` + "`paused`" + ` state, has a ticket price set and its listing is approved by a platform admin (` + "`listing_review`" + ` on get_event; a verified creator's are approved as saved, and an edit waits for review while the approved version stays up) (use update_event to set ` + "`ticket_price_cents`" + `, ` + "`ticket_currency`" + `, ` + "`ticket_team_size`" + `, ` + "`public_blurb`" + ` after create_event).
+- A quest is listed at /store while it's ` + "`running`" + `, has a ticket price set and its listing is approved by a platform admin (` + "`listing_review`" + ` on get_event; a verified creator's are approved as saved, and an edit waits for review while the approved version stays up) (use update_event to set ` + "`ticket_price_cents`" + `, ` + "`ticket_currency`" + `, ` + "`ticket_team_size`" + `, ` + "`public_blurb`" + ` after create_event).
 - Quests start with no teams. start_event won't 409 the way it does for regular events.
 - To "delist" a quest temporarily, pause_event it. To kill it, cancel_event.
 `

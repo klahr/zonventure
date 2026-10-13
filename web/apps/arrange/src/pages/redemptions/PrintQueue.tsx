@@ -6,6 +6,9 @@ import { Button, Dialog, ICON, useToast } from "../../ui/index.ts";
 import { updatePurchase, updateRedemption, type Redemption } from "./api.ts";
 import { langName, useRedemptionError } from "./shared.ts";
 
+/** An order with letters to print. A pending code isn't checked yet: nothing is printed for it. */
+export const printable = (o: Redemption) => (o.state === "approved" || o.state === "paid") && (o.print?.length ?? 0) > 0;
+
 /**
  * Prints the letters of the orders shown, one after the other. A browser
  * opens one new tab per click, so each click opens the next PDF to print;
@@ -15,7 +18,7 @@ import { langName, useRedemptionError } from "./shared.ts";
 export function PrintQueueButton({ orders, reload }: { orders: Redemption[]; reload: () => void }) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const live = orders.filter((o) => o.state !== "rejected" && o.state !== "cancelled" && (o.print?.length ?? 0) > 0);
+  const live = orders.filter(printable);
   if (live.length === 0) return null;
   const docs = live.reduce((n, o) => n + (o.print?.length ?? 0), 0);
   return (

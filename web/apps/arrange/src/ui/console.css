@@ -40,7 +40,15 @@
   .dz .cs-stat__value { font-size: 1.4rem; }
 }
 
-.dz .cs-table-wrap { overflow-x: auto; }
+.dz .cs-table-wrap { overflow-x: auto; position: relative; }
+/* A table wider than its card scrolls sideways: a shadow at the cut edge says there is more. */
+.dz .cs-table-wrap {
+  background:
+    linear-gradient(to right, var(--dz-surface) 30%, transparent) left / 24px 100% no-repeat local,
+    linear-gradient(to left, var(--dz-surface) 30%, transparent) right / 24px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--dz-ink) 20%, transparent), transparent) left / 10px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--dz-ink) 20%, transparent), transparent) right / 10px 100% no-repeat scroll;
+}
 .dz .cs-table { width: 100%; border-collapse: collapse; font-size: var(--dz-text-md); }
 .dz .cs-table th { padding: var(--dz-space-2) var(--dz-space-4); text-align: left; font-size: var(--dz-text-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dz-muted); border-bottom: 1px solid var(--dz-border); white-space: nowrap; }
 .dz .cs-table td { padding: var(--dz-space-2h, 10px) var(--dz-space-4); border-bottom: 1px solid var(--dz-border); color: var(--dz-ink); vertical-align: middle; }
@@ -50,6 +58,7 @@
 .dz .cs-table tr.is-link:hover td { background: var(--dz-surface-2); }
 .dz .cs-rowlink { color: inherit; font-weight: 600; text-decoration: none; }
 @media (max-width: 720px) { .dz .cs-wide { display: none; } }
+@media (max-width: 480px) { .dz .cs-table th, .dz .cs-table td { padding-left: var(--dz-space-2); padding-right: var(--dz-space-2); } }
 
 .dz .cs-tabs { display: flex; gap: var(--dz-space-1); border-bottom: 1px solid var(--dz-border); overflow-x: auto; scrollbar-width: none; }
 .dz .cs-tabs::-webkit-scrollbar { display: none; }

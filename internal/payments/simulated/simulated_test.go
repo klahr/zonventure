@@ -184,3 +184,32 @@ func TestVerifyAndParseWebhook_RoundTrip(t *testing.T) {
 		t.Errorf("Charge round-trip: %+v", out.Charge)
 	}
 }
+
+// TestRefund_DeliversChargeRefunded checks that a refund sends the
+// charge.refunded webhook for the charge, read as a full refund, so
+// the sale completes the way a Stripe refund does.
+func TestRefund_DeliversChargeRefunded(t *testing.T) {
+	var (
+		prov *Provider
+		got  payments.Event
+	)
+	hookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		ev, err := prov.VerifyAndParseWebhook(body, r.Header)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		got = ev
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer hookSrv.Close()
+	prov = New(hookSrv.URL)
+	prov.HTTPClient = hookSrv.Client()
+	if _, err := prov.Refund(context.Background(), payments.RefundParams{ChargeID: "sim_ch_9"}); err != nil {
+		t.Fatalf("Refund: %v", err)
+	}
+	if got.Type != payments.EventChargeRefunded || got.Charge == nil || got.Charge.ID != "sim_ch_9" || !got.Charge.FullyRefunded() {
+		t.Errorf("delivered %+v, want a full charge.refunded for sim_ch_9", got)
+	}
+}

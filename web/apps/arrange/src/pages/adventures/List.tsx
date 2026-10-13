@@ -1,11 +1,12 @@
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
-import { CalendarPlus, Coins, Compass, GraduationCap, MapPin, Plus, Upload, Workflow } from "lucide-react";
-import { canAuthor } from "@zonventure/api";
+import { CalendarPlus, Coins, Compass, GraduationCap, MapPin, PartyPopper, Plus, Upload, Workflow } from "lucide-react";
+import { canAuthor, runsEvents } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { CATALOG_ENABLED, href, navigate } from "../../router.ts";
 import { Button, Empty, ErrorBox, HelpPopover, ICON, Loading, Page, PageHeader, Pill, useLoad, useToast } from "../../ui/index.ts";
 import { SPOTS } from "@zonventure/ui";
+import { HostItDialog } from "../events/HostItDialog.tsx";
 import { NewEventDialog } from "../events/NewEventDialog.tsx";
 import { NewQuestDialog } from "../events/NewQuestDialog.tsx";
 import { duplicateAdventure, isPublisher, listAdventures, listAssignments, type AdventureRow, type Assignment } from "./api.ts";
@@ -48,7 +49,9 @@ export function AdventuresPage() {
   const { state } = useSession();
   const user = state.status === "authenticated" ? state.user : null;
   const author = !!user && canAuthor(user);
-  const load = useLoad((signal) => Promise.all([listAdventures(signal), listAssignments(signal)]), []);
+  // A writer runs no events: no passes to load, no scheduling.
+  const runs = !!user && runsEvents(user);
+  const load = useLoad((signal) => Promise.all([listAdventures(signal), runs ? listAssignments(signal) : Promise.resolve([] as Assignment[])]), [runs]);
   const [creating, setCreating] = useState<false | "choose" | "designer" | "tutorial">(() => {
     // Sent here from the welcome to follow the tutorial.
     try {
@@ -61,6 +64,7 @@ export function AdventuresPage() {
   });
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [selling, setSelling] = useState<string | null>(null);
+  const [hosting, setHosting] = useState<AdventureRow | null>(null);
   const [picking, setPicking] = useState<{ a: AdventureRow; passes: Assignment[] } | null>(null);
   const importer = useImportAdventure();
 
@@ -106,7 +110,8 @@ export function AdventuresPage() {
     const [advs, assignments] = load.data;
     const byAdv = new Map<string, { unused: Assignment[]; used: Assignment[] }>();
     for (const x of assignments) {
-      if (!x.adventure_slug) continue;
+      // A cancelled event's pass is spent but wasn't held.
+      if (!x.adventure_slug || x.event_cancelled) continue;
       const b = byAdv.get(x.adventure_slug) ?? { unused: [], used: [] };
       (x.event_id ? b.used : b.unused).push(x);
       byAdv.set(x.adventure_slug, b);
@@ -122,13 +127,24 @@ export function AdventuresPage() {
     const scheduleBtn = (onClick: () => void) => (
       <Button size="sm" icon={<CalendarPlus size={ICON.sm} aria-hidden />} onClick={onClick}>{t.t("Schedule event")}</Button>
     );
-    // Self-guided needs no pass, only an adventure the org owns or was commissioned.
+    // Self-guided and Host it need no pass, only an adventure the org owns or was commissioned.
     const selfGuidedBtn = (a: AdventureRow) => (
-      <Button size="sm" icon={<Compass size={ICON.sm} aria-hidden />} title={t.t("New self-guided adventure")} onClick={() => setSelling(a.slug)}>{t.t("Self-guided adventure")}</Button>
+      <>
+        <Button size="sm" icon={<Compass size={ICON.sm} aria-hidden />} title={t.t("New self-guided adventure")} onClick={() => setSelling(a.slug)}>{t.t("Self-guided adventure")}</Button>
+        <Button size="sm" icon={<PartyPopper size={ICON.sm} aria-hidden />} title={t.t("Run it yourself, game after game, from a host page")} onClick={() => setHosting(a)}>{t.t("Host it")}</Button>
+      </>
     );
     // The pass it holds, else free when commissioned, else buy-then-schedule for its own.
     const actionsFor = (a: AdventureRow) => {
       const b = bucket(a);
+      if (!runs) {
+        return a.mine_to_edit ? (
+          <a className="btn adv-btn sm" href={href({ name: "designer", slug: a.slug })}>
+            <Workflow size={ICON.sm} aria-hidden />
+            {t.t("Open designer")}
+          </a>
+        ) : null;
+      }
       const sell = (a.shared || (a.mine_to_edit && a.playable)) && selfGuidedBtn(a);
       if (b.unused.length === 1) return <>{scheduleBtn(() => setSchedule({ assignmentId: b.unused[0]!.id }))}{sell}</>;
       if (b.unused.length > 1) return <>{scheduleBtn(() => setPicking({ a, passes: b.unused }))}{sell}</>;
@@ -183,7 +199,7 @@ export function AdventuresPage() {
         >
           {CATALOG_ENABLED
             ? author ? t.t("Create your own or browse the Catalog for published adventures.") : t.t("Browse the Catalog for published adventures.")
-            : author ? t.t("Create your own adventure to get started.") : t.t("An organisation admin can create one for you.")}
+            : author ? t.t("Create your own adventure to get started.") : t.t("An organization admin can create one for you.")}
         </Empty>
       ) : (
         <div className="adv-grid">
@@ -218,6 +234,7 @@ export function AdventuresPage() {
         />
       )}
       {schedule && <NewEventDialog {...schedule} onClose={() => setSchedule(null)} />}
+      {hosting && <HostItDialog slug={hosting.slug} title={hosting.title || hosting.slug} onClose={() => setHosting(null)} />}
       {selling && <NewQuestDialog slug={selling} onClose={() => setSelling(null)} onCreated={(id) => navigate({ name: "event", id })} />}
     </Page>
   );

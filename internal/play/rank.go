@@ -27,15 +27,19 @@ type Ranked struct {
 }
 
 // Ahead is the one ranking rule, for the standings block, the live
-// leaderboard and the results export alike: more points first; between
-// finished teams on the same points, the closer tie-break guess, then the
-// earlier finish. Unfinished teams on the same points are level — a
-// tie-break used mid-event would hint at the answer.
+// leaderboard and the results export alike: more points first; on the
+// same points a finished team before an unfinished one, and between
+// finished teams the closer tie-break guess, then the earlier finish.
+// Unfinished teams on the same points are level — a tie-break used
+// mid-event would hint at the answer.
 func Ahead(a, b Ranked) bool {
 	if a.Score != b.Score {
 		return a.Score > b.Score
 	}
-	if !a.Done || !b.Done {
+	if a.Done != b.Done {
+		return a.Done
+	}
+	if !a.Done {
 		return false
 	}
 	if a.Miss != b.Miss {
@@ -44,10 +48,8 @@ func Ahead(a, b Ranked) bool {
 	return a.CompletedAt.Before(b.CompletedAt)
 }
 
-// SortRanking lists teams in Ahead's order. Ahead leaves teams level,
-// which a sort cannot use as it stands — level is not transitive — so
-// on the same points finished teams list first, then by Ahead's
-// tie-breaks, then by name.
+// SortRanking lists teams in Ahead's order: on the same points finished
+// teams first, then by Ahead's tie-breaks, then by name.
 func SortRanking(rs []Ranked) {
 	sort.SliceStable(rs, func(i, j int) bool {
 		a, b := rs[i], rs[j]

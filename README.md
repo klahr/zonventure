@@ -62,24 +62,32 @@ real users arrive:
 1. Change `POSTGRES_PASSWORD` and the admin password.
 2. Set `ZV_PUBLIC_URL` to your public `https://` address.
 3. Configure `ZV_SMTP_*` so verification and password-reset mail is sent.
-4. Put a TLS-terminating reverse proxy in front of port 8080.
-5. Schedule backups of the database.
+4. Put a TLS-terminating reverse proxy in front of port 8080 and list
+   it in `ZV_TRUSTED_PROXIES`.
+5. Fill in Settings → Legal, or `/privacy` and `/terms` stay offline.
+6. Set `ZV_TOTP_KEY` to enable two-factor sign-in.
+7. Schedule backups of the database.
 
 The full checklist, with examples for each step, is in
 [docs/selfhosting.md](docs/selfhosting.md#pre-flight-checklist-before-going-public).
 
 ## Upgrading
 
-Back up the database, then:
+Back up the database first; `make upgrade` neither takes nor checks a
+backup:
 
 ```sh
+docker compose exec -T db pg_dump -U zv -d zv --clean --if-exists --no-owner --no-privileges \
+  | gzip > zv-$(date +%F).sql.gz
 make upgrade
 ```
 
 This checks out the newest release and rebuilds the app. Migrations run
-on start and the data volume is kept. See
-[docs/selfhosting.md](docs/selfhosting.md#upgrades) for running
-prebuilt images instead of building on the host.
+on start and the data volume is kept. It runs plain `docker compose` in
+this directory, so if you start the stack with `-p` or `-f`, follow the
+manual steps in [docs/selfhosting.md](docs/selfhosting.md#upgrades)
+instead; that section also covers running prebuilt images instead of
+building on the host.
 
 ## Documentation
 

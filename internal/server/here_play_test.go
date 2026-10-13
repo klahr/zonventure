@@ -78,6 +78,16 @@ func TestHereBlocksOverHTTP(t *testing.T) {
 		return c
 	}
 	ann, bo := login(team.Members[0].Token), login(team.Members[1].Token)
+	// The lobby already knows the adventure has places to reach, so the
+	// phone explains location before any step asks for it.
+	var lobby struct {
+		Event struct {
+			UsesLocation bool `json:"uses_location"`
+		} `json:"event"`
+	}
+	if s := ann.doAny("GET", "/api/player/play", nil, &lobby); s != 200 || !lobby.Event.UsesLocation {
+		t.Errorf("lobby = %d uses_location %v, want true", s, lobby.Event.UsesLocation)
+	}
 	if s := arr.do("POST", "/api/admin/events/"+itoa(ev.ID)+"/start", nil, nil); s != 204 {
 		t.Fatalf("start = %d", s)
 	}

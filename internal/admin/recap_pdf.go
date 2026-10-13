@@ -68,7 +68,10 @@ func (h *Handlers) ExportEventRecapPDF(w http.ResponseWriter, r *http.Request) {
 // separate from the SQL collection so writeRecapPDF can be unit-
 // tested without a database.
 type recapPDFData struct {
-	OrgName        string
+	OrgName string
+	// EventName is the organiser's name for the event; the cover leads
+	// with it when set, and names the adventure under it.
+	EventName      string
 	AdventureTitle string
 	AdventureSlug  string
 	EventID        int64
@@ -90,6 +93,9 @@ type recapPDFData struct {
 	// to text.
 	LogoBytes []byte
 	LogoMIME  string
+	// Stats are the event page's statistics, for their own page; nil
+	// without a graph to read them from.
+	Stats *EventStats
 }
 
 type recapPDFTeam struct {
@@ -125,9 +131,9 @@ func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64
 		completedRaw sql.NullString
 	)
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT adventure_slug, started_at, completed_at
+		SELECT adventure_slug, name, started_at, completed_at
 		FROM events WHERE id = $1
-	`, eventID).Scan(&slug, &startedRaw, &completedRaw); err != nil {
+	`, eventID).Scan(&slug, &d.EventName, &startedRaw, &completedRaw); err != nil {
 		return d, fmt.Errorf("event: %w", err)
 	}
 	d.AdventureSlug = slug
@@ -147,7 +153,21 @@ func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64
 		d.Accent = adv.Colors.Accent
 	}
 	h.addRecapLogo(ctx, &d, orgID)
-	return d, h.collectGraphRecap(ctx, &d, eventID)
+	if err := h.collectGraphRecap(ctx, &d, eventID); err != nil {
+		return d, err
+	}
+	g, err := h.engine().EventGraph(ctx, h.DB, eventID)
+	if err != nil && !errors.Is(err, play.ErrNoGraph) {
+		return d, fmt.Errorf("graph: %w", err)
+	}
+	if g != nil {
+		st := EventStats{Puzzles: []PuzzleStats{}}
+		if err := h.fillEventStats(ctx, eventID, g, &st); err != nil {
+			return d, fmt.Errorf("statistics: %w", err)
+		}
+		d.Stats = &st
+	}
+	return d, nil
 }
 
 // addRecapLogo embeds the org's logo on the cover. Best-effort: a missing
@@ -338,10 +358,10 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 	}
 	pdf.SetFont("Helvetica", "B", 22)
 	pdf.SetTextColor(40, 40, 40)
-	pdf.MultiCell(usableW, 8.5, text(d.AdventureTitle), "", "L", false)
+	pdf.MultiCell(usableW, 8.5, text(recapTitle(d)), "", "L", false)
 	pdf.SetFont("Helvetica", "", 11)
 	pdf.SetTextColor(120, 120, 120)
-	pdf.CellFormat(usableW, 6, text(recapDateLine(d)), "", 1, "L", false, 0, "")
+	pdf.CellFormat(usableW, 6, text(recapSubtitle(d)), "", 1, "L", false, 0, "")
 	pdf.Ln(6)
 
 	// Stats grid: 4 boxes summarising the event.
@@ -481,7 +501,176 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 		pdf.Ln(6)
 	}
 
+	if d.Stats != nil && d.Stats.Teams > 0 {
+		writeRecapStats(pdf, text, *d.Stats, accentR, accentG, accentB)
+	}
 	return pdf.Output(w)
+}
+
+// writeRecapStats adds the statistics page: the event page's numbers,
+// across every team and never naming one.
+func writeRecapStats(pdf *fpdf.Fpdf, text func(string) string, st EventStats, accentR, accentG, accentB int) {
+	const (
+		marginX  = 15.0
+		usableW  = 180.0
+		statBoxH = 22.0
+		statGap  = 3.0
+	)
+	pct := func(n, of int) string {
+		if of == 0 {
+			return "—"
+		}
+		return fmt.Sprintf("%d%%", (n*100+of/2)/of)
+	}
+	dur := func(s *int) string {
+		if s == nil {
+			return "—"
+		}
+		return formatHMS(time.Duration(*s) * time.Second)
+	}
+	num := func(f *float64) string { return strconv.FormatFloat(*f, 'f', -1, 64) }
+
+	pdf.AddPage()
+	pdf.SetFont("Helvetica", "B", 18)
+	pdf.SetTextColor(40, 40, 40)
+	pdf.CellFormat(usableW, 9, "Statistics", "", 1, "L", false, 0, "")
+	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetTextColor(120, 120, 120)
+	pdf.CellFormat(usableW, 6, text("Anonymous — across every team that played, without names."), "", 1, "L", false, 0, "")
+	pdf.Ln(4)
+
+	statW := (usableW - 3*statGap) / 4
+	statY := pdf.GetY()
+	for i, s := range [][2]string{
+		{strconv.Itoa(st.Guesses), "guesses"},
+		{pct(st.FirstTry, st.Solved), "solved on the first try"},
+		{strconv.Itoa(st.Hints), "hints used"},
+		{dur(st.MedianSeconds), "median finish time"},
+	} {
+		x := marginX + float64(i)*(statW+statGap)
+		pdf.SetFillColor(248, 248, 248)
+		pdf.SetDrawColor(225, 225, 225)
+		pdf.RoundedRect(x, statY, statW, statBoxH, 2.5, "1234", "FD")
+		pdf.SetXY(x, statY+3)
+		pdf.SetFont("Helvetica", "B", 16)
+		pdf.SetTextColor(accentR, accentG, accentB)
+		pdf.CellFormat(statW, 8, text(s[0]), "", 0, "C", false, 0, "")
+		pdf.SetXY(x, statY+13)
+		pdf.SetFont("Helvetica", "", 9)
+		pdf.SetTextColor(120, 120, 120)
+		pdf.CellFormat(statW, 6, text(s[1]), "", 0, "C", false, 0, "")
+	}
+	pdf.SetY(statY + statBoxH + 6)
+
+	// The trickiest takes the most wrong guesses per team that got
+	// there, the quickest is solved fastest in the middle: as the event
+	// page picks them.
+	var trickiest, quickest *PuzzleStats
+	for i := range st.Puzzles {
+		p := &st.Puzzles[i]
+		if p.Reached == 0 {
+			continue
+		}
+		if p.Wrong > 0 && (trickiest == nil || float64(p.Wrong)/float64(p.Reached) > float64(trickiest.Wrong)/float64(trickiest.Reached)) {
+			trickiest = p
+		}
+		if p.MedianSeconds != nil && (quickest == nil || *p.MedianSeconds < *quickest.MedianSeconds) {
+			quickest = p
+		}
+	}
+	facts := []string{fmt.Sprintf("%d of %d teams finished", st.Finished, st.Teams)}
+	if st.Failed > 0 {
+		facts[0] += fmt.Sprintf(" · %d failed", st.Failed)
+	}
+	if st.FastestSeconds != nil {
+		facts = append(facts, fmt.Sprintf("Fastest %s, slowest %s", dur(st.FastestSeconds), dur(st.SlowestSeconds)))
+	}
+	if st.TopScore != nil {
+		facts = append(facts, fmt.Sprintf("Top score %s, median %s", num(st.TopScore), num(st.MedianScore)))
+	}
+	if trickiest != nil {
+		guesses := "wrong guesses"
+		if trickiest.Wrong == 1 {
+			guesses = "wrong guess"
+		}
+		facts = append(facts, fmt.Sprintf("Trickiest: %s — %d %s", trickiest.Title, trickiest.Wrong, guesses))
+	}
+	if quickest != nil {
+		facts = append(facts, fmt.Sprintf("Quickest: %s — solved in %s", quickest.Title, dur(quickest.MedianSeconds)))
+	}
+	if st.AvgDistanceM != nil {
+		facts = append(facts, fmt.Sprintf("%.1f km walked per team", *st.AvgDistanceM/1000))
+	}
+	if st.Photos > 0 {
+		facts = append(facts, fmt.Sprintf("%d photos taken", st.Photos))
+	}
+	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetTextColor(60, 60, 60)
+	for _, f := range facts {
+		pdf.CellFormat(usableW, 6, text("•  "+f), "", 1, "L", false, 0, "")
+	}
+	pdf.Ln(5)
+
+	pdf.SetFont("Helvetica", "B", 14)
+	pdf.SetTextColor(40, 40, 40)
+	pdf.CellFormat(usableW, 8, "Puzzles", "", 1, "L", false, 0, "")
+	pdf.Ln(1)
+	// Column widths sum to 180 (= usableW).
+	cols := []struct {
+		w     float64
+		hdr   string
+		align string
+	}{
+		{64, "Puzzle", "L"},
+		{20, "Reached", "R"},
+		{20, "Solved", "R"},
+		{20, "First try", "R"},
+		{18, "Wrong", "R"},
+		{16, "Hints", "R"},
+		{22, "Median time", "R"},
+	}
+	pdf.SetFillColor(245, 245, 245)
+	pdf.SetTextColor(80, 80, 80)
+	pdf.SetFont("Helvetica", "B", 9)
+	for _, c := range cols {
+		pdf.CellFormat(c.w, 7, c.hdr, "B", 0, c.align, true, 0, "")
+	}
+	pdf.Ln(7)
+	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetTextColor(40, 40, 40)
+	for i, p := range st.Puzzles {
+		if i%2 == 1 {
+			pdf.SetFillColor(252, 252, 252)
+			pdf.Rect(marginX, pdf.GetY(), usableW, 6, "F")
+		}
+		row := []string{truncateText(p.Title, 34), strconv.Itoa(p.Reached), pct(p.Solved, p.Reached), pct(p.FirstTry, p.Solved), strconv.Itoa(p.Wrong), strconv.Itoa(p.Hints), dur(p.MedianSeconds)}
+		for j, c := range cols {
+			pdf.CellFormat(c.w, 6, text(row[j]), "", 0, c.align, false, 0, "")
+		}
+		pdf.Ln(6)
+	}
+}
+
+// recapTitle is the cover's heading: the event's own name when it has
+// one, else the adventure's title.
+func recapTitle(d recapPDFData) string {
+	if strings.TrimSpace(d.EventName) != "" {
+		return d.EventName
+	}
+	return d.AdventureTitle
+}
+
+// recapSubtitle is the line under the heading: the adventure (when the
+// heading is the event's name) and the dates.
+func recapSubtitle(d recapPDFData) string {
+	parts := []string{}
+	if t := recapTitle(d); t != d.AdventureTitle && d.AdventureTitle != "" {
+		parts = append(parts, d.AdventureTitle)
+	}
+	if s := recapDateLine(d); s != "" {
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, "  ·  ")
 }
 
 // recapDateLine formats the cover-page subtitle. Same date repeated

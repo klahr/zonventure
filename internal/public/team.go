@@ -88,6 +88,9 @@ func fileSize(n int64, lang string) string {
 type teamShareSlot struct {
 	Name     string
 	MagicURL string
+	// Taken says a phone is playing as this player now. Opening the
+	// link anyway takes the seat over and signs that phone out.
+	Taken bool
 }
 
 // TeamShare serves the one-URL-per-team page. The arranger sends this
@@ -114,19 +117,16 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 		schedAt sql.NullString
 		startAt sql.NullString
 		forSale bool
-		lang    sql.NullString
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT t.id, t.event_id, t.name, a.title, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       ar.state, ar.scheduled_at, ar.started_at, ar.public_for_sale,
-		       COALESCE(a.language, o.language)
+		       ar.state, ar.scheduled_at, ar.started_at, ar.public_for_sale
 		FROM teams t
 		JOIN events ar ON ar.id = t.event_id
 		LEFT JOIN adventures a ON a.slug = ar.adventure_slug
-		LEFT JOIN organizations o ON o.id = ar.org_id
 		WHERE t.token = $1
 	`, token).Scan(&teamID, &eventID, &view.TeamName, &title, &hasAvatar,
-		&view.State, &schedAt, &startAt, &forSale, &lang)
+		&view.State, &schedAt, &startAt, &forSale)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "team not found — ask your arranger for a fresh link", http.StatusNotFound)
 		return
@@ -136,7 +136,9 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view.AdventureTitle = title.String
-	view.Lang = emailtpl.Lang(lang.String)
+	// The page speaks the visitor's language; the adventure's own words
+	// (its title) stay as written.
+	view.Lang = emailtpl.LangFromRequest(r)
 	view.Token = token
 	view.ScheduledAt = schedAt.String
 	view.StartedAt = startAt.String
@@ -149,7 +151,9 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT ps.name, ps.token
+		SELECT ps.name, ps.token,
+		       EXISTS (SELECT 1 FROM slot_sessions ss
+		               WHERE ss.slot_id = ps.id AND ss.active AND NOT ss.replaced AND NOT ss.ended)
 		FROM player_slots ps
 		JOIN teams t ON t.id = ps.team_id
 		WHERE t.token = $1
@@ -161,13 +165,16 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var name, slotTok string
-		if err := rows.Scan(&name, &slotTok); err != nil {
+		var (
+			name, slotTok string
+			taken         bool
+		)
+		if err := rows.Scan(&name, &slotTok, &taken); err != nil {
 			http.Error(w, "scan failed", http.StatusInternalServerError)
 			return
 		}
 		view.Members = append(view.Members, teamShareSlot{
-			Name: name, MagicURL: "/play?t=" + slotTok,
+			Name: name, MagicURL: "/play?t=" + slotTok, Taken: taken,
 		})
 	}
 
@@ -408,7 +415,7 @@ var teamSV = map[string]string{
 	"Everyone joins":                                   "Alla går med",
 	"Each person opens the camera on their phone and points it at this square:": "Var och en öppnar kameran i sin telefon och riktar den mot den här rutan:",
 	"QR code to join this team": "QR-kod för att gå med i laget",
-	"Tap Start":                 "Tryck på Starta",
+	"Tap Start playing":         "Tryck på Börja spela",
 	"On every phone — including yours — tap the button below. That's it, you're playing together.": "Tryck på knappen nedan i varje telefon – även din. Klart, ni spelar tillsammans.",
 	"Start playing →":                              "Börja spela →",
 	"Playing on your own? Just tap Start playing.": "Spelar du ensam? Tryck bara på Börja spela.",
@@ -417,10 +424,13 @@ var teamSV = map[string]string{
 	"change":                                       "ändra",
 	"+ photo":                                      "+ foto",
 	"Remove photo":                                 "Ta bort foto",
-	"Starts in":                                    "Börjar om",
+	"Starts in":                                    "Tid till start",
+	"day":                                          "dag",
+	"days":                                         "dagar",
 	"Tap your name to open your link":              "Tryck på ditt namn för att öppna din länk",
 	"Each link is for one person. Don't pass yours on — your teammates have their own below.": "Varje länk är till en person. Skicka inte vidare din – dina lagkamrater har sina egna nedan.",
-	"Open →": "Öppna →",
+	"Open →":                           "Öppna →",
+	"Playing on a phone · take over →": "Spelar på en mobil · ta över →",
 	"No members on this team yet. Ask your arranger to add you.": "Laget har inga medlemmar än. Be arrangören lägga till dig.",
 	"Share this team page": "Dela lagsidan",
 	"Team page link":       "Länk till lagsidan",
@@ -541,6 +551,8 @@ var teamShareTmpl = template.Must(template.New("team").Funcs(template.FuncMap{"t
   .slot:active{transform:translateY(1px);}
   .slot .name{font-weight:700;font-size:1.05rem;}
   .slot .go-sm{color:var(--gold);font-weight:700;font-size:.9rem;white-space:nowrap;}
+  .slot.is-taken{opacity:.6;}
+  .slot.is-taken .go-sm{color:var(--ink-dim);white-space:normal;text-align:right;}
   .file .name{overflow-wrap:anywhere;min-width:0;}
 
   details.share{margin:.2rem 0 0;border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden;}
@@ -652,7 +664,7 @@ var teamShareTmpl = template.Must(template.New("team").Funcs(template.FuncMap{"t
         <li>
           <span class="snum" aria-hidden="true">2</span>
           <div class="sbody">
-            <p class="shead">{{t $.Lang "Tap Start"}}</p>
+            <p class="shead">{{t $.Lang "Tap Start playing"}}</p>
             <p class="stext">{{t $.Lang "On every phone — including yours — tap the button below. That's it, you're playing together."}}</p>
           </div>
         </li>
@@ -693,7 +705,7 @@ var teamShareTmpl = template.Must(template.New("team").Funcs(template.FuncMap{"t
       <p class="note">{{t $.Lang "Each link is for one person. Don't pass yours on — your teammates have their own below."}}</p>
       {{if .Members}}
         {{range .Members}}
-        <a class="slot slot-go" href="{{.MagicURL}}"><span class="name">{{.Name}}</span><span class="go-sm">{{t $.Lang "Open →"}}</span></a>
+        <a class="slot slot-go{{if .Taken}} is-taken{{end}}" href="{{.MagicURL}}"><span class="name">{{.Name}}</span><span class="go-sm">{{if .Taken}}{{t $.Lang "Playing on a phone · take over →"}}{{else}}{{t $.Lang "Open →"}}{{end}}</span></a>
         {{end}}
       {{else}}
         <p class="empty">{{t $.Lang "No members on this team yet. Ask your arranger to add you."}}</p>
@@ -824,7 +836,7 @@ var teamShareTmpl = template.Must(template.New("team").Funcs(template.FuncMap{"t
     var cdLabel=document.getElementById("cd-label"),cdValue=document.getElementById("cd-value"),cdWhen=document.getElementById("cd-when");
     function parseUTC(s){if(!s)return null;var iso=s.indexOf("T")>=0?s:s.replace(" ","T")+"Z";var d=new Date(iso);return isNaN(d.getTime())?null:d;}
     function pad(n){return n<10?"0"+n:""+n;}
-    function fmtCountdown(sec){if(sec<=0)return "00:00";var d=Math.floor(sec/86400),h=Math.floor((sec%86400)/3600),m=Math.floor((sec%3600)/60),s=sec%60;if(d>0)return d+"d "+pad(h)+":"+pad(m)+":"+pad(s);if(h>0)return pad(h)+":"+pad(m)+":"+pad(s);return pad(m)+":"+pad(s);}
+    function fmtCountdown(sec){if(sec<=0)return "00:00";var d=Math.floor(sec/86400),h=Math.floor((sec%86400)/3600),m=Math.floor((sec%3600)/60),s=sec%60;if(d>0)return d+" "+(d===1?{{t $.Lang "day"}}:{{t $.Lang "days"}})+" "+pad(h)+":"+pad(m)+":"+pad(s);if(h>0)return pad(h)+":"+pad(m)+":"+pad(s);return pad(m)+":"+pad(s);}
     function fmtClock(d){return d.toLocaleString(document.documentElement.lang||undefined,{dateStyle:"medium",timeStyle:"short",hour12:false});}
     if(eventState==="completed"){cd.hidden=false;cdLabel.textContent={{t $.Lang "Event"}};cdValue.textContent={{t $.Lang "Completed"}};}
     else if(eventState==="running"||eventState==="paused"){cd.hidden=false;cd.classList.add("live");cdLabel.textContent={{t $.Lang "Event"}};cdValue.textContent=eventState==="paused"?{{t $.Lang "Paused"}}:{{t $.Lang "Live now"}};var sd=parseUTC(startedAt);cdWhen.textContent=sd?{{t $.Lang "Started "}}+fmtClock(sd):"";}

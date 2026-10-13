@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n.tsx";
-import { loadMapLibre, shape, STYLE } from "../../designer/ZoneMap.tsx";
+import { loadMapLibre, mapLocale, shape, STYLE } from "../../designer/ZoneMap.tsx";
 import type { Pin } from "./facts.ts";
 
 type Map = import("maplibre-gl").Map;
@@ -23,7 +23,7 @@ export function AdventureMap({ pins, accent, faint, label, height = 300 }: { pin
       .then((lib) => {
         if (cancelled || !box.current) return;
         const first = pins[0];
-        const m = new lib.Map({ container: box.current, style: STYLE, center: first ? [first.lng, first.lat] : [13.9554, 58.182], zoom: 13, attributionControl: { compact: true }, cooperativeGestures: true });
+        const m = new lib.Map({ container: box.current, style: STYLE, center: first ? [first.lng, first.lat] : [13.9554, 58.182], zoom: 13, attributionControl: { compact: true }, locale: mapLocale(t), cooperativeGestures: true });
         m.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         m.on("load", () => {
           // A pin's zone, or the circle of its radius where it has no zone:

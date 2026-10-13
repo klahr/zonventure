@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { post } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { CATALOG_ENABLED, navigate } from "../../router.ts";
 import { Button, Dialog, ErrorBox, Field, ImageDrop, Loading, errorText, useLoad, useToast } from "../../ui/index.ts";
 import { createEvent, listAdventures, startEvent, updateEvent, uploadEventCover } from "./api.ts";
+import { submitListingURL } from "../event/api.ts";
 import { iconOrCover } from "../adventures/parts.tsx";
 import { AdventureCover } from "./parts.tsx";
 
@@ -11,7 +13,7 @@ import { AdventureCover } from "./parts.tsx";
  * A new self-guided adventure: an always-on event sold per ticket in
  * the org's store. Tickets pay for it, so no event pass is needed —
  * only an adventure the org owns or was commissioned. Created, priced,
- * given its cover and started in one go, as the classic console does.
+ * given its cover, started and submitted for review in one go.
  * Given a slug, it is for that adventure only.
  */
 export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; onClose: () => void; onCreated: (id: number) => void }) {
@@ -31,6 +33,7 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
     setCoverSrc(url);
     return () => URL.revokeObjectURL(url);
   }, [cover]);
+  const [attest, setAttest] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -41,7 +44,7 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
       onClose();
       return;
     }
-    setPicked((p) => p ?? advs.data![0]!.slug);
+    setPicked((p) => p ?? (advs.data!.find((a) => a.playable) ?? advs.data![0]!).slug);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [advs.data]);
 
@@ -56,6 +59,7 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
     // A self-guided adventure goes on sale at once, and only a published
     // one can start: say so before creating anything.
     if (!advs.data?.find((a) => a.slug === picked)?.playable) return setError(t.t("Publish the adventure before selling it in your store."));
+    if (!attest) return setError(t.t("Confirm the content follows the terms to submit it."));
 
     setBusy(true);
     let id: number;
@@ -73,7 +77,7 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
     } catch {
       toast.err(t.t("Self-guided adventure created, but its ticket details were not saved"));
       onClose();
-      navigate({ name: "event", id });
+      navigate({ name: "event", id, quest: true });
       return;
     }
     if (cover) {
@@ -88,10 +92,19 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
     } catch (e) {
       toast.err(t.t("Self-guided adventure created, but it could not start: {{reason}}", { reason: errorText(e) }));
       onClose();
-      navigate({ name: "event", id });
+      navigate({ name: "event", id, quest: true });
       return;
     }
-    toast.ok(t.t("Self-guided adventure created and listed in your store"));
+    // Its listing goes for review with the creator's word given above.
+    try {
+      const res = await post<{ listing_review: string }>(submitListingURL(id), { attest: true });
+      toast.ok(res.listing_review === "approved" ? t.t("Approved: it is public now.") : t.t("Submitted. It goes public once it is approved."));
+    } catch (e) {
+      toast.err(t.t("Self-guided adventure created, but its listing was not submitted: {{reason}}", { reason: errorText(e) }));
+      onClose();
+      navigate({ name: "event", id, quest: true });
+      return;
+    }
     onClose();
     onCreated(id);
   }
@@ -127,8 +140,8 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
           <legend className="cs-field__label">{t.t("Adventure")}</legend>
           <div className="evs-picker" role="radiogroup" aria-label={t.t("Adventure")}>
             {advs.data.map((a) => (
-              <label key={a.slug} className={"evs-choice" + (a.slug === picked ? " is-on" : "")}>
-                <input type="radio" name="evs-quest-adventure" checked={a.slug === picked} onChange={() => setPicked(a.slug)} />
+              <label key={a.slug} className={"evs-choice" + (a.slug === picked ? " is-on" : "") + (a.playable ? "" : " is-off")}>
+                <input type="radio" name="evs-quest-adventure" checked={a.slug === picked} disabled={!a.playable} onChange={() => setPicked(a.slug)} />
                 <AdventureCover title={a.title} src={iconOrCover(a)} />
                 <span className="evs-stack">
                   <strong className="evs-ellipsis">{a.title}</strong>
@@ -149,7 +162,7 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
         <textarea rows={4} maxLength={1000} value={blurb} onChange={(e) => setBlurb(e.target.value)} placeholder={t.t("Short description shown in your store.")} />
       </Field>
       <div className="evs-grid3">
-        <Field label={t.t("Ticket price (kr)")}>
+        <Field label={t.t("Ticket price (SEK)")}>
           <input type="number" min={1} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
         </Field>
         <Field label={t.t("Players per ticket")}>
@@ -169,6 +182,14 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
         />
         <span className="cs-field__hint">{t.t("Shown in your store. JPEG / PNG / WebP / SVG, max 5 MB.")}</span>
       </div>
+      <label className="evs-check evs-attest">
+        <input type="checkbox" checked={attest} onChange={(e) => setAttest(e.target.checked)} />
+        <span>
+          {t.t("I confirm this listing and the adventure it plays contain nothing offensive, hateful, sexual, violent or otherwise illegal or unsuitable, and follow the terms.")}{" "}
+          <a href="/terms" target="_blank" rel="noopener">{t.t("Read the terms")}</a>
+        </span>
+      </label>
+      <p className="evs-muted evs-small">{t.t("Creating it submits the listing for review; it is in your store once approved.")}</p>
       {error && <ErrorBox message={error} />}
     </Dialog>
   );

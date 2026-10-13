@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import { ApiError, auth, siteName, siteWordmark, type SignupConfig } from "@zonventure/api";
 import { SPOTS, WIDE, wideSrcSet } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
+import { useToast } from "./ui/toast.tsx";
+import { errorText as messageOf } from "./ui/load.ts";
 
 /**
  * Everything before the console: log in (with single sign-on when the
@@ -19,8 +21,21 @@ type Mode =
   | { kind: "reset"; token: string }
   | { kind: "signup" };
 
+/** The shareable sign-up address, /app/arrange/signup, opens on the sign-up form. */
+const SIGNUP_PATH = import.meta.env.BASE_URL + "signup";
+
 export function Login({ onSuccess, resetToken }: { onSuccess: (note?: string) => void; resetToken?: string }) {
-  const [mode, setMode] = useState<Mode>(resetToken ? { kind: "reset", token: resetToken } : { kind: "login" });
+  const [mode, setModeState] = useState<Mode>(resetToken ? { kind: "reset", token: resetToken } : location.pathname.replace(/\/$/, "") === SIGNUP_PATH ? { kind: "signup" } : { kind: "login" });
+  const toast = useToast();
+  // A notice from the link that opened the page (a failed /verify) is
+  // about that page; it must not follow the user to another form.
+  const setMode = (m: Mode) => {
+    toast.clear();
+    setModeState(m);
+    // The address bar shows the sign-up link while its form is open, so it can be copied.
+    const path = m.kind === "signup" ? SIGNUP_PATH : import.meta.env.BASE_URL;
+    if (location.pathname !== path) history.replaceState(null, "", path + location.search + location.hash);
+  };
   const [config, setConfig] = useState<SignupConfig | null>(null);
   useEffect(() => {
     auth.signupConfig().then(setConfig, () => setConfig({ enabled: false }));
@@ -40,7 +55,7 @@ export function Login({ onSuccess, resetToken }: { onSuccess: (note?: string) =>
       return config && !config.enabled ? (
         <LoginForm config={config} onSuccess={onSuccess} onTOTP={(challenge) => setMode({ kind: "totp", challenge, afterReset: false })} onForgot={() => setMode({ kind: "forgot" })} onSignup={() => {}} />
       ) : (
-        <SignupForm onSuccess={onSuccess} onBack={toLogin} />
+        <SignupForm consent={config?.legal_pages !== false} onSuccess={onSuccess} onBack={toLogin} />
       );
   }
 }
@@ -79,7 +94,7 @@ function LinkButton({ onClick, children }: { onClick: () => void; children: Reac
 }
 
 function errorText(t: ReturnType<typeof useT>, err: unknown): string {
-  return err instanceof ApiError ? t.tError(err.code, err.message) : t.t("Could not reach the server. Check your connection.");
+  return err instanceof ApiError ? t.tError(err.code, messageOf(err)) : t.t("Could not reach the server. Check your connection.");
 }
 
 function LoginForm(props: { config: SignupConfig | null; onSuccess: () => void; onTOTP: (challenge: string) => void; onForgot: () => void; onSignup: () => void }) {
@@ -133,6 +148,8 @@ function LoginForm(props: { config: SignupConfig | null; onSuccess: () => void; 
   const sso = props.config?.sso?.enabled ? props.config.sso : null;
   return (
     <Card onSubmit={submit}>
+      {/* /oauth/authorize lands here signed out; the consent page follows the sign-in. */}
+      {location.hash.startsWith("#/authorize") && <p className="login__hint">{t.t("An assistant is asking for access to your account. Sign in to see what it asks for and decide.")}</p>}
       {sso && (
         <div className="login__sso">
           <a className="btn btn--sso" href={sso.login_url || "/auth/oidc/login"}>
@@ -203,7 +220,7 @@ function TOTPForm({ challenge, afterReset, onSuccess, onBack }: { challenge: str
 
   return (
     <Card sub={afterReset ? t.t("verify 2FA · password reset") : t.t("two-factor")} onSubmit={submit}>
-      <p className="login__hint">{t.t("Enter the 6-digit code from your authenticator app.")}</p>
+      <p className="login__hint">{recovery === null ? t.t("Enter the 6-digit code from your authenticator app.") : t.t("Enter one of the recovery codes you saved when you turned on two-factor authentication.")}</p>
       {recovery === null ? (
         <label className="field">
           <span className="field__label">{t.t("Authentication code")}</span>
@@ -322,9 +339,10 @@ function ResetForm({ token, onSuccess, onTOTP, onForgot }: { token: string; onSu
   );
 }
 
-function SignupForm({ onSuccess, onBack }: { onSuccess: (note?: string) => void; onBack: () => void }) {
+function SignupForm({ consent, onSuccess, onBack }: { consent: boolean; onSuccess: (note?: string) => void; onBack: () => void }) {
   const t = useT();
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [org, setOrg] = useState("");
   // Most people who sign up make their own adventures; the lobby is for
   // those an existing organization will add.
@@ -339,8 +357,8 @@ function SignupForm({ onSuccess, onBack }: { onSuccess: (note?: string) => void;
     setBusy(true);
     setError(null);
     try {
-      await auth.signup({ email: email.trim(), org_name: joining ? "" : org.trim(), personal: !joining, password, terms_accepted: terms });
-      history.replaceState(null, "", "#/");
+      await auth.signup({ email: email.trim(), name: name.trim(), org_name: joining ? "" : org.trim(), personal: !joining, password, terms_accepted: terms });
+      history.replaceState(null, "", import.meta.env.BASE_URL + "#/");
       onSuccess(t.t("Account created — check {{email}} for a verification link.", { email: email.trim() }));
     } catch (err) {
       setError(errorText(t, err));
@@ -355,37 +373,43 @@ function SignupForm({ onSuccess, onBack }: { onSuccess: (note?: string) => void;
         <span className="field__label">{t.t("Email")}</span>
         <input className="field__input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoFocus required />
       </label>
+      <label className="field">
+        <span className="field__label">{t.t("Your name (optional)")}</span>
+        <input className="field__input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={80} />
+      </label>
       <fieldset className="login__choice">
-        <legend className="field__label">{t.t("I'm")}</legend>
+        <legend className="field__label">{t.t("What brings you here?")}</legend>
         <label className="login__check">
           <input type="radio" name="signup-kind" checked={!joining} onChange={() => setJoining(false)} />
-          <span>{t.t("making my own adventures")}</span>
+          <span>{t.t("Making my own adventures")}</span>
         </label>
         <label className="login__check">
           <input type="radio" name="signup-kind" checked={joining} onChange={() => setJoining(true)} />
-          <span>{t.t("joining an organization that will add me")}</span>
+          <span>{t.t("Joining an organization that will add me")}</span>
         </label>
       </fieldset>
       {!joining && (
         <label className="field">
           <span className="field__label">{t.t("Team or company name (optional)")}</span>
           <input className="field__input" value={org} onChange={(e) => setOrg(e.target.value)} autoComplete="organization" />
-          <span className="login__hint">{t.t("Leave blank to use your name. You can change it any time in Settings.")}</span>
+          <span className="login__hint">{t.t("Leave blank to name it after your email address.")}</span>
         </label>
       )}
       <label className="field">
         <span className="field__label">{t.t("Password (min 8)")}</span>
         <input className="field__input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" minLength={8} required />
       </label>
-      <label className="login__check">
-        <input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} required />
-        <span>
-          {t.t("I agree to the ")}
-          <a href="/terms" target="_blank" rel="noopener">{t.t("Terms of Service")}</a>
-          {t.t(" and ")}
-          <a href="/privacy" target="_blank" rel="noopener">{t.t("Privacy Policy")}</a>.
-        </span>
-      </label>
+      {consent && (
+        <label className="login__check">
+          <input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} required />
+          <span>
+            {t.t("I agree to the ")}
+            <a href="/terms" target="_blank" rel="noopener">{t.t("Terms of Service")}</a>
+            {t.t(" and ")}
+            <a href="/privacy" target="_blank" rel="noopener">{t.t("Privacy Policy")}</a>.
+          </span>
+        </label>
+      )}
       <ErrorLine text={error} />
       <button className="btn btn--primary" type="submit" disabled={busy}>
         {t.t("Create account")}

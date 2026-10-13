@@ -40,7 +40,9 @@ export function route(path: string): Route {
 }
 
 export function App() {
-  const t = useT().t;
+  const i18n = useT();
+  const t = i18n.t;
+  const sv = i18n.current().startsWith("sv");
   const r = route(location.pathname);
   const editing = r.page === "trail-edit" || r.page === "trail-host";
   const root = useRef<HTMLDivElement>(null);
@@ -49,9 +51,12 @@ export function App() {
     <div ref={root} className={"party" + (editing ? " party--wide" : "") + (embedded ? " party--embed" + (editing ? "" : " party--fit") : "")}>
       {!embedded && (
         <header className="party-top">
-          <a href="/" className="party-brand">
-            {siteName()}
-          </a>
+          {/* Not a link: the site's root is the console, and leaving loses the host link's page. */}
+          <span className="party-brand">{siteName()}</span>
+          {/* Each language by its own name; the choice sticks (zv-lang). */}
+          <button type="button" className="party-link party-lang" lang={sv ? "en" : "sv"} aria-label={t("Language")} onClick={() => i18n.setLocale(sv ? "en" : "sv")}>
+            {sv ? "English" : "Svenska"}
+          </button>
         </header>
       )}
       <main className="party-main">
@@ -74,8 +79,13 @@ export function App() {
         ) : r.page === "host-find" ? (
           <section className="party-card">
             <h1>{t("Open your host page")}</h1>
-            <p>{t("Use the link in your booking email. Can't find it? We'll send a new one to the email you booked with.")}</p>
+            <p>{t("Use the link in the email we sent you. Can't find it? We'll send a new one to the email you gave us.")}</p>
             <Resend />
+          </section>
+        ) : r.page === "paid" && new URLSearchParams(location.search).has("cancelled") ? (
+          <section className="party-card">
+            <h1>{t("The payment was cancelled. Nothing was charged.")}</h1>
+            <p>{t("Close this tab and go back to your host page.")}</p>
           </section>
         ) : r.page === "paid" ? (
           <section className="party-card party-card--cover">
@@ -87,7 +97,7 @@ export function App() {
           <section className="party-card">
             <Spot src={SPOTS.notFound} />
             <h1>{t("Nothing here")}</h1>
-            <p>{t("Open the link from your booking email to run your party.")}</p>
+            <p>{t("Open the link from your email to run your party.")}</p>
           </section>
         )}
       </main>

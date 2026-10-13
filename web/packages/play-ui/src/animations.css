@@ -123,12 +123,13 @@
 .pv-step.is-entered[data-transition="fade"] { animation: pv-t-fade 0.5s ease-out both; }
 .pv-step.is-entered[data-transition="slide"] { animation: pv-t-slide 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .pv-step.is-entered[data-transition="zoom"] { animation: pv-t-zoom 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-.pv-step.is-entered[data-transition="flip"] { animation: pv-t-flip 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.pv-step.is-entered[data-transition="flip"] { animation: pv-t-flip 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; backface-visibility: hidden; }
 .pv-step.is-entered[data-transition="pop"] { animation: pv-t-pop 0.5s cubic-bezier(0.2, 0.6, 0.35, 1) both; }
 @keyframes pv-t-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pv-t-slide { from { opacity: 0; transform: translate3d(2.5rem, 0, 0); } to { opacity: 1; transform: none; } }
 @keyframes pv-t-zoom { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: none; } }
-@keyframes pv-t-flip { from { opacity: 0; transform: perspective(900px) rotateY(-60deg); } to { opacity: 1; transform: none; } }
+/* A flip turns the page about its upright axis: the old one turns edge-on, the new one turns in from edge-on. */
+@keyframes pv-t-flip { from { opacity: 0; transform: perspective(1200px) rotateY(-90deg); } 30% { opacity: 1; } to { opacity: 1; transform: none; } }
 /* --- Paired exits: the step that was here leaves as the next enters ----------- */
 
 /* Clipped, not scrolled: a step sliding out must not widen the page. */
@@ -140,19 +141,26 @@
 .pv-leave .pv-dock { display: none; }
 /* The new step waits a beat, so the two never read on top of each other. */
 .pv.is-leaving > .pv-step.is-entered[data-transition] { animation-delay: 0.15s; }
+.pv.is-leaving > .pv-step.is-entered[data-transition="flip"] { animation-delay: 0.2s; }
 .pv-leave[data-transition="fade"] { animation: pv-x-fade 0.25s ease-in both; }
 .pv-leave[data-transition="slide"] { animation: pv-x-slide 0.25s ease-in both; }
 .pv-leave[data-transition="zoom"] { animation: pv-x-zoom 0.25s ease-in both; }
-.pv-leave[data-transition="flip"] { animation: pv-x-flip 0.3s ease-in both; }
+.pv-leave[data-transition="flip"] { animation: pv-x-flip 0.2s cubic-bezier(0.55, 0, 1, 0.45) both; backface-visibility: hidden; }
 .pv-leave[data-transition="pop"] { animation: pv-x-pop 0.2s ease-in both; }
 @keyframes pv-x-fade { to { opacity: 0; } }
 @keyframes pv-x-slide { to { opacity: 0; transform: translate3d(-2.5rem, 0, 0); } }
 @keyframes pv-x-zoom { to { opacity: 0; transform: scale(1.06); } }
-@keyframes pv-x-flip { to { opacity: 0; transform: perspective(900px) rotateY(60deg); } }
+@keyframes pv-x-flip { 70% { opacity: 1; } to { opacity: 0; transform: perspective(1200px) rotateY(90deg); } }
 @keyframes pv-x-pop { to { opacity: 0; transform: scale(0.85); } }
 
 @keyframes pv-t-pop {
   0% { opacity: 0; transform: scale(0.8); }
   70% { opacity: 1; transform: scale(1.03); }
   100% { transform: none; }
+}
+
+/* Under reduced motion play-ui.css stills every animation; a flip still
+ * marks the new page, with a fade. */
+@media (prefers-reduced-motion: reduce) {
+  .pv .pv-step.is-entered[data-transition="flip"] { animation: pv-t-fade 0.3s ease-out both !important; }
 }

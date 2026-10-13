@@ -66,7 +66,7 @@ func CreateUploadLink(ctx context.Context, db *sql.DB, me auth.User, purpose, sl
 		if err != nil {
 			return "", 0, err
 		}
-		if me.OrgID == nil || !org.Valid || org.Int64 != *me.OrgID {
+		if me.OrgID == nil || !org.Valid || org.Int64 != *me.OrgID || !runsEvents(me) {
 			return "", 0, ErrForbidden
 		}
 	default:

@@ -112,6 +112,12 @@ func (f legalField) value() string {
 
 var legal atomic.Pointer[Legal]
 
+// Published reports whether /privacy and /terms are live: the company
+// name, contact email and jurisdiction they need are all set.
+func (l Legal) Published() bool {
+	return strings.TrimSpace(l.CompanyName) != "" && strings.TrimSpace(l.ContactEmail) != "" && strings.TrimSpace(l.Jurisdiction) != ""
+}
+
 // CurrentLegal returns the legal values in force: the saved ones, else the defaults.
 func CurrentLegal() Legal {
 	if l := legal.Load(); l != nil {

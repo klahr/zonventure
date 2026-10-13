@@ -250,6 +250,13 @@ func (h *Handlers) Join(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the host is still setting the game up", "code": "not_ready"})
 		return
 	case "full":
+		// The host page says how many teams couldn't join.
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE event_rounds SET turned_away = array_append(turned_away, $3)
+			WHERE event_id = $1 AND round = $2 AND NOT ($3 = ANY(turned_away)) AND cardinality(turned_away) < 100
+		`, p.EventID, p.Round, strings.ToLower(name)); err == nil {
+			_ = tx.Commit()
+		}
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "this game is full — ask the host to add teams", "code": "full"})
 		return
 	}
@@ -401,6 +408,9 @@ func (h *Handlers) finishRound(ctx context.Context, eventID int64, by string) (b
 	if err := endTeamSessions(ctx, tx, "t.event_id = $1 AND t.round = $2", eventID, round); err != nil {
 		return false, err
 	}
+	if err := h.engine().SettleRound(ctx, tx, eventID, round); err != nil {
+		return false, err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE events SET state = 'running', `+activity.ClosePause+` WHERE id = $1 AND state = 'paused'
 	`, eventID); err != nil {
@@ -431,7 +441,7 @@ func (h *Handlers) sendRoundSummary(ctx context.Context, eventID int64, round in
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	var to, party string
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE((SELECT buyer_email FROM ticket_purchases WHERE event_id = e.id ORDER BY id LIMIT 1),
+		SELECT COALESCE((SELECT buyer_email FROM ticket_purchases WHERE event_id = e.id AND buyer_email <> '' ORDER BY id LIMIT 1),
 		                (SELECT email FROM trails WHERE event_id = e.id), ''), e.party_name
 		FROM events e WHERE e.id = $1
 	`, eventID).Scan(&to, &party); err != nil {
@@ -443,9 +453,16 @@ func (h *Handlers) sendRoundSummary(ctx context.Context, eventID int64, round in
 			return err
 		}
 		l := h.eventLook(ctx, eventID)
-		// The host link's secret is only ever in the host's mail, so the
-		// summary links to the host page's resend form instead.
-		subject, c := emailtpl.RoundSummary(l.Lang, publicURL+"/app/party/host/", party, l.Brand.Name, round, teams, cards)
+		// The summary goes to the host, so it carries the host link. One
+		// not kept would have to be replaced, signing the host page out,
+		// so then the summary links to the host page's resend form.
+		hostURL := publicURL + "/app/party/host/"
+		if token, err := h.keptHostToken(ctx, eventID); err != nil {
+			return err
+		} else if token != "" {
+			hostURL = publicURL + "/party/" + token
+		}
+		subject, c := emailtpl.RoundSummary(l.Lang, hostURL, party, l.Brand.Name, round, teams, cards)
 		c.Picture = l.Cover
 		msg := l.message([]string{to}, subject, c)
 		if h.MailOutbox != nil {
@@ -522,17 +539,40 @@ func (h *Handlers) roundSummary(ctx context.Context, eventID int64, round int) (
 		return nil, nil, err
 	}
 	at := map[string]int{}
+	// A quiz question is a block: its card is reached with its step and
+	// right when the team picked its answer.
+	type quizCard struct {
+		card   int
+		answer string
+	}
+	quiz := map[[2]string]quizCard{}
+	reachedWith := map[string][]int{}
 	cards := []emailtpl.RoundCard{}
 	for _, n := range stored.Graph.Nodes {
-		if n.Type != graph.Puzzle {
-			continue
-		}
 		title := n.Title
 		if title == "" {
 			title = n.Slug
 		}
-		at[n.Slug] = len(cards)
-		cards = append(cards, emailtpl.RoundCard{Title: title})
+		if n.Type == graph.Puzzle {
+			at[n.Slug] = len(cards)
+			cards = append(cards, emailtpl.RoundCard{Title: title})
+			continue
+		}
+		var blocks []graph.Block
+		for _, b := range n.Blocks() {
+			if b.Kind == graph.BlockQuiz {
+				blocks = append(blocks, b)
+			}
+		}
+		for _, b := range blocks {
+			t := title
+			if len(blocks) > 1 && b.Text != "" {
+				t = b.Text
+			}
+			quiz[[2]string{n.Slug, b.ID}] = quizCard{len(cards), b.Answer}
+			reachedWith[n.Slug] = append(reachedWith[n.Slug], len(cards))
+			cards = append(cards, emailtpl.RoundCard{Title: t})
+		}
 	}
 	rows, err = h.DB.QueryContext(ctx, `
 		SELECT s.node, COUNT(*), COUNT(s.solved_at)
@@ -555,8 +595,39 @@ func (h *Handlers) roundSummary(ctx context.Context, eventID int64, round int) (
 		if i, ok := at[node]; ok {
 			cards[i].Reached, cards[i].Right = reached, right
 		}
+		for _, i := range reachedWith[node] {
+			cards[i].Reached = reached
+		}
 	}
-	return teams, cards, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	if len(quiz) == 0 {
+		return teams, cards, nil
+	}
+	picks, err := h.DB.QueryContext(ctx, `
+		SELECT p.node, p.block_id, p.choice, COUNT(*)
+		FROM team_block_picks p JOIN teams t ON t.id = p.team_id
+		WHERE t.event_id = $1 AND t.round = $2 AND t.withdrawn_at IS NULL
+		GROUP BY p.node, p.block_id, p.choice
+	`, eventID, round)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer picks.Close()
+	for picks.Next() {
+		var (
+			node, block, choice string
+			n                   int
+		)
+		if err := picks.Scan(&node, &block, &choice, &n); err != nil {
+			return nil, nil, err
+		}
+		if q, ok := quiz[[2]string{node, block}]; ok && choice != "" && choice == q.answer {
+			cards[q.card].Right += n
+		}
+	}
+	return teams, cards, picks.Err()
 }
 
 /* ---------------- sending the player link ---------------- */

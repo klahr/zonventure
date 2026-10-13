@@ -132,15 +132,17 @@ func TestEventFiles(t *testing.T) {
 	if s, _, body := anon.get("/team/" + tokens[0]); s != 200 || !strings.Contains(string(body), `href="/team/`+tokens[0]+`/files/`+itoa(id)+`"`) || !strings.Contains(string(body), "Regler för dagen.pdf") {
 		t.Errorf("team page = %d, lacks the file link", s)
 	}
-	// An adventure in Swedish has its team page in Swedish.
-	if _, err := db.Exec(`UPDATE adventures SET language = 'sv' WHERE slug = 'demo'`); err != nil {
+	// A visitor browsing in Swedish gets the team page in Swedish.
+	svReq, _ := http.NewRequest("GET", ts.URL+"/team/"+tokens[0], nil)
+	svReq.Header.Set("Accept-Language", "sv")
+	svResp, err := anon.c.Do(svReq)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, body := anon.get("/team/" + tokens[0]); !strings.Contains(string(body), `<html lang="sv">`) || !strings.Contains(string(body), "Filer från arrangörerna") || strings.Contains(string(body), "Files from the organisers") || !strings.Contains(string(body), `addEventListener("change"`) {
+	svBody, _ := io.ReadAll(svResp.Body)
+	svResp.Body.Close()
+	if body := svBody; !strings.Contains(string(body), `<html lang="sv">`) || !strings.Contains(string(body), "Filer från arrangörerna") || strings.Contains(string(body), "Files from the organisers") || !strings.Contains(string(body), `addEventListener("change"`) {
 		t.Errorf("Swedish team page:\n%s", body)
-	}
-	if _, err := db.Exec(`UPDATE adventures SET language = 'en' WHERE slug = 'demo'`); err != nil {
-		t.Fatal(err)
 	}
 	if _, _, body := anon.get("/team/" + tokens[1]); strings.Contains(string(body), "Files from the organisers") {
 		t.Errorf("another event's team page lists the file")
@@ -160,6 +162,54 @@ func TestEventFiles(t *testing.T) {
 	}
 	if s, _, _ := player.get("/api/player/files/" + itoa(id)); s != 404 {
 		t.Errorf("deleted file = %d, want 404", s)
+	}
+
+	// A file added before the start comes unannounced; one added
+	// mid-game is announced to the teams in a message.
+	var inbox struct {
+		Messages []struct {
+			Text string `json:"text"`
+		} `json:"messages"`
+	}
+	if s := player.doAny("GET", "/api/player/play", nil, &inbox); s != 200 || len(inbox.Messages) != 0 {
+		t.Fatalf("messages before the start = %d %+v", s, inbox.Messages)
+	}
+	if _, err := db.Exec(`UPDATE events SET state = 'running', started_at = now_text() WHERE id = $1`, evID); err != nil {
+		t.Fatal(err)
+	}
+	s, out = arr.uploadNamed(files, "Karta.pdf", tinyPDF)
+	if s != 201 {
+		t.Fatalf("mid-game upload = %d %v", s, out)
+	}
+	if s := player.doAny("GET", "/api/player/play", nil, &inbox); s != 200 || len(inbox.Messages) != 1 || !strings.Contains(inbox.Messages[0].Text, "New file: Karta.pdf") {
+		t.Errorf("messages after a mid-game upload = %d %+v", s, inbox.Messages)
+	}
+	if s := arr.do("DELETE", files+"/"+itoa(int64(out["id"].(float64))), nil, nil); s != 204 {
+		t.Fatalf("delete = %d", s)
+	}
+
+	// Files uploaded together unannounced get one message for the batch.
+	var batch []int64
+	for _, name := range []string{"A.pdf", "B.pdf"} {
+		s, out := arr.uploadNamed(files+"?announce=0", name, tinyPDF)
+		if s != 201 {
+			t.Fatalf("unannounced upload = %d %v", s, out)
+		}
+		batch = append(batch, int64(out["id"].(float64)))
+	}
+	if s := player.doAny("GET", "/api/player/play", nil, &inbox); s != 200 || len(inbox.Messages) != 1 {
+		t.Errorf("messages after unannounced uploads = %d %+v", s, inbox.Messages)
+	}
+	if s := arr.do("POST", files+"/announce", map[string]any{"file_ids": batch}, nil); s != 204 {
+		t.Fatalf("announce = %d", s)
+	}
+	if s := player.doAny("GET", "/api/player/play", nil, &inbox); s != 200 || len(inbox.Messages) != 2 || !strings.Contains(inbox.Messages[0].Text, "2 new files: A.pdf, B.pdf") {
+		t.Errorf("messages after the batch announce = %d %+v", s, inbox.Messages)
+	}
+	for _, id := range batch {
+		if s := arr.do("DELETE", files+"/"+itoa(id), nil, nil); s != 204 {
+			t.Fatalf("delete = %d", s)
+		}
 	}
 
 	for i := 0; i < 10; i++ {

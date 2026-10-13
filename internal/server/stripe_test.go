@@ -383,6 +383,14 @@ func stubStripeAPI(t *testing.T, sessionsByPI map[string]string) func() url.Valu
 			})
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/v1/checkout/sessions/"):
 			id := strings.TrimPrefix(r.URL.Path, "/v1/checkout/sessions/")
+			if id == "cs_receipt" {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"id": id, "object": "checkout.session",
+					"payment_intent": map[string]any{"id": "pi_r", "object": "payment_intent",
+						"latest_charge": map[string]any{"id": "ch_r", "object": "charge", "receipt_url": "https://receipt.example/ch_r"}},
+				})
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id": id, "object": "checkout.session",
 				"payment_intent": map[string]any{"id": "pi_123", "object": "payment_intent", "latest_charge": "ch_123"},
@@ -449,6 +457,44 @@ func TestCreatePurchase_StripeCheckoutTaxParams(t *testing.T) {
 	}
 	if got := form.Get("line_items[0][price_data][unit_amount]"); got != "24500" {
 		t.Fatalf("unit_amount = %q, want 24500", got)
+	}
+}
+
+// A session with no invoice records the charge's Stripe receipt as the
+// purchase's receipt link.
+func TestStripeWebhook_ReceiptWithoutInvoice(t *testing.T) {
+	cfg := server.Config{
+		StripeSecretKey:     testStripeSecretKey,
+		StripeWebhookSecret: testStripeWebhookKey,
+		Env:                 "dev",
+	}
+	ts, db, orgID, cleanup := seedPurchaseStack(t, cfg)
+	defer cleanup()
+	stubStripeAPI(t, nil)
+	var purchaseID int64
+	if err := db.QueryRow(`
+		INSERT INTO purchases(org_id, adventure_slug, max_players, amount_cents, currency, provider, state, provider_session_id)
+		VALUES ($1, 'demo', 20, 2500, 'EUR', 'stripe', 'pending', 'cs_receipt') RETURNING id
+	`, orgID).Scan(&purchaseID); err != nil {
+		t.Fatalf("seed purchase: %v", err)
+	}
+	body := eventEnvelope(t, "evt_receipt_1", "checkout.session.completed", map[string]any{
+		"id": "cs_receipt", "object": "checkout.session",
+		"amount_total": 2500, "amount_subtotal": 2500, "currency": "eur", "payment_status": "paid",
+		"payment_intent": "pi_r",
+		"metadata":       map[string]string{"zv_purchase_id": fmt.Sprintf("%d", purchaseID)},
+	})
+	if code, msg := postWebhook(t, ts, body, stripeSign(t, body, testStripeWebhookKey)); code != http.StatusOK {
+		t.Fatalf("webhook = %d (%s), want 200", code, msg)
+	}
+	var chargeID, receipt string
+	if err := db.QueryRow(`
+		SELECT COALESCE(stripe_charge_id, ''), COALESCE(stripe_invoice_url, '') FROM purchases WHERE id = $1
+	`, purchaseID).Scan(&chargeID, &receipt); err != nil {
+		t.Fatalf("readback: %v", err)
+	}
+	if chargeID != "ch_r" || receipt != "https://receipt.example/ch_r" {
+		t.Fatalf("charge=%q receipt=%q", chargeID, receipt)
 	}
 }
 

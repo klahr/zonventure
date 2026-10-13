@@ -499,7 +499,7 @@
   outline: none;
   transition: border-color 0.2s;
 }
-.trail-paper__text:hover:not(:disabled) {
+.trail-paper__text:hover:not(:read-only) {
   border-color: color-mix(in srgb, var(--accent) 60%, var(--border-soft));
 }
 .trail-paper__text:focus {
@@ -508,7 +508,7 @@
   background: var(--surface);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
 }
-.trail-paper__text:disabled {
+.trail-paper__text:read-only {
   border-color: transparent;
   background: transparent;
   padding-left: 0;
@@ -1372,4 +1372,19 @@
     padding: 0 0.7rem;
     font-size: var(--text-xs);
   }
+}
+
+/* A capped field's count, once it is nearly full. */
+.trail-room {
+  flex: none;
+  display: block;
+  padding: 0 var(--sp-2);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.trail-room.is-full {
+  color: var(--danger);
+  font-weight: 700;
 }

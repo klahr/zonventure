@@ -49,7 +49,7 @@ func TestStorePages(t *testing.T) {
 		dbtest.ApproveListings(t, db)
 		r := chi.NewRouter()
 		r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
-			renderStoreEventPage(w, req, db, "https://zv.example.com")
+			renderStoreEventPage(w, req, db, "https://zv.example.com", false)
 		})
 
 		req := httptest.NewRequest("GET", "/store/event/"+itoa64(eventID), nil)
@@ -79,10 +79,26 @@ func TestStorePages(t *testing.T) {
 			"A two-hour outdoor adventure.", // blurb
 			"https://zv.example.com/o/acme/store/event/", // canonical URL
 			"€25", // formatted price
+			"Payment by Stripe.",
+			"By the fountain", // meeting point
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("body missing %q", want)
 			}
+		}
+		// A meeting point is set, so its tile shows.
+		if strings.Contains(body, `<div class="meta-tile" hidden>`) {
+			t.Error("meeting point tile hidden though the adventure has one")
+		}
+		// Without one the tile goes, rather than showing empty.
+		if _, err := db.Exec(`UPDATE adventures SET start_label = '' WHERE slug = 'demo'`); err != nil {
+			t.Fatal(err)
+		}
+		defer db.Exec(`UPDATE adventures SET start_label = 'By the fountain' WHERE slug = 'demo'`) //nolint:errcheck
+		rec = httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest("GET", "/store/event/"+itoa64(eventID), nil))
+		if !strings.Contains(rec.Body.String(), `<div class="meta-tile" hidden>`) {
+			t.Error("empty meeting point tile not hidden")
 		}
 		// Cache headers + content type are part of the contract.
 		if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
@@ -111,7 +127,7 @@ func TestStorePages(t *testing.T) {
 			_, _ = w.Write([]byte("404"))
 		})
 		r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
-			renderStoreEventPage(w, req, db, "")
+			renderStoreEventPage(w, req, db, "", false)
 		})
 
 		req := httptest.NewRequest("GET", "/store/event/"+itoa64(eventID), nil)
@@ -120,6 +136,34 @@ func TestStorePages(t *testing.T) {
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", rec.Code)
+		}
+	})
+
+	// A listed event that is paused says it isn't on sale right now,
+	// not that the page never existed.
+	t.Run("off sale while paused", func(t *testing.T) {
+		var eventID int64
+		if err := db.QueryRow(`
+			INSERT INTO events(adventure_slug, org_id, state, live_token, name,
+			                   public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size)
+			VALUES ('demo', $1, 'running', 'lt-' || md5(random()::text), 'Paused one',
+			        TRUE, 2500, 'eur', 5)
+			RETURNING id
+		`, orgID).Scan(&eventID); err != nil {
+			t.Fatal(err)
+		}
+		dbtest.ApproveListings(t, db)
+		if _, err := db.Exec(`UPDATE events SET state = 'paused' WHERE id = $1`, eventID); err != nil {
+			t.Fatal(err)
+		}
+		r := chi.NewRouter()
+		r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
+			renderStoreEventPage(w, req, db, "", false)
+		})
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest("GET", "/store/event/"+itoa64(eventID), nil))
+		if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), landingLocales["en"].StoreEventNotForSale) {
+			t.Fatalf("status = %d, want 404 saying it isn't on sale; body = %s", rec.Code, rec.Body.String())
 		}
 	})
 
@@ -148,7 +192,7 @@ func TestStorePages(t *testing.T) {
 		dbtest.ApproveListings(t, db)
 		r := chi.NewRouter()
 		r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
-			renderStoreEventPage(w, req, db, "https://zv.example.com")
+			renderStoreEventPage(w, req, db, "https://zv.example.com", false)
 		})
 		page := func(slug string) string {
 			rec := httptest.NewRecorder()
@@ -168,7 +212,7 @@ func TestStorePages(t *testing.T) {
 
 		rec := httptest.NewRecorder()
 		lr := chi.NewRouter()
-		lr.Get("/api/o/{slug}/store/items", (&public.Handlers{DB: db, Lib: adventure.New(db)}).StoreListByOrg)
+		lr.Get("/api/o/{slug}/store/items", (&public.Handlers{DB: db, Lib: adventure.New(db), Payments: true}).StoreListByOrg)
 		lr.ServeHTTP(rec, httptest.NewRequest("GET", "/api/o/acme/store/items", nil))
 		var list struct {
 			Items []public.StoreItemDTO `json:"items"`

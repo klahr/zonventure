@@ -118,6 +118,10 @@ type Graph struct {
 	// it is rendered, and anything untranslated falls back to the main
 	// text — a half-translated adventure still plays.
 	Translations map[string]map[string]string `json:"translations,omitempty"`
+	// TranslationSources fingerprints the main text each translation was
+	// made from, keyed as Translations: the designer marks a translation
+	// outdated when its original has changed since. The engine ignores it.
+	TranslationSources map[string]map[string]string `json:"translation_sources,omitempty"`
 
 	// PrintMaterials are the PDFs that come with the adventure on paper:
 	// a letter with the first clue, a map. They belong to the version, so
@@ -544,6 +548,14 @@ type PuzzleConfig struct {
 	// wrong answer is wrong as ever, and withdraws that player's. Only for
 	// an answer the outputs' matchers decide (UsesMatchers).
 	Unanimous bool `json:"unanimous,omitempty"`
+
+	// Quiet takes any answer without a word of right or wrong, as a quiz
+	// walk does: a right one scores as ever, a wrong one nothing, and
+	// either moves the team on — a wrong one by the output a right answer
+	// takes. A wrong answer gets no replies or lockout and counts towards
+	// no tries-based output. Only for an answer the outputs' matchers
+	// decide (UsesMatchers), and not with Unanimous.
+	Quiet bool `json:"quiet,omitempty"`
 
 	// By is the role whose player alone may answer: the Locksmith opens
 	// the door. The others see the step, and that it is not theirs to
@@ -1500,13 +1512,14 @@ func (p *PuzzleConfig) ResponseIndex(attempts int) int {
 
 // Slugs returns every node slug, sorted, for stable error messages and
 // diffs.
-// MediaIDs returns every media id the graph refers to, once each.
+// MediaIDs returns every media id the graph refers to, once each. A block
+// still waiting for its file (id 0) refers to none; the validator reports it.
 func (g *Graph) MediaIDs() []int64 {
 	seen := map[int64]bool{}
 	var out []int64
 	add := func(ms []Media) {
 		for _, m := range ms {
-			if !seen[m.ID] {
+			if m.ID > 0 && !seen[m.ID] {
 				seen[m.ID] = true
 				out = append(out, m.ID)
 			}

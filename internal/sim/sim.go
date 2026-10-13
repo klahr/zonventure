@@ -452,6 +452,11 @@ type bot struct {
 	// regroup is when a team that split up to open a branch is together
 	// again, having walked back to the player who stayed nearest.
 	regroup float64
+
+	// round is the hub the team last chose at and how far it had got
+	// then, and roundSince when it first stood there that way.
+	round      string
+	roundSince float64
 }
 
 // mark notes key under node in m, making the maps as needed.
@@ -871,6 +876,9 @@ func (b *bot) hub(v session.View) {
 		b.waitFor(v)
 		return
 	}
+	if b.goingRound(v.Node) {
+		return
+	}
 	// The nearest branch, mostly — but teams also pick what sounds fun.
 	pick := open[b.rng().IntN(len(open))]
 	if b.rng().Float64() < b.greedy {
@@ -882,6 +890,35 @@ func (b *bot) hub(v session.View) {
 	}
 	// Full, most likely: try again soon, perhaps another.
 	b.later(60 + b.rng().Float64()*120)
+}
+
+// goingRound reports whether the team has kept choosing at the hub with
+// nothing new to show since it first did — no step reached or answered,
+// nothing gained — for as long as a team may find nothing to do. That is
+// a team going round between a hub and a gate it can never pass, a key
+// out of reach, and it is given up on.
+func (b *bot) goingRound(hub string) bool {
+	key := hub + "\x00" + progress(b.t)
+	if key != b.round {
+		b.round, b.roundSince = key, b.r.now
+		return false
+	}
+	if b.r.now-b.roundSince <= stallAfter {
+		return false
+	}
+	b.stall("keeps coming back here with nothing new to do; a key may be out of reach")
+	return true
+}
+
+// progress is how far a team has got, as one string.
+func progress(t *session.Team) string {
+	outcomes := 0
+	for _, s := range t.Nodes {
+		if s.HasOutcome || s.Solved {
+			outcomes++
+		}
+	}
+	return fmt.Sprint(len(t.Nodes), outcomes, t.Points, t.Items, t.Counters, len(t.JournalOrder), len(t.Picks), t.Entered)
 }
 
 // --- splitting up ---------------------------------------------------------
@@ -1370,8 +1407,59 @@ func satisfy(m match.Matcher) (string, bool) {
 	return "", false
 }
 
-// wrongGuesses are what teams type when they have not got it.
+// wrongGuesses are what teams type when they have not got it, for an
+// adventure with no words of its own to guess from.
 var wrongGuesses = []string{"north", "seven", "the old oak", "1848", "lighthouse", "red", "under the bridge", "42", "clock", "anna"}
+
+// contentGuesses are wrong guesses in the adventure's own words: near
+// misses of the step's answers (a letter dropped, two swapped), then the
+// answers of its other steps and its options' labels. In whatever
+// language the adventure is written, so the commonest wrong guesses say
+// something about it.
+func contentGuesses(g *graph.Graph, n graph.Node) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(v string) {
+		if v = strings.TrimSpace(v); v != "" && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	exacts := func(cfg *graph.PuzzleConfig) []string {
+		var vs []string
+		for _, o := range cfg.Outputs {
+			for _, m := range o.Matchers {
+				if m.Kind == match.Exact {
+					vs = append(vs, m.Value)
+				}
+			}
+		}
+		return vs
+	}
+	for _, v := range exacts(n.PuzzleCfg) {
+		r := []rune(strings.TrimSpace(v))
+		if len(r) > 2 {
+			add(string(r[:len(r)-1]))
+			add(string(append([]rune{r[1], r[0]}, r[2:]...)))
+		}
+	}
+	for _, o := range g.Nodes {
+		if o.Slug == n.Slug || o.PuzzleCfg == nil {
+			continue
+		}
+		for _, v := range exacts(o.PuzzleCfg) {
+			add(v)
+		}
+		if a := o.PuzzleCfg.Answer; a != nil {
+			for _, f := range a.Fields {
+				for _, opt := range f.Options {
+					add(opt.Label)
+				}
+			}
+		}
+	}
+	return out
+}
 
 // wrongAnswer is a plausible wrong guess for the puzzle's kind.
 func (b *bot) wrongAnswer(n graph.Node) string {
@@ -1406,7 +1494,11 @@ func (b *bot) wrongAnswer(n graph.Node) string {
 		}
 		g = strings.Join(parts, "|")
 	default:
-		g = wrongGuesses[b.rng().IntN(len(wrongGuesses))]
+		pool := contentGuesses(b.r.g, n)
+		if len(pool) == 0 {
+			pool = wrongGuesses
+		}
+		g = pool[b.rng().IntN(len(pool))]
 	}
 	// Never by accident the right one.
 	for _, o := range cfg.Outputs {

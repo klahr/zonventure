@@ -6,13 +6,16 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/eventfile"
+	"github.com/klahr/zonventure/internal/eventmsg"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/ws"
@@ -35,7 +38,10 @@ func (h *Handlers) ListEventFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 // AddEventFile uploads a file for the event's players: multipart `file`,
-// at most eventfile.MaxSize. Teams' phones show it at once.
+// at most eventfile.MaxSize. Teams' phones show it at once. With
+// ?announce=0 the teams get no message for it: the organiser's page
+// uploads several files that way and announces them together
+// (AnnounceEventFiles).
 //
 // POST /api/admin/events/{eventID}/files
 func (h *Handlers) AddEventFile(w http.ResponseWriter, r *http.Request) {
@@ -86,9 +92,70 @@ func (h *Handlers) AddEventFile(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
 		return
 	}
+	if r.URL.Query().Get("announce") != "0" {
+		h.announceFiles(r.Context(), eventID, userID, []string{file.Name})
+	}
 	h.publishMessages(eventID)
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusCreated, file)
+}
+
+// announceFiles tells the teams about files added mid-game in one
+// message, or they appear in the menu unnoticed. Not on a store event,
+// where a new file waits for review, nor before the start.
+func (h *Handlers) announceFiles(ctx context.Context, eventID, userID int64, names []string) {
+	var live bool
+	_ = h.DB.QueryRowContext(ctx, `SELECT state IN ('running', 'paused') AND NOT public_for_sale FROM events WHERE id = $1`, eventID).Scan(&live)
+	if !live || len(names) == 0 {
+		return
+	}
+	lang := h.eventLook(ctx, eventID).Lang
+	text := emailtpl.T(lang, "New file: %s. Open the menu and look under “Files from the organisers”.", names[0])
+	if len(names) > 1 {
+		text = emailtpl.T(lang, "%d new files: %s. Open the menu and look under “Files from the organisers”.", len(names), strings.Join(names, ", "))
+	}
+	if _, err := eventmsg.Send(ctx, h.DB, eventID, userID, text, nil); err != nil {
+		logx.Warn("admin.event_files.announce", "event", eventID, "err", err.Error())
+	}
+}
+
+// AnnounceEventFiles sends the teams one message for files uploaded
+// together with ?announce=0: {"file_ids": [...]}.
+//
+// POST /api/admin/events/{eventID}/files/announce
+func (h *Handlers) AnnounceEventFiles(w http.ResponseWriter, r *http.Request) {
+	eventID, ok := h.messagesEvent(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		FileIDs []int64 `json:"file_ids"`
+	}
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	files, err := eventfile.List(r.Context(), h.DB, eventID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading files failed", err)
+		return
+	}
+	var names []string
+	for _, f := range files {
+		if slices.Contains(req.FileIDs, f.ID) {
+			names = append(names, f.Name)
+		}
+	}
+	if len(names) == 0 {
+		httpx.Error(w, http.StatusBadRequest, "no such files")
+		return
+	}
+	var userID int64
+	if me, ok := auth.FromContext(r.Context()); ok {
+		userID = me.ID
+	}
+	h.announceFiles(r.Context(), eventID, userID, names)
+	h.publishMessages(eventID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // GetEventFile downloads one of the event's files, for the organisers

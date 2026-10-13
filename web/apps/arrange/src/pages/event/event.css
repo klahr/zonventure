@@ -29,6 +29,7 @@
 
 .dz .ev-link { display: inline-flex; align-items: center; gap: var(--dz-space-1); flex: 1 1 14rem; min-width: 0; }
 .dz .ev-link input { flex: 1; min-width: 0; font-family: var(--dz-font-mono); font-size: var(--dz-text-sm); background: var(--dz-surface-2); }
+.dz .ev-copybox { display: block; width: 100%; margin-top: var(--dz-space-2); font-family: var(--dz-font-mono); font-size: var(--dz-text-sm); background: var(--dz-surface-2); }
 .dz .ev-link--sm input { font-size: var(--dz-text-xs); }
 
 .dz .ev-live-dlg { display: flex; flex-direction: column; gap: var(--dz-space-3); }
@@ -63,6 +64,8 @@
 .dz .ev-team__name { padding: 0; border: 0; background: none; box-shadow: none; min-height: 0; color: var(--dz-accent); font-weight: 600; text-align: left; cursor: pointer; }
 .dz .ev-team__name:hover { text-decoration: underline; background: none; }
 .dz .ev-team__email { display: block; font-size: var(--dz-text-xs); color: var(--dz-muted); text-decoration: none; overflow-wrap: anywhere; }
+/* On a phone the row actions sit two by two, so the table fits its card instead of scrolling them out of sight. */
+@media (max-width: 720px) { .dz .ev-teams .ev-end { display: grid; grid-template-columns: repeat(2, auto); justify-content: end; } }
 .dz .ev-avatar { display: inline-grid; place-items: center; flex: none; overflow: hidden; border-radius: 50%; border: 2px solid; color: #fff; font-weight: 700; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08); }
 .dz .ev-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
@@ -90,6 +93,8 @@
 .dz .ev-picks { display: flex; flex-wrap: wrap; gap: var(--dz-space-2) var(--dz-space-4); }
 
 .dz .ev-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--dz-space-3); }
+/* On a phone one photo card fills a nested scroll box and hides its buttons: let the page scroll instead. */
+@media (max-width: 720px) { .dz .ev-photos.ev-scroll { max-height: none; overflow-y: visible; } }
 .dz .ev-photo { display: flex; flex-direction: column; gap: var(--dz-space-1); }
 .dz .ev-photo__img { display: block; padding: 0; border: 0; background: none; box-shadow: none; min-height: 0; cursor: zoom-in; }
 .dz .ev-photo__img img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--dz-r-2); }
@@ -134,4 +139,5 @@
 .ev-hash { font-family: ui-monospace, monospace; font-size: .8rem; word-break: break-all; }
 
 .dz .ev-prints { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--dz-space-2); }
-.dz .ev-prints li { display: flex; align-items: center; justify-content: space-between; gap: var(--dz-space-3); }
+.dz .ev-prints li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--dz-space-3); }
+.dz .ev-prints li .ev-muted { flex-basis: 100%; font-size: var(--dz-text-sm); }

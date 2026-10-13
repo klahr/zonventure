@@ -15,6 +15,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/trail"
 )
 
@@ -167,7 +169,14 @@ func TestPublicTrail_Draft(t *testing.T) {
 	if w := callH(t, f.public, "GET", draftPath(d), nil, map[string]string{"X-Trail-Secret": "wrong"}); w.Code != http.StatusNotFound {
 		t.Errorf("wrong secret: %d", w.Code)
 	}
+	// The template's cards are examples until the creator edits one.
+	for _, c := range d.Trail.Cards {
+		if !c.Example {
+			t.Errorf("template card not an example: %+v", c)
+		}
+	}
 	cards := append(d.Trail.Cards, trail.Card{ID: trail.NewID(), Kind: trail.Info, Text: "Slut!"})
+	cards[0].Text, cards[0].Example = "Edited?", false
 	w = callH(t, f.public, "PUT", draftPath(d), map[string]any{"cards": cards, "revision": d.Trail.Revision, "title": "Elsas runda"}, secretOf(d))
 	if w.Code != http.StatusOK {
 		t.Fatalf("save: %d %s", w.Code, w.Body)
@@ -177,12 +186,16 @@ func TestPublicTrail_Draft(t *testing.T) {
 	if saved.Title != "Elsas runda" || len(saved.Cards) != 4 || saved.State != "draft" {
 		t.Errorf("saved: %+v", saved)
 	}
+	if saved.Cards[0].Example || !saved.Cards[1].Example || saved.Cards[3].Example {
+		t.Errorf("examples after save: %+v", saved.Cards)
+	}
 
 	w = call(t, f.console, "GET", "/api/admin/adventures", nil)
 	if strings.Contains(w.Body.String(), saved.Slug) || !strings.Contains(w.Body.String(), "treasure") {
 		t.Errorf("the org's adventures show the hidden trail: %s", w.Body)
 	}
 
+	_, _ = f.h.DB.Exec(`UPDATE adventures SET trail_theme = 'pirate', accent_color = '#123456' WHERE slug = $1`, saved.Slug)
 	w = callH(t, f.public, "POST", draftPath(d)+"/duplicate", nil, secretOf(d))
 	if w.Code != http.StatusCreated {
 		t.Fatalf("duplicate: %d %s", w.Code, w.Body)
@@ -191,6 +204,12 @@ func TestPublicTrail_Draft(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &dup)
 	if dup.ID == d.ID || dup.Trail.Title != "Elsas runda (kopia)" || len(dup.Trail.Cards) != 4 {
 		t.Errorf("duplicate: %+v", dup.Trail)
+	}
+	// The copy keeps the look, and edited cards are no examples again.
+	var accent string
+	_ = f.h.DB.QueryRow(`SELECT accent_color FROM adventures WHERE slug = $1`, dup.Trail.Slug).Scan(&accent)
+	if dup.Trail.Theme != "pirate" || accent != "#123456" || dup.Trail.Revision == 0 {
+		t.Errorf("duplicate's look: theme %q, accent %q, revision %d", dup.Trail.Theme, accent, dup.Trail.Revision)
 	}
 
 	if w := callH(t, f.public, "DELETE", draftPath(d), nil, secretOf(d)); w.Code != http.StatusNoContent {
@@ -239,6 +258,10 @@ func TestPublicTrail_PayHostKeep(t *testing.T) {
 	mail := f.lastMail(t)
 	if !strings.HasPrefix(mail, "anna@example.com") || !strings.Contains(mail, "redo att spelas") {
 		t.Errorf("paid mail: %s", mail)
+	}
+	// Only Stripe mails a receipt; this provider doesn't, so none is promised.
+	if strings.Contains(mail, "Kvitto") || strings.Contains(mail, "kvitto") {
+		t.Errorf("paid mail promises a receipt: %s", mail)
 	}
 	host := regexp.MustCompile(`/party/([A-Za-z0-9_-]+)`).FindStringSubmatch(mail)[1]
 	// The browser that paid was given the same admin page at checkout,
@@ -377,6 +400,14 @@ func TestPublicTrail_Email(t *testing.T) {
 	if w := call(t, f.public, "POST", "/api/trail/email/verify", map[string]any{"token": tok[1]}); w.Code != http.StatusOK {
 		t.Errorf("sign-in link: %d %s", w.Code, w.Body)
 	}
+	// Past the limit, sign-in answers as for an address with no trails.
+	for i := 0; i < 5; i++ { // maxTrailMailsPerHour
+		_ = call(t, f.public, "POST", "/api/trail/email/signin", map[string]any{"email": "bo@example.com"})
+	}
+	before = f.mails()
+	if w := call(t, f.public, "POST", "/api/trail/email/signin", map[string]any{"email": "bo@example.com"}); w.Code != http.StatusNoContent || f.mails() != before || w.Body.Len() != 0 {
+		t.Errorf("sign-in past the limit: %d %s, %d mails", w.Code, w.Body, f.mails()-before)
+	}
 }
 
 // TestPublicTrail_Sweep: an old draft goes, a paid trail whose event has
@@ -433,8 +464,9 @@ func TestPublicTrail_Sweep(t *testing.T) {
 
 // TestPublicTrail_Free: with no blocks a draft is hosted at once, free,
 // for FreeTeams teams a game. The admin link is mailed (no receipt
-// promised); nothing paid vouches for the email, so the address isn't
-// confirmed; the answer opens the admin page.
+// promised); nothing paid vouches for the email, so the address is
+// confirmed only once the mailed link is opened; the answer opens the
+// admin page.
 func TestPublicTrail_Free(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newPartyFixture(t)
@@ -471,5 +503,66 @@ func TestPublicTrail_Free(t *testing.T) {
 	_ = f.h.DB.QueryRow(`SELECT COUNT(*) FROM ticket_purchases`).Scan(&purchases)
 	if confirmed || purchases != 0 {
 		t.Errorf("confirmed %v, purchases %d", confirmed, purchases)
+	}
+	// Opening the mailed link confirms the address: the host page
+	// hands its fragment's token to verify, and sign-in finds it.
+	c := regexp.MustCompile(`#confirm=([A-Za-z0-9_-]+)`).FindStringSubmatch(f.lastMail(t))
+	if c == nil {
+		t.Fatal("admin link mail has no confirm token")
+	}
+	if w := call(t, f.public, "POST", "/api/trail/email/verify", map[string]any{"token": c[1]}); w.Code != http.StatusOK {
+		t.Fatalf("verify: %d %s", w.Code, w.Body)
+	}
+	_ = f.h.DB.QueryRow(`SELECT email_confirmed_at IS NOT NULL FROM trails WHERE id = $1`, d.ID).Scan(&confirmed)
+	if !confirmed {
+		t.Error("opening the mailed link left the address unconfirmed")
+	}
+	signins := f.mails()
+	if w := call(t, f.public, "POST", "/api/trail/email/signin", map[string]any{"email": "someone@example.com"}); w.Code != http.StatusNoContent || f.mails() != signins+1 {
+		t.Errorf("sign-in after confirming: %d, mails %d", w.Code, f.mails()-signins)
+	}
+
+	// A top-up, even one never paid, still leaves the game's results
+	// going to the trail's address.
+	if w := call(t, f.public, "POST", "/api/party/"+m[1]+"/blocks", map[string]any{"blocks": 1}); w.Code != http.StatusOK {
+		t.Fatalf("add teams: %d %s", w.Code, w.Body)
+	}
+	var buyer string
+	_ = f.h.DB.QueryRow(`SELECT buyer_email FROM ticket_purchases WHERE kind = 'hosted_blocks'`).Scan(&buyer)
+	if buyer != "someone@example.com" {
+		t.Errorf("top-up buyer = %q", buyer)
+	}
+	_, _ = f.h.DB.Exec(`UPDATE ticket_purchases SET buyer_email = '' WHERE kind = 'hosted_blocks'`)
+	if w := f.join(t, f.host(t, m[1]).playerToken(), "Ugglorna", 3); w.Code != http.StatusCreated {
+		t.Fatalf("join: %d %s", w.Code, w.Body)
+	}
+	// The host page counts a right quiz pick as the game goes.
+	var team, gid int64
+	if err := f.h.DB.QueryRow(`SELECT t.id, e.graph_id FROM teams t JOIN events e ON e.id = t.event_id WHERE t.name = 'Ugglorna'`).Scan(&team, &gid); err != nil {
+		t.Fatal(err)
+	}
+	s, err := graphstore.ByID(context.Background(), f.h.DB, gid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	picked := ""
+	for _, n := range s.Graph.Nodes {
+		for _, b := range n.Blocks() {
+			if b.Kind == graph.BlockQuiz && picked == "" {
+				_, _ = f.h.DB.Exec(`INSERT INTO team_node_state (team_id, node) VALUES ($1, $2)`, team, n.Slug)
+				_, _ = f.h.DB.Exec(`INSERT INTO team_block_picks (team_id, node, block_id, choice) VALUES ($1, $2, $3, $4)`, team, n.Slug, b.ID, b.Answer)
+				picked = n.Title
+			}
+		}
+	}
+	if v := f.host(t, m[1]); picked == "" || len(v.Teams) != 1 || v.Teams[0].Score != 1 {
+		t.Errorf("score with a right pick: %+v", v.Teams)
+	}
+	before := f.mails()
+	if w := call(t, f.public, "POST", "/api/party/"+m[1]+"/finish-game", nil); w.Code != http.StatusNoContent {
+		t.Fatalf("finish: %d %s", w.Code, w.Body)
+	}
+	if got := f.lastMail(t); f.mails() != before+1 || !strings.HasPrefix(got, "someone@example.com\n") || !strings.Contains(got, co.HostURL) || !strings.Contains(got, picked+": 100") {
+		t.Errorf("results mail: %s", got)
 	}
 }

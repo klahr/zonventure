@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Plus, Search } from "lucide-react";
+import { isGlobalAdmin } from "@zonventure/api";
+import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { href, navigate } from "../../router.ts";
-import { Button, Dialog, Empty, ErrorBox, Field, ICON, Loading, Page, PageHeader, Pill, Tile, Tiles, useLoad, useToast } from "../../ui/index.ts";
-import { createOrganization, listOrganizations, type Organization } from "./api.ts";
+import { Button, Card, Dialog, Empty, ErrorBox, Field, ICON, Loading, Page, PageHeader, Pill, Row, Tile, Tiles, fmtDate, useDialogs, useLoad, useToast } from "../../ui/index.ts";
+import { createOrganization, listOrganizations, partiesByHost, resendHostLink, type HostParty, type Organization } from "./api.ts";
 import { OrgLogo } from "./OrgLogo.tsx";
 import "./admin.css";
 
@@ -13,6 +15,9 @@ const SEARCH_FROM = 6;
 /** The platform admin's customer list: every organisation, searchable, each a link to its page. */
 export function OrganizationsPage() {
   const t = useT();
+  const { state } = useSession();
+  // Support reads the list but creates no organizations.
+  const full = state.status === "authenticated" && isGlobalAdmin(state.user);
   const orgs = useLoad((s) => listOrganizations(s), []);
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
@@ -32,7 +37,7 @@ export function OrganizationsPage() {
             {running > 0 && <> · {t.plural(running, { one: t.t("{{n}} event running"), other: t.t("{{n}} events running") })}</>}
           </>
         )}
-        actions={<Button variant="primary" icon={<Plus size={ICON.md} aria-hidden />} onClick={() => setCreating(true)}>{t.t("New organization")}</Button>}
+        actions={full && <Button variant="primary" icon={<Plus size={ICON.md} aria-hidden />} onClick={() => setCreating(true)}>{t.t("New organization")}</Button>}
       />
       {orgs.error && !orgs.data ? (
         <ErrorBox message={t.t("Couldn't load organizations ({{err}}).", { err: orgs.error })} retry={orgs.reload} retryLabel={t.t("Retry")} />
@@ -57,8 +62,76 @@ export function OrganizationsPage() {
           )}
         </>
       )}
+      <HostLinkCard />
       {creating && <CreateOrgDialog onClose={() => setCreating(false)} />}
     </Page>
+  );
+}
+
+/** Support: find a host's parties by the email that booked them and mail a lost host link again. */
+function HostLinkCard() {
+  const t = useT();
+  const toast = useToast();
+  const dialogs = useDialogs();
+  const locale = t.current();
+  const [email, setEmail] = useState("");
+  const [found, setFound] = useState<{ email: string; parties: HostParty[] } | null>(null);
+  const [busy, setBusy] = useState<number | "search" | null>(null);
+  const search = async () => {
+    const e = email.trim();
+    if (!e) return;
+    setBusy("search");
+    try {
+      setFound({ email: e, parties: await partiesByHost(e) });
+    } catch (err) {
+      toast.err(err);
+    }
+    setBusy(null);
+  };
+  const resend = async (p: HostParty) => {
+    if (!found) return;
+    // The old link stops working at once, so say which party and ask first.
+    const go = await dialogs.confirm({
+      title: t.t("Replace the host link for “{{name}}”?", { name: p.name || p.adventure }),
+      message: t.t("The host's current link stops working at once, and a new one is mailed to {{email}}.", { email: found.email }),
+      confirmLabel: t.t("Replace and send"),
+      danger: true,
+    });
+    if (!go) return;
+    setBusy(p.id);
+    try {
+      await resendHostLink(p.id, found.email);
+      toast.ok(t.t("New host link sent to {{email}}. The old link no longer works.", { email: found.email }));
+    } catch (err) {
+      toast.err(err);
+    }
+    setBusy(null);
+  };
+  return (
+    <Card title={t.t("Lost host link")} subtitle={t.t("Find a party by the email that booked it and send the host a new link.")}>
+      <form onSubmit={(e) => { e.preventDefault(); void search(); }}>
+        <Row>
+          <Field label={t.t("Host's email")}>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
+          </Field>
+          <Button type="submit" loading={busy === "search"} disabled={!email.trim()}>{t.t("Find parties")}</Button>
+        </Row>
+      </form>
+      {found && (found.parties.length === 0 ? (
+        <p className="adm-muted">{t.t("No party still to come or under way was booked with {{email}}.", { email: found.email })}</p>
+      ) : (
+        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {found.parties.map((p) => (
+            <li key={p.id}>
+              <Row>
+                <span><strong>{p.name || p.adventure}</strong> · {p.adventure}{p.org_name && <> · {p.org_name}</>} · {fmtDate(p.created_at, locale)}</span>
+                <Button size="sm" loading={busy === p.id} onClick={() => void resend(p)}>{t.t("Replace host link")}</Button>
+              </Row>
+            </li>
+          ))}
+        </ul>
+      ))}
+    </Card>
   );
 }
 
@@ -81,7 +154,7 @@ function OrgTile({ org }: { org: Organization }) {
           {org.events_running > 0 && <Pill tone="good">{t.t("{{n}} running", { n: org.events_running })}</Pill>}
           {org.trusted && <Pill tone="good">{t.t("Invoice billing")}</Pill>}
           {org.verified_creator && <Pill tone="good">{t.t("Verified creator")}</Pill>}
-          {org.party_adventures && <Pill tone="good">{t.t("Party adventures")}</Pill>}
+          {org.party_adventures && <Pill tone="good">{t.t("Public party creator")}</Pill>}
           {org.is_publisher && <Pill tone="accent">{t.t("Catalog publisher")}</Pill>}
         </span>
       )}

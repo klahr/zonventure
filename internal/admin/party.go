@@ -63,9 +63,11 @@ var errNoPartyGraph = errors.New("publish the adventure before offering it as a 
 // partyOfferDTO is one adventure the org may sell as a party, with its
 // offer when it has one. Problems say why it cannot be offered yet: no
 // published version, or something cards cannot play (StationsProblems).
+// Name is the offer's own name; empty, it is sold under Title.
 type partyOfferDTO struct {
 	AdventureSlug string   `json:"adventure_slug"`
 	Title         string   `json:"title"`
+	Name          string   `json:"name"`
 	OfferID       int64    `json:"offer_id,omitempty"`
 	Enabled       bool     `json:"enabled"`
 	BaseCents     int      `json:"base_cents"`
@@ -75,6 +77,10 @@ type partyOfferDTO struct {
 	Blurb         string   `json:"blurb"`
 	Stations      int      `json:"stations"`
 	Problems      []string `json:"problems,omitempty"`
+	// Places counts the zones that are real places on the map, which
+	// the host cannot move: a story that sends players there may not
+	// suit a party at home.
+	Places int `json:"places,omitempty"`
 	// BookURL is the public booking page, once the offer is saved and the
 	// org has a page of its own (a slug).
 	BookURL string `json:"book_url,omitempty"`
@@ -104,7 +110,7 @@ func (h *Handlers) ListPartyOffers(w http.ResponseWriter, r *http.Request) {
 		SELECT a.id, a.slug, COALESCE(NULLIF(a.title, ''), a.slug),
 		       COALESCE(o.id, 0), COALESCE(o.enabled, FALSE), COALESCE(o.base_cents, 0),
 		       COALESCE(o.per_kid_cents, 0), COALESCE(o.currency, 'sek'), COALESCE(o.max_kids, 20),
-		       COALESCE(o.blurb, ''), COALESCE(o.listing_review, ''), COALESCE(o.listing_reject_reason, ''),
+		       COALESCE(o.name, ''), COALESCE(o.blurb, ''), COALESCE(o.listing_review, ''), COALESCE(o.listing_reject_reason, ''),
 		       EXISTS (SELECT 1 FROM party_offer_listings l WHERE l.offer_id = o.id),
 		       EXISTS (SELECT 1 FROM party_offer_listings l WHERE l.offer_id = o.id AND l.graph_id IS DISTINCT FROM a.published_graph_id)
 		FROM adventures a
@@ -127,7 +133,7 @@ func (h *Handlers) ListPartyOffers(w http.ResponseWriter, r *http.Request) {
 		var x row
 		d := &x.dto
 		if err := rows.Scan(&x.advID, &d.AdventureSlug, &d.Title, &d.OfferID, &d.Enabled, &d.BaseCents,
-			&d.PerKidCents, &d.Currency, &d.MaxKids, &d.Blurb, &d.ListingReview, &d.RejectReason, &d.Listed, &d.NewerVersion); err != nil {
+			&d.PerKidCents, &d.Currency, &d.MaxKids, &d.Name, &d.Blurb, &d.ListingReview, &d.RejectReason, &d.Listed, &d.NewerVersion); err != nil {
 			rows.Close()
 			httpx.ServerErr(w, http.StatusInternalServerError, "offers lookup failed", err)
 			return
@@ -163,6 +169,11 @@ func (h *Handlers) ListPartyOffers(w http.ResponseWriter, r *http.Request) {
 				x.dto.Problems = g.StationsProblems()
 			}
 			x.dto.Stations = len(g.Zones)
+			for _, z := range g.Zones {
+				if !z.Movable && (z.Lat != 0 || z.Lng != 0 || z.IsPolygon()) {
+					x.dto.Places++
+				}
+			}
 		}
 		out = append(out, x.dto)
 	}
@@ -187,6 +198,7 @@ type putPartyOfferRequest struct {
 	PerKidCents int    `json:"per_kid_cents"`
 	Currency    string `json:"currency"`
 	MaxKids     int    `json:"max_kids"`
+	Name        string `json:"name"`
 	Blurb       string `json:"blurb"`
 }
 
@@ -225,6 +237,11 @@ func (h *Handlers) PutPartyOffer(w http.ResponseWriter, r *http.Request) {
 	blurb, err := validateBlurb(strings.TrimSpace(req.Blurb), MaxBlurbLen)
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, "blurb "+err.Error())
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if utf8.RuneCountInString(name) > maxPartyNameLen {
+		httpx.Error(w, http.StatusBadRequest, fmt.Sprintf("name is too long (%d characters max)", maxPartyNameLen))
 		return
 	}
 	var advID int64
@@ -277,13 +294,13 @@ func (h *Handlers) PutPartyOffer(w http.ResponseWriter, r *http.Request) {
 	}
 	var id int64
 	if err := h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO party_offers (org_id, adventure_slug, enabled, base_cents, per_kid_cents, currency, max_kids, blurb)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO party_offers (org_id, adventure_slug, enabled, base_cents, per_kid_cents, currency, max_kids, blurb, name)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (org_id, adventure_slug) DO UPDATE
 		SET enabled = EXCLUDED.enabled, base_cents = EXCLUDED.base_cents, per_kid_cents = EXCLUDED.per_kid_cents,
-		    currency = EXCLUDED.currency, max_kids = EXCLUDED.max_kids, blurb = EXCLUDED.blurb, updated_at = now()
+		    currency = EXCLUDED.currency, max_kids = EXCLUDED.max_kids, blurb = EXCLUDED.blurb, name = EXCLUDED.name, updated_at = now()
 		RETURNING id
-	`, *me.OrgID, slug, req.Enabled, req.BaseCents, req.PerKidCents, req.Currency, req.MaxKids, blurb).Scan(&id); err != nil {
+	`, *me.OrgID, slug, req.Enabled, req.BaseCents, req.PerKidCents, req.Currency, req.MaxKids, blurb, name).Scan(&id); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "offer save failed", err)
 		return
 	}
@@ -309,8 +326,11 @@ type PublicPartyOfferDTO struct {
 	PerKidCents   int    `json:"per_kid_cents"`
 	Currency      string `json:"currency"`
 	MaxKids       int    `json:"max_kids"`
-	OrgName       string `json:"org_name"`
-	OrgSlug       string `json:"org_slug"`
+	// Teams is how many teams a game of the booked party takes, so the
+	// page can put the children in teams.
+	Teams   int    `json:"teams"`
+	OrgName string `json:"org_name"`
+	OrgSlug string `json:"org_slug"`
 	// OrgVerified is a verified creator: the page shows a badge.
 	OrgVerified bool `json:"org_verified"`
 	// PaymentsOpen is false when the org can't take the money yet: the
@@ -327,7 +347,7 @@ type PublicPartyOfferDTO struct {
 // review): an offer without one is not on the page, and an edit waiting
 // for review shows, and charges, what was approved before.
 const publicPartyOffersSQL = `
-	SELECT o.id, o.adventure_slug, COALESCE(NULLIF(a.title, ''), a.slug), l.blurb, l.base_cents,
+	SELECT o.id, o.adventure_slug, COALESCE(NULLIF(l.name, ''), NULLIF(a.title, ''), a.slug), l.blurb, l.base_cents,
 	       l.per_kid_cents, l.currency, l.max_kids, g.name, COALESCE(g.slug, ''), g.verified_creator,
 	       g.stripe_connect_account_id IS NOT NULL AND g.stripe_connect_charges_enabled
 	FROM party_offers o
@@ -346,6 +366,7 @@ func (h *Handlers) scanPublicOffer(row interface{ Scan(...any) error }) (PublicP
 	// With a platform fee the money goes through the org's connected
 	// account, which must be able to take charges.
 	d.PaymentsOpen = h.paymentsEnabled() && (!h.platformFee().Enabled() || connectOK)
+	d.Teams = teamsLimit(1)
 	return d, err
 }
 
@@ -564,7 +585,7 @@ func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, par
 		approved sql.NullInt64
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT o.org_id, o.adventure_slug, COALESCE(NULLIF(a.title, ''), a.slug), l.graph_id
+		SELECT o.org_id, o.adventure_slug, COALESCE(NULLIF(l.name, ''), NULLIF(a.title, ''), a.slug), l.graph_id
 		FROM party_offers o JOIN adventures a ON a.slug = o.adventure_slug
 		LEFT JOIN party_offer_listings l ON l.offer_id = o.id
 		WHERE o.id = $1
@@ -644,14 +665,77 @@ func createHostedEvent(ctx context.Context, tx *sql.Tx, orgID int64, advSlug, na
 	return eventID, hostToken, nil
 }
 
-// hashHostToken is how a host link's secret is stored and looked up.
+// hashHostToken is how a host link's secret is looked up.
 func hashHostToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }
 
-// sendPartyHostLink mails the booker their host link.
-func (h *Handlers) sendPartyHostLink(ctx context.Context, eventID int64, to, hostToken string) error {
+// replaceHostToken gives event id a new host link; the old one stops
+// working.
+func (h *Handlers) replaceHostToken(ctx context.Context, q interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}, id int64) (string, error) {
+	token, err := tokenx.New(24)
+	if err != nil {
+		return "", err
+	}
+	_, err = q.ExecContext(ctx, `UPDATE events SET host_token_hash = $1, host_token_sealed = $2 WHERE id = $3`, hashHostToken(token), h.sealHostToken(token), id)
+	return token, err
+}
+
+// sealHostToken is token sealed with ZV_TOTP_KEY, to keep; nil, so
+// nothing is kept, on a server without that key.
+func (h *Handlers) sealHostToken(token string) []byte {
+	if h.TOTPKey == nil {
+		return nil
+	}
+	sealed, err := auth.SealSecret(h.TOTPKey, token)
+	if err != nil {
+		return nil
+	}
+	return sealed
+}
+
+// keepHostToken keeps a new party's host link, sealed, so that mailing
+// it again sends the same link (see sealHostToken).
+func (h *Handlers) keepHostToken(ctx context.Context, tx *sql.Tx, eventID int64, token string) error {
+	sealed := h.sealHostToken(token)
+	if sealed == nil {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE events SET host_token_sealed = $1 WHERE id = $2`, sealed, eventID)
+	return err
+}
+
+// currentHostToken is the host link event id has now, to mail again.
+// A party whose link is not kept (made before links were, and not opened
+// since, or on a server without ZV_TOTP_KEY) gets a new one.
+func (h *Handlers) currentHostToken(ctx context.Context, id int64) (string, error) {
+	if token, err := h.keptHostToken(ctx, id); err != nil || token != "" {
+		return token, err
+	}
+	return h.replaceHostToken(ctx, h.DB, id)
+}
+
+// keptHostToken is the host link event id has now, or "" when it is not
+// kept (see currentHostToken).
+func (h *Handlers) keptHostToken(ctx context.Context, id int64) (string, error) {
+	var sealed []byte
+	if err := h.DB.QueryRowContext(ctx, `SELECT host_token_sealed FROM events WHERE id = $1`, id).Scan(&sealed); err != nil {
+		return "", err
+	}
+	if sealed != nil && h.TOTPKey != nil {
+		if token, err := auth.OpenSecret(h.TOTPKey, sealed); err == nil {
+			return token, nil
+		}
+	}
+	return "", nil
+}
+
+// sendPartyHostLink mails the booker their host link: again when it is
+// sent anew, which a paid trail's mail tells apart (no receipt line).
+func (h *Handlers) sendPartyHostLink(ctx context.Context, eventID int64, to, hostToken string, again bool) error {
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	if publicURL == "" {
 		return errors.New("party email requires PublicURL")
@@ -660,7 +744,7 @@ func (h *Handlers) sendPartyHostLink(ctx context.Context, eventID int64, to, hos
 	if _, ok, err := h.trailOfEvent(ctx, eventID); err != nil {
 		return err
 	} else if ok {
-		return h.sendTrailPaid(ctx, eventID, to, hostToken)
+		return h.sendTrailPaid(ctx, eventID, to, hostToken, again)
 	}
 	l := h.eventLook(ctx, eventID)
 	var name string
@@ -723,7 +807,36 @@ func (h *Handlers) hostedParty(w http.ResponseWriter, r *http.Request) (hostPart
 		httpx.Error(w, http.StatusNotFound, "no such party")
 		return hostParty{}, false
 	}
-	return h.partyWhere(w, r.Context(), "host_token_hash = $1", hashHostToken(token))
+	p, ok := h.partyWhere(w, r.Context(), "host_token_hash = $1", hashHostToken(token))
+	if ok {
+		// A party made before host links were kept learns its link
+		// from the host page, so mailing it again need not replace it.
+		if sealed := h.sealHostToken(token); sealed != nil {
+			_, _ = h.DB.ExecContext(r.Context(), `UPDATE events SET host_token_sealed = $1 WHERE id = $2 AND host_token_sealed IS NULL`, sealed, p.EventID)
+		}
+	}
+	return p, ok
+}
+
+// ReplaceHostLink gives the party a new host link and answers with it.
+// Every older link, open pages included, stops working: the host's way
+// out when a link went where it should not.
+//
+// POST /api/party/{token}/replace-link
+func (h *Handlers) ReplaceHostLink(w http.ResponseWriter, r *http.Request) {
+	p, ok := h.hostedParty(w, r)
+	if !ok {
+		return
+	}
+	token, err := h.replaceHostToken(r.Context(), h.DB, p.EventID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "replace failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]string{
+		"token":    token,
+		"host_url": strings.TrimRight(h.PublicURL, "/") + "/party/" + token,
+	})
 }
 
 // partyWhere loads the party event cond picks, writing a 404 when there
@@ -793,6 +906,8 @@ type hostRoundDTO struct {
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 	Teams      int        `json:"teams"`
 	Players    int        `json:"players"`
+	// Results are a finished game's teams and scores.
+	Results []hostTeamDTO `json:"results,omitempty"`
 }
 
 type hostPartyDTO struct {
@@ -813,6 +928,9 @@ type hostPartyDTO struct {
 	Round      int    `json:"round"`
 	RoundOpen  bool   `json:"round_open"`
 	TeamsLimit int    `json:"teams_limit"`
+	// TurnedAway counts the teams the game being played turned away,
+	// full.
+	TurnedAway int `json:"turned_away"`
 	// HoldResults keeps a game's results off the phones and the live
 	// board until the host finishes it.
 	HoldResults bool `json:"hold_results"`
@@ -829,6 +947,7 @@ type hostPartyDTO struct {
 	// host link edits its cards (cards), and from KeepFrom its buyer may
 	// keep it (keep).
 	PublicTrail bool           `json:"public_trail"`
+	TrailID     int64          `json:"trail_id,omitempty"`
 	KeepFrom    *time.Time     `json:"keep_from,omitempty"`
 	FirstGameAt *time.Time     `json:"first_game_at,omitempty"`
 	Teams       []hostTeamDTO  `json:"teams"`
@@ -948,7 +1067,7 @@ func (h *Handlers) GetHostParty(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "trail lookup failed", err)
 		return
 	} else if ok {
-		out.PublicTrail = true
+		out.PublicTrail, out.TrailID = true, pt.ID
 		if pt.FirstGameAt.Valid {
 			k := keepFrom(pt.FirstGameAt.Time)
 			out.KeepFrom = &k
@@ -958,9 +1077,31 @@ func (h *Handlers) GetHostParty(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "teams lookup failed", err)
 		return
 	}
+	if p.RoundOpen && g != nil {
+		if err := h.addPickPoints(ctx, g, out.Teams); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "teams lookup failed", err)
+			return
+		}
+	}
 	if out.Rounds, err = h.partyRounds(ctx, p.EventID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "games lookup failed", err)
 		return
+	}
+	for i, rd := range out.Rounds {
+		if rd.FinishedAt == nil {
+			continue
+		}
+		if out.Rounds[i].Results, err = h.roundTeams(ctx, p.EventID, rd.Round); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "games lookup failed", err)
+			return
+		}
+	}
+	if p.RoundOpen {
+		if err := h.DB.QueryRowContext(ctx, `SELECT cardinality(turned_away) FROM event_rounds WHERE event_id = $1 AND round = $2`,
+			p.EventID, p.Round).Scan(&out.TurnedAway); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "games lookup failed", err)
+			return
+		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, out)
@@ -987,6 +1128,54 @@ func (h *Handlers) roundTeams(ctx context.Context, eventID int64, round int) ([]
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// addPickPoints adds to the scores of the teams still playing what their
+// quiz picks so far are worth. Only the host sees this: the phones and
+// the live board score picks as a team finishes (session.Team.Apply).
+func (h *Handlers) addPickPoints(ctx context.Context, g *graph.Graph, teams []hostTeamDTO) error {
+	worth := map[[2]string]int{}
+	answer := map[[2]string]string{}
+	for _, n := range g.Nodes {
+		for _, b := range n.Blocks() {
+			if b.Kind == graph.BlockQuiz {
+				worth[[2]string{n.Slug, b.ID}], answer[[2]string{n.Slug, b.ID}] = max(1, b.Worth), b.Answer
+			}
+		}
+	}
+	at := map[int64]int{}
+	ids := []int64{}
+	for i, t := range teams {
+		if !t.Finished {
+			at[t.ID] = i
+			ids = append(ids, t.ID)
+		}
+	}
+	if len(worth) == 0 || len(ids) == 0 {
+		return nil
+	}
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT team_id, node, block_id, choice FROM team_block_picks
+		WHERE team_id = ANY(string_to_array($1, ',')::bigint[])
+	`, joinIDs(ids))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			id                  int64
+			node, block, choice string
+		)
+		if err := rows.Scan(&id, &node, &block, &choice); err != nil {
+			return err
+		}
+		k := [2]string{node, block}
+		if choice != "" && choice == answer[k] {
+			teams[at[id]].Score += worth[k]
+		}
+	}
+	return rows.Err()
 }
 
 // partyRounds lists the party's games, latest first.
@@ -1180,10 +1369,10 @@ func (h *Handlers) HostPartyAction(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ResendPartyLinks mails a booker fresh host links for their parties that
-// are still to come or under way. The old links stop working: the mail
-// is the only place a link's secret lives. Always 204, so the endpoint
-// does not tell anyone which emails have booked.
+// ResendPartyLinks mails a booker the host links of their parties that
+// are still to come or under way: the links they have, so an open host
+// page keeps working. Always 204, so the endpoint does not tell anyone
+// which emails have booked.
 //
 // POST /api/party/resend
 func (h *Handlers) ResendPartyLinks(w http.ResponseWriter, r *http.Request) {
@@ -1199,13 +1388,7 @@ func (h *Handlers) ResendPartyLinks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	rows, err := h.DB.QueryContext(ctx, `
-		SELECT e.id FROM events e
-		WHERE e.party AND e.state IN ('scheduled', 'running', 'paused')
-		  AND (EXISTS (SELECT 1 FROM ticket_purchases p WHERE p.event_id = e.id AND p.kind IN ('party', 'hosted')
-		               AND p.state = 'paid' AND p.buyer_email = $1)
-		    OR EXISTS (SELECT 1 FROM trails t WHERE t.event_id = e.id AND LOWER(t.email) = $1))
-	`, email)
+	rows, err := h.DB.QueryContext(ctx, `SELECT e.id FROM events e WHERE `+partyOfHostSQL, email)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 		return
@@ -1219,17 +1402,148 @@ func (h *Handlers) ResendPartyLinks(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 	for _, id := range ids {
-		token, err := tokenx.New(24)
-		if err != nil {
-			continue
-		}
-		if _, err := h.DB.ExecContext(ctx, `UPDATE events SET host_token_hash = $1 WHERE id = $2`, hashHostToken(token), id); err != nil {
+		if err := h.resendHostLink(ctx, id, email); err != nil {
 			logx.Warn("admin.party.resend", "event_id", id, "err", err.Error())
-			continue
 		}
-		if err := h.sendPartyHostLink(ctx, id, email, token); err != nil {
-			logx.Warn("admin.party.resend.mail", "event_id", id, "err", err.Error())
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// partyOfHostSQL matches a party still to come or under way that $1
+// booked: paid for it, or saved its trail to that email.
+const partyOfHostSQL = `e.party AND e.state IN ('scheduled', 'running', 'paused')
+	  AND (EXISTS (SELECT 1 FROM ticket_purchases p WHERE p.event_id = e.id AND p.kind IN ('party', 'hosted')
+	               AND p.state = 'paid' AND p.buyer_email = $1)
+	    OR EXISTS (SELECT 1 FROM trails t WHERE t.event_id = e.id AND LOWER(t.email) = $1))`
+
+// resendHostLink mails a party's current host link to email again; an
+// open host page keeps working.
+func (h *Handlers) resendHostLink(ctx context.Context, eventID int64, email string) error {
+	token, err := h.currentHostToken(ctx, eventID)
+	if err != nil {
+		return err
+	}
+	return h.sendPartyHostLink(ctx, eventID, email, token, true)
+}
+
+// adminPartyDTO is a party found by its host's email.
+type adminPartyDTO struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	State     string `json:"state"`
+	Adventure string `json:"adventure"`
+	OrgName   string `json:"org_name"`
+	CreatedAt string `json:"created_at"`
+}
+
+// AdminPartiesByHost lists the parties still to come or under way that
+// an email booked, so support can send a lost host link again.
+// Admin-only.
+//
+// GET /api/admin/parties?email=
+func (h *Handlers) AdminPartiesByHost(w http.ResponseWriter, r *http.Request) {
+	email := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("email")))
+	if email == "" {
+		httpx.Error(w, http.StatusBadRequest, "enter the host's email address")
+		return
+	}
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT e.id, e.party_name, e.state, COALESCE(a.title, e.adventure_slug), COALESCE(o.name, ''), e.created_at
+		FROM events e
+		LEFT JOIN adventures a ON a.slug = e.adventure_slug
+		LEFT JOIN organizations o ON o.id = e.org_id
+		WHERE `+partyOfHostSQL+`
+		ORDER BY e.id DESC`, email)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+		return
+	}
+	defer rows.Close()
+	out := []adminPartyDTO{}
+	for rows.Next() {
+		var p adminPartyDTO
+		if err := rows.Scan(&p.ID, &p.Name, &p.State, &p.Adventure, &p.OrgName, &p.CreatedAt); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+			return
 		}
+		out = append(out, p)
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"parties": out})
+}
+
+// AdminResendHostLink mails a party's host a new host link, to the
+// email that booked it (never another address). Admin-only.
+//
+// POST /api/admin/parties/{eventID}/resend-host-link {"email": "..."}
+func (h *Handlers) AdminResendHostLink(w http.ResponseWriter, r *http.Request) {
+	eventID, err := strconv.ParseInt(chi.URLParam(r, "eventID"), 10, 64)
+	if err != nil || eventID <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "bad event id")
+		return
+	}
+	var req struct {
+		Email string `json:"email"`
+	}
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	var ok bool
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT EXISTS (SELECT 1 FROM events e WHERE e.id = $2 AND `+partyOfHostSQL+`)`, email, eventID).Scan(&ok); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+		return
+	}
+	if !ok {
+		httpx.Error(w, http.StatusNotFound, "no live party booked with that email")
+		return
+	}
+	// Support sends a new link: the old one may be what was lost or leaked.
+	token, err := h.replaceHostToken(r.Context(), h.DB, eventID)
+	if err == nil {
+		err = h.sendPartyHostLink(r.Context(), eventID, email, token, true)
+	}
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "send failed", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ResendHostLinkToBuyer mails a hosted event's buyer their host link
+// again, for when the first mail was lost. The organisation never sees
+// the link: it is the buyer's key to the host page.
+//
+// POST /api/admin/events/{eventID}/hosted/resend-host-link
+func (h *Handlers) ResendHostLinkToBuyer(w http.ResponseWriter, r *http.Request) {
+	eventID, ok := eventIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad event id")
+		return
+	}
+	if _, ok := h.authorizeEvent(w, r, eventID); !ok {
+		return
+	}
+	ctx := r.Context()
+	var email string
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT COALESCE(
+		         (SELECT p.buyer_email FROM ticket_purchases p WHERE p.event_id = e.id AND p.kind IN ('party', 'hosted') AND p.state = 'paid' ORDER BY p.id LIMIT 1),
+		         (SELECT LOWER(t.email) FROM trails t WHERE t.event_id = e.id AND t.email <> '' ORDER BY t.id LIMIT 1),
+		         '')
+		FROM events e
+		WHERE e.id = $1 AND e.party AND e.state IN ('scheduled', 'running', 'paused')`, eventID).Scan(&email)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+		return
+	}
+	if email == "" {
+		httpx.JSON(w, http.StatusNotFound, map[string]string{"error": "no buyer to send the host link to", "code": "no_buyer"})
+		return
+	}
+	if err := h.resendHostLink(ctx, eventID, email); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "send failed", err)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1247,6 +1561,9 @@ func (h *Handlers) fulfilPartyCheckout(ctx context.Context, tx *sql.Tx, event pa
 	if err != nil {
 		return fmt.Errorf("party create: %w", err)
 	}
+	if err := h.keepHostToken(ctx, tx, eventID, hostToken); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE ticket_purchases
 		   SET state = 'paid', paid_at = now_text(), stripe_session_id = COALESCE(stripe_session_id, $1)
@@ -1262,7 +1579,7 @@ func (h *Handlers) fulfilPartyCheckout(ctx context.Context, tx *sql.Tx, event pa
 	}
 	// Best effort, as for a ticket: the booker can have the link sent
 	// again from the party page.
-	if err := h.sendPartyHostLink(ctx, eventID, email, hostToken); err != nil {
+	if err := h.sendPartyHostLink(ctx, eventID, email, hostToken, false); err != nil {
 		logx.Warn("admin.party.mail", "purchase_id", purchaseID, "event_id", eventID, "err", err.Error())
 	}
 	logx.Info("admin.party.paid", "purchase_id", purchaseID, "event_id", eventID, "kids", kids)

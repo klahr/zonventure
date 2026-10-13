@@ -19,6 +19,11 @@ import (
 
 var trailThemeID = regexp.MustCompile(`^[a-z0-9-]{1,40}$`)
 
+// trailTransition is how every step of a party adventure comes in,
+// whatever its theme: its cards turn like pages. The creator offers no
+// other.
+const trailTransition = "flip"
+
 // trailLook is a whole look, as play.Brand writes it.
 type trailLook struct {
 	Accent          string              `json:"accent"`
@@ -61,6 +66,7 @@ func (h *Handlers) applyTrailTheme(w http.ResponseWriter, ctx context.Context, s
 	if style == nil {
 		style = &adventure.Style{}
 	}
+	style.Transition = trailTransition
 	// A cover picture of the adventure's own outlasts a change of theme:
 	// it is shown in place of the theme's.
 	if style.Cover == 0 {

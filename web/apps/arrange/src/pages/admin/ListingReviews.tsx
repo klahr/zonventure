@@ -2,8 +2,9 @@ import { useState, type ReactNode } from "react";
 import { Bot, Check, ExternalLink, FileSearch, KeyRound, Trash2, UserPlus, X, Zap } from "lucide-react";
 import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
+import { useSession } from "../../session.tsx";
 import { href } from "../../router.ts";
-import { Button, Card, Dialog, Empty, ErrorBox, Field, ICON, Loading, Page, PageHeader, Pill, Table, Tabs, fmtDateTime, fmtMoney, relTime, useDialogs, useLoad, useToast, type Column } from "../../ui/index.ts";
+import { Button, Callout, Card, Dialog, Empty, ErrorBox, Field, ICON, Loading, Page, PageHeader, Pill, Table, Tabs, fmtDateTime, fmtMoney, relTime, useDialogs, useLoad, useToast, type Column } from "../../ui/index.ts";
 import { createPasskey, isCancelled, passkeysSupported, signWithPasskey } from "../../ui/webauthn.ts";
 import {
   approveListing, beginReviewerPasskey, finishReviewerPasskey, listListingLog, listListingReviewers, listListingReviews, listReviewerPasskeys,
@@ -23,9 +24,10 @@ type Translator = ReturnType<typeof useT>;
  * never see their own organisations' listings. The log is for
  * spot-checking what AI assistants and verified creators let through.
  */
-export function ListingReviewsPage({ tab, reviewer, admin }: { tab?: string | undefined; reviewer: boolean; admin: boolean }) {
+/** Every global admin reads the queue and the log; only a reviewer (never Support) decides. */
+export function ListingReviewsPage({ tab, reviewer, admin, support }: { tab?: string | undefined; reviewer: boolean; admin: boolean; support: boolean }) {
   const t = useT();
-  const current = tab === "log" || (tab === "reviewers" && admin) || (tab === "passkeys" && reviewer) ? tab : "queue";
+  const current = tab === "log" || (tab === "reviewers" && admin) || (tab === "passkeys" && reviewer && !support) ? tab : "queue";
   return (
     <Page>
       <PageHeader
@@ -38,23 +40,25 @@ export function ListingReviewsPage({ tab, reviewer, admin }: { tab?: string | un
         tabs={[
           { id: "queue", label: t.t("Waiting"), href: href({ name: "listing-reviews" }) },
           { id: "log", label: t.t("Recent decisions"), href: href({ name: "listing-reviews", tab: "log" }) },
-          { id: "passkeys", label: t.t("Your passkeys"), href: href({ name: "listing-reviews", tab: "passkeys" }), hidden: !reviewer },
+          { id: "passkeys", label: t.t("Your passkeys"), href: href({ name: "listing-reviews", tab: "passkeys" }), hidden: !reviewer || support },
           { id: "reviewers", label: t.t("Reviewers"), href: href({ name: "listing-reviews", tab: "reviewers" }), hidden: !admin },
         ]}
       />
-      {current === "queue" && (reviewer ? <Queue /> : <NotReviewer />)}
-      {current === "log" && (reviewer ? <Log /> : <NotReviewer />)}
+      {current === "queue" && (reviewer || admin || support ? <Queue readOnly={!reviewer || support} support={support} /> : <NotReviewer admin={admin} />)}
+      {current === "log" && (reviewer || admin || support ? <Log /> : <NotReviewer admin={admin} />)}
       {current === "passkeys" && <Passkeys />}
       {current === "reviewers" && <Reviewers />}
     </Page>
   );
 }
 
-function NotReviewer() {
+function NotReviewer({ admin }: { admin: boolean }) {
   const t = useT();
   return (
     <Empty title={t.t("You aren't a listing reviewer.")}>
-      {t.t("A platform admin chooses who reviews listings, under Reviewers.")}
+      {admin
+        ? t.t("To review listings yourself, make yourself a reviewer under Reviewers.")
+        : t.t("A platform admin chooses who reviews listings, under Reviewers.")}
     </Empty>
   );
 }
@@ -82,7 +86,28 @@ export function reviewError(e: unknown, t: Translator): string {
     }
     return e.message;
   }
+  // The browser refuses when this page's address isn't the server's public URL (the passkey's domain).
+  if (e instanceof DOMException && e.name === "SecurityError") return t.t("Passkeys work only at this server's public address. Open the console there, or ask the operator to fix the server's public URL.");
   return e instanceof Error ? e.message : String(e);
+}
+
+/** A reviewer without a passkey said yes to deciding unsigned, for this browser session. */
+const UNSIGNED_OK = "zv-review-unsigned-ok";
+
+function unsignedOK(): boolean {
+  try {
+    return sessionStorage.getItem(UNSIGNED_OK) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberUnsignedOK() {
+  try {
+    sessionStorage.setItem(UNSIGNED_OK, "1");
+  } catch {
+    /* storage blocked: asked again next time */
+  }
 }
 
 /**
@@ -91,11 +116,13 @@ export function reviewError(e: unknown, t: Translator): string {
  * and the decision goes in with the signature
  * (internal/admin/reviewer_passkeys.go). Signing is optional, but going
  * without takes a confirmation — with no passkey, when the passkey is
- * cancelled, or when the server can't do passkeys. The reason is trimmed
+ * cancelled, or when the server can't do passkeys. Without a passkey it
+ * is asked once per browser session, not on every decision. The reason is trimmed
  * once, so the one signed is the one sent. A refused decision is said in
- * words and the list reloaded.
+ * words and the list reloaded; onChanged hears when that was because the
+ * listing changed while the reviewer looked.
  */
-export function useDecide(onDone: () => void) {
+export function useDecide(onDone: () => void, onChanged?: () => void) {
   const t = useT();
   const toast = useToast();
   const dialogs = useDialogs();
@@ -115,10 +142,20 @@ export function useDecide(onDone: () => void) {
   const confirmUnsigned = (action: "approve" | "reject", why: "none" | "cancelled") =>
     dialogs.confirm({
       title: action === "approve" ? t.t("Approve without a signature?") : t.t("Reject without a signature?"),
-      message: (why === "cancelled"
-        ? t.t("You didn't sign with your passkey.")
-        : t.t("You have no passkey to sign with.")) + " " +
-        t.t("The decision goes in the log unsigned: nothing there shows it was you. Add a passkey under “Your passkeys” to sign your decisions."),
+      message: (
+        <>
+          {(why === "cancelled"
+            ? t.t("You didn't sign with your passkey.")
+            : t.t("You have no passkey to sign with.")) + " " +
+            t.t("The log records the decision under your name, without a passkey signature to prove it. Signing is optional: add a passkey under “Your passkeys” to sign your decisions.")}
+          {why === "none" && passkeysSupported() && (
+            <>
+              {" "}
+              <a href={href({ name: "listing-reviews", tab: "passkeys" })} target="_blank" rel="noopener">{t.t("Set up a passkey")}</a>
+            </>
+          )}
+        </>
+      ),
       confirmLabel: action === "approve" ? t.t("Approve unsigned") : t.t("Reject unsigned"),
       danger: true,
     });
@@ -128,20 +165,22 @@ export function useDecide(onDone: () => void) {
     try {
       const signed = await sign(ref, action, reason);
       const signature = typeof signed === "object" ? signed : undefined;
-      if (!signature && !(await confirmUnsigned(action, signed as "none" | "cancelled"))) {
+      if (!signature && !(signed === "none" && unsignedOK()) && !(await confirmUnsigned(action, signed as "none" | "cancelled"))) {
         toast.err(t.t("Nothing was decided."));
         return;
       }
+      if (signed === "none") rememberUnsignedOK();
       if (action === "approve") await approveListing(ref, signature);
       else await rejectListing(ref, reason, signature);
       toast.ok(
-        (action === "approve" ? t.t("Approved: it is public now") : t.t("Rejected: the organisation has been told why")) +
+        (action === "approve" ? t.t("Approved: it is public now.") : t.t("Rejected: the organisation has been told why.")) +
           " " + (signature ? t.t("Signed with your passkey.") : t.t("Not signed.")),
       );
       after?.();
       onDone();
     } catch (e) {
       toast.err(reviewError(e, t));
+      if (e instanceof ApiError && e.code === "changed") onChanged?.();
       if (e instanceof ApiError && e.status === 409) onDone();
     } finally {
       setBusy(false);
@@ -154,10 +193,12 @@ export function useDecide(onDone: () => void) {
   };
 }
 
-function Queue() {
+function Queue({ readOnly = false, support = false }: { readOnly?: boolean; support?: boolean }) {
   const t = useT();
   const reviews = useLoad((s) => listListingReviews(s), []);
-  const keys = useLoad((s) => listReviewerPasskeys(s), []);
+  const keys = useLoad((s) => (readOnly ? Promise.resolve(null) : listReviewerPasskeys(s)), [readOnly]);
+  // The copy a reviewer decided on, by listing, when it changed under them.
+  const [reviewed, setReviewed] = useState<Record<string, ListingReview>>({});
   const needKey = keys.data?.length === 0 && (
     <Card title={t.t("Sign your decisions")} subtitle={t.t("Optional: add a passkey and every decision you make here is signed with it, so no one can make or change one in your name.")}>
       <a className="btn sm" href={href({ name: "listing-reviews", tab: "passkeys" })}>
@@ -165,13 +206,36 @@ function Queue() {
       </a>
     </Card>
   );
+  // Why Approve and Reject are missing, and where that changes.
+  const readOnlyNote = readOnly && (
+    <Callout variant="info">
+      {support
+        ? t.t("Support reads the queue; only a listing reviewer approves or rejects.")
+        : <>{t.t("You can read the queue, but only a listing reviewer approves or rejects.")} <a href={href({ name: "listing-reviews", tab: "reviewers" })}>{t.t("Make yourself a reviewer under Reviewers")}</a></>}
+    </Callout>
+  );
   const list = reviews.data ?? [];
   if (reviews.error && !reviews.data) {
     return <ErrorBox message={t.t("Couldn't load listings ({{err}}).", { err: reviews.error })} retry={reviews.reload} retryLabel={t.t("Retry")} />;
   }
   if (!reviews.data) return <Loading label={t.t("Loading…")} />;
   if (list.length === 0) return <>{needKey}<Empty title={t.t("Nothing is waiting for review.")} /></>;
-  return <>{needKey}{list.map((r) => <ReviewCard key={`${r.kind}-${r.id}-${r.revision}`} review={r} onDone={reviews.reload} />)}</>;
+  return (
+    <>
+      {needKey}
+      {readOnlyNote}
+      {list.map((r) => (
+        <ReviewCard
+          key={`${r.kind}-${r.id}-${r.revision}`}
+          review={r}
+          reviewed={reviewed[`${r.kind}-${r.id}`]}
+          onDone={reviews.reload}
+          onChanged={() => setReviewed((m) => ({ ...m, [`${r.kind}-${r.id}`]: r }))}
+          readOnly={readOnly}
+        />
+      ))}
+    </>
+  );
 }
 
 /** What kind of thing waits for review, in words. */
@@ -191,10 +255,10 @@ export function kindLabel(t: Translator, kind: ListingKind): string {
 /** An organisation page or adventure presentation change, not a listing. */
 export const isProposal = (kind: ListingKind) => kind === "org" || kind === "adventure";
 
-function ReviewCard({ review: r, onDone }: { review: ListingReview; onDone: () => void }) {
+function ReviewCard({ review: r, reviewed, onDone, onChanged, readOnly }: { review: ListingReview; reviewed?: ListingReview | undefined; onDone: () => void; onChanged: () => void; readOnly: boolean }) {
   const t = useT();
   const [rejecting, setRejecting] = useState(false);
-  const { busy, approve, reject } = useDecide(onDone);
+  const { busy, approve, reject } = useDecide(onDone, onChanged);
   const d = r.draft;
   const live = r.live;
   const ref: ListingRef = r;
@@ -230,8 +294,8 @@ function ReviewCard({ review: r, onDone }: { review: ListingReview; onDone: () =
           <a className="btn sm" href={href({ name: "listing-review", kind: r.kind, id: r.id })}>
             <FileSearch size={ICON.sm} aria-hidden /> {t.t("Review in full")}
           </a>
-          <Button size="sm" variant="danger" icon={<X size={ICON.sm} aria-hidden />} disabled={busy} onClick={() => setRejecting(true)}>{t.t("Reject")}</Button>
-          <Button size="sm" variant="primary" icon={<Check size={ICON.sm} aria-hidden />} loading={busy} onClick={() => void approve(ref)}>{t.t("Approve")}</Button>
+          {!readOnly && <Button size="sm" variant="danger" icon={<X size={ICON.sm} aria-hidden />} disabled={busy} onClick={() => setRejecting(true)}>{t.t("Reject")}</Button>}
+          {!readOnly && <Button size="sm" variant="primary" icon={<Check size={ICON.sm} aria-hidden />} loading={busy} onClick={() => void approve(ref)}>{t.t("Approve")}</Button>}
         </span>
       }
     >
@@ -242,9 +306,18 @@ function ReviewCard({ review: r, onDone }: { review: ListingReview; onDone: () =
       ) : (
         <ListingFacts kind={r.kind} draft={d} live={live} />
       )}
-      <p className="adm-sub">{t.t("Approve only once you have looked at all of it: open “Review in full” for every text and picture of the adventure.")}</p>
+      {reviewed && reviewed.revision !== r.revision && (
+        <>
+          <p><Pill tone="warn">{t.t("Changed while you looked")}</Pill> {t.t("What changed since you opened it. Nothing was decided: look it over and decide again.")}</p>
+          {!isProposal(r.kind) && <ListingFacts kind={r.kind} draft={d} live={reviewed.draft} />}
+        </>
+      )}
+      {!readOnly && <p className="adm-sub">{r.kind === "org"
+        ? t.t("Approve only once you have looked at all of it: open “Review in full” for every text and picture of the page.")
+        : t.t("Approve only once you have looked at all of it: open “Review in full” for every text and picture of the adventure.")}</p>}
       {rejecting && (
         <RejectDialog
+          proposal={isProposal(r.kind)}
           onClose={() => setRejecting(false)}
           onReject={(reason) => {
             setRejecting(false);
@@ -304,13 +377,14 @@ function Fact({ label, changed, was, children }: { label: string; changed: boole
   );
 }
 
-export function RejectDialog({ onClose, onReject }: { onClose: () => void; onReject: (reason: string) => void }) {
+/** `proposal`: an organisation page or adventure presentation change, not a listing. */
+export function RejectDialog({ proposal = false, onClose, onReject }: { proposal?: boolean; onClose: () => void; onReject: (reason: string) => void }) {
   const t = useT();
   const [reason, setReason] = useState("");
   const ok = reason.trim() !== "";
   return (
     <Dialog
-      title={t.t("Reject this listing?")}
+      title={proposal ? t.t("Reject this change?") : t.t("Reject this listing?")}
       onClose={onClose}
       onSubmit={() => ok && onReject(reason.trim())}
       footer={
@@ -340,6 +414,8 @@ export function ViaPill({ via }: { via: ListingLogEntry["via"] }) {
 
 function Log() {
   const t = useT();
+  const { state } = useSession();
+  const noEmail = state.status === "authenticated" && state.user.role === "admin" && !state.user.email;
   const loc = t.current();
   const [via, setVia] = useState("");
   const log = useLoad((s) => listListingLog(via, s), [via]);
@@ -403,8 +479,16 @@ function Log() {
             </>
           )}
           <p><code className="adm-hash">{check.head_hash || "—"}</code></p>
-          <p>{t.t("{{signed}} decisions signed with a reviewer's passkey, each checked again; {{unsigned}} unsigned (a reviewer without a passkey, an AI assistant or an automatic approval).", { signed: check.signed ?? 0, unsigned: check.unsigned ?? 0 })}</p>
+          <p>{check.signed === 1
+            ? t.t("1 decision signed with a reviewer's passkey, checked again; {{unsigned}} unsigned (a reviewer without a passkey, an AI assistant or an automatic approval).", { unsigned: check.unsigned ?? 0 })
+            : t.t("{{signed}} decisions signed with a reviewer's passkey, each checked again; {{unsigned}} unsigned (a reviewer without a passkey, an AI assistant or an automatic approval).", { signed: check.signed ?? 0, unsigned: check.unsigned ?? 0 })}</p>
           <p className="adm-sub">{t.t("Compare it with the fingerprint mailed to platform admins each day: if one mailed earlier can't be found in the log, it was rewritten.")}</p>
+          {noEmail && (
+            <p className="adm-sub">
+              {t.t("Your account has no email address, so the daily fingerprint doesn't reach you.")}{" "}
+              <a href={href({ name: "settings", tab: "account" })}>{t.t("Add email")}</a>
+            </p>
+          )}
           {check.served && <ServedResult served={check.served} />}
         </div>
       )}
@@ -433,6 +517,7 @@ function Log() {
 function Reviewers() {
   const t = useT();
   const toast = useToast();
+  const { refresh } = useSession();
   const list = useLoad((s) => listListingReviewers(s), []);
   const [username, setUsername] = useState("");
   const [busy, setBusy] = useState(false);
@@ -443,6 +528,8 @@ function Reviewers() {
       toast.ok(on ? t.t("{{name}} reviews listings now", { name }) : t.t("{{name}} no longer reviews listings", { name }));
       if (on) setUsername("");
       list.reload();
+      // The change may be the reader's own: the Waiting tab follows the session.
+      void refresh();
     } catch (e) {
       toast.err(e instanceof ApiError && e.status === 404 ? t.t("No user is called {{name}}.", { name }) : e);
     } finally {

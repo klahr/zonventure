@@ -157,6 +157,7 @@ func TestRecap_GraphTeam(t *testing.T) {
 			Solved   bool   `json:"solved"`
 			Attempts int    `json:"attempts"`
 			Zone     string `json:"zone"`
+			Quiz     bool   `json:"quiz"`
 		} `json:"steps"`
 		Zones []struct {
 			Slug   string  `json:"slug"`
@@ -199,7 +200,7 @@ func TestRecap_GraphTeam(t *testing.T) {
 		node, kind string
 		solved     bool
 		attempts   int
-	}{{"p1", "puzzle", true, 1}, {"s", "story", false, 0}, {"p2", "puzzle", true, 0}}
+	}{{"p1", "puzzle", true, 1}, {"s", "story", true, 0}, {"p2", "puzzle", true, 0}}
 	if len(a.Steps) != len(want) {
 		t.Fatalf("alpha steps = %+v", a.Steps)
 	}
@@ -208,6 +209,10 @@ func TestRecap_GraphTeam(t *testing.T) {
 		if s.Node != w.node || s.Kind != w.kind || s.Solved != w.solved || s.Attempts != w.attempts {
 			t.Errorf("step %d = %+v, want %+v", i, s, w)
 		}
+	}
+	// The story's quiz question was answered right: it is ticked like a puzzle.
+	if !a.Steps[1].Quiz || a.Steps[0].Quiz {
+		t.Errorf("quiz steps = %+v", a.Steps)
 	}
 	if a.Steps[0].Title != "Fountain puzzle" || a.Steps[0].Zone != "fountain" {
 		t.Errorf("step 0 = %+v", a.Steps[0])
@@ -223,5 +228,125 @@ func TestRecap_GraphTeam(t *testing.T) {
 	}
 	if b.AnswersRight != 2 || b.AnswersWrong != 0 || b.Quiz == nil || b.Quiz.Right != 0 || b.Quiz.Total != 1 {
 		t.Errorf("beta counts = %d/%d quiz %+v", b.AnswersRight, b.AnswersWrong, b.Quiz)
+	}
+}
+
+// A step that just moves on takes a wrong answer as it does a right one,
+// without a word of either; the recap still tells them apart.
+func TestRecap_QuietStep(t *testing.T) {
+	ts, assignmentID, cleanup := newTestServer(t)
+	defer cleanup()
+
+	pub := newClient(t, ts)
+	if s := pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
+		t.Fatalf("login = %d", s)
+	}
+	g := graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "p1", Type: graph.Puzzle, Title: "Colour", PuzzleCfg: &graph.PuzzleConfig{
+				Blocks:         graph.LegacyBlocks("What colour?", nil),
+				Outputs:        []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Points: 10, Matchers: []match.Matcher{{Kind: match.Exact, Value: "blue"}}}},
+				Responses:      []graph.Response{{Text: "No."}},
+				LockoutSeconds: 60,
+				Quiet:          true,
+			}},
+			{Slug: "end", Type: graph.End, EndCfg: &graph.EndConfig{Outcome: graph.Complete, Blocks: graph.LegacyBlocks("Done.", nil)}},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "p1"},
+			{From: "p1", FromPort: "solved", To: "end"},
+		},
+	}
+	if s := pub.doAny("PUT", "/api/admin/adventures/demo/graph", graph.Envelope{Format: graph.FormatV2, Graph: g}, nil); s != 200 {
+		t.Fatalf("save graph = %d", s)
+	}
+	if s := pub.doAny("POST", "/api/admin/adventures/demo/graph/publish", nil, nil); s != 200 {
+		t.Fatalf("publish = %d", s)
+	}
+	arr := newClient(t, ts)
+	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
+		t.Fatalf("arranger login = %d", s)
+	}
+	var ev struct {
+		ID int64 `json:"id"`
+	}
+	if s := arr.do("POST", "/api/admin/events", map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &ev); s != 201 {
+		t.Fatalf("create event = %d", s)
+	}
+	players := map[string]*client{}
+	for _, name := range []string{"Alpha", "Beta"} {
+		var team struct {
+			Members []struct {
+				Token string `json:"token"`
+			} `json:"members"`
+		}
+		if s := arr.do("POST", "/api/admin/events/"+itoa(ev.ID)+"/teams", map[string]any{"name": name, "member_names": []string{name}}, &team); s != 201 {
+			t.Fatalf("create team = %d", s)
+		}
+		c := newClient(t, ts)
+		resp, err := c.c.Get(ts.URL + "/play?t=" + team.Members[0].Token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		players[name] = c
+	}
+	if s := arr.do("POST", "/api/admin/events/"+itoa(ev.ID)+"/start", nil, nil); s != 204 {
+		t.Fatalf("start = %d", s)
+	}
+	for name, guess := range map[string]string{"Alpha": "blue", "Beta": "green"} {
+		var res struct {
+			Quiet    bool   `json:"quiet"`
+			Port     string `json:"port"`
+			Response string `json:"response"`
+			View     struct {
+				Finished bool `json:"finished"`
+			} `json:"view"`
+		}
+		if s := players[name].doAny("POST", "/api/player/play/answer", map[string]string{"node": "p1", "guess": guess}, &res); s != 200 {
+			t.Fatalf("%s answer = %d", name, s)
+		}
+		if !res.Quiet || res.Port != "solved" || res.Response != "" || !res.View.Finished {
+			t.Errorf("%s answer = %+v", name, res)
+		}
+	}
+
+	var detail struct {
+		Teams []struct {
+			Name       string `json:"name"`
+			RecapToken string `json:"recap_token"`
+		} `json:"teams"`
+	}
+	if s := arr.do("GET", "/api/admin/events/"+itoa(ev.ID), nil, &detail); s != 200 {
+		t.Fatalf("event detail = %d", s)
+	}
+	for _, tm := range detail.Teams {
+		status, body := readRecap(t, ts.URL, tm.RecapToken)
+		if status != http.StatusOK {
+			t.Fatalf("%s recap = %d %s", tm.Name, status, body)
+		}
+		var r struct {
+			Points       *float64 `json:"points"`
+			Outcome      string   `json:"outcome"`
+			AnswersRight int      `json:"answers_right"`
+			AnswersWrong int      `json:"answers_wrong"`
+			Steps        []struct {
+				Solved   bool `json:"solved"`
+				Attempts int  `json:"attempts"`
+			} `json:"steps"`
+		}
+		if err := json.Unmarshal(body, &r); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		right := tm.Name == "Alpha"
+		points, wrong := 10.0, 0
+		if !right {
+			points, wrong = 0, 1
+		}
+		if r.Points == nil || *r.Points != points || r.Outcome != "complete" || r.AnswersRight != 1-wrong || r.AnswersWrong != wrong ||
+			len(r.Steps) != 1 || r.Steps[0].Solved != right || r.Steps[0].Attempts != wrong {
+			t.Errorf("%s recap = %+v points %v", tm.Name, r, r.Points)
+		}
 	}
 }

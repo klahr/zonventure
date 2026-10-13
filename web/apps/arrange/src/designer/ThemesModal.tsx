@@ -1,5 +1,5 @@
 import { createContext, useState } from "react";
-import { adventures, type play } from "@zonventure/api";
+import { adventures, canAuthor, type play } from "@zonventure/api";
 import type { Graph, Theme, ThemeLook } from "@zonventure/graph";
 import { Building2, Copy, Trash2 } from "lucide-react";
 import { useT } from "../i18n.tsx";
@@ -32,6 +32,9 @@ interface Props {
   initial?: string | null;
   onChange: (g: Graph) => void;
   onClose: () => void;
+  /** The adventure's own look, and making a theme it: offered on closing after a theme was made or edited. */
+  look?: ThemeLook;
+  onUse?: (look: ThemeLook) => void;
 }
 
 /**
@@ -41,17 +44,24 @@ interface Props {
  * the themes its steps switch to. The organisation's library, which new
  * themes may start from, is edited under Settings → Themes.
  */
-export function ThemesModal({ graph, initial, onChange, onClose }: Props) {
+export function ThemesModal({ graph, initial, onChange, onClose, look, onUse }: Props) {
   const t = useT();
   const themes = graph.themes ?? [];
   const [current, setCurrent] = useState<string | null>(initial ?? themes[0]?.slug ?? null);
   const [deleting, setDeleting] = useState<Theme | null>(null);
-  const [choosing, setChoosing] = useState(false);
   const [sharing, setSharing] = useState<{ theme: Theme; existing: adventures.OrgTheme } | null>(null);
   const [shared, setShared] = useState<{ slug: string; text: string } | null>(null);
   const { state } = useSession();
-  const orgAdmin = state.status === "authenticated" && state.user.role === "org_admin";
+  const orgAdmin = state.status === "authenticated" && canAuthor(state.user);
   const theme = themes.find((th) => th.slug === current) ?? null;
+  // The theme last made or edited here, and the question on closing.
+  const [touched, setTouched] = useState<string | null>(null);
+  const [asking, setAsking] = useState<Theme | null>(null);
+  const close = () => {
+    const th = themes.find((x) => x.slug === touched);
+    if (onUse && th && JSON.stringify(th.look) !== JSON.stringify(look ?? {})) return setAsking(th);
+    onClose();
+  };
 
   const save = (next: Theme[]) => {
     const g = { ...graph };
@@ -63,9 +73,13 @@ export function ThemesModal({ graph, initial, onChange, onClose }: Props) {
     const th: Theme = { slug: freshSlug(themes), name, look: structuredClone(look) };
     save([...themes, th]);
     setCurrent(th.slug);
-    setChoosing(false);
+    setTouched(th.slug);
   };
-  const update = (patch: Partial<Theme>) => theme && save(themes.map((th) => (th.slug === theme.slug ? { ...th, ...patch } : th)));
+  const update = (patch: Partial<Theme>) => {
+    if (!theme) return;
+    save(themes.map((th) => (th.slug === theme.slug ? { ...th, ...patch } : th)));
+    setTouched(theme.slug);
+  };
   const remove = (s: string) => {
     const next = themes.filter((th) => th.slug !== s);
     save(next);
@@ -98,13 +112,12 @@ export function ThemesModal({ graph, initial, onChange, onClose }: Props) {
   };
 
   return (
-    <PanelModal title={t.t("Themes")} wide onClose={onClose}>
+    <PanelModal title={t.t("Themes")} wide onClose={close}>
       <div className="themes">
-        <ThemeStrip themes={themes.map((th) => ({ key: th.slug, name: th.name, look: th.look }))} current={current} adding={choosing || !theme} onPick={(s) => { setCurrent(s); setChoosing(false); }} onAdd={() => setChoosing(true)} />
-        {choosing || !theme ? (
+        <ThemeStrip themes={themes.map((th) => ({ key: th.slug, name: th.name, look: th.look }))} current={current} adding={!theme} onPick={setCurrent} onAdd={() => add(t.t("Theme {{n}}", { n: themes.length + 1 }), look ?? {})} />
+        {!theme ? (
           <StarterGallery
             onPick={(name, look) => add(name || t.t("Theme {{n}}", { n: themes.length + 1 }), look)}
-            {...(theme ? { onCancel: () => setChoosing(false) } : {})}
           />
         ) : (
           <ThemeEditor
@@ -160,6 +173,18 @@ export function ThemesModal({ graph, initial, onChange, onClose }: Props) {
             setDeleting(null);
           }}
           onCancel={() => setDeleting(null)}
+        />
+      )}
+      {asking && (
+        <ConfirmModal
+          title={t.t("Use “{{name}}” for this adventure?", { name: asking.name || t.t("Untitled theme") })}
+          message={t.t("It becomes the adventure's look: what players see wherever no step changes the theme.")}
+          confirmLabel={t.t("Use this theme")}
+          onConfirm={() => {
+            onUse?.(asking.look);
+            onClose();
+          }}
+          onCancel={onClose}
         />
       )}
       {sharing && (

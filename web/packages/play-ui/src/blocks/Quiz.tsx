@@ -8,6 +8,16 @@ import "./quiz.css";
 const CHOICES = ["1", "X", "2"] as const;
 
 /**
+ * How a mark reads: 1, X and 2 are a Swedish quiz walk's, so the Swedish
+ * catalog turns the keys A, B and C back into them; other languages read
+ * A, B, C. What is picked and stored stays 1, X or 2.
+ */
+const markLabel = (t: Translate, c: string) => {
+  const i = (CHOICES as readonly string[]).indexOf(c);
+  return i < 0 ? c : t(["A", "B", "C"][i]!);
+};
+
+/**
  * A quiz-walk question: tap 1, X or 2. The team may change its pick
  * until it continues; nothing says whether it is right until the end.
  */
@@ -35,7 +45,7 @@ export const QuizBlock: Renderer<"quiz"> = ({ block, ctx }) => {
               disabled={final || ctx.busy || !ctx.act}
               onClick={() => mine || pick(c)}
             >
-              <span className="pv-quiz__mark">{c}</span>
+              <span className="pv-quiz__mark">{markLabel(t, c)}</span>
               <span className="pv-quiz__text">{block.options[i]}</span>
             </button>
           );
@@ -92,8 +102,8 @@ export const TiebreakBlock: Renderer<"tiebreak"> = ({ block, ctx }) => {
 
 /** How the team did on the quiz walk: the score, then each question. */
 export function QuizResult({ quiz, t }: { quiz: play.QuizResult; t: Translate }) {
-  const mark = ["1", "X", "2"];
-  const option = (item: play.QuizResult["items"][number], c: string | undefined) => (c ? `${c} · ${item.options[mark.indexOf(c)] ?? ""}` : t("no answer"));
+  const option = (item: play.QuizResult["items"][number], c: string | undefined) =>
+    c ? `${markLabel(t, c)} · ${item.options[(CHOICES as readonly string[]).indexOf(c)] ?? ""}` : t("no answer");
   // A typed answer is kept only when right, so a wrong one shows the right answer alone.
   const verdict = (item: play.QuizResult["items"][number]) =>
     item.typed

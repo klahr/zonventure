@@ -4,11 +4,14 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { I18n } from "@zonventure/i18n";
+import { I18n, type Locale } from "@zonventure/i18n";
+import { emails } from "@zonventure/api";
 import { hostedSv } from "@zonventure/hosted";
 import { trailSv } from "@zonventure/trail";
 import classic from "../../../../internal/server/web/locales/web/sv.json";
 import sv from "./locales/sv.json";
+import contentSv from "./locales/content/sv.json";
+import type { Node } from "@zonventure/graph";
 
 /**
  * Catalogs.
@@ -29,7 +32,39 @@ const areas = import.meta.glob<Record<string, string>>("./locales/sv/*.json", { 
 const catalogs = { en: {}, sv: { ...hostedSv, ...trailSv, ...(classic as Record<string, string>), ...Object.assign({}, ...Object.values(areas)), ...sv } };
 
 const instance = new I18n(catalogs);
+
+/**
+ * Text written into the adventure itself, such as a default name players
+ * see, goes in the adventure's language, not the author's UI language.
+ */
+export function contentT(lang: string | undefined): I18n["t"] {
+  return lang ? new I18n(contentCatalogs, lang).t : instance.t;
+}
+// Content words that read differently as UI ("Solved": "Lösta", a count) win here.
+const contentCatalogs = { en: {}, sv: { ...catalogs.sv, ...contentSv } };
+
+/** A new step's default route names, in the adventure's language. */
+export function routesIn(n: Node, lang: string | undefined): Node {
+  if (!n.puzzle?.outputs) return n;
+  const t = contentT(lang);
+  return { ...n, puzzle: { ...n.puzzle, outputs: n.puzzle.outputs.map((o) => (o.label ? { ...o, label: t(o.label) } : o)) } };
+}
 const I18nContext = createContext(instance);
+
+/** Translate outside a component, in the active locale (a server message, say). */
+export const translate = (key: string): string => instance.t(key);
+
+/**
+ * A language the signed-in person picked: the console shows it, and the
+ * server writes their notifications in it. Only an explicit choice is
+ * saved, never the browser's language on load.
+ */
+export function chooseLocale(locale: Locale): void {
+  instance.setLocale(locale);
+  void emails.setMyLanguage(locale).catch(() => {
+    /* the next choice tells it again */
+  });
+}
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   return (

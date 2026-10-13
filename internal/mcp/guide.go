@@ -149,7 +149,7 @@ Any block may move: "animation": {"entrance": one of fadeIn, fadeInUp, fadeInDow
 
 ## A puzzle at a place, typed answer
 
-"zone" withholds the question until the team is inside the zone. Accept every reasonable way of writing the answer: regex (RE2, case-insensitive, whole guess) or several matchers. The responses ladder answers wrong guesses; hints unlock after delay_seconds and may cost points.
+"zone" withholds the question until the team is inside the zone. Accept every reasonable way of writing the answer: regex (RE2, case-insensitive, whole guess) or several matchers. The responses ladder answers wrong guesses; hints unlock after delay_seconds and may cost points. "quiet": true says neither right nor wrong, as on a quiz walk: any answer moves the team on, a wrong one by the first answer output for no points, and the results still show which were right.
 
 %s
 
@@ -211,8 +211,9 @@ func mustIndent(raw json.RawMessage) string {
 
 func (s *Server) registerGuideTool() {
 	s.tools.register(ToolDescriptor{
-		Name:  "get_authoring_guide",
-		Scope: scopeRead,
+		Name:     "get_authoring_guide",
+		Audience: audienceAuthor,
+		Scope:    scopeRead,
 		Description: "How to build an adventure graph step by step: node types and ports, recipes for common steps as exact node JSON " +
 			"(story, zone-gated puzzle, number answer, end), answer kinds, blocks and how to playtest. Read it once before the first edit_adventure_graph call.",
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},

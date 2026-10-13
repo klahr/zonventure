@@ -25,9 +25,9 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 	// HTTP endpoints above; this socket exists only to push event-detail
 	// updates (positions, tracks, events, run+teams) on change. Lobby
 	// users and the platform admin have no org scope to subscribe to
-	// and are excluded.
+	// and are excluded; a writer watches adventures only (startWatch).
 	r.Group(func(r chi.Router) {
-		r.Use(auth.RequireAnyRole(auth.RoleOrgAdmin, auth.RoleOrgMember))
+		r.Use(auth.RequireAnyRole(auth.RoleOrgAdmin, auth.RoleOrgMember, auth.RoleOrgWriter))
 		r.Get("/ws/arrange", adminH.WSArrange)
 	})
 
@@ -45,23 +45,33 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 	// keeps account and credential management cookie-only.
 	r.Route("/api/admin", func(r chi.Router) {
 		r.Use(admin.APITokenAuth(env.cfg.DB))
-		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleOrgAdmin, auth.RoleOrgMember, auth.RoleLobby))
+		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleSupport, auth.RoleOrgAdmin, auth.RoleOrgMember, auth.RoleOrgWriter, auth.RoleLobby))
+		// A writer reaches their account and authoring only (admin/writer.go).
+		r.Use(admin.RestrictWriter)
 		r.Use(auth.RequireCSRF())
 		// A user still on the seeded default password can do nothing here
 		// but change it — so admin/admin isn't a working account until
 		// the operator rotates it. See auth.RequireNonDefaultPassword.
 		r.Use(auth.RequireNonDefaultPassword)
+		// A user whom an organisation or the admin switch requires to
+		// use 2FA can do nothing here but enrol, and their API tokens
+		// are refused. See auth.RequireTOTPSetup.
+		r.Use(auth.RequireTOTPSetup(env.cfg.DB, env.cfg.TOTPKey != nil))
+		// Every change a global admin makes here, whichever group the
+		// route sits in, goes in the admin action log.
+		r.Use(admin.LogAdminActions(env.cfg.DB))
 
 		// Staff password reset (admins & org users).
 		r.With(auth.RequireSession).Post("/users/{userID}/password", adminH.ResetPassword)
 		// Admin TOTP factory-reset — recovery path for users who lost
 		// both their authenticator and every recovery code. Same
 		// authorization rules as the password reset above; requires
-		// X-Confirm-Password from the acting admin.
+		// X-Confirm-Password from the acting admin. Support may use it
+		// too; a global admin's reset goes in the admin action log.
 		r.With(auth.RequireSession).Post("/users/{userID}/totp/disable", adminH.AdminDisableUserTOTP)
-		// Username typeahead for the "Add user to org" modal — admin
-		// / org_admin only. Returns up to 10 prefix matches that
-		// aren't admins and aren't already members of the target org.
+		// Username typeahead for the Organizations page's "Add user"
+		// modal — global admin only. Returns up to 10 prefix matches
+		// that aren't admins and aren't already members of the target org.
 		r.Get("/users/search", adminH.SearchUsers)
 
 		// Org admin or global admin: manage an organization's members + a
@@ -73,9 +83,16 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// or seize ownership, mirroring the account-management routes.
 		r.With(auth.RequireSession).Post("/organizations/{orgID}/members", adminH.CreateOrgMember)
 		r.With(auth.RequireSession).Delete("/organizations/{orgID}/members/{userID}", adminH.DeleteOrgMember)
+		// Changing a member's role in place (Settings → Members); X-Confirm-Password.
+		r.With(auth.RequireSession).Put("/organizations/{orgID}/members/{userID}/role", adminH.SetOrgMemberRole)
+		// Withdrawing a pending invitation (Settings → Members): it stops working.
+		r.With(auth.RequireSession).Delete("/organizations/{orgID}/invitations/{userID}", adminH.WithdrawOrgInvitation)
 		// Atomic ownership transfer — promotes a member to org_admin
 		// and demotes the calling org_admin to org_member in one tx.
 		r.With(auth.RequireSession).Post("/organizations/{orgID}/transfer-ownership", adminH.TransferOwnership)
+		// Whether every member must use 2FA: the org's own admins, or a
+		// full global admin (whose change goes in the admin action log).
+		r.With(auth.RequireSession).Put("/organizations/{orgID}/require-totp", adminH.SetOrgRequireTOTP)
 
 		// Stripe Connect onboarding for the /store marketplace flow.
 		// Each handler re-checks org_admin-of-named-org or global
@@ -90,7 +107,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// the platform admin reconciles across orgs. Buying is org-only.
 		r.Get("/purchases", adminH.ListPurchases)
 		// Ticket sales: self-guided tickets, party bookings and hosted
-		// passes, for the Purchases tab.
+		// passes, for Orders (the platform admin's Purchases tab).
 		r.Get("/ticket-purchases", adminH.ListTicketSales)
 		// Refunding one: the platform admin any, an org admin their own
 		// org's tickets and parties; the handler checks which. As with
@@ -115,6 +132,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.Post("/redemptions/{redemptionID}/reject", adminH.RejectRedemption)
 		r.Post("/redemptions/{redemptionID}/cancel", adminH.CancelRedemption)
 		r.Get("/purchases/{purchaseID}", adminH.GetPurchase)
+		r.Get("/purchases/{purchaseID}/receipt", adminH.PurchaseReceipt)
 		r.Post("/purchases/{purchaseID}/confirm", adminH.ConfirmPurchase)
 
 		// Auth audit feed. The handler scopes per role: admins see
@@ -128,6 +146,11 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// org user uses it to spin up a second org they admin.
 		// Admins are blocked inside the handler.
 		r.Post("/me/organizations", adminH.CreateOwnOrg)
+		// Answering an organisation's invitation to join it (see
+		// CreateOrgMember). Cookie-only: a token must not add its
+		// owner to an organisation.
+		r.With(auth.RequireSession).Post("/me/org-invitations/{orgID}/accept", adminH.AcceptOrgInvitation)
+		r.With(auth.RequireSession).Post("/me/org-invitations/{orgID}/decline", adminH.DeclineOrgInvitation)
 
 		// The author's last position, reported by their phone while
 		// building on site and read by an assistant placing zones.
@@ -148,6 +171,10 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.With(auth.RequireSession).Post("/me/password", adminH.ChangeMyPassword)
 		r.With(auth.RequireSession).Post("/me/email", adminH.ChangeMyEmail)
 		r.With(auth.RequireSession).Post("/me/username", adminH.ChangeMyUsername)
+		r.With(auth.RequireSession).Put("/me/display-name", adminH.SetMyDisplayName)
+		// The console's welcome dialog, shown once per person (admin/me.go).
+		r.With(auth.RequireSession).Post("/me/welcome-seen", adminH.MarkWelcomeSeen)
+		r.With(auth.RequireSession).Delete("/me/welcome-seen", adminH.ForgetWelcomeSeen)
 		// A person's own picture (admin/me_avatar.go).
 		r.With(auth.RequireSession).Post("/me/avatar", adminH.SetMyAvatar)
 		r.With(auth.RequireSession).Delete("/me/avatar", adminH.DeleteMyAvatar)
@@ -162,6 +189,8 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// the grace window.
 		r.Get("/me/email/revert-status", adminH.MyEmailChangeStatus)
 		r.With(auth.RequireSession).Post("/me/email/revert", adminH.RevertMyEmailChange)
+		// Drops an email change still waiting for confirmation.
+		r.With(auth.RequireSession).Delete("/me/email/pending", adminH.CancelMyEmailChange)
 		r.With(auth.RequireSession).Delete("/me", adminH.DeleteMyAccount)
 		// Account deletion is soft — DeleteMyAccount sets a 7-day
 		// timer; this endpoint clears it before the sweeper runs.
@@ -214,7 +243,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 
 		// Org users only: authoring and running events.
 		r.Group(func(r chi.Router) {
-			r.Use(auth.RequireAnyRole(auth.RoleOrgAdmin, auth.RoleOrgMember))
+			r.Use(auth.RequireAnyRole(auth.RoleOrgAdmin, auth.RoleOrgMember, auth.RoleOrgWriter))
 			r.Get("/adventures", adminH.ListAdventures)
 			r.Get("/adventures/{slug}", adminH.AdventureDetail)
 			// Live markdown → HTML for the arrange editor's preview panes.
@@ -244,6 +273,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Post("/events/{eventID}/hosted/finish-game", adminH.FinishHostedGame)
 			r.Post("/events/{eventID}/hosted/send-player-link", adminH.SendHostedPlayerLink)
 			r.Post("/events/{eventID}/hosted/blocks", adminH.AddHostedBlocks)
+			r.Post("/events/{eventID}/hosted/resend-host-link", adminH.ResendHostLinkToBuyer)
 			// Host it: a hosted event of the org's own adventure, at the
 			// platform's pass price (hosted_pricing.go).
 			r.Get("/hosted-price", adminH.GetHostedPrice)
@@ -279,6 +309,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// Files the players can download before the start (and after).
 			r.Get("/events/{eventID}/files", adminH.ListEventFiles)
 			r.Post("/events/{eventID}/files", adminH.AddEventFile)
+			r.Post("/events/{eventID}/files/announce", adminH.AnnounceEventFiles)
 			r.Get("/events/{eventID}/files/{fileID}", adminH.GetEventFile)
 			r.Delete("/events/{eventID}/files/{fileID}", adminH.DeleteEventFile)
 			// Which adventure version a self-guided event plays, and moving
@@ -375,6 +406,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Post("/adventures/{slug}/graph/versions/{version}/publish", adminH.PublishAdventureGraphVersion)
 			r.Patch("/adventures/{slug}/graph/versions/{version}", adminH.LabelAdventureGraphVersion)
 			r.Post("/adventures/{slug}/graph/validate", adminH.ValidateAdventureGraph)
+			r.Get("/adventures/{slug}/graph/qr", adminH.AnswerQR)
 
 			// Working on it together (admin/collab.go): conversations on
 			// steps, where each step is in the work, what each author saw.
@@ -429,12 +461,18 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Delete("/org-themes/{id}", adminH.DeleteOrgTheme)
 			r.Get("/orgs/me/slug", adminH.GetMyOrgSlug)
 			r.Put("/orgs/me/slug", adminH.SetMyOrgSlug)
+			// The organisation's name; held for review like the tagline
+			// once something is for sale (org_name.go).
+			r.Put("/orgs/me/name", adminH.SetMyOrgName)
 			// Public-profile read/write (tagline, website, cover image)
 			// surfaced on /o/{slug}. Read is org-user, writes are
 			// gated to RoleOrgAdmin inside each handler.
 			// Where the organisation posts printed letters to buyers.
 			r.Get("/orgs/me/ship-countries", adminH.GetMyShipCountries)
 			r.Put("/orgs/me/ship-countries", adminH.SetMyShipCountries)
+			// The contact address its mails reply to, and its time zone.
+			r.Get("/orgs/me/contact", adminH.GetMyOrgContact)
+			r.Put("/orgs/me/contact", adminH.SetMyOrgContact)
 			r.Get("/orgs/me/email-theme", adminH.GetOrgEmailTheme)
 			r.Put("/orgs/me/email-theme", adminH.SetOrgEmailTheme)
 			r.Get("/orgs/me/profile", adminH.GetMyOrgProfile)
@@ -455,12 +493,14 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 
 			// Outbound webhooks: per-org subscription CRUD. Org-scoped
 			// (handlers reject callers without an org). The kinds catalog
-			// is read-only for clients to drive their UI.
+			// is read-only for clients to drive their UI. Creating, editing
+			// and rotating are cookie-only: a leaked API token must not set
+			// up a signed event feed that outlives revoking the token.
 			r.Get("/webhooks", adminH.ListWebhooks)
-			r.Post("/webhooks", adminH.CreateWebhook)
-			r.Patch("/webhooks/{endpointID}", adminH.UpdateWebhook)
+			r.With(auth.RequireSession).Post("/webhooks", adminH.CreateWebhook)
+			r.With(auth.RequireSession).Patch("/webhooks/{endpointID}", adminH.UpdateWebhook)
 			r.Delete("/webhooks/{endpointID}", adminH.DeleteWebhook)
-			r.Post("/webhooks/{endpointID}/rotate-secret", adminH.RotateWebhookSecret)
+			r.With(auth.RequireSession).Post("/webhooks/{endpointID}/rotate-secret", adminH.RotateWebhookSecret)
 			r.Post("/webhooks/{endpointID}/test", adminH.SendTestWebhook)
 			r.Get("/webhook-event-kinds", adminH.ListWebhookEventKinds)
 			// Delivery log: every attempt, statuses, errors, the raw
@@ -469,138 +509,161 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Get("/webhooks/deliveries", adminH.ListWebhookDeliveries)
 		})
 
-		// Global admin only.
+		// Global admins, full or Support. Support reads the console and
+		// may only verify an email, resend a host link and reset 2FA
+		// (that route is above); everything else is full-admin only.
 		r.Group(func(r chi.Router) {
-			r.Use(auth.RequireRole(auth.RoleAdmin))
+			r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleSupport))
+			r.Get("/admin-actions", adminH.ListAdminActions)
 			r.Get("/organizations", adminH.ListOrganizations)
-			r.Post("/organizations", adminH.CreateOrganization)
-			r.Patch("/organizations/{orgID}", adminH.UpdateOrganization)
-			r.Post("/organizations/{orgID}/trusted", adminH.SetOrgTrusted)
-			r.Post("/organizations/{orgID}/party-adventures", adminH.SetOrgPartyAdventures)
-			r.Post("/organizations/{orgID}/verified-creator", adminH.SetOrgVerifiedCreator)
-			// Who may review listings (the review itself is below).
 			r.Get("/listing-reviewers", adminH.ListListingReviewers)
-			r.Post("/listing-reviewers", adminH.SetListingReviewer)
-			r.Delete("/organizations/{orgID}", adminH.DeleteOrganization)
-			// Brand logo upload — surfaced on the recap PDF cover and
-			// (later) on the play / arrange chrome. PNG/JPEG/WebP only,
-			// re-encoded by imageutil.Shrink.
-			r.Post("/organizations/{orgID}/logo", adminH.SetOrgLogo)
-			r.Delete("/organizations/{orgID}/logo", adminH.DeleteOrgLogo)
-			r.Post("/organizations/{orgID}/assignments", adminH.CreateAssignment)
-			r.Patch("/organizations/{orgID}/assignments/{assignmentID}", adminH.UpdateAssignment)
-			r.Delete("/organizations/{orgID}/assignments/{assignmentID}", adminH.DeleteAssignment)
-
-			r.Get("/admins", adminH.ListAdmins)
-			// Minting / removing global admins is the most sensitive
-			// credential op there is. Cookie-only (a leaked API token
-			// must not create a permanent admin that outlives the token)
-			// and each handler also re-checks X-Confirm-Password.
-			r.With(auth.RequireSession).Post("/admins", adminH.CreateAdmin)
-			r.With(auth.RequireSession).Delete("/admins/{userID}", adminH.DeleteAdmin)
-
-			// Operator-tunable runtime settings. Admin-only because
-			// these knobs affect everyone hitting the deployment —
-			// public signup, etc.
-			r.Get("/settings", adminH.GetSettings)
-			r.Put("/settings/signup", adminH.SetSignupEnabled)
-			// The platform's prices (Settings → Pricing).
-			r.Get("/pricing", adminH.GetPricing)
-			r.Put("/pricing", adminH.SetPricing)
-			// Who runs the platform, contacts, retention (Settings → Legal).
-			r.Get("/legal", adminH.GetLegal)
-			r.Put("/legal", adminH.SetLegal)
-			r.Post("/legal/preview", legalPreview(env.cfg.Legal))
-
-			// Self-host → hosted migration. Admin-only operator
-			// surface — never an org-self-service flow. Export
-			// streams a portable bundle for one org; import replays
-			// a bundle into a fresh org on this instance; the
-			// redirect-mode toggle flips the post-cutover 301
-			// forwarder. The redirect-mode path is also on the
-			// redirectMode middleware allowlist so an admin can
-			// turn the flag off from inside a redirected instance.
-			r.Get("/migrate/export", adminH.MigrateExport)
-			r.Post("/migrate/import", adminH.MigrateImport)
-			r.Get("/migrate/redirect-mode", adminH.MigrateRedirectMode)
-			r.Post("/migrate/redirect-mode", adminH.MigrateRedirectMode)
-			r.Get("/migrate/maintenance", adminH.MigrateMaintenance)
-			r.Post("/migrate/maintenance", adminH.MigrateMaintenance)
-
-			// Read-only "what's wired in?" panel — surfaces the
-			// build's pluggable seams (mailer/payments/etc.) and
-			// whether each is enabled in this deployment. Drives the
-			// Settings → Installed components card.
-			r.Get("/components", adminH.ListComponents)
-
-			// Software-update surface: cached snapshot of the upstream
-			// CHANGELOG.md plus an on-demand "check now" trigger. The
-			// background poll runs every 24h regardless of the GET; the
-			// POST exists so an operator clicking Check now in the UI
-			// gets a fresh answer in one round trip.
-			r.Get("/system-update", adminH.SystemUpdate)
-			r.Post("/system-update/check", adminH.SystemUpdateCheck)
+			r.Get("/organizations/{orgID}/events", adminH.ListOrgEvents)
+			// An event's teams, and mailing one team its links again.
+			r.Get("/organizations/{orgID}/events/{eventID}/teams", adminH.ListOrgEventTeams)
+			r.Post("/organizations/{orgID}/teams/{teamID}/invitations/send", adminH.OperatorSendTeamInvitation)
+			r.Get("/catalog", adminH.ListCatalog)
+			r.Get("/catalog/{slug}/shares", adminH.ListAdventureShares)
 
 			// Manual email verification — admin escape hatch when an
 			// arranger never received the self-serve verification mail.
 			// Idempotent + audit-logged in auth_events as
 			// event=email_verify reason=admin_manual.
 			r.Post("/users/{userID}/verify-email", adminH.VerifyMemberEmail)
+			// Support: find a party by its host's email and mail a
+			// lost host link again.
+			r.Get("/parties", adminH.AdminPartiesByHost)
+			r.Post("/parties/{eventID}/resend-host-link", adminH.AdminResendHostLink)
 
-			// Test-email knob: lets the operator verify SMTP config
-			// before customers hit the broken signup flow. Body just
-			// names a recipient — content is fixed server-side so
-			// this can't be repurposed as a spam relay.
-			r.Post("/send-test-email", adminH.SendTestEmail)
-
-			// Refunds touch real money — admin-only. The handler
-			// just calls Stripe; the actual state flip happens via
-			// the charge.refunded webhook so the same code path
-			// works whether the refund originated here or in the
-			// Stripe Dashboard.
-			r.Post("/purchases/{purchaseID}/refund", adminH.RefundPurchase)
-			// Off-platform invoice tracking — admin marks an invoice
-			// purchase as billed once the real invoice has been sent.
-			// The Purchases page's "to bill" filter ignores billed
-			// rows so the same row doesn't keep nagging.
-			r.Post("/purchases/{purchaseID}/billed", adminH.SetPurchaseBilled)
-			// "Makulera" — drop the row out of the to-bill filter
-			// without unwinding the assignment grant. Idempotent.
-			r.Post("/purchases/{purchaseID}/void", adminH.VoidPurchase)
-			// Admin-on-behalf-of grant: add player slots to an org's
-			// event. Free for non-trusted orgs (forced); for trusted
-			// orgs the admin chooses zero (goodwill) or a positive
-			// amount routed via the invoice provider.
-			r.Post("/events/{eventID}/grant-slots", adminH.GrantSlotsToEvent)
-
-			// Operator view of one org's events (Organizations page):
-			// read-only list plus cancel. Grant slots is the route above.
-			r.Get("/organizations/{orgID}/events", adminH.ListOrgEvents)
-			r.Post("/organizations/{orgID}/events/{eventID}/cancel", adminH.OperatorCancelEvent)
-
-			// Catalog curation: the publisher org authors the catalog;
-			// the operator flags the publisher, lists / unlists its
-			// adventures and commissions them for other orgs.
-			r.Put("/organizations/{orgID}/publisher", adminH.SetOrgPublisher)
-			r.Get("/catalog", adminH.ListCatalog)
-			r.Put("/catalog/{slug}/published", adminH.SetCatalogPublished)
-			r.Get("/catalog/{slug}/shares", adminH.ListAdventureShares)
-			r.Post("/catalog/{slug}/shares", adminH.GrantAdventureShare)
-			r.Delete("/catalog/{slug}/shares/{orgID}", adminH.RevokeAdventureShare)
-
-			// Server logs — stream + level control. Admin-only so org
-			// users can't snoop another org's messages.
+			// Server logs — read here, level change below. Global admins
+			// only so org users can't snoop another org's messages.
 			r.Get("/logs", adminH.ListLogs)
 			r.Get("/logs/level", adminH.LogsLevel)
-			r.Put("/logs/level", adminH.SetLogsLevel)
+			// The dashboard reads whether public sign-up is on.
+			r.Get("/settings", adminH.GetSettings)
 
+			// Global admin only.
+			r.Group(func(r chi.Router) {
+				r.Use(auth.RequireRole(auth.RoleAdmin))
+				r.Post("/organizations", adminH.CreateOrganization)
+				r.Patch("/organizations/{orgID}", adminH.UpdateOrganization)
+				r.Post("/organizations/{orgID}/trusted", adminH.SetOrgTrusted)
+				r.Post("/organizations/{orgID}/party-adventures", adminH.SetOrgPartyAdventures)
+				r.Post("/organizations/{orgID}/verified-creator", adminH.SetOrgVerifiedCreator)
+				// Who may review listings (the review itself is below).
+				r.Post("/listing-reviewers", adminH.SetListingReviewer)
+				r.Delete("/organizations/{orgID}", adminH.DeleteOrganization)
+				// Brand logo upload — surfaced on the recap PDF cover and
+				// (later) on the play / arrange chrome. PNG/JPEG/WebP only,
+				// re-encoded by imageutil.Shrink.
+				r.Post("/organizations/{orgID}/logo", adminH.SetOrgLogo)
+				r.Delete("/organizations/{orgID}/logo", adminH.DeleteOrgLogo)
+				r.Post("/organizations/{orgID}/assignments", adminH.CreateAssignment)
+				r.Patch("/organizations/{orgID}/assignments/{assignmentID}", adminH.UpdateAssignment)
+				r.Delete("/organizations/{orgID}/assignments/{assignmentID}", adminH.DeleteAssignment)
+
+				r.Get("/admins", adminH.ListAdmins)
+				// Minting / removing global admins is the most sensitive
+				// credential op there is. Cookie-only (a leaked API token
+				// must not create a permanent admin that outlives the token)
+				// and each handler also re-checks X-Confirm-Password.
+				r.With(auth.RequireSession).Post("/admins", adminH.CreateAdmin)
+				r.With(auth.RequireSession).Delete("/admins/{userID}", adminH.DeleteAdmin)
+				r.With(auth.RequireSession).Put("/admins/{userID}/role", adminH.SetAdminRole)
+				// Mails the admin the forgot-password link; never sets the password.
+				r.With(auth.RequireSession).Post("/admins/{userID}/reset-link", adminH.SendAdminResetLink)
+
+				// Operator-tunable runtime settings. Admin-only because
+				// these knobs affect everyone hitting the deployment —
+				// public signup, etc. Reading them is in the group above.
+				r.Put("/settings/signup", adminH.SetSignupEnabled)
+				// Whether every global admin and Support user must use 2FA.
+				r.With(auth.RequireSession).Put("/settings/admin-totp", adminH.SetAdminTOTPRequired)
+				// The platform's prices (Settings → Pricing).
+				r.Get("/pricing", adminH.GetPricing)
+				r.Put("/pricing", adminH.SetPricing)
+				// Who runs the platform, contacts, retention (Settings → Legal).
+				r.Get("/legal", adminH.GetLegal)
+				r.Put("/legal", adminH.SetLegal)
+				r.Post("/legal/preview", legalPreview(env.cfg.Legal))
+
+				// Self-host → hosted migration. Admin-only operator
+				// surface — never an org-self-service flow. Export
+				// streams a portable bundle for one org; import replays
+				// a bundle into a fresh org on this instance; the
+				// redirect-mode toggle flips the post-cutover 301
+				// forwarder. The redirect-mode path is also on the
+				// redirectMode middleware allowlist so an admin can
+				// turn the flag off from inside a redirected instance.
+				r.Get("/migrate/export", adminH.MigrateExport)
+				r.Post("/migrate/import", adminH.MigrateImport)
+				r.Get("/migrate/redirect-mode", adminH.MigrateRedirectMode)
+				r.Post("/migrate/redirect-mode", adminH.MigrateRedirectMode)
+				r.Get("/migrate/maintenance", adminH.MigrateMaintenance)
+				r.Post("/migrate/maintenance", adminH.MigrateMaintenance)
+
+				// Read-only "what's wired in?" panel — surfaces the
+				// build's pluggable seams (mailer/payments/etc.) and
+				// whether each is enabled in this deployment. Drives the
+				// Settings → Installed components card.
+				r.Get("/components", adminH.ListComponents)
+
+				// Software-update surface: cached snapshot of the upstream
+				// CHANGELOG.md plus an on-demand "check now" trigger. The
+				// background poll runs every 24h regardless of the GET; the
+				// POST exists so an operator clicking Check now in the UI
+				// gets a fresh answer in one round trip.
+				r.Get("/system-update", adminH.SystemUpdate)
+				r.Post("/system-update/check", adminH.SystemUpdateCheck)
+
+				// Test-email knob: lets the operator verify SMTP config
+				// before customers hit the broken signup flow. Body just
+				// names a recipient — content is fixed server-side so
+				// this can't be repurposed as a spam relay.
+				r.Post("/send-test-email", adminH.SendTestEmail)
+
+				// Refunds touch real money — admin-only. The handler
+				// just calls Stripe; the actual state flip happens via
+				// the charge.refunded webhook so the same code path
+				// works whether the refund originated here or in the
+				// Stripe Dashboard.
+				r.Post("/purchases/{purchaseID}/refund", adminH.RefundPurchase)
+				// Off-platform invoice tracking — admin marks an invoice
+				// purchase as billed once the real invoice has been sent.
+				// The Purchases page's "to bill" filter ignores billed
+				// rows so the same row doesn't keep nagging.
+				r.Post("/purchases/{purchaseID}/billed", adminH.SetPurchaseBilled)
+				// "Makulera" — drop the row out of the to-bill filter
+				// without unwinding the assignment grant. Idempotent.
+				r.Post("/purchases/{purchaseID}/void", adminH.VoidPurchase)
+				r.Post("/purchases/{purchaseID}/unvoid", adminH.UnvoidPurchase)
+				// Admin-on-behalf-of grant: add player slots to an org's
+				// event. Free for non-trusted orgs (forced); for trusted
+				// orgs the admin chooses zero (goodwill) or a positive
+				// amount routed via the invoice provider.
+				r.Post("/events/{eventID}/grant-slots", adminH.GrantSlotsToEvent)
+
+				// Operator view of one org's events (Organizations page):
+				// cancel (the list is in the group above). Grant slots is the
+				// route above.
+				r.Post("/organizations/{orgID}/events/{eventID}/cancel", adminH.OperatorCancelEvent)
+
+				// Catalog curation: the publisher org authors the catalog;
+				// the operator flags the publisher, lists / unlists its
+				// adventures and commissions them for other orgs.
+				r.Put("/organizations/{orgID}/publisher", adminH.SetOrgPublisher)
+				r.Put("/catalog/{slug}/published", adminH.SetCatalogPublished)
+				r.Post("/catalog/{slug}/shares", adminH.GrantAdventureShare)
+				r.Delete("/catalog/{slug}/shares/{orgID}", adminH.RevokeAdventureShare)
+
+				r.Put("/logs/level", adminH.SetLogsLevel)
+			})
 		})
 	})
 
 	// Log stream socket. Lives outside the /api/admin route tree so it
-	// can use the WS auth path the other sockets do. Admin-only.
+	// can use the WS auth path the other sockets do. Global admins only.
 	r.Group(func(r chi.Router) {
-		r.Use(auth.RequireRole(auth.RoleAdmin))
+		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleSupport))
 		r.Get("/ws/logs", adminH.WSLogs)
 	})
 

@@ -174,11 +174,13 @@ export function PresenceBar({
 
 /**
  * Who holds what `me` has open: another person who opened it first.
- * Times are the server's, so two pages agree on who was first.
+ * Times are the server's, so two pages agree on who was first. Never
+ * `me` themselves: their own other tab, or their socket from before going
+ * offline that the server has not yet seen go.
  */
 export function holderOf(focus: string, me: Peer | null, others: Peer[]): Peer | null {
   const at = (p: Peer) => Date.parse(p.focus_since ?? "") || 0;
   const mine = me?.focus === focus ? at(me) : null;
   const first = (p: Peer) => mine === null || at(p) < mine || (at(p) === mine && p.id < me!.id);
-  return others.find((p) => p.kind === "human" && p.focus === focus && first(p)) ?? null;
+  return others.find((p) => p.kind === "human" && p.user_id !== me?.user_id && p.focus === focus && first(p)) ?? null;
 }

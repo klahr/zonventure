@@ -27,9 +27,9 @@ import (
 //     dashboard. Returning a 301 would make Stripe follow the
 //     redirect and replay the event into the new instance, which
 //     would double-fire fulfilment.
-//   - /api/admin/migrate/redirect-mode — admin must still be able
-//     to flip the toggle off via API even from inside a redirected
-//     instance.
+//   - the console (/arrange, /app/arrange/), /api/auth/*, /api/admin/*
+//     and the shared /assets/ and favicon — the admin must still be able
+//     to sign in, turn redirect mode off and manage the orgs that stay.
 func redirectMode(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		target := settings.RedirectTarget()
@@ -62,8 +62,14 @@ func isRedirectAllowlisted(path string) bool {
 	case "/api/health",
 		"/api/version",
 		"/api/webhooks/stripe",
-		"/api/admin/migrate/redirect-mode":
+		"/arrange",
+		"/favicon.svg":
 		return true
+	}
+	for _, p := range []string{"/app/arrange/", "/api/auth/", "/api/admin/", "/assets/"} {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
 	}
 	return false
 }

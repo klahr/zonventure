@@ -11,7 +11,7 @@ import (
 // placeholders disappear and the substituted values appear.
 func TestRenderLegalPage_PrivacySubstitutesPlaceholders(t *testing.T) {
 	rr := httptest.NewRecorder()
-	renderLegalPage(rr, "privacy.html", LegalConfig{
+	renderLegalPage(rr, "privacy.html", "en", LegalConfig{
 		CompanyName:           "Zonventure AB",
 		ContactEmail:          "hello@zonventure.example",
 		DPOEmail:              "dpo@zonventure.example",
@@ -28,8 +28,9 @@ func TestRenderLegalPage_PrivacySubstitutesPlaceholders(t *testing.T) {
 
 	for _, marker := range []string{
 		"{{COMPANY_NAME}}", "{{CONTACT_EMAIL}}", "{{DPO_EMAIL}}",
-		"{{JURISDICTION}}", "{{LOCATION_RETENTION_DAYS}}",
-		"{{AUDIT_RETENTION_DAYS}}", "{{LAST_UPDATED}}",
+		"{{JURISDICTION}}", "{{LOCATION_RETENTION}}",
+		"{{AUDIT_RETENTION}}", "{{PARTY_RETENTION}}", "{{ADDRESS_RETENTION}}",
+		"{{DAYS}}", "{{LAST_UPDATED}}",
 		"{{HOSTING_PROVIDER}}", "{{EMAIL_PROVIDER}}",
 		"[set ZV_",
 	} {
@@ -49,13 +50,50 @@ func TestRenderLegalPage_PrivacySubstitutesPlaceholders(t *testing.T) {
 	}
 }
 
+// Blank optional sub-processors don't put "[… Settings → Legal]"
+// placeholders on the published page.
+func TestRenderLegalPage_BlankProvidersNoPlaceholder(t *testing.T) {
+	rr := httptest.NewRecorder()
+	renderLegalPage(rr, "privacy.html", "en", LegalConfig{
+		CompanyName:  "Acme",
+		ContactEmail: "ops@example.com",
+		Jurisdiction: "Sweden",
+	})
+	body := rr.Body.String()
+	if rr.Code != 200 || strings.Contains(body, "Settings → Legal]") || !strings.Contains(body, "our hosting provider") {
+		t.Fatalf("status %d, blank provider rendered as placeholder", rr.Code)
+	}
+}
+
+// A retention period of 0 keeps the data (the sweeper skips it), so the
+// page says so instead of "kept for 0 days".
+func TestRenderLegalPage_ZeroRetentionKeeps(t *testing.T) {
+	rr := httptest.NewRecorder()
+	renderLegalPage(rr, "privacy.html", "en", LegalConfig{
+		CompanyName:           "Zonventure AB",
+		ContactEmail:          "hello@zonventure.example",
+		Jurisdiction:          "Sweden",
+		LocationRetentionDays: "0",
+		AuditRetentionDays:    "0",
+		PartyRetentionDays:    "0",
+		AddressRetentionDays:  "21",
+	})
+	body := rr.Body.String()
+	if rr.Code != 200 || strings.Contains(body, " 0 days") || !strings.Contains(body, "Audit logs: kept with no time limit.") {
+		t.Fatalf("status %d, zero retention rendered wrong", rr.Code)
+	}
+	if !strings.Contains(body, "are deleted 21 days after the letter is posted") {
+		t.Errorf("a set period is no longer shown")
+	}
+}
+
 // An unconfigured operator (no company name, contact email or
 // jurisdiction under Settings → Legal) must not show placeholder text on
 // /privacy and /terms to a real customer. The page 503s with what is
 // missing and where to fill it in.
 func TestRenderLegalPage_RefusesWhenUnconfigured(t *testing.T) {
 	rr := httptest.NewRecorder()
-	renderLegalPage(rr, "privacy.html", LegalConfig{})
+	renderLegalPage(rr, "privacy.html", "en", LegalConfig{})
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rr.Code)
 	}
@@ -70,6 +108,15 @@ func TestRenderLegalPage_RefusesWhenUnconfigured(t *testing.T) {
 			t.Errorf("503 body missing hint %q", want)
 		}
 	}
+	// A Swedish visitor reads it in Swedish.
+	rr = httptest.NewRecorder()
+	renderLegalPage(rr, "privacy.html", "sv", LegalConfig{})
+	body = rr.Body.String()
+	for _, want := range []string{`<html lang="sv"`, "Inställningar → Juridik", "företagsnamn", "Inte inställd än"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("Swedish 503 body missing %q", want)
+		}
+	}
 }
 
 // The yellow "Draft template" boxes stay in place by default — this is
@@ -80,7 +127,7 @@ func TestRenderLegalPage_DraftBannerByDefault(t *testing.T) {
 		rr := httptest.NewRecorder()
 		// Required identity fields supplied; Reviewed left false so
 		// the draft banner SHOULD remain in the output.
-		renderLegalPage(rr, name, LegalConfig{
+		renderLegalPage(rr, name, "en", LegalConfig{
 			CompanyName:  "Acme",
 			ContactEmail: "ops@example.com",
 			Jurisdiction: "Stockholm, Sweden",
@@ -97,7 +144,7 @@ func TestRenderLegalPage_DraftBannerByDefault(t *testing.T) {
 func TestRenderLegalPage_ReviewedStripsDraftBanners(t *testing.T) {
 	for _, name := range []string{"privacy.html", "terms.html"} {
 		rr := httptest.NewRecorder()
-		renderLegalPage(rr, name, LegalConfig{
+		renderLegalPage(rr, name, "en", LegalConfig{
 			CompanyName:  "Acme",
 			ContactEmail: "ops@example.com",
 			Jurisdiction: "Stockholm, Sweden",
@@ -118,7 +165,7 @@ func TestRenderLegalPage_ReviewedStripsDraftBanners(t *testing.T) {
 // at customer time.
 func TestRenderLegalPage_TermsCarriesEUClauses(t *testing.T) {
 	rr := httptest.NewRecorder()
-	renderLegalPage(rr, "terms.html", LegalConfig{
+	renderLegalPage(rr, "terms.html", "en", LegalConfig{
 		CompanyName:  "Acme",
 		ContactEmail: "ops@example.com",
 		Jurisdiction: "Stockholm, Sweden",
@@ -162,7 +209,7 @@ func TestRenderLegalPage_CompanyIdentity(t *testing.T) {
 	full.CompanyAddress = "Storgatan 1 & 3, 111 22 Stockholm"
 	for _, page := range []string{"privacy.html", "terms.html"} {
 		rr := httptest.NewRecorder()
-		renderLegalPage(rr, page, full)
+		renderLegalPage(rr, page, "en", full)
 		body := rr.Body.String()
 		for _, want := range []string{"Org. no. 556677-8899", "VAT no. SE556677889901", "Storgatan 1 &amp; 3, 111 22 Stockholm"} {
 			if !strings.Contains(body, want) {
@@ -170,7 +217,7 @@ func TestRenderLegalPage_CompanyIdentity(t *testing.T) {
 			}
 		}
 		rr = httptest.NewRecorder()
-		renderLegalPage(rr, page, base)
+		renderLegalPage(rr, page, "en", base)
 		body = rr.Body.String()
 		if strings.Contains(body, "{{COMPANY_IDENTITY}}") || strings.Contains(body, "Org. no.") || strings.Contains(body, "VAT no.") {
 			t.Errorf("%s: identity placeholder or empty labels left behind", page)
@@ -196,7 +243,7 @@ func TestRenderLegalPage_MapProvider(t *testing.T) {
 		{named, "Example Maps GmbH (Germany)"},
 	} {
 		rr := httptest.NewRecorder()
-		renderLegalPage(rr, "privacy.html", tc.cfg)
+		renderLegalPage(rr, "privacy.html", "en", tc.cfg)
 		body := rr.Body.String()
 		if !strings.Contains(body, tc.want) || strings.Contains(body, "{{MAP_PROVIDER}}") {
 			t.Errorf("privacy page for %+v: want map provider %q", tc.cfg.MapTileURL, tc.want)

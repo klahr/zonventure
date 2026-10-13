@@ -47,7 +47,7 @@ const presentationRevision = `md5(row(p.fields, p.image_mime_type, md5(p.image_c
 // orgProposalFields and adventureProposalFields are the columns review
 // holds back. look_cover stands for look_style's cover.
 var (
-	orgProposalFields       = map[string]bool{"tagline": true, "public_website": true}
+	orgProposalFields       = map[string]bool{"name": true, "tagline": true, "public_website": true}
 	adventureProposalFields = map[string]bool{"title": true, "description": true, "author": true, "intro_text": true,
 		"outro_text": true, "start_label": true, "area": true, "buyer_note": true, "look_cover": true}
 )
@@ -436,7 +436,7 @@ func (h *Handlers) writeProposalPicture(w http.ResponseWriter, r *http.Request, 
 // presentationLabels name the fields as listing content names them
 // (listing_content.go), so a proposal's snapshot and a listing's agree.
 var presentationLabels = map[string]string{
-	"tagline": "Organisation: tagline", "public_website": "Organisation: website",
+	"name": "Organisation: name", "tagline": "Organisation: tagline", "public_website": "Organisation: website",
 	"title": "Adventure: title", "description": "Adventure: description", "author": "Adventure: author",
 	"intro_text": "Adventure: intro", "outro_text": "Adventure: outro", "start_label": "Adventure: meeting point",
 	"area": "Adventure: area", "buyer_note": "Adventure: note to buyers",
@@ -518,7 +518,7 @@ func (h *Handlers) proposalContent(ctx context.Context, kind string, id int64) (
 			FROM organizations WHERE id = $1`, target).Scan(&tagline, &website, &logo, &cover); err != nil {
 			return c, err
 		}
-		c.Texts = append(c.Texts, ReviewText{Where: "Organisation: name", Text: c.OrgName})
+		field("name", c.OrgName)
 		field("tagline", tagline.String)
 		field("public_website", website.String)
 		picture("org-logo", "Organisation: logo", hasImage, logo)

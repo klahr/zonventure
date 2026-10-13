@@ -21,7 +21,7 @@ func sample() []Card {
 
 // A finished trail compiles to a graph the validator accepts: no places,
 // a quiz step per quiz card asking "Card N", a one-try puzzle per answer
-// card.
+// card that just moves on.
 func TestCompileValid(t *testing.T) {
 	cards := sample()
 	if p := Problems(cards); len(p) != 0 {
@@ -42,7 +42,7 @@ func TestCompileValid(t *testing.T) {
 		t.Error("the question is on paper, not the phone")
 	}
 	a := g.Nodes[3]
-	if a.Type != graph.Puzzle || a.Title != "Fråga 2" || a.PuzzleCfg.Outputs[0].Points != 1 || a.PuzzleCfg.Outputs[1].AfterAttempts != 1 {
+	if a.Type != graph.Puzzle || a.Title != "Fråga 2" || a.PuzzleCfg.Outputs[0].Points != 1 || len(a.PuzzleCfg.Outputs) != 1 || !a.PuzzleCfg.Quiet {
 		t.Errorf("answer card: %+v", a)
 	}
 	if n := Number(cards); n[0] != 0 || n[1] != 1 || n[2] != 2 {
@@ -98,8 +98,8 @@ func TestCheck(t *testing.T) {
 	}
 }
 
-// Every template is a sensible start: known kinds, fresh ids, and the
-// filled-in ones compile valid.
+// Every template is a sensible start: known kinds, fresh ids, every card
+// an example, and the filled-in ones compile valid.
 func TestTemplates(t *testing.T) {
 	for _, lang := range []string{"en", "sv"} {
 		for _, name := range TemplateNames {
@@ -109,6 +109,11 @@ func TestTemplates(t *testing.T) {
 			}
 			if err := Check(tp.Cards); err != nil {
 				t.Errorf("%s/%s: %v", lang, name, err)
+			}
+			for _, c := range tp.Cards {
+				if !c.Example {
+					t.Errorf("%s/%s: card not marked an example: %+v", lang, name, c)
+				}
 			}
 			if name == "birthday" || name == "kids" {
 				if p := Problems(tp.Cards); len(p) != 0 {
@@ -151,6 +156,13 @@ func TestTemplatePerson(t *testing.T) {
 	tp, _ = NewFromTemplateFor("birthday", "en", Person{Name: "Mia", Age: 7})
 	if got := strings.Join(tp.Cards[1].Options, ","); got != "6,7,8" || tp.Cards[1].Correct != "X" {
 		t.Errorf("age options: %s %s", got, tp.Cards[1].Correct)
+	}
+	// The example best friend is never the birthday child.
+	for _, name := range []string{"Mia", "alva"} {
+		tp, _ = NewFromTemplateFor("birthday", "sv", Person{Name: name, Age: 7})
+		if got := tp.Cards[3].Answers[0]; strings.EqualFold(got, name) || got == "" {
+			t.Errorf("%s's best friend: %q", name, got)
+		}
 	}
 	if kids, _ := NewFromTemplate("kids", "en"); kids.Person {
 		t.Error("kids is about no one")
@@ -212,5 +224,27 @@ func TestQuizListsAnswerCards(t *testing.T) {
 	}
 	if q := play("Tiger"); q.Right != 1 || q.Total != 2 || q.Items[1].Right || q.Items[1].Picked != "" {
 		t.Errorf("a wrong answer = %+v", q)
+	}
+}
+
+// An answer card says neither right nor wrong: any answer moves the team
+// on by the same way, quietly, and only a right one scores.
+func TestAnswerCardsAreQuiet(t *testing.T) {
+	for _, c := range []struct {
+		guess  string
+		points float64
+	}{{"Måns", 1}, {"Tiger", 0}} {
+		g := Compile(sample(), "en")
+		tm, err := session.Place(g, "card-c", time.Unix(0, 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, step, err := tm.Answer("card-c", c.guess)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if step == nil || !res.Quiet || res.Port != "right" || res.Response != "" || res.BlockedUntil != nil || tm.Points != c.points {
+			t.Errorf("%s: result %+v, points %v", c.guess, res, tm.Points)
+		}
 	}
 }

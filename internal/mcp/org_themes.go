@@ -13,8 +13,9 @@ import (
 
 func (s *Server) registerOrgThemeTools() {
 	s.tools.register(ToolDescriptor{
-		Name:  "list_org_themes",
-		Scope: scopeRead,
+		Name:     "list_org_themes",
+		Audience: audienceAuthor,
+		Scope:    scopeRead,
 		Description: "The caller's organisation's own themes: looks its authors keep for all its adventures (without pictures or sounds). " +
 			"Offer them first when choosing an adventure's look. Each look takes the put_theme look fields; to make one the main look, pass it to update_adventure_meta with _color added to accent, accent_secondary, background, text and submit_bg.",
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},

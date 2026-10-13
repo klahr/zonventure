@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ApiError, post } from "@zonventure/api";
 import { useT } from "../i18n.tsx";
+import { useSession } from "../session.tsx";
 import { Button, Callout } from "../designer/dz/ui.tsx";
 import { Dialog } from "./dialogs.tsx";
 import { ErrorBox } from "./kit.tsx";
@@ -37,6 +38,12 @@ export function ListingStatus({ review, reason, listed, kind, newerVersion }: {
             : store
               ? t.t("Not submitted yet: submit it for review to put it in the store.")
               : t.t("Not submitted yet: submit it for review to put it on your page.")}
+          {reason && (
+            <>
+              <br />
+              <strong>{t.t("Last review:")}</strong> {reason}
+            </>
+          )}
         </Callout>
       );
     case "pending":
@@ -57,6 +64,7 @@ export function ListingStatus({ review, reason, listed, kind, newerVersion }: {
           <strong>{t.t("Not approved:")}</strong> {reason}
           <br />
           {listed ? t.t("The approved version stays up. Change it, then submit it again.") : t.t("Change it, then submit it again.")}
+          {store && <> {t.t("If the reason is the adventure itself, publish a new version of it and update this event to it.")}</>}
         </Callout>
       );
     case "approved":
@@ -99,6 +107,8 @@ export function SubmitListingDialog({ url, title, note, attestText, onClose, onD
 }) {
   const t = useT();
   const toast = useToast();
+  const { state } = useSession();
+  const verified = state.status === "authenticated" && !!state.user.memberships.find((m) => m.org_id === state.user.org_id)?.verified_creator;
   const [attest, setAttest] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -147,7 +157,7 @@ export function SubmitListingDialog({ url, title, note, attestText, onClose, onD
     >
       {title && <p><strong>{title}</strong></p>}
       <p className="ls-note">
-        {note ?? t.t("A reviewer checks the listing, the whole adventure it plays and your organisation's page before it goes public. What is public now stays up meanwhile.")}
+        {verified ? t.t("Your organisation is a verified creator, so this goes public as soon as you submit it.") : note ?? t.t("A reviewer checks the listing, the whole adventure it plays and your organisation's page before it goes public. What is public now stays up meanwhile.")}
       </p>
       <label className="ls-attest">
         <input type="checkbox" checked={attest} onChange={(e) => setAttest(e.target.checked)} />

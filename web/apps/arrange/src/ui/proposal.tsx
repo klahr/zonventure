@@ -56,7 +56,7 @@ export function ProposalPanel({ kind, base, proposal, labels, pictures, onChange
   if (!proposal || (!proposal.gated && !proposal.id)) return null;
 
   const what = kind === "org"
-    ? t.t("Something of yours is for sale, so changes to your tagline, website, logo and cover are reviewed before they go public. Colours apply at once, and removing a picture applies at once.")
+    ? t.t("Something of yours is for sale, so changes to your tagline, website, logo and cover are reviewed before they go public. Colors apply at once, and removing a picture applies at once.")
     : t.t("This adventure is for sale, so changes to its title, description, author, intro, outro, meeting point, area, note to buyers, icon and cover are reviewed before players and buyers see them. Clearing a field applies at once.");
   if (!proposal.id) return <Callout variant="info">{what}</Callout>;
 

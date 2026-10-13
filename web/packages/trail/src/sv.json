@@ -36,6 +36,8 @@
   "Midsummer": "Midsommar",
   "Move earlier": "Flytta tidigare",
   "Move later": "Flytta senare",
+  "Earlier": "Tidigare",
+  "Later": "Senare",
   "Name of the party adventure": "Partyäventyrets namn",
   "New Year's Eve": "Nyårsafton",
   "No cards yet.": "Inga kort än.",
@@ -67,7 +69,6 @@
   "Start from one empty card.": "Börja med ett tomt kort.",
   "Summer": "Sommar",
   "Sunshine": "Solsken",
-  "Tap 1, X or 2 to mark the right option.": "Tryck på 1, X eller 2 för att markera rätt alternativ.",
   "Text": "Text",
   "The right answer": "Rätt svar",
   "The teams' phones get it too.": "Lagens mobiler får det också.",
@@ -97,5 +98,11 @@
   "Options": "Alternativ",
   "Typed answer": "Skrivet svar",
   "Info": "Info",
-  "Teams type it on their phone. Aa or aa, both count.": "Lagen skriver det i mobilen. Aa eller aa, båda räknas."
+  "Teams type it on their phone. Aa or aa, both count.": "Lagen skriver det i mobilen. Aa eller aa, båda räknas.",
+  "Tap A, B or C to mark the right option.": "Tryck på 1, X eller 2 för att markera rätt alternativ.",
+  "A": "1",
+  "B": "X",
+  "C": "2",
+  "Move to top": "Flytta först",
+  "Move to bottom": "Flytta sist"
 }

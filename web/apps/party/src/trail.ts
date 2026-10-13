@@ -74,6 +74,29 @@ function write(key: string, value: unknown) {
   }
 }
 
+/**
+ * Whether this looks like a private window, where what the browser
+ * holds goes when it closes: storage that won't keep a value, or a quota
+ * far below a normal profile's (Chrome's incognito gives ~100 MB). A
+ * guess, so only ever a warning.
+ */
+export async function privateWindow(): Promise<boolean> {
+  try {
+    localStorage.setItem("zv.probe", "1");
+    const kept = localStorage.getItem("zv.probe") === "1";
+    localStorage.removeItem("zv.probe");
+    if (!kept) return true;
+  } catch {
+    return true;
+  }
+  try {
+    const { quota } = await navigator.storage.estimate();
+    return quota !== undefined && quota < 200 * 1024 * 1024;
+  } catch {
+    return false;
+  }
+}
+
 /** The drafts this browser holds. */
 export const heldTrails = (): TrailKey[] => read<TrailKey[]>(KEYS, []).filter((k) => k && typeof k.id === "number" && typeof k.secret === "string");
 
@@ -88,11 +111,29 @@ export function forgetTrails(ids: number[]) {
 const PAID_HOST = "zv.trail-paid-host";
 
 /**
- * The admin page a checkout opens once paid, kept while this browser is
+ * The host page a checkout opens once paid, kept while this browser is
  * away paying, so the thank-you page can go straight there.
  */
 export const paidHost = (): { url: string; at: number } | null => read(PAID_HOST, null);
 export const setPaidHost = (url: string | null) => write(PAID_HOST, url ? { url, at: Date.now() } : null);
+
+const CHECKOUT = "zv.trail-checkout";
+
+/** What this browser last sent to checkout for draft id, so a cancelled payment doesn't lose it. */
+export const lastCheckout = (id: number): { email: string; blocks: number } | null => {
+  const c = read<{ id: number; email: string; blocks: number } | null>(CHECKOUT, null);
+  return c && c.id === id ? c : null;
+};
+export const setLastCheckout = (c: { id: number; email: string; blocks: number }) => write(CHECKOUT, c);
+
+const HOSTS = "zv.trail-hosts";
+
+/** The host links this browser has opened, by trail id, so My trails can open them again. */
+export const hostLink = (id: number): string | undefined => read<Record<string, string>>(HOSTS, {})[String(id)];
+export function holdHostLink(id: number, token: string) {
+  const all = read<Record<string, string>>(HOSTS, {});
+  if (all[String(id)] !== token) write(HOSTS, { ...all, [String(id)]: token });
+}
 
 /** The email session, from a confirm or sign-in link. */
 export const trailSession = (): { session: string; email: string } | null => read(SESSION, null);
@@ -157,5 +198,7 @@ export const setTrailTheme = (which: { id: number } | { token: string }, theme: 
   "token" in which
     ? request<void>(`/api/party/${enc(which.token)}/cards/theme`, { method: "PUT", body: theme })
     : request<void>(`${draft(which.id)}/theme`, { method: "PUT", body: theme, headers: trailHeaders(which.id) });
+
+export const replaceHostLink = (token: string) => request<{ token: string; host_url: string }>(`/api/party/${enc(token)}/replace-link`, { method: "POST" });
 
 export const keepLink = (token: string) => request<{ url: string }>(`/api/party/${enc(token)}/keep`, { method: "POST" });

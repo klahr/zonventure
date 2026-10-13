@@ -224,6 +224,9 @@ func ClientIP(r *http.Request) string {
 		}
 	}
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		if r.Header.Get("X-Forwarded-For") != "" {
+			warnUntrustedProxy(host)
+		}
 		return host
 	}
 	return r.RemoteAddr

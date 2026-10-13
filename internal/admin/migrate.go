@@ -31,6 +31,7 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/orgslug"
 	"github.com/klahr/zonventure/internal/settings"
 )
 
@@ -76,7 +77,7 @@ func (h *Handlers) MigrateSelfExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(
 		`attachment; filename="zonventure-org-%s-%s.zip"`,
-		sanitiseFilename(env.Org.Name), time.Now().UTC().Format("2006-01-02")))
+		orgslug.Slugify(env.Org.Name), time.Now().UTC().Format("2006-01-02")))
 	if err := WriteOrgBundle(w, env, files); err != nil {
 		logx.Warn("admin.migrate.self_export.write", "org_id", orgID, "by", me.Username, "err", err.Error())
 	}
@@ -124,7 +125,7 @@ func (h *Handlers) MigrateExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(
 		`attachment; filename="zonventure-org-%s-%s.zip"`,
-		sanitiseFilename(env.Org.Name), time.Now().UTC().Format("2006-01-02")))
+		orgslug.Slugify(env.Org.Name), time.Now().UTC().Format("2006-01-02")))
 	if err := WriteOrgBundle(w, env, files); err != nil {
 		// Headers are already sent so we can't switch to a JSON 500;
 		// log + bail. The client will see a truncated zip and notice.
@@ -236,6 +237,7 @@ func (h *Handlers) MigrateRedirectMode(w http.ResponseWriter, r *http.Request) {
 		state = "disabled"
 	}
 	logx.Info("admin.migrate.redirect_mode", "state", state, "target", target, "by", me.Username)
+	noteAction(r, onOff(target != ""))
 	httpx.JSON(w, http.StatusOK, RedirectModeStatus{
 		Target:      settings.RedirectTarget(),
 		PinnedByEnv: settings.RedirectPinnedByEnv(),
@@ -289,6 +291,7 @@ func (h *Handlers) MigrateMaintenance(w http.ResponseWriter, r *http.Request) {
 		state = "on"
 	}
 	logx.Info("admin.migrate.maintenance", "state", state, "by", me.Username)
+	noteAction(r, state)
 	httpx.JSON(w, http.StatusOK, MaintenanceModeStatus{
 		On:          settings.MaintenanceMode(),
 		PinnedByEnv: settings.MaintenancePinnedByEnv(),

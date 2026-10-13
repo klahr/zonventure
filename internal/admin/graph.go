@@ -22,10 +22,13 @@ package admin
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -150,6 +153,7 @@ func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 			before = was.Graph
 		}
 	}
+	kept := h.keptOver(r, advID, &env.Graph, base)
 	d, report, err := graphstore.SaveDraftIf(r.Context(), h.DB, advID, h.userID(r), &env.Graph, base)
 	if errors.Is(err, graphstore.ErrDraftChanged) {
 		httpx.JSON(w, http.StatusConflict, graphRefusal{Error: err.Error(), Code: "draft_changed"})
@@ -167,7 +171,7 @@ func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "saving draft failed", err)
 		return
 	}
-	h.publishGraphSaved(r, advID, d.UpdatedAt, before, &env.Graph)
+	h.publishGraphSaved(r, advID, d.UpdatedAt, before, &env.Graph, kept)
 	if d.DevSynced {
 		h.pokeDevTeams(r.Context(), advID)
 	}
@@ -224,12 +228,49 @@ func touchedSteps(before, after *graph.Graph) []string {
 	return append(added, changed...)
 }
 
+// keptSteps says whose edits a save overwrote on purpose: after an edit
+// conflict the saver kept their own version of Steps over UserID's.
+type keptSteps struct {
+	UserID int64    `json:"user_id"`
+	Steps  []string `json:"steps"`
+}
+
+// keptOver reads X-Kept-Steps — the saver's chosen steps, each URL
+// encoded, comma separated — and finds whose save they overwrite: the
+// draft's last saver, when the save is based on that draft. Steps not in
+// g are dropped; nil when nobody else is overwritten.
+func (h *Handlers) keptOver(r *http.Request, advID int64, g *graph.Graph, base *time.Time) *keptSteps {
+	head := r.Header.Get("X-Kept-Steps")
+	if head == "" || base == nil {
+		return nil
+	}
+	var steps []string
+	for _, s := range strings.Split(head, ",") {
+		slug, err := url.PathUnescape(s)
+		if _, ok := g.Node(slug); ok && err == nil && !slices.Contains(steps, slug) {
+			steps = append(steps, slug)
+		}
+	}
+	if len(steps) == 0 {
+		return nil
+	}
+	var (
+		by sql.NullInt64
+		at time.Time
+	)
+	err := h.DB.QueryRowContext(r.Context(), `SELECT updated_by_user_id, updated_at FROM adventure_graph_drafts WHERE adventure_id = $1`, advID).Scan(&by, &at)
+	if err != nil || !by.Valid || !at.Equal(*base) || by.Int64 == h.userID(r) {
+		return nil
+	}
+	return &keptSteps{UserID: by.Int64, Steps: steps}
+}
+
 // publishGraphSaved tells designers open on the adventure that its
 // draft changed, by whom, and whether through an API token — which is
 // how an assistant edits. An assistant's save also makes it present on
 // the adventure for a while, on the steps it touched, saying what it is
 // doing when it said so (X-Edit-Note).
-func (h *Handlers) publishGraphSaved(r *http.Request, advID int64, savedAt time.Time, before, after *graph.Graph) {
+func (h *Handlers) publishGraphSaved(r *http.Request, advID int64, savedAt time.Time, before, after *graph.Graph, kept *keptSteps) {
 	me, _ := auth.FromContext(r.Context())
 	assistant := auth.ViaAPIToken(r.Context())
 	msg := map[string]any{
@@ -237,6 +278,9 @@ func (h *Handlers) publishGraphSaved(r *http.Request, advID int64, savedAt time.
 		"by":        me.Username,
 		"user_id":   me.ID,
 		"assistant": assistant,
+	}
+	if kept != nil {
+		msg["kept"] = kept
 	}
 	if assistant {
 		note := strings.TrimSpace(r.Header.Get("X-Edit-Note"))
@@ -281,7 +325,7 @@ func (h *Handlers) PublishAdventureGraph(w http.ResponseWriter, r *http.Request)
 	}
 	_, report, err := graphstore.Publish(r.Context(), h.DB, advID, h.userID(r), draft.Graph, strings.TrimSpace(req.Label))
 	if !h.publishRefused(w, report, err) {
-		h.publishGraphSaved(r, advID, draft.UpdatedAt, draft.Graph, draft.Graph)
+		h.publishGraphSaved(r, advID, draft.UpdatedAt, draft.Graph, draft.Graph, nil)
 		h.writeGraphState(w, r, advID)
 	}
 }

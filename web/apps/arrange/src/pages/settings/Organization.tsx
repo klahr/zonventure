@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { ApiError } from "@zonventure/api";
 import { Copy, ExternalLink } from "lucide-react";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { Button, Card, ErrorBox, Field, HelpPopover, ICON, ImageDrop, Loading, ProposalPanel, Row, errorText, getProposal, proposedText, useDialogs, useLoad, useToast, type Proposal } from "../../ui/index.ts";
-import { deleteImage, getProfile, putProfile, putSlug, uploadImage, type OrgProfile, type ProfileEdit } from "./organization-api.ts";
+import { deleteImage, getProfile, putName, putProfile, putSlug, uploadImage, type OrgProfile, type ProfileEdit } from "./organization-api.ts";
 import { EmailLookCard } from "./organization-email.tsx";
 import { ShipCountriesCard } from "./organization-shipping.tsx";
+import { ContactCard } from "./organization-contact.tsx";
 import "./organization-branding.css";
 
 type ColorKey = "accent_color" | "accent_secondary_color" | "background_color" | "text_color";
@@ -26,6 +28,16 @@ function rgba(hex: string, a: number): string {
   const v = fullHex(hex.trim());
   if (!/^#[0-9a-fA-F]{6}$/.test(v)) return `rgba(0, 0, 0, ${a})`;
   return `rgba(${parseInt(v.slice(1, 3), 16)}, ${parseInt(v.slice(3, 5), 16)}, ${parseInt(v.slice(5, 7), 16)}, ${a})`;
+}
+
+/** "Nordic Kitchens AB" → "nordic-kitchens-ab": the form internal/orgslug accepts. */
+export function slugify(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+/** "example.com" → "https://example.com"; the server takes only full http(s) URLs. */
+export function withScheme(url: string): string {
+  return url && !/^[a-z][a-z0-9+.-]*:/i.test(url) ? "https://" + url : url;
 }
 
 /** The org page's held-back changes (internal/admin/presentation.go). */
@@ -62,12 +74,17 @@ export function OrganizationTab() {
 
   const [edit, setEdit] = useState<ProfileEdit | null>(null);
   const [slug, setSlug] = useState("");
+  const [name, setName] = useState<string | null>(null);
+  const [nameErr, setNameErr] = useState("");
+  // Under the field, so the autosaves' clearing of err leaves it be.
+  const [slugErr, setSlugErr] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [chip, setChip] = useState<string | null>(null);
   const [imgVersion, setImgVersion] = useState(() => Date.now());
   const chipTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const colorTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const textTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const editRef = useRef<ProfileEdit | null>(null);
   editRef.current = edit;
   const saving = useRef<Promise<void> | null>(null);
@@ -79,8 +96,9 @@ export function OrganizationTab() {
     if (!profile || !propReady) return;
     setEdit((e) => e ?? editOf(profile, prop.data));
     setSlug((s) => s || profile.slug);
-  }, [profile, propReady, prop.data]);
-  useEffect(() => () => { clearTimeout(chipTimer.current); clearTimeout(colorTimer.current); }, []);
+    setName((n) => n ?? proposedText(prop.data, "name") ?? orgName);
+  }, [profile, propReady, prop.data, orgName]);
+  useEffect(() => () => { clearTimeout(chipTimer.current); clearTimeout(colorTimer.current); clearTimeout(textTimer.current); }, []);
 
   const flash = (key: string) => {
     setChip(key);
@@ -100,7 +118,7 @@ export function OrganizationTab() {
         const p = await putProfile({
           ...body,
           tagline: body.tagline.trim(),
-          public_website: body.public_website.trim(),
+          public_website: withScheme(body.public_website.trim()),
           accent_color: body.accent_color.trim(),
           accent_secondary_color: body.accent_secondary_color.trim(),
           background_color: body.background_color.trim(),
@@ -132,7 +150,7 @@ export function OrganizationTab() {
   if (!profile || !edit) return <Loading label={t.t("Loading…")} />;
 
   const storeURL = profile.store_url || `/o/${profile.slug}/store`;
-  const nextSlug = slug.trim().toLowerCase();
+  const nextSlug = slugify(slug);
 
   const copyURL = async () => {
     try {
@@ -145,26 +163,49 @@ export function OrganizationTab() {
 
   const rename = async () => {
     if (!nextSlug) {
-      setErr(t.t("Slug cannot be empty."));
+      setSlugErr(t.t("The short name can't be empty."));
       return;
     }
     if (nextSlug === profile.slug) return;
     const ok = await dialogs.confirm({
       title: t.t("Rename"),
-      message: t.t("Rename the public store URL? Any previously-shared link to /o/{{old}}/store will stop working immediately.", { old: profile.slug }),
+      message: t.t("Change your address to /o/{{slug}}? Every link to /o/{{old}} shared so far, the store's included, stops working immediately.", { slug: nextSlug, old: profile.slug }),
       confirmLabel: t.t("Rename"),
       danger: true,
     });
     if (!ok) return;
     setBusy(true);
-    setErr("");
+    setSlugErr("");
     try {
       await putSlug(nextSlug);
       const p = await getProfile();
       load.set(p);
       setSlug(p.slug);
     } catch (e) {
-      setErr(errorText(e));
+      setSlugErr(e instanceof ApiError && e.status === 409 ? t.t("Another organization already uses /o/{{slug}}. Try another short name.", { slug: nextSlug }) : errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const nextName = (name ?? "").trim();
+  const shownName = proposedText(prop.data, "name") ?? orgName;
+  const saveName = async () => {
+    if (!nextName) {
+      setNameErr(t.t("The name can't be empty."));
+      return;
+    }
+    if (nextName === shownName) return;
+    setBusy(true);
+    setNameErr("");
+    try {
+      const r = await putName(nextName);
+      if (r?.proposed) toast.ok(t.t("Saved — waits for review"));
+      else flash("name");
+      prop.reload();
+      void refreshSession();
+    } catch (e) {
+      setNameErr(e instanceof ApiError && e.status === 409 ? t.t("Another organization already has that name.") : errorText(e));
     } finally {
       setBusy(false);
     }
@@ -203,6 +244,16 @@ export function OrganizationTab() {
   };
 
   const setField = (k: keyof ProfileEdit, v: string) => setEdit((e) => (e ? { ...e, [k]: v } : e));
+  // Typing saves after a pause too, not only on blur, so closing the tab doesn't lose it.
+  const typeText = (k: "tagline" | "public_website", chipKey: string, v: string) => {
+    setField(k, v);
+    clearTimeout(textTimer.current);
+    textTimer.current = setTimeout(() => void save(chipKey), 800);
+  };
+  const blurText = (chipKey: string) => {
+    clearTimeout(textTimer.current);
+    void save(chipKey);
+  };
   const pickColor = (k: ColorKey, v: string) => {
     setField(k, v);
     clearTimeout(colorTimer.current);
@@ -258,7 +309,7 @@ export function OrganizationTab() {
           kind="org"
           base={PROPOSAL}
           proposal={prop.data}
-          labels={{ tagline: t.t("Tagline"), public_website: t.t("Website") }}
+          labels={{ name: t.t("Organization name"), tagline: t.t("Tagline"), public_website: t.t("Website") }}
           pictures={[{ key: "image", label: t.t("Logo") }, { key: "cover", label: t.t("Cover") }]}
           onChanged={() => { prop.reload(); setImgVersion(Date.now()); }}
         />
@@ -267,6 +318,18 @@ export function OrganizationTab() {
             <section className="og-section">
               <h3>{t.t("Identity")}</h3>
               <p className="og-blurb">{t.t("Where customers find you.")}</p>
+              <div className="og-slug">
+                <Field label={<>{t.t("Organization name")} {saved("name")}</>} error={nameErr} hint={waits("name", orgName)}>
+                  <input
+                    type="text"
+                    maxLength={200}
+                    value={name ?? ""}
+                    onChange={(e) => { setName(e.target.value); setNameErr(""); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void saveName(); } }}
+                  />
+                </Field>
+                <Button loading={busy} disabled={nextName === shownName} onClick={() => void saveName()}>{t.t("Save")}</Button>
+              </div>
               <Row gap="sm">
                 <a className="og-mono og-url" href={storeURL} target="_blank" rel="noopener">
                   {storeURL}
@@ -276,19 +339,19 @@ export function OrganizationTab() {
                 {saved("url", t.t("Copied"))}
               </Row>
               <div className="og-slug">
-                <Field label={t.t("Slug")}>
+                <Field label={t.t("Short name in your address")} error={slugErr} hint={nextSlug && nextSlug !== profile.slug ? t.t("Becomes /o/{{slug}} — press Rename to switch.", { slug: nextSlug }) : t.t("The part after /o/. Edit it to rename.")}>
                   <input
                     type="text"
                     className="og-mono"
                     spellCheck={false}
                     value={slug}
-                    onChange={(e) => setSlug(e.target.value)}
+                    onChange={(e) => { setSlug(e.target.value); setSlugErr(""); }}
                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void rename(); } }}
                   />
                 </Field>
                 <Button loading={busy} disabled={nextSlug === profile.slug} onClick={rename}>{t.t("Rename")}</Button>
               </div>
-              <p className="og-blurb">{t.t("Renaming breaks every previously-shared /o/old-slug link — share the new one.")}</p>
+              <p className="og-blurb">{t.t("Renaming breaks every link to /o/{{slug}} shared so far — share the new one.", { slug: profile.slug })}</p>
             </section>
 
             <section className="og-section">
@@ -319,8 +382,8 @@ export function OrganizationTab() {
                 </div>
               </div>
               <div className="og-label og-label--strong">
-                {t.t("Brand colours")}
-                <HelpPopover label={t.t("Brand colours")} body={t.t("Override the platform palette on your public landing. Leave a field blank to keep the default.")} />
+                {t.t("Brand colors")}
+                <HelpPopover label={t.t("Brand colors")} body={t.t("Override the platform palette on your public landing. Leave a field blank to keep the default.")} />
               </div>
               <div className="og-colors">
                 {colorRow("accent_color", t.t("Accent"))}
@@ -343,8 +406,8 @@ export function OrganizationTab() {
                   maxLength={140}
                   placeholder={t.t("A short line about what you offer")}
                   value={edit.tagline}
-                  onChange={(e) => setField("tagline", e.target.value)}
-                  onBlur={() => void save("tagline")}
+                  onChange={(e) => typeText("tagline", "tagline", e.target.value)}
+                  onBlur={() => blurText("tagline")}
                 />
               </Field>
               <Field label={<>{t.t("Website")} {saved("website")}</>} {...(waits("public_website", profile.public_website) ? { hint: waits("public_website", profile.public_website) } : {})}>
@@ -352,8 +415,11 @@ export function OrganizationTab() {
                   type="url"
                   placeholder="https://example.com"
                   value={edit.public_website}
-                  onChange={(e) => setField("public_website", e.target.value)}
-                  onBlur={() => void save("website")}
+                  onChange={(e) => typeText("public_website", "website", e.target.value)}
+                  onBlur={() => {
+                    setField("public_website", withScheme(edit.public_website.trim()));
+                    blurText("website");
+                  }}
                 />
               </Field>
             </section>
@@ -381,7 +447,12 @@ export function OrganizationTab() {
           </div>
         </div>
       </Card>
-      <EmailLookCard orgName={orgName} canEdit={user?.role === "org_admin"} />
+      <EmailLookCard
+        orgName={orgName}
+        canEdit={user?.role === "org_admin"}
+        brand={[profile.accent_color, profile.accent_secondary_color, profile.background_color, profile.text_color, profile.has_logo, imgVersion].join("|")}
+      />
+      <ContactCard canEdit={user?.role === "org_admin"} />
       <ShipCountriesCard canEdit={user?.role === "org_admin"} />
     </>
   );

@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Copy, ExternalLink, KeyRound, Plus, Trash2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
-import { Button, Dialog, Field, ICON, ImageDrop, Row, useDialogs, useToast } from "../../ui/index.ts";
+import { Button, Dialog, errorText, Field, ICON, ImageDrop, Row, useDialogs, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
 import type { EventInfo, Member, Team } from "./api.ts";
 import { Ago } from "./Activity.tsx";
-import { ExpiryHint, LinkField } from "./Links.tsx";
+import { ExpiryHint, LinkField, useCopyOrShow } from "./Links.tsx";
 import { TeamAvatar } from "./teamActions.tsx";
-import { canDo, copyText, downscaleImage, isLive, memberURL, members, teamURL } from "./util.ts";
+import { canDo, downscaleImage, isLive, memberURL, members, teamURL } from "./util.ts";
 
 /**
  * Edit a team: rename it, set the captain's email, change its photo,
@@ -84,10 +84,10 @@ export function TeamEditDialog({ event, team, color, reload, onClose }: { event:
     }
   };
 
-  const copyAll = async () => {
+  const copyOrShow = useCopyOrShow();
+  const copyAll = () => {
     const ms = members(team);
-    if (await copyText(ms.map((m) => `${m.name}: ${memberURL(m.token)}`).join("\n"))) toast.ok(t.t("Copied {{n}} links", { n: ms.length }));
-    else toast.err(t.t("Clipboard blocked — select and copy by hand"));
+    return copyOrShow(ms.map((m) => `${m.name}: ${memberURL(m.token)}`).join("\n"), t.t("Copied {{n}} links", { n: ms.length }));
   };
 
   return (
@@ -170,7 +170,10 @@ function SlotRow({ event, teamId, slot, reload, confirm }: { event: EventInfo; t
   // Mid-event, rotating or removing signs a player out for good, so ask first.
   const live = isLive(event);
   const rotate = async () => {
-    if (live && !(await confirm({ title: t.t("Rotate link"), message: t.t("Rotate {{slot}}'s link mid-event? The current device will be signed out and need the new link to keep playing.", { slot: slot.name }), confirmLabel: t.t("Rotate link"), danger: true }))) return;
+    const message = live
+      ? t.t("Rotate {{slot}}'s link mid-event? The current device will be signed out and need the new link to keep playing.", { slot: slot.name })
+      : t.t("Rotate {{slot}}'s link? The old link stops working, so send {{slot}} the new one.", { slot: slot.name });
+    if (!(await confirm({ title: t.t("Rotate link"), message, confirmLabel: t.t("Rotate link"), danger: live }))) return;
     try {
       await api.rotateSlot(teamId, slot.id);
       toast.ok(t.t("Link rotated"));
@@ -202,5 +205,87 @@ function SlotRow({ event, teamId, slot, reload, confirm }: { event: EventInfo; t
       )}
       {slot.last_login_at && <span className="ev-muted ev-small ev-slot__seen">{t.t("Last login")} <Ago at={slot.last_login_at} /></span>}
     </div>
+  );
+}
+
+/**
+ * Every team's email in one table, for a class whose invitations wait on
+ * them: type or paste down the column, then save once. Only the changed
+ * rows are sent; a row the server refuses keeps its typed value.
+ */
+export function TeamEmailsDialog({ teams, reload, onClose }: { teams: Team[]; reload: () => void; onClose: () => void }) {
+  const t = useT();
+  const toast = useToast();
+  const [emails, setEmails] = useState(() => new Map(teams.map((tm) => [tm.id, tm.email || ""])));
+  const [failed, setFailed] = useState(new Map<number, string>());
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    const changed = teams.filter((tm) => (emails.get(tm.id) ?? "").trim() !== (tm.email || ""));
+    if (changed.length === 0) return onClose();
+    setBusy(true);
+    const errs = new Map<number, string>();
+    for (const tm of changed) {
+      try {
+        await api.patchTeam(tm.id, { email: (emails.get(tm.id) ?? "").trim() });
+      } catch (e) {
+        errs.set(tm.id, errorText(e));
+      }
+    }
+    setBusy(false);
+    setFailed(errs);
+    reload();
+    const saved = changed.length - errs.size;
+    if (errs.size === 0) {
+      toast.ok(t.plural(saved, { one: t.t("Saved {{n}} email"), other: t.t("Saved {{n}} emails") }));
+      onClose();
+    } else toast.err(t.t("Saved {{c}}, {{f}} failed", { c: saved, f: errs.size }));
+  };
+  return (
+    <Dialog
+      title={t.t("Team emails")}
+      wide
+      onClose={onClose}
+      onSubmit={() => void save()}
+      footer={
+        <>
+          <Button onClick={onClose}>{t.t("Cancel")}</Button>
+          <Button type="submit" variant="primary" loading={busy}>{t.t("Save")}</Button>
+        </>
+      }
+    >
+      <p className="ev-muted">{t.t("Invitations go to these addresses. Used by the arranger only — never shown on the team's share page.")}</p>
+      <div className="cs-table-wrap">
+        <table className="cs-table">
+          <thead>
+            <tr>
+              <th scope="col">{t.t("Team")}</th>
+              <th scope="col">{t.t("Email")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {teams.map((tm) => (
+              <tr key={tm.id}>
+                <td>{tm.name}</td>
+                <td>
+                  <input
+                    type="email"
+                    placeholder="captain@example.org"
+                    autoComplete="off"
+                    aria-label={t.t("Email for {{team}}", { team: tm.name })}
+                    {...(failed.has(tm.id) ? { "aria-invalid": true, title: failed.get(tm.id) } : {})}
+                    value={emails.get(tm.id) ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setEmails((m) => new Map(m).set(tm.id, v));
+                    }}
+                  />
+                  {failed.has(tm.id) && <span className="cs-field__error" role="alert">{failed.get(tm.id)}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Dialog>
   );
 }

@@ -186,6 +186,60 @@ func TestPresentationReview_NotGatedBeforeSale(t *testing.T) {
 	}
 }
 
+// An org admin renames the organisation: at once before anything is for
+// sale, held for review after, and never to another organisation's name.
+func TestOrgRename(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newListingFixture(t)
+	defer cleanup()
+	f.console.Put("/api/admin/orgs/me/name", f.h.SetMyOrgName)
+	if _, err := f.h.DB.Exec(`INSERT INTO organizations(name, slug) VALUES ('Taken Org', 'taken-org')`); err != nil {
+		t.Fatal(err)
+	}
+	if w := call(t, f.console, "PUT", "/api/admin/orgs/me/name", map[string]string{"name": "Taken Org"}); w.Code != http.StatusConflict {
+		t.Fatalf("taken name: %d %s", w.Code, w.Body)
+	}
+	if w := call(t, f.console, "PUT", "/api/admin/orgs/me/name", map[string]string{"name": "  Puzzle Co  "}); w.Code != http.StatusOK || strings.Contains(w.Body.String(), "proposed") {
+		t.Fatalf("rename: %d %s", w.Code, w.Body)
+	}
+	if got := f.scalar(t, `SELECT name FROM organizations WHERE id = $1`, f.orgID); got != "Puzzle Co" {
+		t.Fatalf("name before sale = %q", got)
+	}
+
+	f.console.Get("/api/admin/orgs/me/proposal", f.h.GetMyOrgProposal)
+	f.console.Post("/api/admin/orgs/me/proposal/submit", f.h.SubmitMyOrgProposal)
+	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900})
+	f.submitEvent(t)
+	if w := f.decide(t, "event", f.eventID, "approve", f.queue(t)[0].Revision, ""); w.Code != http.StatusOK {
+		t.Fatalf("approve listing: %d %s", w.Code, w.Body)
+	}
+	if w := call(t, f.console, "PUT", "/api/admin/orgs/me/name", map[string]string{"name": "Puzzle Company"}); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"proposed":true`) {
+		t.Fatalf("rename for sale: %d %s", w.Code, w.Body)
+	}
+	if got := f.scalar(t, `SELECT name FROM organizations WHERE id = $1`, f.orgID); got != "Puzzle Co" {
+		t.Fatalf("live name = %q, want it held back", got)
+	}
+	if w := call(t, f.console, "POST", "/api/admin/orgs/me/proposal/submit", map[string]bool{"attest": true}); w.Code != http.StatusOK {
+		t.Fatalf("submit: %d %s", w.Code, w.Body)
+	}
+	var q pendingListing
+	for _, x := range f.queue(t) {
+		if x.Kind == "org" {
+			q = x
+		}
+	}
+	w := call(t, f.reviewer, "GET", fmt.Sprintf("/api/admin/listing-reviews/org/%d", q.ID), nil)
+	if !strings.Contains(w.Body.String(), `"proposed":"Puzzle Company"`) {
+		t.Fatalf("content: %s", w.Body)
+	}
+	if w := f.decide(t, "org", q.ID, "approve", q.Revision, ""); w.Code != http.StatusOK {
+		t.Fatalf("approve: %d %s", w.Code, w.Body)
+	}
+	if got := f.scalar(t, `SELECT name FROM organizations WHERE id = $1`, f.orgID); got != "Puzzle Company" {
+		t.Fatalf("name after approval = %q", got)
+	}
+}
+
 // Files for players of an event sold in the store reach them once the
 // listing is approved with them.
 func TestPresentationReview_EventFiles(t *testing.T) {

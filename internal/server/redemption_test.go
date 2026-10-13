@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +31,8 @@ type redemptionView struct {
 type errView struct {
 	Error  string `json:"error"`
 	Reason string `json:"reason"`
+	// Contact is the organiser's address, on a code already redeemed.
+	Contact string `json:"contact"`
 }
 
 // doErr is c.do for a request expected to fail: it returns the status
@@ -91,6 +94,32 @@ func outboxCount(t *testing.T, db *sql.DB, kind, to string) int {
 // A buyer's TrueStory code goes from the public form, through the
 // organiser's approval, to a team with a year-long link; cancelling
 // stops the link and frees the code.
+// The organisation's contact address defaults to its admin's and can be
+// set; its time zone must be a real one.
+func TestOrgContactSettings(t *testing.T) {
+	boss, _, _, _, _, cleanup := redemptionStack(t)
+	defer cleanup()
+
+	type contact struct {
+		ContactEmail        string `json:"contact_email"`
+		DefaultContactEmail string `json:"default_contact_email"`
+		TimeZone            string `json:"time_zone"`
+	}
+	var got contact
+	if s := boss.do("GET", "/api/admin/orgs/me/contact", nil, &got); s != 200 || got != (contact{"", "boss@org.test", "Europe/Stockholm"}) {
+		t.Fatalf("contact = %d %+v", s, got)
+	}
+	if s, e := doErr(boss, "PUT", "/api/admin/orgs/me/contact", map[string]string{"contact_email": "Boss <boss@org.test>", "time_zone": "Europe/Stockholm"}); s != 400 || e.Reason != "invalid_email" {
+		t.Errorf("a named address = %d %+v, want 400 invalid_email", s, e)
+	}
+	if s, e := doErr(boss, "PUT", "/api/admin/orgs/me/contact", map[string]string{"contact_email": "", "time_zone": "Mars/Olympus"}); s != 400 || e.Reason != "invalid_time_zone" {
+		t.Errorf("an unknown zone = %d %+v, want 400 invalid_time_zone", s, e)
+	}
+	if s := boss.do("PUT", "/api/admin/orgs/me/contact", map[string]string{"contact_email": " Hello@Org.test ", "time_zone": "Europe/Helsinki"}, &got); s != 200 || got != (contact{"hello@org.test", "boss@org.test", "Europe/Helsinki"}) {
+		t.Errorf("saved = %d %+v", s, got)
+	}
+}
+
 func TestRedemption_TrueStoryLifecycle(t *testing.T) {
 	boss, db, _, _, eventID, cleanup := redemptionStack(t)
 	defer cleanup()
@@ -145,8 +174,8 @@ func TestRedemption_TrueStoryLifecycle(t *testing.T) {
 	if s := buyer.do("POST", "/api/redeem", form("abc-def-123"), nil); s != 201 {
 		t.Fatalf("redeem = %d", s)
 	}
-	if s, e := doErr(buyer, "POST", "/api/redeem", form("ABCDEF123")); s != 409 || e.Reason != "code_used" {
-		t.Fatalf("same code again = %d %+v, want 409 code_used", s, e)
+	if s, e := doErr(buyer, "POST", "/api/redeem", form("ABCDEF123")); s != 409 || e.Reason != "code_used" || e.Contact != "boss@org.test" {
+		t.Fatalf("same code again = %d %+v, want 409 code_used with the organiser's address", s, e)
 	}
 	if n := outboxCount(t, db, "redemption_new", "boss@org.test"); n != 1 {
 		t.Errorf("org admin notified %d times, want 1", n)
@@ -165,6 +194,7 @@ func TestRedemption_TrueStoryLifecycle(t *testing.T) {
 	delete(noAddress, "street_address")
 	delete(noAddress, "postal_code")
 	delete(noAddress, "city")
+	noAddress["email"] = "phone@order.test"
 	if s, e := doErr(boss, "POST", "/api/admin/redemptions", noAddress); s != 201 {
 		t.Fatalf("redeem without an address = %d %+v, want 201", s, e)
 	}
@@ -213,7 +243,7 @@ func TestRedemption_TrueStoryLifecycle(t *testing.T) {
 		t.Errorf("team link mailed %d times, want 1", n)
 	}
 	var link string
-	if err := db.QueryRow(`SELECT body_text FROM mail_outbox WHERE kind = 'redemption_team_link'`).Scan(&link); err != nil || !strings.Contains(link, "Start by the big oak.") {
+	if err := db.QueryRow(`SELECT body_text FROM mail_outbox WHERE kind = 'redemption_team_link' AND to_addr = 'ada@buyer.test'`).Scan(&link); err != nil || !strings.Contains(link, "Start by the big oak.") {
 		t.Errorf("team link email lacks the note to buyers (%v):\n%s", err, link)
 	}
 	if s, e := doErr(boss, "POST", "/api/admin/redemptions/"+itoa(r.ID)+"/approve", nil); s != 409 || e.Reason != "not_pending" {
@@ -250,11 +280,15 @@ func TestRedemption_TrueStoryLifecycle(t *testing.T) {
 	if s := boss.do("GET", "/api/admin/redemptions", nil, &list); s != 200 || len(list.Redemptions) != 1 {
 		t.Fatalf("pending after re-redeem = %d %+v", s, list)
 	}
-	if s := boss.do("POST", "/api/admin/redemptions/"+itoa(list.Redemptions[0].ID)+"/reject", nil, &got); s != 200 || got.State != "rejected" {
+	if s := boss.do("POST", "/api/admin/redemptions/"+itoa(list.Redemptions[0].ID)+"/reject", map[string]string{"reason": "The box was returned to the shop."}, &got); s != 200 || got.State != "rejected" {
 		t.Fatalf("reject = %d %+v", s, got)
 	}
 	if n := outboxCount(t, db, "redemption_rejected", "ada@buyer.test"); n != 1 {
 		t.Errorf("rejection mailed %d times, want 1", n)
+	}
+	var rejected string
+	if err := db.QueryRow(`SELECT body_text FROM mail_outbox WHERE kind = 'redemption_rejected'`).Scan(&rejected); err != nil || !strings.Contains(rejected, "The box was returned to the shop.") {
+		t.Errorf("rejection mail lacks the reason (%v):\n%s", err, rejected)
 	}
 }
 
@@ -315,8 +349,16 @@ func TestRedemption_ScopingAndLiveit(t *testing.T) {
 	if s := boss.do("POST", "/api/admin/redemptions", manual, &r); s != 201 {
 		t.Fatalf("manual redemption = %d", s)
 	}
-	if r.BoxNumber != "123456" || r.SecurityCode != "X9Y8" || r.Note != "called in" || r.State != "pending" {
+	// Staff entries skip the review: it checks customers, not staff.
+	if r.BoxNumber != "123456" || r.SecurityCode != "X9Y8" || r.Note != "called in" || r.State != "approved" || r.TeamID == 0 {
 		t.Errorf("manual redemption = %+v", r)
+	}
+	if n := outboxCount(t, db, "redemption_team_link", "phone@order.test"); n != 1 {
+		t.Errorf("manual redemption team link mailed %d times, want 1", n)
+	}
+	var notified int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM mail_outbox WHERE kind = 'redemption_new'`).Scan(&notified); err != nil || notified != 0 {
+		t.Errorf("staff entry notified the organisers %d times (%v), want 0", notified, err)
 	}
 
 	hash := fixtureHash(t, "pw")
@@ -371,8 +413,9 @@ func TestRedemption_ScopingAndLiveit(t *testing.T) {
 }
 
 // A buyer picks the language their envelope is printed in among those
-// the product's adventure version is played in. Their emails and their
-// team's starting language follow it, and the organiser can change it.
+// the product's adventure version is played in. Their team's starting
+// language follows it, and the organiser can change it; their emails
+// are in the language of the page they redeemed on.
 func TestRedemption_LetterLanguage(t *testing.T) {
 	boss, db, _, _, eventID, cleanup := redemptionStack(t)
 	defer cleanup()
@@ -455,6 +498,9 @@ func TestRedemption_LetterLanguage(t *testing.T) {
 	if s, e := doErr(buyer, "POST", "/api/redeem", form("ABCDEF123", "de")); s != 400 || e.Reason != "invalid_language" {
 		t.Fatalf("German letter = %d %+v, want 400 invalid_language", s, e)
 	}
+	// An English page, a Swedish envelope.
+	pageURL, _ := url.Parse(boss.ts.URL)
+	buyer.c.Jar.SetCookies(pageURL, []*http.Cookie{{Name: "zv_lang", Value: "en"}})
 	if s := buyer.do("POST", "/api/redeem", form("ABCDEF123", "sv"), nil); s != 201 {
 		t.Fatalf("redeem in Swedish = %d", s)
 	}
@@ -499,27 +545,32 @@ func TestRedemption_LetterLanguage(t *testing.T) {
 		Redemptions []langView     `json:"redemptions"`
 		Counts      map[string]int `json:"counts"`
 	}
-	if s := boss.do("GET", "/api/admin/redemptions?state=to_post", nil, &toPost); s != 200 || len(toPost.Redemptions) != 2 || toPost.Counts["to_post"] != 2 {
-		t.Fatalf("to post = %d %+v", s, toPost)
+	// A pending code isn't posted before it is checked.
+	if s := boss.do("GET", "/api/admin/redemptions?state=to_post", nil, &toPost); s != 200 || len(toPost.Redemptions) != 0 || toPost.Counts["to_post"] != 0 {
+		t.Fatalf("to post while pending = %d %+v", s, toPost)
 	}
-	if s := boss.do("PATCH", "/api/admin/redemptions/"+itoa(en.ID), map[string]any{"posted": true}, nil); s != 200 {
-		t.Fatalf("mark posted = %d", s)
+	var got langView
+	if s := boss.do("POST", "/api/admin/redemptions/"+itoa(sv.ID)+"/approve", nil, &got); s != 200 || got.TeamID == 0 {
+		t.Fatalf("approve = %d %+v", s, got)
 	}
 	if s := boss.do("GET", "/api/admin/redemptions?state=to_post", nil, &toPost); s != 200 || len(toPost.Redemptions) != 1 || toPost.Counts["to_post"] != 1 {
-		t.Errorf("to post after posting one = %d %+v", s, toPost)
+		t.Fatalf("to post after approving one = %d %+v", s, toPost)
+	}
+	if s := boss.do("PATCH", "/api/admin/redemptions/"+itoa(sv.ID), map[string]any{"posted": true}, nil); s != 200 {
+		t.Fatalf("mark posted = %d", s)
+	}
+	if s := boss.do("GET", "/api/admin/redemptions?state=to_post", nil, &toPost); s != 200 || len(toPost.Redemptions) != 0 || toPost.Counts["to_post"] != 0 {
+		t.Errorf("to post after posting it = %d %+v", s, toPost)
 	}
 
 	if s, e := doErr(boss, "PATCH", "/api/admin/redemptions/"+itoa(en.ID), map[string]any{"letter_lang": "xx"}); s != 400 || e.Reason != "invalid_language" {
 		t.Errorf("unknown language = %d %+v, want 400 invalid_language", s, e)
 	}
-	var got langView
-	if s := boss.do("PATCH", "/api/admin/redemptions/"+itoa(en.ID), map[string]any{"letter_lang": "sv"}, &got); s != 200 || got.LetterLang != "sv" {
-		t.Errorf("change language = %d %+v", s, got)
+	var changed langView
+	if s := boss.do("PATCH", "/api/admin/redemptions/"+itoa(en.ID), map[string]any{"letter_lang": "sv"}, &changed); s != 200 || changed.LetterLang != "sv" {
+		t.Errorf("change language = %d %+v", s, changed)
 	}
 
-	if s := boss.do("POST", "/api/admin/redemptions/"+itoa(sv.ID)+"/approve", nil, &got); s != 200 || got.TeamID == 0 {
-		t.Fatalf("approve = %d %+v", s, got)
-	}
 	var teamLang, body string
 	if err := db.QueryRow(`SELECT lang FROM teams WHERE id = $1`, got.TeamID).Scan(&teamLang); err != nil {
 		t.Fatal(err)
@@ -527,11 +578,11 @@ func TestRedemption_LetterLanguage(t *testing.T) {
 	if teamLang != "sv" {
 		t.Errorf("team starts in %q, want sv", teamLang)
 	}
-	if err := db.QueryRow(`SELECT body_text FROM mail_outbox WHERE kind = 'redemption_team_link' AND to_addr = 'ada@buyer.test'`).Scan(&body); err != nil {
+	if err := db.QueryRow(`SELECT body_text FROM mail_outbox WHERE kind = 'redemption_team_link' AND to_addr = 'ada@buyer.test' ORDER BY id DESC LIMIT 1`).Scan(&body); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(body, "bekräftad") {
-		t.Errorf("team link email isn't in Swedish: %q", body)
+	if !strings.Contains(body, "is confirmed") {
+		t.Errorf("team link email isn't in the page's English: %q", body)
 	}
 }
 
@@ -646,7 +697,7 @@ func TestRedemption_PrintDelivery(t *testing.T) {
 	}
 
 	// Emailing the letter this season: the team gets it, in Swedish, and
-	// the organiser has nothing left to print.
+	// the order that gave an address keeps its letter to print: it is owed.
 	if s := boss.do("PUT", path, map[string]any{"deliveries": map[string]string{"letter": "emailed"}}, &got); s != 200 || got.Materials[0].Delivery != "emailed" {
 		t.Fatalf("override = %d %+v", s, got)
 	}
@@ -654,8 +705,8 @@ func TestRedemption_PrintDelivery(t *testing.T) {
 		t.Errorf("emailed letter = %d %q, want the Swedish one", s, b)
 	}
 	boss.do("GET", "/api/admin/redemptions?state=all", nil, &list)
-	if p := list.Redemptions[0].Print; len(p) != 0 {
-		t.Errorf("organiser still prints %+v", p)
+	if p := list.Redemptions[0].Print; len(p) != 1 || p[0].ID != "letter" {
+		t.Errorf("organiser prints %+v, want the owed letter", p)
 	}
 	if s := boss.do("PUT", path, map[string]any{"deliveries": map[string]string{"letter": "posted"}}, &got); s != 200 || got.Materials[0].Delivery != "posted" {
 		t.Errorf("back to the adventure's = %d %+v", s, got)

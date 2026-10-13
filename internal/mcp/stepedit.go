@@ -19,8 +19,9 @@ import (
 
 func (s *Server) registerStepTools() {
 	s.tools.register(ToolDescriptor{
-		Name:  "get_step",
-		Scope: scopeRead,
+		Name:     "get_step",
+		Audience: audienceAuthor,
+		Scope:    scopeRead,
 		Description: "One step of the draft as JSON — the shape put_node and patch_node take — with where its ports lead. " +
 			"Without node, the step the author's dev phone shows. Much smaller than get_adventure_graph: read this before editing one step.",
 		InputSchema: map[string]any{

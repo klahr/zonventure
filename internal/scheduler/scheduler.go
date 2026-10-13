@@ -7,6 +7,7 @@ package scheduler
 import (
 	"context"
 	"database/sql"
+	"sync"
 	"time"
 
 	"github.com/klahr/zonventure/internal/activity"
@@ -24,6 +25,27 @@ func Start(ctx context.Context, db *sql.DB, hub *ws.Hub, interval time.Duration)
 	return periodic.Start(ctx, interval, func(ctx context.Context) {
 		tick(ctx, db, hub)
 	})
+}
+
+// dbErrLog folds repeated query failures (the database being down)
+// into one "database unreachable" line per minute instead of one per
+// tick.
+var dbErrLog struct {
+	sync.Mutex
+	last       time.Time
+	suppressed int
+}
+
+func logQueryErr(err error) {
+	dbErrLog.Lock()
+	defer dbErrLog.Unlock()
+	if time.Since(dbErrLog.last) < time.Minute {
+		dbErrLog.suppressed++
+		return
+	}
+	logx.Error("scheduler.db_unreachable", "msg", "database unreachable", "err", err, "suppressed", dbErrLog.suppressed)
+	dbErrLog.last = time.Now()
+	dbErrLog.suppressed = 0
 }
 
 // tick finds and promotes all scheduled runs whose time has come.
@@ -44,7 +66,7 @@ func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 		  AND (e.scheduled_at::timestamp AT TIME ZONE 'UTC') <= now()
 	`)
 	if err != nil {
-		logx.Error("scheduler.query", "err", err)
+		logQueryErr(err)
 		return
 	}
 	type due struct {

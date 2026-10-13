@@ -81,7 +81,7 @@ export function Game({ event }: { event: HostedEvent }) {
                       onClick={async () => {
                         if (
                           await ask({
-                            message: t("Take {{team}} out of the game?", {
+                            message: t("Take {{team}} out of the game? Their phone stops playing, and the team is left out of the results.", {
                               team: tm.name,
                             }),
                             confirmLabel: t("Take out"),
@@ -125,9 +125,17 @@ export function Game({ event }: { event: HostedEvent }) {
               className="hosted-btn hosted-btn--primary"
               disabled={busy}
               onClick={async () => {
+                // Say so when a team is still out: finishing stops it mid-game.
+                const playing = event.teams.filter((tm) => !tm.finished).length;
+                const still =
+                  playing === 0
+                    ? ""
+                    : (playing === 1
+                        ? t("1 team is still playing.")
+                        : t("{{n}} teams are still playing.", { n: playing })) + " ";
                 if (
                   await ask({
-                    message: event.hold_results
+                    message: still + (event.hold_results
                       ? t(
                           "Finish game {{n}}? The teams' phones stop, the results are revealed on the phones and the live scoreboard, and you get them by email.",
                           { n: event.round },
@@ -135,7 +143,7 @@ export function Game({ event }: { event: HostedEvent }) {
                       : t(
                           "Finish game {{n}}? The teams' phones stop, and you get the results by email.",
                           { n: event.round },
-                        ),
+                        )),
                     confirmLabel: t("Finish game"),
                     cancelLabel: t("Cancel"),
                   })
@@ -189,9 +197,18 @@ export function Game({ event }: { event: HostedEvent }) {
         </label>
       )}
 
+      {event.round_open && (event.turned_away ?? 0) > 0 && (
+        <p className="hosted-note" role="status">
+          {event.turned_away === 1
+            ? t("1 team couldn't join: the game is full.")
+            : t("{{n}} teams couldn't join: the game is full.", { n: event.turned_away ?? 0 })}{" "}
+          {canAdd && t("Add more teams below.")}
+        </p>
+      )}
+
       {canAdd && (
         <p className="hosted-muted">
-          {t("Up to {{n}} teams can play in one game.", {
+          {t("Up to {{n}} teams can play in one game, one phone per team and any number of players in each.", {
             n: event.teams_limit,
           })}{" "}
           <button
@@ -231,14 +248,36 @@ export function Game({ event }: { event: HostedEvent }) {
           <ul className="hosted-rounds">
             {earlier.map((r) => (
               <li key={r.round}>
-                <strong>{t("Game {{n}}", { n: r.round })}</strong>{" "}
-                <span className="hosted-muted">
-                  {date(r.started_at)} ·{" "}
-                  {t("{{teams}} teams, {{players}} players", {
-                    teams: r.teams,
-                    players: r.players,
-                  })}
-                </span>
+                <details>
+                  <summary>
+                    <strong>{t("Game {{n}}", { n: r.round })}</strong>{" "}
+                    <span className="hosted-muted">
+                      {date(r.started_at)} ·{" "}
+                      {t("{{teams}} teams, {{players}} players", {
+                        teams: r.teams,
+                        players: r.players,
+                      })}
+                    </span>
+                  </summary>
+                  {r.results && r.results.length > 0 ? (
+                    <ol className="hosted-teams">
+                      {[...r.results]
+                        .sort((a, b) => b.score - a.score)
+                        .map((tm) => (
+                          <li key={tm.id}>
+                            <strong>{tm.name}</strong>
+                            <span className="hosted-muted">
+                              {tm.finished
+                                ? t("Finished · {{score}} points", { score: tm.score })
+                                : t("{{score}} points", { score: tm.score })}
+                            </span>
+                          </li>
+                        ))}
+                    </ol>
+                  ) : (
+                    <p className="hosted-muted">{t("No teams played this game.")}</p>
+                  )}
+                </details>
               </li>
             ))}
           </ul>

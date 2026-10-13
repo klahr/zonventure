@@ -66,10 +66,14 @@ export async function getGraph<Env, Rep>(slug: string, signal?: AbortSignal) {
  * Autosave the draft. Errors do not block; the report lists them. With
  * `since` — the saved_at the draft was loaded or last saved at — a save
  * that would overwrite someone else's later one is refused (409
- * draft_changed) instead.
+ * draft_changed) instead. `kept` names the steps where, after an edit
+ * conflict, the author kept their own version over the last saver's,
+ * who is told.
  */
-export const saveGraph = <Env, Rep>(slug: string, envelope: Env, since?: string) =>
-  put<GraphPayload<Env, Rep>>(base(slug), envelope, since ? { headers: { "X-Draft-Base": since } } : {});
+export const saveGraph = <Env, Rep>(slug: string, envelope: Env, since?: string, kept: string[] = []) =>
+  put<GraphPayload<Env, Rep>>(base(slug), envelope, {
+    headers: { ...(since ? { "X-Draft-Base": since } : {}), ...(kept.length ? { "X-Kept-Steps": kept.map(encodeURIComponent).join(",") } : {}) },
+  });
 
 /** Release the saved draft. Refused (422 graph_invalid) when it has errors. */
 export const publishGraph = <Env, Rep>(slug: string, label: string) =>

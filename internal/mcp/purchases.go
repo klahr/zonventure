@@ -57,7 +57,7 @@ func (s *Server) registerPurchaseTools() {
 			"required": []string{"adventure_slug", "max_players"},
 			"properties": map[string]any{
 				"adventure_slug":       map[string]any{"type": "string", "description": "Adventure to bind the assignment to (ignored when top_up_assignment_id is set; the assignment's slug wins)."},
-				"max_players":          map[string]any{"type": "integer", "minimum": 1, "maximum": 500, "description": "Player-slot cap for the new assignment, or the increment when topping up."},
+				"max_players":          map[string]any{"type": "integer", "minimum": 1, "maximum": 500, "description": "Player-slot cap for the new assignment, or the increment when topping up. A new assignment needs at least the free players per event (15 unless the platform's pricing says otherwise); a top-up can add 1 or more."},
 				"top_up_assignment_id": map[string]any{"type": "integer", "description": "Optional: existing assignment id to grow instead of creating a fresh one."},
 			},
 		},
@@ -240,7 +240,7 @@ func grantSlotsToEvent(ctx context.Context, s *Server, raw json.RawMessage) (Too
 	if !ok {
 		return errorResult("no authenticated caller"), nil
 	}
-	if me.Role != auth.RoleAdmin && !me.IsAdmin {
+	if me.Role != auth.RoleAdmin {
 		return errorResult("forbidden: grant_slots_to_event is admin-only"), nil
 	}
 	if r := adminConfigured(s); r != nil {

@@ -51,7 +51,7 @@
 /* Clipped both ways (clip, not hidden: no scroll box, so the dock still
    sticks), or the blur's overhang would make the page scroll. */
 .pv.pv--photo { position: relative; overflow: clip; background-image: none; }
-.pv-photo {
+.pv-backdrop-photo {
   position: var(--pv-photo-position, absolute);
   inset: -24px; /* a blur's edge falls outside the page, not inside it */
   z-index: 0;
@@ -297,6 +297,7 @@
 
 .pv-zone {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-4);
@@ -329,11 +330,13 @@
 .pv-zone:not(.is-here) .pv-zone__pin {
   box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 16%, transparent);
 }
+/* At large text sizes the map link wraps under the place rather than over it. */
 .pv-zone__body {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 8rem;
+  overflow-wrap: anywhere;
 }
 .pv-zone__note {
   color: var(--muted);

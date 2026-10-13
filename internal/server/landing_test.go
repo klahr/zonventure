@@ -194,3 +194,25 @@ func TestRenderLandingPage_SchemaOrganization(t *testing.T) {
 		})
 	}
 }
+
+// With the database down, a page request gets the error card (503,
+// HTML, in the visitor's language) and an API call the JSON error.
+func TestLookupFailed_PageOrJSON(t *testing.T) {
+	h := lookupFailed("session lookup failed")
+	req := httptest.NewRequest("GET", "/arrange?lang=sv", nil)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	body := rec.Body.String()
+	if rec.Code != http.StatusServiceUnavailable || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") ||
+		!strings.Contains(body, landingLocales["sv"].UnavailableHeading) || strings.Contains(body, "{{") {
+		t.Fatalf("page: %d %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	req = httptest.NewRequest("GET", "/api/auth/whoami", nil)
+	req.Header.Set("Accept", "text/html")
+	rec = httptest.NewRecorder()
+	h(rec, req)
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), `"session lookup failed"`) {
+		t.Fatalf("api: %d %s", rec.Code, rec.Body)
+	}
+}

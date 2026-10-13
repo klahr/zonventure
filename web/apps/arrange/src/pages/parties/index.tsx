@@ -16,6 +16,8 @@ import "./parties.css";
 interface PartyOffer {
   adventure_slug: string;
   title: string;
+  /** The offer's own name; empty, it is sold under the adventure's title. */
+  name: string;
   offer_id?: number;
   enabled: boolean;
   base_cents: number;
@@ -25,6 +27,8 @@ interface PartyOffer {
   blurb: string;
   stations: number;
   problems?: string[];
+  /** The adventure's fixed places on the map, which a party at home has no way to reach. */
+  places?: number;
   book_url?: string;
   /**
    * Listing review: where the offer's draft is (draft = not submitted),
@@ -132,8 +136,9 @@ function Offers({ slug }: { slug?: string | undefined }) {
       <span className="evs-namecell">
         <AdventureCover title={o.title} src={o.cover} />
         <span className="evs-stack">
-          <strong>{o.title}</strong>
-          {o.stations > 0 && <span className="evs-sub">{t.t("{{n}} cards to hide", { n: o.stations })}</span>}
+          <strong>{o.name || o.title}</strong>
+          {o.name && <span className="evs-sub">{o.title}</span>}
+          {o.stations > 0 && <span className="evs-sub">{t.plural(o.stations, { one: t.t("{{n}} card to hide"), other: t.t("{{n}} cards to hide") })}</span>}
         </span>
       </span>
     ) },
@@ -143,7 +148,7 @@ function Offers({ slug }: { slug?: string | undefined }) {
       <span className="pt-actions">
         <StatePill offer={o} />
         {o.enabled && canSubmitListing(o.listing_review, o.newer_version) && (
-          <Button size="sm" variant="primary" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSubmitting({ slug: o.adventure_slug, title: o.title }); }}>
+          <Button size="sm" variant="primary" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSubmitting({ slug: o.adventure_slug, title: o.name || o.title }); }}>
             {t.t("Submit for review")}
           </Button>
         )}
@@ -189,7 +194,7 @@ function Offers({ slug }: { slug?: string | undefined }) {
       </Card>
       {unavailable.length > 0 && (
         <details className="pt-unavailable">
-          <summary>{t.t("{{n}} adventures can't be offered as a party adventure", { n: unavailable.length })}</summary>
+          <summary>{t.plural(unavailable.length, { one: t.t("{{n}} adventure can't be offered as a party adventure"), other: t.t("{{n}} adventures can't be offered as a party adventure") })}</summary>
           <ul>
             {unavailable.map((o) => (
               <li key={o.adventure_slug}>
@@ -258,6 +263,7 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
   const [base, setBase] = useState(major(start?.base_cents ?? 0));
   const [perKid, setPerKid] = useState(major(start?.per_kid_cents ?? 0));
   const [maxKids, setMaxKids] = useState(String(start?.max_kids ?? 20));
+  const [name, setName] = useState(props.offer?.name ?? "");
   const [blurb, setBlurb] = useState(start?.blurb ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -276,12 +282,12 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
     try {
       const saved = await request<{ listing_review?: string }>(`/api/admin/party-offers/${encodeURIComponent(target.adventure_slug)}`, {
         method: "PUT",
-        body: { enabled: enabled && !blocked, base_cents: minor(base), per_kid_cents: minor(perKid), currency: "sek", max_kids: kidsN, blurb },
+        body: { enabled: enabled && !blocked, base_cents: minor(base), per_kid_cents: minor(perKid), currency: "sek", max_kids: kidsN, name: name.trim(), blurb },
       });
       toast.ok(isNew ? t.t("Party adventure created") : t.t("Saved"));
       // A draft waits to be submitted for review: the list opens that next.
       props.onClose();
-      props.onSaved({ slug: target.adventure_slug, title: target.title }, saved?.listing_review);
+      props.onSaved({ slug: target.adventure_slug, title: name.trim() || target.title }, saved?.listing_review);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
       setBusy(false);
@@ -311,7 +317,7 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
                 <AdventureCover title={a.title} src={a.cover} />
                 <span className="evs-stack">
                   <strong className="evs-ellipsis">{a.title}</strong>
-                  <span className="evs-muted evs-small">{t.t("{{n}} cards to hide", { n: a.stations })}</span>
+                  <span className="evs-muted evs-small">{t.plural(a.stations, { one: t.t("{{n}} card to hide"), other: t.t("{{n}} cards to hide") })}</span>
                 </span>
               </label>
             ))}
@@ -323,13 +329,24 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
             <AdventureCover title={target.title} src={target.cover} size={36} />
             <span className="evs-stack">
               <strong>{target.title}</strong>
-              {target.stations > 0 && <span className="evs-muted evs-small">{t.t("{{n}} cards to hide", { n: target.stations })}</span>}
+              {target.stations > 0 && <span className="evs-muted evs-small">{t.plural(target.stations, { one: t.t("{{n}} card to hide"), other: t.t("{{n}} cards to hide") })}</span>}
             </span>
           </div>
         )
       )}
       {props.offer && <ListingStatus kind="page" review={props.offer.listing_review} reason={props.offer.reject_reason} listed={props.offer.listed} newerVersion={props.offer.newer_version} />}
       {blocked && <Callout variant="warning">{t.t("Can't be offered as a party adventure: {{reason}}", { reason: target!.problems![0]! })}</Callout>}
+      {!blocked && (target?.places ?? 0) > 0 && (
+        <Callout variant="warning">
+          {t.plural(target!.places!, {
+            one: t.t("This adventure has a place on the map. A party plays it at home or in the park, with a card for each place: check that the story doesn't send the children somewhere they can't go."),
+            other: t.t("This adventure has {{n}} places on the map. A party plays it at home or in the park, with a card for each place: check that the story doesn't send the children somewhere they can't go."),
+          })}
+        </Callout>
+      )}
+      <Field label={t.t("Offer name (optional)")}>
+        <input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} placeholder={target?.title} />
+      </Field>
       <div className="pt-terms">
         <Field label={t.t("Base price (kr)")}>
           <input inputMode="decimal" value={base} onChange={(e) => setBase(e.target.value)} placeholder="0" />

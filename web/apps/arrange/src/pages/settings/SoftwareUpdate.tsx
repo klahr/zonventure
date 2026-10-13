@@ -15,6 +15,7 @@ interface UpdateStatus {
   sections?: { version: string; date?: string; notes_html?: string }[];
   checked_at?: string;
   fetch_error?: string;
+  disabled?: boolean;
 }
 
 const muted = { margin: 0, color: "var(--dz-muted)", fontSize: "var(--dz-text-sm)" };
@@ -47,7 +48,9 @@ export function SoftwareUpdateTab() {
   const s = load.data;
   // No checked_at means the snapshot itself never arrived.
   const couldNotCheck = (!!s.fetch_error && !s.latest) || !s.checked_at;
-  const [tone, label]: [Tone, string] = s.is_dev_build
+  const [tone, label]: [Tone, string] = s.disabled
+    ? ["neutral", t.t("Off")]
+    : s.is_dev_build
     ? ["warn", t.t("Development build")]
     : s.update_available
       ? ["accent", t.t("Update available")]
@@ -71,10 +74,15 @@ export function SoftwareUpdateTab() {
             { label: t.t("Latest"), value: <span style={monoBig}>{s.latest ? s.latest + (s.latest_date ? `  (${s.latest_date})` : "") : t.t("unknown")}</span> },
           ]}
         />
+        {s.disabled && <p style={muted}>{t.t("Update checks are off: ZV_CHANGELOG_URL is set empty, so nothing is fetched.")}</p>}
         {s.is_dev_build && <p style={muted}>{t.t("This binary reports a version past the last tagged release. Update prompts are suppressed because we can't tell whether the upstream changelog covers commits this build already includes.")}</p>}
         <Row gap="sm">
-          <Button size="sm" icon={<RefreshCw size={ICON.sm} aria-hidden />} loading={checking} onClick={() => void check()}>{checking ? t.t("Checking…") : t.t("Check now")}</Button>
-          <span style={muted} title={s.checked_at}>{s.checked_at ? t.t("Checked {{when}}", { when: relTime(s.checked_at, t.current()) }) : t.t("Not checked yet.")}</span>
+          {!s.disabled && (
+            <>
+              <Button size="sm" icon={<RefreshCw size={ICON.sm} aria-hidden />} loading={checking} onClick={() => void check()}>{checking ? t.t("Checking…") : t.t("Check now")}</Button>
+              <span style={muted} title={s.checked_at}>{s.checked_at ? t.t("Checked {{when}}", { when: relTime(s.checked_at, t.current()) }) : t.t("Not checked yet.")}</span>
+            </>
+          )}
           {!upgrade && <HelpPopover label={t.t("How to upgrade")} body={"make upgrade — " + howTo} />}
           {checkErr && <span style={{ ...muted, color: "var(--dz-danger)" }} role="alert">{checkErr}</span>}
         </Row>

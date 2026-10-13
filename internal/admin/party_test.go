@@ -21,6 +21,7 @@ import (
 	"github.com/klahr/zonventure/internal/graph/match"
 	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/play"
+	"github.com/klahr/zonventure/internal/player"
 	"github.com/klahr/zonventure/internal/ws"
 )
 
@@ -77,7 +78,7 @@ func newPartyFixture(t *testing.T) (*partyFixture, func()) {
 		t.Fatal(err)
 	}
 	f.h = &admin.Handlers{DB: db, Lib: adventure.New(db), Hub: ws.NewHub(), Mailer: f.mail,
-		PublicURL: "https://zv.example.com", Provider: &fakeProvider{},
+		PublicURL: "https://zv.example.com", Provider: &fakeProvider{}, TOTPKey: make([]byte, 32),
 		// Free hosting and no platform fee unless a test sets its prices.
 		Pricing: func() settings.Pricing { return settings.Pricing{} }}
 
@@ -96,6 +97,7 @@ func newPartyFixture(t *testing.T) (*partyFixture, func()) {
 	public.Post("/api/o/{slug}/parties/{offerID}/book", f.h.BookParty)
 	public.Post("/api/party/resend", f.h.ResendPartyLinks)
 	public.Get("/api/party/{token}", f.h.GetHostParty)
+	public.Post("/api/party/{token}/replace-link", f.h.ReplaceHostLink)
 	public.Delete("/api/party/{token}/teams/{teamID}", f.h.RemoveHostTeam)
 	public.Post("/api/party/{token}/finish-game", f.h.FinishHostedGame)
 	public.Put("/api/party/{token}/hold-results", f.h.PutHoldResults)
@@ -171,17 +173,22 @@ type hostView struct {
 	Round       int    `json:"round"`
 	RoundOpen   bool   `json:"round_open"`
 	HoldResults bool   `json:"hold_results"`
+	TurnedAway  int    `json:"turned_away"`
 	Stations    []struct {
 		Zone, Name, Code, URL string
 	} `json:"stations"`
 	Teams []struct {
 		ID        int64 `json:"id"`
 		Headcount int   `json:"headcount"`
+		Score     int   `json:"score"`
 	} `json:"teams"`
 	Rounds []struct {
 		Round   int `json:"round"`
 		Teams   int `json:"teams"`
 		Players int `json:"players"`
+		Results []struct {
+			Name string `json:"name"`
+		} `json:"results"`
 	} `json:"rounds"`
 }
 
@@ -398,7 +405,9 @@ func TestParty_Console(t *testing.T) {
 	}
 }
 
-// TestParty_GameIsFull: a game takes 15 teams per block bought.
+// TestParty_GameIsFull: a game takes 15 teams per block bought; the
+// host page counts the teams turned away, each once. A finished game
+// lists its teams.
 func TestParty_GameIsFull(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newPartyFixture(t)
@@ -413,13 +422,135 @@ func TestParty_GameIsFull(t *testing.T) {
 	if w := f.join(t, player, "One too many", 1); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "full") {
 		t.Fatalf("team past the limit: %d %s", w.Code, w.Body)
 	}
-	// A removed team frees its place.
+	_ = f.join(t, player, "ONE TOO MANY", 1)
+	_ = f.join(t, player, "Another", 1)
 	v := f.host(t, token)
+	if v.TurnedAway != 2 {
+		t.Errorf("turned away = %d, want 2", v.TurnedAway)
+	}
+	// A removed team frees its place.
 	if w := call(t, f.public, "DELETE", "/api/party/"+token+"/teams/"+strconv.FormatInt(v.Teams[0].ID, 10), nil); w.Code != http.StatusNoContent {
 		t.Fatalf("remove: %d %s", w.Code, w.Body)
 	}
 	if w := f.join(t, player, "One too many", 1); w.Code != http.StatusCreated {
 		t.Fatalf("after a removal: %d %s", w.Code, w.Body)
+	}
+	if w := call(t, f.public, "POST", "/api/party/"+token+"/finish-game", nil); w.Code != http.StatusNoContent {
+		t.Fatalf("finish: %d %s", w.Code, w.Body)
+	}
+	if v := f.host(t, token); len(v.Rounds) != 1 || len(v.Rounds[0].Results) != admin.TeamsPerBlock {
+		t.Errorf("finished game's results: %+v", v.Rounds)
+	}
+}
+
+// TestParty_EndedPhonesLearnWhy: a team the host takes out, and one
+// still playing when the host finishes the game, are each told why
+// their phone stopped, and the latter its result in its own game.
+func TestParty_EndedPhonesLearnWhy(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newPartyFixture(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	_, token := f.book(t, 5)
+	link := f.host(t, token).playerToken()
+	for _, name := range []string{"Owls", "Foxes", "Hares"} {
+		if w := f.join(t, link, name, 1); w.Code != http.StatusCreated {
+			t.Fatalf("join %s: %d %s", name, w.Code, w.Body)
+		}
+	}
+	v := f.host(t, token)
+	owls, foxes := v.Teams[0].ID, v.Teams[1].ID
+	session := func(team int64) string {
+		t.Helper()
+		var magic string
+		if err := f.h.DB.QueryRow(`SELECT token FROM player_slots WHERE team_id = $1`, team).Scan(&magic); err != nil {
+			t.Fatal(err)
+		}
+		_, s, err := auth.LoginSlotByToken(ctx, f.h.DB, magic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	owlsPhone, foxesPhone := session(owls), session(foxes)
+
+	phone := chi.NewRouter()
+	phone.Use(auth.SlotMiddleware(f.h.DB, nil))
+	phone.With(auth.RequireSlot).Get("/api/player/play", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	phone.With(auth.RequireSlotOrEnded).Get("/api/player/party-end", (&player.Handlers{DB: f.h.DB}).GetPartyEnd)
+	get := func(path, session string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("GET", path, nil)
+		req.AddCookie(&http.Cookie{Name: auth.SlotCookieName, Value: session})
+		w := httptest.NewRecorder()
+		phone.ServeHTTP(w, req)
+		return w
+	}
+	type end struct {
+		Reason string   `json:"reason"`
+		Points *float64 `json:"points"`
+		Rank   int      `json:"rank"`
+		Teams  int      `json:"teams"`
+	}
+	partyEnd := func(session string) end {
+		t.Helper()
+		w := get("/api/player/party-end", session)
+		if w.Code != http.StatusOK {
+			t.Fatalf("party end: %d %s", w.Code, w.Body)
+		}
+		var e end
+		if err := json.Unmarshal(w.Body.Bytes(), &e); err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+
+	if w := get("/api/player/party-end", owlsPhone); w.Code != http.StatusNotFound {
+		t.Errorf("party end while playing: %d", w.Code)
+	}
+	if w := call(t, f.public, "DELETE", "/api/party/"+token+"/teams/"+strconv.FormatInt(foxes, 10), nil); w.Code != http.StatusNoContent {
+		t.Fatalf("take out: %d %s", w.Code, w.Body)
+	}
+	if w := get("/api/player/play", foxesPhone); w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), `"taken_out"`) {
+		t.Errorf("taken-out phone: %d %s", w.Code, w.Body)
+	}
+	if e := partyEnd(foxesPhone); e.Reason != "taken_out" || e.Points != nil || e.Rank != 0 {
+		t.Errorf("taken out: %+v", e)
+	}
+
+	if w := call(t, f.public, "POST", "/api/party/"+token+"/finish-game", nil); w.Code != http.StatusNoContent {
+		t.Fatalf("finish game: %d %s", w.Code, w.Body)
+	}
+	if w := get("/api/player/play", owlsPhone); w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), `"game_finished"`) {
+		t.Errorf("phone after the finish: %d %s", w.Code, w.Body)
+	}
+	// Ranked among the game's two teams left: the taken-out one is not.
+	if e := partyEnd(owlsPhone); e.Reason != "game_finished" || e.Points == nil || e.Rank < 1 || e.Teams != 2 {
+		t.Errorf("game finished: %+v", e)
+	}
+	// Taken out before the finish stays taken out.
+	if e := partyEnd(foxesPhone); e.Reason != "taken_out" {
+		t.Errorf("taken out, after the finish: %+v", e)
+	}
+
+	// A game nobody plays any more ends by itself: just over, and placed
+	// in its own game only, not among game 1's teams.
+	if w := f.join(t, link, "Badgers", 1); w.Code != http.StatusCreated {
+		t.Fatalf("join game 2: %d %s", w.Code, w.Body)
+	}
+	badgersPhone := session(f.host(t, token).Teams[0].ID)
+	if _, err := f.h.DB.Exec(`UPDATE event_rounds SET started_at = now() - interval '1 day' WHERE round = 2`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.h.DB.Exec(`UPDATE team_graph_state SET updated_at = now() - interval '1 day'`); err != nil {
+		t.Fatal(err)
+	}
+	f.h.SweepHosted(ctx)
+	if w := get("/api/player/play", badgersPhone); w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), `"game_finished"`) {
+		t.Errorf("phone after an idle end: %d %s", w.Code, w.Body)
+	}
+	if e := partyEnd(badgersPhone); e.Reason != "game_over" || e.Points == nil || e.Rank != 1 || e.Teams != 1 {
+		t.Errorf("idle game over: %+v", e)
 	}
 }
 
@@ -475,9 +606,35 @@ func TestParty_BookingValidation(t *testing.T) {
 	}
 }
 
-// TestParty_RefundCancelsAndResendRotates: a refunded party is called
-// off, and a resent host link replaces the old one.
-func TestParty_RefundCancelsAndResendRotates(t *testing.T) {
+// TestParty_RefundCancelsAndResendKeeps: a resent host link is the one
+// the host has, so an open host page keeps working; only "Replace link"
+// gives a new one. A refunded party is called off.
+// Without ZV_TOTP_KEY no host link is kept, so mailing it again has to
+// send a new one.
+func TestParty_ResendWithoutKeyReplaces(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newPartyFixture(t)
+	defer cleanup()
+	f.h.TOTPKey = nil
+	_, token := f.book(t, 3)
+
+	if w := call(t, f.public, "POST", "/api/party/resend", map[string]any{"email": "parent@example.com"}); w.Code != http.StatusNoContent {
+		t.Fatalf("resend: %d", w.Code)
+	}
+	m := regexp.MustCompile(`/party/([A-Za-z0-9_-]+)`).FindStringSubmatch(f.mail.messages[len(f.mail.messages)-1].Text)
+	if m == nil || m[1] == token {
+		t.Fatalf("resend mailed %v, want a new link", m)
+	}
+	if w := call(t, f.public, "GET", "/api/party/"+m[1], nil); w.Code != http.StatusOK {
+		t.Errorf("new link: %d, want 200", w.Code)
+	}
+	var sealed []byte
+	if err := f.h.DB.QueryRow(`SELECT host_token_sealed FROM events WHERE host_token_hash IS NOT NULL LIMIT 1`).Scan(&sealed); err != nil || sealed != nil {
+		t.Errorf("host link kept without a key: %v %v", sealed, err)
+	}
+}
+
+func TestParty_RefundCancelsAndResendKeeps(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
@@ -486,14 +643,29 @@ func TestParty_RefundCancelsAndResendRotates(t *testing.T) {
 	if w := call(t, f.public, "POST", "/api/party/resend", map[string]any{"email": "parent@example.com"}); w.Code != http.StatusNoContent {
 		t.Fatalf("resend: %d", w.Code)
 	}
-	if w := call(t, f.public, "GET", "/api/party/"+token, nil); w.Code != http.StatusNotFound {
-		t.Errorf("old link after resend: %d, want 404", w.Code)
+	if w := call(t, f.public, "GET", "/api/party/"+token, nil); w.Code != http.StatusOK {
+		t.Errorf("link after resend: %d, want 200", w.Code)
 	}
 	m := regexp.MustCompile(`/party/([A-Za-z0-9_-]+)`).FindStringSubmatch(f.mail.messages[len(f.mail.messages)-1].Text)
-	if m == nil || m[1] == token {
-		t.Fatal("resend mailed no new link")
+	if m == nil || m[1] != token {
+		t.Fatalf("resend mailed %v, want the current link", m)
 	}
-	if v := f.host(t, m[1]); v.State != "scheduled" {
+
+	w := call(t, f.public, "POST", "/api/party/"+token+"/replace-link", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("replace link: %d %s", w.Code, w.Body)
+	}
+	var replaced struct {
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &replaced)
+	if replaced.Token == "" || replaced.Token == token {
+		t.Fatalf("replace link answered %s", w.Body)
+	}
+	if w := call(t, f.public, "GET", "/api/party/"+token, nil); w.Code != http.StatusNotFound {
+		t.Errorf("old link after replace: %d, want 404", w.Code)
+	}
+	if v := f.host(t, replaced.Token); v.State != "scheduled" {
 		t.Errorf("new link: %+v", v)
 	}
 
@@ -503,7 +675,7 @@ func TestParty_RefundCancelsAndResendRotates(t *testing.T) {
 	if err := admin.ExportedHandleChargeRefunded(f.h, context.Background(), buildChargeRefundedEvent(t, "ch_party")); err != nil {
 		t.Fatalf("refund: %v", err)
 	}
-	if v := f.host(t, m[1]); v.State != "cancelled" {
+	if v := f.host(t, replaced.Token); v.State != "cancelled" {
 		t.Errorf("after refund: state %q, want cancelled", v.State)
 	}
 }
@@ -701,4 +873,70 @@ func (f *partyFixture) offer(t *testing.T, body map[string]any) int64 {
 		t.Fatalf("submit offer: %d %s", w.Code, w.Body)
 	}
 	return offer.ID
+}
+
+// The organisation mails a hosted event's buyer their host link again,
+// without seeing it: only the buyer's address gets it.
+func TestParty_OrgResendsHostLinkToBuyer(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newPartyFixture(t)
+	defer cleanup()
+	eventID, _ := f.book(t, 3)
+	f.consoleRoute("POST", "/api/admin/events/{eventID}/hosted/resend-host-link", f.h.ResendHostLinkToBuyer)
+
+	before := len(f.mail.messages)
+	w := call(t, f.console, "POST", "/api/admin/events/"+strconv.FormatInt(eventID, 10)+"/hosted/resend-host-link", nil)
+	if w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Fatalf("resend: %d %s", w.Code, w.Body)
+	}
+	if len(f.mail.messages) != before+1 || f.mail.messages[before].To[0] != "parent@example.com" {
+		t.Fatalf("mails: %d, want one more to the buyer", len(f.mail.messages)-before)
+	}
+	// An event nobody bought has no buyer to mail.
+	var other int64
+	if err := f.h.DB.QueryRow(`
+		INSERT INTO events(adventure_slug, org_id, state, live_token, party)
+		SELECT adventure_slug, org_id, 'scheduled', 'lt-' || md5(random()::text), TRUE FROM events WHERE id = $1
+		RETURNING id`, eventID).Scan(&other); err != nil {
+		t.Fatal(err)
+	}
+	if w := call(t, f.console, "POST", "/api/admin/events/"+strconv.FormatInt(other, 10)+"/hosted/resend-host-link", nil); w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "no_buyer") {
+		t.Errorf("no buyer: %d %s, want 404 no_buyer", w.Code, w.Body)
+	}
+}
+
+// Support finds a party by its host's email and mails the host a new
+// link; another address is refused.
+func TestParty_AdminLookupAndResend(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newPartyFixture(t)
+	defer cleanup()
+	_, token := f.book(t, 3)
+	f.consoleRoute("GET", "/api/admin/parties", f.h.AdminPartiesByHost)
+	f.consoleRoute("POST", "/api/admin/parties/{eventID}/resend-host-link", f.h.AdminResendHostLink)
+
+	w := call(t, f.console, "GET", "/api/admin/parties?email=Parent@example.com", nil)
+	var got struct {
+		Parties []struct {
+			ID        int64  `json:"id"`
+			Adventure string `json:"adventure"`
+		} `json:"parties"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || len(got.Parties) != 1 || got.Parties[0].Adventure != "Treasure Hunt" {
+		t.Fatalf("lookup: %d %s", w.Code, w.Body)
+	}
+	path := "/api/admin/parties/" + strconv.FormatInt(got.Parties[0].ID, 10) + "/resend-host-link"
+	if w := call(t, f.console, "POST", path, map[string]any{"email": "someone@else.com"}); w.Code != http.StatusNotFound {
+		t.Errorf("resend to another address: %d, want 404", w.Code)
+	}
+	if w := call(t, f.console, "POST", path, map[string]any{"email": "parent@example.com"}); w.Code != http.StatusNoContent {
+		t.Fatalf("resend: %d %s", w.Code, w.Body)
+	}
+	last := f.mail.messages[len(f.mail.messages)-1]
+	if last.To[0] != "parent@example.com" {
+		t.Errorf("mailed to %v", last.To)
+	}
+	if w := call(t, f.public, "GET", "/api/party/"+token, nil); w.Code != http.StatusNotFound {
+		t.Errorf("old link after resend: %d, want 404", w.Code)
+	}
 }

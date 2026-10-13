@@ -22,7 +22,7 @@ func TestHideUnavailableLinks(t *testing.T) {
 	})
 	// No legal identity: /privacy and /terms are unavailable; no
 	// override pricing.html makes /pricing unavailable too.
-	mw := hideUnavailableLinks(func() LegalConfig { return LegalConfig{} })
+	mw := hideUnavailableLinks(func() LegalConfig { return LegalConfig{} }, "home")
 
 	rec := httptest.NewRecorder()
 	mw(page).ServeHTTP(rec, httptest.NewRequest("GET", "/arrange", nil))
@@ -55,13 +55,22 @@ func TestUnavailablePages_PricingFollowsOverride(t *testing.T) {
 	legal := LegalConfig{}
 
 	webOverrideDir = t.TempDir()
-	if got := unavailablePages(legal); !slices.Contains(got, "/pricing") {
+	if got := unavailablePages(legal, "home"); !slices.Contains(got, "/pricing") {
 		t.Errorf("no override pricing.html: unavailable = %v, want /pricing", got)
 	}
 	if err := os.WriteFile(filepath.Join(webOverrideDir, "pricing.html"), []byte("<html></html>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := unavailablePages(legal); slices.Contains(got, "/pricing") {
+	if got := unavailablePages(legal, "home"); slices.Contains(got, "/pricing") {
 		t.Errorf("override pricing.html: unavailable = %v, want /pricing served", got)
+	}
+}
+
+func TestUnavailablePages_StoreFollowsHomeOrg(t *testing.T) {
+	if got := unavailablePages(LegalConfig{}, ""); !slices.Contains(got, "/store") {
+		t.Errorf("no home organisation: unavailable = %v, want /store", got)
+	}
+	if got := unavailablePages(LegalConfig{}, "home"); slices.Contains(got, "/store") {
+		t.Errorf("home organisation set: unavailable = %v, want /store served", got)
 	}
 }

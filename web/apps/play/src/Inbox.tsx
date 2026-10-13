@@ -2,9 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import type { play } from "@zonventure/api";
 import { Markdown, MarkdownInline, Sheet, type Translate } from "@zonventure/play-ui";
 
+/** How long a new message's banner shows in full before it folds to one line. */
+const FOLD_MS = 8000;
+
 /**
  * The organisers' messages: a bell in the app bar with how many are
- * unread, a banner when one arrives, and a sheet listing them all.
+ * unread, a banner while one is unread, and a sheet listing them all.
  * Information beside the game — none of it moves the team.
  *
  * Read is remembered per team on this phone, as the newest id seen.
@@ -19,16 +22,43 @@ export function Inbox({ messages, teamID, t, locale }: { messages: play.EventMes
     }
   });
   const [open, setOpen] = useState(false);
-  const [banner, setBanner] = useState<play.EventMessage | null>(null);
   const newest = messages[0]?.id ?? 0;
   const unread = messages.filter((m) => m.id > seen).length;
+  // The newest unread message stays on a banner until it is read or
+  // waved away: a glance at the screen in the street must catch it.
+  const [dismissed, setDismissed] = useState(0);
+  const banner = unread > 0 && newest > dismissed ? messages[0] : null;
+  // Once seen, the banner folds to one line, and stays folded on this
+  // phone: the message is at hand without covering every step. A tap
+  // unfolds it.
+  const foldKey = `zv-inbox-folded-${teamID}`;
+  const [folded, setFolded] = useState(() => {
+    try {
+      return Number(localStorage.getItem(foldKey)) || 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [unfolded, setUnfolded] = useState(0);
+  const bannerID = banner?.id ?? 0;
+  useEffect(() => {
+    if (!bannerID || bannerID <= folded) return;
+    const id = setTimeout(() => {
+      setFolded(bannerID);
+      try {
+        localStorage.setItem(foldKey, String(bannerID));
+      } catch {
+        /* private mode: it shows in full again next time */
+      }
+    }, FOLD_MS);
+    return () => clearTimeout(id);
+  }, [bannerID, folded, foldKey]);
+  const compact = !!banner && banner.id <= folded && unfolded !== banner.id;
 
-  // A message that arrives while the team plays gets a banner; the ones
-  // waiting when the app opens only count on the bell.
+  // A message that arrives while the team plays also buzzes.
   const known = useRef(newest);
   useEffect(() => {
     if (newest > known.current) {
-      setBanner(messages[0] ?? null);
       // A phone in a pocket outdoors: a short buzz so "meet at 12:30"
       // isn't missed. Silently unsupported on iOS.
       try {
@@ -38,12 +68,7 @@ export function Inbox({ messages, teamID, t, locale }: { messages: play.EventMes
       }
     }
     known.current = newest;
-  }, [newest, messages]);
-  useEffect(() => {
-    if (!banner) return;
-    const id = setTimeout(() => setBanner(null), 8000);
-    return () => clearTimeout(id);
-  }, [banner]);
+  }, [newest]);
 
   const markRead = () => {
     setSeen(newest);
@@ -55,7 +80,6 @@ export function Inbox({ messages, teamID, t, locale }: { messages: play.EventMes
   };
   const show = () => {
     setOpen(true);
-    setBanner(null);
     markRead();
   };
   // 24-hour like the organisers' screens; older than today gets the date.
@@ -74,10 +98,15 @@ export function Inbox({ messages, teamID, t, locale }: { messages: play.EventMes
         {unread > 0 && <span className="app-inbox__count">{unread}</span>}
       </button>
       {banner && (
-        <button type="button" className="app-inbox__banner" onClick={show} role="status">
-          <span className="app-inbox__from">{t("Message from the organisers")}</span>
-          <MarkdownInline className="app-inbox__preview" text={banner.text} />
-        </button>
+        <div className={"app-inbox__banner" + (compact ? " app-inbox__banner--folded" : "")} role="status">
+          <button type="button" className="app-inbox__open" onClick={compact ? () => setUnfolded(banner.id) : show} {...(compact ? { "aria-expanded": false } : {})}>
+            <span className="app-inbox__from">{t("Message from the organisers")}</span>
+            <MarkdownInline className="app-inbox__preview" text={banner.text} />
+          </button>
+          <button type="button" className="app-inbox__close" onClick={() => setDismissed(newest)} aria-label={t("Hide")}>
+            ×
+          </button>
+        </div>
       )}
       {open && (
         <div className="pv app-inbox__pv">

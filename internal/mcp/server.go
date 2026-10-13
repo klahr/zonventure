@@ -11,6 +11,7 @@ import (
 
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/sitename"
 	"github.com/klahr/zonventure/internal/storage"
@@ -101,6 +102,19 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
+	}
+	// A token carries no second factor: while 2FA is required of its
+	// user and they haven't enrolled, it is refused (auth.RequireTOTPSetup).
+	if s.Admin != nil && s.Admin.TOTPKey != nil {
+		required, err := auth.TOTPSetupRequired(r.Context(), s.DB, user)
+		if err != nil {
+			http.Error(w, "two-factor check failed", http.StatusInternalServerError)
+			return
+		}
+		if required {
+			httpx.JSON(w, http.StatusForbidden, auth.TOTPSetupRequiredBody)
+			return
+		}
 	}
 
 	var req Request

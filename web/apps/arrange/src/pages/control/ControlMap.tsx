@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { Map as GLMap, Marker, GeoJSONSource, LngLatBounds } from "maplibre-gl";
-import type { Zone } from "@zonventure/graph";
+import { metresBetween, type Zone } from "@zonventure/graph";
 import { useT } from "../../i18n.tsx";
-import { loadMapLibre, shape, STYLE } from "../../designer/ZoneMap.tsx";
-import { fmtDateTime, initials } from "../../ui/index.ts";
+import { loadMapLibre, mapLocale, shape, STYLE } from "../../designer/ZoneMap.tsx";
+import { fmtDateTime, initials, toDate } from "../../ui/index.ts";
 import type { Track } from "./api.ts";
 import { mapViews, ZONE_COLOR } from "./model.ts";
 
@@ -48,6 +48,7 @@ export function ControlMap({ eventId, zones, teams, tracks }: { eventId: number;
           center: saved ? saved.center : [13.9554, 58.182],
           zoom: saved ? saved.zoom : 14,
           attributionControl: { compact: true },
+          locale: mapLocale(t),
           // Scrolling the page past the map shouldn't zoom it.
           cooperativeGestures: true,
         });
@@ -97,6 +98,8 @@ export function ControlMap({ eventId, zones, teams, tracks }: { eventId: number;
       mapRef.current = null;
       teamMarkers.current.clear();
     };
+    // The map is made once per event; a language switch keeps it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
   // The fixed features: zones.
@@ -118,7 +121,7 @@ export function ControlMap({ eventId, zones, teams, tracks }: { eventId: number;
       features: shown.map((tr) => ({
         type: "Feature" as const,
         properties: { color: byId.get(tr.team_id)!.color },
-        geometry: { type: "LineString" as const, coordinates: tr.points!.map((p) => [p.lng, p.lat]) },
+        geometry: { type: "MultiLineString" as const, coordinates: trailRuns(tr.points!) },
       })),
     });
     const keep = new Set<number>();
@@ -175,6 +178,29 @@ export function ControlMap({ eventId, zones, teams, tracks }: { eventId: number;
       {!failed && !anyPosition && <p className="cc-muted cc-map__note">{t.t("No team positions yet.")}</p>}
     </div>
   );
+}
+
+/**
+ * A trail as the runs between GPS jumps: a step faster than 60 m/s
+ * (judged over at least 5 s, as the server's anti-teleport rule is) is a
+ * stray fix, not a walk, so no line is drawn across it.
+ */
+function trailRuns(points: NonNullable<Track["points"]>): [number, number][][] {
+  const runs: [number, number][][] = [];
+  let run: [number, number][] = [];
+  points.forEach((p, i) => {
+    const prev = points[i - 1];
+    if (prev) {
+      const secs = ((toDate(p.server_ts)?.getTime() ?? 0) - (toDate(prev.server_ts)?.getTime() ?? 0)) / 1000;
+      if (metresBetween(prev.lat, prev.lng, p.lat, p.lng) > 60 * Math.max(5, secs)) {
+        runs.push(run);
+        run = [];
+      }
+    }
+    run.push([p.lng, p.lat]);
+  });
+  runs.push(run);
+  return runs.filter((r) => r.length > 1);
 }
 
 function teamMarker(tm: MapTeam, avatar: string | undefined): HTMLElement {

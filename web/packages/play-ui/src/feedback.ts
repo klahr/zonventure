@@ -27,10 +27,15 @@ export interface Feedback {
 
 /** Feedback for an action the engine accepted (HTTP 200). */
 export function feedbackForResult(kind: play.PlayAction["kind"], r: play.Result, t: Translate): Feedback | null {
+  // A gate sent the team back to the hub: the screen alone would not change.
+  if (r.not_yet && kind !== "answer") return { tone: "info", text: t("Not yet — come back when you've done what it takes.") };
   switch (kind) {
     case "cheat":
       return { tone: "good", text: t("Solved.") };
     case "answer":
+      // A step that just moves on says nothing at all: the next step's
+      // entrance is the only sign the answer was taken.
+      if (r.quiet) return null;
       // A game that keeps its results secret says neither right nor wrong
       // of an answer the team moves on from.
       if (r.view?.results_held && (r.accepted || r.port)) return { tone: "info", text: t("Answer saved.") };
@@ -103,6 +108,8 @@ export function feedbackForRefusal(code: string | undefined, t: Translate): Feed
       return { tone: "info", text: t("The game is paused. Hold on.") };
     case "not_running":
       return { tone: "info", text: t("The game is not running.") };
+    case "maintenance":
+      return { tone: "info", text: t("The game is paused for maintenance. Try again in a minute.") };
     case "rate_limited":
       return { tone: "bad", text: t("That was a lot of tries. Wait a minute, then try again.") };
     case "too_long":

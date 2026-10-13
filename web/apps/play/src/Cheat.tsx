@@ -21,8 +21,8 @@ export function useSevenTaps(open: () => void): () => void {
 
 /**
  * The cheat password, for a tester. The server checks it here and again
- * on every cheat; the phone keeps it in memory only, so a reload ends
- * cheating.
+ * on every cheat; the phone keeps it for this browser session only, so
+ * closing the tab ends cheating.
  */
 export function CheatSheet({ t, onClose, onUnlocked }: { t: Translate; onClose: () => void; onUnlocked: (password: string) => void }) {
   const [password, setPassword] = useState("");

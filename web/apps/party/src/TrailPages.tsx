@@ -14,8 +14,11 @@ import {
   getStart,
   heldTrails,
   holdTrail,
+  hostLink,
+  lastCheckout,
   listMine,
   paidHost,
+  privateWindow,
   setTrailTheme,
   sendHostLink,
   setPaidHost,
@@ -32,10 +35,27 @@ import { Spot, ThankYouBanner } from "./pictures.tsx";
 
 const MINE = "/app/party/trail/mine";
 
+/** A word when this looks like a private window: closing it loses the party adventures it holds. */
+export function PrivateWarning() {
+  const t = useT().t;
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    void privateWindow().then(setShown);
+  }, []);
+  if (!shown) return null;
+  return (
+    <p className="party-note" role="status">
+      {t(
+        "This looks like a private window: what you make here is kept only until you close it. Copy the link from the address bar, or once your party adventure is ready, use \"Email me the host page\" under My party adventures.",
+      )}
+    </p>
+  );
+}
+
 function MyTrailsLink() {
   const t = useT().t;
   // On the landing page, the page around the frame has the link.
-  if (embedded || (heldTrails().length === 0 && !trailSession())) return null;
+  if (embedded) return null;
   return (
     <p className="party-right">
       <a href={MINE} target={outside}>
@@ -113,9 +133,10 @@ export function TrailStart({ org }: { org: string }) {
       const d = await createDraft(org, template, lang, who);
       holdTrail({ id: d.id, secret: d.secret });
       await setTrailTheme({ id: d.id }, { id: theme.id, look: theme.look }).catch(() => {});
-      location.href = editURL(d.id);
+      // In place of this step, so back never offers to make it again.
+      location.replace(editURL(d.id));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : t("Something went wrong. Try again."));
+      setError(e instanceof ApiError ? i18n.tError(e.code, e.message) : t("Something went wrong. Try again."));
       setBusy(false);
     }
   };
@@ -274,7 +295,7 @@ export function TrailMine() {
       if (done) setNote(done);
       setNonce((n) => n + 1);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : t("Something went wrong. Try again."));
+      setError(e instanceof ApiError ? i18n.tError(e.code, e.message) : t("Something went wrong. Try again."));
     }
   };
   const stateText = (x: TrailSummary) =>
@@ -305,6 +326,7 @@ export function TrailMine() {
             </button>
           </p>
         ) : null}
+        <PrivateWarning />
         {error && (
           <p className="party-error" role="alert">
             {error}
@@ -336,7 +358,7 @@ export function TrailMine() {
                     <strong>{x.title}</strong>
                     <small className="party-muted">
                       {t("{{n}} cards", { n: x.cards })} · {stateText(x)}
-                      {!x.saved && " · " + t("only on this phone")}
+                      {!x.saved && " · " + t("only in this browser")}
                     </small>
                   </div>
                 </div>
@@ -346,9 +368,14 @@ export function TrailMine() {
                       {x.state === "draft" ? t("Continue") : t("Edit")}
                     </a>
                   )}
+                  {(x.state === "paid" || x.state === "playing") && hostLink(x.id) && (
+                    <a className="party-btn party-btn--primary" href={"/app/party/host/" + encodeURIComponent(hostLink(x.id)!)}>
+                      {t("Open the host page")}
+                    </a>
+                  )}
                   {(x.state === "paid" || x.state === "playing") && (
-                    <button type="button" className="party-btn" onClick={() => void act(() => sendHostLink(x.id), t("We've emailed you the link to the admin page. Older links stop working."))}>
-                      {t("Email me the admin page")}
+                    <button type="button" className="party-btn" onClick={() => void act(() => sendHostLink(x.id), t("We've emailed you the link to the host page."))}>
+                      {t("Email me the host page")}
                     </button>
                   )}
                   <button
@@ -388,7 +415,8 @@ export function TrailMine() {
 
 /** Get a link by email: always "check your inbox", whether the address has trails or not. */
 function SignIn() {
-  const t = useT().t;
+  const i18n = useT();
+  const t = i18n.t;
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -409,7 +437,7 @@ function SignIn() {
               await signIn(email.trim());
               setSent(true);
             } catch (err) {
-              setError(err instanceof ApiError ? err.message : t("Something went wrong. Try again."));
+              setError(err instanceof ApiError ? i18n.tError(err.code, err.message) : t("Something went wrong. Try again."));
             } finally {
               setBusy(false);
             }
@@ -465,16 +493,19 @@ const PAID_WAIT_MS = 60_000;
 
 /**
  * Back from paying for a quiz trail. The browser that paid holds the
- * admin page's link (from checkout): once the payment has landed the
+ * host page's link (from checkout): once the payment has landed the
  * page opens, so the buyer goes straight there. The link is in the mail
  * too, for any other device.
  */
 export function TrailPaid() {
   const t = useT().t;
+  const cancelled = new URLSearchParams(location.search).has("cancelled");
   const [held] = useState(() => {
     const p = paidHost();
-    return p && Date.now() - p.at < 24 * 3600_000 ? p.url : null;
+    return !cancelled && p && Date.now() - p.at < 24 * 3600_000 ? p.url : null;
   });
+  // Back from a cancelled payment: the draft it was for, to try again from.
+  const [retry] = useState(() => (cancelled ? heldTrails().find((k) => lastCheckout(k.id)) : undefined));
   const [ready, setReady] = useState(false);
   const [late, setLate] = useState(false);
 
@@ -503,24 +534,41 @@ export function TrailPaid() {
     };
   }, [held]);
 
+  if (cancelled) {
+    return (
+      <section className="party-card">
+        <h1>{t("The payment was cancelled. Nothing was charged.")}</h1>
+        {retry && (
+          <p>
+            <a className="party-btn party-btn--primary" href={editURL(retry.id)}>
+              {t("Back to your party adventure")}
+            </a>
+          </p>
+        )}
+        <a className="party-btn" href={MINE}>
+          {t("My party adventures")}
+        </a>
+      </section>
+    );
+  }
   return (
     <section className="party-card party-card--cover">
       <ThankYouBanner />
       <h1>{t("Thank you — your party adventure is ready to play")}</h1>
       {held && !late ? (
         <p className="party-lead" role="status">
-          {ready ? t("Opening your admin page…") : t("Getting your admin page ready…")}
+          {ready ? t("Opening your host page…") : t("Getting your host page ready…")}
         </p>
       ) : (
         <>
           {held && (
             <p>
               <a className="party-btn party-btn--primary" href={held}>
-                {t("Open the admin page")}
+                {t("Open the host page")}
               </a>
             </p>
           )}
-          <p className="party-lead">{t("We're emailing you the link to the admin page. There you print the cards and the answer key, and show the teams how to join.")}</p>
+          <p className="party-lead">{t("We're emailing you the link to the host page. There you print the cards and the answer key, and show the teams how to join.")}</p>
         </>
       )}
       <p className="party-muted">{t("It can take a minute or two. Check your spam folder if it doesn't arrive.")}</p>

@@ -238,23 +238,29 @@ func (h *Handlers) fillEventStats(ctx context.Context, eventID int64, g *graph.G
 	}
 
 	// Each team's walk is the haversine sum of its pings in order, as on
-	// its recap; the average is over the teams that sent any.
+	// its recap, leaving out GPS jumps (a step faster than
+	// play.MaxPingSpeedMS, judged over at least 5 s as the anti-teleport
+	// rule is); the average is over the teams that sent any.
 	var (
 		dist  sql.NullFloat64
 		walks int
 	)
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT SUM(2 * 6371000 * ASIN(LEAST(1, SQRT(
-		         POWER(SIN(RADIANS(lat - plat) / 2), 2) +
-		         COS(RADIANS(lat)) * COS(RADIANS(plat)) * POWER(SIN(RADIANS(lng - plng) / 2), 2)))))
-		         FILTER (WHERE plat IS NOT NULL),
+		SELECT SUM(d) FILTER (WHERE d <= $2 * GREATEST(secs, 5)),
 		       COUNT(DISTINCT team_id)
 		FROM (
-		  SELECT team_id, lat, lng, LAG(lat) OVER w AS plat, LAG(lng) OVER w AS plng
-		  FROM location_pings
-		  WHERE event_id = $1 AND team_id IN (`+statsTeams+`)
-		  WINDOW w AS (PARTITION BY team_id ORDER BY server_ts, id)
-		) x`, eventID).Scan(&dist, &walks); err != nil {
+		  SELECT team_id,
+		         2 * 6371000 * ASIN(LEAST(1, SQRT(
+		           POWER(SIN(RADIANS(lat - plat) / 2), 2) +
+		           COS(RADIANS(lat)) * COS(RADIANS(plat)) * POWER(SIN(RADIANS(lng - plng) / 2), 2)))) AS d,
+		         EXTRACT(EPOCH FROM server_ts::timestamp - pts::timestamp) AS secs
+		  FROM (
+		    SELECT team_id, lat, lng, server_ts, LAG(lat) OVER w AS plat, LAG(lng) OVER w AS plng, LAG(server_ts) OVER w AS pts
+		    FROM location_pings
+		    WHERE event_id = $1 AND team_id IN (`+statsTeams+`)
+		    WINDOW w AS (PARTITION BY team_id ORDER BY server_ts, id)
+		  ) x
+		) y`, eventID, play.MaxPingSpeedMS).Scan(&dist, &walks); err != nil {
 		return err
 	}
 	if walks > 0 {

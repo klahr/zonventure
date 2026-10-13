@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from "react";
 import { createPortal } from "react-dom";
 import { Menu as MenuIcon, X, Building2, CalendarDays, ClipboardCheck, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, Gift, LogOut, Map as MapIcon, Monitor, Moon, PartyPopper, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
-import { auth, emails, siteName, siteWordmark, type Whoami } from "@zonventure/api";
+import { auth, readsAsAdmin, runsEvents, siteName, siteWordmark, type Whoami } from "@zonventure/api";
 import { readTheme, setTheme, type Theme } from "@zonventure/ui";
-import { useT } from "./i18n.tsx";
+import { chooseLocale, useT } from "./i18n.tsx";
 import { useSession } from "./session.tsx";
 import { href, useRoute, type Route } from "./router.ts";
 import { TopBarSlot, TopBarTitle } from "./topbar.tsx";
@@ -43,6 +43,16 @@ function reloadOnce(): boolean {
   }
   location.reload();
   return true;
+}
+
+/** The console is open somewhere other than ZV_PUBLIC_URL (sent to the full platform admin only). */
+function otherOrigin(publicURL?: string): boolean {
+  if (!publicURL) return false;
+  try {
+    return new URL(publicURL).origin !== location.origin;
+  } catch {
+    return true;
+  }
 }
 const Designer = page(() => import("./designer/Designer.tsx"), "Designer");
 const TrailPage = page(() => import("./pages/adventures/Trail.tsx"), "TrailPage");
@@ -85,7 +95,7 @@ function savedCollapsed(): boolean {
   }
 }
 
-const ROLE: Record<Whoami["role"], string> = { admin: "Administrator", org_admin: "Organisation admin", org_member: "Member" };
+const ROLE: Record<Whoami["role"], string> = { admin: "Administrator", support: "Support", org_admin: "Organization admin", org_member: "Event host", org_writer: "Writer" };
 
 /**
  * The classic console's sidebar sections for this user, mirroring the
@@ -100,7 +110,7 @@ type Section = "dashboard" | "organizations" | "listing-reviews" | "logs" | "set
 // sidebar leads there, on every screen.
 function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: string; section: Section }[] {
   const item = (label: string, icon: LucideIcon, r: Route, section: Section) => ({ label, icon, href: href(r), section });
-  if (user.role === "admin") {
+  if (readsAsAdmin(user)) {
     return [
       item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"),
       item("Organizations", Building2, { name: "organizations" }, "organizations"),
@@ -111,12 +121,14 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
   // A listing reviewer, in an organisation or none, also has the queue.
   const review = user.listing_reviewer ? [item("Content review", ClipboardCheck, { name: "listing-reviews" }, "listing-reviews")] : [];
   if (!user.memberships.length) return [item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"), ...review];
+  // A writer authors: no events, orders or hosting.
+  if (!runsEvents(user)) return [item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"), item("Adventures", MapIcon, { name: "adventures" }, "adventures"), ...review];
   return [
     item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"),
     item("Adventures", MapIcon, { name: "adventures" }, "adventures"),
     item("Live events", CalendarDays, { name: "events" }, "events"),
     item("Self-guided", Compass, { name: "quests" }, "quests"),
-    item("Hosted", PartyPopper, { name: "parties" }, "parties"),
+    ...(user.role === "org_admin" ? [item("Hosted", PartyPopper, { name: "parties" }, "parties")] : []),
     item("Orders", Gift, { name: "redemptions" }, "redemptions"),
     ...review,
   ];
@@ -134,9 +146,13 @@ function sectionOf(r: Route): { section: Section; label: string } {
     case "catalog":
     case "catalog-item":
       return { section: "adventures", label: "Adventures" };
-    case "events":
     case "event":
+      if (r.quest) return { section: "quests", label: "Self-guided" };
+      return { section: "events", label: "Live events" };
     case "event-control":
+      if (r.quest) return { section: "quests", label: "Self-guided" };
+      return { section: "events", label: "Live events" };
+    case "events":
       return { section: "events", label: "Live events" };
     case "quests":
       return { section: "quests", label: "Self-guided" };
@@ -152,8 +168,10 @@ function sectionOf(r: Route): { section: Section; label: string } {
     case "listing-reviews":
     case "listing-review":
       return { section: "listing-reviews", label: "Content review" };
+    // The consent page: what it grants is managed under Settings → Account → API tokens.
     case "settings":
     case "webhook-log":
+    case "authorize":
       return { section: "settings", label: "Settings" };
     default:
       return { section: "dashboard", label: "Dashboard" };
@@ -169,10 +187,11 @@ function allowed(r: Route, user: Whoami): boolean {
   const s = sectionOf(r).section;
   // The review queue is a listing reviewer's, whatever else they are;
   // a platform admin has it too, to choose the reviewers.
-  if (s === "listing-reviews") return !!user.listing_reviewer || user.role === "admin";
-  if (user.role === "admin") return s === "dashboard" || s === "organizations" || s === "logs" || s === "settings";
+  if (s === "listing-reviews") return !!user.listing_reviewer || readsAsAdmin(user);
+  if (readsAsAdmin(user)) return s === "dashboard" || s === "organizations" || s === "logs" || s === "settings";
   if (!user.memberships.length) return s === "dashboard" || s === "settings";
   if (s === "parties") return user.role === "org_admin";
+  if (!runsEvents(user)) return s === "dashboard" || s === "adventures" || s === "settings";
   return s !== "organizations" && s !== "logs";
 }
 
@@ -187,7 +206,10 @@ export function Shell({ user }: { user: Whoami }) {
 
   const route = useRoute();
   const current = sectionOf(route);
-  const nav = consoleNav(user).map((item) => ({ ...item, active: item.section === current.section }));
+  // Until the seeded password or a required 2FA is dealt with, every
+  // page is that setup, so the sidebar offers nothing else.
+  const setupOnly = !!user.password_is_default || !!user.totp_setup_required;
+  const nav = setupOnly ? [] : consoleNav(user).map((item) => ({ ...item, active: item.section === current.section }));
   // Each page names itself for the crumb; a new page starts unnamed.
   const routeKey = href(route);
   useEffect(() => setPageTitle(null), [routeKey]);
@@ -197,8 +219,13 @@ export function Shell({ user }: { user: Whoami }) {
   useEffect(() => setDrawer(false), [routeKey]);
   // A page this role can't open goes to the dashboard, crumb and all.
   const permitted = allowed(route, user);
+  // Said on the dashboard it lands on, so the bounce isn't silent.
+  const [bounced, setBounced] = useState(false);
   useEffect(() => {
-    if (!permitted) location.replace("#/");
+    if (!permitted) {
+      setBounced(true);
+      location.replace("#/");
+    } else if (route.name !== "dashboard") setBounced(false);
   }, [permitted, routeKey]);
   useEffect(() => {
     if (!drawer) return;
@@ -218,17 +245,15 @@ export function Shell({ user }: { user: Whoami }) {
     });
   }
 
+  // Start in the language the user chose, in any browser. Only an
+  // explicit choice (chooseLocale) saves one.
+  useEffect(() => {
+    if (user.language) t.setLocale(user.language);
+  }, [user.language, t]);
+
   const org = user.memberships.find((m) => m.org_id === user.org_id);
   // Where the organisation's name leads: its settings, for those who may change them.
   const orgHref = !org ? null : user.role === "org_admin" ? href({ name: "settings", tab: "organization" }) : user.role === "admin" ? href({ name: "organization", id: org.org_id }) : null;
-  // The notifications this person gets are written in the language they
-  // use the console in: tell the server whenever that changes.
-  const lang = t.current();
-  useEffect(() => {
-    void emails.setMyLanguage(lang).catch(() => {
-      /* the next change or visit tells it again */
-    });
-  }, [lang]);
   // Where a page shows who else has it open.
   const [liveSlot, setLiveSlot] = useState<HTMLElement | null>(null);
 
@@ -258,7 +283,7 @@ export function Shell({ user }: { user: Whoami }) {
             <path className="shell__mark-d" d="M131.8,218.7Q126.9,210.0 136.9,210.0L176.1,210.0Q186.1,210.0 181.2,218.7L156.5,262.0Z" />
           </svg>
         </a>
-        {current.section !== "dashboard" && (
+        {current.section !== "dashboard" && !setupOnly && (
           <nav className="shell__crumb" aria-label={t.t("Breadcrumb")}>
             <a href={nav.find((n) => n.section === current.section)?.href ?? href({ name: "dashboard" })}>{t.t(current.label)}</a>
             {pageTitle && (
@@ -326,13 +351,35 @@ export function Shell({ user }: { user: Whoami }) {
             <a href={href({ name: "settings", tab: "account" })}>{t.t("Change password →")}</a>
           </div>
         )}
-        <AccountBanners user={user} />
+        {user.maintenance && (
+          <div className="alert alert--warn" role="status">
+            {t.t("Maintenance mode is on: saving is paused until a platform admin turns it off.")}
+          </div>
+        )}
+        {otherOrigin(user.public_url) && (
+          <div className="alert alert--warn" role="status">
+            {t.t("This console is open at {{here}}, but ZV_PUBLIC_URL is {{url}}. Links in emails point there, so check that it is the server's public address.", { here: location.origin, url: user.public_url! })}
+          </div>
+        )}
+        {bounced && (
+          <div className="alert alert--warn" role="status">
+            {readsAsAdmin(user)
+              ? t.t("The platform admin doesn't author adventures or run events. Sign in as a user of an organization for that.")
+              : t.t("That page isn't open to your account, so you're on the dashboard.")}
+          </div>
+        )}
+        <DialogProvider>
+          <AccountBanners user={user} />
+        </DialogProvider>
         <TopBarTitle.Provider value={setPageTitle}>
           <TopBarSlot.Provider value={liveSlot}>
             <ToastProvider>
               <DialogProvider>
                 <Suspense fallback={<Loading label={t.t("Loading…")} />}>
-                  {permitted ? <Page route={route} user={user} /> : <DashboardPage />}
+                  {/* Every other API call is refused until the seeded
+                      password goes, or until a required 2FA is set up,
+                      so show only the form that lifts it. */}
+                  {setupOnly ? <Page route={{ name: "settings", tab: "account" }} user={user} /> : permitted ? <Page route={route} user={user} /> : <DashboardPage />}
                 </Suspense>
               </DialogProvider>
             </ToastProvider>
@@ -404,6 +451,7 @@ function AccountMenu({ user, orgName, collapsed, onLogout }: { user: Whoami; org
     { value: "dark", label: "Dark", icon: Moon },
   ];
   const sub = [t.t(ROLE[user.role]), orgName].filter(Boolean).join(" · ");
+  const who = user.display_name || user.username;
 
   return (
     <div className="account-menu">
@@ -415,17 +463,17 @@ function AccountMenu({ user, orgName, collapsed, onLogout }: { user: Whoami; org
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={t.t("Account menu")}
-        title={collapsed ? user.username : undefined}
+        title={collapsed ? who : undefined}
       >
         {user.avatar_url ? (
-          <PersonAvatar name={user.username} src={user.avatar_url} size={32} className="account-menu__avatar" />
+          <PersonAvatar name={who} src={user.avatar_url} size={32} className="account-menu__avatar" />
         ) : (
           <span className="account-menu__avatar" aria-hidden>
-            {user.username.slice(0, 1).toUpperCase()}
+            {who.slice(0, 1).toUpperCase()}
           </span>
         )}
         <span className="account-menu__who nav-label">
-          <strong>{user.username}</strong>
+          <strong>{who}</strong>
           {sub && <span>{sub}</span>}
         </span>
         <ChevronUp size={14} className="nav-label" aria-hidden />
@@ -435,7 +483,7 @@ function AccountMenu({ user, orgName, collapsed, onLogout }: { user: Whoami; org
         createPortal(
           <div className="account-pop" role="menu" style={{ left: pos.left, bottom: pos.bottom }}>
             <div className="account-pop__head">
-              <strong>{user.username}</strong>
+              <strong>{who}</strong>
               {user.email && <span>{user.email}</span>}
             </div>
             <div className="account-pop__sep" role="separator" />
@@ -464,7 +512,7 @@ function AccountMenu({ user, orgName, collapsed, onLogout }: { user: Whoami; org
                   role="menuitemradio"
                   aria-checked={t.current() === l}
                   className={"account-pop__choice" + (t.current() === l ? " is-on" : "")}
-                  onClick={() => t.setLocale(l)}
+                  onClick={() => chooseLocale(l)}
                 >
                   {LANGUAGE[l] ?? l.toUpperCase()}
                 </button>
@@ -565,7 +613,7 @@ function Page({ route, user }: { route: Route; user: Whoami }) {
     case "logs":
       return <LogsPage />;
     case "listing-reviews":
-      return <ListingReviewsPage tab={route.tab} reviewer={!!user.listing_reviewer} admin={user.role === "admin"} />;
+      return <ListingReviewsPage tab={route.tab} reviewer={!!user.listing_reviewer} admin={user.role === "admin"} support={user.role === "support"} />;
     case "listing-review":
       return <ListingReviewPage key={`${route.kind}-${route.id}`} kind={route.kind} id={route.id} />;
     case "settings":

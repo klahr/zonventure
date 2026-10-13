@@ -313,10 +313,10 @@ func tokenUser(ctx context.Context, db *sql.DB, uid int64, pinned sql.NullInt64)
 		scheduledDeletion sql.NullString
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, is_admin, COALESCE(email, ''),
-		       (email_verified <> 0), scheduled_deletion_at, listing_reviewer
+		SELECT id, username, is_admin, is_support, COALESCE(email, ''),
+		       (email_verified <> 0), scheduled_deletion_at, listing_reviewer, totp_enabled
 		FROM users WHERE id = $1
-	`, uid).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified, &scheduledDeletion, &u.ListingReviewer)
+	`, uid).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Support, &u.Email, &u.EmailVerified, &scheduledDeletion, &u.ListingReviewer, &u.TOTPEnabled)
 	if err != nil {
 		return auth.User{}, err
 	}
@@ -327,7 +327,7 @@ func tokenUser(ctx context.Context, db *sql.DB, uid int64, pinned sql.NullInt64)
 		return auth.User{}, ErrUnknownMCPToken
 	}
 	if u.IsAdmin {
-		u.Role = auth.RoleAdmin
+		u.Role = u.AdminRole()
 		return u, nil
 	}
 	var (

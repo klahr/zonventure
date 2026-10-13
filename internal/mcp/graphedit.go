@@ -25,8 +25,9 @@ import (
 
 func (s *Server) registerGraphEditTools() {
 	s.tools.register(ToolDescriptor{
-		Name:  "edit_adventure_graph",
-		Scope: scopeWrite,
+		Name:     "edit_adventure_graph",
+		Audience: audienceAuthor,
+		Scope:    scopeWrite,
 		Description: "Apply a list of small edits to an adventure's draft graph and save it, without sending the whole graph. " +
 			"Operations apply in order; if any fails nothing is saved. Returns the validation report and the draft's node and zone slugs. " +
 			"Ops: put_node {node} adds or replaces the node with that slug (same shape as nodes in get_adventure_graph); " +
@@ -73,8 +74,9 @@ func (s *Server) registerGraphEditTools() {
 	}, editAdventureGraph)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "undo_adventure_graph_edit",
-		Scope: scopeWrite,
+		Name:     "undo_adventure_graph_edit",
+		Audience: audienceAuthor,
+		Scope:    scopeWrite,
 		Description: fmt.Sprintf("Put the draft back as it was before the latest edit_adventure_graph call, and forget that edit. "+
 			"Repeat to go further back, up to %d edits. Edits made in the designer or with save_adventure_graph are not undone by this.", maxUndo),
 		InputSchema: map[string]any{
@@ -87,8 +89,9 @@ func (s *Server) registerGraphEditTools() {
 	}, undoAdventureGraphEdit)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "create_adventure",
-		Scope: scopeWrite,
+		Name:     "create_adventure",
+		Audience: audienceAuthor,
+		Scope:    scopeWrite,
 		Description: "Create a new, empty adventure authored as a graph, with an optional brief. Its draft starts as a start node joined to an end node " +
 			"(slugs start and end, start's port out); build on it with edit_adventure_graph. Nothing is published.",
 		InputSchema: map[string]any{
@@ -105,8 +108,9 @@ func (s *Server) registerGraphEditTools() {
 	}, createGraphAdventure)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "get_creator_position",
-		Scope: scopeRead,
+		Name:     "get_creator_position",
+		Audience: audienceAuthor,
+		Scope:    scopeRead,
 		Description: "Where the author's phone last reported standing: {lat, lng, accuracy_m, at, age_seconds}. " +
 			"The phone reports while Field mode is open in the arranger. 404 if it never has. " +
 			"To put a zone where the author stands, prefer edit_adventure_graph put_zone with here: true.",
@@ -556,7 +560,7 @@ func createGraphAdventure(ctx context.Context, s *Server, raw json.RawMessage) (
 		}
 	}
 	seed := graph.Graph{
-		Nodes: []graph.Node{{Slug: "start", Type: graph.Start}, {Slug: "end", Type: graph.End, X: 560}},
+		Nodes: []graph.Node{{Slug: "start", Type: graph.Start}, {Slug: "end", Type: graph.End, X: 560, EndCfg: &graph.EndConfig{Outcome: graph.Complete}}},
 		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "end"}},
 	}
 	status, body, err = callAdmin(ctx, s.Admin.PutAdventureGraph, "PUT", "/api/admin/adventures/"+a.Slug+"/graph", params, nil,

@@ -4,6 +4,7 @@ import { get, post } from "@zonventure/api";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { Button, Callout, Card, ErrorBox, HelpPopover, ICON, Loading, Pill, Row, fmtDateTime, relTime, useLoad, useToast } from "../../ui/index.ts";
+import { DEFAULT_PAYOUT_TERMS } from "./Pricing.tsx";
 
 /** connectStatusDTO, internal/admin/stripe_connect.go. */
 interface ConnectStatus {
@@ -12,6 +13,8 @@ interface ConnectStatus {
   payouts_enabled: boolean;
   synced_at?: string;
   platform_fee_enabled: boolean;
+  /** When the platform pays out ticket sales without a platform fee; empty is the built-in terms. */
+  payout_terms?: string;
 }
 
 // Stripe's onboarding sends the browser back with ?stripe_connect=return
@@ -113,9 +116,12 @@ export function BillingTab() {
   );
 
   if (!s.platform_fee_enabled) {
-    return card(
-      null,
-      <p style={muted}>{t.t("Marketplace mode is off on this server. The operator hasn't configured ZV_PLATFORM_FEE_PERCENT_BPS, so /store sales would land directly in the platform account with no per-charge fee. No Connect setup needed.")}</p>,
+    // Nothing to connect here, so neither the Connect title nor its popover applies.
+    return (
+      <Card title={t.t("Ticket payouts")}>
+        <p style={muted}>{t.t("Ticket sales in your store are paid to the platform's own Stripe account on this server, so you have no Stripe account to connect here.")}</p>
+        <p style={muted}><strong>{t.t("Payout terms")}:</strong> {s.payout_terms || t.t(DEFAULT_PAYOUT_TERMS)}</p>
+      </Card>
     );
   }
   if (!s.account_id) {

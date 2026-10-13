@@ -186,3 +186,15 @@ func TestBlocksMatchSharedVectors(t *testing.T) {
 		t.Fatalf("a graph of every kind does not parse: %v", err)
 	}
 }
+
+// A block still waiting for its file refers to no media, so a draft
+// holding one saves; the validator reports the missing file.
+func TestMediaIDsSkipEmptyBlock(t *testing.T) {
+	g := &Graph{Nodes: []Node{{Slug: "s", Type: Story, StoryCfg: &StoryConfig{Blocks: []Block{
+		{ID: "a", Kind: BlockImage, Media: 7},
+		{ID: "b", Kind: BlockImage},
+	}}}}}
+	if got := g.MediaIDs(); !reflect.DeepEqual(got, []int64{7}) {
+		t.Errorf("MediaIDs = %v, want [7]", got)
+	}
+}

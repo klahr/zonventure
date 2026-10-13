@@ -84,10 +84,10 @@ export function LegalTab() {
           </p>
         )}
         <Card title={t.t("Company")} subtitle={t.t("Shown on the legal pages and as the seller next to every buy button.")}>
-          {text("company_name", t.t("Company name"), { required: true, placeholder: "Zonventure AB" })}
+          {text("company_name", t.t("Company name"), { required: true, placeholder: t.t("e.g. {{example}}", { example: t.t("Your Company AB") }) })}
           <Row>
-            {text("company_org_number", t.t("Organisation number"), { placeholder: "556677-8899" })}
-            {text("company_vat_number", t.t("VAT number"), { placeholder: "SE556677889901" })}
+            {text("company_org_number", t.t("Organisation number"), { placeholder: t.t("e.g. {{example}}", { example: "556123-4567" }) })}
+            {text("company_vat_number", t.t("VAT number"), { placeholder: t.t("e.g. {{example}}", { example: "SE556123456701" }) })}
           </Row>
           {text("company_address", t.t("Address"))}
         </Card>
@@ -96,20 +96,20 @@ export function LegalTab() {
             {text("contact_email", t.t("Contact email"), { required: true, type: "email" })}
             {text("dpo_email", t.t("Data protection email"), { type: "email", hint: t.t("Blank uses the contact email.") })}
           </Row>
-          {text("jurisdiction", t.t("Jurisdiction"), { required: true, placeholder: "Sweden", hint: t.t("Whose courts settle disputes.") })}
+          {text("jurisdiction", t.t("Jurisdiction"), { required: true, placeholder: t.t("e.g. {{example}}", { example: t.t("Sweden") }), hint: t.t("Whose courts settle disputes.") })}
         </Card>
         <Card title={t.t("Sub-processors")} subtitle={t.t("Named in the privacy policy.")}>
           <Row>
-            {text("hosting_provider", t.t("Hosting provider"), { placeholder: "DigitalOcean" })}
+            {text("hosting_provider", t.t("Hosting provider"), { placeholder: t.t("e.g. {{example}}", { example: t.t("your hosting company") }) })}
             {text("email_provider", t.t("Email provider"))}
           </Row>
         </Card>
         <Card title={t.t("Data kept")} subtitle={t.t("Days before it is deleted; 0 keeps it. The privacy policy says the same, and the cleanup uses these from its next run.")}>
           <Row>
             {days("location_retention_days", t.t("Player locations and answers"))}
-            {days("audit_retention_days", t.t("Login history"))}
+            {days("audit_retention_days", t.t("Audit logs (login history)"))}
             {days("party_retention_days", t.t("A finished party adventure"))}
-            {days("address_retention_days", t.t("A posted letter's address"))}
+            {days("address_retention_days", t.t("Postal addresses for letters we post"))}
           </Row>
         </Card>
         <Card title={t.t("Review")}>
@@ -132,6 +132,12 @@ export function LegalTab() {
   );
 }
 
+/**
+ * The sandboxed preview can't load the self-hosted fonts (opaque origin), and the pages' body stack
+ * then falls back to an emoji font whose wide digits and spaces look like justified text.
+ */
+const previewFonts = "<style>:root{--font-body:system-ui,-apple-system,'Segoe UI',sans-serif}</style>";
+
 /** The privacy policy or the terms as the typed values make them, a moment after the last keystroke. */
 function LegalPreview({ legal }: { legal: Legal }) {
   const t = useT();
@@ -151,7 +157,7 @@ function LegalPreview({ legal }: { legal: Legal }) {
       })
         .then((r) => (r.ok ? r.text() : Promise.reject(new Error(r.statusText))))
         .then((h) => {
-          setHtml(h);
+          setHtml(h.replace("</head>", previewFonts + "</head>"));
           setError(null);
         })
         .catch((e: unknown) => !ac.signal.aborted && setError(errorText(e)));

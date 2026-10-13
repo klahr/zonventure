@@ -227,7 +227,7 @@ body { border-top: 4px solid var(--accent); border-image: linear-gradient(90deg,
 </head>
 <body>
 <div class="wrap" id="wrap">
-  <div class="brand">{{SITE_WORDMARK}}<small>recap</small></div>
+  <div class="brand">{{SITE_WORDMARK}}<small id="brand-sub">recap</small></div>
   <div id="root">
     <p class="empty" id="loading">Loading…</p>
   </div>
@@ -252,6 +252,7 @@ function recapToken() {
 
 const root = document.getElementById('root');
 const t = (s, vars) => zvI18n.t(s, vars);
+document.getElementById('brand-sub').textContent = t('Recap').toLocaleLowerCase();
 
 function formatDistance(m) {
   if (!Number.isFinite(m) || m <= 0) return '—';
@@ -396,11 +397,12 @@ function renderReceipt(d) {
 function render(d) {
   applyColors(d.colors);
   root.replaceChildren();
+  document.querySelector('.brand small').textContent = t('Recap');
 
   const head = el('div', { class: 'head' },
     el('h1', {}, d.adventure_title || t('Adventure')),
     el('div', { class: 'who' },
-      [d.team_name, d.completed_at ? new Date(d.completed_at.replace(' ', 'T') + 'Z').toLocaleString() : '']
+      [d.team_name, d.completed_at ? new Date(d.completed_at.replace(' ', 'T') + 'Z').toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', hour12: false }) : '']
         .filter(Boolean).join(' · ')));
   applyLook(d.look, head);
   root.append(head);
@@ -415,11 +417,15 @@ function render(d) {
   renderPhotos(d);
   renderReceipt(d);
 
-  const mapHost = el('div', { id: 'map' });
-  root.append(mapHost);
-  // Leaflet may not be ready yet on a slow network — defer one
-  // frame so the script tag has a chance to evaluate.
-  setTimeout(() => mountMap(mapHost, d), 0);
+  // A game with nowhere on the map (a party's cards at home) has no map:
+  // it would only show the map's default place.
+  if (placed(d)) {
+    const mapHost = el('div', { id: 'map' });
+    root.append(mapHost);
+    // Leaflet may not be ready yet on a slow network — defer one
+    // frame so the script tag has a chance to evaluate.
+    setTimeout(() => mountMap(mapHost, d), 0);
+  }
 
   // Share button. Native share where available, clipboard fallback
   // otherwise. The share text leads with team + adventure so a
@@ -462,10 +468,11 @@ function renderGraphStats(d) {
   const rank = d.rank ? t('{{rank}} of {{n}}', { rank: d.rank, n: d.team_count }) : '—';
   const boxes = [
     statBox(formatDuration(d.duration_seconds), t('Time')),
-    statBox(formatDistance(d.distance_m),       t('Distance')),
     statBox(points,                             t('Points')),
     statBox(rank,                               t('Rank')),
   ];
+  // No walk to measure (no track, or a game played at home): no Distance.
+  if (d.distance_m > 0) boxes.splice(1, 0, statBox(formatDistance(d.distance_m), t('Distance')));
   if (d.quiz) boxes.push(statBox(d.quiz.right + '/' + d.quiz.total, t('Quiz')));
   root.append(el('div', { class: 'stats' }, ...boxes));
   if (d.outcome === 'fail') {
@@ -474,7 +481,8 @@ function renderGraphStats(d) {
   if (!(d.steps || []).length) return;
   const list = el('ol', { class: 'steps' });
   for (const s of d.steps) {
-    const puzzle = s.kind === 'puzzle';
+    // A story that asked quiz questions is ticked like a puzzle.
+    const puzzle = s.kind === 'puzzle' || s.quiz;
     const misses = s.attempts === 1 ? t('1 miss')
       : s.attempts > 1 ? t('{{n}} misses', { n: s.attempts }) : '';
     list.append(el('li', { class: puzzle ? 'puzzle' : 'story' },
@@ -494,6 +502,13 @@ function renderPhotos(d) {
     el('figure', {},
       el('img', { src: '/api/public/recap/' + tok + '/photos/' + p.id, alt: p.prompt || t('Team photo'), loading: 'lazy' }),
       el('figcaption', {}, p.step || p.prompt || '')))));
+}
+
+// placed is whether the recap has anything to put on a map: a track,
+// or a zone with a place.
+function placed(d) {
+  return (d.track || []).length > 0 || (d.zones || []).some((z) =>
+    (z.polygon || []).length >= 3 || (Number.isFinite(z.lat) && Number.isFinite(z.lng) && !(z.lat === 0 && z.lng === 0)));
 }
 
 // mountMap draws the team's day on a vector map: its track, the zones

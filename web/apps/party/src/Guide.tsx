@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { coverOf } from "@zonventure/play-ui";
+import { useConfirm } from "@zonventure/ui";
 import {
   CardEditor,
   Icon,
@@ -102,6 +103,11 @@ export function ThemeHero({ theme, onChange }: { theme: TrailTheme; onChange?: (
 
 type Screen = { at: "name" } | { at: "card"; id: string } | { at: "overview" } | { at: "ready" };
 
+/** The screen history.state holds for this entry: the one a reload was on. */
+function savedScreen(): Screen | null {
+  return (history.state as { guide?: Screen } | null)?.guide ?? null;
+}
+
 export interface GuideProps {
   title: string;
   cards: Card[];
@@ -113,8 +119,6 @@ export interface GuideProps {
   onTheme?: ((t: TrailTheme) => void) | undefined;
   /** A new one: the guide starts at its name. */
   fresh: boolean;
-  /** Its cards are a template's examples, marked so until changed. */
-  example: boolean;
   /** Paid, or from the host page: the last screen is Overview, with Done. */
   finishOnOverview: boolean;
   /** The last screen's form (teams, email) and the button that sends it. */
@@ -142,15 +146,18 @@ export function Guide(props: GuideProps) {
   const { title, cards, readOnly, onChange } = props;
   const i18n = useT();
   const t = i18n.t;
-  const [screen, setScreen] = useState<Screen>(() => (props.fresh && !readOnly ? { at: "name" } : { at: "overview" }));
-  const [depth, setDepth] = useState(0);
+  // A reload keeps the screen it was on: history.state survives it.
+  const [screen, setScreen] = useState<Screen>(() => savedScreen() ?? (props.fresh && !readOnly ? { at: "name" } : { at: "overview" }));
+  const [depth, setDepth] = useState(() => savedScreen() ? ((history.state as { depth?: number } | null)?.depth ?? 0) : 0);
   // Cards added on this visit and not yet left: no "still needs" until then.
   const [added, setAdded] = useState<Set<string>>(() => new Set());
   // The template's example cards not yet changed.
-  const [examples, setExamples] = useState<Set<string>>(() => new Set(props.example ? cards.map((c) => c.id) : []));
+  const examples = new Set(cards.filter((c) => c.example).map((c) => c.id));
   const [looks, setLooks] = useState(false);
   const [peek, setPeek] = useState(false);
-  const [undo, setUndo] = useState<{ cards: Card[]; label: string } | null>(null);
+  // restore: the card a delete took, to show again when it is undone.
+  const [undo, setUndo] = useState<{ cards: Card[]; label: string; restore?: string } | null>(null);
+  const [ask, confirmDialog] = useConfirm();
   const top = useRef<HTMLDivElement>(null);
   const theme = themeById(props.theme);
   const nums = numbers(cards);
@@ -158,7 +165,7 @@ export function Guide(props: GuideProps) {
   const flagged = new Set(probs.map((p) => p.card));
 
   useEffect(() => {
-    history.replaceState({ guide: screen, depth: 0 }, "");
+    history.replaceState({ guide: screen, depth }, "");
     const pop = (e: PopStateEvent) => {
       const st = e.state as { guide?: Screen; depth?: number } | null;
       if (!st?.guide) return;
@@ -176,7 +183,7 @@ export function Guide(props: GuideProps) {
   }, [lost]);
   useEffect(() => {
     if (!undo) return;
-    const id = setTimeout(() => setUndo(null), 6000);
+    const id = setTimeout(() => setUndo(null), 10_000);
     return () => clearTimeout(id);
   }, [undo]);
 
@@ -207,15 +214,7 @@ export function Guide(props: GuideProps) {
     go({ at: "card", id: c.id });
     setAdded((s) => new Set(s).add(c.id));
   };
-  const update = (c: Card) => {
-    onChange({ cards: cards.map((x) => (x.id === c.id ? c : x)) });
-    if (examples.has(c.id))
-      setExamples((s) => {
-        const n = new Set(s);
-        n.delete(c.id);
-        return n;
-      });
-  };
+  const update = (c: Card) => onChange({ cards: cards.map((x) => (x.id === c.id ? c : x)) });
   const reorder = (from: number, to: number) => {
     const next = move(cards, from, to);
     if (next === cards) return;
@@ -225,7 +224,7 @@ export function Guide(props: GuideProps) {
   const remove = (id: string) => {
     const i = cards.findIndex((c) => c.id === id);
     const next = cards.filter((c) => c.id !== id);
-    setUndo({ cards, label: t("Card deleted.") });
+    setUndo({ cards, label: t("Card deleted."), restore: id });
     onChange({ cards: next });
     const stay = next[Math.min(i, next.length - 1)];
     go(stay ? { at: "card", id: stay.id } : { at: "overview" });
@@ -247,6 +246,7 @@ export function Guide(props: GuideProps) {
       hero={opts.hero && theme ? <ThemeHero theme={theme} /> : undefined}
     >
       <div ref={top} />
+      {confirmDialog}
       {props.note && (
         <p className="party-note" role="status">
           {props.note}
@@ -260,6 +260,7 @@ export function Guide(props: GuideProps) {
             type="button"
             onClick={() => {
               onChange({ cards: undo.cards });
+              if (undo.restore && screen.at === "card") go({ at: "card", id: undo.restore });
               setUndo(null);
             }}
           >
@@ -336,6 +337,8 @@ export function Guide(props: GuideProps) {
             canLater={!last}
             onEarlier={() => reorder(i, i - 1)}
             onLater={() => reorder(i, i + 1)}
+            onFirst={() => reorder(i, 0)}
+            onLast={() => reorder(i, cards.length - 1)}
             onDelete={() => remove(card.id)}
           />
           {/* Beside the card when there is room; behind a link when not. */}
@@ -370,13 +373,14 @@ export function Guide(props: GuideProps) {
     const unfinished = cards.flatMap((c, i) => (flagged.has(c.id) ? [{ c, i }] : []));
     const noQuestion = probs.some((p) => !p.card);
     const ready = probs.length === 0;
+    const exampleCount = readOnly ? 0 : cards.filter((c) => examples.has(c.id)).length;
     return shell(
       <>
         <h1 className="trail-guide__title">{t("Your party adventure")}</h1>
         {props.notes}
         <label className="party-field">
           <span>{t("Name")}</span>
-          <input value={title} maxLength={120} disabled={readOnly} onChange={(e) => onChange({ title: e.target.value })} />
+          <input value={title} maxLength={120} readOnly={readOnly} onChange={(e) => onChange({ title: e.target.value })} />
         </label>
         {props.onTheme && !readOnly && (
           <div className="trail-guide__look">
@@ -387,22 +391,6 @@ export function Guide(props: GuideProps) {
             </button>
             {looks && <ThemePicker i18n={i18n} selected={props.theme} onPick={props.onTheme} />}
           </div>
-        )}
-        <h2 className="trail-guide__sub">{t("The cards, in order")}</h2>
-        <CardList
-          cards={cards}
-          nums={nums}
-          flagged={flagged}
-          examples={readOnly ? new Set() : examples}
-          readOnly={readOnly}
-          onOpen={(id) => go({ at: "card", id })}
-          onMove={reorder}
-        />
-        {!readOnly && cards.length < MAX_CARDS && (
-          <button type="button" className="trail-btn trail-guide__add" onClick={() => add(cards.length)}>
-            <Icon name="plus" size={18} />
-            {t("Add a card")}
-          </button>
         )}
         {!ready && (
           <div className="trail-needs" role="status">
@@ -422,9 +410,59 @@ export function Guide(props: GuideProps) {
             </div>
           </div>
         )}
+        {exampleCount > 0 && (
+          <p className="trail-guide__example">
+            <Icon name="pencil" size={16} />
+            {exampleCount === 1
+              ? t("1 card is still an example. Tap it to make it yours.")
+              : t("{{n}} cards are still examples. Tap them to make them yours.", { n: exampleCount })}
+          </p>
+        )}
+        <h2 className="trail-guide__sub">{t("The cards, in order")}</h2>
+        <CardList
+          cards={cards}
+          nums={nums}
+          flagged={flagged}
+          examples={readOnly ? new Set() : examples}
+          readOnly={readOnly}
+          onOpen={(id) => go({ at: "card", id })}
+          onMove={reorder}
+        />
+        {!readOnly && cards.length < MAX_CARDS && (
+          <button type="button" className="trail-btn trail-guide__add" onClick={() => add(cards.length)}>
+            <Icon name="plus" size={18} />
+            {t("Add a card")}
+          </button>
+        )}
+        {!readOnly && cards.length >= MAX_CARDS && <p className="trail-muted">{t("A party adventure has at most {{n}} cards.", { n: MAX_CARDS })}</p>}
       </>,
       props.finishOnOverview ? (
-        <button type="button" className="trail-btn trail-btn--primary trail-guide__next" disabled={props.busy} onClick={props.finish}>
+        <button
+          type="button"
+          className="trail-btn trail-btn--primary trail-guide__next"
+          disabled={props.busy}
+          onClick={async () => {
+            // A card left unfinished (a template's blank right answer, say)
+            // is worth a word, but Done still works.
+            const first = unfinished[0];
+            if (
+              first &&
+              !readOnly &&
+              (await ask({
+                message:
+                  unfinished.length === 1
+                    ? t("1 card isn't finished: it has no right answer, or something else is missing. Fill it in now?")
+                    : t("{{n}} cards aren't finished: they have no right answer, or something else is missing. Fill them in now?", { n: unfinished.length }),
+                confirmLabel: t("Fill it in"),
+                cancelLabel: t("Done anyway"),
+              }))
+            ) {
+              go({ at: "card", id: first.c.id });
+              return;
+            }
+            props.finish();
+          }}
+        >
           {t("Done")}
         </button>
       ) : (
@@ -434,11 +472,14 @@ export function Guide(props: GuideProps) {
     );
   }
 
+  const questions = nums.filter((n) => n > 0).length;
+  const infos = cards.length - questions;
   return shell(
     <>
       <h1 className="trail-guide__title">{t("Ready to play?")}</h1>
       <p className="trail-guide__lead">
-        <strong>{title}</strong> · {t("{{n}} cards", { n: cards.length })}
+        <strong>{title}</strong> · {questions === 1 ? t("1 question") : t("{{n}} questions", { n: questions })}
+        {infos > 0 && <> · {infos === 1 ? t("1 information card") : t("{{n}} information cards", { n: infos })}</>}
       </p>
       {props.ready?.body}
     </>,
@@ -446,7 +487,6 @@ export function Guide(props: GuideProps) {
       {backBtn(back)}
       {props.ready?.action}
     </>,
-    { hero: true },
   );
 }
 
@@ -629,11 +669,12 @@ function CardList(props: {
             <span className="trail-chip__no">{props.nums[i] || <Icon name="info" size={14} />}</span>
             <span className="trail-guide__excerpt">{c.text.trim() || t("Empty")}</span>
             {props.examples.has(c.id) && (
-              <span className="trail-guide__tag" title={t("Example")} aria-label={t("Example")}>
+              <span className="trail-guide__tag">
                 <Icon name="pencil" size={14} />
+                {t("Example")}
               </span>
             )}
-            {props.flagged.has(c.id) && <span className="trail-chip__flag" aria-label={t("Not finished")} />}
+            {props.flagged.has(c.id) && <span className="trail-chip__flag" role="img" title={t("Not finished")} aria-label={t("Not finished")} />}
             <Icon name="right" size={16} />
           </button>
         </li>

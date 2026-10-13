@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Copy, Download, ShieldCheck, ShieldOff } from "lucide-react";
-import { ApiError, type Whoami } from "@zonventure/api";
+import { ApiError, readsAsAdmin, siteName, type Whoami } from "@zonventure/api";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { Button, Callout, Card, Dialog, ErrorBox, Field, HelpPopover, ICON, Pill, errorText, fmtDateTime, relTime, useDialogs, useLoad, useToast } from "../../ui/index.ts";
@@ -52,13 +52,23 @@ export function Item({ name, meta, action, children }: { name: ReactNode; meta?:
 export function SignInCard({ user }: { user: Whoami }) {
   const t = useT();
   const isDefault = !!user.password_is_default;
+  if (!isDefault && user.totp_setup_required) {
+    return (
+      <Card title={t.t("Sign-in")} id="acct-password" tone="danger">
+        <Callout variant="warning">{readsAsAdmin(user) ? t.t("Two-factor authentication is required for admins on this server. Set it up to continue.") : t.t("Your organization requires two-factor authentication. Set it up to continue.")}</Callout>
+        <div className="acct-list">
+          <TotpRow required />
+        </div>
+      </Card>
+    );
+  }
   return (
     <Card title={t.t("Sign-in")} id="acct-password" {...(isDefault ? { tone: "danger" as const } : {})}>
       <div className="acct-list">
-        <UsernameRow user={user} />
+        {!isDefault && <UsernameRow user={user} />}
         <PasswordRow isDefault={isDefault} />
-        <EmailRow user={user} />
-        <TotpRow />
+        {!isDefault && <EmailRow user={user} />}
+        {!isDefault && <TotpRow />}
       </div>
     </Card>
   );
@@ -71,6 +81,7 @@ function usePasswordForm(onDone: () => void, focus?: boolean) {
   const { refresh } = useSession();
   const [cur, setCur] = useState("");
   const [next, setNext] = useState("");
+  const [again, setAgain] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const curRef = useRef<HTMLInputElement>(null);
@@ -83,18 +94,20 @@ function usePasswordForm(onDone: () => void, focus?: boolean) {
 
   const submit = async () => {
     if (next.length < 8) return setError(t.t("New password must be at least 8 characters."));
+    if (next !== again) return setError(t.t("The new passwords don't match."));
     setBusy(true);
     setError(null);
     try {
       await account.changePassword(cur, next);
       setCur("");
       setNext("");
-      toast.ok(t.t("Password updated. You're still signed in here; every other session was kicked."));
+      setAgain("");
+      toast.ok(t.t("Password updated. You're still signed in here; every other session was signed out."));
       // A fresh whoami clears password_is_default and its banner.
       await refresh();
       onDone();
     } catch (e) {
-      setError(errorText(e));
+      setError(e instanceof ApiError && e.code === "password_too_common" ? t.t("That password is too common. Pick something harder to guess.") : errorText(e));
     } finally {
       setBusy(false);
     }
@@ -107,6 +120,9 @@ function usePasswordForm(onDone: () => void, focus?: boolean) {
       </Field>
       <Field label={t.t("New password (min 8)")} error={error}>
         <input type="password" autoComplete="new-password" minLength={8} required value={next} onChange={(e) => setNext(e.target.value)} />
+      </Field>
+      <Field label={t.t("Confirm new password")}>
+        <input type="password" autoComplete="new-password" required value={again} onChange={(e) => setAgain(e.target.value)} />
       </Field>
     </>
   );
@@ -231,6 +247,16 @@ function EmailRow({ user }: { user: Whoami }) {
     }
   };
 
+  const cancelPending = async () => {
+    try {
+      await account.cancelEmailChange();
+      toast.ok(t.t("Email change cancelled."));
+      revert.reload();
+    } catch (e) {
+      toast.err(e);
+    }
+  };
+
   const rs = revert.data;
   return (
     <Item
@@ -250,6 +276,15 @@ function EmailRow({ user }: { user: Whoami }) {
         </Button>
       }
     >
+      {rs?.pending_email && (
+        <Callout variant="info">
+          <p style={{ margin: 0 }}>{t.t("Waiting for confirmation at {{email}}.", { email: rs.pending_email })}</p>
+          <p className="acct-muted" style={{ margin: "4px 0 8px" }}>
+            {t.t("Open the link we sent there before {{when}}. Until then you keep signing in with your current address.", { when: fmtDateTime(rs.pending_expires_at, t.current()) })}
+          </p>
+          <Button size="sm" onClick={() => void cancelPending()}>{t.t("Cancel change")}</Button>
+        </Callout>
+      )}
       {rs?.available && rs.previous_email && (
         <Callout variant="warning">
           <p style={{ margin: 0 }}>{t.t("Recent change from {{prev}} → {{cur}}.", { prev: rs.previous_email, cur: user.email || "—" })}</p>
@@ -259,7 +294,7 @@ function EmailRow({ user }: { user: Whoami }) {
           <Button size="sm" onClick={() => void doRevert(rs.previous_email!)}>{t.t("Revert email change")}</Button>
         </Callout>
       )}
-      {open && <EmailDialog title={user.email ? t.t("Change email") : t.t("Add email")} onClose={() => setOpen(false)} />}
+      {open && <EmailDialog title={user.email ? t.t("Change email") : t.t("Add email")} onClose={() => { setOpen(false); revert.reload(); }} />}
     </Item>
   );
 }
@@ -268,15 +303,16 @@ function EmailDialog({ title, onClose }: { title: string; onClose: () => void })
   const t = useT();
   const toast = useToast();
   const [email, setEmail] = useState("");
+  const [cur, setCur] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     const to = email.trim();
-    if (!to) return;
+    if (!to || !cur) return;
     setBusy(true);
     setError(null);
     try {
-      await account.changeEmail(to);
+      await account.changeEmail(to, cur);
       toast.ok(t.t("Confirmation link sent to {{email}}.", { email: to }));
       onClose();
     } catch (e) {
@@ -298,6 +334,9 @@ function EmailDialog({ title, onClose }: { title: string; onClose: () => void })
       >
         <input id="acct-new-email" type="email" autoComplete="email" autoFocus required value={email} onChange={(e) => setEmail(e.target.value)} />
       </Field>
+      <Field label={t.t("Current password")}>
+        <input id="acct-email-password" type="password" autoComplete="current-password" required value={cur} onChange={(e) => setCur(e.target.value)} />
+      </Field>
     </Dialog>
   );
 }
@@ -307,8 +346,10 @@ function EmailDialog({ title, onClose }: { title: string; onClose: () => void })
  * ZV_TOTP_KEY (enrolment impossible), enrolled (regenerate recovery
  * codes, disable — both re-check the password), or not enrolled (set
  * up: QR and secret, then a code to confirm, then recovery codes).
+ * When 2FA is required, the session refreshes only once the recovery
+ * codes are saved: the refresh opens the console and unmounts this row.
  */
-function TotpRow() {
+function TotpRow({ required = false }: { required?: boolean }) {
   const t = useT();
   const toast = useToast();
   const { password } = useDialogs();
@@ -374,12 +415,21 @@ function TotpRow() {
           onDone={async (c) => {
             setSetup(null);
             setCodes(c);
+            if (required) return;
             await refresh();
             status.reload();
           }}
         />
       )}
-      {codes && <RecoveryCodesDialog codes={codes} onClose={() => setCodes(null)} />}
+      {codes && (
+        <RecoveryCodesDialog
+          codes={codes}
+          onClose={() => {
+            setCodes(null);
+            if (required) void refresh();
+          }}
+        />
+      )}
     </>
   );
   let row;
@@ -405,13 +455,20 @@ function TotpRow() {
     row = (
       <Item
         name={<><ShieldCheck size={ICON.sm} aria-hidden className="acct-good" />{name}</>}
-        meta={s.enrolled_at ? <span title={fmtDateTime(s.enrolled_at, t.current())}>{t.t("On since {{when}}", { when: relTime(s.enrolled_at, t.current()) })}</span> : t.t("On")}
+        meta={
+          <>
+            {s.enrolled_at ? <span title={fmtDateTime(s.enrolled_at, t.current())}>{t.t("Turned on {{when}}", { when: relTime(s.enrolled_at, t.current()) })}</span> : t.t("On")}
+            {" · "}
+            {t.plural(s.recovery_codes_left, { one: t.t("{{n}} recovery code left"), other: t.t("{{n}} recovery codes left") })}
+            {s.required_by && <>{" · "}{s.required_by === "admin" ? t.t("Required for admins on this server") : t.t("Required by your organization")}</>}
+          </>
+        }
         action={
           <MoreMenu
             label={t.t("Manage")}
             items={[
               { label: t.t("Regenerate recovery codes"), onClick: () => void regenerate() },
-              { label: t.t("Disable 2FA"), icon: <ShieldOff size={ICON.sm} aria-hidden />, danger: true, onClick: () => void disable() },
+              ...(s.required_by ? [] : [{ label: t.t("Disable 2FA"), icon: <ShieldOff size={ICON.sm} aria-hidden />, danger: true, onClick: () => void disable() }]),
             ]}
           />
         }
@@ -513,6 +570,9 @@ function TotpSetupDialog({ setup, onClose, onDone }: { setup: TotpSetup; onClose
 function RecoveryCodesDialog({ codes, onClose }: { codes: string[]; onClose: () => void }) {
   const t = useT();
   const toast = useToast();
+  const { state } = useSession();
+  const who = state.status === "authenticated" ? state.user.username : "";
+  const file = [t.t("{{site}} recovery codes for {{user}}", { site: siteName(), user: who }), t.t("Saved {{when}} from {{url}}", { when: fmtDateTime(new Date().toISOString(), t.current()), url: location.origin }), "", ...codes].join("\n") + "\n";
   const first = useRef<HTMLButtonElement>(null);
   useEffect(() => first.current?.focus(), []);
   return (
@@ -529,7 +589,7 @@ function RecoveryCodesDialog({ codes, onClose }: { codes: string[]; onClose: () 
         <Button
           ref={first}
           icon={<Download size={14} aria-hidden />}
-          onClick={() => saveBlob(new Blob([codes.join("\n") + "\n"], { type: "text/plain" }), "zonventure-recovery-codes.txt")}
+          onClick={() => saveBlob(new Blob([file], { type: "text/plain" }), "zonventure-recovery-codes.txt")}
         >
           {t.t("Download as .txt")}
         </Button>

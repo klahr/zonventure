@@ -40,9 +40,16 @@ func TestOIDCConfigValidate(t *testing.T) {
 			HostedDomain: "example.com",
 			RedirectURL:  "https://zv.example.com/auth/oidc/callback",
 		}, false},
-		{"missing hosted_domain rejected", auth.OIDCConfig{
+		{"missing hosted_domain allowed (non-Google IdPs)", auth.OIDCConfig{
 			Enabled:      true,
-			Issuer:       "https://accounts.google.com",
+			Issuer:       "https://login.microsoftonline.com/tenant/v2.0",
+			ClientID:     "abc",
+			ClientSecret: "xyz",
+			RedirectURL:  "https://zv.example.com/auth/oidc/callback",
+		}, false},
+		{"issuer without scheme fails", auth.OIDCConfig{
+			Enabled:      true,
+			Issuer:       "idp.company.example",
 			ClientID:     "abc",
 			ClientSecret: "xyz",
 			RedirectURL:  "https://zv.example.com/auth/oidc/callback",
@@ -191,6 +198,62 @@ func TestOIDCCallback_WrongHostedDomain(t *testing.T) {
 	_ = db.QueryRow(`SELECT COUNT(*) FROM users WHERE email = $1`, "evil@other.com").Scan(&n)
 	if n != 0 {
 		t.Errorf("hd mismatch should not provision user; got %d rows", n)
+	}
+}
+
+// An IdP without an hd claim (Entra, Okta) is held to the hosted
+// domain by the email's domain.
+func TestOIDCCallback_HostedDomainByEmail(t *testing.T) {
+	t.Parallel()
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+
+	fi := newFakeIssuer(t, "test-client")
+	defer fi.Close()
+	h := newOIDCHandlers(t, db, fi, "entra-"+randomToken(t)+".example", "")
+	domain := h.OIDC.HostedDomain()
+
+	state, nonce, cookie := startLogin(t, h)
+	code := "code-nohd-wrong-" + randomToken(t)
+	fi.queue(code, idClaims{Sub: "entra-evil-" + randomToken(t), Email: "evil@other.com", EmailVerified: true, Nonce: nonce})
+	resp := callCallback(t, h, code, state, cookie)
+	if !strings.Contains(resp.Header.Get("Location"), "sso-error=domain_not_allowed") {
+		t.Fatalf("no hd + wrong email domain should be refused, got %q", resp.Header.Get("Location"))
+	}
+
+	state, nonce, cookie = startLogin(t, h)
+	code = "code-nohd-ok-" + randomToken(t)
+	fi.queue(code, idClaims{Sub: "entra-ok-" + randomToken(t), Email: "ann@" + domain, EmailVerified: true, Nonce: nonce})
+	resp = callCallback(t, h, code, state, cookie)
+	if !hasCookie(resp, auth.CookieName) {
+		t.Fatalf("no hd + matching email domain should sign in, got %q", resp.Header.Get("Location"))
+	}
+}
+
+// A failed discovery at boot must not stop the server: SSO is hidden
+// instead.
+func TestNewOIDC_DiscoveryFailureDegrades(t *testing.T) {
+	fi := newFakeIssuer(t, "irrelevant")
+	issuer := fi.URL
+	fi.Close()
+	o, err := auth.NewOIDC(context.Background(), auth.OIDCConfig{
+		Enabled:      true,
+		Issuer:       issuer,
+		ClientID:     "irrelevant",
+		ClientSecret: "irrelevant",
+		RedirectURL:  "http://server/auth/oidc/callback",
+	})
+	if err != nil {
+		t.Fatalf("NewOIDC should not fail on discovery: %v", err)
+	}
+	if o.Enabled() || !o.Configured() {
+		t.Fatalf("Enabled = %v, Configured = %v; want false, true", o.Enabled(), o.Configured())
+	}
+	h := &auth.Handlers{OIDC: o}
+	w := httptest.NewRecorder()
+	h.OIDCLogin(w, httptest.NewRequest("GET", "/auth/oidc/login", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("login before discovery = %d, want 404", w.Code)
 	}
 }
 

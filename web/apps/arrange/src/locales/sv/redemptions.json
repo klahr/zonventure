@@ -32,5 +32,8 @@
   "Open {{i}} of {{n}}": "Öppna {{i}} av {{n}}",
   "Next: {{doc}} for {{name}}": "Nästa: {{doc}} till {{name}}",
   "All {{n}} opened. Print them, post the envelopes, then mark the orders as posted.": "Alla {{n}} öppnade. Skriv ut dem, posta kuverten och markera sedan beställningarna som postade.",
-  "Each click opens one PDF in a new tab: browsers don't let one click open more.": "Varje klick öppnar en PDF i en ny flik: webbläsare låter inte ett klick öppna fler."
+  "Each click opens one PDF in a new tab: browsers don't let one click open more.": "Varje klick öppnar en PDF i en ny flik: webbläsare låter inte ett klick öppna fler.",
+  "Redemption added and approved; its team link is emailed": "Inlösen tillagd och godkänd; laglänken mejlas",
+  "Reason (optional)": "Förklaring (valfritt)",
+  "Included in the email to the customer.": "Skickas med i mejlet till kunden."
 }

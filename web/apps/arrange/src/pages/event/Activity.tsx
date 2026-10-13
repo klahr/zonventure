@@ -71,6 +71,16 @@ function ActivityLine({ e, event, graph }: { e: Activity; event: Info; graph: Ev
       msg = <>{team}{p.node ? t.t(" solved “{{step}}”", { step }) : t.t(" solved puzzle {{n}}", { n: num(p.page_index) + 1 })}</>;
       break;
     case "team.completed": badge = "good"; symbol = "★"; msg = <>{team}{t.t(" finished the adventure!")}</>; break;
+    case "team.withdrawn": badge = "bad"; symbol = "⊘"; msg = <>{team}{t.t(" was marked withdrawn")}</>; break;
+    case "team.returned": badge = "good"; symbol = "↩"; msg = <>{team}{t.t(" was marked returned")}</>; break;
+    case "email.sent":
+      symbol = "✉"; msg = <>{t.t("Emailed teams:")} <strong>{str(p.subject)}</strong></>;
+      meta = t.t("{{n}} sent, {{skipped}} without an address", { n: num(p.sent), skipped: num(p.skipped) });
+      break;
+    case "invitations.sent":
+      symbol = "✉"; msg = e.team_id ? <>{t.t("Invitation emailed to ")}{team}</> : t.t("Invitations emailed");
+      if (!e.team_id) meta = t.t("{{n}} sent, {{skipped}} without an address", { n: num(p.sent), skipped: num(p.skipped) });
+      break;
     case "team.unlocked":
       // A graph rescue names the step; a lane skip counts pages.
       badge = "brand"; symbol = "⇨";

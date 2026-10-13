@@ -16,8 +16,9 @@ import (
 
 func (s *Server) registerCollabTools() {
 	s.tools.register(ToolDescriptor{
-		Name:  "list_adventure_threads",
-		Scope: scopeRead,
+		Name:     "list_adventure_threads",
+		Audience: audienceAuthor,
+		Scope:    scopeRead,
 		Description: "The conversations the authors have on an adventure's steps: each thread's step (node, '' for the whole adventure), " +
 			"optional block, whether it is resolved, and its comments in order. A thread with for_assistant: true is a task the authors gave you " +
 			"by writing @assistant — do what it asks, reply on the thread with what you did, then resolve it. " +
@@ -35,8 +36,9 @@ func (s *Server) registerCollabTools() {
 	}, listAdventureThreads)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "comment_on_adventure",
-		Scope: scopeWrite,
+		Name:     "comment_on_adventure",
+		Audience: audienceAuthor,
+		Scope:    scopeWrite,
 		Description: "Write in the authors' conversation on an adventure. With thread_id, reply on that thread (a resolved thread opens again). " +
 			"Without, start a thread on a step (node), on one block of it (node and block_id), or on the whole adventure (no node). " +
 			"Use it to report what you did about a task, to ask before a change you are unsure of, and for review notes: one thread per issue, " +
@@ -56,8 +58,9 @@ func (s *Server) registerCollabTools() {
 	}, commentOnAdventure)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "suggest_step_change",
-		Scope: scopeWrite,
+		Name:     "suggest_step_change",
+		Audience: audienceAuthor,
+		Scope:    scopeWrite,
 		Description: "Propose a change to a step instead of making it: the authors see it as a thread with the change shown field by field, " +
 			"and accept (merging it into the step) or reject it. Send the whole step as you would have it (same shape as put_node) and a short note " +
 			"saying why. Prefer this to edit_adventure_graph for review fixes, and for a step an author is working on — " +
@@ -75,6 +78,7 @@ func (s *Server) registerCollabTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "resolve_adventure_thread",
+		Audience:    audienceAuthor,
 		Scope:       scopeWrite,
 		Description: "Resolve a thread once what it asked is done (or open it again with resolved: false). Reply first saying what you did.",
 		InputSchema: map[string]any{
@@ -89,8 +93,9 @@ func (s *Server) registerCollabTools() {
 	}, resolveAdventureThread)
 
 	s.tools.register(ToolDescriptor{
-		Name:  "set_step_status",
-		Scope: scopeWrite,
+		Name:     "set_step_status",
+		Audience: audienceAuthor,
+		Scope:    scopeWrite,
 		Description: "Say where a step is in the work: status idea, draft, review (ready for someone to look at) or ready, " +
 			"and who has it (owner, an author's username; empty to take it from whoever had it). Fields left out stay as they are. " +
 			"Set review on a step you finished for an author to check; do not mark steps ready yourself unless asked.",

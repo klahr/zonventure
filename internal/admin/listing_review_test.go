@@ -98,7 +98,7 @@ func newListingFixture(t *testing.T) (*listingFixture, func()) {
 	})
 	routes(f.assistant)
 
-	publicH := &public.Handlers{DB: db, Lib: adventure.New(db)}
+	publicH := &public.Handlers{DB: db, Lib: adventure.New(db), Payments: true}
 	f.store = chi.NewRouter()
 	f.store.Get("/api/o/{slug}/store/items", publicH.StoreListByOrg)
 	f.store.Get("/store-cover/event/{eventID}", f.h.ServeEventCover)
@@ -342,7 +342,7 @@ func TestListingReview_VerifiedCreator(t *testing.T) {
 		t.Fatal("listed before review")
 	}
 	if w := call(t, f.reviewer, "POST", fmt.Sprintf("/api/admin/organizations/%d/verified-creator", f.orgID),
-		map[string]bool{"verified": true}); w.Code != http.StatusOK {
+		map[string]bool{"verified": true}); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"approved":1`) {
 		t.Fatalf("verify: %d %s", w.Code, w.Body)
 	}
 	items := f.storeItems(t)
@@ -627,9 +627,9 @@ func TestListingReview_Reviewers(t *testing.T) {
 		return r
 	}
 
-	// A platform admin who isn't a reviewer can't.
+	// A platform admin who isn't a reviewer reads the queue but can't decide.
 	notReviewer := as(auth.User{ID: rootID, Username: "root", Role: auth.RoleAdmin, IsAdmin: true})
-	if w := call(t, notReviewer, "GET", "/api/admin/listing-reviews", nil); w.Code != http.StatusForbidden || code(w) != "not_reviewer" {
+	if w := call(t, notReviewer, "GET", "/api/admin/listing-reviews", nil); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"kind":"event"`) {
 		t.Fatalf("admin without the flag lists: %d %s", w.Code, w.Body)
 	}
 	if w := f.decideAs(t, notReviewer, "event", f.eventID, "approve", rev, ""); w.Code != http.StatusForbidden {

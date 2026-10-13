@@ -104,6 +104,36 @@ func TestConsoleOnGraphAdventure(t *testing.T) {
 	if s := arr.do("POST", "/api/admin/teams/"+itoa(teamIDs["Beta"])+"/unlock", map[string]string{"node": "q"}, nil); s != 200 {
 		t.Errorf("a rescue past the puzzle the team is on = %d, want 200", s)
 	}
+	// Turning location sharing off drops where the phone last was: the
+	// place no longer counts as reached.
+	if s := players["Gamma"].doAny("POST", "/api/player/location", map[string]any{"lat": 59.33, "lng": 18.06, "accuracy": 5}, nil); s != 200 && s != 204 {
+		t.Fatalf("location = %d", s)
+	}
+	var here struct {
+		View struct {
+			Here bool `json:"here"`
+		} `json:"view"`
+	}
+	if s := players["Gamma"].do("GET", "/api/player/play", nil, &here); s != 200 || !here.View.Here {
+		t.Fatalf("Gamma at the place = %d %+v", s, here)
+	}
+	if s := players["Gamma"].doAny("POST", "/api/player/location/off", nil, nil); s != 204 {
+		t.Fatalf("location off = %d", s)
+	}
+	here.View.Here = false // omitted when false
+	if s := players["Gamma"].do("GET", "/api/player/play", nil, &here); s != 200 || here.View.Here {
+		t.Fatalf("Gamma after sharing off = %d %+v, want not here", s, here)
+	}
+	// The moved team's phone is told the organisers moved it on; a team
+	// that answered isn't.
+	for name, want := range map[string]bool{"Beta": true, "Alpha": false} {
+		var ps struct {
+			MovedOn bool `json:"moved_on"`
+		}
+		if s := players[name].do("GET", "/api/player/play", nil, &ps); s != 200 || ps.MovedOn != want {
+			t.Errorf("%s play = %d moved_on %v, want %v", name, s, ps.MovedOn, want)
+		}
+	}
 	var ed struct {
 		Event struct {
 		} `json:"event"`

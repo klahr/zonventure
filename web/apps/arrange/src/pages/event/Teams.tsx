@@ -5,10 +5,11 @@ import { Button, Card, Empty, fmtAgo, fmtDateTime, HelpPopover, ICON, Pill, useT
 import { SPOTS } from "@zonventure/ui";
 import { giveFreeTicket, type EventGraph, type EventInfo, type FreeTicket, type Team } from "./api.ts";
 import { TeamAvatar, useTeamActions } from "./teamActions.tsx";
+import { TeamEmailsDialog } from "./TeamEdit.tsx";
 import { useInviteAll } from "./Lifecycle.tsx";
-import { useCopyLinks } from "./Links.tsx";
+import { useCopyLinks, useCopyOrShow } from "./Links.tsx";
 import { MoreMenu, type MenuItem } from "./Menu.tsx";
-import { canDo, copyText, isLive, isQuest, isTerminal, joinedCount, members, teamColor, teamProgress, teamStuck, teamURL } from "./util.ts";
+import { canDo, isLive, isQuest, isTerminal, joinedCount, members, teamColor, teamProgress, teamStuck, teamURL } from "./util.ts";
 
 type Filter = "all" | "done" | "stuck" | "unstarted";
 
@@ -35,6 +36,7 @@ export function TeamsCard(props: {
   const actions = useTeamActions(props.reload);
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
+  const [editEmails, setEditEmails] = useState(false);
   const canCreate = canDo(event, "create_team");
   const full = event.max_players > 0 && (event.player_slots_count || 0) >= event.max_players;
   const index = new Map(teams.map((tm, i) => [tm.id, i]));
@@ -56,7 +58,6 @@ export function TeamsCard(props: {
     { key: "unstarted", label: t.t("Unstarted") },
   ];
   const locale = t.current();
-  const toast = useToast();
   const links = useCopyLinks(teams);
   const { withEmail, invite } = useInviteAll(event, teams);
   const before = event.state === "scheduled";
@@ -66,13 +67,16 @@ export function TeamsCard(props: {
     { label: t.t("Copy captain links"), icon: <Copy size={ICON.sm} aria-hidden />, title: t.t("One line per team: name and captain link"), onClick: () => void links.captains() },
     { label: t.t("Copy all links (CSV)"), icon: <Copy size={ICON.sm} aria-hidden />, title: t.t("Captain and player links, for a spreadsheet or email merge"), onClick: () => void links.csv() },
   ];
-  if (withEmail > 0 && !isQuest(event)) {
+  if (canDo(event, "edit_team_email") || canDo(event, "rename_team")) {
+    share.push({ separator: true }, { label: t.t("Edit team emails"), icon: <Pencil size={ICON.sm} aria-hidden />, title: t.t("Every team's email in one table"), onClick: () => setEditEmails(true) });
+  }
+  // Before the start, invitations are the job at hand: a button of their own.
+  const inviteFirst = before && withEmail > 0 && !isQuest(event) && !event.party;
+  if (withEmail > 0 && !isQuest(event) && !inviteFirst) {
     share.push({ separator: true }, { label: t.t("Email invitations ({{n}})", { n: withEmail }), icon: <Mail size={ICON.sm} aria-hidden />, title: t.t("Email each team their join links + calendar invite"), onClick: () => void invite() });
   }
-  const copyCaptain = async (tm: (typeof teams)[number]) => {
-    if (await copyText(teamURL(tm))) toast.ok(t.t("Link copied"));
-    else toast.err(t.t("Clipboard blocked — select and copy by hand"));
-  };
+  const copyOrShow = useCopyOrShow();
+  const copyCaptain = (tm: (typeof teams)[number]) => copyOrShow(teamURL(tm), t.t("Link copied"));
 
   return (
     <Card
@@ -87,6 +91,11 @@ export function TeamsCard(props: {
               body={t.t("Send each captain their team link; players pick their own name there. Links stop working seven days after the event's scheduled start (30 days after they're made when it has no date). Anyone with a link can play as that player — if one leaks, edit the team and rotate that player's link.")}
             />
             <MoreMenu label={t.t("Share links")} items={share} />
+            {inviteFirst && (
+              <Button size="sm" variant="primary" icon={<Mail size={ICON.sm} aria-hidden />} title={t.t("Email each team their join links + calendar invite")} onClick={() => void invite()}>
+                {t.t("Send invitations ({{n}})", { n: withEmail })}
+              </Button>
+            )}
           </>
         )}
         {/* A hosted event's teams join from its player link. */}
@@ -194,6 +203,7 @@ export function TeamsCard(props: {
           </table>
         </div>
       )}
+      {editEmails && <TeamEmailsDialog teams={teams} reload={props.reload} onClose={() => setEditEmails(false)} />}
     </Card>
   );
 }
@@ -228,10 +238,7 @@ function FreeTicketForm({ event, reload }: { event: EventInfo; reload: () => voi
       setBusy(false);
     }
   };
-  const copy = async (text: string, done: string) => {
-    if (await copyText(text)) toast.ok(done);
-    else toast.err(t.t("Clipboard blocked — select and copy by hand"));
-  };
+  const copy = useCopyOrShow();
   return (
     <div className="ev-free">
       <form className="ev-toolbar" onSubmit={(e) => void submit(e)}>

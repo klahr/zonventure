@@ -168,7 +168,7 @@ export function coachTutorials(t: T): Tutorial[] {
         {
           id: "welcome-write",
           title: t.t("Write the welcome"),
-          body: t.t("Under What the team sees, tell the teams who needs help, and why. Write your own, or let the tutorial write it."),
+          body: t.t("Under What the team sees, replace the example with who needs help, and why. Write your own, or let the tutorial write it."),
           example: t.t("Hi! I'm Erik, the zookeeper. Last night someone opened the gate and my three elephants **wandered off** into the park.\n\nFollow the clues, and hurry: they get grumpy after dark!"),
           fill: "welcome",
           target: (c) => onStep(welcomeStep(c.graph)?.slug, c, text),
@@ -203,7 +203,7 @@ export function coachTutorials(t: T): Tutorial[] {
         {
           id: "zone-pin",
           title: t.t("Put it on the map"),
-          body: t.t("Drag the pin onto a tree near you, or leave it where it is for now. Keep the radius at 30 metres or more: GPS drifts between buildings."),
+          body: t.t("Press Use my location, or drag the pin onto a tree near you, or leave it where it is for now. Keep the radius at 30 metres or more: GPS drifts between buildings."),
           target: () => [{ sel: `${SETTINGS} .zone-map` }],
         },
         { id: "zone-close", title: t.t("Close the settings"), body: t.t("That's the place. Close the settings."), target: () => [close], done: (c) => !c.settings },
@@ -270,7 +270,7 @@ export function coachTutorials(t: T): Tutorial[] {
         {
           id: "puzzle-also",
           title: t.t("Take seven too"),
-          body: t.t("Press Also accept and type seven, so a team that writes the word gets it right too."),
+          body: t.t("Under Answers and next steps, press Also accept and type seven, so a team that writes the word gets it right too."),
           target: (c) => onStep(question(c)?.slug, c, { sel: ".inspector button.add-btn", text: t.t("Also accept") }, drill("Answers and next steps")),
           allow: [".inspector .box"],
           ready: (c) => (question(c)?.puzzle?.outputs?.[0]?.matchers ?? []).filter((m) => (m.value ?? "").trim() !== "").length > 1,
@@ -342,7 +342,8 @@ export function coachTutorials(t: T): Tutorial[] {
           id: "look-pick",
           title: t.t("Pick a look"),
           body: t.t("Under Look, pick another Main look: the adventure changes at once."),
-          target: () => [{ sel: `${SETTINGS} .look .field`, text: t.t("Main look"), then: "select" }, { sel: `${SETTINGS} .look` }],
+          // The gallery opens in a dialog of its own, over the settings.
+          target: () => [{ sel: `.modal[aria-label=${attr(t.t("Choose a look"))}]` }, { sel: `${SETTINGS} .look .look__main .btn` }, { sel: `${SETTINGS} .look` }],
           done: (c) => c.flags.includes("look"),
         },
         { id: "look-close", title: t.t("Close the settings"), body: t.t("Close the settings."), target: () => [close], done: (c) => !c.settings },
@@ -408,7 +409,7 @@ export function coachTutorials(t: T): Tutorial[] {
         {
           id: "test-close",
           title: t.t("Close Test play"),
-          body: t.t("Close the preview."),
+          body: t.t("Close the Preview window: ✕ in its title bar."),
           target: () => [{ sel: `.float-win[aria-label=${attr(t.t("Preview"))}] .float-win__bar [aria-label=${attr(t.t("Close"))}]` }],
           done: (c) => !c.previewing,
         },

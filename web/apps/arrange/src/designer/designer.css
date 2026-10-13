@@ -389,8 +389,9 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 
 .cond { display: flex; flex-direction: column; gap: var(--sp-2); }
 .cond--nested { padding-left: var(--sp-3); border-left: 2px solid var(--border-soft); }
-.cond__cmp { display: flex; gap: var(--sp-2); }
-.cond__cmp .field__input:first-child { width: 4rem; flex: none; }
+.cond__cmp { display: flex; align-items: center; gap: var(--sp-2); }
+.cond__cmp .cond__what { flex: none; color: var(--muted); font-size: var(--text-sm); }
+.cond__cmp select.field__input { width: 4rem; flex: none; }
 .cond__cmp .field__input:last-child { flex: 1; }
 .cond__children { display: flex; flex-direction: column; gap: var(--sp-2); }
 .cond__child { display: flex; flex-direction: column; gap: var(--sp-1); }
@@ -921,6 +922,7 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .lang-switch .field__input { height: 34px; padding-block: 0; min-width: 9rem; font-size: var(--dz-text-md, var(--text-sm)); }
 .tr-rows { display: flex; flex-direction: column; gap: var(--sp-3); }
 .tr-row__main { display: block; white-space: pre-wrap; padding: var(--sp-2); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--ink-soft); font-size: var(--text-sm); }
+.tr-row__outdated { color: var(--warning); }
 .tr-lang { flex: 1; }
 
 /* --- Phone ------------------------------------------------------------- */
@@ -1135,6 +1137,9 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 
 /* The clash notice's step names are links into the canvas. */
 .dz .editor-conn-banner .link-button { padding: 0; border: 0; background: none; color: var(--dz-accent); font: inherit; text-decoration: underline; cursor: pointer; }
+/* Both versions of each clashing step, so choosing is not blind. */
+.dz .clash-versions { max-height: 40vh; overflow-y: auto; font-size: var(--dz-text-sm); }
+.dz .clash-versions__step + .clash-versions__step { margin-top: var(--dz-space-2); }
 
 @media (prefers-reduced-motion: reduce) {
   .card.is-arriving, .card__peer, .follow-chip, .live-ticker__item, .live-bot__badge, .inspector__flash { animation: none; }
@@ -1355,8 +1360,10 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 }
 .coach__head { display: flex; align-items: center; gap: var(--dz-space-2); color: var(--dz-accent); }
 .coach__head strong { flex: 1; color: var(--dz-ink); font-size: var(--dz-text-md); }
-.coach__bar { height: 4px; border-radius: var(--dz-r-pill); background: var(--dz-surface-2); overflow: hidden; }
-.coach__bar span { display: block; height: 100%; background: var(--dz-success); transition: width var(--dz-dur-3) var(--dz-ease-out); }
+.coach__dots { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.coach__dots li { display: grid; place-items: center; width: 12px; height: 12px; border-radius: var(--dz-r-pill); background: var(--dz-surface-2); color: #fff; transition: background var(--dz-dur-3) var(--dz-ease-out); }
+.coach__dots li.is-done { background: var(--dz-success); }
+.coach__dots li.is-at { box-shadow: inset 0 0 0 2px var(--dz-success); }
 .coach__body { margin: 0; line-height: 1.5; }
 .coach__lost { margin: 0; color: var(--dz-ink-soft); font-size: var(--dz-text-xs); }
 .coach__example { border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); background: var(--dz-surface-2); }
@@ -1384,7 +1391,7 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .coach-pill svg { color: var(--dz-accent); }
 @media (prefers-reduced-motion: reduce) {
   .coach-spot, .coach-arrow { animation: none; }
-  .coach, .coach-spot, .coach__bar span { transition: none; }
+  .coach, .coach-spot, .coach__dots li { transition: none; }
 }
 
 /* The tutorials list (Coach.tsx), docked over the canvas like the phone guide. */

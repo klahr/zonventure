@@ -70,18 +70,25 @@ type patchWebhookRequest struct {
 // the worker happily POSTs at the AWS metadata endpoint with their
 // signed payload — a textbook SSRF pivot from a customer-supplied
 // string into the cloud-host's secret store.
+// The refusals of a webhook URL the console translates, by these words.
+const (
+	errURLUnresolvable = "That address can't be found. Check the host name."
+	errURLNotPublic    = "That address is on a private network. Use one that is reachable from the internet."
+	errURLNotHTTPS     = "The endpoint URL must start with https://."
+)
+
 func validateWebhookURL(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "", errors.New("url is required")
+		return "", errors.New("Enter the endpoint URL.")
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", errors.New("invalid url")
+		return "", errors.New("That isn't a valid URL.")
 	}
 	host := u.Hostname()
 	if host == "" {
-		return "", errors.New("url must have a host")
+		return "", errors.New("The endpoint URL needs a host name.")
 	}
 	loopback := webhooks.IsLoopbackHost(host) && webhooks.LoopbackAllowed()
 	switch u.Scheme {
@@ -89,19 +96,24 @@ func validateWebhookURL(raw string) (string, error) {
 		// fine
 	case "http":
 		if !loopback {
-			return "", errors.New("http urls are only allowed for localhost — use https in production")
+			return "", errors.New(errURLNotHTTPS)
 		}
 	default:
-		return "", errors.New("url must be http(s)")
+		return "", errors.New(errURLNotHTTPS)
 	}
 	// Skip the IP-address gate for loopback dev URLs. For everything
 	// else, resolve and reject if any answer is non-public. The
 	// resolver lives in internal/webhooks/ so the delivery worker
 	// can reuse it (defending against DNS rebinding between
 	// registration and dispatch).
+	// The resolver's own words name internals (the DNS server, IP
+	// ranges); the user gets what to do about it.
 	if !loopback {
 		if err := webhooks.ValidateHost(host); err != nil {
-			return "", err
+			if strings.HasPrefix(err.Error(), "could not resolve host") {
+				return "", errors.New(errURLUnresolvable)
+			}
+			return "", errors.New(errURLNotPublic)
 		}
 	}
 	return u.String(), nil

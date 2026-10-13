@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/klahr/zonventure/internal/admin"
+	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/server"
 	"github.com/klahr/zonventure/internal/ws"
 
@@ -277,6 +278,82 @@ func TestWSArrange_WatchAdventure(t *testing.T) {
 	}
 	if m := recvMsg(t, conn); m.Kind != "watch_error" {
 		t.Errorf("watching another org's adventure: kind = %q, want watch_error", m.Kind)
+	}
+}
+
+// After an edit conflict the author kept their own version of a step
+// over the last saver's: graph_saved names that saver and the steps, so
+// their designer can offer their text back.
+func TestWSArrange_KeptOver(t *testing.T) {
+	hub := ws.NewHub()
+	ts, db, _, cleanup := seedPurchaseStack(t, server.Config{Hub: hub})
+	defer cleanup()
+
+	boss := newClient(t, ts)
+	if s := boss.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
+		t.Fatalf("login = %d", s)
+	}
+	if s := boss.do("POST", "/api/admin/adventures", map[string]string{"slug": "kept", "title": "Kept"}, nil); s != 201 {
+		t.Fatalf("create adventure = %d", s)
+	}
+	conn := dialWS(t, ts, "/ws/arrange", boss.c)
+	defer conn.Close(websocket.StatusNormalClosure, "")
+	cwx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := conn.Write(cwx, websocket.MessageText, []byte(`{"kind":"watch_adventure","data":{"slug":"kept"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	recvKind(t, conn, "presence_self", 3*time.Second)
+
+	env := map[string]any{"format": "zonventure-adventure-v2", "graph": map[string]any{
+		"nodes": []map[string]any{{"slug": "start", "type": "start"}, {"slug": "end", "type": "end"}},
+		"edges": []map[string]any{{"from": "start", "from_port": "out", "to": "end"}},
+	}}
+	var saved struct {
+		SavedAt string `json:"saved_at"`
+	}
+	if s := boss.do("PUT", "/api/admin/adventures/kept/graph", env, &saved); s != 200 {
+		t.Fatalf("save = %d", s)
+	}
+	recvKind(t, conn, "graph_saved", 3*time.Second)
+	// The draft as anna saved it.
+	var annaID int64
+	if err := db.QueryRow(`INSERT INTO users(username, password_hash, email_verified) VALUES ('anna', 'x', 1) RETURNING id`).Scan(&annaID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE adventure_graph_drafts SET updated_by_user_id = $1`, annaID); err != nil {
+		t.Fatal(err)
+	}
+
+	body, _ := json.Marshal(env)
+	req, err := http.NewRequest("PUT", ts.URL+"/api/admin/adventures/kept/graph", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(auth.CSRFHeaderName, boss.csrfCookie())
+	req.Header.Set("X-Draft-Base", saved.SavedAt)
+	req.Header.Set("X-Kept-Steps", "end,nowhere,end")
+	resp, err := boss.c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("save keeping mine = %d", resp.StatusCode)
+	}
+	m := recvKind(t, conn, "graph_saved", 3*time.Second)
+	var d struct {
+		Kept *struct {
+			UserID int64    `json:"user_id"`
+			Steps  []string `json:"steps"`
+		} `json:"kept"`
+	}
+	if err := json.Unmarshal(m.Data, &d); err != nil {
+		t.Fatal(err)
+	}
+	if d.Kept == nil || d.Kept.UserID != annaID || len(d.Kept.Steps) != 1 || d.Kept.Steps[0] != "end" {
+		t.Errorf("graph_saved kept = %+v, want anna's end", d.Kept)
 	}
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Bot, Check, CheckCircle2, GitPullRequestArrow, MessageSquare, Pencil, RotateCcw, Send, SmilePlus, Trash2, X } from "lucide-react";
 import { adventures } from "@zonventure/api";
 import { blocksOf, nodeBySlug, type Graph, type GraphDiff, type Node } from "@zonventure/graph";
@@ -147,6 +147,16 @@ function Composer({
   const [pick, setPick] = useState(0);
   const area = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
+  // Where the caret goes once a picked name is in the text: set in the
+  // same commit, before the next key can land where React left it.
+  const placeCaret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const at = placeCaret.current;
+    if (at === null) return;
+    placeCaret.current = null;
+    area.current?.focus();
+    area.current?.setSelectionRange(at, at);
+  });
 
   // The @word being typed, if the caret is in one.
   const typing = useMemo(() => {
@@ -167,13 +177,10 @@ function Composer({
   const insert = (name: string) => {
     if (!typing) return;
     const next = text.slice(0, typing.start) + "@" + name + " " + text.slice(caret);
-    setText(next);
     const at = typing.start + name.length + 2;
-    requestAnimationFrame(() => {
-      area.current?.focus();
-      area.current?.setSelectionRange(at, at);
-      setCaret(at);
-    });
+    placeCaret.current = at;
+    setText(next);
+    setCaret(at);
   };
   const send = async () => {
     if (!text.trim() || busy) return;
@@ -344,8 +351,15 @@ function changesOf(base: Node, proposed: Node, graph: Graph, t: T): FieldChange[
   for (const [id, b] of now) {
     const old = was.get(id);
     if (!old) out.push({ label: t.t("Added: {{block}}", { block: t.t(KINDS[b.kind]?.label ?? b.kind) }), after: summarize(b, graph, t, proposed) });
-    else if (stable(old) !== stable(b))
-      out.push({ label: t.t(KINDS[b.kind]?.label ?? b.kind), before: summarize(old, graph, t, base), after: summarize(b, graph, t, proposed) });
+    else if (stable(old) !== stable(b)) {
+      let before = summarize(old, graph, t, base);
+      let after = summarize(b, graph, t, proposed);
+      // A summary shows a text's start; a change further on would read the same twice.
+      const was = "text" in old ? old.text : undefined;
+      const is = "text" in b ? b.text : undefined;
+      if (before === after && typeof was === "string" && typeof is === "string") [before, after] = aroundChange(was, is);
+      out.push({ label: t.t(KINDS[b.kind]?.label ?? b.kind), before, after });
+    }
   }
   for (const [id, b] of was) if (!now.has(id)) out.push({ label: t.t("Removed: {{block}}", { block: t.t(KINDS[b.kind]?.label ?? b.kind) }), before: summarize(b, graph, t, base) });
   // Every other setting, by name.
@@ -361,6 +375,20 @@ function changesOf(base: Node, proposed: Node, graph: Graph, t: T): FieldChange[
     out.push({ label, before: show(a[k]), after: show(b[k]) });
   }
   return out;
+}
+
+/** Two texts cut to where they differ, with a little of what is around it. */
+function aroundChange(a: string, b: string, context = 30): [string, string] {
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let end = 0;
+  while (end < a.length - start && end < b.length - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end++;
+  const from = Math.max(0, start - context);
+  const cut = (s: string) => {
+    const to = Math.min(s.length, s.length - end + context);
+    return (from > 0 ? "…" : "") + s.slice(from, to) + (to < s.length ? "…" : "");
+  };
+  return [cut(a), cut(b)];
 }
 
 /** JSON with object keys sorted: two copies of a step compare equal however they were built. */
@@ -887,7 +915,7 @@ function Board({ slug, graph, collab, onChanged, onGo }: { slug: string; graph: 
                   }}
                   onClick={() => onGo(n.slug)}
                 >
-                  <span className="board__title">{n.title || n.slug}</span>
+                  <span className="board__title">{n.title || (n.type === "end" ? t.t("End") : n.slug)}</span>
                   <span className="board__meta">
                     {(open.get(n.slug) ?? 0) > 0 && (
                       <span className="board__talk">

@@ -13,8 +13,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-pdf/fpdf"
+	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/orgslug"
 	"github.com/klahr/zonventure/internal/trail"
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -60,12 +62,13 @@ func (h *Handlers) printTrail(ctx context.Context, slug string) (trailPrint, loa
 }
 
 // sendTrailPDF writes the cards (or, with ?answers=1, the answer key) as
-// a PDF download, and marks the cards printed.
+// a PDF to open in the browser's viewer, and marks the cards printed.
 func (h *Handlers) sendTrailPDF(w http.ResponseWriter, r *http.Request, p trailPrint, t loadedTrail) {
 	answers := r.URL.Query().Get("answers") == "1"
-	name := "cards"
+	words := trailPDFWords(p.Lang)
+	name := words.cardsFile
 	if answers {
-		name = "answers"
+		name = words.answersFile
 	}
 	var buf bytes.Buffer
 	var err error
@@ -85,7 +88,12 @@ func (h *Handlers) sendTrailPDF(w http.ResponseWriter, r *http.Request, p trailP
 	}
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.pdf"`, t.dto.Slug, name))
+	// Named after what it is called now: the slug keeps the first title.
+	file := orgslug.Slugify(p.Title)
+	if file == "org" {
+		file = t.dto.Slug
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s-%s.pdf"`, file, name))
 	_, _ = w.Write(buf.Bytes())
 }
 
@@ -130,6 +138,12 @@ func (h *Handlers) HostedTrailPDF(w http.ResponseWriter, r *http.Request) {
 
 type trailWords struct {
 	card, info, writeIt, scan, howTo, hide, answers, right string
+	hideAll                                                string // hide, with information cards among the questions
+	keep                                                   string // the answer key is the host's, not a card to hide
+	cardsFile, answersFile                                 string
+	// marks are how graph.QuizChoices print: 1, X, 2 in Swedish, A, B,
+	// C otherwise.
+	marks []string
 }
 
 func trailPDFWords(lang string) trailWords {
@@ -138,12 +152,18 @@ func trailPDFWords(lang string) trailWords {
 			card: "Fråga %d", info: "Information", writeIt: "Skriv svaret i mobilen.",
 			scan: "Skanna för att vara med", howTo: "Varje lag skannar koden med en mobil, ger sig ett namn och letar upp korten i ordning. Svaren skrivs i mobilen.",
 			hide: "Göm korten i ordning, 1 till %d, där lagen kan hitta dem.", answers: "Facit", right: "Rätt svar",
+			hideAll: "Göm alla %d korten i den ordning de är utskrivna, informationskorten också, där lagen kan hitta dem.",
+			keep:    "Till värden: göm inte det här bladet.", cardsFile: "kort", answersFile: "facit",
+			marks: graph.QuizChoices,
 		}
 	}
 	return trailWords{
 		card: "Question %d", info: "Information", writeIt: "Write the answer on your phone.",
 		scan: "Scan to join", howTo: "Each team scans the code with one phone, gives itself a name and finds the cards in order. Answers go on the phone.",
 		hide: "Hide the cards in order, 1 to %d, where the teams can find them.", answers: "Answer key", right: "Right answer",
+		hideAll: "Hide all %d cards in the order they are printed, the information cards too, where the teams can find them.",
+		keep:    "For the host: don't hide this sheet.", cardsFile: "cards", answersFile: "answers",
+		marks: []string{"A", "B", "C"},
 	}
 }
 
@@ -337,7 +357,11 @@ func writeTrailCardsPDF(w io.Writer, p trailPrint) error {
 		if questions > 0 {
 			pdf.Ln(4)
 			pdf.SetX(margin + 10)
-			pdf.MultiCell(pageW-2*margin-20, 6, text(fmt.Sprintf(words.hide, questions)), "", "C", false)
+			hide := fmt.Sprintf(words.hide, questions)
+			if len(p.Cards) > questions {
+				hide = fmt.Sprintf(words.hideAll, len(p.Cards))
+			}
+			pdf.MultiCell(pageW-2*margin-20, 6, text(hide), "", "C", false)
 		}
 	}
 
@@ -392,7 +416,7 @@ func writeTrailCardsPDF(w io.Writer, p trailPrint) error {
 		switch c.Kind {
 		case trail.Quiz:
 			pdf.SetLineWidth(0.4)
-			for j, mark := range []string{"1", "X", "2"} {
+			for j, mark := range words.marks {
 				opt := ""
 				if j < len(c.Options) {
 					opt = c.Options[j]
@@ -441,6 +465,9 @@ func writeTrailAnswersPDF(w io.Writer, p trailPrint) error {
 	accent.ink().text(pdf)
 	pdf.SetFont("Helvetica", "B", 20)
 	pdf.CellFormat(0, 10, text(words.answers+" - "+p.Title), "", 1, "L", false, 0, "")
+	pdfInk.text(pdf)
+	pdf.SetFont("Helvetica", "B", 12)
+	pdf.CellFormat(0, 7, text(words.keep), "", 1, "L", false, 0, "")
 	pdf.SetLineWidth(0.8)
 	accent.draw(pdf)
 	pdf.Line(18, pdf.GetY()+1, 192, pdf.GetY()+1)
@@ -454,9 +481,9 @@ func writeTrailAnswersPDF(w io.Writer, p trailPrint) error {
 		var right string
 		switch c.Kind {
 		case trail.Quiz:
-			for j, mark := range []string{"1", "X", "2"} {
-				if mark == c.Correct && j < len(c.Options) {
-					right = mark + "  " + c.Options[j]
+			for j, choice := range graph.QuizChoices {
+				if choice == c.Correct && j < len(c.Options) {
+					right = words.marks[j] + "  " + c.Options[j]
 				}
 			}
 		case trail.Answer:

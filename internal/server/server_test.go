@@ -259,8 +259,8 @@ func TestFullFlow(t *testing.T) {
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("bad magic link status = %d, want 302", resp.StatusCode)
 	}
-	if got := resp.Header.Get("Location"); got != "/play?link=invalid" {
-		t.Fatalf("bad magic link Location = %q, want /play?link=invalid", got)
+	if got := resp.Header.Get("Location"); got != "/app/play/?link=invalid" {
+		t.Fatalf("bad magic link Location = %q, want /app/play/?link=invalid", got)
 	}
 
 	// --- Arranger logs in and schedules an event. ---

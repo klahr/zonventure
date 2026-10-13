@@ -36,7 +36,7 @@ func pinRedirectTarget(t *testing.T, target string) {
 // TestRedirectMode_PathsAndAllowlist locks in the contract: every
 // user-facing path 301s to the hosted target with the original path
 // + query preserved, and the allowlist (/api/health, /api/version,
-// /api/webhooks/stripe, /api/admin/migrate/redirect-mode) does not
+// /api/webhooks/stripe, the console with /api/auth and /api/admin) does not
 // redirect. The Stripe webhook gets a special-cased 200 OK so the
 // upstream never replays into the new instance. The target is loaded
 // with a nil *sql.DB, so the 301s also prove the redirect path makes no
@@ -91,11 +91,46 @@ func TestRedirectMode_PathsAndAllowlist(t *testing.T) {
 			wantLoc:    "https://hosted.example/",
 		},
 		{
-			name:       "arrange redirects",
-			path:       "/arrange",
+			name:       "org page redirects",
+			path:       "/o/scout-catalog",
 			method:     http.MethodGet,
 			wantStatus: http.StatusMovedPermanently,
-			wantLoc:    "https://hosted.example/arrange",
+			wantLoc:    "https://hosted.example/o/scout-catalog",
+		},
+		{
+			name:       "console is still served",
+			path:       "/arrange",
+			method:     http.MethodGet,
+			wantStatus: http.StatusOK,
+			wantInner:  true,
+		},
+		{
+			name:       "console app is still served",
+			path:       "/app/arrange/assets/index.js",
+			method:     http.MethodGet,
+			wantStatus: http.StatusOK,
+			wantInner:  true,
+		},
+		{
+			name:       "sign-in API is still served",
+			path:       "/api/auth/whoami",
+			method:     http.MethodGet,
+			wantStatus: http.StatusOK,
+			wantInner:  true,
+		},
+		{
+			name:       "admin API is still served",
+			path:       "/api/admin/organizations",
+			method:     http.MethodGet,
+			wantStatus: http.StatusOK,
+			wantInner:  true,
+		},
+		{
+			name:       "player app redirects",
+			path:       "/app/play/",
+			method:     http.MethodGet,
+			wantStatus: http.StatusMovedPermanently,
+			wantLoc:    "https://hosted.example/app/play/",
 		},
 		{
 			name:       "health is allowlisted",
