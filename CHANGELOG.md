@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-10-14
+
 ### Added
 
 - The Hacker, Scary, Sad, Love and Cyberpunk themes have cover pictures, on the web, in print and in emails, as every other starter theme does.
