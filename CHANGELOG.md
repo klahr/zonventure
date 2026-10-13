@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-10-14
+
 ### Added
 
 - Two-factor authentication can be required: per organisation by its admins (Settings → Members) or a global admin (the organisation's page), and for every global admin and Support user (Settings → System). A covered user without 2FA sees only the setup and their API tokens are refused until they enrol; SSO sign-in counts. Members and Admins show who has 2FA on, a required 2FA can't be turned off, and turning a requirement off asks for the password. Needs `ZV_TOTP_KEY`.
