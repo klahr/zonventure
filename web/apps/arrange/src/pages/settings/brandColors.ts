@@ -128,3 +128,19 @@ export async function colorsFromLogo(src: string): Promise<BrandColors> {
   const accent2 = second ? hex(second) : hex(fromHsl((h + 0.08) % 1, s, Math.min(0.6, hsl(first)[2] + 0.12)));
   return { accent_color: accent, accent_secondary_color: accent2, background_color: background, text_color: text };
 }
+
+/**
+ * The store hero's background (internal/server/web/store.html, .hero): a
+ * dark shade over the cover, darker towards the bottom, and only a faint
+ * accent glow from the top left, so the picture shows as it is. Without
+ * a cover, the organisation's colours on dark. Keep the two in step.
+ */
+export function storeHeroBackground(cover: string, accent: string, accent2: string): string {
+  return [
+    "linear-gradient(180deg, rgba(12, 14, 20, 0.3) 0%, rgba(12, 14, 20, 0.55) 55%, rgba(12, 14, 20, 0.92) 100%)",
+    `linear-gradient(120deg, color-mix(in srgb, ${accent} 55%, transparent) 0%, transparent 65%)`,
+    cover
+      ? `url('${cover}') center / cover`
+      : `radial-gradient(120% 120% at 85% 10%, color-mix(in srgb, ${accent2} 70%, #131722) 0%, #131722 60%)`,
+  ].join(", ") + ", #131722";
+}

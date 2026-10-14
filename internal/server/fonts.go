@@ -49,6 +49,9 @@ func serveFontFile(name, contentType string) http.HandlerFunc {
 	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", contentType)
+		// Fonts load cross-origin from emails and the console's
+		// sandboxed email preview, which need it said they may.
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("ETag", etag)
 		w.Header().Set("Cache-Control", "public, max-age=3600, must-revalidate")
 		if match := r.Header.Get("If-None-Match"); match != "" && match == etag {

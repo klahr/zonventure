@@ -57,12 +57,16 @@ type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// orgGated reports whether an organisation's page edits wait for review:
-// it isn't a verified creator and has something approved for sale.
+// orgGated reports whether an organisation's page edits are reviewed:
+// it has something approved for sale, and no platform admin vouches for
+// it — not a verified creator, not on invoice billing (a customer under
+// contract), not entitled to its own domain. Its edits apply at once and
+// are reviewed afterwards (org_page_changes.go).
 func orgGated(ctx context.Context, q querier, orgID int64) (bool, error) {
 	var gated bool
 	err := q.QueryRowContext(ctx, `
-		SELECT NOT g.verified_creator AND (
+		SELECT NOT g.verified_creator AND g.trusted = 0
+		   AND (g.custom_domain_until IS NULL OR g.custom_domain_until + 30 < current_date) AND (
 		       EXISTS (SELECT 1 FROM event_listings l JOIN events e ON e.id = l.event_id WHERE e.org_id = g.id)
 		    OR EXISTS (SELECT 1 FROM party_offer_listings l JOIN party_offers o ON o.id = l.offer_id WHERE o.org_id = g.id))
 		FROM organizations g WHERE g.id = $1`, orgID).Scan(&gated)
@@ -296,12 +300,9 @@ func (h *Handlers) GetMyOrgProposal(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	gated, err := orgGated(r.Context(), h.DB, orgID)
-	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "proposal lookup failed", err)
-		return
-	}
-	h.writeProposal(w, r, listingOrg, orgID, gated)
+	// Its page edits apply at once and are reviewed afterwards: a
+	// proposal is only one held back before that, until reviewed.
+	h.writeProposal(w, r, listingOrg, orgID, false)
 }
 
 // SubmitMyOrgProposal sends the organisation page's proposal for review.
@@ -620,16 +621,6 @@ func (h *Handlers) proposalMedia(ctx context.Context, kind string, id int64, ref
 		return "", nil, sql.ErrNoRows
 	}
 	return mime.String, content, nil
-}
-
-// holdOrgPicture keeps an uploaded logo or cover back for review when
-// the organisation's page edits wait for it. held says it did.
-func (h *Handlers) holdOrgPicture(ctx context.Context, orgID int64, logo, cover *picture) (bool, error) {
-	gated, err := orgGated(ctx, h.DB, orgID)
-	if err != nil || !gated {
-		return false, err
-	}
-	return true, propose(ctx, h.DB, listingOrg, orgID, orgID, map[string]any{}, nil, logo, cover)
 }
 
 // HoldAdventureIcon keeps an uploaded icon back for review when the

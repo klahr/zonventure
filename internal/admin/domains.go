@@ -809,10 +809,9 @@ func (h *Handlers) requestBase(ctx context.Context) string {
 
 // domainBrandDTO is how an organisation presents itself on its own
 // domain: GET/PUT /api/admin/orgs/me/domain/brand. DisplayName "" goes
-// by the organisation's name; Font is a look font key, "" the site's.
+// by the organisation's name. Its typeface is set in its profile.
 type domainBrandDTO struct {
 	DisplayName string `json:"display_name"`
-	Font        string `json:"font"`
 	TermsURL    string `json:"terms_url"`
 	PrivacyURL  string `json:"privacy_url"`
 }
@@ -832,8 +831,8 @@ func (h *Handlers) GetMyDomainBrand(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) writeDomainBrand(w http.ResponseWriter, r *http.Request, orgID int64) {
 	var out domainBrandDTO
 	if err := h.DB.QueryRowContext(r.Context(), `
-		SELECT brand_display_name, brand_font, brand_terms_url, brand_privacy_url FROM organizations WHERE id = $1
-	`, orgID).Scan(&out.DisplayName, &out.Font, &out.TermsURL, &out.PrivacyURL); err != nil {
+		SELECT brand_display_name, brand_terms_url, brand_privacy_url FROM organizations WHERE id = $1
+	`, orgID).Scan(&out.DisplayName, &out.TermsURL, &out.PrivacyURL); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 		return
 	}
@@ -848,7 +847,12 @@ func (h *Handlers) SetMyDomainBrand(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var req domainBrandDTO
+	// The typeface is set with the rest of the look, in the profile
+	// (org_profile.go); a font sent here still saves, for older clients.
+	var req struct {
+		domainBrandDTO
+		Font *string `json:"font"`
+	}
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
@@ -859,7 +863,7 @@ func (h *Handlers) SetMyDomainBrand(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "the name is too long", "reason": "invalid_name"})
 		return
 	}
-	if _, ok := glook.Fonts[req.Font]; req.Font != "" && !ok {
+	if _, ok := glook.Fonts[deref(req.Font)]; req.Font != nil && *req.Font != "" && !ok {
 		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "unknown typeface", "reason": "invalid_font"})
 		return
 	}
@@ -874,7 +878,7 @@ func (h *Handlers) SetMyDomainBrand(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `
-		UPDATE organizations SET brand_display_name = $2, brand_font = $3, brand_terms_url = $4, brand_privacy_url = $5 WHERE id = $1
+		UPDATE organizations SET brand_display_name = $2, brand_font = COALESCE($3, brand_font), brand_terms_url = $4, brand_privacy_url = $5 WHERE id = $1
 	`, orgID, req.DisplayName, req.Font, req.TermsURL, req.PrivacyURL); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "saving failed", err)
 		return

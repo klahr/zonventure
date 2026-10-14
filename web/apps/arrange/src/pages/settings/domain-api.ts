@@ -62,8 +62,6 @@ export const putOrgCustomDomain = (orgID: number, until: string) =>
 export interface DomainBrand {
   /** "" goes by the organization's name. */
   display_name: string;
-  /** A look font key, "" for the site's. */
-  font: string;
   terms_url: string;
   privacy_url: string;
 }

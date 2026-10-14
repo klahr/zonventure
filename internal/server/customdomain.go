@@ -16,7 +16,6 @@ import (
 
 	"github.com/klahr/zonventure/internal/domains"
 	"github.com/klahr/zonventure/internal/emailtpl"
-	"github.com/klahr/zonventure/internal/graph/look"
 	"github.com/klahr/zonventure/internal/sitename"
 )
 
@@ -301,10 +300,11 @@ var orgLinkTexts = map[string][2]string{
 func whiteLabelHTML(s string, e domains.Entry, lang string) string {
 	// "Verified creator" is the platform vouching for an organiser; on
 	// the organiser's own domain it would read as vouching for itself.
-	s = strings.Replace(s, "</head>", "<style>.verified-badge { display: none !important; }</style></head>", 1)
-	if family, ok := look.Fonts[e.Font]; ok && lookFontURL(e.Font) != "" {
-		font := `<link rel="stylesheet" href="` + lookFontURL(e.Font) + `">` +
-			`<style>h1, h2, .brand { font-family: "` + html.EscapeString(family) + `", var(--font-brand) !important; }</style>`
+	// And the organisation's name above each adventure only repeats itself.
+	s = strings.Replace(s, "</head>", "<style>.verified-badge, .store-org { display: none !important; }</style></head>", 1)
+	// The store's pages carry it already (orgFontBlock); the rest of
+	// its domain's pages get it here.
+	if font := orgFontBlock(e.Font); font != "" && !strings.Contains(s, lookFontURL(e.Font)) {
 		s = strings.Replace(s, "</head>", font+"</head>", 1)
 	}
 	if strings.Contains(s, "<!--org-links-->") {

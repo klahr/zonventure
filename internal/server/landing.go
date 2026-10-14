@@ -189,6 +189,23 @@ type landingStrings struct {
 	StoreStep3Title string
 	StoreStep3Body  string
 
+	// An organisation's store page: the hero's buttons, the count of
+	// its adventures, and the box where a code from an envelope, a
+	// gift card or an email starts an adventure.
+	StoreBrowseCTA     string
+	StoreCodeCTA       string
+	StoreCountOne      string
+	StoreCountPlural   string
+	StoreCodeEyebrow   string
+	StoreCodeHeading   string
+	StoreCodeBody      string
+	StoreCodeLabel     string
+	StoreCodeSubmit    string
+	StoreCodeInvalid   string
+	StoreCodeClosed    string
+	StoreCodeBusy      string
+	StoreFooterContact string
+
 	// Toasts after Stripe redirect.
 	StoreToastPaid      string
 	StoreToastCancelled string
@@ -444,6 +461,11 @@ func storeI18nJSON(s landingStrings) string {
 		"handoffFailed":        s.StoreHandoffFailed,
 		"verifiedCreator":      s.VerifiedCreator,
 		"verifiedCreatorHint":  s.VerifiedCreatorHint,
+		"countOne":             s.StoreCountOne,
+		"countPlural":          s.StoreCountPlural,
+		"codeInvalid":          s.StoreCodeInvalid,
+		"codeClosed":           s.StoreCodeClosed,
+		"codeBusy":             s.StoreCodeBusy,
 	}
 	return marshalJSONForScript(m)
 }
@@ -535,6 +557,14 @@ func storeSubs(s landingStrings) [][2]string {
 		{"{{STORE_STEP2_BODY}}", s.StoreStep2Body},
 		{"{{STORE_STEP3_TITLE}}", s.StoreStep3Title},
 		{"{{STORE_STEP3_BODY}}", s.StoreStep3Body},
+		{"{{STORE_BROWSE_CTA}}", s.StoreBrowseCTA},
+		{"{{STORE_CODE_CTA}}", s.StoreCodeCTA},
+		{"{{STORE_CODE_EYEBROW}}", s.StoreCodeEyebrow},
+		{"{{STORE_CODE_HEADING}}", s.StoreCodeHeading},
+		{"{{STORE_CODE_BODY}}", s.StoreCodeBody},
+		{"{{STORE_CODE_LABEL}}", s.StoreCodeLabel},
+		{"{{STORE_CODE_SUBMIT}}", s.StoreCodeSubmit},
+		{"{{STORE_FOOTER_CONTACT}}", s.StoreFooterContact},
 
 		{"{{STORE_TOAST_PAID}}", s.StoreToastPaid},
 		{"{{STORE_TOAST_CANCELLED}}", s.StoreToastCancelled},
@@ -626,6 +656,8 @@ func renderOrgPage(w http.ResponseWriter, r *http.Request, org orgProfile) {
 		{"{{LOGO_BLOCK}}", org.logoBlock()},
 		{"{{WEBSITE_LINK_BLOCK}}", org.websiteBlock()},
 		{"{{HERO_BG_STYLE}}", org.heroBgStyle()},
+		{"{{HERO_COVER_STYLE}}", org.heroCoverStyle()},
+		{"{{ORG_CONTACT_BLOCK}}", org.contactBlock(s.StoreFooterContact)},
 		{"{{ORG_BRAND_OVERRIDES}}", org.brandStyle()},
 		{"{{ORG_VERIFIED}}", boolAttr(org.Verified)},
 	}

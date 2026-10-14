@@ -234,6 +234,40 @@ func TestBranding_ColorsClearOnEmpty(t *testing.T) {
 	}
 }
 
+// TestBranding_TitleFont: the title typeface is saved with the rest of
+// the look, kept when a save leaves it out, and only a known one.
+func TestBranding_TitleFont(t *testing.T) {
+	t.Parallel()
+	db, orgID, _, r := brandingFixture(t)
+	put := func(body map[string]any) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(body)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("PUT", "/api/admin/orgs/me/profile", strings.NewReader(string(b)))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+		return w
+	}
+	font := func() string {
+		var f string
+		if err := db.QueryRow(`SELECT brand_font FROM organizations WHERE id = $1`, orgID).Scan(&f); err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	if w := put(map[string]any{"title_font": "special-elite"}); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"title_font":"special-elite"`) {
+		t.Fatalf("PUT: %d %s", w.Code, w.Body)
+	}
+	if w := put(map[string]any{"tagline": "Hi"}); w.Code != http.StatusOK || font() != "special-elite" {
+		t.Fatalf("a save without the font changed it to %q (%d %s)", font(), w.Code, w.Body)
+	}
+	if w := put(map[string]any{"title_font": "comic-sans"}); w.Code != http.StatusBadRequest || font() != "special-elite" {
+		t.Fatalf("unknown font: %d, font %q", w.Code, font())
+	}
+	if w := put(map[string]any{"title_font": ""}); w.Code != http.StatusOK || font() != "" {
+		t.Fatalf("clearing: %d, font %q", w.Code, font())
+	}
+}
+
 // TestBranding_LogoAuthGate proves the org-admin self-logo upload +
 // delete are gated to RoleOrgAdmin: an org_member call returns 403
 // without touching the row. The gate decides from the session

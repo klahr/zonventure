@@ -13,6 +13,8 @@ export interface OrgProfile {
   accent_secondary_color?: string;
   background_color?: string;
   text_color?: string;
+  /** The title typeface (a look font key), "" for the site's. */
+  title_font: string;
 }
 
 export type ProfileEdit = Pick<OrgProfile, "tagline" | "public_website"> & {
@@ -20,6 +22,8 @@ export type ProfileEdit = Pick<OrgProfile, "tagline" | "public_website"> & {
   accent_secondary_color: string;
   background_color: string;
   text_color: string;
+  /** Left out, it stays as it is. */
+  title_font?: string;
 };
 
 export const getProfile = (signal?: AbortSignal) => get<OrgProfile>("/api/admin/orgs/me/profile", signal ? { signal } : {});

@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/klahr/zonventure/internal/domains"
+	"github.com/klahr/zonventure/internal/graph/look"
 	"github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/mdx"
 	"github.com/klahr/zonventure/internal/sitename"
@@ -73,6 +74,10 @@ type Brand struct {
 	// WhiteLabel is an organisation on its own domain: its emails are
 	// signed and sent under its name alone.
 	WhiteLabel bool
+	// TitleFont is the headings' typeface on its own domain, as its
+	// store's, and TitleFontCSS the stylesheet that loads it. Mail
+	// clients without web fonts fall back to the theme's.
+	TitleFont, TitleFontCSS string
 }
 
 // Platform is the instance's own brand (named by ZV_SITE_NAME), for
@@ -218,11 +223,14 @@ func styleOf(t Theme, b Brand) style {
 	}
 	s.Text = readable(b.Ink, s.Card)
 	s.Muted = mix(s.Text, s.Card, 0.4)
+	if b.TitleFont != "" {
+		s.HeadFont = template.CSS(`"`+b.TitleFont+`",`) + s.HeadFont
+	}
 	return s
 }
 
 var page = template.Must(template.New("email").Parse(`<!doctype html>
-<html lang="{{.Lang}}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>{{.Subject}}</title></head>
+<html lang="{{.Lang}}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>{{.Subject}}</title>{{if .B.TitleFontCSS}}<link rel="stylesheet" href="{{.B.TitleFontCSS}}">{{end}}</head>
 <body style="margin:0;padding:0;background:{{.S.Page}};">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;">{{.C.Preheader}}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{{.S.Page}};"><tr><td align="center" style="padding:{{if eq .Theme "minimal"}}24px 16px{{else}}32px 16px{{end}};">
@@ -388,22 +396,23 @@ func Lookup(ctx context.Context, q Querier, publicURL string, orgID, eventID int
 		slug, theme               string
 		ownCover                  bool
 		contact, tz               string
+		font                      string
 	)
 	var err error
 	if eventID > 0 {
 		err = q.QueryRowContext(ctx, `
 			SELECT o.id, o.name, e.email_theme, o.email_theme, o.accent_color, o.accent_secondary_color, o.background_color, o.text_color,
 			       COALESCE(left(md5(o.logo_content), 8), ''), COALESCE(a.language, o.language), `+coverColumns+`,
-			       `+ContactSQL+`, o.time_zone
+			       `+ContactSQL+`, o.time_zone, o.brand_font
 			FROM events e JOIN organizations o ON o.id = e.org_id LEFT JOIN adventures a ON a.slug = e.adventure_slug
 			WHERE e.id = $1
-		`, eventID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &logoVer, &lang, &slug, &theme, &ownCover, &contact, &tz)
+		`, eventID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &logoVer, &lang, &slug, &theme, &ownCover, &contact, &tz, &font)
 	} else if orgID > 0 {
 		err = q.QueryRowContext(ctx, `
 			SELECT o.id, o.name, NULL, o.email_theme, o.accent_color, o.accent_secondary_color, o.background_color, o.text_color,
-			       COALESCE(left(md5(o.logo_content), 8), ''), o.language, `+ContactSQL+`, o.time_zone
+			       COALESCE(left(md5(o.logo_content), 8), ''), o.language, `+ContactSQL+`, o.time_zone, o.brand_font
 			FROM organizations o WHERE o.id = $1
-		`, orgID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &logoVer, &lang, &contact, &tz)
+		`, orgID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &logoVer, &lang, &contact, &tz, &font)
 	} else {
 		return Look{Theme: Classic, Brand: Platform(), Lang: "en"}
 	}
@@ -423,6 +432,16 @@ func Lookup(ctx context.Context, q Querier, publicURL string, orgID, eventID int
 	// by URL for good, so a new logo needs a new address to show.
 	if base := strings.TrimRight(strings.TrimSpace(publicURL), "/"); logoVer != "" && base != "" {
 		b.LogoURL = base + "/org-logo/" + strconv.FormatInt(org.Int64, 10) + "?v=" + logoVer
+	}
+	// Its headings in its store's typeface: the one it chose; on its own
+	// domain, where its store is all players see, else the site's own
+	// (internal/server/org_landing.go orgFontBlock, fonts.go).
+	if base := strings.TrimRight(strings.TrimSpace(publicURL), "/"); base != "" {
+		if family, ok := look.Fonts[font]; ok {
+			b.TitleFont, b.TitleFontCSS = family, base+"/assets/look-font/"+font+".css"
+		} else if b.WhiteLabel {
+			b.TitleFont, b.TitleFontCSS = "Aclonica", base+"/assets/fontface.css"
+		}
 	}
 	t := Theme(orgTheme.String)
 	if Valid(Theme(eventTheme.String)) {

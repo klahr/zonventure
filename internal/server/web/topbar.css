@@ -255,7 +255,7 @@ body.has-hero .brand { text-shadow: 0 2px 12px rgba(0,0,0,.25); }
     border-bottom: 1px solid var(--border-soft);
   }
   .nav-overlay a:last-child { border-bottom: none; }
-  .nav-overlay a:hover { color: var(--accent); }
+  .nav-overlay a:hover { color: var(--accent-text); }
   .nav-overlay .btn {
     margin: 1.25rem 1.5rem 0;
     padding: .9rem 1.25rem;
@@ -288,5 +288,5 @@ footer {
   border-top: 1px solid var(--border-soft);
 }
 footer a { color: inherit; margin: 0 .5rem; }
-footer a:hover { color: var(--accent); }
+footer a:hover { color: var(--accent-text); }
 footer .copy, footer .seller { margin-top: .5rem; font-size: .8rem; }

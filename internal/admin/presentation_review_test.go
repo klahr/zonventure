@@ -74,51 +74,95 @@ func testPNG(t *testing.T) []byte {
 }
 
 // The organisation's page, once something of theirs is for sale: an edit
-// is held back as a proposal, submitted with the creator's word, and
-// only an approval writes it; the check then agrees with what is served.
+// applies at once and waits for review afterwards; a reviewer approves
+// it or puts the previous value back, with a reason.
 func TestPresentationReview_OrgPage(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newPresentationFixture(t)
 	defer cleanup()
+	f.console.Post("/api/admin/orgs/me/logo", f.h.SetMyOrgLogo)
 
 	w := call(t, f.console, "PUT", "/api/admin/orgs/me/profile", map[string]any{"tagline": "Puzzles for everyone", "accent_color": "#123456"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("profile: %d %s", w.Code, w.Body)
 	}
-	if got := f.scalar(t, `SELECT COALESCE(tagline, '') || '|' || COALESCE(accent_color, '') FROM organizations WHERE id = $1`, f.orgID); got != "|#123456" {
-		t.Fatalf("live page = %q, want the tagline held back and the colour applied", got)
+	if got := f.scalar(t, `SELECT COALESCE(tagline, '') || '|' || COALESCE(accent_color, '') FROM organizations WHERE id = $1`, f.orgID); got != "Puzzles for everyone|#123456" {
+		t.Fatalf("live page = %q, want both applied", got)
 	}
-	w = call(t, f.console, "GET", "/api/admin/orgs/me/proposal", nil)
-	if !strings.Contains(w.Body.String(), `"tagline":"Puzzles for everyone"`) || !strings.Contains(w.Body.String(), `"gated":true`) {
-		t.Fatalf("proposal = %s", w.Body)
+	if w := call(t, f.console, "PUT", "/api/admin/orgs/me/profile", map[string]any{"tagline": "Puzzles for all"}); w.Code != http.StatusOK {
+		t.Fatalf("profile again: %d %s", w.Code, w.Body)
 	}
-	if w := call(t, f.console, "POST", "/api/admin/orgs/me/proposal/submit", map[string]bool{"attest": true}); w.Code != http.StatusOK {
-		t.Fatalf("submit: %d %s", w.Code, w.Body)
+	if w := upload(t, f.console, "/api/admin/orgs/me/logo", "file", "logo.png", "image/png", testPNG(t)); w.Code/100 != 2 {
+		t.Fatalf("logo: %d %s", w.Code, w.Body)
 	}
 
-	var q pendingListing
-	for _, x := range f.queue(t) {
-		if x.Kind == "org" {
-			q = x
-		}
+	changes := f.pageChanges(t)
+	if len(changes) != 2 {
+		t.Fatalf("changes = %+v, want the tagline and the logo", changes)
 	}
-	if q.ID == 0 {
-		t.Fatalf("no org proposal in the queue: %+v", f.queue(t))
+	byField := map[string]orgPageChange{}
+	for _, c := range changes {
+		byField[c.Field] = c
 	}
-	w = call(t, f.reviewer, "GET", fmt.Sprintf("/api/admin/listing-reviews/org/%d", q.ID), nil)
-	if !strings.Contains(w.Body.String(), `"proposed":"Puzzles for everyone"`) {
-		t.Fatalf("content: %s", w.Body)
+	if c := byField["tagline"]; c.Previous != "" || c.Current != "Puzzles for all" {
+		t.Fatalf("tagline change = %+v, want the value a reviewer last saw kept", c)
 	}
-	if w := f.decide(t, "org", q.ID, "approve", q.Revision, ""); w.Code != http.StatusOK {
-		t.Fatalf("approve: %d %s", w.Code, w.Body)
+	if c := byField["logo"]; c.ID == 0 || c.HadImage {
+		t.Fatalf("logo change = %+v", c)
 	}
-	if got := f.scalar(t, `SELECT tagline FROM organizations WHERE id = $1`, f.orgID); got != "Puzzles for everyone" {
-		t.Fatalf("live tagline = %q", got)
+
+	if w := call(t, f.reviewer, "POST", fmt.Sprintf("/api/admin/org-page-changes/%d/roll-back", byField["tagline"].ID), map[string]string{"reason": ""}); w.Code != http.StatusBadRequest {
+		t.Fatalf("roll back without a reason: %d %s", w.Code, w.Body)
 	}
-	w = call(t, f.reviewer, "GET", "/api/admin/listing-reviews/log/verify", nil)
-	if !strings.Contains(w.Body.String(), `"ok":true`) || !strings.Contains(w.Body.String(), `"matching":1`) {
-		t.Fatalf("check after the page's approval: %s", w.Body)
+	if w := call(t, f.reviewer, "POST", fmt.Sprintf("/api/admin/org-page-changes/%d/roll-back", byField["tagline"].ID), map[string]string{"reason": "Not your slogan"}); w.Code != http.StatusOK {
+		t.Fatalf("roll back: %d %s", w.Code, w.Body)
 	}
+	if got := f.scalar(t, `SELECT COALESCE(tagline, '') FROM organizations WHERE id = $1`, f.orgID); got != "" {
+		t.Fatalf("tagline after roll back = %q", got)
+	}
+	if w := call(t, f.reviewer, "POST", fmt.Sprintf("/api/admin/org-page-changes/%d/roll-back", byField["logo"].ID), map[string]string{"reason": "Someone else's logo"}); w.Code != http.StatusOK {
+		t.Fatalf("roll back logo: %d %s", w.Code, w.Body)
+	}
+	if got := f.scalar(t, `SELECT (logo_content IS NULL)::text FROM organizations WHERE id = $1`, f.orgID); got != "true" {
+		t.Fatalf("logo removed after roll back = %s", got)
+	}
+	if len(f.pageChanges(t)) != 0 {
+		t.Fatalf("changes left: %+v", f.pageChanges(t))
+	}
+
+	// A platform admin vouches for the organisation: nothing to review.
+	if _, err := f.h.DB.Exec(`UPDATE organizations SET trusted = 1 WHERE id = $1`, f.orgID); err != nil {
+		t.Fatal(err)
+	}
+	if w := call(t, f.console, "PUT", "/api/admin/orgs/me/profile", map[string]any{"tagline": "Trusted"}); w.Code != http.StatusOK {
+		t.Fatalf("profile trusted: %d %s", w.Code, w.Body)
+	}
+	if len(f.pageChanges(t)) != 0 {
+		t.Fatalf("changes for a trusted organisation: %+v", f.pageChanges(t))
+	}
+}
+
+type orgPageChange struct {
+	ID       int64  `json:"id"`
+	Field    string `json:"field"`
+	Previous string `json:"previous"`
+	Current  string `json:"current"`
+	HadImage bool   `json:"had_image"`
+}
+
+func (f *listingFixture) pageChanges(t *testing.T) []orgPageChange {
+	t.Helper()
+	w := call(t, f.reviewer, "GET", "/api/admin/org-page-changes", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("org page changes: %d %s", w.Code, w.Body)
+	}
+	var out struct {
+		Changes []orgPageChange `json:"changes"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	return out.Changes
 }
 
 // An adventure's presentation, once it is for sale: a title and an icon
@@ -186,8 +230,9 @@ func TestPresentationReview_NotGatedBeforeSale(t *testing.T) {
 	}
 }
 
-// An org admin renames the organisation: at once before anything is for
-// sale, held for review after, and never to another organisation's name.
+// An org admin renames the organisation, never to another
+// organisation's name; once something is for sale the rename still
+// applies at once and is reviewed afterwards.
 func TestOrgRename(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newListingFixture(t)
@@ -199,44 +244,46 @@ func TestOrgRename(t *testing.T) {
 	if w := call(t, f.console, "PUT", "/api/admin/orgs/me/name", map[string]string{"name": "Taken Org"}); w.Code != http.StatusConflict {
 		t.Fatalf("taken name: %d %s", w.Code, w.Body)
 	}
-	if w := call(t, f.console, "PUT", "/api/admin/orgs/me/name", map[string]string{"name": "  Puzzle Co  "}); w.Code != http.StatusOK || strings.Contains(w.Body.String(), "proposed") {
+	if w := call(t, f.console, "PUT", "/api/admin/orgs/me/name", map[string]string{"name": "  Puzzle Co  "}); w.Code != http.StatusOK {
 		t.Fatalf("rename: %d %s", w.Code, w.Body)
 	}
 	if got := f.scalar(t, `SELECT name FROM organizations WHERE id = $1`, f.orgID); got != "Puzzle Co" {
 		t.Fatalf("name before sale = %q", got)
 	}
+	if len(f.pageChanges(t)) != 0 {
+		t.Fatalf("a rename before sale is reviewed: %+v", f.pageChanges(t))
+	}
 
-	f.console.Get("/api/admin/orgs/me/proposal", f.h.GetMyOrgProposal)
-	f.console.Post("/api/admin/orgs/me/proposal/submit", f.h.SubmitMyOrgProposal)
 	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900})
 	f.submitEvent(t)
 	if w := f.decide(t, "event", f.eventID, "approve", f.queue(t)[0].Revision, ""); w.Code != http.StatusOK {
 		t.Fatalf("approve listing: %d %s", w.Code, w.Body)
 	}
-	if w := call(t, f.console, "PUT", "/api/admin/orgs/me/name", map[string]string{"name": "Puzzle Company"}); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"proposed":true`) {
+	if w := call(t, f.console, "PUT", "/api/admin/orgs/me/name", map[string]string{"name": "Puzzle Company"}); w.Code != http.StatusOK {
 		t.Fatalf("rename for sale: %d %s", w.Code, w.Body)
 	}
-	if got := f.scalar(t, `SELECT name FROM organizations WHERE id = $1`, f.orgID); got != "Puzzle Co" {
-		t.Fatalf("live name = %q, want it held back", got)
+	if got := f.scalar(t, `SELECT name FROM organizations WHERE id = $1`, f.orgID); got != "Puzzle Company" {
+		t.Fatalf("live name = %q", got)
 	}
-	if w := call(t, f.console, "POST", "/api/admin/orgs/me/proposal/submit", map[string]bool{"attest": true}); w.Code != http.StatusOK {
-		t.Fatalf("submit: %d %s", w.Code, w.Body)
+	changes := f.pageChanges(t)
+	if len(changes) != 1 || changes[0].Field != "name" || changes[0].Previous != "Puzzle Co" || changes[0].Current != "Puzzle Company" {
+		t.Fatalf("changes = %+v", changes)
 	}
-	var q pendingListing
-	for _, x := range f.queue(t) {
-		if x.Kind == "org" {
-			q = x
-		}
-	}
-	w := call(t, f.reviewer, "GET", fmt.Sprintf("/api/admin/listing-reviews/org/%d", q.ID), nil)
-	if !strings.Contains(w.Body.String(), `"proposed":"Puzzle Company"`) {
-		t.Fatalf("content: %s", w.Body)
-	}
-	if w := f.decide(t, "org", q.ID, "approve", q.Revision, ""); w.Code != http.StatusOK {
+	if w := call(t, f.reviewer, "POST", fmt.Sprintf("/api/admin/org-page-changes/%d/approve", changes[0].ID), nil); w.Code != http.StatusOK {
 		t.Fatalf("approve: %d %s", w.Code, w.Body)
 	}
-	if got := f.scalar(t, `SELECT name FROM organizations WHERE id = $1`, f.orgID); got != "Puzzle Company" {
-		t.Fatalf("name after approval = %q", got)
+	if len(f.pageChanges(t)) != 0 {
+		t.Fatalf("changes after approval: %+v", f.pageChanges(t))
+	}
+
+	// Renamed and renamed back before a review: nothing is left to review.
+	for _, n := range []string{"Puzzle Corp", "Puzzle Company"} {
+		if w := call(t, f.console, "PUT", "/api/admin/orgs/me/name", map[string]string{"name": n}); w.Code != http.StatusOK {
+			t.Fatalf("rename to %s: %d %s", n, w.Code, w.Body)
+		}
+	}
+	if len(f.pageChanges(t)) != 0 {
+		t.Fatalf("changes after renaming back: %+v", f.pageChanges(t))
 	}
 }
 

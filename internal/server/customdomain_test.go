@@ -1,8 +1,10 @@
 package server
 
 import (
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -135,5 +137,38 @@ func TestLookFontURL(t *testing.T) {
 	}
 	if got := lookFontURL("baloo-2"); got == "" {
 		t.Error("baloo-2 should resolve through its file stem")
+	}
+}
+
+// An organisation with its own colours: its brand block must not land
+// inside another <style>, or the page's CSS shows as text.
+func TestOrgPageStylesIntact(t *testing.T) {
+	org := orgProfile{ID: 7, Slug: "acme", Name: "Acme",
+		Accent: sql.NullString{String: "#495369", Valid: true}, Accent2: sql.NullString{String: "#f59e0b", Valid: true}}
+	for _, wl := range []bool{false, true} {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		if wl {
+			r = r.WithContext(domains.WithEntry(r.Context(), domains.Entry{OrgID: 7, Slug: "acme", Name: "Acme", Host: "play.acme.se"}))
+		}
+		w := httptest.NewRecorder()
+		renderOrgPage(w, r, org)
+		body := w.Body.String()
+		if !strings.Contains(body, "--accent:#495369") {
+			t.Fatalf("brand colours missing (white-label %v)", wl)
+		}
+		depth := 0
+		for _, tok := range regexp.MustCompile(`</?style\b`).FindAllString(body, -1) {
+			if tok == "<style" {
+				depth++
+			} else {
+				depth--
+			}
+			if depth < 0 || depth > 1 {
+				t.Fatalf("nested or stray <style> (white-label %v)", wl)
+			}
+		}
+		if depth != 0 {
+			t.Fatalf("unclosed <style> (white-label %v)", wl)
+		}
 	}
 }

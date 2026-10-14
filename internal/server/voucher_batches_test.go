@@ -62,12 +62,21 @@ func TestVoucherBatchFlow(t *testing.T) {
 	code1 := strings.Split(lines[1], ",")[0]
 	code2 := strings.Split(lines[2], ",")[0]
 
-	// A buyer types the first code at /play: a team of four starts.
+	// On another organisation's store the code is unknown, and stays unused.
 	player := newClient(t, boss.ts)
+	if s, _ := doErr(player, "POST", "/api/play/voucher", map[string]string{"code": code1, "org": "someone-else"}); s != 404 {
+		t.Fatalf("another org's store: %d, want 404", s)
+	}
+	var unused bool
+	if err := db.QueryRow(`SELECT activated_at IS NULL FROM voucher_codes WHERE code = $1`, code1).Scan(&unused); err != nil || !unused {
+		t.Fatalf("code used by another store: %v %v", unused, err)
+	}
+
+	// A buyer types the first code at its own store: a team of four starts.
 	var hit struct {
 		TeamURL string `json:"team_url"`
 	}
-	if s := player.do("POST", "/api/play/voucher", map[string]string{"code": strings.ToLower(code1)}, &hit); s != 200 || !strings.HasPrefix(hit.TeamURL, "/team/") {
+	if s := player.do("POST", "/api/play/voucher", map[string]string{"code": strings.ToLower(code1), "org": "testorg"}, &hit); s != 200 || !strings.HasPrefix(hit.TeamURL, "/team/") {
 		t.Fatalf("first use: %d %+v", s, hit)
 	}
 	first := hit.TeamURL

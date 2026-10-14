@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/klahr/zonventure/internal/auth"
+	glook "github.com/klahr/zonventure/internal/graph/look"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/logx"
@@ -36,6 +37,9 @@ type orgProfileDTO struct {
 	AccentSecondaryColor string `json:"accent_secondary_color,omitempty"`
 	BackgroundColor      string `json:"background_color,omitempty"`
 	TextColor            string `json:"text_color,omitempty"`
+	// TitleFont is its pages' title typeface (a look font key), "" for
+	// the site's. Left out of a PUT, it stays as it is.
+	TitleFont *string `json:"title_font,omitempty"`
 }
 
 // orgProfileMaxTagline caps the tagline length. Long enough for a
@@ -73,6 +77,7 @@ func (h *Handlers) GetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 		accentSecondaryColor sql.NullString
 		backgroundColor      sql.NullString
 		textColor            sql.NullString
+		titleFont            string
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT slug,
@@ -80,11 +85,11 @@ func (h *Handlers) GetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 		       public_website,
 		       (logo_content IS NOT NULL AND length(logo_content) > 0),
 		       (cover_image_content IS NOT NULL AND length(cover_image_content) > 0),
-		       accent_color, accent_secondary_color, background_color, text_color
+		       accent_color, accent_secondary_color, background_color, text_color, brand_font
 		FROM organizations
 		WHERE id = $1
 	`, orgID).Scan(&slug, &tagline, &website, &hasLogo, &hasCover,
-		&accentColor, &accentSecondaryColor, &backgroundColor, &textColor)
+		&accentColor, &accentSecondaryColor, &backgroundColor, &textColor, &titleFont)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "organization not found")
@@ -105,6 +110,7 @@ func (h *Handlers) GetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 		AccentSecondaryColor: accentSecondaryColor.String,
 		BackgroundColor:      backgroundColor.String,
 		TextColor:            textColor.String,
+		TitleFont:            &titleFont,
 	})
 }
 
@@ -167,8 +173,15 @@ func (h *Handlers) SetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Once something of theirs is for sale, the tagline and website wait
-	// for review (presentation.go); the colours apply at once.
+	if req.TitleFont != nil {
+		if _, ok := glook.Fonts[*req.TitleFont]; *req.TitleFont != "" && !ok {
+			httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "unknown typeface", "reason": "invalid_font"})
+			return
+		}
+	}
+
+	// Once something of theirs is for sale, a changed tagline or website
+	// is reviewed afterwards (org_page_changes.go); it applies at once.
 	gated, err := orgGated(r.Context(), h.DB, orgID)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
@@ -182,19 +195,12 @@ func (h *Handlers) SetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 			httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
 			return
 		}
-		fields, unset := map[string]any{}, []string{}
-		for col, v := range map[string][2]string{"tagline": {tagline, liveTagline}, "public_website": {website, liveWebsite}} {
-			if v[0] == v[1] {
-				unset = append(unset, col)
-			} else {
-				fields[col] = v[0]
+		for _, c := range [][3]string{{"tagline", liveTagline, tagline}, {"public_website", liveWebsite, website}} {
+			if err := h.noteOrgText(r.Context(), orgID, me.ID, c[0], c[1], c[2]); err != nil {
+				httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
+				return
 			}
 		}
-		if err := propose(r.Context(), h.DB, listingOrg, orgID, orgID, fields, unset, nil, nil); err != nil {
-			httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
-			return
-		}
-		tagline, website = liveTagline, liveWebsite
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `
 		UPDATE organizations
@@ -203,16 +209,20 @@ func (h *Handlers) SetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 		       accent_color = NULLIF($3, ''),
 		       accent_secondary_color = NULLIF($4, ''),
 		       background_color = NULLIF($5, ''),
-		       text_color = NULLIF($6, '')
+		       text_color = NULLIF($6, ''),
+		       brand_font = COALESCE($8, brand_font)
 		 WHERE id = $7
 	`, tagline, website,
 		colors["accent"], colors["accent_secondary"],
 		colors["background"], colors["text"],
-		orgID); err != nil {
+		orgID, req.TitleFont); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
 	}
 	logx.Info("admin.org.profile.updated", "org_id", orgID, "by", me.Username)
+	if req.TitleFont != nil {
+		h.reloadDomains(r.Context())
+	}
 	// Re-render the GET payload so the frontend doesn't need a second
 	// round-trip to refresh has_cover / has_logo derived booleans.
 	h.GetMyOrgProfile(w, r)
@@ -295,12 +305,9 @@ func (h *Handlers) SetMyOrgLogo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, mime = normalized, newMIME
-	if held, err := h.holdOrgPicture(r.Context(), orgID, &picture{mime: mime, content: data}, nil); err != nil || held {
-		if err != nil {
-			httpx.ServerErr(w, http.StatusInternalServerError, "store failed", err)
-			return
-		}
-		httpx.JSON(w, http.StatusAccepted, map[string]any{"proposed": true, "mime": mime, "size": int64(len(data))})
+	// It shows at once; reviewed afterwards when the page is.
+	if err := h.noteOrgPicture(r.Context(), orgID, me.ID, "logo"); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "store failed", err)
 		return
 	}
 	if err := h.Storage.PutOrgLogo(r.Context(), orgID, data, mime); err != nil {
@@ -393,12 +400,9 @@ func (h *Handlers) SetMyOrgCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, mime = normalized, newMIME
-	if held, err := h.holdOrgPicture(r.Context(), orgID, nil, &picture{mime: mime, content: data}); err != nil || held {
-		if err != nil {
-			httpx.ServerErr(w, http.StatusInternalServerError, "store failed", err)
-			return
-		}
-		httpx.JSON(w, http.StatusAccepted, map[string]any{"proposed": true, "mime": mime, "size": int64(len(data))})
+	// It shows at once; reviewed afterwards when the page is.
+	if err := h.noteOrgPicture(r.Context(), orgID, me.ID, "cover"); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "store failed", err)
 		return
 	}
 	if err := h.Storage.PutOrgCover(r.Context(), orgID, data, mime); err != nil {

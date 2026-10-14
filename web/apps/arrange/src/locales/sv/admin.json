@@ -322,5 +322,17 @@
   "Your organisation is a verified creator, so this goes public as soon as you submit it.": "Er organisation är en verifierad skapare, så det blir publikt så fort du skickar in det.",
   "{{name}} is the catalog publisher. Stop publishing there first; only one organization can hold it.": "{{name}} är katalogutgivare. Avsluta utgivningen där först; bara en organisation kan ha den rollen.",
   "{{username}} created {{n}} active event in {{org}}.": "{{username}} har skapat {{n}} aktivt event i {{org}}.",
-  "{{username}} created {{n}} active events in {{org}}.": "{{username}} har skapat {{n}} aktiva event i {{org}}."
+  "{{username}} created {{n}} active events in {{org}}.": "{{username}} har skapat {{n}} aktiva event i {{org}}.",
+  "Kept.": "Behållen.",
+  "Rolled back: the organisation has been told why.": "Återställd: organisationen har fått veta varför.",
+  "Another organisation has the previous name now, so it can't be put back.": "En annan organisation har det tidigare namnet nu, så det går inte att återställa.",
+  "Public already": "Redan publik",
+  "changed {{when}}": "ändrad {{when}}",
+  "Roll back": "Återställ",
+  "Keep": "Behåll",
+  "{{field}} changed. It is public already: keep it, or roll it back to what was there before.": "{{field}} har ändrats. Ändringen är redan publik: behåll den, eller återställ det som fanns innan.",
+  "Before": "Innan",
+  "Now": "Nu",
+  "Roll this change back?": "Återställa ändringen?",
+  "What was there before is put back on their page at once.": "Det som fanns innan läggs tillbaka på deras sida direkt."
 }

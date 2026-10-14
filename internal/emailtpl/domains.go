@@ -80,3 +80,22 @@ func DomainEnding(lang, host, until, link string) (string, Content) {
 		Buttons: []Button{{T(lang, "Domain settings"), link}},
 	}
 }
+
+// OrgChangeRolledBack tells an organisation's admins a change to their
+// public page was put back, and why. field is name, tagline,
+// public_website, logo or cover.
+func OrgChangeRolledBack(lang, field, reason, link string) (string, Content) {
+	what := map[string]string{
+		"name": T(lang, "your organisation's name"), "tagline": T(lang, "your tagline"), "public_website": T(lang, "your website"),
+		"logo": T(lang, "your logo"), "cover": T(lang, "your cover picture"),
+	}[field]
+	return T(lang, "A change to your page was put back"), Content{
+		Lang:      lang,
+		Preheader: T(lang, "The previous version of %s is showing again.", what),
+		Heading:   T(lang, "A change to your page was put back"),
+		Body:      T(lang, "We reviewed the recent change to %s and put the previous version back.", what),
+		Quote:     reason,
+		Buttons:   []Button{{T(lang, "Change it again"), link}},
+		Footer:    T(lang, "Questions? Reply to this email."),
+	}
+}

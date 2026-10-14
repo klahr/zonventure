@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/klahr/zonventure/internal/graph/look"
 )
 
 // orgProfile is the public face of an organisation: what /o/{slug}
@@ -28,8 +30,13 @@ type orgProfile struct {
 	Accent2  sql.NullString
 	Bg       sql.NullString
 	Ink      sql.NullString
+	// Font is its title typeface (a look font key), "" for the site's.
+	Font string
 	// Verified is a verified creator (listing review).
 	Verified bool
+	// Contact is the address it set for buyers to reach it, "" for none
+	// (never its admins' own addresses).
+	Contact string
 }
 
 // loadOrgProfile looks an organisation up by slug. sql.ErrNoRows means
@@ -40,11 +47,11 @@ func loadOrgProfile(ctx context.Context, db *sql.DB, slug string) (orgProfile, e
 		SELECT id, name, tagline, public_website,
 		       (logo_content IS NOT NULL AND length(logo_content) > 0),
 		       (cover_image_content IS NOT NULL AND length(cover_image_content) > 0),
-		       accent_color, accent_secondary_color, background_color, text_color, verified_creator
+		       accent_color, accent_secondary_color, background_color, text_color, verified_creator, contact_email, brand_font
 		FROM organizations
 		WHERE slug = $1
 	`, slug).Scan(&p.ID, &p.Name, &p.Tagline, &p.Website, &p.HasLogo, &p.HasCover,
-		&p.Accent, &p.Accent2, &p.Bg, &p.Ink, &p.Verified)
+		&p.Accent, &p.Accent2, &p.Bg, &p.Ink, &p.Verified, &p.Contact, &p.Font)
 	return p, err
 }
 
@@ -61,8 +68,34 @@ func (p orgProfile) heroBgStyle() string {
 	return fmt.Sprintf(
 		"background-image: linear-gradient(135deg, %s, %s), url('%s'); background-size: cover; background-position: center;",
 		heroRGBA(p.Accent.String, "173,19,87", ".6"), heroRGBA(p.Accent2.String, "226,64,128", ".5"),
-		html.EscapeString(cssURLQuote("/org-cover/"+strconv.FormatInt(p.ID, 10))),
+		p.coverURL(),
 	)
+}
+
+// coverURL is the org's cover, quoted for a CSS url('…') inside a
+// style attribute.
+func (p orgProfile) coverURL() string {
+	return html.EscapeString(cssURLQuote("/org-cover/" + strconv.FormatInt(p.ID, 10)))
+}
+
+// heroCoverStyle sets the org's cover as the --hero-cover variable, for
+// a hero that layers its own shade over it. Empty without a cover; the
+// page then falls back to an adventure's cover.
+func (p orgProfile) heroCoverStyle() string {
+	if !p.HasCover {
+		return ""
+	}
+	return fmt.Sprintf("--hero-cover: url('%s');", p.coverURL())
+}
+
+// contactBlock links the org's contact address, empty without one.
+func (p orgProfile) contactBlock(label string) string {
+	c := strings.TrimSpace(p.Contact)
+	if c == "" {
+		return ""
+	}
+	return fmt.Sprintf(`<p class="contact">%s <a href="mailto:%s">%s</a></p>`,
+		html.EscapeString(label), html.EscapeString(c), html.EscapeString(c))
 }
 
 // heroRGBA turns a stored #rgb/#rrggbb brand colour into an rgba()
@@ -108,7 +141,19 @@ func (p orgProfile) websiteBlock() string {
 
 // brandStyle is the org's colour override block; see orgBrandStyleBlock.
 func (p orgProfile) brandStyle() string {
-	return orgBrandStyleBlock(p.Accent.String, p.Accent2.String, p.Bg.String, p.Ink.String)
+	return orgBrandStyleBlock(p.Accent.String, p.Accent2.String, p.Bg.String, p.Ink.String) + orgFontBlock(p.Font)
+}
+
+// orgFontBlock loads an organisation's title typeface (a look font key)
+// and sets its pages' titles in it; "" when it chose none or the font
+// isn't built. Keys come from look.Fonts only, so the output is safe.
+func orgFontBlock(key string) string {
+	family, ok := look.Fonts[key]
+	if !ok || lookFontURL(key) == "" {
+		return ""
+	}
+	return `<link rel="stylesheet" href="` + lookFontURL(key) + `">` +
+		`<style>h1, h2, .brand { font-family: "` + html.EscapeString(family) + `", var(--font-brand) !important; }</style>`
 }
 
 // orgBrandStyleBlock emits a `<style>:root { --foo: #bar; }</style>`
@@ -144,16 +189,28 @@ func orgBrandStyleBlock(accent, accent2, bg, ink string) string {
 	if len(overrides) == 0 {
 		return ""
 	}
-	var b strings.Builder
-	b.WriteString("<style>:root{")
+	// In dark mode the accents stay the organisation's, lightened as
+	// text, and a surface and ink picked for light pages give way to
+	// page-tokens.css's dark ones. The selectors outrank that file's dark blocks, which this
+	// block's :root would otherwise beat (the toggle) or lose to (the
+	// system setting).
+	var light, dark strings.Builder
 	for _, o := range overrides {
-		b.WriteString(o.name)
-		b.WriteString(":")
-		b.WriteString(o.val)
-		b.WriteString(";")
+		light.WriteString(o.name + ":" + o.val + ";")
+		switch o.name {
+		case "--bg":
+			dark.WriteString("--bg:#14202e;")
+		case "--ink":
+			dark.WriteString("--ink:#e7ecf4;")
+		case "--accent":
+			dark.WriteString(o.name + ":" + o.val + ";--accent-text:color-mix(in srgb," + o.val + " 45%,#ffffff);")
+		default:
+			dark.WriteString(o.name + ":" + o.val + ";")
+		}
 	}
-	b.WriteString("}</style>")
-	return b.String()
+	return "<style>:root{" + light.String() + "}" +
+		"@media (prefers-color-scheme: dark){:root:not([data-theme]){" + dark.String() + "}}" +
+		":root[data-theme=\"dark\"]{" + dark.String() + "}</style>"
 }
 
 // buildOrgSitemapURLs returns <url>… entries for every org with at

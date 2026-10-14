@@ -402,6 +402,24 @@ export const approveListing = (r: ListingRef, signature?: DecisionSignature) =>
 export const rejectListing = (r: ListingRef, reason: string, signature?: DecisionSignature) =>
   post<unknown>(`${review(r)}/reject`, { revision: r.revision, reason, ...(signature ? { signature } : {}) });
 
+/** internal/admin/org_page_changes.go orgPageChangeDTO */
+export interface OrgPageChange {
+  id: number;
+  org_id: number;
+  org_name: string;
+  org_slug: string;
+  field: "name" | "tagline" | "public_website" | "logo" | "cover";
+  previous: string;
+  current: string;
+  had_image: boolean;
+  changed_at: string;
+  changed_by?: string;
+}
+export const listOrgPageChanges = (signal?: AbortSignal) =>
+  get<{ changes: OrgPageChange[] | null }>("/api/admin/org-page-changes", signal ? { signal } : {}).then((r) => r.changes ?? []);
+export const approveOrgPageChange = (id: number) => post<unknown>(`/api/admin/org-page-changes/${id}/approve`, {});
+export const rollBackOrgPageChange = (id: number, reason: string) => post<unknown>(`/api/admin/org-page-changes/${id}/roll-back`, { reason });
+
 /** internal/admin/reviewer_passkeys.go reviewerPasskeyDTO */
 export interface ReviewerPasskey {
   id: number;

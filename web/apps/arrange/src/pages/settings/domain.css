@@ -163,18 +163,30 @@
 .dz .dm-browser__url span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .dz .dm-browser__url svg { flex: none; color: var(--dz-muted); }
 .dz .dm-browser__url svg.is-live { color: var(--dz-success); }
-.dz .dm-browser__page { padding: 10px 12px 14px; display: flex; flex-direction: column; gap: 10px; }
-.dz .dm-browser__top { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.8rem; }
-.dz .dm-browser__top img { width: 22px; height: 22px; object-fit: contain; border-radius: 5px; background: #fff; }
+.dz .dm-browser__page { display: flex; flex-direction: column; }
+.dz .dm-browser__hero { padding: 10px 12px 16px; display: flex; flex-direction: column; align-items: flex-start; color: #fff; min-height: 13rem; justify-content: flex-end; }
+.dz .dm-browser__top { align-self: stretch; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: auto; padding-bottom: 14px; font-weight: 700; font-size: 0.8rem; }
+.dz .dm-browser__top span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dz .dm-browser__menu { display: flex; flex-direction: column; gap: 2px; }
+.dz .dm-browser__menu i { width: 11px; height: 1.5px; border-radius: 1px; background: #fff; }
 .dz .dm-browser__mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: #fff; font-size: 0.7rem; }
-.dz .dm-browser__hero { border-radius: 10px; padding: 18px 14px 14px; display: flex; flex-direction: column; gap: 4px; color: #fff; min-height: 7.5rem; justify-content: flex-end; }
-.dz .dm-browser__hero strong { font-family: Georgia, serif; font-size: 1.2rem; line-height: 1.1; overflow-wrap: anywhere; }
-.dz .dm-browser__hero span { font-size: 0.72rem; opacity: 0.9; }
-.dz .dm-browser__hero em { align-self: flex-start; margin-top: 6px; font-style: normal; font-weight: 700; font-size: 0.7rem; padding: 5px 11px; border-radius: 999px; background: #fff; }
+.dz .dm-browser__logo { display: inline-block; margin-bottom: 8px; padding: 4px; border-radius: 7px; background: #fff; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35); }
+.dz .dm-browser__logo img { display: block; max-height: 26px; max-width: 80px; }
+.dz .dm-browser__chip { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 6px; padding: 2px 7px 2px 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.22); font-size: 0.6rem; font-weight: 600; }
+.dz .dm-browser__chip i { width: 6px; height: 6px; border-radius: 50%; }
+.dz .dm-browser__hero strong { font-size: 1.35rem; line-height: 1.05; overflow-wrap: anywhere; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.35); }
+.dz .dm-browser__tagline { margin-top: 4px; font-size: 0.72rem; color: rgba(255, 255, 255, 0.88); }
+.dz .dm-browser__ctas { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.dz .dm-browser__ctas em { font-style: normal; font-weight: 700; font-size: 0.62rem; padding: 5px 10px; border-radius: 999px; color: #fff; }
+.dz .dm-browser__ctas em.is-glass { background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.35); }
+.dz .dm-browser__body { padding: 12px 12px 14px; display: flex; flex-direction: column; }
+.dz .dm-browser__eyebrow { font-size: 0.5rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.dz .dm-browser__body b { font-size: 0.95rem; line-height: 1.1; margin: 2px 0 8px; }
 .dz .dm-browser__cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.dz .dm-browser__card { border-radius: 8px; background: rgba(255, 255, 255, 0.75); border: 1px solid rgba(0, 0, 0, 0.06); padding: 6px; display: flex; flex-direction: column; gap: 5px; }
-.dz .dm-browser__card div { height: 34px; border-radius: 5px; opacity: 0.85; }
-.dz .dm-browser__card i { height: 5px; border-radius: 3px; opacity: 0.25; }
+.dz .dm-browser__card { border-radius: 8px; overflow: hidden; background: #fff; border: 1px solid rgba(0, 0, 0, 0.06); box-shadow: 0 4px 12px rgba(20, 24, 36, 0.08); display: flex; flex-direction: column; gap: 5px; padding-bottom: 7px; }
+.dz .dm-browser__card div { position: relative; aspect-ratio: 16 / 10; }
+.dz .dm-browser__price { position: absolute; right: 5px; bottom: 5px; width: 26px; height: 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.95); }
+.dz .dm-browser__card i { height: 5px; margin: 0 7px; border-radius: 3px; opacity: 0.25; }
 .dz .dm-browser__card i + i { width: 60%; opacity: 0.15; }
 
 @keyframes dm-pulse { 50% { opacity: 0.35; transform: scale(0.85); } }

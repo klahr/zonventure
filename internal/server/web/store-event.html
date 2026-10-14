@@ -61,62 +61,75 @@
      all live in /assets/page-tokens.css. Page-specific overrides below. */
   :root { --shadow-lg: 0 8px 28px rgba(31,51,73,.14); }
   body { line-height: 1.6; }
-  .wrap { max-width: 60rem; margin: 0 auto; padding: 0 1.25rem; }
+  .wrap { max-width: 75rem; margin: 0 auto; padding: 0 1.5rem; }
   /* Buy buttons want a slightly bigger button than the marketing default. */
   .btn { padding: .9rem 1.9rem; font-size: 1rem; }
   .btn.primary[disabled] { opacity: .55; cursor: not-allowed; transform: none; }
 
-  main { padding: 2.5rem 0 5rem; }
-  .crumbs { color: var(--muted); font-size: .85rem; margin: 0 0 1rem; }
-  .crumbs a { color: var(--muted); }
+  main { padding: 0 0 5rem; }
 
+  /* The adventure's cover across the top, under a shade tinted with the
+     organisation's accent; without a cover, its colours alone. */
   .hero {
-    display: grid;
-    gap: 2rem;
-    grid-template-columns: minmax(0, 1fr);
-    margin-bottom: 2.5rem;
+    position: relative; color: #fff; isolation: isolate;
+    background-color: #131722;
+    background-image:
+      linear-gradient(180deg, rgba(12,14,20,.35) 0%, rgba(12,14,20,.55) 50%, rgba(12,14,20,.92) 100%),
+      linear-gradient(120deg, color-mix(in srgb, var(--accent) 50%, transparent) 0%, transparent 65%),
+      radial-gradient(120% 120% at 85% 10%, color-mix(in srgb, var(--accent-2) 70%, #131722) 0%, #131722 60%);
+    background-size: cover; background-position: center;
   }
-  @media (min-width: 50rem) {
-    .hero { grid-template-columns: 1.4fr 1fr; align-items: center; }
+  .hero[data-cover="true"] {
+    background-image:
+      linear-gradient(180deg, rgba(12,14,20,.35) 0%, rgba(12,14,20,.55) 50%, rgba(12,14,20,.92) 100%),
+      linear-gradient(120deg, color-mix(in srgb, var(--accent) 50%, transparent) 0%, transparent 65%),
+      var(--cover-img);
   }
-  .hero-art {
-    aspect-ratio: 16 / 9;
-    border-radius: 20px;
-    background: linear-gradient(135deg, var(--accent-deep), var(--accent-2));
-    background-size: cover;
-    background-position: center;
-    box-shadow: var(--shadow-lg);
-  }
-  .hero-art[data-cover="true"] { background-image: var(--cover-img); }
-  .adv-icon { display: block; width: 72px; height: 72px; margin-bottom: .75rem; border-radius: 18px; object-fit: cover; }
+  .hero-inner { min-height: min(62vh, 36rem); display: flex; flex-direction: column; justify-content: flex-end; padding-top: 6.5rem; padding-bottom: clamp(2.5rem, 6vw, 4rem); }
+  .crumbs { font-size: .9rem; margin: 0 0 auto; padding-bottom: 2rem; }
+  .crumbs a { color: rgba(255,255,255,.85); font-weight: 600; }
+  .adv-icon { display: block; width: 72px; height: 72px; margin-bottom: 1rem; border-radius: 18px; object-fit: cover; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
   .adv-icon[data-has="false"] { display: none; }
-  .org { color: var(--muted); font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; }
+  .org { color: rgba(255,255,255,.75); font-size: .85rem; text-transform: uppercase; letter-spacing: .1em; margin: 0; }
   /* Verified creator (listing review): shown when the org is one. */
   .verified-badge { display: inline-flex; align-items: center; gap: .3rem; margin-left: .5rem; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--success, #1b6b43); background: color-mix(in srgb, var(--success, #1b6b43) 12%, transparent); vertical-align: middle; }
   .verified-badge[data-verified="false"] { display: none; }
   h1 {
     font-family: var(--font-brand);
-    font-size: clamp(2rem, 5vw, 3rem);
-    margin: .5rem 0 .35rem;
-    line-height: 1.1;
+    font-size: clamp(2.4rem, 6vw, 4.2rem);
+    margin: .4rem 0 .5rem;
+    line-height: 1.04;
+    text-shadow: 0 4px 30px rgba(0,0,0,.35);
+    overflow-wrap: anywhere;
   }
-  .subtitle { color: var(--ink-soft); font-size: 1.1rem; margin: 0 0 1.5rem; }
+  .subtitle { color: rgba(255,255,255,.88); font-size: 1.2rem; margin: 0 0 1.5rem; max-width: 40rem; }
+  .subtitle:empty { display: none; }
   .price-row {
-    display: inline-flex; align-items: baseline; gap: .55rem;
-    padding: .65rem 1.1rem;
-    background: var(--surface); border: 1px solid var(--border-soft);
-    border-radius: 999px; box-shadow: var(--shadow);
+    display: inline-flex; align-items: baseline; gap: .55rem; align-self: flex-start;
+    padding: .6rem 1.1rem;
+    background: rgba(255,255,255,.95); border-radius: 999px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
   }
-  .price-row .price { font-weight: 800; font-size: 1.4rem; color: var(--ink); }
-  .price-row .per { color: var(--muted); font-size: .9rem; }
+  .price-row .price { font-weight: 800; font-size: 1.35rem; color: #111827; }
+  .price-row .per { color: #4b5563; font-size: .9rem; }
 
-  .blurb { color: var(--ink-soft); font-size: 1.05rem; margin: 1.5rem 0 0; }
+  /* Below the hero: about and the facts beside the buy card, which
+     stays in view on a wide screen. */
+  .detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 25rem); gap: clamp(1.5rem, 4vw, 3rem); align-items: start; padding-top: clamp(2.5rem, 5vw, 3.5rem); }
+  .detail-side { position: sticky; top: 5.5rem; }
+  @media (max-width: 56rem) {
+    .detail { grid-template-columns: minmax(0, 1fr); }
+    .detail-side { position: static; }
+  }
+  @media (max-width: 30rem) {
+    .meta-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+  .blurb { color: var(--ink-soft); font-size: 1.1rem; line-height: 1.7; margin: 0; white-space: pre-line; }
 
   .meta-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
-    margin: 2rem 0;
+    margin: 2rem 0 0;
   }
   .meta-tile {
     background: var(--surface);
@@ -173,7 +186,7 @@
   .seg input { margin: 0; accent-color: var(--accent); }
 </style>
 </head>
-<body>
+<body class="has-hero">
 
 <a class="skip-link" href="#main">{{SKIP_TO_CONTENT}}</a>
 
@@ -212,60 +225,62 @@
 </aside>
 
 <main id="main">
-  <div class="wrap">
-    <p class="crumbs"><a href="{{ORG_PATH}}">{{STORE_EVENT_CRUMBS}}</a></p>
+  <section class="hero" data-cover="{{HAS_COVER}}" style="--cover-img: url('{{COVER_URL}}')">
+    <div class="wrap hero-inner">
+      <p class="crumbs"><a href="{{ORG_PATH}}">{{STORE_EVENT_CRUMBS}}</a></p>
+      <img class="adv-icon" src="{{ICON_URL}}" alt="" width="72" height="72" data-has="{{HAS_ICON}}">
+      <p class="org store-org">{{ORG_NAME}}<span class="verified-badge" data-verified="{{ORG_VERIFIED}}" title="{{VERIFIED_CREATOR_HINT}}">✓ {{VERIFIED_CREATOR}}</span></p>
+      <h1>{{TITLE}}</h1>
+      <p class="subtitle">{{SUBTITLE}}</p>
+      <div class="price-row">
+        <span class="price">{{PRICE_DISPLAY}}</span>
+        <span class="per">{{STORE_PER_TICKET}}</span>
+      </div>
+    </div>
+  </section>
 
-    <div id="status"></div>
+  <div class="wrap detail">
+    <div class="detail-main">
+      <div id="status"></div>
+      <p class="blurb">{{BLURB}}</p>
 
-    <div class="hero">
-      <div>
-        <img class="adv-icon" src="{{ICON_URL}}" alt="" width="72" height="72" data-has="{{HAS_ICON}}">
-        <p class="org">{{ORG_NAME}}<span class="verified-badge" data-verified="{{ORG_VERIFIED}}" title="{{VERIFIED_CREATOR_HINT}}">✓ {{VERIFIED_CREATOR}}</span></p>
-        <h1>{{TITLE}}</h1>
-        <p class="subtitle">{{SUBTITLE}}</p>
-        <div class="price-row">
-          <span class="price">{{PRICE_DISPLAY}}</span>
-          <span class="per">{{STORE_PER_TICKET}}</span>
+      <div class="meta-grid" aria-label="Ticket details">
+        <div class="meta-tile">
+          <div class="k">{{STORE_EVENT_META_TEAM_SIZE}}</div>
+          <div class="v">{{TEAM_LABEL}}</div>
         </div>
-        <p class="blurb">{{BLURB}}</p>
-      </div>
-      <div class="hero-art" data-cover="{{HAS_COVER}}" style="--cover-img: url('{{COVER_URL}}')" role="img" aria-label="{{TITLE}}"></div>
-    </div>
-
-    <div class="meta-grid" aria-label="Ticket details">
-      <div class="meta-tile">
-        <div class="k">{{STORE_EVENT_META_TEAM_SIZE}}</div>
-        <div class="v">{{TEAM_LABEL}}</div>
-      </div>
-      <div class="meta-tile">
-        <div class="k">{{STORE_EVENT_META_FORMAT}}</div>
-        <div class="v">{{STORE_EVENT_META_FORMAT_VALUE}}</div>
-      </div>
-      <div class="meta-tile">
-        <div class="k">{{STORE_EVENT_META_WHEN}}</div>
-        <div class="v">{{STORE_EVENT_META_WHEN_VALUE}}</div>
-      </div>
-      <div class="meta-tile"{{START_LABEL_HIDDEN}}>
-        <div class="k">{{STORE_EVENT_META_MEETING_POINT}}</div>
-        <div class="v">{{START_LABEL}}</div>
+        <div class="meta-tile">
+          <div class="k">{{STORE_EVENT_META_FORMAT}}</div>
+          <div class="v">{{STORE_EVENT_META_FORMAT_VALUE}}</div>
+        </div>
+        <div class="meta-tile">
+          <div class="k">{{STORE_EVENT_META_WHEN}}</div>
+          <div class="v">{{STORE_EVENT_META_WHEN_VALUE}}</div>
+        </div>
+        <div class="meta-tile"{{START_LABEL_HIDDEN}}>
+          <div class="k">{{STORE_EVENT_META_MEETING_POINT}}</div>
+          <div class="v">{{START_LABEL}}</div>
+        </div>
       </div>
     </div>
 
-    <div class="buy-card">
-      <h2>{{STORE_EVENT_BUY_HEADING}}</h2>
-      <form id="buy-form" data-event-id="{{EVENT_ID}}" novalidate>
-        <label for="buyer-email">{{STORE_EVENT_EMAIL_LABEL}}</label>
-        <input id="buyer-email" type="email" required autocomplete="email" placeholder="{{STORE_EVENT_EMAIL_PLACEHOLDER}}">
-        <fieldset class="letter-lang" id="letter-lang" data-langs="{{LETTER_LANGS}}" hidden>
-          <legend>{{STORE_EVENT_LETTER_LANG_LABEL}}</legend>
-          <div class="seg" id="letter-lang-options"></div>
-          <p class="hint">{{STORE_EVENT_LETTER_LANG_HINT}}</p>
-        </fieldset>
-        <div class="err" id="buy-err" role="alert"></div>
-        <button type="submit" class="btn primary" id="buy-submit">{{STORE_EVENT_BUY_CTA}}</button>
-        <p class="terms-note">{{STORE_EVENT_TERMS_HTML}}</p>
-        <!--ZV_SELLER_SOLD_BY-->
-      </form>
+    <div class="detail-side">
+      <div class="buy-card">
+        <h2>{{STORE_EVENT_BUY_HEADING}}</h2>
+        <form id="buy-form" data-event-id="{{EVENT_ID}}" novalidate>
+          <label for="buyer-email">{{STORE_EVENT_EMAIL_LABEL}}</label>
+          <input id="buyer-email" type="email" required autocomplete="email" placeholder="{{STORE_EVENT_EMAIL_PLACEHOLDER}}">
+          <fieldset class="letter-lang" id="letter-lang" data-langs="{{LETTER_LANGS}}" hidden>
+            <legend>{{STORE_EVENT_LETTER_LANG_LABEL}}</legend>
+            <div class="seg" id="letter-lang-options"></div>
+            <p class="hint">{{STORE_EVENT_LETTER_LANG_HINT}}</p>
+          </fieldset>
+          <div class="err" id="buy-err" role="alert"></div>
+          <button type="submit" class="btn primary" id="buy-submit">{{STORE_EVENT_BUY_CTA}}</button>
+          <p class="terms-note">{{STORE_EVENT_TERMS_HTML}}</p>
+          <!--ZV_SELLER_SOLD_BY-->
+        </form>
+      </div>
     </div>
   </div>
 </main>

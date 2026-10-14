@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Bot, Check, ExternalLink, FileSearch, KeyRound, Trash2, UserPlus, X, Zap } from "lucide-react";
+import { Bot, Check, ExternalLink, FileSearch, KeyRound, Trash2, Undo2, UserPlus, X, Zap } from "lucide-react";
 import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
@@ -7,9 +7,9 @@ import { href } from "../../router.ts";
 import { Button, Callout, Card, Dialog, Empty, ErrorBox, Field, ICON, Loading, Page, PageHeader, Pill, Table, Tabs, fmtDateTime, fmtMoney, relTime, useDialogs, useLoad, useToast, type Column } from "../../ui/index.ts";
 import { createPasskey, isCancelled, passkeysSupported, signWithPasskey } from "../../ui/webauthn.ts";
 import {
-  approveListing, beginReviewerPasskey, finishReviewerPasskey, listListingLog, listListingReviewers, listListingReviews, listReviewerPasskeys,
-  rejectListing, revokeReviewerPasskey, setListingReviewer, signListingDecision, verifyListingLog,
-  type ChainReport, type ListingKind, type ServedFinding, type ServedReport, type DecisionSignature, type ListingFields, type ReviewerPasskey, type ListingLogEntry, type ListingRef, type ListingReview, type ListingReviewer,
+  approveListing, approveOrgPageChange, beginReviewerPasskey, finishReviewerPasskey, listListingLog, listListingReviewers, listListingReviews, listOrgPageChanges, listReviewerPasskeys,
+  rejectListing, rollBackOrgPageChange, revokeReviewerPasskey, setListingReviewer, signListingDecision, verifyListingLog,
+  type ChainReport, type ListingKind, type ServedFinding, type ServedReport, type DecisionSignature, type ListingFields, type ReviewerPasskey, type ListingLogEntry, type ListingRef, type ListingReview, type ListingReviewer, type OrgPageChange,
 } from "./api.ts";
 import "./admin.css";
 
@@ -196,6 +196,7 @@ export function useDecide(onDone: () => void, onChanged?: () => void) {
 function Queue({ readOnly = false, support = false }: { readOnly?: boolean; support?: boolean }) {
   const t = useT();
   const reviews = useLoad((s) => listListingReviews(s), []);
+  const changes = useLoad((s) => listOrgPageChanges(s), []);
   const keys = useLoad((s) => (readOnly ? Promise.resolve(null) : listReviewerPasskeys(s)), [readOnly]);
   // The copy a reviewer decided on, by listing, when it changed under them.
   const [reviewed, setReviewed] = useState<Record<string, ListingReview>>({});
@@ -219,11 +220,13 @@ function Queue({ readOnly = false, support = false }: { readOnly?: boolean; supp
     return <ErrorBox message={t.t("Couldn't load listings ({{err}}).", { err: reviews.error })} retry={reviews.reload} retryLabel={t.t("Retry")} />;
   }
   if (!reviews.data) return <Loading label={t.t("Loading…")} />;
-  if (list.length === 0) return <>{needKey}<Empty title={t.t("Nothing is waiting for review.")} /></>;
+  const pageChanges = changes.data ?? [];
+  if (list.length === 0 && pageChanges.length === 0) return <>{needKey}<Empty title={t.t("Nothing is waiting for review.")} /></>;
   return (
     <>
       {needKey}
       {readOnlyNote}
+      {pageChanges.map((c) => <PageChangeCard key={c.id} change={c} onDone={changes.reload} readOnly={readOnly} />)}
       {list.map((r) => (
         <ReviewCard
           key={`${r.kind}-${r.id}-${r.revision}`}
@@ -326,6 +329,135 @@ function ReviewCard({ review: r, reviewed, onDone, onChanged, readOnly }: { revi
         />
       )}
     </Card>
+  );
+}
+
+function pageFieldLabel(t: Translator, field: OrgPageChange["field"]): string {
+  switch (field) {
+    case "name":
+      return t.t("Name");
+    case "tagline":
+      return t.t("Tagline");
+    case "public_website":
+      return t.t("Website");
+    case "logo":
+      return t.t("Logo");
+    case "cover":
+      return t.t("Cover picture");
+  }
+}
+
+/**
+ * A change to an organisation's page, public already: kept, or rolled
+ * back to what was there before with a reason the organisation is sent.
+ */
+function PageChangeCard({ change: c, onDone, readOnly }: { change: OrgPageChange; onDone: () => void; readOnly: boolean }) {
+  const t = useT();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [rollingBack, setRollingBack] = useState(false);
+  const picture = c.field === "logo" || c.field === "cover";
+  const none = <span className="adm-sub">{t.t("(none)")}</span>;
+  const pictureClass = c.field === "cover" ? "adm-listing__cover" : "adm-logo adm-page-change__logo";
+  const decide = async (roll: string | null) => {
+    setBusy(true);
+    try {
+      if (roll === null) await approveOrgPageChange(c.id);
+      else await rollBackOrgPageChange(c.id, roll);
+      toast.ok(roll === null ? t.t("Kept.") : t.t("Rolled back: the organisation has been told why."));
+      onDone();
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "org_name_taken") toast.err(t.t("Another organisation has the previous name now, so it can't be put back."));
+      else toast.err(reviewError(e, t));
+      if (e instanceof ApiError && e.status === 404) onDone();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card
+      title={
+        <span className="adm-inline">
+          {c.org_name}
+          <Pill tone="info">{t.t("Organisation page")}</Pill>
+          <Pill tone="warn">{t.t("Public already")}</Pill>
+        </span>
+      }
+      subtitle={
+        <>
+          <a href={href({ name: "organization", id: c.org_id })}>{c.org_name}</a>
+          {" · "}
+          <span title={fmtDateTime(c.changed_at, t.current())}>{t.t("changed {{when}}", { when: relTime(c.changed_at, t.current()) })}</span>
+          {c.changed_by && <>{" · "}{t.t("by {{name}}", { name: c.changed_by })}</>}
+        </>
+      }
+      actions={
+        <span className="adm-actions">
+          {c.org_slug && (
+            <a className="adm-inline" href={`/o/${encodeURIComponent(c.org_slug)}`} target="_blank" rel="noopener">
+              {t.t("Public page")} <ExternalLink size={ICON.sm} aria-hidden />
+            </a>
+          )}
+          {!readOnly && <Button size="sm" variant="danger" icon={<Undo2 size={ICON.sm} aria-hidden />} disabled={busy} onClick={() => setRollingBack(true)}>{t.t("Roll back")}</Button>}
+          {!readOnly && <Button size="sm" variant="primary" icon={<Check size={ICON.sm} aria-hidden />} loading={busy} onClick={() => void decide(null)}>{t.t("Keep")}</Button>}
+        </span>
+      }
+    >
+      <p className="adm-sub">{t.t("{{field}} changed. It is public already: keep it, or roll it back to what was there before.", { field: pageFieldLabel(t, c.field) })}</p>
+      <dl className="adm-listing__facts">
+        <div className="adm-listing__fact">
+          <dt>{t.t("Before")}</dt>
+          <dd>
+            {picture
+              ? c.had_image
+                ? <img className={pictureClass} src={`/api/admin/org-page-changes/${c.id}/previous`} alt={t.t("Before")} />
+                : none
+              : c.previous || none}
+          </dd>
+        </div>
+        <div className="adm-listing__fact is-changed">
+          <dt>{t.t("Now")}</dt>
+          <dd>
+            {picture
+              ? <img className={pictureClass} src={`/${c.field === "cover" ? "org-cover" : "org-logo"}/${c.org_id}?t=${encodeURIComponent(c.changed_at)}`} alt={t.t("Now")} />
+              : c.current || none}
+          </dd>
+        </div>
+      </dl>
+      {rollingBack && (
+        <RollBackDialog
+          onClose={() => setRollingBack(false)}
+          onRollBack={(reason) => {
+            setRollingBack(false);
+            void decide(reason);
+          }}
+        />
+      )}
+    </Card>
+  );
+}
+
+function RollBackDialog({ onClose, onRollBack }: { onClose: () => void; onRollBack: (reason: string) => void }) {
+  const t = useT();
+  const [reason, setReason] = useState("");
+  const ok = reason.trim() !== "";
+  return (
+    <Dialog
+      title={t.t("Roll this change back?")}
+      onClose={onClose}
+      onSubmit={() => ok && onRollBack(reason.trim())}
+      footer={
+        <>
+          <Button onClick={onClose}>{t.t("Cancel")}</Button>
+          <Button type="submit" variant="danger" filled disabled={!ok}>{t.t("Roll back")}</Button>
+        </>
+      }
+    >
+      <Field label={t.t("Why? The organisation's admins get this by email.")}>
+        <textarea autoFocus rows={4} maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} />
+      </Field>
+      <p className="adm-sub">{t.t("What was there before is put back on their page at once.")}</p>
+    </Dialog>
   );
 }
 

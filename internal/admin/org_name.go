@@ -10,9 +10,9 @@ import (
 
 // SetMyOrgName renames the caller's organisation. RoleOrgAdmin only.
 // Names are unique, so a taken one is a 409. Once something of the
-// organisation's is for sale the name waits for review, as the tagline
-// does (presentation.go): the reply's proposed says so, and name stays
-// the live one until a reviewer approves.
+// organisation's is for sale the new name applies at once and is
+// reviewed afterwards, as the tagline is (org_page_changes.go), unless a
+// platform admin vouches for the organisation (orgGated).
 //
 //	PUT /api/admin/orgs/me/name {name}
 func (h *Handlers) SetMyOrgName(w http.ResponseWriter, r *http.Request) {
@@ -54,17 +54,12 @@ func (h *Handlers) SetMyOrgName(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
 		return
 	}
+	// Reviewed afterwards (org_page_changes.go); it applies at once.
 	if gated {
-		fields, unset := map[string]any{"name": name}, []string(nil)
-		if name == live {
-			fields, unset = map[string]any{}, []string{"name"}
-		}
-		if err := propose(r.Context(), h.DB, listingOrg, orgID, orgID, fields, unset, nil, nil); err != nil {
+		if err := h.noteOrgText(r.Context(), orgID, me.ID, "name", live, name); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
 			return
 		}
-		httpx.JSON(w, http.StatusOK, map[string]any{"name": live, "proposed": name != live})
-		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `UPDATE organizations SET name = $1 WHERE id = $2`, name, orgID); err != nil {
 		if isUniqueViolation(err) {

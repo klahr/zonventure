@@ -23,20 +23,20 @@ func TestOrgBrandStyleBlock(t *testing.T) {
 		{
 			name:   "only accent emits one var",
 			accent: "#112233",
-			want:   "<style>:root{--accent:#112233;}</style>",
+			want:   "<style>:root{--accent:#112233;}@media (prefers-color-scheme: dark){:root:not([data-theme]){--accent:#112233;--accent-text:color-mix(in srgb,#112233 45%,#ffffff);}}:root[data-theme=\"dark\"]{--accent:#112233;--accent-text:color-mix(in srgb,#112233 45%,#ffffff);}</style>",
 		},
 		{
-			name:    "all four emit all four vars in stable order",
+			name:    "all four emit all four vars in stable order, dark keeping the accents",
 			accent:  "#aa1111",
 			accent2: "#bb2222",
 			bg:      "#cccccc",
 			ink:     "#222222",
-			want:    "<style>:root{--accent:#aa1111;--accent-2:#bb2222;--bg:#cccccc;--ink:#222222;}</style>",
+			want:    "<style>:root{--accent:#aa1111;--accent-2:#bb2222;--bg:#cccccc;--ink:#222222;}@media (prefers-color-scheme: dark){:root:not([data-theme]){--accent:#aa1111;--accent-text:color-mix(in srgb,#aa1111 45%,#ffffff);--accent-2:#bb2222;--bg:#14202e;--ink:#e7ecf4;}}:root[data-theme=\"dark\"]{--accent:#aa1111;--accent-text:color-mix(in srgb,#aa1111 45%,#ffffff);--accent-2:#bb2222;--bg:#14202e;--ink:#e7ecf4;}</style>",
 		},
 		{
 			name: "background only",
 			bg:   "#fafafa",
-			want: "<style>:root{--bg:#fafafa;}</style>",
+			want: "<style>:root{--bg:#fafafa;}@media (prefers-color-scheme: dark){:root:not([data-theme]){--bg:#14202e;}}:root[data-theme=\"dark\"]{--bg:#14202e;}</style>",
 		},
 	}
 	for _, tc := range cases {

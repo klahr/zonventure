@@ -131,6 +131,10 @@ func spaAssetHandler(app string) http.HandlerFunc {
 		// at a given URL can never change, so nothing needs to
 		// revalidate. This is the whole point of hashed filenames.
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		// A look's typeface also loads from emails (lookassets.go).
+		if path.Ext(r.URL.Path) == ".woff2" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
 		fileServer.ServeHTTP(w, r)
 	}
 }

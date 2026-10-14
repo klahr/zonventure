@@ -25,12 +25,3 @@
 .dz .og-color input[type="text"] { width: 7rem; font-size: var(--dz-text-sm); }
 .dz .og-err { margin: 0; color: var(--dz-danger); font-size: var(--dz-text-sm); }
 .dz .og-preview { display: flex; flex-direction: column; gap: var(--dz-space-2); min-width: 0; }
-.dz .og-hero { min-height: 11rem; padding: var(--dz-space-4); border-radius: 14px; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--dz-space-2); box-shadow: 0 4px 16px rgba(31, 51, 73, 0.12); overflow: hidden; }
-.dz .og-hero__brand { display: flex; align-items: center; gap: var(--dz-space-3); min-width: 0; }
-.dz .og-hero__logo { width: 3.2rem; height: 3.2rem; border-radius: 8px; background: #fff; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; font-size: 0.7rem; color: #999; }
-.dz .og-hero__logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.dz .og-hero__name { font-family: Georgia, serif; font-size: 1.6rem; font-weight: 700; color: #fff; line-height: 1.1; overflow-wrap: anywhere; }
-.dz .og-hero__tagline { color: rgba(255, 255, 255, 0.85); font-size: 0.95rem; }
-.dz .og-hero__btn { display: inline-block; padding: 0.65rem 1.2rem; border-radius: 999px; font-weight: 700; color: #fff; opacity: 0.92; }
-.dz .og-swatches { display: flex; gap: var(--dz-space-2); }
-.dz .og-swatches span { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: var(--dz-r-2); border: 1px solid var(--dz-border); font-weight: 700; font-size: var(--dz-text-sm); }

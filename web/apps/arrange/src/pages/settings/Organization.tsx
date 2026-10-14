@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "@zonventure/api";
-import { Copy, ExternalLink } from "lucide-react";
+import { Copy, ExternalLink, Palette } from "lucide-react";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { Button, Card, ErrorBox, Field, HelpPopover, ICON, ImageDrop, Loading, ProposalPanel, Row, errorText, getProposal, proposedText, useDialogs, useLoad, useToast, type Proposal } from "../../ui/index.ts";
@@ -8,6 +8,9 @@ import { deleteImage, getProfile, putName, putProfile, putSlug, uploadImage, typ
 import { EmailLookCard } from "./organization-email.tsx";
 import { ShipCountriesCard } from "./organization-shipping.tsx";
 import { ContactCard } from "./organization-contact.tsx";
+import { colorsFromLogo, contrast, fixContrast } from "./brandColors.ts";
+import { FontPicker, Previews, brandOf } from "./brandPreview.tsx";
+import { getDomain, getDomainBrand } from "./domain-api.ts";
 import "./organization-branding.css";
 
 type ColorKey = "accent_color" | "accent_secondary_color" | "background_color" | "text_color";
@@ -24,15 +27,15 @@ function fullHex(v: string): string {
   return v.length === 4 ? "#" + v[1] + v[1] + v[2] + v[2] + v[3] + v[3] : v;
 }
 
-function rgba(hex: string, a: number): string {
-  const v = fullHex(hex.trim());
-  if (!/^#[0-9a-fA-F]{6}$/.test(v)) return `rgba(0, 0, 0, ${a})`;
-  return `rgba(${parseInt(v.slice(1, 3), 16)}, ${parseInt(v.slice(3, 5), 16)}, ${parseInt(v.slice(5, 7), 16)}, ${a})`;
-}
-
 /** "Nordic Kitchens AB" → "nordic-kitchens-ab": the form internal/orgslug accepts. */
 export function slugify(s: string): string {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+/** The store's address as a browser's bar shows it: "v4.zonventure.com/o/acme"; this site's when the server has no public URL. */
+function storeAddress(url: string): string {
+  const u = new URL(url, window.location.origin);
+  return (u.host + u.pathname).replace(/\/$/, "");
 }
 
 /** "example.com" → "https://example.com"; the server takes only full http(s) URLs. */
@@ -51,12 +54,16 @@ function editOf(p: OrgProfile, prop?: Proposal | null): ProfileEdit {
     accent_secondary_color: (p.accent_secondary_color || "").trim(),
     background_color: (p.background_color || "").trim(),
     text_color: (p.text_color || "").trim(),
+    title_font: p.title_font || "",
   };
 }
 
 /**
  * The org's public face on /o/{slug} and its store: address, logo,
- * cover, colours and copy, with a live preview of the landing hero.
+ * cover, colours, title typeface and copy, with a live preview of its
+ * store, a ticket email and a player's screen. The one place the look
+ * is edited; Settings → Domain shows it on the organisation's own
+ * address.
  * Copy and colours save on blur (colours 600 ms after the picker
  * stops); the slug has its own confirmed Rename because it breaks
  * every link already shared.
@@ -67,6 +74,9 @@ export function OrganizationTab() {
   const dialogs = useDialogs();
   const load = useLoad((signal) => getProfile(signal), []);
   const prop = useLoad((signal) => getProposal(PROPOSAL, signal).catch(() => null), []);
+  // Its own domain, once live, is the address the preview shows.
+  const domain = useLoad((signal) => getDomain(signal).catch(() => null), []);
+  const domainBrand = useLoad((signal) => getDomainBrand(signal).catch(() => null), []);
   const toast = useToast();
   const user = state.status === "authenticated" ? state.user : null;
   const orgID = user?.org_id ?? 0;
@@ -266,17 +276,50 @@ export function OrganizationTab() {
     void save();
   };
 
+  const pickFont = (k: string) => {
+    setField("title_font", k);
+    editRef.current = { ...edit, title_font: k };
+    void save("font");
+  };
+  // Colours from the logo, or the current ones made readable.
+  const applyColors = (c: Pick<ProfileEdit, ColorKey>) => {
+    clearTimeout(colorTimer.current);
+    setEdit((e) => (e ? { ...e, ...c } : e));
+    editRef.current = { ...edit, ...c };
+    void save("accent_color");
+  };
+  const fromLogo = async () => {
+    try {
+      applyColors(await colorsFromLogo(logoSrc));
+    } catch (e) {
+      setErr(errorText(e));
+    }
+  };
+
   const color = (k: ColorKey) => (HEX.test(edit[k].trim()) ? fullHex(edit[k].trim()) : DEFAULTS[k]);
   const accent = color("accent_color");
-  const accent2 = color("accent_secondary_color");
+  const textOk = contrast(color("text_color"), color("background_color")) >= 4.5;
+  const buttonOk = contrast("#ffffff", accent) >= 3;
+  const fixColors = () =>
+    applyColors({
+      accent_color: buttonOk ? accent : fixContrast(accent, "#ffffff", 3),
+      accent_secondary_color: color("accent_secondary_color"),
+      background_color: color("background_color"),
+      text_color: textOk ? color("text_color") : fixContrast(color("text_color"), color("background_color")),
+    });
   // A held-back picture shows as it would be; it is public once approved.
   const logoSrc = prop.data?.has_image ? `${PROPOSAL}/image?t=${imgVersion}` : profile.has_logo && orgID ? `/org-logo/${orgID}?t=${imgVersion}` : "";
   const coverSrc = prop.data?.has_cover ? `${PROPOSAL}/cover?t=${imgVersion}` : profile.has_cover && orgID ? `/org-cover/${orgID}?t=${imgVersion}` : "";
   const waits = (key: string, live: string) =>
     proposedText(prop.data, key) !== undefined ? t.t("Waits for review. Public now: “{{live}}”", { live: live || t.t("(empty)") }) : undefined;
-  const heroBg = coverSrc
-    ? `linear-gradient(135deg, ${rgba(accent, 0.6)}, ${rgba(accent2, 0.5)}), url('${coverSrc}') center / cover`
-    : `linear-gradient(135deg, ${accent}, ${accent2})`;
+  const brand = brandOf(
+    { ...profile, ...Object.fromEntries((Object.keys(DEFAULTS) as ColorKey[]).map((k) => [k, color(k)])), tagline: edit.tagline.trim(), title_font: edit.title_font ?? "" },
+    orgID,
+    { name: shownName, logo: logoSrc, cover: coverSrc },
+  );
+  const live = domain.data?.domain?.status === "live" ? domain.data.domain : null;
+  // On its own domain it goes by the name it chose there.
+  const shownAs = (live && domainBrand.data?.display_name) || shownName;
 
   const saved = (key: string, text = t.t("Saved")) => (
     <span className={"og-chip" + (chip === key ? " is-on" : "")} aria-hidden={chip !== key} role="status">
@@ -391,11 +434,16 @@ export function OrganizationTab() {
                 {colorRow("background_color", t.t("Background"))}
                 {colorRow("text_color", t.t("Text"))}
               </div>
-              {(edit.accent_color || edit.accent_secondary_color || edit.background_color || edit.text_color) && (
-                <div>
+              {(!textOk || !buttonOk) && <p className="og-err" role="status">{t.t("Some text would be hard to read on these colours.")}</p>}
+              <Row gap="sm">
+                {logoSrc && <Button size="sm" variant="ghost" icon={<Palette size={ICON.sm} aria-hidden />} onClick={() => void fromLogo()}>{t.t("Pick from my logo")}</Button>}
+                {(!textOk || !buttonOk) && <Button size="sm" variant="primary" onClick={fixColors}>{t.t("Fix contrast")}</Button>}
+                {(edit.accent_color || edit.accent_secondary_color || edit.background_color || edit.text_color) && (
                   <Button size="sm" variant="ghost" onClick={resetColors}>{t.t("Reset to defaults")}</Button>
-                </div>
-              )}
+                )}
+              </Row>
+              <div className="og-label og-label--strong">{t.t("Title typeface")} {saved("font")}</div>
+              <FontPicker value={edit.title_font ?? ""} onChange={pickFont} disabled={user?.role !== "org_admin"} />
             </section>
 
             <section className="og-section">
@@ -428,22 +476,13 @@ export function OrganizationTab() {
 
           <div className="og-preview">
             <h3>{t.t("Live preview")}</h3>
-            <div className="og-hero" style={{ background: heroBg }}>
-              <div className="og-hero__brand">
-                <div className="og-hero__logo">{logoSrc ? <img src={logoSrc} alt="" /> : <span>{t.t("Logo")}</span>}</div>
-                <div className="og-hero__name">{orgName}</div>
-              </div>
-              <div className="og-hero__tagline">{edit.tagline.trim() || t.t("Add a tagline below to fill this space.")}</div>
-              <div>
-                <span className="og-hero__btn" style={{ background: `linear-gradient(135deg, ${accent}, ${accent2})` }}>{t.t("Browse store")}</span>
-              </div>
-            </div>
-            <div className="og-swatches" aria-hidden>
-              <span style={{ background: color("background_color"), color: color("text_color") }}>Aa</span>
-              <span style={{ background: accent }} />
-              <span style={{ background: accent2 }} />
-            </div>
-            <p className="og-blurb">{t.t("How your public landing hero will look. Changes save automatically.")}</p>
+            <Previews
+              host={live ? live.host : storeAddress(storeURL)}
+              name={shownAs}
+              brand={brand}
+              live
+              version={[profile.accent_color, profile.accent_secondary_color, profile.background_color, profile.text_color, profile.has_logo, profile.title_font, imgVersion].join("|")}
+            />
           </div>
         </div>
       </Card>

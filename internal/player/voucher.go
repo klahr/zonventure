@@ -35,6 +35,20 @@ func teamURLForVoucher(r *http.Request, db *sql.DB, code string) (string, bool) 
 	return "/team/" + token, true
 }
 
+// voucherOrg is the slug of the organisation whose event a voucher code
+// belongs to: a team's, or an unused batch code's. ok is false when no
+// one has the code.
+func voucherOrg(r *http.Request, db *sql.DB, code string) (slug string, ok bool) {
+	err := db.QueryRowContext(r.Context(), `
+		SELECT o.slug FROM teams t JOIN events e ON e.id = t.event_id JOIN organizations o ON o.id = e.org_id
+		WHERE t.voucher_code = $1
+		UNION ALL
+		SELECT o.slug FROM voucher_codes c JOIN voucher_batches b ON b.id = c.batch_id JOIN organizations o ON o.id = b.org_id
+		WHERE c.code = $1
+		LIMIT 1`, code).Scan(&slug)
+	return slug, err == nil
+}
+
 // resolveVoucher is teamURLForVoucher, falling back to an unused batch
 // code (admin/voucher_batches.go), which its first use turns into a
 // team. closed says the code exists but can't start a team now.
@@ -62,6 +76,10 @@ func (h *Handlers) resolveVoucher(r *http.Request, code string) (url string, ok,
 func (h *Handlers) VoucherRedeem(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code string `json:"code"`
+		// Org, an organisation's slug, limits the lookup to its codes:
+		// its store's code box, so another's code never opens under its
+		// name and brand.
+		Org string `json:"org,omitempty"`
 	}
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -72,6 +90,15 @@ func (h *Handlers) VoucherRedeem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code := auth.NormalizeVoucherCode(req.Code)
+	if req.Org != "" {
+		if slug, ok := voucherOrg(r, h.DB, code); !ok || slug != req.Org {
+			httpx.JSON(w, http.StatusNotFound, map[string]string{
+				"error": "that code isn't valid — check it and try again",
+				"code":  "unknown_voucher",
+			})
+			return
+		}
+	}
 	url, ok, closed := h.resolveVoucher(r, code)
 	if closed {
 		httpx.JSON(w, http.StatusConflict, map[string]string{

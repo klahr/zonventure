@@ -75,6 +75,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		brandAccentSecondary sql.NullString
 		brandBackground      sql.NullString
 		brandText            sql.NullString
+		brandFont            string
 	)
 	err = db.QueryRowContext(r.Context(), `
 		SELECT l.name, e.adventure_slug,
@@ -88,7 +89,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		       a.start_label,
 		       (l.cover_mime_type IS NOT NULL) AS has_cover,
 		       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,
-		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color
+		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color, o.brand_font
 		FROM events e
 		JOIN event_listings l ON l.event_id = e.id
 		JOIN organizations o ON o.id = e.org_id
@@ -100,7 +101,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		  AND NOT e.sales_stopped
 	`, id).Scan(&eventName, &advSlug, &advTitle, &orgName, &orgSlug, &orgVerified, &blurb, &priceCents,
 		&currency, &teamSize, &startLabel, &hasCover, &hasIcon,
-		&brandAccent, &brandAccentSecondary, &brandBackground, &brandText)
+		&brandAccent, &brandAccentSecondary, &brandBackground, &brandText, &brandFont)
 	if errors.Is(err, sql.ErrNoRows) {
 		renderStoreEventGone(w, r, db, id, slugFromURL)
 		return
@@ -242,7 +243,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{ORG_BRAND_OVERRIDES}}", orgBrandStyleBlock(
 			brandAccent.String, brandAccentSecondary.String,
 			brandBackground.String, brandText.String,
-		)},
+		) + orgFontBlock(brandFont)},
 	)
 
 	out := string(body)

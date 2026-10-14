@@ -27,6 +27,9 @@
   --accent: #ad1357;
   --accent-2: #e24080;
   --accent-deep: #6d0a35;
+  /* The accent as text (links, eyebrows). An organisation's brand
+     block lightens it in dark mode, where its accent may not read. */
+  --accent-text: var(--accent);
   --ink: #1f3349;
   --ink-soft: #3d5573;
   /* AA contrast on light --bg: #6b7f96 falls at 3.86:1 which fails the
@@ -73,7 +76,7 @@ body {
   font: 16px/1.55 var(--font-body);
   color: var(--ink); background: var(--bg);
 }
-a { color: var(--accent); text-decoration: none; }
+a { color: var(--accent-text); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 /* Hidden by its own height, not a fixed offset, which a taller link
@@ -126,4 +129,4 @@ a:focus-visible, button:focus-visible, .btn:focus-visible {
   border-color: var(--border-soft);
   background: var(--surface);
 }
-.btn.ghost:hover { border-color: var(--accent); color: var(--accent); }
+.btn.ghost:hover { border-color: var(--accent); color: var(--accent-text); }

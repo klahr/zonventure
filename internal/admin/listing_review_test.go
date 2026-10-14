@@ -85,6 +85,10 @@ func newListingFixture(t *testing.T) (*listingFixture, func()) {
 		r.Post("/api/admin/me/reviewer-passkeys/finish", f.h.FinishReviewerPasskey)
 		r.Post("/api/admin/listing-reviews/{kind}/{id}/reject", f.h.RejectListing)
 		r.Post("/api/admin/organizations/{orgID}/verified-creator", f.h.SetOrgVerifiedCreator)
+		r.Get("/api/admin/org-page-changes", f.h.ListOrgPageChanges)
+		r.Get("/api/admin/org-page-changes/{id}/previous", f.h.OrgPageChangePrevious)
+		r.Post("/api/admin/org-page-changes/{id}/approve", f.h.ApproveOrgPageChange)
+		r.Post("/api/admin/org-page-changes/{id}/roll-back", f.h.RollBackOrgPageChange)
 	}
 	root := auth.User{ID: adminID, Username: "root", Role: auth.RoleAdmin, IsAdmin: true, ListingReviewer: true}
 	f.reviewer = chi.NewRouter()

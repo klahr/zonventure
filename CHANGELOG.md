@@ -11,6 +11,45 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- An organisation's store page (on its own domain, and on servers
+  without their own store page) is redesigned: a full-width hero on the
+  organisation's cover picture, or its first adventure's, with its logo,
+  name, tagline and how many adventures it has; cards of even height
+  with the price on the picture; "How it works" in three steps; a box
+  where a code from an envelope, a gift card or an email starts the
+  team; and a footer with the organisation's contact address. An
+  adventure's page continues the look, its cover across the top and the
+  buy card beside the details.
+- An organisation's look is set in one place, Settings → Organization
+  (Branding): logo, cover, colours (picked from the logo, or fixed when
+  text would be hard to read), tagline and now its title typeface, with
+  a preview of its store, a ticket email and a player's screen. The
+  typeface applies to its store and adventure pages everywhere, not only
+  on its own domain, and to its emails' headings. Settings → Domain,
+  "Make it yours", ticks off what is done and leads to Branding; the
+  name on the domain, the replies address and the terms and privacy
+  links stay there.
+- Changes to an organisation's page (name, tagline, website, logo,
+  cover) no longer wait for review once something of theirs is for
+  sale: they apply at once and a reviewer looks afterwards, under
+  Content review, keeping a change or rolling it back to what was there
+  before with a reason the organisation's admins get by email.
+  Organisations on invoice billing or with their own domain, like
+  verified creators, aren't reviewed at all.
+- On its own domain, an organisation's emails have their headings in
+  its store's typeface, in mail apps that show web fonts.
+
+### Fixed
+
+- Dark mode on an organisation's store and adventure pages: the theme
+  switch did nothing, and the system's dark mode replaced the
+  organisation's colours with the platform's. Its accents now stay,
+  lightened where they are text.
+- Settings → Domain: the ticket email preview showed no logo when the
+  console was open at another address than the server's public one.
+
 ## [0.32.0] - 2026-10-14
 
 ### Added

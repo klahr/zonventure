@@ -1,19 +1,15 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "@zonventure/api";
-import { Check, CircleAlert, Copy, ExternalLink, Globe, Lock, Mail, Palette, RefreshCw, Sparkles, Trash2 } from "lucide-react";
-import { FONTS, loadFont } from "@zonventure/play-ui";
-import { emails } from "@zonventure/api";
+import { Check, CircleAlert, Copy, ExternalLink, Globe, Mail, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { navigate } from "../../router.ts";
-import { Button, EmailPreview, ErrorBox, Field, ICON, Loading, ProposalPanel, errorText, fmtMoney, getProposal, proposedText, useDialogs, useLoad, useToast } from "../../ui/index.ts";
+import { Button, ErrorBox, Field, ICON, Loading, errorText, fmtMoney, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 import { checkDomain, deleteDomain, getDomain, getDomainBrand, getGuide, putDomain, putDomainBrand, sendInstructions, type DomainBrand, type DomainInfo, type DomainState } from "./domain-api.ts";
-import { getContact, getProfile, putContact, putProfile, type OrgContact, type OrgProfile } from "./organization-api.ts";
-import { colorsFromLogo, contrast, fixContrast, type BrandColors } from "./brandColors.ts";
+import { getContact, getProfile, putContact, type OrgContact, type OrgProfile } from "./organization-api.ts";
+import { contrast } from "./brandColors.ts";
+import { Previews, StorePreview, brandOf, type Brand } from "./brandPreview.tsx";
 import "./domain.css";
-
-/** The organisation page's held-back changes (presentation.go). */
-const PROPOSAL = "/api/admin/orgs/me/proposal";
 
 /**
  * Settings → Domain: an organisation's store on its own address, set up
@@ -44,7 +40,7 @@ export function DomainTab() {
       </div>
     );
   }
-  const brand = brandOf(profile.data ?? undefined, orgID, details.data ?? undefined);
+  const brand = brandOf(profile.data ?? undefined, orgID, { name: details.data?.display_name ?? "" });
   if (!d.entitled) return <Offer d={d} brand={brand} />;
   return (
     <Setup
@@ -54,43 +50,11 @@ export function DomainTab() {
       profile={profile.data ?? null}
       profileError={profile.error}
       reloadProfile={profile.reload}
-      setProfile={profile.set}
       details={details.data ?? null}
       setDetails={details.set}
       canEdit={canEdit}
     />
   );
-}
-
-/** What the preview shows: the organisation's colours and logo. */
-interface Brand {
-  accent: string;
-  accent2: string;
-  surface: string;
-  ink: string;
-  logo: string;
-  tagline: string;
-  /** The title typeface's family, "" for the site's. */
-  font: string;
-  /** The name it goes by on its domain, "" for its own. */
-  name: string;
-}
-
-const DEFAULT_BRAND = { accent: "#ad1357", accent2: "#e24080", surface: "#fbfbfd", ink: "#1f3349" };
-const HEX = /^#[0-9a-fA-F]{6}$/;
-
-function brandOf(p: OrgProfile | undefined, orgID: number, b?: DomainBrand): Brand {
-  const pick = (v: string | undefined, def: string) => (v && HEX.test(v) ? v : def);
-  return {
-    accent: pick(p?.accent_color, DEFAULT_BRAND.accent),
-    accent2: pick(p?.accent_secondary_color, DEFAULT_BRAND.accent2),
-    surface: pick(p?.background_color, DEFAULT_BRAND.surface),
-    ink: pick(p?.text_color, DEFAULT_BRAND.ink),
-    logo: p?.has_logo && orgID ? `/org-logo/${orgID}?v=${p.accent_color ?? ""}` : "",
-    tagline: p?.tagline ?? "",
-    font: (b?.font && FONTS[b.font]) || "",
-    name: b?.display_name ?? "",
-  };
 }
 
 // --- without the feature ----------------------------------------------------
@@ -143,7 +107,6 @@ function Setup(props: {
   profile: OrgProfile | null;
   profileError: string | null | undefined;
   reloadProfile: () => void;
-  setProfile: (p: OrgProfile) => void;
   details: DomainBrand | null;
   setDetails: (b: DomainBrand) => void;
   canEdit: boolean;
@@ -199,7 +162,7 @@ function Setup(props: {
     }
   };
 
-  const brandDone = !!props.profile?.has_logo && !!props.profile?.accent_color && !!props.details?.font;
+  const brandDone = !!props.profile?.has_logo && !!props.profile?.accent_color && !!brand.fontKey;
   const steps: { key: string; title: string; done: boolean; body: ReactNode }[] = [
     {
       key: "address",
@@ -231,7 +194,7 @@ function Setup(props: {
       done: brandDone,
       body: props.profileError && !props.profile
         ? <ErrorBox message={props.profileError} retry={props.reloadProfile} retryLabel={t.t("Retry")} />
-        : <BrandStep profile={props.profile} setProfile={props.setProfile} details={props.details} setDetails={props.setDetails} brand={brand} canEdit={canEdit} />,
+        : <BrandStep profile={props.profile} details={props.details} setDetails={props.setDetails} brand={brand} canEdit={canEdit} />,
     },
   ];
   const current = steps.findIndex((s) => !s.done);
@@ -581,99 +544,38 @@ function ago(t: ReturnType<typeof useT>, iso: string): string {
 
 // --- step 4 -------------------------------------------------------------------
 
-function BrandStep({ profile, setProfile, details, setDetails, brand, canEdit }: {
+/**
+ * What makes the store theirs, ticked off: the look is edited under
+ * Settings → Organization (Branding), so each item leads there; what
+ * only matters on their own domain is set here.
+ */
+function BrandStep({ profile, details, setDetails, brand, canEdit }: {
   profile: OrgProfile | null;
-  setProfile: (p: OrgProfile) => void;
   details: DomainBrand | null;
   setDetails: (b: DomainBrand) => void;
   brand: Brand;
   canEdit: boolean;
 }) {
   const t = useT();
-  const toast = useToast();
-  const [busy, setBusy] = useState(false);
-  const [tagline, setTagline] = useState<string | null>(null);
-  // Once something of the organisation's is for sale, its tagline and
-  // website wait for review (presentation.go); colours apply at once.
-  const prop = useLoad((signal) => getProposal(PROPOSAL, signal).catch(() => null), []);
-  const colorTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(colorTimer.current), []);
   if (!profile) return <Loading label={t.t("Loading…")} />;
   const hasColors = !!profile.accent_color;
-  const proposedTagline = proposedText(prop.data, "tagline");
-  const shownTagline = (proposedTagline ?? profile.tagline).trim();
-  // What a save sends for the reviewed fields: their pending values, so
-  // saving colours never drops a tagline that waits for review.
-  const held = () => ({
-    tagline: proposedTagline ?? profile.tagline,
-    public_website: proposedText(prop.data, "public_website") ?? profile.public_website,
-  });
-  const colors = (): BrandColors => ({
-    accent_color: profile.accent_color ?? "",
-    accent_secondary_color: profile.accent_secondary_color ?? "",
-    background_color: profile.background_color ?? "",
-    text_color: profile.text_color ?? "",
-  });
-  const saveTagline = async () => {
-    if (tagline === null) return;
-    setBusy(true);
-    try {
-      setProfile(await putProfile({ ...held(), tagline: tagline.trim(), ...colors() }));
-      const p = await getProposal(PROPOSAL).catch(() => null);
-      prop.set(p);
-      setTagline(null);
-      toast.ok(proposedText(p, "tagline") !== undefined ? t.t("Saved. It waits for review before players see it.") : t.t("Saved"));
-    } catch (e) {
-      toast.err(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  // A picked colour shows at once and is saved a moment later.
-  const pickColor = (k: keyof BrandColors, v: string) => {
-    const next = { ...colors(), [k]: v };
-    setProfile({ ...profile, [k]: v });
-    clearTimeout(colorTimer.current);
-    colorTimer.current = setTimeout(() => {
-      void putProfile({ ...held(), ...next }).then(setProfile).catch((e) => toast.err(errorText(e)));
-    }, 600);
-  };
   const textOk = contrast(brand.ink, brand.surface) >= 4.5;
   const buttonOk = contrast("#ffffff", brand.accent) >= 3;
-
-  const apply = async (c: BrandColors) => {
-    setBusy(true);
-    try {
-      setProfile(await putProfile({ ...held(), ...c }));
-      toast.ok(t.t("Colours updated"));
-    } catch (e) {
-      toast.err(errorText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const fromLogo = async () => {
-    try {
-      await apply(await colorsFromLogo(brand.logo));
-    } catch (e) {
-      toast.err(errorText(e));
-    }
-  };
-  const fixColors = () =>
-    void apply({
-      accent_color: buttonOk ? brand.accent : fixContrast(brand.accent, "#ffffff", 3),
-      accent_secondary_color: brand.accent2,
-      background_color: brand.surface,
-      text_color: textOk ? brand.ink : fixContrast(brand.ink, brand.surface),
-    });
   const toBranding = () => navigate({ name: "settings", tab: "organization" });
+  const tagline = profile.tagline.trim();
 
-  const items: { done: boolean; label: string; hint: string; action?: ReactNode }[] = [
+  const items: { done: boolean; label: string; hint: string }[] = [
     {
       done: profile.has_logo,
       label: t.t("Your logo"),
       hint: profile.has_logo ? t.t("On your store, its tab and every email.") : t.t("Upload it once: it becomes your store's header, its tab icon and your emails' signature."),
-      action: !profile.has_logo && canEdit ? <Button size="sm" onClick={toBranding}>{t.t("Upload logo")}</Button> : undefined,
+    },
+    {
+      done: profile.has_cover,
+      label: t.t("A cover picture"),
+      hint: profile.has_cover
+        ? t.t("Behind your name at the top of your store.")
+        : t.t("A wide photo behind your name at the top of your store. Without one, your first adventure's cover shows there."),
     },
     {
       done: hasColors && textOk && buttonOk,
@@ -681,42 +583,20 @@ function BrandStep({ profile, setProfile, details, setDetails, brand, canEdit }:
       hint: !hasColors
         ? profile.has_logo ? t.t("We can pick them from your logo.") : t.t("Choose them, or upload a logo and we'll pick them from it.")
         : !textOk || !buttonOk ? t.t("Some text would be hard to read on these colours.") : t.t("Buttons, links and backgrounds use them."),
-      action: canEdit ? (
-        !hasColors && profile.has_logo ? <Button size="sm" variant="primary" loading={busy} icon={<Palette size={ICON.sm} />} onClick={() => void fromLogo()}>{t.t("Pick from my logo")}</Button>
-        : hasColors && (!textOk || !buttonOk) ? <Button size="sm" variant="primary" loading={busy} onClick={fixColors}>{t.t("Fix contrast")}</Button>
-        : profile.has_logo ? <Button size="sm" variant="ghost" loading={busy} icon={<Palette size={ICON.sm} />} onClick={() => void fromLogo()}>{t.t("Pick again from my logo")}</Button>
-        : undefined
-      ) : undefined,
     },
     {
-      done: !!shownTagline && proposedTagline === undefined,
+      done: !!tagline,
       label: t.t("A tagline"),
-      hint: proposedTagline !== undefined
-        ? t.t("“{{text}}” waits for review before players see it.", { text: proposedTagline.trim() || t.t("(empty)") })
-        : shownTagline ? `“${shownTagline}”` : t.t("One line under your name that says what you offer."),
-      action: canEdit ? (
-        tagline !== null || !shownTagline ? (
-          <form className="dm-inline" onSubmit={(e) => { e.preventDefault(); void saveTagline(); }}>
-            <input value={tagline ?? ""} maxLength={200} placeholder={t.t("Adventures in your city")} aria-label={t.t("A tagline")} onChange={(e) => setTagline(e.target.value)} autoFocus={tagline !== null} />
-            <Button type="submit" size="sm" variant="primary" loading={busy} disabled={!(tagline ?? "").trim()}>{t.t("Save")}</Button>
-            {shownTagline && <Button size="sm" variant="ghost" onClick={() => setTagline(null)}>{t.t("Cancel")}</Button>}
-          </form>
-        ) : (
-          <Button size="sm" variant="link" onClick={() => setTagline(shownTagline)}>{t.t("Change")}</Button>
-        )
-      ) : undefined,
+      hint: tagline ? `“${tagline}”` : t.t("One line under your name that says what you offer."),
+    },
+    {
+      done: !!brand.fontKey,
+      label: t.t("Your title typeface"),
+      hint: brand.font ? brand.font : t.t("Your store's titles are in the site's own typeface until you pick one."),
     },
   ];
   return (
     <div className="dm-brand">
-      <ProposalPanel
-        kind="org"
-        base={PROPOSAL}
-        proposal={prop.data}
-        labels={{ tagline: t.t("Tagline"), public_website: t.t("Website") }}
-        pictures={[{ key: "image", label: t.t("Logo") }, { key: "cover", label: t.t("Cover") }]}
-        onChanged={() => { prop.reload(); void getProfile().then(setProfile).catch(() => {}); }}
-      />
       <ul className="dm-checklist">
         {items.map((it) => (
           <li key={it.label} className={it.done ? "is-done" : ""}>
@@ -725,26 +605,10 @@ function BrandStep({ profile, setProfile, details, setDetails, brand, canEdit }:
               <strong>{it.label}</strong>
               <span>{it.hint}</span>
             </div>
-            {it.action}
+            {canEdit && <Button size="sm" variant={it.done ? "link" : "secondary"} onClick={toBranding}>{it.done ? t.t("Change") : t.t("Add in Branding")}</Button>}
           </li>
         ))}
       </ul>
-      <div className="dm-colors" role="group" aria-label={t.t("Your colours")}>
-        {([
-          ["accent_color", t.t("Accent"), brand.accent],
-          ["accent_secondary_color", t.t("Accent (secondary)"), brand.accent2],
-          ["background_color", t.t("Background"), brand.surface],
-          ["text_color", t.t("Text"), brand.ink],
-        ] as const).map(([k, label, value]) => (
-          <label key={k} className="dm-color">
-            <input type="color" value={value} disabled={!canEdit} onChange={(e) => pickColor(k, e.target.value)} aria-label={label} />
-            <span className="dm-color__text">
-              <span className="dm-color__label">{label}</span>
-              <code>{value}</code>
-            </span>
-          </label>
-        ))}
-      </div>
       {details && <BrandDetails details={details} setDetails={setDetails} brand={brand} canEdit={canEdit} />}
       <p className="dm-muted">
         {t.t("On your own domain players see only your name: no mention of us in pages, titles or emails. Emails go out under your name, and replies reach your contact address.")}{" "}
@@ -754,13 +618,10 @@ function BrandStep({ profile, setProfile, details, setDetails, brand, canEdit }:
   );
 }
 
-/** Fonts for a title: those the player ships, by key. */
-const FONT_KEYS = Object.keys(FONTS).sort((a, b) => FONTS[a]!.localeCompare(FONTS[b]!));
-
 /**
- * What the organisation goes by on its own domain: the name, its title
- * typeface, the address players' replies reach, and links to its own
- * terms and privacy policy, shown beside ours. Saved together.
+ * What the organisation goes by on its own domain: the name, the address
+ * players' replies reach, and links to its own terms and privacy policy,
+ * shown beside ours. Saved together.
  */
 function BrandDetails({ details, setDetails, brand, canEdit }: {
   details: DomainBrand;
@@ -779,16 +640,13 @@ function BrandDetails({ details, setDetails, brand, canEdit }: {
   useEffect(() => {
     if (contact.data && email === null) setEmail(contact.data.contact_email);
   }, [contact.data, email]);
-  useEffect(() => {
-    for (const k of FONT_KEYS) loadFont(k);
-  }, []);
   const c: OrgContact | undefined = contact.data ?? undefined;
   const changed = JSON.stringify(edit) !== JSON.stringify(details) || (c !== undefined && email !== null && email.trim() !== c.contact_email);
   const save = async () => {
     setBusy(true);
     setErr("");
     try {
-      setDetails(await putDomainBrand({ ...edit, display_name: edit.display_name.trim(), terms_url: edit.terms_url.trim(), privacy_url: edit.privacy_url.trim() }));
+      setDetails(await putDomainBrand({ display_name: edit.display_name.trim(), terms_url: edit.terms_url.trim(), privacy_url: edit.privacy_url.trim() }));
       if (c && email !== null && email.trim() !== c.contact_email) contact.set(await putContact({ contact_email: email.trim(), time_zone: c.time_zone }));
       toast.ok(t.t("Saved"));
     } catch (e) {
@@ -814,19 +672,6 @@ function BrandDetails({ details, setDetails, brand, canEdit }: {
           <input type="email" value={email ?? ""} disabled={!canEdit || !c} maxLength={254} placeholder={c?.default_contact_email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
       </div>
-      <div className="dm-label">{t.t("Title typeface")}</div>
-      <div className="dm-fonts" role="radiogroup" aria-label={t.t("Title typeface")}>
-        <button type="button" role="radio" aria-checked={!edit.font} className={"dm-font" + (!edit.font ? " is-on" : "")} disabled={!canEdit} title={t.t("The site's own typeface, used when you pick none")} onClick={() => setEdit({ ...edit, font: "" })}>
-          <span className="dm-font__sample" style={{ fontFamily: "var(--font-brand)" }}>Aa</span>
-          <span className="dm-font__name">Aclonica</span>
-        </button>
-        {FONT_KEYS.map((k) => (
-          <button type="button" role="radio" aria-checked={edit.font === k} key={k} className={"dm-font" + (edit.font === k ? " is-on" : "")} disabled={!canEdit} onClick={() => setEdit({ ...edit, font: k })}>
-            <span className="dm-font__sample" style={{ fontFamily: `"${FONTS[k]}", var(--dz-font-sans)` }}>Aa</span>
-            <span className="dm-font__name">{FONTS[k]}</span>
-          </button>
-        ))}
-      </div>
       <div className="dm-details__grid">
         <Field label={t.t("Your terms (optional)")} hint={t.t("Shown in your store's footer, beside the platform's.")}>
           <input type="url" value={edit.terms_url} disabled={!canEdit} maxLength={500} placeholder="https://" onChange={set("terms_url")} />
@@ -838,123 +683,5 @@ function BrandDetails({ details, setDetails, brand, canEdit }: {
       {err && <p className="dm-err" role="alert">{err}</p>}
       {canEdit && <div className="dm-row"><Button type="submit" variant="primary" loading={busy} disabled={!changed}>{t.t("Save")}</Button></div>}
     </form>
-  );
-}
-
-/** A title's typeface: the chosen one, else the site's brand face (Aclonica), as the store's headings fall back. */
-function titleFont(brand: Brand): string {
-  return brand.font ? `"${brand.font}", var(--font-brand)` : "var(--font-brand)";
-}
-
-// --- the previews --------------------------------------------------------------
-
-/** The store, a ticket email and a player's screen, as they will look. */
-function Previews(props: { host: string; name: string; brand: Brand; live?: boolean; ghost?: boolean }) {
-  const t = useT();
-  const [tab, setTab] = useState<"store" | "email" | "player">("store");
-  const tabs = [
-    { id: "store" as const, label: t.t("Store") },
-    { id: "email" as const, label: t.t("Ticket email") },
-    { id: "player" as const, label: t.t("Player screen") },
-  ];
-  return (
-    <div className="dm-previews">
-      <div className="dm-tabs" role="tablist" aria-label={t.t("Preview")}>
-        {tabs.map((x) => (
-          <button type="button" role="tab" key={x.id} aria-selected={tab === x.id} className={"dm-tab" + (tab === x.id ? " is-on" : "")} onClick={() => setTab(x.id)}>
-            {x.label}
-          </button>
-        ))}
-      </div>
-      {tab === "store" && (
-        <>
-          <StorePreview {...props} />
-          <p className="dm-muted dm-aside__note">
-            {props.live ? t.t("This is your store's front page, as players see it.") : t.t("A preview of your store on its own address.")}
-          </p>
-        </>
-      )}
-      {tab === "email" && <TicketEmailPreview name={props.name} live={!!props.live} />}
-      {tab === "player" && (
-        <>
-          <PlayerPreview {...props} />
-          <p className="dm-muted dm-aside__note">{t.t("A step of an adventure on a player's phone: your colours, your title typeface, your address.")}</p>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** The real ticket email, rendered by the server in the organisation's look. */
-function TicketEmailPreview({ name, live }: { name: string; live: boolean }) {
-  const t = useT();
-  const load = useLoad((signal) => emails.preview("team_link", { lang: t.current(), signal }), [t.current(), name, live]);
-  return (
-    <div className="dm-mail">
-      <EmailPreview preview={load.data ?? null} loading={!load.data} from={name} />
-      <p className="dm-muted dm-aside__note">
-        {live ? t.t("The email a buyer gets with their ticket, sent under your name.") : t.t("Once your domain is live, the line about us under the email goes and its links use your address.")}
-      </p>
-    </div>
-  );
-}
-
-/** A player's phone mid-adventure, in the organisation's colours and typeface. */
-function PlayerPreview({ host, name, brand }: { host: string; name: string; brand: Brand }) {
-  const t = useT();
-  const title = { fontFamily: titleFont(brand) };
-  return (
-    <figure className="dm-phone" aria-label={t.t("Preview of a player's screen")}>
-      <div className="dm-phone__notch" aria-hidden />
-      <div className="dm-phone__url"><Lock size={10} aria-hidden /> {host}</div>
-      <div className="dm-phone__screen" style={{ background: brand.surface, color: brand.ink }}>
-        <div className="dm-phone__top">
-          {brand.logo ? <img src={brand.logo} alt="" /> : <span className="dm-browser__mark" style={{ background: brand.accent }}>{name.slice(0, 1).toUpperCase()}</span>}
-          <span style={title}>{name}</span>
-        </div>
-        <div className="dm-phone__card">
-          <span className="dm-phone__step" style={{ color: brand.accent }}>{t.t("Step 2 of 8")}</span>
-          <strong style={title}>{t.t("The clock tower")}</strong>
-          <p>{t.t("Count the bells above the door. How many are there?")}</p>
-          <span className="dm-phone__input" />
-          <span className="dm-phone__btn" style={{ background: brand.accent }}>{t.t("Answer")}</span>
-        </div>
-      </div>
-    </figure>
-  );
-}
-
-function StorePreview({ host, name, brand, live, ghost }: { host: string; name: string; brand: Brand; live?: boolean; ghost?: boolean }) {
-  const t = useT();
-  return (
-    <figure className={"dm-browser" + (ghost ? " is-ghost" : "")} aria-label={t.t("Preview of your store on {{host}}", { host })}>
-      <div className="dm-browser__bar">
-        <span className="dm-browser__dots" aria-hidden><i /><i /><i /></span>
-        <span className="dm-browser__url">
-          <Lock size={11} aria-hidden className={live ? "is-live" : ""} />
-          <span>{host}</span>
-        </span>
-      </div>
-      <div className="dm-browser__page" style={{ background: brand.surface, color: brand.ink }}>
-        <div className="dm-browser__top">
-          {brand.logo ? <img src={brand.logo} alt="" /> : <span className="dm-browser__mark" style={{ background: brand.accent }}>{name.slice(0, 1).toUpperCase()}</span>}
-          <span style={{ fontFamily: titleFont(brand) }}>{name}</span>
-        </div>
-        <div className="dm-browser__hero" style={{ background: `linear-gradient(135deg, ${brand.accent}, ${brand.accent2})` }}>
-          <strong style={{ fontFamily: titleFont(brand) }}>{name}</strong>
-          <span>{brand.tagline || t.t("Adventures in your city")}</span>
-          <em style={{ color: brand.accent }}>{t.t("Book now")}</em>
-        </div>
-        <div className="dm-browser__cards">
-          {[0, 1].map((i) => (
-            <div key={i} className="dm-browser__card">
-              <div style={{ background: i ? brand.accent2 : brand.accent }} />
-              <i style={{ background: brand.ink }} />
-              <i style={{ background: brand.ink }} />
-            </div>
-          ))}
-        </div>
-      </div>
-    </figure>
   );
 }

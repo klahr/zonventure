@@ -230,6 +230,12 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.Post("/listing-reviews/{kind}/{id}/sign", adminH.SignListingDecision)
 		r.Post("/listing-reviews/{kind}/{id}/approve", adminH.ApproveListing)
 		r.Post("/listing-reviews/{kind}/{id}/reject", adminH.RejectListing)
+		// Organisation page changes, reviewed after they apply
+		// (admin/org_page_changes.go).
+		r.Get("/org-page-changes", adminH.ListOrgPageChanges)
+		r.Get("/org-page-changes/{id}/previous", adminH.OrgPageChangePrevious)
+		r.Post("/org-page-changes/{id}/approve", adminH.ApproveOrgPageChange)
+		r.Post("/org-page-changes/{id}/roll-back", adminH.RollBackOrgPageChange)
 		r.With(auth.RequireSession).Get("/me/mcp-tokens", adminH.ListMCPTokens)
 		r.With(auth.RequireSession).Delete("/me/mcp-tokens/{id}", adminH.RevokeMCPToken)
 		// TOTP 2FA: status, enrol (setup → confirm), disable, and
@@ -466,8 +472,8 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Delete("/org-themes/{id}", adminH.DeleteOrgTheme)
 			r.Get("/orgs/me/slug", adminH.GetMyOrgSlug)
 			r.Put("/orgs/me/slug", adminH.SetMyOrgSlug)
-			// The organisation's name; held for review like the tagline
-			// once something is for sale (org_name.go).
+			// The organisation's name; like the tagline, reviewed after it
+			// applies once something is for sale (org_name.go).
 			r.Put("/orgs/me/name", adminH.SetMyOrgName)
 			// Public-profile read/write (tagline, website, cover image)
 			// surfaced on /o/{slug}. Read is org-user, writes are

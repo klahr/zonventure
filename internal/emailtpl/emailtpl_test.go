@@ -205,3 +205,20 @@ func TestOrgInvitationNewAccount(t *testing.T) {
 		t.Errorf("existing account = %+v", c)
 	}
 }
+
+// An organisation on its own domain heads its emails in its store's
+// typeface, loaded from there, with the theme's as the fallback.
+func TestTitleFont(t *testing.T) {
+	b := Platform()
+	b.TitleFont, b.TitleFontCSS = "Aclonica", "https://play.example.com/assets/fontface.css"
+	h, _ := Render(Classic, b, "s", Content{Heading: "Hello"})
+	if !strings.Contains(h, `<link rel="stylesheet" href="https://play.example.com/assets/fontface.css">`) {
+		t.Fatalf("no font stylesheet: %s", h)
+	}
+	if !strings.Contains(h, `font:700 24px/1.25 &#34;Aclonica&#34;,-apple-system`) {
+		t.Fatalf("heading not in the title font: %s", h)
+	}
+	if h, _ := Render(Classic, Platform(), "s", Content{Heading: "Hello"}); strings.Contains(h, "stylesheet") {
+		t.Fatalf("a font without one chosen: %s", h)
+	}
+}

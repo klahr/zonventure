@@ -78,6 +78,7 @@
 .dz .adm-listing__fact.is-changed { border-left-color: var(--dz-warning, #b87503); }
 .dz .adm-listing__fact dt { display: flex; align-items: center; gap: var(--dz-space-2); color: var(--dz-muted); font-size: var(--dz-text-sm); }
 .dz .adm-listing__fact dd { margin: 2px 0 0; white-space: pre-wrap; }
+.dz .adm-page-change__logo { width: 6rem; height: 6rem; border: 1px solid var(--dz-border); }
 .dz .adm-listing__was { display: block; margin-top: 2px; text-decoration: line-through; }
 
 /* Listing review: the queue's helpers and one listing in full. */
