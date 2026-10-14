@@ -245,3 +245,12 @@
 .dz .dm-inline { display: flex; gap: var(--dz-space-2); width: 100%; }
 .dz .dm-inline input { flex: 1; min-width: 0; }
 .dz .dm-checklist li > form:nth-child(3) { justify-self: stretch; }
+
+/* Step 4's colour pickers. */
+.dz .dm-colors { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: var(--dz-space-2); }
+.dz .dm-color { display: flex; align-items: center; gap: var(--dz-space-2); padding: 6px 8px; border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); background: var(--dz-surface); cursor: pointer; }
+.dz .dm-color:hover { border-color: var(--dz-accent); }
+.dz .dm-color input[type="color"] { flex: none; width: 2rem; height: 2rem; padding: 0; border: 1px solid var(--dz-border); border-radius: 6px; background: none; cursor: pointer; }
+.dz .dm-color__text { display: flex; flex-direction: column; min-width: 0; }
+.dz .dm-color__label { font-size: var(--dz-text-xs); color: var(--dz-muted); }
+.dz .dm-color code { font-family: var(--dz-font-mono); font-size: var(--dz-text-sm); color: var(--dz-ink); }

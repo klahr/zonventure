@@ -130,7 +130,6 @@
   "Preview of a player's screen": "Förhandsvisning av en spelares skärm",
   "Replies go to": "Svar går till",
   "Shown in your store's footer, beside the platform's.": "Visas i butikens sidfot, bredvid plattformens.",
-  "Site default": "Standard",
   "Step 2 of 8": "Steg 2 av 8",
   "That isn't an email address.": "Det är inte en e-postadress.",
   "The clock tower": "Klocktornet",
@@ -146,5 +145,8 @@
   "No end date": "Inget slutdatum",
   "For the platform's own organization, or a partner you don't bill.": "För plattformens egen organisation, eller en partner ni inte fakturerar.",
   "Included, with no end date.": "Ingår, utan slutdatum.",
-  "Off: links go back to our address": "Av: länkar går tillbaka till vår adress"
+  "Off: links go back to our address": "Av: länkar går tillbaka till vår adress",
+  "Saved. It waits for review before players see it.": "Sparat. Det granskas innan spelarna ser det.",
+  "“{{text}}” waits for review before players see it.": "”{{text}}” granskas innan spelarna ser den.",
+  "The site's own typeface, used when you pick none": "Sidans eget typsnitt, som används när ni inte väljer något"
 }
