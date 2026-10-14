@@ -11,6 +11,15 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+0.32.0 and 0.32.1 were tagged but their images never published (CI
+failed); this release ships their changes.
+
+### Fixed
+
+- The players' rate limiter could be created twice when the first
+  requests arrived together, letting a burst slip past it.
+- Formatting that newer Go versions and CI disagreed on.
+
 ## [0.32.1] - 2026-10-14
 
 ### Changed

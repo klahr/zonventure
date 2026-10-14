@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -79,15 +80,19 @@ type Handlers struct {
 	// limiter throttles answer + location attempts per slot. Lazy-init
 	// on first use so tests that construct Handlers directly don't
 	// need to plumb a value through. nil-safe.
-	limiter *playLimiter
+	limiter     *playLimiter
+	limiterOnce sync.Once
 }
 
 // rateLimiter returns the lazily-initialised playLimiter so handlers
-// don't have to nil-check.
+// don't have to nil-check. Once, because the first requests can arrive
+// together.
 func (h *Handlers) rateLimiter() *playLimiter {
-	if h.limiter == nil {
-		h.limiter = &playLimiter{}
-	}
+	h.limiterOnce.Do(func() {
+		if h.limiter == nil {
+			h.limiter = &playLimiter{}
+		}
+	})
 	return h.limiter
 }
 
