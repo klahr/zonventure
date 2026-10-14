@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-10-14
+
 0.32.0 and 0.32.1 were tagged but their images never published (CI
 failed); this release ships their changes.
 
