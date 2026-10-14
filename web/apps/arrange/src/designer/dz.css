@@ -175,12 +175,12 @@
   background: color-mix(in srgb, var(--dz-danger) 12%, transparent);
   border-color: var(--dz-danger);
 }
-:where(.dz) button.danger.filled, .dz .btn.danger.filled, .dz .confirm-dialog .modal-foot button.danger {
+:where(.dz) button.danger.filled, .dz .btn.danger.filled {
   background: var(--dz-danger);
   color: #fff;
   border-color: var(--dz-danger);
 }
-:where(.dz) button.danger.filled:hover:not(:disabled), .dz .btn.danger.filled:hover, .dz .confirm-dialog .modal-foot button.danger:hover {
+:where(.dz) button.danger.filled:hover:not(:disabled), .dz .btn.danger.filled:hover {
   background: var(--dz-danger);
   filter: brightness(1.08);
 }
@@ -1043,6 +1043,9 @@
 .dz .modal input.invalid:focus {
   outline-color: var(--dz-warning);
 }
+/* Modals (ui.tsx Modal): one shell for every dialog. A head with an
+   optional icon tile, the title and a line under it; a body that scrolls;
+   a footer of buttons on a quieter band. Sized by purpose, not by page. */
 .dz .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1056,8 +1059,9 @@
 }
 .dz .modal {
   width: 100%;
-  max-width: 640px;
-  max-height: calc(100vh - 60px);
+  max-width: 36rem;
+  max-height: min(calc(100vh - 2 * var(--dz-space-4)), 56rem);
+  max-height: min(calc(100dvh - 2 * var(--dz-space-4)), 56rem);
   display: flex;
   flex-direction: column;
   background: var(--dz-surface);
@@ -1065,27 +1069,64 @@
   border-radius: var(--dz-r-3);
   box-shadow: var(--dz-shadow-pop);
   overflow: hidden;
+  outline: none;
 }
+.dz .modal--sm { max-width: 28rem; }
+.dz .modal--lg { max-width: 52rem; }
+.dz .modal--xl { max-width: 76rem; }
+.dz .modal-banner { flex: none; aspect-ratio: 3 / 1; overflow: hidden; background: #fbeef3; }
+.dz .modal-banner img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
 .dz .modal-head {
+  flex: none;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--dz-space-4) var(--dz-space-5);
+  align-items: flex-start;
+  gap: var(--dz-space-3);
+  padding: var(--dz-space-4) var(--dz-space-3) var(--dz-space-4) var(--dz-space-5);
   border-bottom: 1px solid var(--dz-border);
+}
+.dz .modal-head__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--dz-r-2);
+  background: color-mix(in srgb, var(--dz-accent) 12%, var(--dz-surface));
+  color: var(--dz-accent);
+}
+.dz .modal-head__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: 36px;
 }
 .dz .modal-head h2 {
   margin: 0;
   font-size: var(--dz-text-lg);
-  font-weight: 600;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--dz-ink);
 }
+.dz .modal-head__sub {
+  margin: 0;
+  font-size: var(--dz-text-sm);
+  line-height: 1.45;
+  color: var(--dz-muted);
+}
+.dz .modal-close { flex: none; }
 .dz .modal-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dz-space-3);
   padding: var(--dz-space-5);
   overflow-y: auto;
-  flex: 1;
 }
-.dz .confirm-dialog {
-  max-width: 440px;
-}
+.dz .modal--flush .modal-body { padding: 0; gap: 0; overflow: hidden; }
 .dz .confirm-message {
   margin: 0;
   font-size: var(--dz-text-md);
@@ -1093,7 +1134,10 @@
   color: var(--dz-ink-soft);
 }
 .dz .modal-foot {
+  flex: none;
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
   gap: var(--dz-space-2);
   padding: var(--dz-space-3) var(--dz-space-5);
@@ -1574,4 +1618,13 @@
   to {
     stroke-dashoffset: 0;
   }
+}
+
+@media (max-width: 40rem) {
+  /* On a phone a modal is a sheet from the bottom, the whole width. */
+  .dz .modal-backdrop { padding: var(--dz-space-2) 0 0; place-items: end stretch; }
+  .dz .modal { max-width: none; border-radius: var(--dz-r-3) var(--dz-r-3) 0 0; border-bottom: none; }
+  .dz .modal-head { padding-left: var(--dz-space-4); }
+  .dz .modal-body { padding: var(--dz-space-4); }
+  .dz .modal-foot { padding-inline: var(--dz-space-4); }
 }

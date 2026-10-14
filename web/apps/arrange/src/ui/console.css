@@ -81,7 +81,7 @@
 .dz .cs-empty__action { margin-top: var(--dz-space-2); }
 /* An empty list's picture (SPOTS): its own blush background, framed like a tile. Smaller in a dialog and on a phone. */
 .dz .cs-empty__art { width: 9rem; height: 9rem; margin-bottom: var(--dz-space-2); border-radius: var(--dz-r-3); object-fit: cover; }
-.dz .cs-dialog .cs-empty__art { width: 6rem; height: 6rem; }
+.dz .modal .cs-empty__art { width: 6rem; height: 6rem; }
 @media (max-width: 40rem) {
   .dz .cs-empty__art { width: 7rem; height: 7rem; }
 }
@@ -117,14 +117,6 @@
 .dz .cs-error { display: flex; align-items: center; justify-content: space-between; gap: var(--dz-space-3); padding: var(--dz-space-3) var(--dz-space-4); border: 1px solid color-mix(in srgb, var(--dz-danger) 40%, var(--dz-border)); border-radius: var(--dz-r-2); background: color-mix(in srgb, var(--dz-danger) 8%, var(--dz-surface)); color: var(--dz-danger); }
 .dz .cs-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-.dz .cs-dialog { max-width: 32rem; width: calc(100vw - 2rem); }
-.dz .cs-dialog--wide { max-width: 44rem; }
-/* A banner across a dialog's top (WIDE pictures), cropped to 3:1; the dialog's rounded corners clip it. */
-.dz .cs-dialog__banner { flex: none; aspect-ratio: 3 / 1; overflow: hidden; background: #fbeef3; }
-.dz .cs-dialog__banner img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
-.dz .cs-dialog--huge { max-width: 72rem; }
-.dz .cs-dialog--huge .modal-body { max-height: min(80vh, 52rem); }
-.dz .cs-dialog .modal-body { display: flex; flex-direction: column; gap: var(--dz-space-3); max-height: 70vh; overflow-y: auto; }
 
 /* Toasts (ui/toast.tsx): cards on the surface, the tone in the icon and
    the left edge only — a failure reads clearly without a slab of red. */

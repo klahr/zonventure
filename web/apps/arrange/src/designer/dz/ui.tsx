@@ -16,10 +16,11 @@ import {
   useState,
   type ButtonHTMLAttributes,
   type CSSProperties,
+  type FormEvent,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, CheckCircle2, Info, XCircle, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, X, XCircle, type LucideIcon } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 
 export const ICON = { xs: 12, sm: 14, md: 16, lg: 18, xl: 20 } as const;
@@ -293,6 +294,97 @@ export function IssueRow({ text, actions }: { text: ReactNode; actions?: ReactNo
 
 // --- modals ----------------------------------------------------------------
 
+export type ModalSize = "sm" | "md" | "lg" | "xl";
+
+/**
+ * Every modal in the console and the designer: one shell, so they all
+ * look and behave the same. A head with the title (an icon and a line
+ * under it, optionally) and a close button, a body that scrolls, and a
+ * footer of the dialog's own buttons. Escape or a click outside closes
+ * it. Focus goes in — to a field marked autoFocus, else the first field,
+ * else the dialog — and back to where it was on close. With onSubmit the
+ * body is a form, so Enter submits.
+ *
+ * Sizes: sm for a question, md (the default) for a form, lg for a list
+ * or a preview, xl for a workspace. A flush body has no padding and does
+ * not scroll, for a dialog that lays out its own panes.
+ */
+export function Modal(props: {
+  title: ReactNode;
+  icon?: ReactNode;
+  subtitle?: ReactNode;
+  children?: ReactNode;
+  footer?: ReactNode;
+  onClose: () => void;
+  onSubmit?: () => void;
+  size?: ModalSize;
+  /** A picture across the top, edge to edge, above the title. */
+  banner?: ReactNode;
+  flush?: boolean;
+  /** An alertdialog asks before something; the body is then its message. */
+  alert?: boolean;
+  className?: string;
+}) {
+  const t = useT();
+  const id = useId();
+  useEscapeToClose(props.onClose);
+  const box = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    const el = box.current;
+    if (el && !el.contains(document.activeElement)) {
+      const first = el.querySelector<HTMLElement>(".modal-body [autofocus], .modal-body input:not([type=hidden]):not([disabled]), .modal-body select, .modal-body textarea");
+      (first ?? el).focus();
+    }
+    return () => before?.focus?.();
+  }, []);
+  const Body = props.onSubmit ? "form" : "div";
+  const cls = ["modal", `modal--${props.size ?? "md"}`, props.flush && "modal--flush", props.className].filter(Boolean).join(" ");
+  return (
+    <DzPortal>
+      {/* Mouse down, not click: a text selection dragged out of the dialog doesn't close it. */}
+      <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && props.onClose()}>
+        <Body
+          ref={(el: HTMLElement | null) => {
+            box.current = el;
+          }}
+          tabIndex={-1}
+          className={cls}
+          role={props.alert ? "alertdialog" : "dialog"}
+          aria-modal="true"
+          aria-labelledby={id}
+          {...(props.onSubmit
+            ? {
+                onSubmit: (e: FormEvent) => {
+                  e.preventDefault();
+                  props.onSubmit!();
+                },
+              }
+            : {})}
+        >
+          {props.banner && <div className="modal-banner">{props.banner}</div>}
+          <div className="modal-head">
+            {props.icon && (
+              <span className="modal-head__icon" aria-hidden="true">
+                {props.icon}
+              </span>
+            )}
+            <div className="modal-head__text">
+              <h2 id={id}>{props.title}</h2>
+              {props.subtitle && <p className="modal-head__sub">{props.subtitle}</p>}
+            </div>
+            <Button variant="ghost" size="icon" className="modal-close" onClick={props.onClose} aria-label={t.t("Close")} title={t.t("Close")}>
+              <X size={ICON.md} />
+            </Button>
+          </div>
+          <div className="modal-body">{props.children}</div>
+          {props.footer && <div className="modal-foot">{props.footer}</div>}
+        </Body>
+      </div>
+    </DzPortal>
+  );
+}
+
 export function PromptModal({
   title,
   label,
@@ -315,42 +407,33 @@ export function PromptModal({
   const t = useT();
   const [value, setValue] = useState(initialValue ?? "");
   const input = useRef<HTMLInputElement>(null);
+  const fieldId = useId();
   useEffect(() => input.current?.select(), []);
-  useEscapeToClose(onCancel);
   return (
-    <DzPortal>
-      <div className="modal-backdrop" onClick={onCancel}>
-        <form
-          className="modal"
-          onClick={(e) => e.stopPropagation()}
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (allowEmpty || value.trim()) onSubmit(value.trim());
-          }}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="modal-head">
-            <h2>{title}</h2>
-          </div>
-          <div className="modal-body">
-            <div className="sf-field">
-              <div className="label-row">
-                <label>{label}</label>
-              </div>
-              <input ref={input} value={value} onChange={(e) => setValue(e.target.value)} spellCheck={false} autoComplete="off" />
-              {hint && <p className="desc">{hint}</p>}
-            </div>
-          </div>
-          <div className="modal-foot">
-            <Button onClick={onCancel}>{t.t("Cancel")}</Button>
-            <Button type="submit" variant="primary" disabled={!allowEmpty && !value.trim()}>
-              {confirmLabel}
-            </Button>
-          </div>
-        </form>
+    <Modal
+      title={title}
+      size="sm"
+      onClose={onCancel}
+      onSubmit={() => {
+        if (allowEmpty || value.trim()) onSubmit(value.trim());
+      }}
+      footer={
+        <>
+          <Button onClick={onCancel}>{t.t("Cancel")}</Button>
+          <Button type="submit" variant="primary" disabled={!allowEmpty && !value.trim()}>
+            {confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      <div className="sf-field">
+        <div className="label-row">
+          <label htmlFor={fieldId}>{label}</label>
+        </div>
+        <input id={fieldId} ref={input} value={value} onChange={(e) => setValue(e.target.value)} spellCheck={false} autoComplete="off" />
+        {hint && <p className="desc">{hint}</p>}
       </div>
-    </DzPortal>
+    </Modal>
   );
 }
 
@@ -362,6 +445,7 @@ export function ConfirmModal({
   title,
   message,
   confirmLabel,
+  cancelLabel,
   danger,
   onConfirm,
   onCancel,
@@ -369,37 +453,32 @@ export function ConfirmModal({
   title: string;
   message?: ReactNode;
   confirmLabel: string;
+  cancelLabel?: string;
   danger?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   const t = useT();
-  const id = useId();
   const cancel = useRef<HTMLButtonElement>(null);
   useEffect(() => cancel.current?.focus(), []);
-  useEscapeToClose(onCancel);
   return (
-    <DzPortal>
-      <div className="modal-backdrop" onClick={onCancel}>
-        <div className="modal confirm-dialog" onClick={(e) => e.stopPropagation()} role="alertdialog" aria-modal="true" aria-labelledby={id}>
-          <div className="modal-head">
-            <h2 id={id}>{title}</h2>
-          </div>
-          {message && (
-            <div className="modal-body">
-              <p className="confirm-message">{message}</p>
-            </div>
-          )}
-          <div className="modal-foot">
-            <Button ref={cancel} onClick={onCancel}>
-              {t.t("Cancel")}
-            </Button>
-            <Button variant={danger ? "danger" : "primary"} onClick={onConfirm}>
-              {confirmLabel}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </DzPortal>
+    <Modal
+      title={title}
+      size="sm"
+      alert
+      onClose={onCancel}
+      footer={
+        <>
+          <Button ref={cancel} onClick={onCancel}>
+            {cancelLabel ?? t.t("Cancel")}
+          </Button>
+          <Button variant={danger ? "danger" : "primary"} filled={!!danger} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      {message && <p className="confirm-message">{message}</p>}
+    </Modal>
   );
 }

@@ -81,7 +81,7 @@ import type { Mark } from "./NodeCard.tsx";
 import { CatchUpBanner, StepTalk, WorkPanel, cardTalk, catchUpOf, useCollab, type CatchUp } from "./Collab.tsx";
 import { useSession } from "../session.tsx";
 import { Inspector } from "./Inspector.tsx";
-import { LanguageSwitch, LanguagesSettings, languageName, translationLanguages } from "./Translate.tsx";
+import { LanguageSwitch, LanguagesSettings, TranslatorModal, languageName, translationLanguages } from "./Translate.tsx";
 import { PrintMaterials } from "./PrintMaterials.tsx";
 import { ListView } from "./ListView.tsx";
 import { Resources } from "./Resources.tsx";
@@ -268,7 +268,9 @@ export function Designer({ slug }: { slug: string }) {
   const [celebrate, setCelebrate] = useState(false);
   const [diff, setDiff] = useState<{ loading: boolean; diff: GraphDiff | null } | null>(null);
   // Adventure settings: all of it, or one section opened from the ⋮ menu.
-  const [settingsOpen, setSettingsOpen] = useState<boolean | "languages" | "print">(false);
+  const [settingsOpen, setSettingsOpen] = useState<boolean | "print">(false);
+  // The translator, open on a language ("" for the first); null when closed.
+  const [translating, setTranslating] = useState<string | null>(null);
   const [devOpen, setDevOpen] = useState(false);
   // The theme editor, open on a theme or on the first; null when closed.
   const [themesOpen, setThemesOpen] = useState<{ theme?: string } | null>(null);
@@ -403,6 +405,14 @@ export function Designer({ slug }: { slug: string }) {
     },
     [readOnly],
   );
+  // The main language is the adventure's setting, saved straight away;
+  // the draft's copy too, so the simulator and the next save agree with
+  // the adventure.
+  const saveMainLang = async (l: string) => {
+    await adventures.saveLanguage(slug, l);
+    setAdventureLang(l);
+    if (graph) change({ ...graph, language: l });
+  };
   // "a": the next step, from the keyboard — the quick-add palette after the
   // selected step, as Ctrl+K opens it — or the Start first, when the
   // graph has none.
@@ -1125,7 +1135,7 @@ export function Designer({ slug }: { slug: string }) {
     { label: t.t("Edit details"), icon: <Pencil size={ICON.sm} />, onClick: () => void (async () => { if (unsaved && !(await saveNow())) return; setDetailsOpen(true); })() },
     { label: t.t("Adventure settings"), icon: <Settings size={ICON.sm} />, onClick: () => setSettingsOpen(true) },
     { label: t.t("Themes"), icon: <Palette size={ICON.sm} />, onClick: () => openThemes() },
-    { label: t.t("Languages"), icon: <Languages size={ICON.sm} />, onClick: () => setSettingsOpen("languages") },
+    { label: t.t("Languages"), icon: <Languages size={ICON.sm} />, onClick: () => setTranslating(editLang) },
     { label: t.t("Print materials"), icon: <Printer size={ICON.sm} />, onClick: () => setSettingsOpen("print") },
     { label: t.t("Play the draft on my phone"), icon: <Smartphone size={ICON.sm} />, onClick: () => setDevOpen(true) },
     {
@@ -1954,9 +1964,21 @@ export function Designer({ slug }: { slug: string }) {
           onCancel={() => setLabelEditing(null)}
         />
       )}
+      {translating !== null && graph && (
+        <TranslatorModal
+          graph={graph}
+          main={mainLang}
+          meta={meta}
+          onChange={change}
+          onMainChange={saveMainLang}
+          initial={translating}
+          onClose={() => setTranslating(null)}
+          {...(readOnly ? { readOnly } : {})}
+        />
+      )}
       {settingsOpen && (
         <PanelModal
-          title={settingsOpen === "languages" ? t.t("Languages") : settingsOpen === "print" ? t.t("Print materials") : t.t("Adventure settings")}
+          title={settingsOpen === "print" ? t.t("Print materials") : t.t("Adventure settings")}
           wide
           onClose={() => setSettingsOpen(false)}
         >
@@ -1966,28 +1988,22 @@ export function Designer({ slug }: { slug: string }) {
                 <Resources graph={graph} onChange={change} />
               </AdventureSlug.Provider>
             )}
-            {settingsOpen !== "print" && (
-            <LanguagesSettings
-              graph={graph}
-              main={mainLang}
-              meta={meta}
-              onChange={change}
-              onMainChange={async (l) => {
-                await adventures.saveLanguage(slug, l);
-                setAdventureLang(l);
-                // Also the draft's copy, so the simulator and the next
-                // save agree with the adventure straight away.
-                change({ ...graph, language: l });
-              }}
-              editing={editLang}
-              {...(readOnly ? { readOnly } : {})}
-            />
+            {settingsOpen === true && (
+              <LanguagesSettings
+                graph={graph}
+                main={mainLang}
+                meta={meta}
+                onMainChange={saveMainLang}
+                onTranslate={(l) => {
+                  setTranslating(l ?? editLang);
+                  setSettingsOpen(false);
+                }}
+                {...(readOnly ? { readOnly } : {})}
+              />
             )}
-            {settingsOpen !== "languages" && (
-              <AdventureSlug.Provider value={slug}>
-                <PrintMaterials graph={graph} main={mainLang} onChange={change} />
-              </AdventureSlug.Provider>
-            )}
+            <AdventureSlug.Provider value={slug}>
+              <PrintMaterials graph={graph} main={mainLang} onChange={change} />
+            </AdventureSlug.Provider>
             {settingsOpen === true && (
             <Look
               brand={brand}

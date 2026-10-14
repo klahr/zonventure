@@ -125,7 +125,7 @@
 .dz .ev-check.is-off { opacity: 0.55; cursor: not-allowed; }
 @media (max-width: 900px) { .dz .ev-mail { grid-template-columns: 1fr; } }
 /* The composer sits beside its preview: room for both. */
-.dz .cs-dialog--wide:has(.ev-mail), .dz .cs-dialog--wide:has(.mailprev) { max-width: min(76rem, calc(100vw - 2rem)); }
+.dz .modal--lg:has(.ev-mail), .dz .modal--lg:has(.mailprev) { max-width: min(76rem, calc(100vw - 2rem)); }
 /* Statistics: a few plain facts under the numbers, a solve-rate bar per puzzle. */
 .dz .ev-statfacts { display: flex; flex-wrap: wrap; gap: var(--dz-space-1) var(--dz-space-4); margin: var(--dz-space-3) 0; padding: 0; list-style: none; color: var(--dz-muted); font-size: var(--dz-text-sm); }
 .dz .ev-statbar { display: inline-flex; align-items: center; gap: var(--dz-space-2); min-width: 7rem; }

@@ -8,10 +8,10 @@
 // dazyflow; wording adapted from flows to adventures.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { GitCompare, Rocket, X } from "lucide-react";
+import { GitCompare, Rocket } from "lucide-react";
 import { diffIsEmpty, wordDiff, type GraphDiff, type TextChange } from "@zonventure/graph";
 import { useT } from "../../i18n.tsx";
-import { Button, Callout, DzPortal, ICON, Notice, useEscapeToClose } from "./ui.tsx";
+import { Button, Callout, DzPortal, ICON, Modal, Notice } from "./ui.tsx";
 
 export function PublishLabelModal({
   title,
@@ -34,41 +34,30 @@ export function PublishLabelModal({
   const [value, setValue] = useState("");
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
-  useEscapeToClose(onCancel);
   return (
-    <DzPortal>
-      <div className="modal-backdrop" onClick={onCancel}>
-        <div className="modal confirm-dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-          <div className="modal-head">
-            <h2>{title}</h2>
-          </div>
-          <div className="modal-body">
-            {warning && <Callout variant="warning">{warning}</Callout>}
-            <label className="publish-label-field">
-              <span>{t.t("Name this release (optional)")}</span>
-              <input
-                ref={input}
-                type="text"
-                value={value}
-                placeholder={t.t("e.g. Summer edition")}
-                onChange={(e) => setValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !blocked) onPublish(value.trim());
-                }}
-              />
-            </label>
-            <p className="confirm-message">{message}</p>
-          </div>
-          <div className="modal-foot">
-            <Button onClick={onCancel}>{t.t("Cancel")}</Button>
-            <Button variant="primary" disabled={blocked} onClick={() => onPublish(value.trim())}>
-              <Rocket size={ICON.sm} />
-              {confirmLabel}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </DzPortal>
+    <Modal
+      title={title}
+      icon={<Rocket size={ICON.md} />}
+      size="sm"
+      onClose={onCancel}
+      onSubmit={() => !blocked && onPublish(value.trim())}
+      footer={
+        <>
+          <Button onClick={onCancel}>{t.t("Cancel")}</Button>
+          <Button type="submit" variant="primary" disabled={blocked}>
+            <Rocket size={ICON.sm} />
+            {confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      {warning && <Callout variant="warning">{warning}</Callout>}
+      <label className="publish-label-field">
+        <span>{t.t("Name this release (optional)")}</span>
+        <input ref={input} type="text" value={value} placeholder={t.t("e.g. Summer edition")} onChange={(e) => setValue(e.target.value)} />
+      </label>
+      <p className="confirm-message">{message}</p>
+    </Modal>
   );
 }
 
@@ -88,79 +77,70 @@ export function DiffDialog({
   onClose: () => void;
 }) {
   const t = useT();
-  useEscapeToClose(onClose);
   const kinds: Record<string, string> = { zones: t.t("Zones"), items: t.t("Items"), counters: t.t("Shared counters"), journal: t.t("Journal"), time_limit: t.t("Time limit"), hide_score: t.t("Score on the phone") };
   return (
-    <DzPortal>
-      <div className="modal-backdrop" onClick={onClose}>
-        <div className="modal" onClick={(e) => e.stopPropagation()} aria-modal="true" role="dialog" aria-label={t.t("Changes")}>
-          <div className="modal-head">
-            <strong>
-              <GitCompare className="icon-lede" size={ICON.sm} />
-              {t.t("Draft changes since published")}
-            </strong>
-            <Button size="icon" onClick={onClose} aria-label={t.t("Dismiss")}>
-              <X size={ICON.md} />
-            </Button>
-          </div>
-          <div className="modal-body">
-            {loading ? (
-              <Notice>{t.t("Loading…")}</Notice>
-            ) : !diff || diffIsEmpty(diff) ? (
-              <Notice>{t.t("The draft matches the published version.")}</Notice>
-            ) : (
-              <ul className="diff-list">
-                {diff.added.map((s) => (
-                  <li key={`a-${s.slug}`} className="diff-row added">
-                    + {t.t("Step added: {{name}}", { name: s.title })}
-                  </li>
-                ))}
-                {diff.removed.map((s) => (
-                  <li key={`r-${s.slug}`} className="diff-row removed">
-                    − {t.t("Step removed: {{name}}", { name: s.title })}
-                  </li>
-                ))}
-                {diff.changed.map((s) => (
-                  <li key={`c-${s.slug}`} className="diff-row changed">
-                    ~ {t.t("Step changed: {{name}} ({{what}})", { name: s.title, what: s.fields.map((f) => t.t(f)).join(", ") })}
-                    {s.texts.length > 0 && <TextChanges changes={s.texts} before={t.t("Published")} after={t.t("Draft")} />}
-                  </li>
-                ))}
-                {diff.addedEdges.map((k) => (
-                  <li key={`ae-${k}`} className="diff-row added">
-                    + {t.t("Connection added")}: <code>{k}</code>
-                  </li>
-                ))}
-                {diff.removedEdges.map((k) => (
-                  <li key={`re-${k}`} className="diff-row removed">
-                    − {t.t("Connection removed")}: <code>{k}</code>
-                  </li>
-                ))}
-                {diff.resources.length > 0 && (
-                  <li className="diff-row changed">~ {t.t("Adventure settings changed: {{what}}", { what: diff.resources.map((r) => kinds[r] ?? r).join(", ") })}</li>
-                )}
-              </ul>
-            )}
-          </div>
-          <div className="modal-foot">
-            <Button variant="ghost" onClick={onClose}>
-              {t.t("Dismiss")}
-            </Button>
-            <Button
-              className="editor-publish"
-              onClick={() => {
-                onClose();
-                onPublish();
-              }}
-              disabled={publishing || !canPublish}
-            >
-              <Rocket size={ICON.sm} />
-              {t.t("Publish")}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </DzPortal>
+    <Modal
+      title={t.t("Draft changes since published")}
+      icon={<GitCompare size={ICON.md} />}
+      size="lg"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {t.t("Dismiss")}
+          </Button>
+          <Button
+            className="editor-publish"
+            onClick={() => {
+              onClose();
+              onPublish();
+            }}
+            disabled={publishing || !canPublish}
+          >
+            <Rocket size={ICON.sm} />
+            {t.t("Publish")}
+          </Button>
+        </>
+      }
+    >
+      {loading ? (
+        <Notice>{t.t("Loading…")}</Notice>
+      ) : !diff || diffIsEmpty(diff) ? (
+        <Notice>{t.t("The draft matches the published version.")}</Notice>
+      ) : (
+        <ul className="diff-list">
+          {diff.added.map((s) => (
+            <li key={`a-${s.slug}`} className="diff-row added">
+              + {t.t("Step added: {{name}}", { name: s.title })}
+            </li>
+          ))}
+          {diff.removed.map((s) => (
+            <li key={`r-${s.slug}`} className="diff-row removed">
+              − {t.t("Step removed: {{name}}", { name: s.title })}
+            </li>
+          ))}
+          {diff.changed.map((s) => (
+            <li key={`c-${s.slug}`} className="diff-row changed">
+              ~ {t.t("Step changed: {{name}} ({{what}})", { name: s.title, what: s.fields.map((f) => t.t(f)).join(", ") })}
+              {s.texts.length > 0 && <TextChanges changes={s.texts} before={t.t("Published")} after={t.t("Draft")} />}
+            </li>
+          ))}
+          {diff.addedEdges.map((k) => (
+            <li key={`ae-${k}`} className="diff-row added">
+              + {t.t("Connection added")}: <code>{k}</code>
+            </li>
+          ))}
+          {diff.removedEdges.map((k) => (
+            <li key={`re-${k}`} className="diff-row removed">
+              − {t.t("Connection removed")}: <code>{k}</code>
+            </li>
+          ))}
+          {diff.resources.length > 0 && (
+            <li className="diff-row changed">~ {t.t("Adventure settings changed: {{what}}", { what: diff.resources.map((r) => kinds[r] ?? r).join(", ") })}</li>
+          )}
+        </ul>
+      )}
+    </Modal>
   );
 }
 
@@ -217,23 +197,11 @@ export function PublishCelebration() {
 }
 
 /** A plain modal with a title and a close button, for settings and help. */
-export function PanelModal({ title, wide, onClose, children }: { title: string; wide?: boolean; onClose: () => void; children: ReactNode }) {
-  const t = useT();
-  useEscapeToClose(onClose);
+export function PanelModal({ title, icon, subtitle, wide, onClose, children }: { title: string; icon?: ReactNode; subtitle?: ReactNode; wide?: boolean; onClose: () => void; children: ReactNode }) {
   return (
-    <DzPortal>
-      <div className="modal-backdrop" onClick={onClose}>
-        <div className={"modal" + (wide ? " modal-wide" : "")} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
-          <div className="modal-head">
-            <strong>{title}</strong>
-            <Button size="icon" onClick={onClose} aria-label={t.t("Close")}>
-              <X size={ICON.md} />
-            </Button>
-          </div>
-          <div className="modal-body">{children}</div>
-        </div>
-      </div>
-    </DzPortal>
+    <Modal title={title} size={wide ? "lg" : "md"} onClose={onClose} {...(icon ? { icon } : {})} {...(subtitle ? { subtitle } : {})}>
+      {children}
+    </Modal>
   );
 }
 

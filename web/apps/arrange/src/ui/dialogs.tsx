@@ -1,14 +1,16 @@
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { X } from "lucide-react";
-import { Button, DzPortal, ICON, useEscapeToClose } from "../designer/dz/ui.tsx";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { Button, ConfirmModal, Modal } from "../designer/dz/ui.tsx";
 import { useT } from "../i18n.tsx";
 
 /**
- * A dialog in the designer's style. With onSubmit the body is a form, so
- * Enter submits; the footer is the page's own buttons.
+ * A dialog in the designer's style: the shared Modal, sized by wide and
+ * huge. With onSubmit the body is a form, so Enter submits; the footer is
+ * the page's own buttons.
  */
 export function Dialog(props: {
   title: ReactNode;
+  icon?: ReactNode;
+  subtitle?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   onClose: () => void;
@@ -19,47 +21,8 @@ export function Dialog(props: {
   /** A picture across the top, edge to edge, above the title. */
   banner?: ReactNode;
 }) {
-  const t = useT();
-  const id = useId();
-  useEscapeToClose(props.onClose);
-  // Focus goes into the dialog — to a field marked autoFocus, else the
-  // first field, else the dialog — and back to where it was on close.
-  const box = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    const before = document.activeElement as HTMLElement | null;
-    const el = box.current;
-    if (el && !el.contains(document.activeElement)) {
-      const first = el.querySelector<HTMLElement>("[autofocus], input:not([type=hidden]):not([disabled]), select, textarea");
-      (first ?? el).focus();
-    }
-    return () => before?.focus?.();
-  }, []);
-  const Body = props.onSubmit ? "form" : "div";
-  return (
-    <DzPortal>
-      <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && props.onClose()}>
-        <Body
-          ref={(el: HTMLElement | null) => { box.current = el; }}
-          tabIndex={-1}
-          className={"modal cs-dialog" + (props.wide ? " cs-dialog--wide" : "") + (props.huge ? " cs-dialog--huge" : "")}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={id}
-          {...(props.onSubmit ? { onSubmit: (e: FormEvent) => { e.preventDefault(); props.onSubmit!(); } } : {})}
-        >
-          {props.banner && <div className="cs-dialog__banner">{props.banner}</div>}
-          <div className="modal-head">
-            <h2 id={id}>{props.title}</h2>
-            <Button variant="ghost" size="icon" onClick={props.onClose} aria-label={t.t("Close")} title={t.t("Close")}>
-              <X size={ICON.md} />
-            </Button>
-          </div>
-          <div className="modal-body">{props.children}</div>
-          {props.footer && <div className="modal-foot">{props.footer}</div>}
-        </Body>
-      </div>
-    </DzPortal>
-  );
+  const { wide, huge, ...rest } = props;
+  return <Modal {...rest} size={huge ? "xl" : wide ? "lg" : "md"} />;
 }
 
 interface ConfirmOpts {
@@ -108,22 +71,16 @@ export function useDialogs(): Dialogs {
 }
 
 function ConfirmDialog({ o, onDone }: { o: ConfirmOpts; onDone: (v: boolean) => void }) {
-  const t = useT();
-  const cancel = useRef<HTMLButtonElement>(null);
-  useEffect(() => cancel.current?.focus(), []);
   return (
-    <Dialog
+    <ConfirmModal
       title={o.title}
-      onClose={() => onDone(false)}
-      footer={
-        <>
-          <Button ref={cancel} onClick={() => onDone(false)}>{o.cancelLabel ?? t.t("Cancel")}</Button>
-          <Button variant={o.danger ? "danger" : "primary"} filled={!!o.danger} onClick={() => onDone(true)}>{o.confirmLabel}</Button>
-        </>
-      }
-    >
-      {o.message && <p className="confirm-message">{o.message}</p>}
-    </Dialog>
+      message={o.message}
+      confirmLabel={o.confirmLabel}
+      {...(o.cancelLabel ? { cancelLabel: o.cancelLabel } : {})}
+      {...(o.danger ? { danger: true } : {})}
+      onConfirm={() => onDone(true)}
+      onCancel={() => onDone(false)}
+    />
   );
 }
 

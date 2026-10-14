@@ -11,6 +11,20 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- Every dialog in the console and the designer shares one design: the
+  same head (with an icon and a subtitle where it helps), close button,
+  sizes, footer and focus handling. On a phone a dialog opens as a sheet
+  from the bottom.
+- The Languages dialog is now a translator: the languages and how far
+  each has come down the side, every text with the original beside its
+  translation, grouped by step, each marked translated, untranslated or
+  outdated. Search the texts, show only what is left to do or outdated,
+  copy the original, and press Ctrl+Enter to go to the next text. The
+  adventure settings show each language's progress and open the
+  translator.
+
 ## [0.30.2] - 2026-10-14
 
 ### Added
