@@ -32,6 +32,7 @@ func (LogMailer) Send(_ context.Context, m Message) error {
 		"text_len", len(m.Text),
 		"html_len", len(m.HTML),
 		"reply_to", m.ReplyTo,
+		"from_name", m.FromName,
 		"attachments", attNames,
 		"attachments_bytes", attBytes,
 	)

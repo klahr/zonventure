@@ -102,9 +102,9 @@ func (o *Outbox) Enqueue(ctx context.Context, kind string, m Message) error {
 	// different layer.
 	for _, addr := range m.To {
 		if _, err := o.DB.ExecContext(ctx, `
-			INSERT INTO mail_outbox (kind, to_addr, subject, body_text, body_html, reply_to)
-			VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''))
-		`, kind, addr, m.Subject, m.Text, m.HTML, m.ReplyTo); err != nil {
+			INSERT INTO mail_outbox (kind, to_addr, subject, body_text, body_html, reply_to, from_name)
+			VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7)
+		`, kind, addr, m.Subject, m.Text, m.HTML, m.ReplyTo, m.FromName); err != nil {
 			return fmt.Errorf("outbox enqueue: %w", err)
 		}
 	}
@@ -159,6 +159,7 @@ type claimedMail struct {
 	bodyText string
 	bodyHTML string
 	replyTo  string
+	fromName string
 	attempts int
 }
 
@@ -193,7 +194,7 @@ func (o *Outbox) claimNext(ctx context.Context) (*claimedMail, error) {
 		replyTo sql.NullString
 	)
 	err = tx.QueryRowContext(ctx, `
-		SELECT id, kind, to_addr, subject, body_text, body_html, reply_to, attempts
+		SELECT id, kind, to_addr, subject, body_text, body_html, reply_to, from_name, attempts
 		  FROM mail_outbox
 		 WHERE status = 'pending'
 		   AND next_attempt_at <= now_text()
@@ -201,7 +202,7 @@ func (o *Outbox) claimNext(ctx context.Context) (*claimedMail, error) {
 		 ORDER BY next_attempt_at
 		 LIMIT 1
 		 FOR UPDATE SKIP LOCKED
-	`).Scan(&c.id, &c.kind, &c.toAddr, &c.subject, &c.bodyText, &c.bodyHTML, &replyTo, &c.attempts)
+	`).Scan(&c.id, &c.kind, &c.toAddr, &c.subject, &c.bodyText, &c.bodyHTML, &replyTo, &c.fromName, &c.attempts)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -232,11 +233,12 @@ func (o *Outbox) claimNext(ctx context.Context) (*claimedMail, error) {
 // and another worker picks it up.
 func (o *Outbox) deliver(ctx context.Context, c *claimedMail) {
 	msg := Message{
-		To:      []string{c.toAddr},
-		Subject: c.subject,
-		Text:    c.bodyText,
-		HTML:    c.bodyHTML,
-		ReplyTo: c.replyTo,
+		To:       []string{c.toAddr},
+		Subject:  c.subject,
+		Text:     c.bodyText,
+		HTML:     c.bodyHTML,
+		ReplyTo:  c.replyTo,
+		FromName: c.fromName,
 	}
 	sendErr := o.Mailer.Send(ctx, msg)
 	if sendErr == nil {

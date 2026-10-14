@@ -485,6 +485,17 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// logo without involving platform support.
 			r.Post("/orgs/me/logo", adminH.SetMyOrgLogo)
 			r.Delete("/orgs/me/logo", adminH.DeleteMyOrgLogo)
+			// The organisation's own domain (admin/domains.go). Read is
+			// org-user; claiming, removing and sending instructions are
+			// gated to RoleOrgAdmin inside each handler.
+			r.Get("/orgs/me/domain", adminH.GetMyDomain)
+			r.Put("/orgs/me/domain", adminH.SetMyDomain)
+			r.Delete("/orgs/me/domain", adminH.DeleteMyDomain)
+			r.Post("/orgs/me/domain/check", adminH.CheckMyDomain)
+			r.Post("/orgs/me/domain/send", adminH.SendDomainInstructions)
+			r.Get("/orgs/me/domain/guide/{provider}", adminH.DomainGuide)
+			r.Get("/orgs/me/domain/brand", adminH.GetMyDomainBrand)
+			r.Put("/orgs/me/domain/brand", adminH.SetMyDomainBrand)
 
 			// Purchases: arrangers buy player-slot assignments here. The
 			// simulated flow just needs the confirm endpoint; a future
@@ -549,6 +560,9 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 				r.Post("/organizations/{orgID}/trusted", adminH.SetOrgTrusted)
 				r.Post("/organizations/{orgID}/party-adventures", adminH.SetOrgPartyAdventures)
 				r.Post("/organizations/{orgID}/verified-creator", adminH.SetOrgVerifiedCreator)
+				// Grant or end an organisation's own domain.
+				r.Get("/organizations/{orgID}/custom-domain", adminH.GetOrgCustomDomain)
+				r.Put("/organizations/{orgID}/custom-domain", adminH.SetOrgCustomDomain)
 				// Who may review listings (the review itself is below).
 				r.Post("/listing-reviewers", adminH.SetListingReviewer)
 				r.Delete("/organizations/{orgID}", adminH.DeleteOrganization)

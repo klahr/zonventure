@@ -73,6 +73,8 @@ short tour:
 | `ZV_SEED_ADMIN` | First-run admin (`user:pass`); ignored once an admin exists | `admin:admin` |
 | `POSTGRES_PASSWORD` | Bundled Postgres password — **change before prod** | `zv` |
 | `ZV_PUBLIC_URL` | Origin used in outbound emails (set to your real https URL) | `http://localhost:8080` |
+| `ZV_DOMAIN_CNAME_SUFFIX` | Turns on organisations' own domains: the name their CNAMEs point at (`cname.example.org`), with a wildcard DNS record to this server. See [Organisations' own domains](#organisations-own-domains) | unset (off) |
+| `ZV_DOMAIN_PROBE_ADDR` | Where the "does this domain answer" check dials your TLS proxy (`172.17.0.1:443`), when the server can't reach its own public IP | unset |
 | `ZV_HOME_ORG` | Slug of the organisation the site is: `/store` redirects to its page `/o/<slug>`, and the landing page lists its adventures | unset (`/store` not found) |
 | `ZV_SITE_NAME` | Name the instance shows players and arrangers (titles, player header, emails, authenticator entry). Set your own brand so players know who runs the service | `Zonventure` |
 | `ZV_CURRENCY` | ISO 4217 code every price, ticket and party is sold in. Must have two decimals (not JPY, KRW, …). Set it before the first sale: amounts already saved keep their numbers, not their value | `sek` |
@@ -393,6 +395,64 @@ server {
     }
 }
 ```
+
+## Organisations' own domains
+
+An organisation can have its store, tickets and games on its own address
+(`adventures.theirbrand.se`), in its own name: players see no mention of
+this instance there. The organisation sets it up itself under
+**Settings → Domain** by adding one CNAME record; the page walks it
+through, per DNS provider, and says the moment it works.
+
+1. Add a wildcard DNS record for a name you control, say
+   `*.cname.example.org`, pointing at this server (`A`/`AAAA`, or a
+   CNAME to its hostname).
+2. Set `ZV_DOMAIN_CNAME_SUFFIX=cname.example.org` and restart.
+3. Let your TLS proxy fetch certificates on demand, asking zv first.
+   With Caddy:
+
+   ```
+   {
+   	on_demand_tls {
+   		ask http://127.0.0.1:8080/internal/tls-allowed
+   	}
+   }
+
+   zv.example.org {
+   	respond /internal/* 404
+   	reverse_proxy 127.0.0.1:8080
+   }
+
+   https:// {
+   	tls {
+   		on_demand
+   	}
+   	respond /internal/* 404
+   	reverse_proxy 127.0.0.1:8080
+   }
+   ```
+
+   `/internal/tls-allowed?domain=` answers 200 only for a name an entitled
+   organisation claimed and whose record was found right, so nobody can
+   make your proxy fetch certificates for names of their choosing. Keep it
+   unreachable from outside, as `respond /internal/* 404` does. The proxy
+   must pass the original `Host` header (Caddy does by default).
+4. Give an organisation its domain under **Admin → Organizations → (the
+   org) → Own domain**, with the date it is included until. Its admins get
+   an email with how to start. Past that date it keeps working for 30
+   days, then every link to it redirects back to this instance, so nothing
+   already sent breaks.
+
+On its own domain an organisation's pages show only its name, logo and
+colours, its emails go out under its name, and every player-facing link
+(tickets, invitations, printed letters, calendar invites) uses its
+address. The console, signing in and the API for staff stay on
+`ZV_PUBLIC_URL`. Your privacy policy and terms stay reachable there,
+unchanged, because they name who actually sells and processes.
+
+On a development instance (`ZV_ENV=dev`) any `*.localhost` name counts as
+pointing here, so the whole flow can be tried locally: claim
+`play.acme.localhost` and open `http://play.acme.localhost:8080`.
 
 ## Pointing at an external Postgres
 

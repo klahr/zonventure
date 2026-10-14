@@ -113,3 +113,4 @@
 .adm-changes thead th { border-top: 0; font-weight: 600; }
 .adm-changes tbody th { font-weight: 500; white-space: nowrap; }
 .adm-change__img { max-width: 220px; max-height: 160px; border-radius: 6px; display: block; }
+.dz .adm-domain-row { align-items: flex-end; flex-wrap: wrap; }

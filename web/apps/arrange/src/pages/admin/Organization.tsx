@@ -17,6 +17,7 @@ import {
 } from "./api.ts";
 import { AddMemberDialog, EditPassDialog, GrantPassDialog, GrantSlotsDialog, MarkBilledDialog, PickDialog, RenameOrgDialog, SetPasswordDialog } from "./OrgDialogs.tsx";
 import { OrgLogo } from "./OrgLogo.tsx";
+import { OrgDomainCard } from "./OrgDomain.tsx";
 import { TicketSalesCard } from "../settings/TicketSales.tsx";
 import { stateText } from "../event/util.ts";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
@@ -351,6 +352,7 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
       />
 
       <SetupCard org={org} connect={data.connect} onTrusted={() => act(() => setTrusted(org.id, !org.trusted), org.trusted ? t.t("Invoice billing disabled") : t.t("Invoice billing enabled"))} onParty={() => act(() => setPartyAdventures(org.id, !org.party_adventures), org.party_adventures ? t.t("Public party creator disabled") : t.t("Public party creator enabled"))} onVerified={toggleVerified} onPublisher={togglePublisher} onRequireTotp={toggleRequireTotp} reload={reload} readOnly={!full} />
+      <OrgDomainCard orgID={org.id} readOnly={!full} />
 
       <Card
         title={t.t("Users")}

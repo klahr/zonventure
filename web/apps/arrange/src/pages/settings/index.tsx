@@ -18,6 +18,7 @@ import { IntegrationsTab } from "./Integrations.tsx";
 import { ThemesTab } from "./Themes.tsx";
 import { PricingTab } from "./Pricing.tsx";
 import { LegalTab } from "./Legal.tsx";
+import { DomainTab } from "./Domain.tsx";
 import "./settings.css";
 
 /**
@@ -38,6 +39,7 @@ export function SettingsPage({ tab }: { tab?: string | undefined }) {
     { id: "members", group: "org", label: t.t("Members"), visible: orgAdmin },
     { id: "themes", group: "org", label: t.t("Themes"), visible: canAuthor(u) },
     { id: "purchases", group: "org", label: t.t("Purchases"), visible: orgAdmin || admin },
+    { id: "domain", group: "org", label: t.t("Domain"), visible: orgAdmin },
     { id: "billing", group: "org", label: t.t("Billing"), visible: orgAdmin },
     { id: "integrations", group: "org", label: t.t("Integrations"), visible: orgAdmin },
     { id: "audit", group: "org", label: t.t("Audit"), visible: orgAdmin || readsAsAdmin(u) },
@@ -107,6 +109,8 @@ function SettingsTab({ id, admin }: { id: string; admin: boolean }) {
       );
     case "billing":
       return <BillingTab />;
+    case "domain":
+      return <DomainTab />;
     case "pricing":
       return <PricingTab />;
     case "legal":

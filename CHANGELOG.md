@@ -11,6 +11,32 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Organisations' own domains. A platform admin grants one under
+  Organizations → Own domain; the organisation's admins then set it up
+  under Settings → Domain in four steps: choose the address
+  (`adventures.theirbrand.se`), add one CNAME record (with step-by-step
+  guides for Loopia, One.com, Binero, GoDaddy, Namecheap, Cloudflare and
+  Squarespace, or "send these instructions" to whoever runs their DNS),
+  a live check that names the fix when the record is wrong, and a
+  branding checklist that can pick colours from the logo. On its own
+  domain an organisation's store, tickets and games show only its name,
+  logo and colours; its emails go out under its name; every player link
+  uses its address. Turned on with `ZV_DOMAIN_CNAME_SUFFIX` and a TLS
+  proxy that fetches certificates on demand (see docs/selfhosting.md).
+- Settings → Pricing: the own-domain price per year and the link
+  organisations use to ask for it, also shown on `/pricing`.
+- On its own domain an organisation can also choose the name it goes
+  by, its title typeface, and links to its own terms and privacy policy.
+  A platform admin can grant an own domain with no end date, for an
+  organisation that isn't billed.
+
+### Fixed
+
+- An adventure look's title typeface now shows on its store page; the
+  font files were looked up under the wrong name.
+
 ## [0.30.4] - 2026-10-14
 
 ### Added

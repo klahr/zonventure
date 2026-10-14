@@ -61,6 +61,13 @@ services:
       # no-op, so leaving it in place across restarts is safe.
       ZV_SEED_ADMIN:    ${ZV_SEED_ADMIN:-admin:admin}
       ZV_PUBLIC_URL:    ${ZV_PUBLIC_URL:-http://localhost:8080}
+      # Organisations' own domains: the suffix their CNAMEs point at,
+      # a wildcard record to this server (docs/selfhosting.md). Empty
+      # → off.
+      ZV_DOMAIN_CNAME_SUFFIX: ${ZV_DOMAIN_CNAME_SUFFIX:-}
+      # Where the check that a domain answers dials the TLS proxy, when
+      # the server can't reach its own public IP (e.g. 172.17.0.1:443).
+      ZV_DOMAIN_PROBE_ADDR: ${ZV_DOMAIN_PROBE_ADDR:-}
       # The site's own organisation (its slug): /store and the landing
       # page's adventures. Empty → /store is not found.
       ZV_HOME_ORG:      ${ZV_HOME_ORG:-}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"mime"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strings"
 	"time"
@@ -162,6 +163,16 @@ func (s *SMTPMailer) Send(ctx context.Context, msg Message) error {
 	return nil
 }
 
+// withFromName is from with its display name replaced by name, from
+// itself when name is empty.
+func withFromName(from, name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return from
+	}
+	return (&mail.Address{Name: name, Address: extractAddr(from)}).String()
+}
+
 // extractAddr returns the bare addr-spec from a From header value
 // like "Name <addr@example>" — needed for the SMTP envelope, which
 // rejects display-name forms.
@@ -200,7 +211,7 @@ func buildRFC5322(msg Message, from string) ([]byte, error) {
 		// than addresses (Subject, Reply-To, the From label).
 		fmt.Fprintf(&b, "%s: %s\r\n", k, sanitizeHeader(v))
 	}
-	hdr("From", from)
+	hdr("From", withFromName(from, msg.FromName))
 	hdr("To", strings.Join(msg.To, ", "))
 	if msg.ReplyTo != "" {
 		hdr("Reply-To", msg.ReplyTo)

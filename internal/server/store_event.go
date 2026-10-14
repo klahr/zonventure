@@ -48,7 +48,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	}
 	slugFromURL := strings.TrimSpace(chi.URLParam(r, "slug"))
 
-	body, err := readWebFile("web/store-event.html")
+	body, err := readWebFileFor(r, "web/store-event.html")
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return

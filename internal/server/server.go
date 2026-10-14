@@ -25,6 +25,7 @@ import (
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/components"
+	"github.com/klahr/zonventure/internal/domains"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/mcp"
@@ -225,6 +226,14 @@ func New(cfg Config) http.Handler {
 	// CSP / X-Frame / X-Content-Type-Options. Costs nothing on a 301
 	// where the body is empty anyway; closes a real gap on the 503.
 	r.Use(securityHeaders(cspFor(cfg.Legal.MapTileURL, cfg.Legal.MapStyleURL)))
+	// An organisation's own domain answers as its store, in its name
+	// (customdomain.go); its pages here move there once it is live.
+	if cfg.DB != nil {
+		if err := domains.Load(context.Background(), cfg.DB); err != nil {
+			logx.Warn("domains.load", "err", err.Error())
+		}
+	}
+	r.Use(customDomains(cfg.PublicURL))
 	// Hide links to /privacy, /terms, /pricing and /store while they'd
 	// answer 503 / 404 (legal identity unset, landing off, no home org).
 	r.Use(hideUnavailableLinks(func() LegalConfig { return legalNow(cfg.Legal) }, cfg.HomeOrg))
@@ -405,6 +414,8 @@ func New(cfg Config) http.Handler {
 	periodic.Start(bgCtx, time.Hour, adminH.AnchorListingLog)
 	// The day-before reminder of a scheduled account deletion.
 	periodic.Start(bgCtx, time.Hour, adminH.SweepDeletionReminders)
+	// Organisations' own domains: DNS checks, going live, endings.
+	periodic.Start(bgCtx, time.Minute, adminH.SweepDomains)
 	publicH := &public.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL, Engine: playerH.Engine,
 		SecureCookie: cfg.SecureCookie,

@@ -27,7 +27,7 @@ func (h *Handlers) ExportEventInviteICS(w http.ResponseWriter, r *http.Request) 
 	if _, ok := h.authorizeEvent(w, r, eventID); !ok {
 		return
 	}
-	evt, err := icscal.BuildForEvent(r.Context(), h.DB, h.Lib, eventID, h.PublicURL)
+	evt, err := icscal.BuildForEvent(r.Context(), h.DB, h.Lib, eventID, h.eventBase(r.Context(), eventID))
 	if err != nil {
 		if errors.Is(err, icscal.ErrNoSchedule) {
 			httpx.Error(w, http.StatusBadRequest, "event has no scheduled time")

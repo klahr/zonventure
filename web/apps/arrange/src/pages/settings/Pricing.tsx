@@ -13,6 +13,8 @@ interface Pricing {
   fee_min_cents: number;
   vat_excluded: boolean;
   payout_terms: string;
+  domain_year_cents: number;
+  domain_contact_url: string;
 }
 
 /** unconnectedSeller, internal/admin/pricing.go. */
@@ -22,18 +24,18 @@ interface Seller {
   listings: number;
 }
 
-type Price = "player_cents" | "free_players" | "hosted_block_cents" | "fee_percent_bps" | "fee_fixed_cents" | "fee_min_cents";
+type Price = "player_cents" | "free_players" | "hosted_block_cents" | "fee_percent_bps" | "fee_fixed_cents" | "fee_min_cents" | "domain_year_cents";
 
 /** What the fields hold while typed: amounts and percent as written. */
 type Draft = Record<Price, string>;
 
-const KRONOR: Price[] = ["player_cents", "hosted_block_cents", "fee_fixed_cents", "fee_min_cents"];
+const KRONOR: Price[] = ["player_cents", "hosted_block_cents", "fee_fixed_cents", "fee_min_cents", "domain_year_cents"];
 
-const FIELDS: Price[] = ["player_cents", "free_players", "hosted_block_cents", "fee_percent_bps", "fee_fixed_cents", "fee_min_cents"];
+const FIELDS: Price[] = ["player_cents", "free_players", "hosted_block_cents", "fee_percent_bps", "fee_fixed_cents", "fee_min_cents", "domain_year_cents"];
 
 /** The settings alone: the server's response also carries its currency and the unconnected sellers, which are no field here. */
 function pick(p: Pricing): Pricing {
-  const out = { vat_excluded: !!p.vat_excluded, payout_terms: p.payout_terms ?? "" } as Pricing;
+  const out = { vat_excluded: !!p.vat_excluded, payout_terms: p.payout_terms ?? "", domain_contact_url: p.domain_contact_url ?? "" } as Pricing;
   for (const k of FIELDS) out[k] = p[k];
   return out;
 }
@@ -179,6 +181,19 @@ export function PricingTab() {
           </Callout>
         )}
       </PriceCard>
+      <PriceCard
+        title={t.t("Own domain")}
+        who={t.t("Paid by an org, per year, for its store on its own address. You grant it under Organizations once paid. 0 shows “Contact us” without a price.")}
+        keys={["domain_year_cents"]}
+        saved={saved}
+        draft={draft}
+        parsed={parsed}
+        onSaved={onSaved}
+        example={now.domain_year_cents > 0 ? t.t("Orgs see: {{price}} per year.", { price: kr(now.domain_year_cents) }) : t.t("Orgs see “Contact us”, with no price.")}
+      >
+        <Field label={t.t("Price per year")}>{input("domain_year_cents", krIncl)}</Field>
+      </PriceCard>
+      <DomainContactCard saved={saved} onSaved={onSaved} />
       <PayoutTermsCard saved={saved} onSaved={onSaved} />
     </>
   );
@@ -239,6 +254,40 @@ function PayoutTermsCard({ saved, onSaved }: { saved: Pricing; onSaved: (p: Pric
     >
       <Field label={t.t("Payout terms")} hint={t.t("Empty shows the built-in terms: {{terms}}", { terms: t.t(DEFAULT_PAYOUT_TERMS) })}>
         <textarea rows={3} maxLength={1000} value={text} onChange={(e) => setText(e.target.value)} />
+      </Field>
+    </Card>
+  );
+}
+
+/** Where an org asks for its own domain: the offer's button in the console, and on /pricing. */
+function DomainContactCard({ saved, onSaved }: { saved: Pricing; onSaved: (p: Pricing) => void }) {
+  const t = useT();
+  const toast = useToast();
+  const [url, setUrl] = useState(saved.domain_contact_url);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      onSaved(await put<Pricing>("/api/admin/pricing", { ...saved, domain_contact_url: url.trim() }));
+      toast.ok(t.t("Saved"));
+    } catch (e) {
+      toast.err(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card
+      title={t.t("Own domain: where orgs ask for it")}
+      subtitle={t.t("The link behind “Get your own domain” in an org's Domain settings. Empty tells them to ask the platform's operator.")}
+      actions={
+        <Button variant="primary" loading={busy} disabled={url.trim() === saved.domain_contact_url} onClick={() => void save()}>
+          {t.t("Save")}
+        </Button>
+      }
+    >
+      <Field label={t.t("Link")} hint={t.t("A mailto: address or an https:// page, like mailto:sales@example.com?subject=Own%20domain")}>
+        <input type="url" maxLength={500} value={url} placeholder="mailto:" onChange={(e) => setUrl(e.target.value)} />
       </Field>
     </Card>
   );

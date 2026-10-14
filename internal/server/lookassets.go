@@ -60,7 +60,7 @@ func themeCoverURL(id string) string {
 // lookFontURL is the stylesheet that loads look font key, or "" when the
 // key isn't one of look.Fonts or the build lacks its file.
 func lookFontURL(key string) string {
-	if _, ok := look.Fonts[key]; !ok || playAsset(fontStem(key)+"-latin.woff2") == "" {
+	if _, ok := look.Fonts[key]; !ok || playAsset("fonts/"+fontStem(key)+"-latin.woff2") == "" {
 		return ""
 	}
 	return "/assets/look-font/" + key + ".css"
@@ -92,7 +92,7 @@ func serveLookFont(w http.ResponseWriter, r *http.Request) {
 	}
 	var b strings.Builder
 	for _, sub := range []struct{ suffix, rng string }{{"-latin.woff2", latinRange}, {"-latin-ext.woff2", latinExtRange}} {
-		u := playAsset(fontStem(key) + sub.suffix)
+		u := playAsset("fonts/" + fontStem(key) + sub.suffix)
 		if u == "" {
 			continue
 		}

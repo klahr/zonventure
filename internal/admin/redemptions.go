@@ -1575,7 +1575,7 @@ func (h *Handlers) sendRedemptionMail(ctx context.Context, kind, lang string, to
 }
 
 func (h *Handlers) sendRedemptionApproved(ctx context.Context, eventID int64, email, partner, lang, teamToken, voucher string) error {
-	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
+	publicURL := h.eventBase(ctx, eventID)
 	if publicURL == "" {
 		return errors.New("redemption email requires PublicURL")
 	}

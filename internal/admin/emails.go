@@ -184,6 +184,14 @@ func (h *Handlers) samplePreview(w http.ResponseWriter, r *http.Request, kind st
 	if coverKinds[k.ID] {
 		c.Picture = h.previewCover(r, eventID, l.Lang)
 	}
+	// The console shows the preview, and its pages load pictures from
+	// this site only: an organisation's logo comes from here, not its
+	// own domain, which its sent emails use.
+	if base := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/"); base != "" {
+		if i := strings.Index(l.Brand.LogoURL, "/org-logo/"); i > 0 {
+			l.Brand.LogoURL = base + l.Brand.LogoURL[i:]
+		}
+	}
 	html, text := emailtpl.Render(l.Theme, l.Brand, subject, c)
 	return previewDTO{Subject: subject, HTML: html, Text: text, Theme: string(l.Theme)}, true
 }
@@ -640,7 +648,7 @@ func (h *Handlers) emailTeamsCancelled(ctx context.Context, eventID int64) int {
 	// The calendar entry the invitations put in calendars, cancelled. The
 	// outbox holds no attachments, so with one the mail goes straight out.
 	var cancel []mailerpkg.Attachment
-	if evt, err := icscal.BuildForEvent(ctx, h.DB, h.Lib, eventID, h.PublicURL); err == nil && h.Mailer != nil {
+	if evt, err := icscal.BuildForEvent(ctx, h.DB, h.Lib, eventID, h.eventBase(ctx, eventID)); err == nil && h.Mailer != nil {
 		evt.Method, evt.Status = "CANCEL", "CANCELLED"
 		if b, err := icscal.Bytes(evt); err == nil {
 			cancel = []mailerpkg.Attachment{{Filename: icscal.Filename(eventID), ContentType: "text/calendar; method=CANCEL; charset=UTF-8", Bytes: b}}

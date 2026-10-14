@@ -30,6 +30,9 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 	// (with reconnect storms, tab refreshes, etc.) never trips it.
 	r.Group(func(r chi.Router) {
 		r.Use(publicRLMiddleware(env.publicRL))
+		// Whether an organisation's own domain points here, for whoever
+		// runs its DNS (domaincheck.go).
+		registerDomainCheck(r, adminH)
 		// Token URLs must not be crawled. The page itself carries
 		// `<meta name="robots" content="noindex, nofollow">`; the
 		// header is the belt to that suspenders, blocking indexers

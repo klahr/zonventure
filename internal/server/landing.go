@@ -603,7 +603,7 @@ func storeSubs(s landingStrings) [][2]string {
 // back from checkout (?paid=…), which the page's script follows up.
 // {{STORE_SCOPE}} stays "org" for templates that still style by it.
 func renderOrgPage(w http.ResponseWriter, r *http.Request, org orgProfile) {
-	body, err := readWebFile("web/store.html")
+	body, err := readWebFileFor(r, "web/store.html")
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -685,7 +685,7 @@ func redeemSubs(s landingStrings) [][2]string {
 // that organisation's products; the options and the form post go to the
 // matching API base, and names orgName where the bare page names the site.
 func renderRedeemPage(w http.ResponseWriter, r *http.Request, orgSlug, orgName string) {
-	body, err := readWebFile("web/redeem.html")
+	body, err := readWebFileFor(r, "web/redeem.html")
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -726,7 +726,7 @@ func render404(w http.ResponseWriter, r *http.Request) {
 
 // renderErrorPage is the 404 page's card with status and its own text.
 func renderErrorPage(w http.ResponseWriter, r *http.Request, status int, title, heading, body string) {
-	page, err := readWebFile("web/404.html")
+	page, err := readWebFileFor(r, "web/404.html")
 	if err != nil {
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -811,24 +811,42 @@ func renderTopbarPage(w http.ResponseWriter, r *http.Request, name string) {
 	_, _ = w.Write(out)
 }
 
-// pricingSubs renders {{FREE_PLAYERS_PER_EVENT}} and
-// {{PRICE_PER_EXTRA_PLAYER}} from the prices in force (Settings →
-// Pricing), so the manual never disagrees with the charge.
+// pricingSubs renders {{FREE_PLAYERS_PER_EVENT}},
+// {{PRICE_PER_EXTRA_PLAYER}} and the own-domain offer
+// ({{DOMAIN_PRICE_EN}}, {{DOMAIN_PRICE_SV}}, {{DOMAIN_CONTACT_URL}})
+// from the prices in force (Settings → Pricing), so the manual never
+// disagrees with the charge.
 func pricingSubs() [][2]string {
 	p := settings.CurrentPricing()
-	price := strconv.FormatInt(p.PlayerCents/100, 10)
-	if minor := p.PlayerCents % 100; minor != 0 {
-		price += "," + fmt.Sprintf("%02d", minor)
+	domainEN, domainSV := "Price on request", "Pris på förfrågan"
+	if p.DomainYearCents > 0 {
+		domainEN, domainSV = kronor(p.DomainYearCents)+" / year", kronor(p.DomainYearCents)+" / år"
+	}
+	contact := p.DomainContactURL
+	if contact == "" {
+		contact = "/arrange"
 	}
 	return [][2]string{
 		{"{{FREE_PLAYERS_PER_EVENT}}", strconv.FormatInt(p.FreePlayers, 10)},
-		{"{{PRICE_PER_EXTRA_PLAYER}}", price + " kr"},
+		{"{{PRICE_PER_EXTRA_PLAYER}}", kronor(p.PlayerCents)},
+		{"{{DOMAIN_PRICE_EN}}", domainEN},
+		{"{{DOMAIN_PRICE_SV}}", domainSV},
+		{"{{DOMAIN_CONTACT_URL}}", html.EscapeString(contact)},
 	}
+}
+
+// kronor is cents as "49 kr", "49,50 kr".
+func kronor(cents int64) string {
+	price := strconv.FormatInt(cents/100, 10)
+	if minor := cents % 100; minor != 0 {
+		price += "," + fmt.Sprintf("%02d", minor)
+	}
+	return price + " kr"
 }
 
 func pricingKey() string {
 	p := settings.CurrentPricing()
-	return strconv.FormatInt(p.PlayerCents, 10) + "/" + strconv.FormatInt(p.FreePlayers, 10)
+	return strconv.FormatInt(p.PlayerCents, 10) + "/" + strconv.FormatInt(p.FreePlayers, 10) + "/" + strconv.FormatInt(p.DomainYearCents, 10) + "/" + p.DomainContactURL
 }
 
 // renderLandingPage substitutes the locale's strings into the embedded

@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/domains"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/eventfile"
 	"github.com/klahr/zonventure/internal/graph"
@@ -363,7 +364,12 @@ func (h *Handlers) TeamShareQR(w http.ResponseWriter, r *http.Request) {
 	// useless to anyone scanning it on a different device, and the
 	// 503 here pushes the operator to set ZV_PUBLIC_URL before the
 	// QR is printed and handed out. Same posture as buildResetLink.
+	// An organisation's own domain is safe: only a registered one
+	// gets here.
 	base := strings.TrimRight(h.PublicURL, "/")
+	if e, ok := domains.FromContext(r.Context()); ok {
+		base = domains.Origin(e.Host)
+	}
 	if base == "" {
 		http.Error(w, "operator must set ZV_PUBLIC_URL before generating share QR codes", http.StatusServiceUnavailable)
 		return

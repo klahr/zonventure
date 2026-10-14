@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/klahr/zonventure/internal/domains"
 	"github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/mdx"
 	"github.com/klahr/zonventure/internal/sitename"
@@ -69,6 +70,9 @@ type Brand struct {
 	Accent2 string
 	Surface string
 	Ink     string
+	// WhiteLabel is an organisation on its own domain: its emails are
+	// signed and sent under its name alone.
+	WhiteLabel bool
 }
 
 // Platform is the instance's own brand (named by ZV_SITE_NAME), for
@@ -266,7 +270,7 @@ func Render(t Theme, b Brand, subject string, c Content) (htmlOut, text string) 
 
 // signature is the line under every email: who sent it.
 func signature(b Brand, lang string) string {
-	if b.Name == sitename.Name() {
+	if b.Name == sitename.Name() || b.WhiteLabel {
 		return b.Name
 	}
 	return T(lang, "%s · sent with %s", b.Name, sitename.Name())
@@ -333,7 +337,11 @@ func styleBody(h string, s style, b Brand) string {
 // Message is an email to `to` in theme t from brand b.
 func Message(to []string, subject string, t Theme, b Brand, c Content) mailer.Message {
 	htmlOut, text := Render(t, b, subject, c)
-	return mailer.Message{To: to, Subject: subject, HTML: htmlOut, Text: text}
+	m := mailer.Message{To: to, Subject: subject, HTML: htmlOut, Text: text}
+	if b.WhiteLabel {
+		m.FromName = b.Name
+	}
+	return m
 }
 
 // Querier is what Lookup reads through.
@@ -402,7 +410,15 @@ func Lookup(ctx context.Context, q Querier, publicURL string, orgID, eventID int
 	if err != nil {
 		return Look{Theme: Classic, Brand: Platform(), Lang: "en"}
 	}
-	b := Brand{Name: name, Accent: accent.String, Accent2: accent2.String, Surface: bg.String, Ink: text.String}
+	b := Brand{Name: name, Accent: accent.String, Accent2: accent2.String, Surface: bg.String, Ink: text.String, WhiteLabel: domains.WhiteLabel(org.Int64)}
+	// On its own domain it goes by the name it chose there.
+	if e, ok := domains.ByOrg(org.Int64); ok && b.WhiteLabel {
+		b.Name = e.Name
+	}
+	// On its own domain, its pictures come from there too.
+	if strings.TrimSpace(publicURL) != "" {
+		publicURL = domains.Base(org.Int64, publicURL)
+	}
 	// The logo's address carries a hash of it: mail clients cache images
 	// by URL for good, so a new logo needs a new address to show.
 	if base := strings.TrimRight(strings.TrimSpace(publicURL), "/"); logoVer != "" && base != "" {

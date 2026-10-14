@@ -294,7 +294,7 @@ func (h *Handlers) Join(w http.ResponseWriter, r *http.Request) {
 	}
 	h.Hub.Publish(ws.EventTopic(p.EventID), "changed", nil)
 	httpx.JSON(w, http.StatusCreated, map[string]string{
-		"play_url": strings.TrimRight(h.PublicURL, "/") + "/play?t=" + slotToken,
+		"play_url": h.eventBase(ctx, p.EventID) + "/play?t=" + slotToken,
 	})
 }
 
@@ -438,7 +438,7 @@ func (h *Handlers) finishRound(ctx context.Context, eventID int64, by string) (b
 // sendRoundSummary mails the host the summary of a finished game and
 // marks it sent.
 func (h *Handlers) sendRoundSummary(ctx context.Context, eventID int64, round int) error {
-	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
+	publicURL := h.eventBase(ctx, eventID)
 	var to, party string
 	if err := h.DB.QueryRowContext(ctx, `
 		SELECT COALESCE((SELECT buyer_email FROM ticket_purchases WHERE event_id = e.id AND buyer_email <> '' ORDER BY id LIMIT 1),
@@ -671,7 +671,7 @@ func (h *Handlers) SendHostedPlayerLink(w http.ResponseWriter, r *http.Request) 
 	var party string
 	_ = h.DB.QueryRowContext(ctx, `SELECT party_name FROM events WHERE id = $1`, p.EventID).Scan(&party)
 	l := h.eventLook(ctx, p.EventID)
-	subject, c := emailtpl.HostedPlayerLink(l.Lang, strings.TrimRight(h.PublicURL, "/")+"/j/"+p.PlayerToken, party, l.Brand.Name)
+	subject, c := emailtpl.HostedPlayerLink(l.Lang, h.eventBase(ctx, p.EventID)+"/j/"+p.PlayerToken, party, l.Brand.Name)
 	c.Picture = l.Cover
 	msg := l.message([]string{email}, subject, c)
 	var err error

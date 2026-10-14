@@ -60,6 +60,12 @@ type Pricing struct {
 	// takes the money), shown on the org's Billing page; empty shows
 	// the built-in terms.
 	PayoutTerms string `json:"payout_terms"`
+	// DomainYearCents is an organisation's own domain, per year; 0
+	// shows "Contact us" with no price. DomainContactURL is where an
+	// organisation asks for it (a mailto: or https: link); empty hides
+	// the offer.
+	DomainYearCents  int64  `json:"domain_year_cents"`
+	DomainContactURL string `json:"domain_contact_url"`
 }
 
 // MaxPayoutTerms is the longest PayoutTerms may be.
@@ -77,6 +83,8 @@ const (
 	keyFeeMinCents      = "price_fee_min_cents"
 	keyVATExcluded      = "price_vat_excluded"
 	keyPayoutTerms      = "payout_terms"
+	keyDomainYearCents  = "price_domain_year_cents"
+	keyDomainContactURL = "domain_contact_url"
 )
 
 func (p *Pricing) fields() []struct {
@@ -93,6 +101,7 @@ func (p *Pricing) fields() []struct {
 		{keyFeePercentBPS, &p.FeePercentBPS},
 		{keyFeeFixedCents, &p.FeeFixedCents},
 		{keyFeeMinCents, &p.FeeMinCents},
+		{keyDomainYearCents, &p.DomainYearCents},
 	}
 }
 
@@ -128,6 +137,9 @@ func LoadPricing(ctx context.Context, db *sql.DB) {
 		if v, err := getString(ctx, db, keyPayoutTerms); err == nil {
 			p.PayoutTerms = v
 		}
+		if v, err := getString(ctx, db, keyDomainContactURL); err == nil {
+			p.DomainContactURL = v
+		}
 	}
 	pricing.Store(&p)
 }
@@ -146,12 +158,19 @@ func (p Pricing) Validate() error {
 	if utf8.RuneCountInString(p.PayoutTerms) > MaxPayoutTerms {
 		return errors.New("the payout terms are too long")
 	}
+	if u := strings.TrimSpace(p.DomainContactURL); u != "" {
+		low := strings.ToLower(u)
+		if len(u) > 500 || !(strings.HasPrefix(low, "https://") || strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "mailto:")) {
+			return errors.New("the domain contact link must start with https:// or mailto:")
+		}
+	}
 	return nil
 }
 
 // SetPricing saves every price in one transaction and puts them in force.
 func SetPricing(ctx context.Context, db *sql.DB, p Pricing) error {
 	p.PayoutTerms = strings.TrimSpace(p.PayoutTerms)
+	p.DomainContactURL = strings.TrimSpace(p.DomainContactURL)
 	if err := p.Validate(); err != nil {
 		return err
 	}
@@ -160,7 +179,7 @@ func SetPricing(ctx context.Context, db *sql.DB, p Pricing) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	values := map[string]string{keyVATExcluded: "0", keyPayoutTerms: p.PayoutTerms}
+	values := map[string]string{keyVATExcluded: "0", keyPayoutTerms: p.PayoutTerms, keyDomainContactURL: p.DomainContactURL}
 	if p.VATExcluded {
 		values[keyVATExcluded] = "1"
 	}

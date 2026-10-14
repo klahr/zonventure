@@ -736,7 +736,7 @@ func (h *Handlers) keptHostToken(ctx context.Context, id int64) (string, error) 
 // sendPartyHostLink mails the booker their host link: again when it is
 // sent anew, which a paid trail's mail tells apart (no receipt line).
 func (h *Handlers) sendPartyHostLink(ctx context.Context, eventID int64, to, hostToken string, again bool) error {
-	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
+	publicURL := h.eventBase(ctx, eventID)
 	if publicURL == "" {
 		return errors.New("party email requires PublicURL")
 	}
@@ -835,7 +835,7 @@ func (h *Handlers) ReplaceHostLink(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.JSON(w, http.StatusOK, map[string]string{
 		"token":    token,
-		"host_url": strings.TrimRight(h.PublicURL, "/") + "/party/" + token,
+		"host_url": h.eventBase(r.Context(), p.EventID) + "/party/" + token,
 	})
 }
 
@@ -977,7 +977,7 @@ func (h *Handlers) GetHostParty(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	base := strings.TrimRight(h.PublicURL, "/")
+	base := h.eventBase(ctx, p.EventID)
 	out := hostPartyDTO{State: p.State, Kids: p.Kids, ValidUntil: p.ValidUntil,
 		Expired: partyLapsed(p), PlayURL: base + "/play",
 		PlayerURL: base + "/j/" + p.PlayerToken, Round: p.Round, RoundOpen: p.RoundOpen, HoldResults: p.HoldResults,
@@ -1596,7 +1596,7 @@ func (h *Handlers) HostPartyQR(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	base := strings.TrimRight(h.PublicURL, "/")
+	base := h.eventBase(r.Context(), p.EventID)
 	if base == "" {
 		httpx.Error(w, http.StatusServiceUnavailable, "the operator must set ZV_PUBLIC_URL before QR codes can be made")
 		return

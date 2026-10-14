@@ -53,7 +53,7 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 	// page. A missing schedule (event not yet planned) just drops the
 	// attachment; the magic links still go out so an arranger can
 	// pre-distribute before scheduling.
-	evt, icsErr := icscal.BuildForEvent(r.Context(), h.DB, h.Lib, eventID, h.PublicURL)
+	evt, icsErr := icscal.BuildForEvent(r.Context(), h.DB, h.Lib, eventID, h.eventBase(r.Context(), eventID))
 	if icsErr != nil && !errors.Is(icsErr, icscal.ErrNoSchedule) {
 		logx.Warn("admin.invitations.ics", "event", eventID, "err", icsErr.Error())
 	}
@@ -117,7 +117,7 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 		skippedNoEmail int
 		failed         int
 	)
-	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
+	publicURL := h.eventBase(r.Context(), eventID)
 	l := h.eventLook(r.Context(), eventID)
 	start, place := h.inviteWhen(r.Context(), eventID)
 	for _, t := range teams {
@@ -236,12 +236,12 @@ func (h *Handlers) sendTeamInvitation(w http.ResponseWriter, r *http.Request, te
 	// resend rather than cached, since arrangers may be re-sending
 	// after a reschedule and the file should reflect the latest
 	// scheduled_at.
-	evt, icsErr := icscal.BuildForEvent(r.Context(), h.DB, h.Lib, eventID, h.PublicURL)
+	evt, icsErr := icscal.BuildForEvent(r.Context(), h.DB, h.Lib, eventID, h.eventBase(r.Context(), eventID))
 	if icsErr != nil && !errors.Is(icsErr, icscal.ErrNoSchedule) {
 		logx.Warn("admin.invitations.team.ics", "event", eventID, "team", teamID, "err", icsErr.Error())
 	}
 
-	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
+	publicURL := h.eventBase(r.Context(), eventID)
 	l := h.eventLook(r.Context(), eventID)
 	start, place := h.inviteWhen(r.Context(), eventID)
 	if err := sendOneInvitation(r.Context(), h.Mailer, l, teamName, teamMail, publicURL, slots, h.fileLinks(r.Context(), eventID, publicURL, teamTok), teamICS(evt, icsErr, eventID, publicURL, teamTok), start, place, invited); err != nil {

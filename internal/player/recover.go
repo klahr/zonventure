@@ -3,6 +3,7 @@ package player
 import (
 	"context"
 	"errors"
+	"github.com/klahr/zonventure/internal/domains"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"net/http"
 	"strconv"
@@ -103,7 +104,7 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 	}
 	var links []freshLink
 	for _, s := range slots {
-		base := strings.TrimRight(h.PublicURL, "/")
+		base := domains.BaseForEvent(r.Context(), h.DB, s.EventID, h.PublicURL)
 		// Origin-relative fallback for misconfigured self-host:
 		// the email body becomes useless to the recipient, which
 		// nudges the operator to set ZV_PUBLIC_URL — same posture
@@ -164,7 +165,7 @@ func buildEventInviteAttachments(ctx context.Context, h *Handlers, eventIDs []in
 	}
 	var atts []mailerpkg.Attachment
 	for _, eventID := range eventIDs {
-		evt, err := icscal.BuildForEvent(ctx, h.DB, h.Lib, eventID, h.PublicURL)
+		evt, err := icscal.BuildForEvent(ctx, h.DB, h.Lib, eventID, domains.BaseForEvent(ctx, h.DB, eventID, h.PublicURL))
 		if err != nil {
 			if !errors.Is(err, icscal.ErrNoSchedule) {
 				logx.Warn("player.recover_link.ics_build", "event", eventID, "err", err.Error())

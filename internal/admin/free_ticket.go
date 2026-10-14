@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
@@ -57,7 +56,7 @@ func (h *Handlers) GiveFreeTicket(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "email required")
 		return
 	}
-	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
+	publicURL := h.eventBase(r.Context(), eventID)
 	if publicURL == "" {
 		httpx.Error(w, http.StatusServiceUnavailable, "free tickets need ZV_PUBLIC_URL for their links")
 		return

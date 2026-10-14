@@ -18,11 +18,14 @@ import (
 // messages). Either Text or HTML may be empty, but at least one must
 // be non-empty — otherwise SMTPMailer.Send refuses with an error.
 type Message struct {
-	To          []string
-	Subject     string
-	Text        string
-	HTML        string
-	ReplyTo     string
+	To      []string
+	Subject string
+	Text    string
+	HTML    string
+	ReplyTo string
+	// FromName replaces the display name of the configured From
+	// address: an organisation on its own domain sends as itself.
+	FromName    string
 	Attachments []Attachment
 }
 

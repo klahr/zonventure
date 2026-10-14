@@ -193,7 +193,7 @@
 
       <p class="hint" id="hint-link">Got a magic link in your email instead? Just open it — it takes you straight in.</p>
       <p class="hint"><span id="hint-lost">Playing an event? Lost your link?</span> <a href="/app/play/" id="hint-lost-link">Get it again by email</a></p>
-      <p class="curio"><span id="curio-new">New here?</span> <a href="/" id="curio-what">See what {{SITE_NAME}} is</a> · <a href="/manual" id="curio-how">How it works</a></p>
+      <!--platform--><p class="curio"><span id="curio-new">New here?</span> <a href="/" id="curio-what">See what {{SITE_NAME}} is</a> · <a href="/manual" id="curio-how">How it works</a></p><!--/platform-->
     </section>
   </main>
 
@@ -229,7 +229,7 @@
    ["curio-new", t("New here?")],
    ["curio-what", t("See what {{site}} is", {site: site})],
    ["curio-how", t("How it works")]
-  ].forEach(function(e){ document.getElementById(e[0]).textContent=e[1]; });
+  ].forEach(function(e){ var el=document.getElementById(e[0]); if(el) el.textContent=e[1]; });
   document.title=t("Play") + " · " + site;
 
   var form=document.getElementById("form"), input=document.getElementById("code"),

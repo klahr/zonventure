@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/klahr/zonventure/internal/domains"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"net/http"
 	"net/mail"
@@ -417,9 +418,13 @@ func (h *Handlers) createTicketCheckoutSession(
 	storeBasePath string,
 	shipCountries []string,
 ) (string, string, error) {
-	publicURL := strings.TrimRight(h.PublicURL, "/")
+	publicURL := h.requestBase(ctx)
 	if publicURL == "" {
 		return "", "", errors.New("ticket checkout requires PublicURL to be configured")
+	}
+	// On the organisation's own domain its store is at the root.
+	if e, ok := domains.FromContext(ctx); ok && storeBasePath == "/o/"+e.Slug {
+		storeBasePath = "/"
 	}
 	// storeBasePath lets the org-scoped buy flow send the buyer back
 	// to /o/{slug}/store while the global buy flow lands on /store.
@@ -743,7 +748,7 @@ func uniqueTicketTeamName(ctx context.Context, tx *sql.Tx, eventID int64, lang s
 // lang, when set, is the language of the buyer's posted letter, which
 // their email is written in too; address is where it is posted.
 func (h *Handlers) sendTicketTeamLink(ctx context.Context, eventID int64, buyerEmail, teamToken, voucher, lang string, address []string, gift bool) error {
-	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
+	publicURL := h.eventBase(ctx, eventID)
 	if publicURL == "" {
 		return errors.New("ticket email requires PublicURL")
 	}

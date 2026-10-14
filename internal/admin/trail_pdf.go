@@ -132,7 +132,7 @@ func (h *Handlers) HostedTrailPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = h.DB.QueryRowContext(r.Context(), `SELECT party_name FROM events WHERE id = $1`, ev.EventID).Scan(&p.Title)
-	p.PlayerURL = strings.TrimRight(h.PublicURL, "/") + "/j/" + ev.PlayerToken
+	p.PlayerURL = h.eventBase(r.Context(), ev.EventID) + "/j/" + ev.PlayerToken
 	h.sendTrailPDF(w, r, p, t)
 }
 
