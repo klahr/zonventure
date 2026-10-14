@@ -84,6 +84,8 @@
 .card.is-unseen::before { content: ""; position: absolute; top: -4px; right: -4px; width: 10px; height: 10px; border: 2px solid var(--surface); border-radius: 50%; background: var(--accent); z-index: 1; }
 
 .catchup__hint { color: var(--dz-muted); }
+.dz .catchup { align-items: flex-start; }
+.dz .catchup > button { flex: none; margin: -4px -8px 0 auto; }
 .step.is-unseen { position: relative; }
 .step.is-unseen::before { content: ""; position: absolute; top: 50%; left: -6px; width: 8px; height: 8px; margin-top: -4px; border-radius: 50%; background: var(--accent); }
 .step__talk { margin-left: 6px; vertical-align: 1px; }

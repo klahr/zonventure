@@ -164,6 +164,12 @@ func TestDraftsAndReleases(t *testing.T) {
 	if graphstore.Differs(linear("a"), framed) {
 		t.Error("drawing a frame is not a change to publish")
 	}
+	tracked := linear("a")
+	tracked.TranslationOriginals = map[string]map[string]string{"en": {"meta:title": "Titeln"}}
+	tracked.TranslationSources = map[string]map[string]string{"en": {"meta:title": "0badf00d"}}
+	if graphstore.Differs(linear("a"), tracked) {
+		t.Error("what a translation was made from is not a change to publish")
+	}
 	if !graphstore.Differs(linear("a"), linear("b")) {
 		t.Error("a changed answer is")
 	}

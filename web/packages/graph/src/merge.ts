@@ -88,7 +88,7 @@ function mergeList<T>(
   return out;
 }
 
-const KEYED = ["nodes", "edges", "zones", "items", "counters", "journal", "frames", "translations", "translation_sources"];
+const KEYED = ["nodes", "edges", "zones", "items", "counters", "journal", "frames", "translations", "translation_originals", "translation_sources"];
 
 /** A graph's settings: everything but its keyed collections. */
 const scalars = (g: Graph): Record<string, unknown> =>
@@ -121,7 +121,7 @@ export function mergeGraphs(base: Graph, mine: Graph, theirs: Graph, prefer: Mer
   for (const [k, v] of Object.entries(lists)) if (v !== undefined) (graph as unknown as Record<string, unknown>)[k] = v;
 
   // Translations merge text by text, and what each was made from with them.
-  for (const field of ["translations", "translation_sources"] as const) {
+  for (const field of ["translations", "translation_originals", "translation_sources"] as const) {
     if (!base[field] && !mine[field] && !theirs[field]) continue;
     const out: Record<string, Record<string, string>> = {};
     const langs = new Set([...Object.keys(base[field] ?? {}), ...Object.keys(mine[field] ?? {}), ...Object.keys(theirs[field] ?? {})]);

@@ -1002,6 +1002,11 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .tr-tag { padding: 1px 7px; border-radius: 999px; background: var(--dz-surface-2); border: 1px solid var(--dz-border); font-size: 11px; font-weight: 600; color: var(--dz-muted); }
 .tr-tag--warn { background: color-mix(in srgb, var(--warning) 14%, var(--dz-surface)); border-color: color-mix(in srgb, var(--warning) 40%, transparent); color: color-mix(in srgb, var(--warning) 75%, var(--ink)); }
 .tr-row__src { min-width: 0; padding: 7px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--dz-text-md); line-height: 1.5; color: var(--dz-ink); }
+.tr-row__src ins, .tr-row__src del { border-radius: 3px; padding: 0 1px; text-decoration: none; }
+.tr-diff__ins { background: color-mix(in srgb, var(--dz-success) 20%, transparent); }
+.tr-diff__del { background: color-mix(in srgb, var(--dz-danger) 18%, transparent); color: var(--dz-danger); text-decoration: line-through !important; }
+.tr-diff__chg { border-radius: 3px; background: color-mix(in srgb, var(--dz-warning) 26%, transparent); }
+.tr-diff__chg del { color: var(--dz-muted); text-decoration: line-through; margin-right: 2px; }
 .tr-row__dst { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .dz .tr-input { width: 100%; font-size: var(--dz-text-md); line-height: 1.5; padding: 6px 10px; border-radius: var(--dz-r-2); }
 .dz textarea.tr-input { resize: vertical; field-sizing: content; min-height: 3.6em; max-height: 20em; font-family: var(--font-body); }

@@ -118,9 +118,13 @@ type Graph struct {
 	// it is rendered, and anything untranslated falls back to the main
 	// text — a half-translated adventure still plays.
 	Translations map[string]map[string]string `json:"translations,omitempty"`
-	// TranslationSources fingerprints the main text each translation was
-	// made from, keyed as Translations: the designer marks a translation
-	// outdated when its original has changed since. The engine ignores it.
+	// TranslationOriginals holds the main text each translation was made
+	// from, keyed as Translations: the designer marks a translation
+	// outdated when its original has changed since, and shows how. The
+	// engine ignores it.
+	TranslationOriginals map[string]map[string]string `json:"translation_originals,omitempty"`
+	// TranslationSources fingerprints the main text instead, for
+	// translations made before originals were kept. The engine ignores it.
 	TranslationSources map[string]map[string]string `json:"translation_sources,omitempty"`
 
 	// PrintMaterials are the PDFs that come with the adventure on paper:

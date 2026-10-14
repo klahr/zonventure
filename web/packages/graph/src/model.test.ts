@@ -229,6 +229,7 @@ describe("persistence", () => {
       frames: [{ id: "f", x: 0, y: 0, width: 10, height: 10 }],
       language: "sv",
       translations: { en: { "meta:title": "T" } },
+      translation_originals: { en: { "meta:title": "Titeln" } },
       translation_sources: { en: { "meta:title": "0badf00d" } },
       print_materials: [{ id: "letter", name: "Letter", delivery: "posted", files: { sv: 1 } }],
     };

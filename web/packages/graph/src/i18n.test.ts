@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adventureTexts, allTexts, coverage, blockKey, isOutdated, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey, translatedNode } from "./i18n.ts";
+import { adventureTexts, allTexts, coverage, blockKey, isOutdated, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey, sourceFingerprint, trackTranslations, translatedNode, translationOriginal } from "./i18n.ts";
 import type { Graph } from "./types.ts";
 
 const g: Graph = {
@@ -73,9 +73,38 @@ test("a translation of a changed original is outdated and not counted", () => {
   assert.ok(!isOutdated(t, "en", text()), "set again from the new original, it is up to date");
   assert.equal(coverage(t, "en"), once);
   t = setTranslation(t, "en", blockKey("q", "b1"), "");
-  assert.equal(t.translation_sources, undefined, "an emptied translation forgets its original");
+  assert.equal(t.translation_originals, undefined, "an emptied translation forgets its original");
   const old = setTranslation(g, "en", blockKey("q", "b1"), "How many?");
   assert.ok(!isOutdated(old, "en", allTexts(old).find((x) => x.key === blockKey("q", "b1"))!), "one without a fingerprint is taken as up to date");
+});
+
+test("tracking fingerprints old translations from the main text as it is now", () => {
+  const text = (x: typeof g) => allTexts(x).find((y) => y.key === blockKey("q", "b1"))!;
+  const old = setTranslation(g, "en", blockKey("q", "b1"), "How many?");
+  const tracked = trackTranslations(old);
+  assert.ok(!isOutdated(tracked, "en", text(tracked)));
+  assert.equal(trackTranslations(tracked), tracked, "nothing left to track: the same graph");
+  const edited = { ...tracked, nodes: tracked.nodes.map((n) => (n.slug === "q" ? { ...n, puzzle: { ...n.puzzle!, blocks: [{ id: "b1", kind: "text" as const, text: "Hur många!" }] } } : n)) };
+  assert.ok(isOutdated(edited, "en", text(edited)), "an edit after tracking marks it outdated");
+  assert.equal(trackTranslations(edited), edited, "a kept original is not replaced");
+});
+
+test("a translation keeps the original it was made from", () => {
+  const t = setTranslation(g, "en", blockKey("q", "b1"), "How many?", "Hur många?");
+  assert.equal(translationOriginal(t, "en", blockKey("q", "b1")), "Hur många?");
+});
+
+test("tracking turns a fingerprint that still matches into the original, and keeps one that does not", () => {
+  const key = blockKey("q", "b1");
+  const main = allTexts(g).find((x) => x.key === key)!.main;
+  const base = setTranslation(g, "en", key, "How many?");
+  const matching = trackTranslations({ ...base, translation_sources: { en: { [key]: sourceFingerprint(main) } } });
+  assert.equal(translationOriginal(matching, "en", key), main);
+  assert.equal(matching.translation_sources, undefined);
+  const stale = { ...base, translation_sources: { en: { [key]: sourceFingerprint("Något annat") } } };
+  const kept = trackTranslations(stale);
+  assert.equal(translationOriginal(kept, "en", key), undefined);
+  assert.ok(isOutdated(kept, "en", allTexts(kept).find((x) => x.key === key)!), "it stays outdated");
 });
 
 test("block texts use the engine's block keys", () => {

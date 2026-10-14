@@ -55,6 +55,7 @@ import {
   STEP_PITCH,
   textChanges,
   tidy,
+  trackTranslations,
   undo,
   updateNode,
   emptyHistory,
@@ -370,27 +371,30 @@ export function Designer({ slug }: { slug: string }) {
           setAdventureLang(language);
           setMeta({ title, intro, outro });
           setBrand(b);
+          return { title, intro, outro };
         })
         .catch(() => {
           // No palette is the default look.
+          return undefined;
         }),
     [slug],
   );
 
   useEffect(() => {
     const ac = new AbortController();
+    const look = loadLook(ac.signal);
     adventures
       .getGraph<Envelope, Report>(slug, ac.signal)
-      .then((r) => {
+      .then(async (r) => {
         if (ac.signal.aborted) return;
         // A new adventure opens on a blank flow.
         if (!r) adopt(null, emptyGraph(), null);
-        else adopt(r, r.envelope.graph, r.envelope.graph);
+        // Translations without a fingerprint get one, which autosaves.
+        else adopt(r, trackTranslations(r.envelope.graph, await look), r.envelope.graph);
       })
       .catch((e: unknown) => {
         if (!ac.signal.aborted) setLoaded(loadError(e));
       });
-    loadLook(ac.signal);
     return () => ac.abort();
   }, [slug, adopt, loadLook]);
 
@@ -1135,7 +1139,7 @@ export function Designer({ slug }: { slug: string }) {
     { label: t.t("Edit details"), icon: <Pencil size={ICON.sm} />, onClick: () => void (async () => { if (unsaved && !(await saveNow())) return; setDetailsOpen(true); })() },
     { label: t.t("Adventure settings"), icon: <Settings size={ICON.sm} />, onClick: () => setSettingsOpen(true) },
     { label: t.t("Themes"), icon: <Palette size={ICON.sm} />, onClick: () => openThemes() },
-    { label: t.t("Languages"), icon: <Languages size={ICON.sm} />, onClick: () => setTranslating(editLang) },
+    { label: t.t("Translations"), icon: <Languages size={ICON.sm} />, onClick: () => setTranslating(editLang) },
     { label: t.t("Print materials"), icon: <Printer size={ICON.sm} />, onClick: () => setSettingsOpen("print") },
     { label: t.t("Play the draft on my phone"), icon: <Smartphone size={ICON.sm} />, onClick: () => setDevOpen(true) },
     {

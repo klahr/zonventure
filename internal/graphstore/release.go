@@ -281,6 +281,9 @@ func canonical(g *graph.Graph) string {
 	// Frames are layout, like positions: moving one is not a change to
 	// publish.
 	c.Frames = nil
+	// What translations were made from is the designer's: the engine
+	// ignores it.
+	c.TranslationOriginals, c.TranslationSources = nil, nil
 	c.Nodes = make([]graph.Node, len(g.Nodes))
 	for i, n := range g.Nodes {
 		n.X, n.Y = 0, 0

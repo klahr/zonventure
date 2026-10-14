@@ -45,7 +45,9 @@ export interface Graph {
   language?: string;
   /** Other languages: language → field key → text. See i18n.ts. */
   translations?: Record<string, Record<string, string>>;
-  /** The fingerprint of the main text each translation was made from, keyed as translations. See i18n.ts. */
+  /** The main text each translation was made from, keyed as translations. See i18n.ts. */
+  translation_originals?: Record<string, Record<string, string>>;
+  /** The fingerprint of the main text, for translations made before originals were kept. See i18n.ts. */
   translation_sources?: Record<string, Record<string, string>>;
   /** PDFs that come with the adventure on paper; players never see them. */
   print_materials?: PrintMaterial[];

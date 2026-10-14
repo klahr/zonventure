@@ -1,6 +1,6 @@
 import { useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { AdventureMeta, Graph, Translatable } from "@zonventure/graph";
-import { adventureTexts, allTexts, coverage, isOutdated, nodeBySlug, nodeTexts, outline, setTranslation } from "@zonventure/graph";
+import { adventureTexts, allTexts, coverage, isOutdated, nodeBySlug, nodeTexts, outline, setTranslation, translationOriginal, wordDiff } from "@zonventure/graph";
 import { BookMarked, Check, CheckCircle2, ChevronRight, ClipboardCopy, Languages, Plus, Search, Trash2, X } from "lucide-react";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { useT } from "../i18n.tsx";
@@ -94,9 +94,11 @@ function Meter({ value }: { value: number }) {
 function removeTranslation(graph: Graph, l: string): Graph {
   const next = { ...(graph.translations ?? {}) };
   delete next[l];
+  const originals = { ...(graph.translation_originals ?? {}) };
+  delete originals[l];
   const sources = { ...(graph.translation_sources ?? {}) };
   delete sources[l];
-  return { ...graph, translations: next, translation_sources: sources };
+  return { ...graph, translations: next, translation_originals: originals, translation_sources: sources };
 }
 
 /** The main language, as a select; a language with a translation can't be it. */
@@ -417,6 +419,31 @@ export function TranslatorModal({ graph, main, meta, onChange, onMainChange, ini
   );
 }
 
+/**
+ * The original as it is now against the one a translation was made from:
+ * added words green, removed red, and a word replaced yellow.
+ */
+function OriginalChanges({ was, now }: { was: string; now: string }) {
+  const parts = wordDiff(was, now);
+  const out: ReactNode[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i]!;
+    const next = parts[i + 1];
+    if (p.op === "del" && next?.op === "ins") {
+      out.push(
+        <span key={i} className="tr-diff__chg">
+          <del>{p.text}</del>
+          <ins>{next.text}</ins>
+        </span>,
+      );
+      i++;
+    } else if (p.op === "same") out.push(<span key={i}>{p.text}</span>);
+    else if (p.op === "del") out.push(<del key={i} className="tr-diff__del">{p.text}</del>);
+    else out.push(<ins key={i} className="tr-diff__ins">{p.text}</ins>);
+  }
+  return <>{out}</>;
+}
+
 /** One text: what it is and where it stands, the original, the translation. */
 function TextRow({ x, graph, lang, main, onChange, onKeyDown, readOnly }: {
   x: Translatable;
@@ -431,6 +458,7 @@ function TextRow({ x, graph, lang, main, onChange, onKeyDown, readOnly }: {
   const id = useId();
   const value = graph.translations?.[lang]?.[x.key] ?? "";
   const status = statusOf(graph, lang, x);
+  const was = translationOriginal(graph, lang, x.key);
   const set = (v: string) => onChange(setTranslation(graph, lang, x.key, v, x.main));
   const STATUS: Record<Status, string> = {
     done: t.t("Translated"),
@@ -472,7 +500,9 @@ function TextRow({ x, graph, lang, main, onChange, onKeyDown, readOnly }: {
           </div>
         )}
       </div>
-      <div className="tr-row__src" lang={main}>{x.main || <em>{t.t("(empty)")}</em>}</div>
+      <div className="tr-row__src" lang={main}>
+        {status === "outdated" && was !== undefined ? <OriginalChanges was={was} now={x.main} /> : x.main || <em>{t.t("(empty)")}</em>}
+      </div>
       <div className="tr-row__dst">
         {x.multiline ? <textarea rows={Math.min(8, Math.max(2, x.main.split("\n").length))} {...field} /> : <input {...field} />}
         {status === "outdated" && <span className="tr-row__note">{t.t("Outdated: the original has changed since this was translated.")}</span>}

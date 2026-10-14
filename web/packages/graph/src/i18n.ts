@@ -239,20 +239,63 @@ export function allTexts(g: Graph, meta: AdventureMeta = {}): Translatable[] {
   return [...g.nodes.flatMap(nodeTexts), ...adventureTexts(g, meta)];
 }
 
-/** A short fingerprint of a main text (FNV-1a), kept beside a translation made from it. */
+/**
+ * A short fingerprint of a main text (FNV-1a), kept beside translations
+ * made before their originals were. See translationOriginal.
+ */
 export function sourceFingerprint(main: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < main.length; i++) h = Math.imul(h ^ main.charCodeAt(i), 0x01000193);
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
+/** The main text a translation was made from, when it was kept. */
+export function translationOriginal(g: Graph, lang: string, key: string): string | undefined {
+  return g.translation_originals?.[lang]?.[key];
+}
+
 /**
- * Whether a translation was made from a main text that has changed since.
- * One saved before fingerprints were kept is taken as up to date.
+ * Whether a translation was made from a main text that has changed since,
+ * by its original or else its fingerprint. One saved before either was
+ * kept is taken as up to date.
  */
 export function isOutdated(g: Graph, lang: string, t: Translatable): boolean {
+  if (t.answers || !g.translations?.[lang]?.[t.key]?.trim()) return false;
+  const was = translationOriginal(g, lang, t.key);
+  if (was !== undefined) return was !== t.main;
   const from = g.translation_sources?.[lang]?.[t.key];
-  return !t.answers && !!g.translations?.[lang]?.[t.key]?.trim() && !!from && from !== sourceFingerprint(t.main);
+  return !!from && from !== sourceFingerprint(t.main);
+}
+
+/**
+ * The graph with each translation that has no original kept given the main
+ * text as it is now, or g itself when none lacks one: a translation kept
+ * before originals were is then marked outdated by later edits. One whose
+ * fingerprint no longer matches keeps it, so it stays outdated.
+ */
+export function trackTranslations(g: Graph, meta: AdventureMeta = {}): Graph {
+  const originals = { ...(g.translation_originals ?? {}) };
+  const sources = { ...(g.translation_sources ?? {}) };
+  let added = false;
+  const texts = allTexts(g, meta);
+  for (const [lang, tr] of Object.entries(g.translations ?? {})) {
+    const was = { ...(originals[lang] ?? {}) };
+    const from = { ...(sources[lang] ?? {}) };
+    for (const t of texts) {
+      if (!tr[t.key]?.trim() || was[t.key] !== undefined) continue;
+      if (from[t.key] && from[t.key] !== sourceFingerprint(t.main)) continue;
+      was[t.key] = t.main;
+      delete from[t.key];
+      added = true;
+    }
+    if (Object.keys(was).length) originals[lang] = was;
+    if (Object.keys(from).length) sources[lang] = from;
+    else delete sources[lang];
+  }
+  if (!added) return g;
+  const out: Graph = { ...g, translation_originals: originals, translation_sources: sources };
+  if (!Object.keys(sources).length) delete out.translation_sources;
+  return out;
 }
 
 /** How much of the adventure is translated into lang, 0–1. An outdated translation does not count. */
@@ -270,16 +313,22 @@ export function coverage(g: Graph, lang: string, meta: AdventureMeta = {}): numb
 export function setTranslation(g: Graph, lang: string, key: string, text: string, main?: string): Graph {
   const all = { ...(g.translations ?? {}) };
   const one = { ...(all[lang] ?? {}) };
+  const originals = { ...(g.translation_originals ?? {}) };
+  const was = { ...(originals[lang] ?? {}) };
   const sources = { ...(g.translation_sources ?? {}) };
   const from = { ...(sources[lang] ?? {}) };
   if (text.trim()) one[key] = text;
   else delete one[key];
-  if (text.trim() && main !== undefined) from[key] = sourceFingerprint(main);
-  else delete from[key];
+  if (text.trim() && main !== undefined) was[key] = main;
+  else delete was[key];
+  delete from[key];
   all[lang] = one;
+  if (Object.keys(was).length) originals[lang] = was;
+  else delete originals[lang];
   if (Object.keys(from).length) sources[lang] = from;
   else delete sources[lang];
-  const out: Graph = { ...g, translations: all, translation_sources: sources };
+  const out: Graph = { ...g, translations: all, translation_originals: originals, translation_sources: sources };
+  if (!Object.keys(originals).length) delete out.translation_originals;
   if (!Object.keys(sources).length) delete out.translation_sources;
   return out;
 }

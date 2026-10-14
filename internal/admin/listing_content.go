@@ -415,7 +415,7 @@ var graphWiringKeys = map[string]bool{
 	"id": true, "slug": true, "port": true, "from": true, "to": true, "from_port": true,
 	"kind": true, "type": true, "trigger": true, "zone": true, "item": true, "group": true,
 	"lang": true, "mode": true, "start": true, "condition": true, "section": true,
-	"translation_sources": true,
+	"translation_originals": true, "translation_sources": true,
 }
 
 var (
