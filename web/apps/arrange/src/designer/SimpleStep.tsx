@@ -123,9 +123,9 @@ function Pictures({ node, pictures, setBlocks }: { node: Node; pictures: Picture
       {pictures.map((p) => (
         <div key={p.id} className="simple-step__pic">
           <img src={play.mediaURL(p.media)} alt={p.alt ?? ""} />
-          <button type="button" className="icon-remove" aria-label={t.t("Remove picture")} onClick={() => setBlocks(blocksOf(latest.current).filter((b) => b.id !== p.id))}>
+          <Button variant="ghost" size="icon" className="danger" aria-label={t.t("Remove picture")} onClick={() => setBlocks(blocksOf(latest.current).filter((b) => b.id !== p.id))}>
             <X size={ICON.sm} />
-          </button>
+          </Button>
         </div>
       ))}
       <input ref={file} type="file" accept="image/*" multiple hidden onChange={(e) => void pick(e.target.files)} />
@@ -185,15 +185,15 @@ function Answers({ node, onChange }: { node: Node; onChange: (n: Node) => void }
               onChange={(e) => set(values.map((x, j) => (j === i ? e.target.value : x)))}
             />
             {i > 0 && (
-              <button type="button" className="icon-remove" aria-label={t.t("Remove")} onClick={() => set(values.filter((_, j) => j !== i))}>
+              <Button variant="ghost" size="icon" className="danger" aria-label={t.t("Remove")} onClick={() => set(values.filter((_, j) => j !== i))}>
                 <X size={ICON.sm} />
-              </button>
+              </Button>
             )}
           </div>
         ))}
-        <button type="button" className="link-btn" onClick={() => set([...values, ""])}>
+        <Button variant="link" onClick={() => set([...values, ""])}>
           {t.t("+ Also accept another answer")}
-        </button>
+        </Button>
       </div>
     </Field>
   );

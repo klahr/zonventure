@@ -1,7 +1,7 @@
 import type { Cmp, Graph, Op, Predicate } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { Plus, Trash2 } from "lucide-react";
-import { ICON } from "./dz/ui.tsx";
+import { Button, ICON } from "./dz/ui.tsx";
 
 /**
  * The condition builder for Gates and hub branches.
@@ -310,15 +310,15 @@ export function ConditionEditor({ value, onChange, graph, depth = 0, forPlayer =
                 onChange={(c) => set({ of: (value.of ?? []).map((x, j) => (j === i ? c : x)) })}
               />
               {value.op !== "not" && (
-                <button
+                <Button
                   type="button"
-                  className="icon-remove"
+                  variant="ghost" size="icon" className="danger"
                   onClick={() => set({ of: (value.of ?? []).filter((_, j) => j !== i) })}
                   aria-label={t.t("Remove")}
                   title={t.t("Remove")}
-                >
+               >
                   <Trash2 size={ICON.sm} />
-                </button>
+                </Button>
               )}
             </div>
           ))}

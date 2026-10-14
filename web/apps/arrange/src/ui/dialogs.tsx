@@ -20,6 +20,9 @@ export function Dialog(props: {
   huge?: boolean;
   /** A picture across the top, edge to edge, above the title. */
   banner?: ReactNode;
+  /** No padding around the body, for a body that lays itself out (a rail). */
+  flush?: boolean;
+  className?: string;
 }) {
   const { wide, huge, ...rest } = props;
   return <Modal {...rest} size={huge ? "xl" : wide ? "lg" : "md"} />;

@@ -1,8 +1,8 @@
 import { canAuthor, readsAsAdmin } from "@zonventure/api";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
-import { href } from "../../router.ts";
-import { Page, PageHeader, Tabs } from "../../ui/index.ts";
+import { navigate } from "../../router.ts";
+import { Page, PageHeader, RailLayout } from "../../ui/index.ts";
 import { AccountTab } from "./Account.tsx";
 import { OrganizationTab } from "./Organization.tsx";
 import { MembersTab } from "./Members.tsx";
@@ -34,20 +34,25 @@ export function SettingsPage({ tab }: { tab?: string | undefined }) {
   const orgAdmin = u.role === "org_admin";
   const setupOnly = !!u.password_is_default || !!u.totp_setup_required;
   const tabs = [
-    { id: "organization", label: t.t("Organization"), visible: orgAdmin },
-    { id: "account", label: t.t("Account"), visible: true },
-    { id: "members", label: t.t("Members"), visible: orgAdmin },
-    { id: "themes", label: t.t("Themes"), visible: canAuthor(u) },
-    { id: "admins", label: t.t("Admins"), visible: admin },
-    { id: "audit", label: t.t("Audit"), visible: orgAdmin || readsAsAdmin(u) },
-    { id: "purchases", label: t.t("Purchases"), visible: orgAdmin || admin },
-    { id: "billing", label: t.t("Billing"), visible: orgAdmin },
-    { id: "pricing", label: t.t("Pricing"), visible: admin },
-    { id: "legal", label: t.t("Legal"), visible: admin },
-    { id: "system", label: t.t("System"), visible: admin },
-    { id: "migration", label: t.t("Migration"), visible: admin },
-    { id: "software-update", label: t.t("Software update"), visible: admin },
-    { id: "integrations", label: t.t("Integrations"), visible: orgAdmin },
+    { id: "organization", group: "org", label: t.t("Organization"), visible: orgAdmin },
+    { id: "members", group: "org", label: t.t("Members"), visible: orgAdmin },
+    { id: "themes", group: "org", label: t.t("Themes"), visible: canAuthor(u) },
+    { id: "purchases", group: "org", label: t.t("Purchases"), visible: orgAdmin || admin },
+    { id: "billing", group: "org", label: t.t("Billing"), visible: orgAdmin },
+    { id: "integrations", group: "org", label: t.t("Integrations"), visible: orgAdmin },
+    { id: "audit", group: "org", label: t.t("Audit"), visible: orgAdmin || readsAsAdmin(u) },
+    { id: "account", group: "you", label: t.t("Account"), visible: true },
+    { id: "admins", group: "platform", label: t.t("Admins"), visible: admin },
+    { id: "pricing", group: "platform", label: t.t("Pricing"), visible: admin },
+    { id: "legal", group: "platform", label: t.t("Legal"), visible: admin },
+    { id: "system", group: "platform", label: t.t("System"), visible: admin },
+    { id: "migration", group: "platform", label: t.t("Migration"), visible: admin },
+    { id: "software-update", group: "platform", label: t.t("Software update"), visible: admin },
+  ];
+  const groups = [
+    { id: "org", label: t.t("Organization") },
+    { id: "you", label: t.t("You") },
+    { id: "platform", label: t.t("Platform") },
   ];
   const visible = tabs.filter((x) => x.visible && (!setupOnly || x.id === "account"));
   const current = visible.find((x) => x.id === tab)?.id ?? visible[0]!.id;
@@ -61,10 +66,21 @@ export function SettingsPage({ tab }: { tab?: string | undefined }) {
           {t.t("That settings page isn't open to your account.")}
         </div>
       )}
-      <div className="st-tabs">
-        <Tabs label={t.t("Settings")} current={current} tabs={visible.map((x) => ({ ...x, href: href({ name: "settings", tab: x.id }) }))} />
-      </div>
-      <SettingsTab id={current} admin={admin} />
+      {visible.length > 1 ? (
+        <RailLayout
+          page
+          label={t.t("Settings")}
+          current={current}
+          onPick={(id) => navigate({ name: "settings", tab: id })}
+          groups={groups
+            .map((g) => ({ label: g.label, entries: visible.filter((x) => x.group === g.id).map(({ id, label }) => ({ id, label })) }))
+            .filter((g) => g.entries.length)}
+        >
+          <SettingsTab id={current} admin={admin} />
+        </RailLayout>
+      ) : (
+        <SettingsTab id={current} admin={admin} />
+      )}
     </Page>
   );
 }

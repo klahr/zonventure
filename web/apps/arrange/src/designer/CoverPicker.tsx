@@ -2,7 +2,7 @@ import { useContext, useRef, useState } from "react";
 import { adventures, type play } from "@zonventure/api";
 import { ImagePlus, Trash2 } from "lucide-react";
 import { useT } from "../i18n.tsx";
-import { ICON } from "./dz/ui.tsx";
+import { Button, ICON } from "./dz/ui.tsx";
 import { AdventureSlug, downscale } from "./MediaEditor.tsx";
 
 /**
@@ -37,15 +37,15 @@ export function CoverPicker({ brand, setStyle }: { brand: play.Brand; setStyle: 
       <h4>{t.t("Cover picture")}</h4>
       {cover ? <img className="look__cover" src={`/media/${cover}`} alt="" /> : null}
       <div className="look__actions">
-        <button type="button" className="btn btn--ghost btn--sm" disabled={!slug || uploading} onClick={() => file.current?.click()}>
+        <Button size="sm" disabled={!slug || uploading} onClick={() => file.current?.click()}>
           <ImagePlus size={ICON.sm} aria-hidden />
           {uploading ? t.t("Uploading…") : cover ? t.t("Replace picture") : t.t("Add a cover picture")}
-        </button>
+        </Button>
         {cover ? (
-          <button type="button" className="btn btn--ghost btn--sm" disabled={uploading} onClick={() => setStyle({ cover: undefined })}>
+          <Button size="sm" disabled={uploading} onClick={() => setStyle({ cover: undefined })}>
             <Trash2 size={ICON.sm} aria-hidden />
             {t.t("Remove")}
-          </button>
+          </Button>
         ) : null}
       </div>
       <input

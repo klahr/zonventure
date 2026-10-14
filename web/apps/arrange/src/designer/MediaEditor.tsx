@@ -3,7 +3,7 @@ import { ApiError, adventures, play } from "@zonventure/api";
 import type { Media } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { Camera, Plus, X } from "lucide-react";
-import { ICON } from "./dz/ui.tsx";
+import { Button, ICON } from "./dz/ui.tsx";
 import { ImageDrop } from "../ui/imageDrop.tsx";
 import { isTouch } from "./device.ts";
 
@@ -91,9 +91,9 @@ export function MediaEditor({
             aria-label={t.t("Description")}
             onChange={(e) => set(list.map((x, j) => (j === i ? { ...x, alt: e.target.value } : x)))}
           />
-          <button type="button" className="icon-remove" onClick={() => set(list.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
+          <Button variant="ghost" size="icon" className="danger" onClick={() => set(list.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
             <X size={ICON.sm} />
-          </button>
+          </Button>
         </div>
       ))}
       <input ref={input} type="file" accept="image/*,audio/*" multiple hidden onChange={(e) => void pick(e.target.files)} />

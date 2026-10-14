@@ -4,7 +4,7 @@ import { BACKDROP_KINDS, BACKDROP_LIMITS, FULL_STRENGTH, backdropPalette, brandV
 import { ImagePlus, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { BACKDROP_PRESETS, presetOf, tidy, type BackdropEdit } from "./backdrops.ts";
-import { ICON } from "./dz/ui.tsx";
+import { Button, ICON } from "./dz/ui.tsx";
 import { AdventureSlug, downscale } from "./MediaEditor.tsx";
 
 /**
@@ -105,9 +105,9 @@ export function BackdropPicker({ brand, onChange, media = true }: { brand: play.
           <div className="look__status">
             <span className="field__hint">{matched ? t.t("Preset: {{name}}", { name: t.t(BACKDROP_PRESETS.find((p) => p.id === matched)!.label) }) : t.t("Custom")}</span>
             {preset && !matched && (
-              <button type="button" className="btn btn--ghost btn--sm" onClick={() => choose(preset.id)}>
+              <Button size="sm" onClick={() => choose(preset.id)}>
                 {t.t("Reset to {{name}}", { name: t.t(preset.label) })}
-              </button>
+              </Button>
             )}
           </div>
           {bd.kind === "spots" && <SpotCanvas brand={brand} bd={bd} onPoints={(points) => edit({ points })} />}
@@ -150,10 +150,10 @@ export function BackdropPicker({ brand, onChange, media = true }: { brand: play.
             <>
               <Slider label={t.t("Blur")} value={bd.blur ?? 0} min={0} max={20} step={1} shown={`${bd.blur ?? 0} px`} onSlide={(blur) => edit({ blur: blur || undefined })} />
               <div className="look__actions">
-                <button type="button" className="btn btn--ghost btn--sm" disabled={uploading} onClick={() => file.current?.click()}>
+                <Button size="sm" disabled={uploading} onClick={() => file.current?.click()}>
                   <ImagePlus size={ICON.sm} aria-hidden />
                   {t.t("Replace picture")}
-                </button>
+                </Button>
               </div>
               <p className="field__hint">{t.t("Check that text reads over the picture: lower the strength, add blur, or frost the cards.")}</p>
             </>
@@ -233,17 +233,17 @@ function SpotCanvas({ brand, bd, onPoints }: { brand: play.Brand; bd: play.Backd
             <span className="field__hint">{spot.color ?? t.t("Follows the palette.")}</span>
           </div>
           {points.length > 1 && (
-            <button
+            <Button
               type="button"
-              className="icon-remove"
+              variant="ghost" size="icon" className="danger"
               aria-label={t.t("Remove this spot")}
               onClick={() => {
                 onPoints(points.filter((_, k) => k !== picked));
                 setPicked(null);
               }}
-            >
+           >
               <X size={ICON.sm} />
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -265,20 +265,20 @@ export function ColourList({ label, empty, colours, onColours }: { label: string
         {colours.map((c, i) => (
           <span key={i} className="colour-list__item">
             <input type="color" className="look__swatch" aria-label={t.t("Colour {{n}}", { n: i + 1 })} value={c} onChange={(e) => onColours(colours.map((x, k) => (k === i ? e.target.value.toLowerCase() : x)))} />
-            <button type="button" className="icon-remove" aria-label={t.t("Remove colour {{n}}", { n: i + 1 })} onClick={() => onColours(colours.filter((_, k) => k !== i))}>
+            <Button variant="ghost" size="icon" className="danger" aria-label={t.t("Remove colour {{n}}", { n: i + 1 })} onClick={() => onColours(colours.filter((_, k) => k !== i))}>
               <X size={ICON.sm} />
-            </button>
+            </Button>
           </span>
         ))}
         {colours.length < BACKDROP_LIMITS.colors && (
-          <button type="button" className="btn btn--ghost btn--sm" onClick={() => onColours([...colours, RAINBOW[colours.length % RAINBOW.length]!])}>
+          <Button size="sm" onClick={() => onColours([...colours, RAINBOW[colours.length % RAINBOW.length]!])}>
             {t.t("Add colour")}
-          </button>
+          </Button>
         )}
         {colours.length === 0 && (
-          <button type="button" className="btn btn--ghost btn--sm" onClick={() => onColours(RAINBOW)}>
+          <Button size="sm" onClick={() => onColours(RAINBOW)}>
             {t.t("Rainbow")}
-          </button>
+          </Button>
         )}
       </div>
       <span className="field__hint">{colours.length ? t.t("Used in turn, up to {{max}}.", { max: BACKDROP_LIMITS.colors }) : empty}</span>
@@ -302,9 +302,9 @@ function Colour(props: { label: string; hint: string; value: string | undefined;
         <span className="field__hint">{props.value ? props.value : props.hint}</span>
       </div>
       {props.value && (
-        <button type="button" className="icon-remove" onClick={() => props.onPick(undefined)} aria-label={t.t("Use the default")}>
+        <Button variant="ghost" size="icon" className="danger" onClick={() => props.onPick(undefined)} aria-label={t.t("Use the default")}>
           <X size={ICON.sm} />
-        </button>
+        </Button>
       )}
     </div>
   );

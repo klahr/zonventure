@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } f
 import { FIXED_KINDS, addMediaBlocks, blocksOf, freshBlockId, isFixed, moveBlock, needsFile, newBlock, updateNode, withBlocks, type Block, type BlockKind, type FileKind, type Graph, type Node, type Zone } from "@zonventure/graph";
 import { Camera, ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Plus, Power, PowerOff, Sparkles, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
-import { ConfirmModal, DzPortal, ICON, useAnchoredPop, useDismiss } from "./dz/ui.tsx";
+import { Button, ConfirmModal, DzPortal, ICON, useAnchoredPop, useDismiss } from "./dz/ui.tsx";
 import { useMediaUpload } from "./MediaEditor.tsx";
 import { isNarrow, isTouch } from "./device.ts";
 import { ACCEPT } from "./blocks/Media.tsx";
@@ -215,9 +215,9 @@ export function BlocksEditor({ blocks, node, graph, onChange, onGraphChange, tex
   return (
     <div className="blk-ed" ref={root}>
       {list.length > 1 && (
-        <button type="button" className="link-btn blk-ed__fold-all" onClick={() => setFolded(allFolded ? new Set() : new Set(list.map((b) => b.id)))}>
+        <Button variant="link" className="blk-ed__fold-all" onClick={() => setFolded(allFolded ? new Set() : new Set(list.map((b) => b.id)))}>
           {allFolded ? t.t("Expand all") : t.t("Collapse all")}
-        </button>
+        </Button>
       )}
       {list.map((b, i) => {
         const kind = KINDS[b.kind];
@@ -321,9 +321,9 @@ export function BlocksEditor({ blocks, node, graph, onChange, onGraphChange, tex
               >
                 {b.disabled ? <PowerOff size={ICON.sm} /> : <Power size={ICON.sm} />}
               </button>
-              <button type="button" className="icon-remove" onClick={() => setRemoving(b)} aria-label={t.t("Remove")}>
+              <Button variant="ghost" size="icon" className="danger" onClick={() => setRemoving(b)} aria-label={t.t("Remove")}>
                 <X size={ICON.sm} />
-              </button>
+              </Button>
             </div>
             {!isFolded && (needsFile(b.kind) && !(b as { media?: number }).media ? (
               <button type="button" className="add-btn" onClick={() => fill(b)} disabled={busy || !ready}>

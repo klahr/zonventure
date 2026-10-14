@@ -4,7 +4,7 @@ import { adventureTexts, allTexts, coverage, isOutdated, nodeBySlug, nodeTexts, 
 import { BookMarked, Check, CheckCircle2, ChevronRight, ClipboardCopy, Languages, Plus, Search, Trash2, X } from "lucide-react";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { useT } from "../i18n.tsx";
-import { Button, ConfirmModal, ICON, Modal } from "./dz/ui.tsx";
+import { Button, ICON, Modal } from "./dz/ui.tsx";
 import { STEP } from "./dz/types.tsx";
 
 /**
@@ -91,7 +91,7 @@ function Meter({ value }: { value: number }) {
   );
 }
 
-function removeTranslation(graph: Graph, l: string): Graph {
+export function removeTranslation(graph: Graph, l: string): Graph {
   const next = { ...(graph.translations ?? {}) };
   delete next[l];
   const originals = { ...(graph.translation_originals ?? {}) };
@@ -186,12 +186,14 @@ type Filter = "all" | "todo" | "outdated";
  * what is left, a search to what is wanted. Ctrl+Enter goes to the next
  * text, as in a translation tool.
  */
-export function TranslatorModal({ graph, main, meta, onChange, onMainChange, initial, onClose, readOnly }: {
+export function TranslatorModal({ graph, main, meta, onChange, onMainChange, onRemove, initial, onClose, readOnly }: {
   graph: Graph;
   main: string;
   meta: AdventureMeta;
   onChange: (g: Graph) => void;
   onMainChange: (l: string) => Promise<void>;
+  /** Removes a language, asking first: one with texts takes the password. */
+  onRemove: (l: string) => void;
   /** The language to open on: the toolbar's, or one picked in the settings. */
   initial?: string;
   onClose: () => void;
@@ -205,7 +207,6 @@ export function TranslatorModal({ graph, main, meta, onChange, onMainChange, ini
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
-  const [removing, setRemoving] = useState<string | null>(null);
   const list = useRef<HTMLDivElement>(null);
 
   const add = (l: string) => {
@@ -282,18 +283,18 @@ export function TranslatorModal({ graph, main, meta, onChange, onMainChange, ini
         </>
       }
     >
-      <div className="tr">
-        <aside className="tr-rail" aria-label={t.t("Languages")}>
-          <div className="tr-rail__group">
-            <span className="tr-rail__head">{t.t("Source")}</span>
+      <div className="rail-layout">
+        <aside className="rail" aria-label={t.t("Languages")}>
+          <div className="rail__group">
+            <span className="rail__head">{t.t("Source")}</span>
             <div className="tr-lang tr-lang--source">
               <LangCode lang={main} />
               <span className="tr-lang__name">{languageName(main)}</span>
             </div>
             <MainLanguage graph={graph} main={main} onMainChange={onMainChange} {...(readOnly ? { readOnly } : {})} />
           </div>
-          <div className="tr-rail__group">
-            <span className="tr-rail__head">{t.t("Translations")}</span>
+          <div className="rail__group">
+            <span className="rail__head">{t.t("Translations")}</span>
             {others.length === 0 && <p className="tr-rail__none">{t.t("None yet.")}</p>}
             {others.map((l) => {
               const v = pct(graph, l, meta);
@@ -306,7 +307,7 @@ export function TranslatorModal({ graph, main, meta, onChange, onMainChange, ini
                     <Meter value={v} />
                   </button>
                   {!readOnly && (
-                    <Button variant="ghost" size="icon" className="sm danger tr-lang__remove" aria-label={t.t("Remove {{lang}}", { lang: languageName(l) })} title={t.t("Remove {{lang}}", { lang: languageName(l) })} onClick={() => setRemoving(l)}>
+                    <Button variant="ghost" size="icon" className="sm danger tr-lang__remove" aria-label={t.t("Remove {{lang}}", { lang: languageName(l) })} title={t.t("Remove {{lang}}", { lang: languageName(l) })} onClick={() => onRemove(l)}>
                       <Trash2 size={ICON.sm} />
                     </Button>
                   )}
@@ -402,19 +403,6 @@ export function TranslatorModal({ graph, main, meta, onChange, onMainChange, ini
           </div>
         )}
       </div>
-      {removing && (
-        <ConfirmModal
-          title={t.t("Remove {{lang}}?", { lang: languageName(removing) })}
-          message={t.t("Remove the {{lang}} translation? Its texts are deleted.", { lang: languageName(removing) })}
-          confirmLabel={t.t("Remove")}
-          danger
-          onConfirm={() => {
-            onChange(removeTranslation(graph, removing));
-            setRemoving(null);
-          }}
-          onCancel={() => setRemoving(null)}
-        />
-      )}
     </Modal>
   );
 }

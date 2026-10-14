@@ -56,7 +56,7 @@ export function EmailsCard({ event, teams, from, refresh }: { event: Info; teams
       {data && (
         <>
           <div className="ev-mailtheme">
-            <Field label={t.t("Look of this event's emails")}>
+            <Field label={t.t("Theme of this event's emails")}>
               <select value={data.theme} onChange={(e) => void setTheme(e.target.value as emails.Theme | "")}>
                 <option value="">{data.theme ? t.t("The organisation's") : t.t("The organisation's ({{theme}})", { theme: themeName(data.theme_used) })}</option>
                 {catalog.data?.themes.map((x) => (
@@ -68,7 +68,7 @@ export function EmailsCard({ event, teams, from, refresh }: { event: Info; teams
             </Field>
             <p className="ev-muted">
               {t.t("{{n}} of {{total}} teams have a contact email.", { n: data.with_email, total: data.teams_total })}{" "}
-              {t.t("Invitations and emails from steps use this look too.")}
+              {t.t("Invitations and emails from steps use this theme too.")}
             </p>
           </div>
           {data.emails.length === 0 ? (

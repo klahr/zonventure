@@ -82,10 +82,10 @@ import type { Mark } from "./NodeCard.tsx";
 import { CatchUpBanner, StepTalk, WorkPanel, cardTalk, catchUpOf, useCollab, type CatchUp } from "./Collab.tsx";
 import { useSession } from "../session.tsx";
 import { Inspector } from "./Inspector.tsx";
-import { LanguageSwitch, LanguagesSettings, TranslatorModal, languageName, translationLanguages } from "./Translate.tsx";
+import { LanguageSwitch, LanguagesSettings, TranslatorModal, languageName, removeTranslation, translationLanguages } from "./Translate.tsx";
 import { PrintMaterials } from "./PrintMaterials.tsx";
 import { ListView } from "./ListView.tsx";
-import { Resources } from "./Resources.tsx";
+import { Resources, type ResourceSection } from "./Resources.tsx";
 import { Simulator, type SimMode } from "./Simulator.tsx";
 import { EventSim } from "./EventSim.tsx";
 import { FloatingWindow } from "./FloatingWindow.tsx";
@@ -102,12 +102,15 @@ import { START_TUTORIAL } from "../pages/dashboard/Onboarding.tsx";
 import { addChoiceAfter, addStepAfter, checkInStep, choiceDraft, emptyStep, loadTutorial, saveTutorial, welcomeStep, welcomeText, withHint, withText, withZoneName, type TutorialState, type TutorialStep } from "./tutorial.ts";
 import { AdventureSlug } from "./MediaEditor.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
-import { DiffDialog, HelpModal, PanelModal, PublishCelebration, PublishLabelModal, TextChanges } from "./dz/dialogs.tsx";
-import { Button, ICON, IssueRow, IssuesButton, Notice, PromptModal } from "./dz/ui.tsx";
+import { DiffDialog, HelpModal, PublishCelebration, PublishLabelModal, TextChanges } from "./dz/dialogs.tsx";
+import { Button, ICON, IssueRow, IssuesButton, Modal, Notice, PromptModal, RailLayout } from "./dz/ui.tsx";
+import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { isNarrow as narrowScreen, isTouch } from "./device.ts";
 import "./dz.css";
 import "./designer.css";
 
+/** A section of Adventure settings. */
+type SettingsSection = ResourceSection | "look" | "languages" | "print";
 
 const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -268,8 +271,13 @@ export function Designer({ slug }: { slug: string }) {
   const [publishing, setPublishing] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
   const [diff, setDiff] = useState<{ loading: boolean; diff: GraphDiff | null } | null>(null);
-  // Adventure settings: all of it, or one section opened from the ⋮ menu.
-  const [settingsOpen, setSettingsOpen] = useState<boolean | "print">(false);
+  // Adventure settings, open on a section; the last one shown opens again.
+  const [settingsOpen, setSettingsOpen] = useState<SettingsSection | false>(false);
+  const [settingsLast, setSettingsLast] = useState<SettingsSection>("zones");
+  const openSettings = (s: SettingsSection = settingsLast) => {
+    setSettingsLast(s);
+    setSettingsOpen(s);
+  };
   // The translator, open on a language ("" for the first); null when closed.
   const [translating, setTranslating] = useState<string | null>(null);
   const [devOpen, setDevOpen] = useState(false);
@@ -532,19 +540,24 @@ export function Designer({ slug }: { slug: string }) {
     [slug, show],
   );
 
+  // What the server answered for a save of g.
+  const stored = useCallback((g: Graph, r: adventures.GraphPayload<Envelope, Report>) => {
+    kept.current = [];
+    setSaved(g);
+    since.current = r.saved_at;
+    setIssues(r.report.issues ?? []);
+    setPublished(r.published ?? null);
+    setServerDirty(!!r.dirty);
+    setSaveError(null);
+  }, []);
+
   const saveNow = useCallback(async (): Promise<boolean> => {
     if (!draft) return false;
     setSaving(true);
     missed.current = null;
     try {
       const r = await adventures.saveGraph<Envelope, Report>(slug, envelope(draft), since.current, kept.current);
-      kept.current = [];
-      setSaved(draft);
-      since.current = r.saved_at;
-      setIssues(r.report.issues ?? []);
-      setPublished(r.published ?? null);
-      setServerDirty(!!r.dirty);
-      setSaveError(null);
+      stored(draft, r);
       const m = missed.current as Saver | null;
       if (m && m.saved_at !== r.saved_at) void pullRemote(m);
       return true;
@@ -559,7 +572,7 @@ export function Designer({ slug }: { slug: string }) {
       missed.current = null;
       setSaving(false);
     }
-  }, [draft, slug, pullRemote, t]);
+  }, [draft, slug, pullRemote, stored, t]);
 
   // Back online: the autosave that failed tries again.
   const [online, setOnline] = useState(0);
@@ -577,6 +590,36 @@ export function Designer({ slug }: { slug: string }) {
   const presence = usePresence();
   const session = useSession();
   const dialogs = useDialogs();
+
+  // Removing a language deletes all its texts, so one with texts takes the
+  // password and is saved at once with it; the server refuses it otherwise.
+  const removeLanguage = async (l: string) => {
+    if (!draft) return;
+    const name = languageName(l);
+    const next = removeTranslation(draft, l);
+    if (!Object.keys(draft.translations?.[l] ?? {}).length) {
+      if (await dialogs.confirm({ title: t.t("Remove {{lang}}?", { lang: name }), confirmLabel: t.t("Remove"), danger: true })) change(next);
+      return;
+    }
+    for (let wrong = false; ; wrong = true) {
+      const pw = await dialogs.password({
+        title: t.t("Remove {{lang}}?", { lang: name }),
+        message: t.t("Remove the {{lang}} translation? Its texts are deleted.", { lang: name }) + " " + t.t("Enter your password to confirm."),
+        confirmLabel: t.t("Remove"),
+        danger: true,
+        ...(wrong ? { error: t.t("Wrong password. Try again.") } : {}),
+      });
+      if (!pw) return;
+      try {
+        stored(next, await adventures.saveGraph<Envelope, Report>(slug, envelope(next), since.current, kept.current, pw));
+        change(next);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401 && e.message === "wrong password") continue;
+        setSaveError(errorText(e));
+      }
+      return;
+    }
+  };
   const me = session.state.status === "authenticated" ? session.state.user.id : 0;
   useEffect(() => {
     if (me) setCoachState(loadCoach(me));
@@ -1109,7 +1152,7 @@ export function Designer({ slug }: { slug: string }) {
           : [t.t("The designer could not open"), loaded.message];
     return (
       <div className="designer-empty" role="alert">
-        <a className="link-btn" href={href({ name: "adventures" })}>
+        <a className="btn link" href={href({ name: "adventures" })}>
           ← {t.t("Adventures")}
         </a>
         <h1>{title}</h1>
@@ -1129,7 +1172,7 @@ export function Designer({ slug }: { slug: string }) {
           i.node ? (
             <Button variant="link" onClick={() => jumpTo(i)}>{t.t("Show")}</Button>
           ) : i.code.startsWith("print.") ? (
-            <Button variant="link" onClick={() => setSettingsOpen("print")}>{t.t("Show")}</Button>
+            <Button variant="link" onClick={() => openSettings("print")}>{t.t("Show")}</Button>
           ) : undefined
         }
       />
@@ -1137,10 +1180,10 @@ export function Designer({ slug }: { slug: string }) {
   const kebabItems: ContextMenuItem[] = [
     // Saved first: renaming the adventure moves its draft along with it.
     { label: t.t("Edit details"), icon: <Pencil size={ICON.sm} />, onClick: () => void (async () => { if (unsaved && !(await saveNow())) return; setDetailsOpen(true); })() },
-    { label: t.t("Adventure settings"), icon: <Settings size={ICON.sm} />, onClick: () => setSettingsOpen(true) },
+    { label: t.t("Adventure settings"), icon: <Settings size={ICON.sm} />, onClick: () => openSettings() },
     { label: t.t("Themes"), icon: <Palette size={ICON.sm} />, onClick: () => openThemes() },
     { label: t.t("Translations"), icon: <Languages size={ICON.sm} />, onClick: () => setTranslating(editLang) },
-    { label: t.t("Print materials"), icon: <Printer size={ICON.sm} />, onClick: () => setSettingsOpen("print") },
+    { label: t.t("Print materials"), icon: <Printer size={ICON.sm} />, onClick: () => openSettings("print") },
     { label: t.t("Play the draft on my phone"), icon: <Smartphone size={ICON.sm} />, onClick: () => setDevOpen(true) },
     {
       label: narrowScreen() ? t.t("Tutorial") : t.t("Tutorials"),
@@ -1211,7 +1254,7 @@ export function Designer({ slug }: { slug: string }) {
           hint: () => openAt(question()?.slug),
           choice: () => (choiceDraft(graph) ? openAt(choiceDraft(graph)!.slug) : added(addChoiceAfter(graph, question()?.slug, choiceWords()))),
           finish: fixNext,
-          look: () => setSettingsOpen(true),
+          look: () => openSettings("look"),
           test: () => {
             setSimMode("run");
             setSimRestart((n) => n + 1);
@@ -1222,13 +1265,13 @@ export function Designer({ slug }: { slug: string }) {
         }
       : {
         welcome: () => openAt(welcomeStep(graph)?.slug),
-        zone: () => setSettingsOpen(true),
+        zone: () => openSettings("zones"),
         checkin: () => addAfter(welcomeStep(graph)?.slug),
         puzzle: () => (question() ? openAt(question()!.slug) : addAfter((checkInStep(graph) ?? welcomeStep(graph))?.slug)),
         hint: () => openAt(question()?.slug),
         choice: () => (choiceDraft(graph) ? openAt(choiceDraft(graph)!.slug) : addAfter(question()?.slug)),
         finish: fixNext,
-        look: () => setSettingsOpen(true),
+        look: () => openSettings("look"),
         test: () => {
           setSimMode("run");
           setSimRestart((n) => n + 1);
@@ -1522,9 +1565,9 @@ export function Designer({ slug }: { slug: string }) {
                       <span key={x}>
                         {i > 0 && ", "}
                         {n ? (
-                          <button type="button" className="link-button" onClick={() => reveal(x)}>
+                          <Button variant="link" onClick={() => reveal(x)}>
                             {n.title || n.slug}
-                          </button>
+                          </Button>
                         ) : (
                           x
                         )}
@@ -1658,7 +1701,7 @@ export function Designer({ slug }: { slug: string }) {
                 selected,
                 inspecting: slot === "inspect" && !!node,
                 menu: !!kebab,
-                settings: settingsOpen === true,
+                settings: !!settingsOpen,
                 previewing,
                 playing: previewing ? playing : null,
                 publishing: !!publishAsk,
@@ -1975,66 +2018,96 @@ export function Designer({ slug }: { slug: string }) {
           meta={meta}
           onChange={change}
           onMainChange={saveMainLang}
+          onRemove={(l) => void removeLanguage(l)}
           initial={translating}
           onClose={() => setTranslating(null)}
           {...(readOnly ? { readOnly } : {})}
         />
       )}
       {settingsOpen && (
-        <PanelModal
-          title={settingsOpen === "print" ? t.t("Print materials") : t.t("Adventure settings")}
-          wide
-          onClose={() => setSettingsOpen(false)}
-        >
-          <div className="dz-settings">
-            {settingsOpen === true && (
-              <AdventureSlug.Provider value={slug}>
-                <Resources graph={graph} onChange={change} />
-              </AdventureSlug.Provider>
-            )}
-            {settingsOpen === true && (
-              <LanguagesSettings
-                graph={graph}
-                main={mainLang}
-                meta={meta}
-                onMainChange={saveMainLang}
-                onTranslate={(l) => {
-                  setTranslating(l ?? editLang);
-                  setSettingsOpen(false);
-                }}
-                {...(readOnly ? { readOnly } : {})}
-              />
-            )}
-            <AdventureSlug.Provider value={slug}>
-              <PrintMaterials graph={graph} main={mainLang} onChange={change} />
-            </AdventureSlug.Provider>
-            {settingsOpen === true && (
-            <Look
-              brand={brand}
-              saving={brandSaving}
-              error={brandError}
-              savedThemes={graph.themes ?? []}
-              onApply={applyBrand}
-              {...(readOnly
-                ? {}
-                : {
-                    onAddTheme: (name, look) => {
-                      const themes = graph.themes ?? [];
-                      change({ ...graph, themes: [...themes, { slug: freshSlug(themes), name, look: structuredClone(look) }] });
-                    },
-                    onSaveAsTheme: () => {
-                      const themes = graph.themes ?? [];
-                      let n = 1;
-                      while (themes.some((th) => th.slug === `theme-${n}`)) n++;
-                      change({ ...graph, themes: [...themes, { slug: `theme-${n}`, name: t.t("Theme {{n}}", { n: themes.length + 1 }), look: structuredClone(brand) }] });
-                      openThemes(`theme-${n}`);
-                    },
-                    onEditThemes: () => openThemes(),
-                  })}
-            />
-            )}
-          </div>
-        </PanelModal>
+        <Modal title={t.t("Adventure settings")} icon={<Settings size={ICON.md} />} size="xl" flush className="settings-modal" onClose={() => setSettingsOpen(false)}>
+          <RailLayout
+            label={t.t("Adventure settings")}
+            current={settingsOpen}
+            onPick={(id) => openSettings(id as SettingsSection)}
+            groups={[
+              {
+                label: t.t("World"),
+                entries: [
+                  { id: "zones", label: t.t("Zones"), icon: <ConceptIcon {...RESOURCE.zones} />, count: graph.zones?.length ?? 0 },
+                  { id: "items", label: t.t("Items"), icon: <ConceptIcon {...RESOURCE.items} />, count: graph.items?.length ?? 0 },
+                  { id: "counters", label: t.t("Shared counters"), icon: <ConceptIcon {...RESOURCE.counters} />, count: graph.counters?.length ?? 0 },
+                  { id: "journal", label: t.t("Journal"), icon: <ConceptIcon {...RESOURCE.journal} />, count: graph.journal?.length ?? 0 },
+                ],
+              },
+              {
+                label: t.t("Gameplay"),
+                entries: [
+                  { id: "roles", label: t.t("Roles"), icon: <ConceptIcon {...RESOURCE.roles} />, count: graph.roles?.length ?? 0 },
+                  { id: "score", label: t.t("Score"), icon: <ConceptIcon {...RESOURCE.score} /> },
+                  { id: "time", label: t.t("Time limit"), icon: <ConceptIcon {...RESOURCE.time} /> },
+                  { id: "party", label: t.t("Party words"), icon: <ConceptIcon {...RESOURCE.party} />, count: graph.host_values?.length ?? 0 },
+                ],
+              },
+              {
+                label: t.t("Presentation"),
+                entries: [
+                  { id: "look", label: t.t("Theme"), icon: <ConceptIcon {...RESOURCE.look} /> },
+                  { id: "languages", label: t.t("Languages"), icon: <ConceptIcon {...RESOURCE.languages} />, count: 1 + translationLanguages(graph, mainLang).length },
+                  { id: "print", label: t.t("Print materials"), icon: <ConceptIcon {...RESOURCE.print} />, count: graph.print_materials?.length ?? 0 },
+                ],
+              },
+            ]}
+          >
+            <div className="dz-settings">
+              {settingsOpen === "languages" ? (
+                <LanguagesSettings
+                  graph={graph}
+                  main={mainLang}
+                  meta={meta}
+                  onMainChange={saveMainLang}
+                  onTranslate={(l) => {
+                    setTranslating(l ?? editLang);
+                    setSettingsOpen(false);
+                  }}
+                  {...(readOnly ? { readOnly } : {})}
+                />
+              ) : settingsOpen === "print" ? (
+                <AdventureSlug.Provider value={slug}>
+                  <PrintMaterials graph={graph} main={mainLang} onChange={change} />
+                </AdventureSlug.Provider>
+              ) : settingsOpen === "look" ? (
+                <Look
+                  brand={brand}
+                  saving={brandSaving}
+                  error={brandError}
+                  savedThemes={graph.themes ?? []}
+                  onApply={applyBrand}
+                  {...(readOnly
+                    ? {}
+                    : {
+                        onAddTheme: (name, look) => {
+                          const themes = graph.themes ?? [];
+                          change({ ...graph, themes: [...themes, { slug: freshSlug(themes), name, look: structuredClone(look) }] });
+                        },
+                        onSaveAsTheme: () => {
+                          const themes = graph.themes ?? [];
+                          let n = 1;
+                          while (themes.some((th) => th.slug === `theme-${n}`)) n++;
+                          change({ ...graph, themes: [...themes, { slug: `theme-${n}`, name: t.t("Theme {{n}}", { n: themes.length + 1 }), look: structuredClone(brand) }] });
+                          openThemes(`theme-${n}`);
+                        },
+                        onEditThemes: () => openThemes(),
+                      })}
+                />
+              ) : (
+                <AdventureSlug.Provider value={slug}>
+                  <Resources graph={graph} onChange={change} section={settingsOpen} />
+                </AdventureSlug.Provider>
+              )}
+            </div>
+          </RailLayout>
+        </Modal>
       )}
       {devOpen && <DevTicketModal slug={slug} onClose={() => setDevOpen(false)} />}
       {themesOpen && draft && (

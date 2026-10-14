@@ -3,7 +3,7 @@ import { LocateFixed } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { ICON } from "./dz/ui.tsx";
 import { isTouch } from "./device.ts";
-import { STYLE, circleRing, collapseCredits, loadMapLibre, mapLocale } from "./ZoneMap.tsx";
+import { mapStyle, circleRing, collapseCredits, loadMapLibre, mapLocale } from "./ZoneMap.tsx";
 import { conceptColor } from "./dz/concepts.tsx";
 import { DEFAULT_CENTRE, locate } from "./zones.ts";
 import "./pointmap.css";
@@ -39,7 +39,7 @@ export function PointMap({ value, onChange, fallback, radius }: { value: Point |
       .then((lib) => {
         if (cancelled || !box.current) return;
         libRef.current = lib;
-        const map = new lib.Map({ container: box.current, style: STYLE, center: [start.lng, start.lat], zoom: value ? 16 : 13, attributionControl: { compact: true }, locale: mapLocale(t), cooperativeGestures: isTouch() });
+        const map = new lib.Map({ container: box.current, style: mapStyle(), center: [start.lng, start.lat], zoom: value ? 16 : 13, attributionControl: { compact: true }, locale: mapLocale(t), cooperativeGestures: isTouch() });
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         collapseCredits(map);
         map.on("click", (e) => changeRef.current({ lat: round(e.lngLat.lat), lng: round(e.lngLat.lng) }));

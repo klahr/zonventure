@@ -11,7 +11,7 @@ import { DevicePanel } from "./DevicePanel.tsx";
 import { VISIBLE } from "./dz/types.tsx";
 import { locationError, zoneName } from "./zones.ts";
 import { Clapperboard, LocateFixed } from "lucide-react";
-import { ICON } from "./dz/ui.tsx";
+import { Button, ICON } from "./dz/ui.tsx";
 import { DEMO_ANSWER_EVENT, REPLAY_EVENT } from "./blocks/Animation.tsx";
 
 /** internal/graph/session.StartPlaceSlug: the start screen's zone for a required starting point. */
@@ -460,25 +460,25 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
           <div className="sim__controls">
             <span className="sim__clock" title={t.t("Time since the team started")}>⏱ {formatSeconds(elapsed)}</span>
             {[60, 300, 1800].map((s) => (
-              <button key={s} type="button" className="btn btn--ghost btn--sm" disabled={!team || busy} onClick={() => wait(s)}>
+              <Button key={s} type="button" size="sm" disabled={!team || busy} onClick={() => wait(s)}>
                 +{s / 60} {t.t("min")}
-              </button>
+              </Button>
             ))}
-            <button
+            <Button
               type="button"
-              className="btn btn--ghost btn--sm"
+              size="sm"
               disabled={!view}
               onClick={() => setReplay((n) => n + 1)}
               title={t.t("Show this step again, animations and all")}
-            >
+           >
               <Clapperboard size={ICON.sm} aria-hidden="true" />
               {t.t("Show again")}
-            </button>
+            </Button>
             {mode === "run" && (
-              <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => setNonce((n) => n + 1)}
+              <Button size="sm" disabled={busy} onClick={() => setNonce((n) => n + 1)}
                 aria-label={t.t("Start over")} title={t.t("Start over")}>
                 ↺
-              </button>
+              </Button>
             )}
           </div>
 
@@ -495,10 +495,10 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
           </label>
 
           <div className="sim__follow">
-            <button type="button" className={"btn btn--ghost btn--sm" + (follow ? " is-on" : "")} aria-pressed={follow} disabled={!team} onClick={() => setFollow((f) => !f)}>
+            <Button size="sm" className={follow ? "is-on" : ""} aria-pressed={follow} disabled={!team} onClick={() => setFollow((f) => !f)}>
               <LocateFixed size={ICON.sm} aria-hidden="true" />
               {follow ? t.t("Stop following my location") : t.t("Test here with my location")}
-            </button>
+            </Button>
             {followNote && <span className={"field__hint" + (followNote.warn ? " zone-here__warn" : "")}>{followNote.text}</span>}
           </div>
 
@@ -511,9 +511,9 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
               <span className="field__label">{t.t("Get past it")}</span>
               <span className="field__hint">{t.t("Leave by an output without the answer — for a QR code you can't scan, or a place you're not at.")}</span>
               {current.puzzle.outputs.map((o) => (
-                <button key={o.port} type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => void act({ kind: "force", node: current.slug, port: o.port })}>
+                <Button key={o.port} type="button" size="sm" disabled={busy} onClick={() => void act({ kind: "force", node: current.slug, port: o.port })}>
                   {t.t("Pass: {{port}}", { port: portLabel(current, o.port) })}
-                </button>
+                </Button>
               ))}
             </div>
           ) : null}

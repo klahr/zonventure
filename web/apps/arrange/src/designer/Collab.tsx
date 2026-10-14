@@ -973,10 +973,10 @@ export function CatchUpBanner({ catchUp, onShowTalk, onDismiss }: { catchUp: Cat
         {catchUp.comments > 0 && (
           <>
             {parts.length > 0 && " · "}
-            <button type="button" className="link-button" onClick={onShowTalk}>
+            <Button variant="link" onClick={onShowTalk}>
               {t.t(catchUp.comments === 1 ? "1 new comment" : "{{n}} new comments", { n: catchUp.comments })}
               {catchUp.mentions > 0 && ` (${t.t(catchUp.mentions === 1 ? "1 mentions you" : "{{n}} mention you", { n: catchUp.mentions })})`}
-            </button>
+            </Button>
           </>
         )}
         {parts.length > 0 && <span className="catchup__hint"> {t.t("New and changed steps have a dot until you open them.")}</span>}

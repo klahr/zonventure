@@ -74,7 +74,7 @@ export default function NewAdventure({ onClose, tutorial = false }: { onClose: (
 
   const badSlug = slug !== "" && !SLUG.test(slug);
   const basicsDone = title.trim() !== "" && slug.trim() !== "" && !badSlug;
-  const steps = [t.t("The basics"), t.t("The look"), t.t("Where it starts"), t.t("Ready")];
+  const steps = [t.t("The basics"), t.t("The theme"), t.t("Where it starts"), t.t("Ready")];
   const shownTitle = title.trim() || t.t("Your adventure");
   const welcome = pitch.trim() || t.t("Welcome! Your first step: tell the teams what this adventure is about.");
 
@@ -260,8 +260,8 @@ export default function NewAdventure({ onClose, tutorial = false }: { onClose: (
                   <dd>{t.t(AUDIENCES.find((a) => a.value === audience)!.label)}</dd>
                 </>
               )}
-              <dt>{t.t("The look")}</dt>
-              <dd>{theme.id === "default" ? t.t("Default look") : theme.name}</dd>
+              <dt>{t.t("The theme")}</dt>
+              <dd>{theme.id === "default" ? t.t("Default theme") : theme.name}</dd>
               <dt>{t.t("Where it starts")}</dt>
               <dd>
                 {start ? `${start.lat.toFixed(5)}, ${start.lng.toFixed(5)}` : t.t("Not set yet")}

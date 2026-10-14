@@ -3,7 +3,7 @@ import { play } from "@zonventure/api";
 import { fractionAt } from "@zonventure/play-ui";
 import type { Spot } from "@zonventure/graph";
 import { X } from "lucide-react";
-import { ICON } from "../dz/ui.tsx";
+import { Button, ICON } from "../dz/ui.tsx";
 import { MediaEditor } from "../MediaEditor.tsx";
 import { AltInput } from "./Media.tsx";
 import { withField, type Editor, type T as EditorT } from "./types.ts";
@@ -47,9 +47,9 @@ function SpotPicker({ media, spots, setSpots, hint, placeholder, label, t }: { m
             autoFocus={i === fresh}
             onChange={(e) => setSpots(spots.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))}
           />
-          <button type="button" className="icon-remove" onClick={() => setSpots(spots.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
+          <Button variant="ghost" size="icon" className="danger" onClick={() => setSpots(spots.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
             <X size={ICON.sm} />
-          </button>
+          </Button>
         </div>
       ))}
     </>

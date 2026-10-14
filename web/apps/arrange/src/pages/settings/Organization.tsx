@@ -355,7 +355,7 @@ export function OrganizationTab() {
             </section>
 
             <section className="og-section">
-              <h3>{t.t("Look")}</h3>
+              <h3>{t.t("Branding")}</h3>
               <div className="og-images">
                 <div>
                   <div className="og-label">{t.t("Logo")}</div>

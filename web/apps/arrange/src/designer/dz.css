@@ -189,11 +189,22 @@
   border: none;
   color: var(--dz-accent);
   padding: 0;
+  font-weight: 600;
+  font-size: var(--dz-text-sm);
+  text-align: left;
 }
 :where(.dz) button.link:hover:not(:disabled), .dz .btn.link:hover {
   background: none;
   border-color: transparent;
-  opacity: 0.8;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+:where(.dz) button.link:disabled {
+  color: var(--dz-muted);
+  opacity: 1;
+}
+:where(.dz) button.link:active {
+  transform: none;
 }
 :where(.dz) button.icon, .dz .btn.icon {
   display: inline-flex;

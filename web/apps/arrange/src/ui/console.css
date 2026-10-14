@@ -194,3 +194,40 @@
 .seg button:hover:not(:disabled, .is-on) { background: var(--dz-surface-2); color: var(--dz-ink); }
 .seg button.is-on { background: var(--dz-accent); color: var(--dz-accent-ink); }
 .seg button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* A rail: sections down the side, the chosen one beside them (RailLayout;
+   the translator's languages). */
+.rail-layout { display: grid; grid-template-columns: 15.5rem minmax(0, 1fr); height: 100%; min-height: 0; }
+.rail { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-4) var(--sp-3); border-right: 1px solid var(--dz-border); background: var(--dz-surface-2); overflow-y: auto; }
+.rail__group { display: flex; flex-direction: column; gap: 4px; }
+.rail__head { padding: 0 var(--sp-2) 2px; font-size: var(--dz-text-2xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dz-muted); }
+.dz .rail__item { width: 100%; justify-content: flex-start; gap: var(--sp-2); padding: 7px var(--sp-2); font-size: var(--dz-text-md); border: 1px solid transparent; border-radius: var(--dz-r-2); background: transparent; text-align: left; font-weight: 600; color: var(--dz-ink-soft); }
+.dz .rail__item:hover:not(:disabled) { background: var(--dz-surface); border-color: var(--dz-border); }
+.dz .rail__item.is-active { background: var(--dz-surface); border-color: color-mix(in srgb, var(--accent) 45%, var(--dz-border)); box-shadow: var(--dz-shadow); color: var(--dz-ink); }
+.rail__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail__alert { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--dz-danger); }
+.rail__count { font-size: var(--dz-text-xs); font-weight: 600; color: var(--dz-muted); font-variant-numeric: tabular-nums; }
+.rail-layout__main { min-width: 0; min-height: 0; overflow-y: auto; padding: var(--sp-5); }
+@media (max-width: 56rem) {
+  .rail-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .rail { flex-direction: row; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-right: 0; border-bottom: 1px solid var(--dz-border); overflow-x: auto; }
+  .rail__group { flex-direction: row; align-items: center; flex: none; }
+  .rail__head { display: none; }
+  .dz .rail__item { width: auto; flex: none; }
+  .rail-layout__main { padding: var(--sp-4); }
+}
+/* As a page's navigation (Settings): no box, the rail kept in view; on a
+   phone every section stays in view, wrapped, rather than scrolling off. */
+.rail-layout--page { height: auto; gap: var(--sp-6); align-items: start; }
+.rail-layout--page > .rail { position: sticky; top: var(--sp-4); padding: 0; border-right: 0; background: none; overflow: visible; }
+.rail-layout--page > .rail-layout__main { padding: 0; overflow: visible; }
+@media (max-width: 56rem) {
+  .rail-layout--page { gap: var(--sp-4); }
+  .rail-layout--page > .rail { position: static; flex-wrap: wrap; gap: var(--sp-1); padding-bottom: var(--sp-3); border-bottom: 1px solid var(--dz-border); }
+  .rail-layout--page .rail__group { flex-wrap: wrap; flex: 0 1 auto; }
+}
+
+/* Edit details: its sections beside the rail, one shown at a time. */
+.dz .modal.details-modal { height: min(calc(100dvh - 2 * var(--dz-space-4)), 48rem); }
+.details-section { display: flex; flex-direction: column; gap: var(--dz-space-4); max-width: 46rem; }
+.details-modal__note { padding: var(--sp-5); }

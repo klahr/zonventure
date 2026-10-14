@@ -1,5 +1,6 @@
 import type { Motion } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
+import { Button } from "./dz/ui.tsx";
 
 /** Ways to hold a phone worth one click: the level's two targets, and holding it to read. */
 const POSES: { label: string; motion: Omit<Motion, "heading"> }[] = [
@@ -29,9 +30,9 @@ export function DevicePanel({ motion, onChange }: { motion: Motion; onChange: (m
       <legend className="field__label">{t.t("How the phone is held")}</legend>
       <div className="sim__poses">
         {POSES.map((p) => (
-          <button key={p.label} type="button" className="btn btn--ghost btn--sm" onClick={() => onChange({ ...motion, ...p.motion })}>
+          <Button key={p.label} type="button" size="sm" onClick={() => onChange({ ...motion, ...p.motion })}>
             {t.t(p.label)}
-          </button>
+          </Button>
         ))}
       </div>
       {slider("heading", "Facing (0 is north)", 0, 359)}

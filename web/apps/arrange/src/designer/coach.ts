@@ -334,16 +334,16 @@ export function coachTutorials(t: T): Tutorial[] {
     },
     {
       id: "look",
-      title: t.t("The look"),
-      blurb: t.t("Pick a look for the phones and line up the cards."),
+      title: t.t("The theme"),
+      blurb: t.t("Pick a theme for the phones and line up the cards."),
       steps: [
-        ...openSettings("look", t.t("The look is in the adventure's settings. Open the ⋮ menu."), (c) => c.flags.includes("look")),
+        ...openSettings("look", t.t("The theme is in the adventure's settings. Open the ⋮ menu."), (c) => c.flags.includes("look")),
         {
           id: "look-pick",
-          title: t.t("Pick a look"),
-          body: t.t("Under Look, pick another Main look: the adventure changes at once."),
+          title: t.t("Pick a theme"),
+          body: t.t("Under Theme, pick another main theme: the adventure changes at once."),
           // The gallery opens in a dialog of its own, over the settings.
-          target: () => [{ sel: `.modal[aria-label=${attr(t.t("Choose a look"))}]` }, { sel: `${SETTINGS} .look .look__main .btn` }, { sel: `${SETTINGS} .look` }],
+          target: () => [{ sel: `.modal[aria-label=${attr(t.t("Choose a theme"))}]` }, { sel: `${SETTINGS} .look .look__main .btn` }, { sel: `${SETTINGS} .look` }],
           done: (c) => c.flags.includes("look"),
         },
         { id: "look-close", title: t.t("Close the settings"), body: t.t("Close the settings."), target: () => [close], done: (c) => !c.settings },

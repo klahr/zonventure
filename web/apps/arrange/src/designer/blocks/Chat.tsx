@@ -1,6 +1,6 @@
 import type { ChatLine } from "@zonventure/graph";
 import { Plus, X } from "lucide-react";
-import { ICON } from "../dz/ui.tsx";
+import { Button, ICON } from "../dz/ui.tsx";
 import { MediaEditor } from "../MediaEditor.tsx";
 import { withField, type Editor } from "./types.ts";
 import "./chat-editor.css";
@@ -33,9 +33,9 @@ export const ChatEditor: Editor<"chat"> = ({ block, set, t }) => {
             </div>
             <textarea className="field__input" rows={2} value={l.text} placeholder={t.t("Message")} aria-label={t.t("Message {{n}}", { n: i + 1 })} onChange={(e) => setLine(i, { ...l, text: e.target.value })} />
           </div>
-          <button type="button" className="icon-remove" disabled={lines.length < 2} onClick={() => setLines(lines.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
+          <Button variant="ghost" size="icon" className="danger" disabled={lines.length < 2} onClick={() => setLines(lines.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
             <X size={ICON.sm} />
-          </button>
+          </Button>
         </div>
       ))}
       <button type="button" className="add-btn" onClick={() => setLines([...lines, { text: "" }])}>

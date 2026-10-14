@@ -70,6 +70,65 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   );
 });
 
+// --- Rail ----------------------------------------------------------------------
+
+export interface RailEntry {
+  id: string;
+  label: string;
+  icon?: ReactNode;
+  /** How many there are, shown beside the label; omitted for a section that is not a list. */
+  count?: number;
+  /** Something in the section needs fixing. */
+  alert?: boolean;
+}
+
+/**
+ * Sections down the side and the chosen one beside them, as in Adventure
+ * settings; the translator's rail shares the look. On a narrow screen the
+ * rail becomes a strip across the top.
+ */
+export function RailLayout({ label, groups, current, onPick, page, children }: {
+  label: string;
+  groups: { label: string; entries: RailEntry[] }[];
+  current: string;
+  onPick: (id: string) => void;
+  /** As a page's navigation rather than inside a window. */
+  page?: boolean;
+  children: ReactNode;
+}) {
+  const rail = useRef<HTMLElement>(null);
+  // As a strip on a narrow screen, the chosen section scrolls into view.
+  useEffect(() => {
+    rail.current?.querySelector(".rail__item.is-active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [current]);
+  return (
+    <div className={"rail-layout" + (page ? " rail-layout--page" : "")}>
+      <nav ref={rail} className="rail" aria-label={label}>
+        {groups.map((g) => (
+          <div key={g.label} className="rail__group">
+            <span className="rail__head">{g.label}</span>
+            {g.entries.map((e) => (
+              <button
+                key={e.id}
+                type="button"
+                className={"rail__item" + (e.id === current ? " is-active" : "")}
+                aria-current={e.id === current ? "true" : undefined}
+                onClick={() => onPick(e.id)}
+              >
+                {e.icon}
+                <span className="rail__label">{e.label}</span>
+                {e.count !== undefined && <span className="rail__count">{e.count}</span>}
+                {e.alert && <span className="rail__alert" aria-hidden="true" />}
+              </button>
+            ))}
+          </div>
+        ))}
+      </nav>
+      <div className="rail-layout__main">{children}</div>
+    </div>
+  );
+}
+
 // --- small pieces ------------------------------------------------------------
 
 const CALLOUT: Record<"warning" | "info" | "danger" | "success", LucideIcon> = {

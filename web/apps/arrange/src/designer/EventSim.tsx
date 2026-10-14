@@ -4,9 +4,9 @@ import { nodeBySlug, portLabel, type Envelope, type Graph } from "@zonventure/gr
 import { formatSeconds } from "@zonventure/play-ui";
 import { Pause, Play, RotateCcw, Shuffle } from "lucide-react";
 import { useT } from "../i18n.tsx";
-import { STYLE, loadMapLibre, mapLocale, shape } from "./ZoneMap.tsx";
+import { mapStyle, loadMapLibre, mapLocale, shape } from "./ZoneMap.tsx";
 import { conceptColor } from "./dz/concepts.tsx";
-import { ICON } from "./dz/ui.tsx";
+import { Button, ICON } from "./dz/ui.tsx";
 import { DEFAULT_CENTRE } from "./zones.ts";
 
 /**
@@ -224,16 +224,16 @@ export function EventSim({ slug, graph, envelope }: Props) {
             <span className="field__label">{t.t("Seed")}</span>
             <span className="esim__seed">
               <input className="field__input" type="number" min={0} value={settings.seed} onChange={(e) => set("seed", Number(e.target.value))} />
-              <button type="button" className="btn btn--ghost btn--sm" title={t.t("Another run")} aria-label={t.t("Another run")} onClick={() => set("seed", Math.floor(Math.random() * 1e6))}>
+              <Button size="sm" title={t.t("Another run")} aria-label={t.t("Another run")} onClick={() => set("seed", Math.floor(Math.random() * 1e6))}>
                 <Shuffle size={ICON.sm} />
-              </button>
+              </Button>
             </span>
           </label>
         </div>
         <span className="field__hint">{t.t("The same seed plays the same event again, so a fix can be compared with what went before.")}</span>
-        <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void run()}>
+        <Button variant="primary" disabled={busy} onClick={() => void run()}>
           {busy ? t.t("Simulating…") : t.t("Simulate event")}
-        </button>
+        </Button>
         {error && <div className="alert alert--danger">{error}</div>}
         {result && <Summary result={result} />}
       </div>
@@ -242,9 +242,9 @@ export function EventSim({ slug, graph, envelope }: Props) {
         {result ? (
           <>
             <div className="esim__controls">
-              <button type="button" className="btn btn--ghost btn--sm" aria-label={playing ? t.t("Pause") : t.t("Play")} onClick={() => (clock >= result.duration ? (setClock(0), setPlaying(true)) : setPlaying((p) => !p))}>
+              <Button size="sm" aria-label={playing ? t.t("Pause") : t.t("Play")} onClick={() => (clock >= result.duration ? (setClock(0), setPlaying(true)) : setPlaying((p) => !p))}>
                 {playing ? <Pause size={ICON.sm} /> : clock >= result.duration ? <RotateCcw size={ICON.sm} /> : <Play size={ICON.sm} />}
-              </button>
+              </Button>
               <span className="esim__clock" title={t.t("Time since the event started")}>
                 ⏱ {formatSeconds(clock)} · {new Date(new Date(result.start).getTime() + clock * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </span>
@@ -338,7 +338,7 @@ function TeamMap({ graph, result, clock, chosen }: { graph: Graph; result: play.
       .then((lib) => {
         if (cancelled || !box.current) return;
         const first = zones[0] ?? DEFAULT_CENTRE;
-        const map = new lib.Map({ container: box.current, style: STYLE, center: [first.lng, first.lat], zoom: 14, attributionControl: { compact: true }, locale: mapLocale(t) });
+        const map = new lib.Map({ container: box.current, style: mapStyle(), center: [first.lng, first.lat], zoom: 14, attributionControl: { compact: true }, locale: mapLocale(t) });
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         map.on("load", () => {
           const empty = { type: "FeatureCollection" as const, features: [] };

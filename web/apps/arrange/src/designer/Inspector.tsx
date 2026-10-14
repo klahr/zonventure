@@ -811,16 +811,16 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
                   </option>
                 ))}
               </select>
-              <button
+              <Button
                 type="button"
-                className="icon-remove"
+                variant="ghost" size="icon" className="danger"
                 disabled={outputs.length <= 1}
                 title={outputs.length <= 1 ? t.t("A puzzle needs at least one way out.") : undefined}
                 onClick={() => onChange({ ...cfg, outputs: outputs.filter((_, j) => j !== i) })}
                 aria-label={t.t("Remove")}
-              >
+             >
                 <Trash2 size={ICON.sm} />
-              </button>
+              </Button>
             </div>
 
             {o.trigger === "missing" && (
@@ -1350,16 +1350,16 @@ function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void
                 onChange={(n) => setBranch(i, withOptional({ ...b }, "capacity", n))}
               />
             )}
-            <button
+            <Button
               type="button"
-              className="icon-remove"
+              variant="ghost" size="icon" className="danger"
               disabled={branches.length <= 1}
               onClick={() => onChange({ ...cfg, branches: branches.filter((_, j) => j !== i) })}
               aria-label={t.t("Remove")}
               title={t.t("Remove")}
-            >
+           >
               <Trash2 size={ICON.sm} />
-            </button>
+            </Button>
           </div>
           {cfg.policy === "choice" && (
             <details className="box__more" open={!!(b.note || b.image)}>
@@ -1481,9 +1481,9 @@ function switchParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void
                 onChange={(e) => setCase(graph, i, { ...c, label: e.target.value })}
                 aria-label={t.t("Path name")}
               />
-              <button type="button" className="icon-remove" onClick={() => setCfg(graph, { ...cfg, cases: cases.filter((_, j) => j !== i) })} aria-label={t.t("Remove")} title={t.t("Remove")}>
+              <Button variant="ghost" size="icon" className="danger" onClick={() => setCfg(graph, { ...cfg, cases: cases.filter((_, j) => j !== i) })} aria-label={t.t("Remove")} title={t.t("Remove")}>
                 <Trash2 size={ICON.sm} />
-              </button>
+              </Button>
             </div>
 
             <div className="answer-chips">
@@ -1637,7 +1637,7 @@ function EffectForm({ cfg, graph, onChange, onNewItem, onGraphChange }: { cfg: E
         <Field label={t.t("Theme")} hint={t.t("Stays until another step changes it.")}>
           <select className="field__input" value={cfg.theme ?? ""} onChange={(e) => onChange(withOptional({ ...cfg }, "theme", e.target.value || undefined))}>
             <option value="" disabled>{t.t("— pick one —")}</option>
-            <option value="default">{t.t("The adventure's own look")}</option>
+            <option value="default">{t.t("The adventure's own theme")}</option>
             {saved.length > 0 && (
               <optgroup label={t.t("Your themes")}>
                 {saved.map((th) => (
@@ -1655,9 +1655,9 @@ function EffectForm({ cfg, graph, onChange, onNewItem, onGraphChange }: { cfg: E
         </Field>
       )}
       {cfg.kind === "theme" && openThemes && (
-        <button type="button" className="btn btn--ghost btn--sm" onClick={() => openThemes(saved.some((th) => th.slug === cfg.theme) ? cfg.theme : undefined)}>
+        <Button size="sm" onClick={() => openThemes(saved.some((th) => th.slug === cfg.theme) ? cfg.theme : undefined)}>
           {saved.some((th) => th.slug === cfg.theme) ? t.t("Edit this theme…") : t.t("Make or edit themes…")}
-        </button>
+        </Button>
       )}
     </>
   );
@@ -1730,9 +1730,9 @@ function ItemsForm({ graph, slots, onChange }: { graph: Graph; slots: AnswerOf<"
                 aria-label={t.t("What the slot is called")}
                 onChange={(e) => setSlot(i, withOptional({ ...sl }, "label", e.target.value || undefined))}
               />
-              <button type="button" className="icon-remove" disabled={slots.slots.length <= 1} onClick={() => onChange({ ...slots, slots: slots.slots.filter((_, j) => j !== i) })} aria-label={t.t("Remove")}>
+              <Button variant="ghost" size="icon" className="danger" disabled={slots.slots.length <= 1} onClick={() => onChange({ ...slots, slots: slots.slots.filter((_, j) => j !== i) })} aria-label={t.t("Remove")}>
                 <X size={ICON.sm} />
-              </button>
+              </Button>
             </div>
             <ResourceSelect label={t.t("Wants")} value={sl.item} options={items} onChange={(item) => setSlot(i, { ...sl, item })} />
           </div>
@@ -1793,12 +1793,12 @@ function LockForm({ cfg, lock, onChange }: { cfg: PuzzleConfig; lock: AnswerOf<"
             <div className="box__row">
               <input className="field__input" value={s.label ?? s.value} aria-label={t.t("Symbol")}
                 onChange={(e) => setSymbol(i, { ...s, label: e.target.value })} />
-              <button type="button" className="icon-remove" disabled={lock.symbols.length <= 2}
+              <Button variant="ghost" size="icon" className="danger" disabled={lock.symbols.length <= 2}
                 onClick={() => setLock({ ...lock, symbols: lock.symbols.filter((_, j) => j !== i), start: (lock.start ?? []).map((x) => Math.min(x, lock.symbols.length - 2)) })}
                 aria-label={t.t("Remove")}
-              >
+             >
                 <X size={ICON.sm} />
-              </button>
+              </Button>
             </div>
             <MediaEditor single media={s.image ? [s.image] : undefined} onChange={(m) => setSymbol(i, m?.[0] ? { ...s, image: m[0] } : withOptional({ ...s }, "image", undefined))} />
           </div>
@@ -1859,9 +1859,9 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
           <div className="box__row">
             <input className="field__input" value={f.label ?? ""} placeholder={t.t("Question (optional for one)")} aria-label={t.t("Question")}
               onChange={(e) => setField(i, e.target.value ? { ...f, label: e.target.value } : withOptional({ ...f }, "label", undefined))} />
-            <button type="button" className="icon-remove" disabled={choices.fields.length <= 1} onClick={() => setFields(choices.fields.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
+            <Button variant="ghost" size="icon" className="danger" disabled={choices.fields.length <= 1} onClick={() => setFields(choices.fields.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
               <Trash2 size={ICON.sm} />
-            </button>
+            </Button>
           </div>
           {f.options.map((o, k) => (
             <div key={k} className="box__row">
@@ -1870,12 +1870,12 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
               )}
               <input className="field__input" value={o.label ?? o.value} aria-label={t.t("Option")}
                 onChange={(e) => setField(i, { ...f, options: f.options.map((x, j) => (j === k ? { ...x, label: e.target.value } : x)) })} />
-              <button type="button" className="icon-remove" disabled={f.options.length <= 2}
+              <Button variant="ghost" size="icon" className="danger" disabled={f.options.length <= 2}
                 onClick={() => setField(i, withOptional({ ...f, options: f.options.filter((_, j) => j !== k) }, "answer", f.answer === o.value ? undefined : f.answer))}
                 aria-label={t.t("Remove")}
-              >
+             >
                 <X size={ICON.sm} />
-              </button>
+              </Button>
             </div>
           ))}
           <button type="button" className="add-btn" onClick={(e) => {
@@ -1899,7 +1899,7 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
           {t.t("Mark it: every question has a right answer")}
         </label>
         {!graded && choices.fields.length === 1 && (
-          <button type="button" className="link-btn" onClick={() => onChange({
+          <Button variant="link" onClick={() => onChange({
             ...cfg,
             outputs: [
               ...choices.fields[0]!.options.map((o): Output => ({ port: o.value, label: o.label || o.value, trigger: "answer", matchers: [{ kind: "exact", value: o.value }] })),
@@ -1907,7 +1907,7 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
             ],
           })}>
             {t.t("Route each option its own way")}
-          </button>
+          </Button>
         )}
       </div>
     </>
@@ -1924,7 +1924,7 @@ function AnswerQRs({ node, cfg }: { node: string; cfg: PuzzleConfig }) {
     <Field label={t.t("QR codes to print")} hint={t.t("Opens a page to print with the code of an accepted answer, labelled with the step and the adventure but not the answer. A new answer shows once the adventure is saved.")}>
       <div className="box__row box__row--wrap">
         {values.map((v) => (
-          <a key={v} className="link-btn" href={`/api/admin/adventures/${encodeURIComponent(slug)}/graph/qr?${new URLSearchParams({ node, value: v, sheet: "1" })}`} target="_blank" rel="noreferrer">
+          <a key={v} className="btn link" href={`/api/admin/adventures/${encodeURIComponent(slug)}/graph/qr?${new URLSearchParams({ node, value: v, sheet: "1" })}`} target="_blank" rel="noreferrer">
             {t.t("Print QR: {{answer}}", { answer: v })}
           </a>
         ))}
@@ -2122,9 +2122,9 @@ function ListEditor<T>({
       {items.map((item, i) => (
         <div key={i} className="list-ed__item">
           <div className="list-ed__body">{render(item, (next) => onChange(items.map((x, j) => (j === i ? next : x))))}</div>
-          <button type="button" className="icon-remove" onClick={() => onChange(items.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
+          <Button variant="ghost" size="icon" className="danger" onClick={() => onChange(items.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
             <X size={ICON.sm} />
-          </button>
+          </Button>
         </div>
       ))}
       <button type="button" className="add-btn" onClick={(e) => {
@@ -2203,9 +2203,9 @@ function WebhookForm({ cfg, onChange }: { cfg: EffectConfig; onChange: (c: Effec
             aria-label={t.t("Header value")}
             onChange={(e) => setHeaders(headers.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
           />
-          <button type="button" className="icon-remove" onClick={() => setHeaders(headers.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
+          <Button variant="ghost" size="icon" className="danger" onClick={() => setHeaders(headers.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
             <X size={ICON.sm} />
-          </button>
+          </Button>
         </div>
       ))}
       <button type="button" className="add-btn concept--effect" onClick={() => setHeaders([...headers, { name: "", value: "" }])}>

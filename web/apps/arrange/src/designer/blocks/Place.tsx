@@ -6,7 +6,7 @@ import { contentT } from "../../i18n.tsx";
 import { Field, ZoneSelect } from "../fields.tsx";
 import { ZoneMap } from "../ZoneMap.tsx";
 import { nearLastZone, zoneAt } from "../zones.ts";
-import { ICON } from "../dz/ui.tsx";
+import { Button, ICON } from "../dz/ui.tsx";
 import { withField, type Editor, type Of, type T } from "./types.ts";
 
 function PlaceSelect<B extends Of<"compass" | "map" | "radar">>({ block, set, t, graph, withZones }: { block: B; set: (b: B) => void; t: T; graph: Graph; withZones?: ((zones: Zone[], b: B) => void) | undefined }) {
@@ -44,9 +44,9 @@ function PlaceSelect<B extends Of<"compass" | "map" | "radar">>({ block, set, t,
   return (
     <>
       {select}
-      <button type="button" className="link-btn blk__zone-edit" aria-expanded={editing} onClick={() => setEditing((v) => !v)}>
+      <Button variant="link" className="blk__zone-edit" aria-expanded={editing} onClick={() => setEditing((v) => !v)}>
         {editing ? t.t("Done") : t.t("Edit the place on the map")}
-      </button>
+      </Button>
       {editing && (
         <div className="blk__zone">
           <Field label={t.t("Name of the place")} hint={t.t("The team sees this name.")}>
@@ -133,9 +133,9 @@ export const MapEditor: Editor<"map"> = ({ block, set, t, graph, withZones }) =>
           <span className="blk__coords">
             {m.lat.toFixed(5)}, {m.lng.toFixed(5)}
           </span>
-          <button type="button" className="icon-remove" onClick={() => setMarkers(markers.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
+          <Button variant="ghost" size="icon" className="danger" onClick={() => setMarkers(markers.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
             <X size={ICON.sm} />
-          </button>
+          </Button>
         </div>
       ))}
       <p className="field__hint">{block.hide_team ? t.t("The team does not see itself on this map.") : block.zoom ? t.t("The team sees itself on the map whenever it is inside the frame.") : t.t("The team sees itself on the map when it is within 3 km.")}</p>

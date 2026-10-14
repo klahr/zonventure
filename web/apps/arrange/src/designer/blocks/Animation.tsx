@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ATTENTIONS, ENTRANCES, type Animation, type Block } from "@zonventure/graph";
 import { animationCSS } from "@zonventure/play-ui";
 import { Play } from "lucide-react";
-import { ICON } from "../dz/ui.tsx";
+import { Button, ICON } from "../dz/ui.tsx";
 import type { T } from "./types.ts";
 
 /** Asks the preview to play the step's animations again; the simulator listens. */
@@ -120,17 +120,17 @@ export function AnimationEditor({ block, set, t }: { block: Block; set: (b: Bloc
         <input type="range" min={0} max={10} step={0.25} value={a.delay ?? 0} onChange={(e) => edit({ delay: Number(e.target.value) })} />
       </label>
       <div className="blk__anim-foot">
-        <button
+        <Button
           type="button"
-          className="btn btn--ghost btn--sm"
+          size="sm"
           onClick={() => {
             setDemo((n) => n + 1);
             replayAnimations();
           }}
-        >
+       >
           <Play size={ICON.sm} aria-hidden />
           {t.t("Play again")}
-        </button>
+        </Button>
         <span className="field__hint">{t.t("Phones set to reduce motion show the block without moving it.")}</span>
       </div>
     </div>

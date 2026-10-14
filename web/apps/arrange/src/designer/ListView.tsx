@@ -22,10 +22,11 @@ import {
   type Issue,
   type Node,
 } from "@zonventure/graph";
-import { CornerDownRight, GripVertical, MessageSquare } from "lucide-react";
+import { CornerDownRight, GripVertical, MessageSquare, X } from "lucide-react";
 import { routesIn, useT } from "../i18n.tsx";
 import { Thumb } from "./NodeCard.tsx";
 import { STEP } from "./dz/types.tsx";
+import { Button, ICON } from "./dz/ui.tsx";
 
 interface Props {
   graph: Graph;
@@ -298,17 +299,18 @@ export function ListView({ graph, issues, selected, playing = null, changed, mar
                 <Thumb node={n} className="step__thumb" />
               </button>
               {mv && line && at >= 0 && (
-                <button
-                  type="button"
-                  className="icon-btn"
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="danger"
                   onClick={() => {
                     onChange(removeStep(graph, n.slug));
                     if (selected === n.slug) onSelect(null);
                   }}
                   aria-label={t.t("Remove")}
                 >
-                  ×
-                </button>
+                  <X size={ICON.sm} />
+                </Button>
               )}
               {/* On the right, as on a card's corner: its issues, its status,
                   and the handle to drag it by. */}
@@ -355,9 +357,9 @@ export function ListView({ graph, issues, selected, playing = null, changed, mar
             </button>
           );
         })}
-        <button type="button" className="btn btn--ghost" onClick={() => onOpenCanvas(selected)}>
+        <Button onClick={() => onOpenCanvas(selected)}>
           {t.t("Branch it on the canvas →")}
-        </button>
+        </Button>
       </div>
       <p className="listview__hint">
         {selected ? t.t("New steps go after the selected one.") : t.t("New steps go just before the end. Select a step to add after it instead.")}

@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { isPolygon, type Graph, type Zone } from "@zonventure/graph";
 import { LocateFixed, Map as MapIcon, MapPin } from "lucide-react";
 import { useT } from "../i18n.tsx";
-import { ICON } from "./dz/ui.tsx";
+import { Button, ICON } from "./dz/ui.tsx";
 import { locate, nearLastZone, zoneAt } from "./zones.ts";
 import { ZoneMap } from "./ZoneMap.tsx";
 
@@ -117,15 +117,15 @@ export function ZoneSelect({ graph, label, value, onChange, empty, here, onNew }
               {busy ? t.t("Finding you…") : t.t("Mark where I stand")}
             </button>
             {chosen && !isPolygon(chosen) && (
-              <button type="button" className="link-btn" disabled={busy} onClick={() => void pin(true)}>
+              <Button variant="link" disabled={busy} onClick={() => void pin(true)}>
                 <LocateFixed size={ICON.sm} aria-hidden="true" />
                 {t.t("Move it here")}
-              </button>
+              </Button>
             )}
-            <button type="button" className="link-btn" aria-pressed={drawing && !!chosen} onClick={draw}>
+            <Button variant="link" aria-pressed={drawing && !!chosen} onClick={draw}>
               <MapIcon size={ICON.sm} aria-hidden="true" />
               {t.t("Draw on map")}
-            </button>
+            </Button>
           </div>
           {drawing && chosen && <ZoneMap key={chosen.slug} zone={chosen} onChange={(nz) => here.set(zones.map((z) => (z.slug === nz.slug ? nz : z)), nz.slug)} />}
           {chosen && !isPolygon(chosen) && (

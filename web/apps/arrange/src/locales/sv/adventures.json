@@ -72,7 +72,7 @@
   "One line about it": "En rad om det",
   "Skip for now": "Hoppa över tills vidare",
   "The basics": "Grunderna",
-  "The look": "Utseendet",
+  "The theme": "Temat",
   "Welcome! Your first step: tell the teams what this adventure is about.": "Välkommen! Ditt första steg: berätta för lagen vad äventyret handlar om.",
   "What teams will do, and roughly how long it takes. It is the first thing they read.": "Vad lagen ska göra, och ungefär hur lång tid det tar. Det är det första de läser.",
   "Where do teams meet? Click the map to put the starting point there. You can also set it later, or skip it.": "Var möts lagen? Klicka på kartan för att sätta startplatsen där. Du kan också ange den senare, eller hoppa över.",
@@ -88,5 +88,9 @@
   "Imported: originally by {{name}}.": "Importerat: ursprungligen av {{name}}.",
   "That short name is taken or could not be used. Pick another:": "Det kortnamnet är upptaget eller kunde inte användas. Välj ett annat:",
   "Download this adventure as a portable .zip, its pictures and sounds included": "Ladda ner detta äventyr som en portabel .zip, med bilder och ljud",
-  "Imported \"{{title}}\" as a draft: publish it when it is ready.": "Importerade \"{{title}}\" som utkast: publicera det när det är klart."
+  "Imported \"{{title}}\" as a draft: publish it when it is ready.": "Importerade \"{{title}}\" som utkast: publicera det när det är klart.",
+  "Basics": "Grunder",
+  "Texts": "Texter",
+  "Starting location": "Startplats",
+  "Advanced": "Avancerat"
 }

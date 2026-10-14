@@ -4,7 +4,7 @@ import type { I18n } from "@zonventure/i18n";
 import { useT } from "../i18n.tsx";
 import { LocateFixed } from "lucide-react";
 import { conceptColor } from "./dz/concepts.tsx";
-import { ICON } from "./dz/ui.tsx";
+import { Button, ICON } from "./dz/ui.tsx";
 import { isTouch } from "./device.ts";
 import { locate } from "./zones.ts";
 
@@ -27,7 +27,7 @@ type MapLib = typeof import("maplibre-gl");
  */
 function workerURL(file: string): string {
   const url = new URL(file, location.href);
-  const source = mapConfig?.style_url || mapConfig?.tile_url || "";
+  const source = mapConfig()?.style_url || mapConfig()?.tile_url || "";
   try {
     url.searchParams.set("map", new URL(source).host);
   } catch {
@@ -56,24 +56,25 @@ export function loadMapLibre(): Promise<MapLib> {
 // The operator's map source, set on the page as window.ZV_MAP by
 // /assets/map-config.js: a vector style (ZV_MAP_STYLE_URL, OpenFreeMap's
 // by default), else raster tiles (ZV_MAP_TILE_URL), else OpenFreeMap's
-// style.
-const mapConfig = (globalThis as { ZV_MAP?: { tile_url?: string; attribution?: string; style_url?: string } }).ZV_MAP;
+// style. Read when a map opens: the script is deferred and may run after
+// this module has loaded.
+const mapConfig = () => (globalThis as { ZV_MAP?: { tile_url?: string; attribution?: string; style_url?: string } }).ZV_MAP;
 
-const RASTER_STYLE = {
+const rasterStyle = () => ({
   version: 8 as const,
   sources: {
     osm: {
       type: "raster" as const,
-      tiles: [mapConfig?.tile_url ?? ""],
+      tiles: [mapConfig()?.tile_url ?? ""],
       tileSize: 256,
       maxzoom: 19,
-      attribution: mapConfig?.attribution || "© OpenStreetMap contributors",
+      attribution: mapConfig()?.attribution || "© OpenStreetMap contributors",
     },
   },
   layers: [{ id: "osm", type: "raster" as const, source: "osm" }],
-};
+});
 
-export const STYLE: string | typeof RASTER_STYLE = mapConfig?.style_url || (mapConfig?.tile_url ? RASTER_STYLE : "https://tiles.openfreemap.org/styles/liberty");
+export const mapStyle = (): string | ReturnType<typeof rasterStyle> => mapConfig()?.style_url || (mapConfig()?.tile_url ? rasterStyle() : "https://tiles.openfreemap.org/styles/liberty");
 
 /** MapLibre's own control and gesture words, in the console's language. */
 export function mapLocale(t: I18n): Record<string, string> {
@@ -160,7 +161,7 @@ export function ZoneMap({ zone, onChange, areaOnly, maxCorners }: { zone: Zone; 
         libRef.current = lib;
         // On a touch screen one finger scrolls the page past the map and two
         // move the map, so the map inside a scrolling panel is not a trap.
-        const map = new lib.Map({ container: box.current, style: STYLE, center: [zone.lng, zone.lat], zoom: 17, attributionControl: { compact: true }, locale: mapLocale(t), cooperativeGestures: isTouch() });
+        const map = new lib.Map({ container: box.current, style: mapStyle(), center: [zone.lng, zone.lat], zoom: 17, attributionControl: { compact: true }, locale: mapLocale(t), cooperativeGestures: isTouch() });
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         collapseCredits(map);
         map.on("load", () => {
@@ -255,10 +256,10 @@ export function ZoneMap({ zone, onChange, areaOnly, maxCorners }: { zone: Zone; 
     }
   };
   const hereButton = (
-    <button type="button" className="link-btn zone-map__here" disabled={finding || (polygonMode && !!maxCorners && corners >= maxCorners)} onClick={() => void here()}>
+    <Button variant="link" className="zone-map__here" disabled={finding || (polygonMode && !!maxCorners && corners >= maxCorners)} onClick={() => void here()}>
       <LocateFixed size={ICON.sm} aria-hidden="true" />
       {finding ? t.t("Finding you…") : polygonMode ? t.t("Add a corner where I stand") : t.t("Use my location")}
-    </button>
+    </Button>
   );
 
   return (
@@ -292,12 +293,12 @@ export function ZoneMap({ zone, onChange, areaOnly, maxCorners }: { zone: Zone; 
                 : t.t("{{n}} corners. Drag a corner to move it; click to add more.", { n: corners })}
           </span>
           {hereButton}
-          <button type="button" className="link-btn" disabled={!corners} onClick={() => onChange({ ...zone, polygon: (zone.polygon ?? []).slice(0, -1) })}>
+          <Button variant="link" disabled={!corners} onClick={() => onChange({ ...zone, polygon: (zone.polygon ?? []).slice(0, -1) })}>
             {t.t("Undo corner")}
-          </button>
-          <button type="button" className="link-btn" disabled={!corners} onClick={() => onChange({ ...zone, polygon: [] })}>
+          </Button>
+          <Button variant="link" disabled={!corners} onClick={() => onChange({ ...zone, polygon: [] })}>
             {t.t("Clear")}
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="zone-map__row">

@@ -5,6 +5,7 @@ import { DEFAULT_LOOK, THEME_COVERS, brandVars, loadFont } from "@zonventure/pla
 import { useT } from "../i18n.tsx";
 import { STARTER_GROUPS, STARTER_THEMES } from "@zonventure/play-ui";
 import "./starters.css";
+import { Button } from "./dz/ui.tsx";
 
 /** A look as JSON with its keys in order, so two can be compared however they were built. */
 export function canon(v: unknown): string {
@@ -48,7 +49,7 @@ export function StarterGallery({ onPick, onCancel, selected, sample, ownLookHint
   const t = useT();
   const [library, setLibrary] = useState<adventures.OrgTheme[]>([]);
   const [only, setOnly] = useState<string | null>(null);
-  const starters = [{ id: "default", label: "Default look", group: "", look: DEFAULT_LOOK as ThemeLook }, ...STARTER_THEMES];
+  const starters = [{ id: "default", label: "Default theme", group: "", look: DEFAULT_LOOK as ThemeLook }, ...STARTER_THEMES];
   const own = library.map((th) => ({ id: `org-${th.id}`, label: th.name, raw: true, look: th.look as ThemeLook }));
   const mine = saved.map((th) => ({ id: `saved-${th.slug}`, label: th.name || t.t("Untitled theme"), raw: true, look: th.look }));
   useEffect(() => {
@@ -72,15 +73,15 @@ export function StarterGallery({ onPick, onCancel, selected, sample, ownLookHint
     { id: "", label: "", items: [starters[0]!] },
     ...(mine.length ? [{ id: "saved", label: t.t("This adventure"), items: mine }] : []),
     ...(own.length ? [{ id: "org", label: t.t("Your organisation"), items: own }] : []),
-    ...STARTER_GROUPS.map((g) => ({ id: g.id, label: g.label && t.t(g.label), chip: g.label ? t.t(g.label) : t.t("More looks"), items: STARTER_THEMES.filter((s) => s.group === g.id) })),
+    ...STARTER_GROUPS.map((g) => ({ id: g.id, label: g.label && t.t(g.label), chip: g.label ? t.t(g.label) : t.t("More themes"), items: STARTER_THEMES.filter((s) => s.group === g.id) })),
   ];
   const head = heading ?? t.t("Start from");
   return (
-    <section className="starters" aria-label={head || t.t("Looks")}>
+    <section className="starters" aria-label={head || t.t("Themes")}>
       {(head || onCancel) && (
         <div className="starters__head">
           {head && <h4>{head}</h4>}
-          {onCancel && <button type="button" className="btn btn--ghost btn--sm" onClick={onCancel}>{t.t("Cancel")}</button>}
+          {onCancel && <Button size="sm" onClick={onCancel}>{t.t("Cancel")}</Button>}
         </div>
       )}
       <div className="starters__chips" role="group" aria-label={t.t("Show")}>
@@ -114,7 +115,7 @@ export function StarterGallery({ onPick, onCancel, selected, sample, ownLookHint
           </div>
         </div>
       ))}
-      {ownLookHint && <p className="field__hint">{t.t("To start from the adventure's own look, use Save this look as a theme under Adventure settings.")}</p>}
+      {ownLookHint && <p className="field__hint">{t.t("To start from the adventure's own theme, use Save as a theme under Adventure settings.")}</p>}
     </section>
   );
 }

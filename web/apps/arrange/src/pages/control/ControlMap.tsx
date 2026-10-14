@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Map as GLMap, Marker, GeoJSONSource, LngLatBounds } from "maplibre-gl";
 import { metresBetween, type Zone } from "@zonventure/graph";
 import { useT } from "../../i18n.tsx";
-import { loadMapLibre, mapLocale, shape, STYLE } from "../../designer/ZoneMap.tsx";
+import { loadMapLibre, mapLocale, shape, mapStyle } from "../../designer/ZoneMap.tsx";
 import { fmtDateTime, initials, toDate } from "../../ui/index.ts";
 import type { Track } from "./api.ts";
 import { mapViews, ZONE_COLOR } from "./model.ts";
@@ -44,7 +44,7 @@ export function ControlMap({ eventId, zones, teams, tracks }: { eventId: number;
         const saved = mapViews.get(eventId);
         const map = new lib.Map({
           container: el,
-          style: STYLE,
+          style: mapStyle(),
           center: saved ? saved.center : [13.9554, 58.182],
           zoom: saved ? saved.zoom : 14,
           attributionControl: { compact: true },

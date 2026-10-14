@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { adventures } from "@zonventure/api";
 import { useT } from "../i18n.tsx";
 import { PanelModal } from "./dz/dialogs.tsx";
+import { Button } from "./dz/ui.tsx";
 
 /**
  * The author's dev ticket: a phone link that plays the saved draft live —
@@ -33,14 +34,14 @@ export function DevTicketModal({ slug, onClose }: { slug: string; onClose: () =>
             {token && <img className="devticket__qr" src={`/qr/team/${encodeURIComponent(token)}`} alt={t.t("QR code for the dev ticket")} />}
             <div className="look__actions">
               <input className="field__input" readOnly value={ticket.team_url} onFocus={(e) => e.target.select()} aria-label={t.t("Link")} />
-              <button
+              <Button
                 type="button"
-                className="btn btn--ghost btn--sm"
+                size="sm"
                 onClick={() => void navigator.clipboard?.writeText(ticket.team_url).then(() => setNote(t.t("Link copied")))}
-              >
+             >
                 {t.t("Copy link")}
-              </button>
-              <a className="btn btn--ghost btn--sm" href={ticket.team_url} target="_blank" rel="noopener noreferrer">
+              </Button>
+              <a className="btn sm" href={ticket.team_url} target="_blank" rel="noopener noreferrer">
                 {t.t("Open")}
               </a>
             </div>
@@ -69,23 +70,23 @@ export function DevTicketModal({ slug, onClose }: { slug: string; onClose: () =>
                 aria-label={t.t("Send to an email address")}
                 onChange={(e) => setEmail(e.target.value)}
               />
-              <button type="submit" className="btn btn--ghost btn--sm" disabled={!email.trim() || sending}>
+              <Button type="submit" size="sm" disabled={!email.trim() || sending}>
                 {sending ? t.t("Sending…") : t.t("Send")}
-              </button>
+              </Button>
             </form>
             <div className="look__actions">
-              <button
+              <Button
                 type="button"
-                className="btn btn--ghost btn--sm"
+                size="sm"
                 onClick={() =>
                   void adventures
                     .devReset(slug)
                     .then(() => setNote(t.t("The phone starts over.")))
                     .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
                 }
-              >
+             >
                 {t.t("Start over")}
-              </button>
+              </Button>
               {note && <span className="field__hint">{note}</span>}
             </div>
             <p className="field__hint">{t.t("On the phone, the DEV bar goes to any step — back or on — or starts over.")}</p>

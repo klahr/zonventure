@@ -26,7 +26,6 @@
   "Test event sent. It should reach your endpoint within a few seconds.": "Testhändelsen är skickad. Den bör nå din slutpunkt inom några sekunder.",
   "Endpoint disabled. No more events will be sent to it.": "Slutpunkten är inaktiverad. Inga fler händelser skickas till den.",
   "Endpoint enabled. Events will be sent to it again.": "Slutpunkten är aktiverad. Händelser skickas till den igen.",
-  "Email look": "Mejlens utseende",
   "Email theme": "Mejltema",
   "Emails use the logo and colours from Branding above. Each event can choose its own theme.": "Mejlen använder logotypen och färgerna från Varumärke ovan. Varje event kan välja ett eget tema.",
   "How the emails your organization sends to players and designers look.": "Hur mejlen som din organisation skickar till spelare och designers ser ut.",
@@ -349,5 +348,8 @@
   "Sent a test email": "Skickade ett testmejl",
   "Log level": "Loggnivå",
   "Approved an AI assistant": "Godkände en AI-assistent",
-  "unbilled": "ofakturerad"
+  "unbilled": "ofakturerad",
+  "Branding": "Grafisk profil",
+  "You": "Du",
+  "Platform": "Plattform"
 }

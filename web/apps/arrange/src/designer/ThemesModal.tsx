@@ -1,15 +1,14 @@
 import { createContext, useState } from "react";
 import { adventures, canAuthor, type play } from "@zonventure/api";
 import type { Graph, Theme, ThemeLook } from "@zonventure/graph";
-import { Building2, Copy, Trash2 } from "lucide-react";
+import { Building2, Copy, Palette, Plus, Trash2 } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { useSession } from "../session.tsx";
 import { href } from "../router.ts";
 import { SamplePreview } from "./SamplePreview.tsx";
 import { StarterGallery } from "./StarterGallery.tsx";
-import { ThemeEditor, ThemeStrip } from "./ThemeEditor.tsx";
-import { PanelModal } from "./dz/dialogs.tsx";
-import { ConfirmModal, ICON } from "./dz/ui.tsx";
+import { ThemeEditor, ThemeSwatch } from "./ThemeEditor.tsx";
+import { Button, ConfirmModal, ICON, Modal, RailLayout } from "./dz/ui.tsx";
 
 
 /** Opens the theme editor, on a theme if given: for the theme step's inspector. */
@@ -20,6 +19,9 @@ export function freshSlug(themes: Theme[]): string {
   const taken = new Set(themes.map((th) => th.slug));
   for (let i = 1; ; i++) if (!taken.has(`theme-${i}`)) return `theme-${i}`;
 }
+
+/** The rail's entry that makes a new theme; never a theme's slug. */
+const NEW = "+new";
 
 /** How many theme effects switch to this theme. */
 export function themeUses(g: Graph, slug: string): number {
@@ -112,56 +114,70 @@ export function ThemesModal({ graph, initial, onChange, onClose, look, onUse }: 
   };
 
   return (
-    <PanelModal title={t.t("Themes")} wide onClose={close}>
-      <div className="themes">
-        <ThemeStrip themes={themes.map((th) => ({ key: th.slug, name: th.name, look: th.look }))} current={current} adding={!theme} onPick={setCurrent} onAdd={() => add(t.t("Theme {{n}}", { n: themes.length + 1 }), look ?? {})} />
-        {!theme ? (
-          <StarterGallery
-            onPick={(name, look) => add(name || t.t("Theme {{n}}", { n: themes.length + 1 }), look)}
-          />
-        ) : (
-          <ThemeEditor
-            name={theme.name}
-            onName={(name) => update({ name })}
-            look={theme.look}
-            onLook={(look) => update({ look })}
-            media
-            actions={
-              <>
-                <button type="button" className="btn btn--ghost btn--sm" onClick={() => add(t.t("{{name}} (copy)", { name: theme.name }), theme.look)}>
-                  <Copy size={ICON.sm} aria-hidden />
-                  {t.t("Duplicate")}
-                </button>
-                {orgAdmin && (
-                  <button type="button" className="btn btn--ghost btn--sm" title={t.t("Keep this theme for all the organisation's adventures")} onClick={() => void share(theme)}>
-                    <Building2 size={ICON.sm} aria-hidden />
-                    {t.t("Share with organisation")}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--sm"
-                  disabled={uses > 0}
-                  title={uses > 0 ? t.t("Steps still switch to this theme. Change them first.") : undefined}
-                  onClick={() => setDeleting(theme)}
-                >
-                  <Trash2 size={ICON.sm} aria-hidden />
-                  {t.t("Delete")}
-                </button>
-              </>
-            }
-            note={
-              <p className="field__hint theme-ed__note" role="status">
-                {shared?.slug === theme.slug
-                  ? shared.text
-                  : uses > 0 && t.plural(uses, { one: t.t("{{n}} step switches to this theme."), other: t.t("{{n}} steps switch to this theme.") })}{" "}
-                {orgAdmin && <a href={href({ name: "settings", tab: "themes" })}>{t.t("Organisation themes")}</a>}
-              </p>
-            }
-            preview={<SamplePreview brand={theme.look} />}
-          />
-        )}
-      </div>
+    <Modal title={t.t("Themes")} icon={<Palette size={ICON.md} />} size="xl" flush className="themes-modal" onClose={close}>
+      <RailLayout
+        label={t.t("Themes")}
+        current={theme ? theme.slug : NEW}
+        onPick={(id) => (id === NEW ? add(t.t("Theme {{n}}", { n: themes.length + 1 }), look ?? {}) : setCurrent(id))}
+        groups={[
+          {
+            label: t.t("Themes"),
+            entries: [
+              ...themes.map((th) => ({ id: th.slug, label: th.name || t.t("Untitled theme"), icon: <ThemeSwatch look={th.look as play.Brand} /> })),
+              { id: NEW, label: t.t("New theme"), icon: <span className="theme-swatch theme-swatch--add" aria-hidden><Plus size={ICON.sm} /></span> },
+            ],
+          },
+        ]}
+      >
+        <div className="themes">
+          {!theme ? (
+            <StarterGallery
+              onPick={(name, look) => add(name || t.t("Theme {{n}}", { n: themes.length + 1 }), look)}
+            />
+          ) : (
+            <ThemeEditor
+              name={theme.name}
+              onName={(name) => update({ name })}
+              look={theme.look}
+              onLook={(look) => update({ look })}
+              media
+              actions={
+                <>
+                  <Button size="sm" onClick={() => add(t.t("{{name}} (copy)", { name: theme.name }), theme.look)}>
+                    <Copy size={ICON.sm} aria-hidden />
+                    {t.t("Duplicate")}
+                  </Button>
+                  {orgAdmin && (
+                    <Button size="sm" title={t.t("Keep this theme for all the organisation's adventures")} onClick={() => void share(theme)}>
+                      <Building2 size={ICON.sm} aria-hidden />
+                      {t.t("Share with organisation")}
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={uses> 0}
+                    title={uses> 0 ? t.t("Steps still switch to this theme. Change them first.") : undefined}
+                    onClick={() => setDeleting(theme)}
+                 >
+                    <Trash2 size={ICON.sm} aria-hidden />
+                    {t.t("Delete")}
+                  </Button>
+                </>
+              }
+              note={
+                <p className="field__hint theme-ed__note" role="status">
+                  {shared?.slug === theme.slug
+                    ? shared.text
+                    : uses > 0 && t.plural(uses, { one: t.t("{{n}} step switches to this theme."), other: t.t("{{n}} steps switch to this theme.") })}{" "}
+                  {orgAdmin && <a href={href({ name: "settings", tab: "themes" })}>{t.t("Organisation themes")}</a>}
+                </p>
+              }
+              preview={<SamplePreview brand={theme.look} />}
+            />
+          )}
+        </div>
+      </RailLayout>
       {deleting && (
         <ConfirmModal
           title={t.t("Delete the theme “{{name}}”?", { name: deleting.name || t.t("Untitled theme") })}
@@ -178,7 +194,7 @@ export function ThemesModal({ graph, initial, onChange, onClose, look, onUse }: 
       {asking && (
         <ConfirmModal
           title={t.t("Use “{{name}}” for this adventure?", { name: asking.name || t.t("Untitled theme") })}
-          message={t.t("It becomes the adventure's look: what players see wherever no step changes the theme.")}
+          message={t.t("It becomes the adventure's main theme: what players see wherever no step changes the theme.")}
           confirmLabel={t.t("Use this theme")}
           onConfirm={() => {
             onUse?.(asking.look);
@@ -200,6 +216,6 @@ export function ThemesModal({ graph, initial, onChange, onClose, look, onUse }: 
           onCancel={() => setSharing(null)}
         />
       )}
-    </PanelModal>
+    </Modal>
   );
 }

@@ -10,9 +10,10 @@ import { AdventureSlug } from "./MediaEditor.tsx";
 import { adventures, play as playApi } from "@zonventure/api";
 import { useContext, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
-import { ICON } from "./dz/ui.tsx";
+import { Button, ICON } from "./dz/ui.tsx";
 import { PanelModal } from "./dz/dialogs.tsx";
 import { StarterGallery, canon } from "./StarterGallery.tsx";
+import { SamplePreview } from "./SamplePreview.tsx";
 
 /** What each typeface is for, in the author's words. */
 const FONT_LABELS: Record<string, string> = {
@@ -109,31 +110,38 @@ export function Look({ brand, saving, error, savedThemes, onApply, onAddTheme, o
     <section className="look insp__section">
       <h3>
         <ConceptIcon {...RESOURCE.look} />
-        {t.t("Look")}
+        {t.t("Theme")}
       </h3>
-      <div className="field">
-        <span className="field__label">{t.t("Main look")}</span>
-        <div className="look__main">
-          <span className="look__main-thumb look__thumb" style={brandVars(standard ? (DEFAULT_LOOK as play.Brand) : brand) as CSSProperties} aria-hidden>
-            <span className="theme-strip__aa">Aa</span>
-            <span className="theme-strip__dot" />
-          </span>
-          <span className="look__main-name">
-            {standard ? t.t("Standard look") : matched ? matched.name || t.t("Untitled theme") : t.t("Custom look (not a saved theme)")}
-          </span>
-          <button type="button" className="btn btn--sm" disabled={saving} onClick={() => setBrowsing(true)}>{t.t("Browse looks…")}</button>
+      <div className="look__body">
+        <div className="look__controls">
+          <div className="field">
+            <span className="field__label">{t.t("Main theme")}</span>
+            <div className="look__main">
+              <span className="look__main-thumb look__thumb" style={brandVars(standard ? (DEFAULT_LOOK as play.Brand) : brand) as CSSProperties} aria-hidden>
+                <span className="theme-strip__aa">Aa</span>
+                <span className="theme-strip__dot" />
+              </span>
+              <span className="look__main-name">
+                {standard ? t.t("Standard theme") : matched ? matched.name || t.t("Untitled theme") : t.t("Custom theme (not saved)")}
+              </span>
+              <Button size="sm" disabled={saving} onClick={() => setBrowsing(true)}>{t.t("Browse themes…")}</Button>
+            </div>
+          </div>
+          {error && <div className="alert alert--danger">{error}</div>}
+          <div className="look__actions">
+            {onEditThemes && <Button size="sm" onClick={onEditThemes}>{t.t("Edit themes…")}</Button>}
+            {value === "custom" && onSaveAsTheme && <Button size="sm" onClick={onSaveAsTheme}>{t.t("Save as a theme")}</Button>}
+          </div>
+          <p className="field__hint">
+            {t.t("Choosing a theme applies it at once, also to running events. Editing a theme later does not change the main theme: choose it again to apply the changes.")}
+          </p>
+        </div>
+        <div className="look__preview">
+          <SamplePreview brand={standard ? (DEFAULT_LOOK as play.Brand) : brand} />
         </div>
       </div>
-      {error && <div className="alert alert--danger">{error}</div>}
-      <div className="look__actions">
-        {onEditThemes && <button type="button" className="btn btn--ghost btn--sm" onClick={onEditThemes}>{t.t("Edit themes…")}</button>}
-        {value === "custom" && onSaveAsTheme && <button type="button" className="btn btn--ghost btn--sm" onClick={onSaveAsTheme}>{t.t("Save this look as a theme")}</button>}
-      </div>
-      <p className="field__hint">
-        {t.t("Choosing a look applies it at once, also to running events. Changing a theme later does not change the main look: choose it again to apply the changes.")}
-      </p>
       {browsing && (
-        <PanelModal title={t.t("Choose a look")} wide onClose={() => setBrowsing(false)}>
+        <PanelModal title={t.t("Choose a theme")} wide onClose={() => setBrowsing(false)}>
           <StarterGallery
             heading=""
             ownLookHint={false}
@@ -368,9 +376,9 @@ function ColourRow({ label, hint, value, onSet }: { label: string; hint: string;
         }}
       />
       {value && (
-        <button type="button" className="icon-remove" onClick={() => onSet(null)} aria-label={t.t("Use the default")}>
+        <Button variant="ghost" size="icon" className="danger" onClick={() => onSet(null)} aria-label={t.t("Use the default")}>
           <X size={ICON.sm} />
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -418,8 +426,8 @@ function Celebration({ brand, setStyle, media }: { brand: play.Brand; setStyle: 
         </>
       )}
       <div className="look__actions">
-        <button type="button" className="btn btn--ghost btn--sm" onClick={() => demoAnswer(true)}>{t.t("Try a right answer")}</button>
-        <button type="button" className="btn btn--ghost btn--sm" onClick={() => demoAnswer(false)}>{t.t("Try a wrong answer")}</button>
+        <Button size="sm" onClick={() => demoAnswer(true)}>{t.t("Try a right answer")}</Button>
+        <Button size="sm" onClick={() => demoAnswer(false)}>{t.t("Try a wrong answer")}</Button>
       </div>
       <p className="field__hint">{t.t("The words are the same in every language the adventure is played in.")}</p>
     </>
@@ -439,16 +447,16 @@ function SoundPick({ label, id, onPick }: { label: string; id: number | undefine
       <div className="look__actions">
         {id ? (
           <>
-            <button type="button" className="btn btn--ghost btn--sm" onClick={() => void new Audio(playApi.mediaURL(id)).play().catch(() => {})}>▶ {t.t("Listen")}</button>
-            <button type="button" className="btn btn--ghost btn--sm" disabled={busy || !slug} onClick={() => input.current?.click()}>{t.t("Replace")}</button>
-            <button type="button" className="icon-remove" aria-label={t.t("No sound")} onClick={() => onPick(undefined)}>
+            <Button size="sm" onClick={() => void new Audio(playApi.mediaURL(id)).play().catch(() => {})}>▶ {t.t("Listen")}</Button>
+            <Button size="sm" disabled={busy || !slug} onClick={() => input.current?.click()}>{t.t("Replace")}</Button>
+            <Button variant="ghost" size="icon" className="danger" aria-label={t.t("No sound")} onClick={() => onPick(undefined)}>
               <X size={ICON.sm} />
-            </button>
+            </Button>
           </>
         ) : (
-          <button type="button" className="btn btn--ghost btn--sm" disabled={busy || !slug} onClick={() => input.current?.click()}>
+          <Button size="sm" disabled={busy || !slug} onClick={() => input.current?.click()}>
             {busy ? t.t("Uploading…") : t.t("Choose a sound")}
-          </button>
+          </Button>
         )}
       </div>
       <input

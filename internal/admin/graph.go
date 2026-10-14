@@ -153,6 +153,21 @@ func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 			before = was.Graph
 		}
 	}
+	// Removing a language deletes all its texts at once: like the other
+	// steps that are hard to take back, it takes the password.
+	langs, err := graphstore.DraftLanguages(r.Context(), h.DB, advID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading draft failed", err)
+		return
+	}
+	for _, l := range langs {
+		if _, kept := env.Graph.Translations[l]; !kept {
+			if !h.requirePasswordConfirm(w, r) {
+				return
+			}
+			break
+		}
+	}
 	kept := h.keptOver(r, advID, &env.Graph, base)
 	d, report, err := graphstore.SaveDraftIf(r.Context(), h.DB, advID, h.userID(r), &env.Graph, base)
 	if errors.Is(err, graphstore.ErrDraftChanged) {

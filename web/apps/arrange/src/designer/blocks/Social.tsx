@@ -1,5 +1,5 @@
 import { Plus, X } from "lucide-react";
-import { ICON } from "../dz/ui.tsx";
+import { Button, ICON } from "../dz/ui.tsx";
 import { withField, type Editor, type EditorProps, type T } from "./types.ts";
 import { MarkdownArea } from "../MarkdownArea.tsx";
 import { focusAdded } from "../fields.tsx";
@@ -18,9 +18,9 @@ function TextList({ items, set, min, rows, placeholder, label, addLabel, t }: { 
               <input className="field__input" value={s} placeholder={placeholder} aria-label={label(i)} onChange={(e) => change(i, e.target.value)} />
             )}
           </div>
-          <button type="button" className="icon-remove" disabled={items.length <= min} onClick={() => set(items.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
+          <Button variant="ghost" size="icon" className="danger" disabled={items.length <= min} onClick={() => set(items.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
             <X size={ICON.sm} />
-          </button>
+          </Button>
         </div>
       ))}
       <button type="button" className="add-btn" onClick={(e) => {

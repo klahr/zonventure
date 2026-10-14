@@ -153,7 +153,7 @@ export function EmailLookCard({ orgName, canEdit, brand }: { orgName: string; ca
   );
 
   return (
-    <Card title={t.t("Email look")} subtitle={t.t("How the emails your organization sends to players and designers look.")}>
+    <Card title={t.t("Email theme")} subtitle={t.t("How the emails your organization sends to players and designers look.")}>
       {body}
     </Card>
   );

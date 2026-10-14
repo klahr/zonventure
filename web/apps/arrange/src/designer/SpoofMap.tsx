@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Zone } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
-import { STYLE, loadMapLibre, mapLocale, shape } from "./ZoneMap.tsx";
+import { mapStyle, loadMapLibre, mapLocale, shape } from "./ZoneMap.tsx";
 import { conceptColor } from "./dz/concepts.tsx";
 import { DEFAULT_CENTRE } from "./zones.ts";
 
@@ -34,7 +34,7 @@ export function SpoofMap({ zones, position, focus, onPick, disabled }: { zones: 
       .then((lib) => {
         if (cancelled || !box.current) return;
         const first = position ?? zones[0] ?? DEFAULT_CENTRE;
-        const map = new lib.Map({ container: box.current, style: STYLE, center: [first.lng, first.lat], zoom: 15, attributionControl: { compact: true }, locale: mapLocale(t) });
+        const map = new lib.Map({ container: box.current, style: mapStyle(), center: [first.lng, first.lat], zoom: 15, attributionControl: { compact: true }, locale: mapLocale(t) });
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         map.on("load", () => {
           map.addSource("zones", { type: "geojson", data: { type: "FeatureCollection", features: [] } });

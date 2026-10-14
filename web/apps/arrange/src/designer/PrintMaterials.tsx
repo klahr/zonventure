@@ -4,7 +4,7 @@ import { MAX_PRINT_MATERIALS, type Delivery, type Graph, type PrintMaterial } fr
 import { FileText, Plus, Trash2 } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
-import { ICON } from "./dz/ui.tsx";
+import { Button, ICON } from "./dz/ui.tsx";
 import { AdventureSlug } from "./MediaEditor.tsx";
 import { languageName, translationLanguages } from "./Translate.tsx";
 
@@ -56,9 +56,9 @@ export function PrintMaterials({ graph, main, onChange }: { graph: Graph; main: 
               onChange={(e) => update(i, { ...pm, delivery: e.target.value as Delivery })}>
               {deliveries.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
             </select>
-            <button type="button" className="icon-remove" onClick={() => set(materials.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
+            <Button variant="ghost" size="icon" className="danger" onClick={() => set(materials.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
               <Trash2 size={ICON.sm} />
-            </button>
+            </Button>
           </div>
           {langs.map((l) => (
             <PrintFile
@@ -116,17 +116,17 @@ function PrintFile({ lang, id, required, onChange }: { lang: string; id: number 
     <div className="box__row print__file">
       <span className="print__lang">{languageName(lang)}</span>
       {id ? (
-        <a className="link-btn" href={play.mediaURL(id)} target="_blank" rel="noreferrer">
+        <a className="btn link" href={play.mediaURL(id)} target="_blank" rel="noreferrer">
           <FileText size={ICON.sm} aria-hidden="true" /> {t.t("Open PDF")}
         </a>
       ) : (
         <span className={required ? "field__error" : "field__hint"}>{required ? t.t("Missing: needed to post it") : t.t("No PDF")}</span>
       )}
       <input ref={input} type="file" accept="application/pdf" hidden onChange={(e) => void pick(e.target.files?.[0])} />
-      <button type="button" className="link-btn" disabled={busy || !slug} onClick={() => input.current?.click()}>
+      <Button variant="link" disabled={busy || !slug} onClick={() => input.current?.click()}>
         {busy ? t.t("Uploading…") : id ? t.t("Replace") : t.t("Upload PDF")}
-      </button>
-      {id && <button type="button" className="link-btn" onClick={() => onChange(undefined)}>{t.t("Remove")}</button>}
+      </Button>
+      {id && <Button variant="link" onClick={() => onChange(undefined)}>{t.t("Remove")}</Button>}
       {error && <span className="field__error" role="alert">{error}</span>}
     </div>
   );

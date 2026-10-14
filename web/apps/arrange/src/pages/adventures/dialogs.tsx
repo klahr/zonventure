@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Pencil } from "lucide-react";
 import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
-import { Button, Dialog, Field, HelpPopover, ICON, ImageDrop, MarkdownArea, ProposalPanel, Row, fmtDateTime, getProposal, proposedText, useDialogs, useLoad, useToast, type Proposal } from "../../ui/index.ts";
+import { Button, Dialog, Field, HelpPopover, ICON, ImageDrop, MarkdownArea, ProposalPanel, RailLayout, Row, fmtDateTime, getProposal, proposedText, useDialogs, useLoad, useToast, type Proposal } from "../../ui/index.ts";
 import { downscaleImage, firstPlaceOf, getEdit, getGraphState, importAdventure, removeCover, updateAdventure, uploadCover, type AdventurePatch, type AdventureEdit, type Assignment } from "./api.ts";
 import { PointMap } from "../../designer/PointMap.tsx";
 
@@ -191,7 +191,7 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
   const load = { error: edit.error, data: merged };
   const heldLabels: Record<string, string> = {
     title: t.t("Title"), description: t.t("Description"), author: t.t("Author"), intro_text: t.t("Intro"),
-    outro_text: t.t("Outro"), buyer_note: t.t("Buyer note"), area: t.t("Area"), start_label: t.t("Meeting point"), look_cover: t.t("Cover picture in the look"),
+    outro_text: t.t("Outro"), buyer_note: t.t("Buyer note"), area: t.t("Area"), start_label: t.t("Meeting point"), look_cover: t.t("Cover picture in the theme"),
   };
   // Nothing published to copy a start from: the draft's first place instead.
   const draft = useLoad((signal) => (firstPlace ? Promise.resolve(null) : getGraphState(slug, signal).catch(() => null)), [slug, !!firstPlace]);
@@ -222,6 +222,11 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
   const radiusOf = (x: Form) => (x.require_start ? coord(x.radius) : null);
   const radiusBad = !!f && f.require_start && (radiusOf(f) == null || radiusOf(f)! < 5 || radiusOf(f)! > 5000);
   const requireWithoutPoint = !!f && f.require_start && (coord(f.lat) == null || coord(f.lng) == null);
+  // One section at a time beside the rail. The form's values live in f,
+  // so Save sends and checks every section, shown or not.
+  const [section, setSection] = useState("basics");
+  const basicsBad = !!f && (badSlug || !f.title.trim());
+  const startBad = latBad || lngBad || halfStart || radiusBad || requireWithoutPoint;
 
   const save = async () => {
     if (!f || !initial || badSlug || !f.title.trim() || latBad || lngBad || halfStart || radiusBad || requireWithoutPoint) return;
@@ -287,7 +292,10 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
 
   return (
     <Dialog
-      wide
+      huge
+      flush
+      className="details-modal"
+      icon={<Pencil size={ICON.md} />}
       title={t.t("Edit details")}
       onClose={close}
       onSubmit={save}
@@ -298,135 +306,166 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
         </>
       }
     >
-      {err && <p className="cs-field__error" role="alert">{err}</p>}
-      {!f && !err && <p className="cs-loading">{t.t("Loading…")}</p>}
+      {err && <p className="cs-field__error details-modal__note" role="alert">{err}</p>}
+      {!f && !err && <p className="cs-loading details-modal__note">{t.t("Loading…")}</p>}
       {f && (
-        <>
-          <ProposalPanel
-            kind="adventure"
-            base={proposalURL}
-            proposal={prop.data}
-            labels={heldLabels}
-            pictures={[{ key: "image", label: t.t("Cover picture") }]}
-            onChanged={() => {
-              prop.reload();
-              onSaved(slug);
-            }}
-          />
-          <div className="adv-cover-row__text">
-            <span className="cs-field__label">{t.t("Cover picture")}</span>
-            <ImageDrop
-              shape="photo"
-              src={cover}
-              label={t.t("Upload cover")}
-              title={t.t("Click to upload a cover")}
-              accept="image/*"
-              onFile={(f) => void onFile(f)}
-              onRemove={() => void dropCover()}
-              removeLabel={t.t("Remove cover")}
-            />
-          </div>
-          <Field label={t.t("Title")}>
-            <input autoFocus required value={f.title} onChange={(e) => set("title", e.target.value)} />
-          </Field>
-          <Field label={t.t("Short name")} error={badSlug ? t.t("Lowercase a–z, digits, and hyphens only.") : undefined} hint={t.t("Used in links. Renaming breaks links already shared.")}>
-            <input required value={f.slug} onChange={(e) => set("slug", e.target.value)} aria-invalid={badSlug || undefined} />
-          </Field>
-          <Field label={t.t("Description")}>
-            <textarea rows={2} value={f.description} onChange={(e) => set("description", e.target.value)} />
-          </Field>
-          <Field label={t.t("Author")} {...(edit.data?.original_author ? { hint: t.t("Imported: originally by {{name}}.", { name: edit.data.original_author }) } : {})}>
-            <input value={f.author} onChange={(e) => set("author", e.target.value)} />
-          </Field>
-          <Field label={t.t("Area — where it is played")} hint={t.t("A few words for the store card and map, such as “Göteborg · Slottsskogen” or “At home”.")}>
-            <input value={f.area} maxLength={80} onChange={(e) => set("area", e.target.value)} />
-          </Field>
-          <Field label={t.t("Intro — shown on the welcome screen")} hint={t.t("Markdown. Leave empty for the default welcome + tips.")}>
-            <MarkdownArea rows={5} value={f.intro_text} onChange={(e) => set("intro_text", e.target.value)} />
-          </Field>
-          <Field label={t.t("Outro — shown on the completion screen")} hint={t.t("Markdown. Leave empty for the default celebratory line.")}>
-            <MarkdownArea rows={3} value={f.outro_text} onChange={(e) => set("outro_text", e.target.value)} />
-          </Field>
-          <Field label={t.t("Buyer note — added to the purchase email")} hint={t.t("Markdown. Sent to whoever buys the adventure, never shown to players. Use it for instructions or printables the players must not see.")}>
-            <MarkdownArea rows={3} value={f.buyer_note} onChange={(e) => set("buyer_note", e.target.value)} />
-          </Field>
-          <fieldset className="adv-fieldset">
-            <legend className="cs-field__label">
-              {t.t("Starting location (optional)")}{" "}
-              <HelpPopover label={t.t("About the starting location")} body={t.t("Shown on the catalog page and the player welcome overlay so the team knows where to meet up. Leave blank to fall back to the first gated puzzle's location.")} />
-            </legend>
-            <div className="adv-form-grid">
-              <Field label={t.t("Lat")} error={latBad ? t.t("Not a number.") : undefined}>
-                <input type="number" step="any" min={-90} max={90} inputMode="decimal" placeholder="59.3214" value={f.lat} onChange={(e) => set("lat", e.target.value)} />
+        <RailLayout
+          label={t.t("Edit details")}
+          current={section}
+          onPick={setSection}
+          groups={[
+            {
+              label: t.t("Details"),
+              entries: [
+                { id: "basics", label: t.t("Basics"), alert: basicsBad },
+                { id: "texts", label: t.t("Texts") },
+                { id: "start", label: t.t("Starting location"), alert: startBad },
+                { id: "advanced", label: t.t("Advanced") },
+              ],
+            },
+          ]}
+        >
+          {section === "basics" && (
+            <div className="details-section">
+              <ProposalPanel
+                kind="adventure"
+                base={proposalURL}
+                proposal={prop.data}
+                labels={heldLabels}
+                pictures={[{ key: "image", label: t.t("Cover picture") }]}
+                onChanged={() => {
+                  prop.reload();
+                  onSaved(slug);
+                }}
+              />
+              <div className="adv-cover-row__text">
+                <span className="cs-field__label">{t.t("Cover picture")}</span>
+                <ImageDrop
+                  shape="photo"
+                  src={cover}
+                  label={t.t("Upload cover")}
+                  title={t.t("Click to upload a cover")}
+                  accept="image/*"
+                  onFile={(f) => void onFile(f)}
+                  onRemove={() => void dropCover()}
+                  removeLabel={t.t("Remove cover")}
+                />
+              </div>
+              <Field label={t.t("Title")}>
+                <input autoFocus required value={f.title} onChange={(e) => set("title", e.target.value)} />
               </Field>
-              <Field label={t.t("Lng")} error={lngBad ? t.t("Not a number.") : undefined}>
-                <input type="number" step="any" min={-180} max={180} inputMode="decimal" placeholder="18.0641" value={f.lng} onChange={(e) => set("lng", e.target.value)} />
+              <Field label={t.t("Short name")} error={badSlug ? t.t("Lowercase a–z, digits, and hyphens only.") : undefined} hint={t.t("Used in links. Renaming breaks links already shared.")}>
+                <input required value={f.slug} onChange={(e) => set("slug", e.target.value)} aria-invalid={badSlug || undefined} />
+              </Field>
+              <Field label={t.t("Description")}>
+                <textarea rows={2} value={f.description} onChange={(e) => set("description", e.target.value)} />
+              </Field>
+              <Field label={t.t("Author")} {...(edit.data?.original_author ? { hint: t.t("Imported: originally by {{name}}.", { name: edit.data.original_author }) } : {})}>
+                <input value={f.author} onChange={(e) => set("author", e.target.value)} />
+              </Field>
+              <Field label={t.t("Area — where it is played")} hint={t.t("A few words for the store card and map, such as “Göteborg · Slottsskogen” or “At home”.")}>
+                <input value={f.area} maxLength={80} onChange={(e) => set("area", e.target.value)} />
               </Field>
             </div>
-            <Field label={t.t("Label")}>
-              <input maxLength={200} value={f.start_label} placeholder={t.t("e.g. “Monteliusvägen, vid bänken under trappan”")} onChange={(e) => set("start_label", e.target.value)} />
-            </Field>
-            <label className="adv-check">
-              <input type="checkbox" checked={f.require_start} onChange={(e) => set("require_start", e.target.checked)} />
-              <span>{t.t("Teams must be at the starting point to begin")}</span>
-              <HelpPopover label={t.t("Teams must be at the starting point to begin")} body={t.t("The start stays locked on the phones until a player on the team is within this distance of the starting point. The clock starts when the team begins, not when the event does.")} />
-            </label>
-            {f.require_start && (
-              <Field label={t.t("Radius (metres)")} error={radiusBad ? t.t("Between 5 and 5000 metres.") : undefined}>
-                <input type="number" min={5} max={5000} step={5} inputMode="numeric" value={f.radius} onChange={(e) => set("radius", e.target.value)} />
+          )}
+          {section === "texts" && (
+            <div className="details-section">
+              <Field label={t.t("Intro — shown on the welcome screen")} hint={t.t("Markdown. Leave empty for the default welcome + tips.")}>
+                <MarkdownArea rows={5} value={f.intro_text} onChange={(e) => set("intro_text", e.target.value)} />
               </Field>
-            )}
-            {requireWithoutPoint && <p className="cs-field__error" role="alert">{t.t("Set the starting point first.")}</p>}
-            {halfStart && <p className="cs-field__error" role="alert">{t.t("Set both coordinates, or clear both.")}</p>}
-            <PointMap
-              value={coord(f.lat) != null && coord(f.lng) != null ? { lat: coord(f.lat)!, lng: coord(f.lng)! } : null}
-              fallback={place}
-              radius={f.require_start ? coord(f.radius) : null}
-              onChange={(p) => setF((x) => (x ? { ...x, lat: String(p.lat), lng: String(p.lng) } : x))}
-            />
-            <Row gap="sm">
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={!place}
-                title={place ? undefined : t.t("No gated puzzle to copy from yet.")}
-                onClick={() => place && setF((x) => (x ? { ...x, lat: String(place.lat), lng: String(place.lng) } : x))}
+              <Field label={t.t("Outro — shown on the completion screen")} hint={t.t("Markdown. Leave empty for the default celebratory line.")}>
+                <MarkdownArea rows={3} value={f.outro_text} onChange={(e) => set("outro_text", e.target.value)} />
+              </Field>
+              <Field label={t.t("Buyer note — added to the purchase email")} hint={t.t("Markdown. Sent to whoever buys the adventure, never shown to players. Use it for instructions or printables the players must not see.")}>
+                <MarkdownArea rows={3} value={f.buyer_note} onChange={(e) => set("buyer_note", e.target.value)} />
+              </Field>
+            </div>
+          )}
+          {section === "start" && (
+            <div className="details-section">
+              <fieldset className="adv-fieldset">
+                <legend className="cs-field__label">
+                  {t.t("Starting location (optional)")}{" "}
+                  <HelpPopover label={t.t("About the starting location")} body={t.t("Shown on the catalog page and the player welcome overlay so the team knows where to meet up. Leave blank to fall back to the first gated puzzle's location.")} />
+                </legend>
+                <div className="adv-form-grid">
+                  <Field label={t.t("Lat")} error={latBad ? t.t("Not a number.") : undefined}>
+                    <input type="number" step="any" min={-90} max={90} inputMode="decimal" placeholder="59.3214" value={f.lat} onChange={(e) => set("lat", e.target.value)} />
+                  </Field>
+                  <Field label={t.t("Lng")} error={lngBad ? t.t("Not a number.") : undefined}>
+                    <input type="number" step="any" min={-180} max={180} inputMode="decimal" placeholder="18.0641" value={f.lng} onChange={(e) => set("lng", e.target.value)} />
+                  </Field>
+                </div>
+                <Field label={t.t("Label")}>
+                  <input maxLength={200} value={f.start_label} placeholder={t.t("e.g. “Monteliusvägen, vid bänken under trappan”")} onChange={(e) => set("start_label", e.target.value)} />
+                </Field>
+                <label className="adv-check">
+                  <input type="checkbox" checked={f.require_start} onChange={(e) => set("require_start", e.target.checked)} />
+                  <span>{t.t("Teams must be at the starting point to begin")}</span>
+                  <HelpPopover label={t.t("Teams must be at the starting point to begin")} body={t.t("The start stays locked on the phones until a player on the team is within this distance of the starting point. The clock starts when the team begins, not when the event does.")} />
+                </label>
+                {f.require_start && (
+                  <Field label={t.t("Radius (metres)")} error={radiusBad ? t.t("Between 5 and 5000 metres.") : undefined}>
+                    <input type="number" min={5} max={5000} step={5} inputMode="numeric" value={f.radius} onChange={(e) => set("radius", e.target.value)} />
+                  </Field>
+                )}
+                {requireWithoutPoint && <p className="cs-field__error" role="alert">{t.t("Set the starting point first.")}</p>}
+                {halfStart && <p className="cs-field__error" role="alert">{t.t("Set both coordinates, or clear both.")}</p>}
+                <PointMap
+                  value={coord(f.lat) != null && coord(f.lng) != null ? { lat: coord(f.lat)!, lng: coord(f.lng)! } : null}
+                  fallback={place}
+                  radius={f.require_start ? coord(f.radius) : null}
+                  onChange={(p) => setF((x) => (x ? { ...x, lat: String(p.lat), lng: String(p.lng) } : x))}
+                />
+                <Row gap="sm">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!place}
+                    title={place ? undefined : t.t("No gated puzzle to copy from yet.")}
+                    onClick={() => place && setF((x) => (x ? { ...x, lat: String(place.lat), lng: String(place.lng) } : x))}
+                  >
+                    {t.t("Use first gated puzzle")}
+                  </Button>
+                </Row>
+              </fieldset>
+            </div>
+          )}
+          {section === "advanced" && (
+            <div className="details-section">
+              <label className="adv-check">
+                <input type="checkbox" checked={f.strict_assets} onChange={(e) => set("strict_assets", e.target.checked)} />
+                <span>
+                  <strong>{t.t("Strict assets")}</strong> — {t.t("Hide images and audio for pages the team hasn't reached yet")}{" "}
+                  <HelpPopover label={t.t("About strict assets")} body={t.t("Default off lets the offline cache prefetch every page's media. Turn on for hunts where the picture is the puzzle (find-the-glyph, hidden QR, map fragments).")} />
+                </span>
+              </label>
+              <Field
+                label={t.t("Cheat password")}
+                hint={t.t("Optional: for testing, or for helping a stuck team past a step during an event. Leave empty for none. On the phone, tap the adventure's title 7 times and enter it: every answer then counts as right, for no points, and the team is left out of the rankings.")}
               >
-                {t.t("Use first gated puzzle")}
-              </Button>
-            </Row>
-          </fieldset>
-          <label className="adv-check">
-            <input type="checkbox" checked={f.strict_assets} onChange={(e) => set("strict_assets", e.target.checked)} />
-            <span>
-              <strong>{t.t("Strict assets")}</strong> — {t.t("Hide images and audio for pages the team hasn't reached yet")}{" "}
-              <HelpPopover label={t.t("About strict assets")} body={t.t("Default off lets the offline cache prefetch every page's media. Turn on for hunts where the picture is the puzzle (find-the-glyph, hidden QR, map fragments).")} />
-            </span>
-          </label>
-          <Field
-            label={t.t("Cheat password")}
-            hint={t.t("Optional: for testing, or for helping a stuck team past a step during an event. Leave empty for none. On the phone, tap the adventure's title 7 times and enter it: every answer then counts as right, for no points, and the team is left out of the rankings.")}
-          >
-            <Row>
-              <input
-                type={showCheat ? "text" : "password"}
-                autoComplete="off"
-                value={f.cheat_password}
-                onChange={(e) => set("cheat_password", e.target.value)}
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={showCheat ? t.t("Hide password") : t.t("Show password")}
-                title={showCheat ? t.t("Hide password") : t.t("Show password")}
-                aria-pressed={showCheat}
-                icon={showCheat ? <EyeOff size={ICON.sm} aria-hidden /> : <Eye size={ICON.sm} aria-hidden />}
-                onClick={() => setShowCheat((v) => !v)}
-              />
-            </Row>
-          </Field>
-          <p className="cs-field__hint">{t.t("The language, translations, colours and fonts are under Adventure settings in the designer.")}</p>
-        </>
+                <Row>
+                  <input
+                    type={showCheat ? "text" : "password"}
+                    autoComplete="off"
+                    value={f.cheat_password}
+                    onChange={(e) => set("cheat_password", e.target.value)}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={showCheat ? t.t("Hide password") : t.t("Show password")}
+                    title={showCheat ? t.t("Hide password") : t.t("Show password")}
+                    aria-pressed={showCheat}
+                    icon={showCheat ? <EyeOff size={ICON.sm} aria-hidden /> : <Eye size={ICON.sm} aria-hidden />}
+                    onClick={() => setShowCheat((v) => !v)}
+                  />
+                </Row>
+              </Field>
+              <p className="cs-field__hint">{t.t("The language, translations, colours and fonts are under Adventure settings in the designer.")}</p>
+            </div>
+          )}
+        </RailLayout>
       )}
     </Dialog>
   );

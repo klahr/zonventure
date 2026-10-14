@@ -1,6 +1,6 @@
 import type { SuspectCard } from "@zonventure/graph";
 import { Plus, X } from "lucide-react";
-import { ICON } from "../dz/ui.tsx";
+import { Button, ICON } from "../dz/ui.tsx";
 import { MediaEditor } from "../MediaEditor.tsx";
 import { withField, type Editor } from "./types.ts";
 import "./chat-editor.css";
@@ -27,9 +27,9 @@ export const SuspectsEditor: Editor<"suspects"> = ({ block, set, t }) => {
               />
             </div>
           </div>
-          <button type="button" className="icon-remove" disabled={cards.length < 2} onClick={() => setCards(cards.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
+          <Button variant="ghost" size="icon" className="danger" disabled={cards.length < 2} onClick={() => setCards(cards.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
             <X size={ICON.sm} />
-          </button>
+          </Button>
         </div>
       ))}
       <button type="button" className="add-btn" onClick={() => setCards([...cards, { name: "" }])}>

@@ -70,9 +70,14 @@ export async function getGraph<Env, Rep>(slug: string, signal?: AbortSignal) {
  * conflict, the author kept their own version over the last saver's,
  * who is told.
  */
-export const saveGraph = <Env, Rep>(slug: string, envelope: Env, since?: string, kept: string[] = []) =>
+/** Save the draft. Removing a language with texts takes the user's password. */
+export const saveGraph = <Env, Rep>(slug: string, envelope: Env, since?: string, kept: string[] = [], password?: string) =>
   put<GraphPayload<Env, Rep>>(base(slug), envelope, {
-    headers: { ...(since ? { "X-Draft-Base": since } : {}), ...(kept.length ? { "X-Kept-Steps": kept.map(encodeURIComponent).join(",") } : {}) },
+    headers: {
+      ...(since ? { "X-Draft-Base": since } : {}),
+      ...(kept.length ? { "X-Kept-Steps": kept.map(encodeURIComponent).join(",") } : {}),
+      ...(password ? { "X-Confirm-Password": password } : {}),
+    },
   });
 
 /** Release the saved draft. Refused (422 graph_invalid) when it has errors. */

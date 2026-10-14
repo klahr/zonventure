@@ -16,6 +16,16 @@ export interface StripTheme {
  * The themes to edit, side by side: each a small card in its own page
  * colour, background, title face and accent, and New theme last.
  */
+/** A theme's background and accent in small, beside its name in a list. */
+export function ThemeSwatch({ look }: { look: play.Brand }) {
+  loadFont(look.heading_font ?? look.font);
+  return (
+    <span className="theme-swatch look__thumb" style={brandVars(look) as CSSProperties} aria-hidden>
+      <span className="theme-strip__dot" />
+    </span>
+  );
+}
+
 export function ThemeStrip({ themes, current, adding, onPick, onAdd }: { themes: StripTheme[]; current: string | null; adding: boolean; onPick: (key: string) => void; onAdd: () => void }) {
   const t = useT();
   return (

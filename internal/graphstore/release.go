@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
@@ -123,6 +124,22 @@ func SaveRound(ctx context.Context, q Querier, adventureID, eventID int64, g *gr
 		RETURNING id
 	`, adventureID, doc, eventID).Scan(&id)
 	return id, err
+}
+
+// DraftLanguages lists the languages the draft has translated text in,
+// read straight from the stored document so an autosave need not decode
+// the whole draft to learn them. Without a draft there are none.
+func DraftLanguages(ctx context.Context, q Querier, adventureID int64) ([]string, error) {
+	var langs string
+	err := q.QueryRowContext(ctx, `
+		SELECT COALESCE(string_agg(t.key, ',' ORDER BY t.key), '')
+		FROM adventure_graph_drafts d, jsonb_each(COALESCE(d.graph->'translations', '{}'::jsonb)) t
+		WHERE d.adventure_id = $1 AND jsonb_typeof(t.value) = 'object' AND t.value <> '{}'::jsonb
+	`, adventureID).Scan(&langs)
+	if err != nil || langs == "" {
+		return nil, err
+	}
+	return strings.Split(langs, ","), nil
 }
 
 // LoadDraft returns the draft, or ErrNotFound.
