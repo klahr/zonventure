@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.30.3] - 2026-10-14
+
 ### Changed
 
 - Every dialog in the console and the designer shares one design: the
