@@ -11,6 +11,37 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Gift box partners are each organisation's own. Under Gift boxes →
+  Partners, "Add partner" sets one up: its name, the one or two codes
+  its boxes carry (each with a label in English and Swedish, an example,
+  a shortest and longest length, digits only or letters and digits) and
+  a hint for buyers. "Edit partner" changes it later. The redeem page
+  asks for exactly those codes. Existing Live it and TrueStory partners
+  carry over unchanged.
+- `ZV_CURRENCY` sets the currency everything is sold in (ISO 4217, two
+  decimals; default `sek`). Set it before the first sale.
+- `ZV_TIME_ZONE` and `ZV_SHIP_COUNTRIES` set the time zone and the
+  countries letters are posted to for an organisation that hasn't chosen
+  its own (defaults Europe/Stockholm and SE). `ZV_MAP_CENTER` (`lat,lng`)
+  sets where a map opens with nothing to show.
+
+### Changed
+
+- A gift box code can be redeemed once per partner, no longer once
+  across every organisation that takes the same partner's boxes.
+- Price labels in the console show the instance's currency instead of
+  "kr" or "SEK".
+
+### Upgrading
+
+- An operator's own `redeem.html` override must follow the new script:
+  partners are picked by `id` and their inputs come from `fields`
+  (see `internal/server/web/redeem.html`). The `REDEEM_BOX_NUMBER_LABEL`,
+  `REDEEM_SECURITY_CODE_LABEL`, `REDEEM_EXPERIENCE_CODE_LABEL`,
+  `REDEEM_LIVEIT_HINT` and `REDEEM_TRUESTORY_HINT` placeholders are gone.
+
 ## [0.30.3] - 2026-10-14
 
 ### Changed
