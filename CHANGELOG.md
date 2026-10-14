@@ -11,6 +11,13 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- An organisation given its own domain with no end date may use a
+  subdomain of the server's own domain (`adventures.zonventure.com`).
+  The server's own hostname and the CNAME names stay refused, and other
+  organisations still can't claim names there.
+
 ## [0.31.0] - 2026-10-14
 
 ### Added

@@ -101,4 +101,15 @@ func TestOwnDomainFlow(t *testing.T) {
 	if base := domains.Base(orgID, "https://zv.test"); base != "https://zv.test" {
 		t.Fatalf("links after removal: %q", base)
 	}
+
+	// A name under the instance's own domain: only with no end date.
+	if s, e := doErr(boss, "PUT", "/api/admin/orgs/me/domain", map[string]string{"host": "adventures.zv.test"}); s != 400 || e.Reason != "ours" {
+		t.Fatalf("own zone, yearly: %d %+v", s, e)
+	}
+	if _, err := db.Exec(`UPDATE organizations SET custom_domain_until = '9999-12-31' WHERE id = $1`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	if s := boss.do("PUT", "/api/admin/orgs/me/domain", map[string]string{"host": "adventures.zv.test"}, &d); s != 200 || d.Domain == nil || d.Domain.Host != "adventures.zv.test" {
+		t.Fatalf("own zone, no end date: %d %+v", s, d)
+	}
 }

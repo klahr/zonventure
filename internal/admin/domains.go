@@ -173,28 +173,43 @@ func orgAdminOnly(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	return *me.OrgID, true
 }
 
-// ourHosts are the instance's own hostnames, which no organisation may claim.
-func (h *Handlers) ourHosts() []string {
-	var out []string
-	if u := strings.TrimSpace(h.PublicURL); u != "" {
-		if i := strings.Index(u, "://"); i >= 0 {
-			u = u[i+3:]
-		}
-		u = strings.SplitN(u, "/", 2)[0]
-		if host, _, err := net.SplitHostPort(u); err == nil {
-			u = host
-		}
-		if u == "localhost" {
-			// A development instance: *.localhost names stand in for
-			// organisations' domains.
-			return nil
-		}
-		out = append(out, u)
-		if a := domains.Apex(u); a != "" {
-			out = append(out, a)
-		}
+// publicHost is the instance's own hostname (ZV_PUBLIC_URL's), "" on a
+// development instance, where *.localhost names stand in for
+// organisations' domains.
+func (h *Handlers) publicHost() string {
+	u := strings.TrimSpace(h.PublicURL)
+	if i := strings.Index(u, "://"); i >= 0 {
+		u = u[i+3:]
 	}
-	return out
+	u = strings.SplitN(u, "/", 2)[0]
+	if host, _, err := net.SplitHostPort(u); err == nil {
+		u = host
+	}
+	if u == "localhost" {
+		return ""
+	}
+	return strings.ToLower(u)
+}
+
+// ourHosts are the names no organisation may claim, nor any name under
+// them: the instance's own hostname (v4.zonventure.com). When that is
+// the bare registered domain, the apex rule refuses it already and its
+// subdomains are ownZone's to judge.
+func (h *Handlers) ourHosts() []string {
+	if p := h.publicHost(); p != "" && p != domains.Apex(p) {
+		return []string{p}
+	}
+	return nil
+}
+
+// ownZone reports whether host is under the instance's registered
+// domain (adventures.zonventure.com on zonventure.com). Only an
+// organisation given its domain with no end date may claim one: only
+// the operator can point such a name, so for anyone else a claim would
+// just reserve it.
+func (h *Handlers) ownZone(host string) bool {
+	apex := domains.Apex(h.publicHost())
+	return apex != "" && strings.HasSuffix(host, "."+apex)
 }
 
 // SetMyDomain claims a hostname for the caller's organisation, replacing
@@ -224,6 +239,10 @@ func (h *Handlers) SetMyDomain(w http.ResponseWriter, r *http.Request) {
 	host, refuse := domains.Normalize(req.Host, h.ourHosts()...)
 	if refuse != "" {
 		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "that address can't be used", "reason": refuse})
+		return
+	}
+	if h.ownZone(host) && !cur.Forever {
+		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "that address can't be used", "reason": domains.RefuseOurs})
 		return
 	}
 	if cur.Domain != nil && cur.Domain.Host == host {
