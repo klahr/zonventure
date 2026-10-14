@@ -334,6 +334,11 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Post("/events/{eventID}/teams", adminH.CreateTeam)
 			r.Post("/events/{eventID}/teams/bulk", adminH.BulkCreateTeams)
 			r.Post("/events/{eventID}/free-ticket", adminH.GiveFreeTicket)
+			// Pay-later voucher codes (admin/voucher_batches.go).
+			r.Get("/events/{eventID}/voucher-batches", adminH.ListVoucherBatches)
+			r.Post("/events/{eventID}/voucher-batches", adminH.CreateVoucherBatch)
+			r.Get("/voucher-batches/{batchID}/codes.csv", adminH.VoucherBatchCSV)
+			r.Post("/voucher-batches/{batchID}/void", adminH.VoidVoucherBatch)
 			// Team-roster file import — multipart upload, returns a
 			// parsed preview the client then submits to /teams/bulk
 			// after the arranger inspects it.
@@ -496,6 +501,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Get("/orgs/me/domain/guide/{provider}", adminH.DomainGuide)
 			r.Get("/orgs/me/domain/brand", adminH.GetMyDomainBrand)
 			r.Put("/orgs/me/domain/brand", adminH.SetMyDomainBrand)
+			r.Get("/orgs/me/voucher-use", adminH.MyVoucherUse)
 
 			// Purchases: arrangers buy player-slot assignments here. The
 			// simulated flow just needs the confirm endpoint; a future
@@ -563,6 +569,9 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 				// Grant or end an organisation's own domain.
 				r.Get("/organizations/{orgID}/custom-domain", adminH.GetOrgCustomDomain)
 				r.Put("/organizations/{orgID}/custom-domain", adminH.SetOrgCustomDomain)
+				// Used voucher codes to invoice, and marking them invoiced.
+				r.Get("/voucher-billing", adminH.VoucherBilling)
+				r.Post("/organizations/{orgID}/voucher-billing", adminH.MarkVoucherBilled)
 				// Who may review listings (the review itself is below).
 				r.Post("/listing-reviewers", adminH.SetListingReviewer)
 				r.Delete("/organizations/{orgID}", adminH.DeleteOrganization)

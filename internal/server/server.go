@@ -416,6 +416,7 @@ func New(cfg Config) http.Handler {
 	periodic.Start(bgCtx, time.Hour, adminH.SweepDeletionReminders)
 	// Organisations' own domains: DNS checks, going live, endings.
 	periodic.Start(bgCtx, time.Minute, adminH.SweepDomains)
+	playerH.ActivateVoucher = adminH.ActivateVoucherCode
 	publicH := &public.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL, Engine: playerH.Engine,
 		SecureCookie: cfg.SecureCookie,

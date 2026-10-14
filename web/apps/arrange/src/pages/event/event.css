@@ -141,3 +141,27 @@
 .dz .ev-prints { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--dz-space-2); }
 .dz .ev-prints li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--dz-space-3); }
 .dz .ev-prints li .ev-muted { flex-basis: 100%; font-size: var(--dz-text-sm); }
+
+/* Voucher codes (Vouchers.tsx). */
+.dz .vc-title { display: inline-flex; align-items: center; gap: var(--dz-space-2); }
+.dz .vc { display: flex; flex-direction: column; gap: var(--dz-space-3); }
+.dz .vc-price { margin: 0; font-weight: 600; color: var(--dz-ink); }
+.dz .vc-muted { margin: 0; color: var(--dz-muted); font-size: var(--dz-text-sm); }
+.dz .vc-err { margin: 0; color: var(--dz-danger); font-size: var(--dz-text-sm); }
+.dz .vc-form { display: flex; flex-direction: column; gap: var(--dz-space-2); padding: var(--dz-space-3); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); background: var(--dz-surface-2); }
+.dz .vc-batches { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--dz-space-2); }
+.dz .vc-batches li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(10rem, 14rem) auto; gap: var(--dz-space-3); align-items: center; padding: var(--dz-space-2) var(--dz-space-3); border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); }
+.dz .vc-batches li.is-voided { opacity: 0.6; }
+.dz .vc-batch__head { display: flex; flex-direction: column; min-width: 0; }
+.dz .vc-batch__head strong { overflow-wrap: anywhere; }
+.dz .vc-batch__meta { font-size: var(--dz-text-xs); color: var(--dz-muted); }
+.dz .vc-batch__use { display: flex; flex-direction: column; gap: 4px; font-size: var(--dz-text-xs); color: var(--dz-muted); }
+.dz .vc-bar { height: 6px; border-radius: 999px; background: var(--dz-surface-3); overflow: hidden; }
+.dz .vc-bar > span { display: block; height: 100%; background: var(--dz-accent); border-radius: inherit; }
+.dz .vc-batch__actions { display: flex; align-items: center; gap: var(--dz-space-2); flex-wrap: wrap; justify-content: flex-end; }
+.dz .vc-link { display: inline-flex; align-items: center; gap: 4px; font-size: var(--dz-text-sm); color: var(--dz-accent); text-decoration: none; white-space: nowrap; }
+.dz .vc-link:hover { text-decoration: underline; }
+@media (max-width: 48rem) {
+  .dz .vc-batches li { grid-template-columns: minmax(0, 1fr); }
+  .dz .vc-batch__actions { justify-content: flex-start; }
+}

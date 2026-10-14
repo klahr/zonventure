@@ -665,8 +665,8 @@ func createTicketTeamIn(ctx context.Context, tx *sql.Tx, eventID int64, buyerEma
 	return teamID, teamTok, voucher, nil
 }
 
-// uniqueVoucherCode allocates a fresh team voucher code not currently in
-// use. The 50-bit space makes a collision astronomically unlikely, so a
+// uniqueVoucherCode allocates a fresh voucher code not currently in use,
+// by a team or a voucher batch. The 50-bit space makes a collision astronomically unlikely, so a
 // handful of tries is plenty; the UNIQUE index on teams.voucher_code is
 // the ultimate backstop against a concurrent insert racing in.
 func uniqueVoucherCode(ctx context.Context, q interface {
@@ -678,8 +678,10 @@ func uniqueVoucherCode(ctx context.Context, q interface {
 			return "", err
 		}
 		var exists bool
+		// Batch codes (voucher_batches) share the space: an unused one
+		// becomes its team's voucher code when it is first used.
 		if err := q.QueryRowContext(ctx,
-			`SELECT EXISTS(SELECT 1 FROM teams WHERE voucher_code = $1)`, code).Scan(&exists); err != nil {
+			`SELECT EXISTS(SELECT 1 FROM teams WHERE voucher_code = $1) OR EXISTS(SELECT 1 FROM voucher_codes WHERE code = $1)`, code).Scan(&exists); err != nil {
 			return "", err
 		}
 		if !exists {

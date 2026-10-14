@@ -64,7 +64,10 @@ type Pricing struct {
 	// shows "Contact us" with no price. DomainContactURL is where an
 	// organisation asks for it (a mailto: or https: link); empty hides
 	// the offer.
-	DomainYearCents  int64  `json:"domain_year_cents"`
+	DomainYearCents int64 `json:"domain_year_cents"`
+	// VoucherCents is a pay-later voucher code, charged once when it is
+	// first used, on the organisation's invoice (voucher_batches).
+	VoucherCents     int64  `json:"voucher_cents"`
 	DomainContactURL string `json:"domain_contact_url"`
 }
 
@@ -72,7 +75,7 @@ type Pricing struct {
 const MaxPayoutTerms = 1000
 
 // DefaultPricing applies to any price never saved.
-var DefaultPricing = Pricing{PlayerCents: 4900, FreePlayers: 15, HostedBlockCents: 14900}
+var DefaultPricing = Pricing{PlayerCents: 4900, FreePlayers: 15, HostedBlockCents: 14900, VoucherCents: 2900}
 
 const (
 	keyPlayerCents      = "price_player_cents"
@@ -84,6 +87,7 @@ const (
 	keyVATExcluded      = "price_vat_excluded"
 	keyPayoutTerms      = "payout_terms"
 	keyDomainYearCents  = "price_domain_year_cents"
+	keyVoucherCents     = "price_voucher_cents"
 	keyDomainContactURL = "domain_contact_url"
 )
 
@@ -102,6 +106,7 @@ func (p *Pricing) fields() []struct {
 		{keyFeeFixedCents, &p.FeeFixedCents},
 		{keyFeeMinCents, &p.FeeMinCents},
 		{keyDomainYearCents, &p.DomainYearCents},
+		{keyVoucherCents, &p.VoucherCents},
 	}
 }
 

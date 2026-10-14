@@ -68,6 +68,9 @@ type Handlers struct {
 	// falls back to LogMailer so dev still sees the URL in stderr.
 	Mailer    mailerpkg.Mailer
 	PublicURL string
+	// ActivateVoucher turns an unused pay-later batch code into a team
+	// (admin.ActivateVoucherCode); nil when there are none to turn.
+	ActivateVoucher func(ctx context.Context, code string) (teamURL string, ok, closed bool)
 	// Engine runs graph adventures. The server sets one shared engine so
 	// its graph cache is shared; nil builds a throwaway one per call.
 	Engine *play.Engine

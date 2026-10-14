@@ -15,6 +15,7 @@ interface Pricing {
   payout_terms: string;
   domain_year_cents: number;
   domain_contact_url: string;
+  voucher_cents: number;
 }
 
 /** unconnectedSeller, internal/admin/pricing.go. */
@@ -24,14 +25,14 @@ interface Seller {
   listings: number;
 }
 
-type Price = "player_cents" | "free_players" | "hosted_block_cents" | "fee_percent_bps" | "fee_fixed_cents" | "fee_min_cents" | "domain_year_cents";
+type Price = "player_cents" | "free_players" | "hosted_block_cents" | "fee_percent_bps" | "fee_fixed_cents" | "fee_min_cents" | "domain_year_cents" | "voucher_cents";
 
 /** What the fields hold while typed: amounts and percent as written. */
 type Draft = Record<Price, string>;
 
-const KRONOR: Price[] = ["player_cents", "hosted_block_cents", "fee_fixed_cents", "fee_min_cents", "domain_year_cents"];
+const KRONOR: Price[] = ["player_cents", "hosted_block_cents", "fee_fixed_cents", "fee_min_cents", "domain_year_cents", "voucher_cents"];
 
-const FIELDS: Price[] = ["player_cents", "free_players", "hosted_block_cents", "fee_percent_bps", "fee_fixed_cents", "fee_min_cents", "domain_year_cents"];
+const FIELDS: Price[] = ["player_cents", "free_players", "hosted_block_cents", "fee_percent_bps", "fee_fixed_cents", "fee_min_cents", "domain_year_cents", "voucher_cents"];
 
 /** The settings alone: the server's response also carries its currency and the unconnected sellers, which are no field here. */
 function pick(p: Pricing): Pricing {
@@ -180,6 +181,18 @@ export function PricingTab() {
             </ul>
           </Callout>
         )}
+      </PriceCard>
+      <PriceCard
+        title={t.t("Voucher codes")}
+        who={t.t("Orgs with invoice billing print codes for a self-guided event and pay this for each code used, on a monthly invoice you send. Unused codes cost nothing; 0 makes them free.")}
+        keys={["voucher_cents"]}
+        saved={saved}
+        draft={draft}
+        parsed={parsed}
+        onSaved={onSaved}
+        example={now.voucher_cents > 0 ? t.t("100 codes, 60 used: 60 × {{price}} = {{total}}.", { price: kr(now.voucher_cents), total: kr(60 * now.voucher_cents) }) : t.t("Using codes is free.")}
+      >
+        <Field label={t.t("Price per code used")}>{input("voucher_cents", krIncl)}</Field>
       </PriceCard>
       <PriceCard
         title={t.t("Own domain")}

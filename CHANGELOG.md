@@ -11,6 +11,21 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Voucher codes you pay later, for selling adventures as envelopes or
+  gift cards in bookstores and shops. On a self-guided event, an
+  organisation with invoice billing makes a batch of codes (up to 2000,
+  with the players per code) and downloads them as CSV for printing. A
+  buyer types the code at /play: its first use starts a team, and
+  teammates who type it land on the same team. Each code used is charged
+  once, at the price under Settings → Pricing → Voucher codes (default
+  29 kr), and unused codes cost nothing. A batch can be voided, so its
+  unused codes stop working. Platform admins see what each organisation
+  owes under Settings → Purchases and mark it invoiced with the
+  invoice's number; the organisation sees what it owes on its Billing
+  page.
+
 ## [0.31.2] - 2026-10-14
 
 ### Added

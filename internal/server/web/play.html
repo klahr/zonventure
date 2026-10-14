@@ -255,6 +255,7 @@
     var p=new URLSearchParams(location.search);
     if(p.get("voucher")==="invalid") fail(t("That code didn't match. Check it and try again."));
     else if(p.get("voucher")==="busy") say(t("One moment — too many tries just now. Try again shortly."),"bad");
+    else if(p.get("voucher")==="closed") fail(t("This code's adventure isn't open right now. Ask whoever sold it to you."));
   }catch(e){}
 
   var busy=false;
@@ -285,6 +286,7 @@
         }
         busy=false; go.classList.remove("loading"); go.disabled=false;
         if(res.s===429) fail(t("Too many tries. Give it a minute, then try again."));
+        else if(res.s===409) fail(t("This code's adventure isn't open right now. Ask whoever sold it to you."));
         else fail(t("That code isn't valid. Check it and try again."));
       })
       .catch(function(){

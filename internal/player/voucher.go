@@ -35,6 +35,26 @@ func teamURLForVoucher(r *http.Request, db *sql.DB, code string) (string, bool) 
 	return "/team/" + token, true
 }
 
+// resolveVoucher is teamURLForVoucher, falling back to an unused batch
+// code (admin/voucher_batches.go), which its first use turns into a
+// team. closed says the code exists but can't start a team now.
+func (h *Handlers) resolveVoucher(r *http.Request, code string) (url string, ok, closed bool) {
+	if url, ok := teamURLForVoucher(r, h.DB, code); ok {
+		return url, true, false
+	}
+	if h.ActivateVoucher == nil || code == "" {
+		return "", false, false
+	}
+	url, ok, closed = h.ActivateVoucher(r.Context(), code)
+	if !ok && !closed {
+		// A teammate's first use may just have made the team.
+		if url, ok := teamURLForVoucher(r, h.DB, code); ok {
+			return url, true, false
+		}
+	}
+	return url, ok, closed
+}
+
 // VoucherRedeem is the JSON endpoint the /play code box posts to:
 // POST /api/play/voucher {"code":"..."} → {"team_url":"/team/..."} on a
 // hit, 404 otherwise. Public and rate-limited; the body carries only the
@@ -52,7 +72,14 @@ func (h *Handlers) VoucherRedeem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code := auth.NormalizeVoucherCode(req.Code)
-	url, ok := teamURLForVoucher(r, h.DB, code)
+	url, ok, closed := h.resolveVoucher(r, code)
+	if closed {
+		httpx.JSON(w, http.StatusConflict, map[string]string{
+			"error": "this code's adventure isn't open right now — ask whoever sold it",
+			"code":  "voucher_closed",
+		})
+		return
+	}
 	if !ok {
 		httpx.JSON(w, http.StatusNotFound, map[string]string{
 			"error": "that code isn't valid — check it and try again",
@@ -79,7 +106,11 @@ func (h *Handlers) VoucherLink(w http.ResponseWriter, r *http.Request) bool {
 		return true
 	}
 	code := auth.NormalizeVoucherCode(raw)
-	url, ok := teamURLForVoucher(r, h.DB, code)
+	url, ok, closed := h.resolveVoucher(r, code)
+	if closed {
+		http.Redirect(w, r, "/play?voucher=closed", http.StatusFound)
+		return true
+	}
 	if !ok {
 		http.Redirect(w, r, "/play?voucher=invalid", http.StatusFound)
 		return true
