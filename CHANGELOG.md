@@ -11,6 +11,25 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.31.2] - 2026-10-14
+
+### Added
+
+- Settings → Domain, "Make it yours": pick your own colours (accent,
+  secondary accent, background, text) right there, with the preview
+  following as you pick. The tagline can be changed there too, not only
+  added once.
+
+### Fixed
+
+- A tagline set under Settings → Domain seemed not to save for an
+  organisation with something for sale: it waits for review, and now
+  says so, with the review panel to send it in. Picking colours there no
+  longer throws away a tagline that waits for review.
+- The title typeface list shows the site's own typeface, Aclonica, as
+  the first choice, in its own face; the previews use it when no other
+  is chosen.
+
 ## [0.31.1] - 2026-10-14
 
 ### Changed
