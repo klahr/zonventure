@@ -48,6 +48,9 @@ type LegalConfig struct {
 	// host. Empty = OpenFreeMap's, free and open to commercial use.
 	MapStyleURL string
 	MapProvider string
+	// MapCenter is "lat,lng", where a map opens with no place to show
+	// (ValidMapCenter). Empty = the frontend's default.
+	MapCenter string
 	// Reviewed flips off the "draft template — needs lawyer review"
 	// banner, ticked under Settings → Legal once a lawyer has signed off
 	// on the wording; without it an unconfigured operator doesn't ship a
@@ -208,8 +211,22 @@ func mapConfigJS(c LegalConfig) []byte {
 	if d.MapTileURL != "" {
 		m["tile_url"], m["attribution"] = d.MapTileURL, d.MapTileAttribution
 	}
+	if d.MapCenter != "" {
+		m["center"] = d.MapCenter
+	}
 	b, _ := json.Marshal(m)
 	return []byte("window.ZV_MAP=" + string(b) + ";\n")
+}
+
+// ValidMapCenter reports whether s is "lat,lng" in range.
+func ValidMapCenter(s string) bool {
+	lat, lng, ok := strings.Cut(s, ",")
+	if !ok {
+		return false
+	}
+	a, errA := strconv.ParseFloat(strings.TrimSpace(lat), 64)
+	b, errB := strconv.ParseFloat(strings.TrimSpace(lng), 64)
+	return errA == nil && errB == nil && a >= -90 && a <= 90 && b >= -180 && b <= 180
 }
 
 // identityLines is the seller's registration data, each "label value"

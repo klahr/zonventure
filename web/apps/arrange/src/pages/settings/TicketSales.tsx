@@ -56,7 +56,7 @@ export function TicketSalesCard({ orgId }: { orgId?: number | undefined } = {}) 
   if (!load.data) return <Loading label={t.t("Loading…")} />;
   const sales = load.data.sales ?? [];
   const shown = sales.filter((s) => (filter === "abandoned" ? !!s.abandoned : !s.abandoned && (filter === "all" || s.state === filter)));
-  const money = (s: Sale) => fmtMoney(s.amount_cents, s.currency || "SEK", locale);
+  const money = (s: Sale) => fmtMoney(s.amount_cents, s.currency, locale);
 
   const kinds: Record<string, string> = {
     ticket: t.t("Self-guided ticket"),

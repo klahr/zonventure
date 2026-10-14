@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useT } from "../../i18n.tsx";
 import { Button, Dialog, Field, useToast } from "../../ui/index.ts";
-import { addProduct, createRedemption, updateProduct, type Partner, type PartnerProduct, type Redemption, type SelfGuidedEvent } from "./api.ts";
-import { langName, partnerLabel, regionName, useRedemptionError } from "./shared.ts";
+import { addPartner, addProduct, createRedemption, updatePartner, updateProduct, type Partner, type PartnerField, type PartnerProduct, type PartnerSetup, type Redemption, type SelfGuidedEvent } from "./api.ts";
+import { langName, localText, regionName, useRedemptionError } from "./shared.ts";
 
 /** Rejecting a code, with an optional reason the customer's email passes on. */
 export function RejectDialog({ email, onClose, onReject }: { email: string; onClose: () => void; onReject: (reason: string) => void }) {
@@ -75,7 +75,10 @@ export function AddRedemptionDialog({ partners, onClose, onDone }: { partners: P
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((v) => ({ ...v, [k]: e.target.value }));
   const picked = products.find((x) => String(x.id) === productId);
-  const liveit = picked?.partner.kind === "liveit";
+  // Two fields are box number then security code; one is the code alone.
+  const fields = picked?.partner.fields ?? [];
+  const two = fields.length === 2;
+  const codeField = fields[fields.length - 1];
   // A product whose event posts nothing needs no address.
   const letter = picked?.letter ?? null;
   const langs = letter?.languages ?? [];
@@ -88,7 +91,7 @@ export function AddRedemptionDialog({ partners, onClose, onDone }: { partners: P
     try {
       const rd = await createRedemption({
         product_id: picked ? picked.id : 0,
-        box_number: liveit ? f.box.trim() : "",
+        box_number: two ? f.box.trim() : "",
         security_code: f.code.trim(),
         name: f.name.trim(),
         email: f.email.trim(),
@@ -120,21 +123,15 @@ export function AddRedemptionDialog({ partners, onClose, onDone }: { partners: P
       <Field label={t.t("Product")}>
         <select value={productId} onChange={(e) => setProductId(e.target.value)} required autoFocus>
           {enabled.map((p) => (
-            <optgroup key={p.id} label={partnerLabel(p.kind, p.name)}>
+            <optgroup key={p.id} label={p.name}>
               {p.products.map((x) => <option key={x.id} value={x.id}>{x.name || x.adventure_title || x.event_name}</option>)}
             </optgroup>
           ))}
         </select>
       </Field>
       <div className="rd-grid">
-        {liveit && (
-          <Field label={t.t("Box number")}>
-            <input type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off" required value={f.box} onChange={set("box")} />
-          </Field>
-        )}
-        <Field label={liveit ? t.t("Security code") : t.t("Experience code")}>
-          <input type="text" required autoComplete="off" className="rd-mono" value={f.code} onChange={set("code")} {...(liveit ? {} : { minLength: 9, maxLength: 9 })} />
-        </Field>
+        {two && <CodeInput field={fields[0]!} value={f.box} onChange={set("box")} />}
+        {codeField && <CodeInput field={codeField} value={f.code} onChange={set("code")} />}
       </div>
       <Field label={t.t("Name")}><input type="text" required maxLength={200} value={f.name} onChange={set("name")} /></Field>
       <Field label={t.t("Email")}><input type="email" required maxLength={254} value={f.email} onChange={set("email")} /></Field>
@@ -196,7 +193,7 @@ export function ProductDialog({ partner, existing, events, onClose, onDone }: { 
 
   return (
     <Dialog
-      title={existing ? t.t("Edit product") : t.t("Add product to {{partner}}", { partner: partnerLabel(partner.kind, partner.name) })}
+      title={existing ? t.t("Edit product") : t.t("Add product to {{partner}}", { partner: partner.name })}
       onClose={onClose}
       onSubmit={submit}
       footer={<><Button onClick={onClose}>{t.t("Cancel")}</Button><Button type="submit" variant="primary" loading={busy}>{existing ? t.t("Save") : t.t("Add product")}</Button></>}
@@ -212,6 +209,104 @@ export function ProductDialog({ partner, existing, events, onClose, onDone }: { 
       <Field label={t.t("Players per team")}>
         <input type="number" min={1} max={50} required value={size} onChange={(e) => setSize(e.target.value)} />
       </Field>
+    </Dialog>
+  );
+}
+
+/** A partner's code input, named and shaped by its field. */
+function CodeInput({ field, value, onChange }: { field: PartnerField; value: string; onChange: (e: { target: { value: string } }) => void }) {
+  const t = useT();
+  return (
+    <Field label={localText(field.label, t.current())}>
+      <input type="text" required autoComplete="off" className="rd-mono" inputMode={field.digits ? "numeric" : "text"} placeholder={field.example} value={value} onChange={onChange} />
+    </Field>
+  );
+}
+
+/** The languages a partner's labels and hint are written in (partner_fields.go partnerLangs). */
+const PARTNER_LANGS = ["en", "sv"];
+
+const blankField = (): PartnerField => ({ label: {}, example: "", min: 1, max: 20, digits: false });
+
+/** Add (existing null) or set up a partner: its name, the one or two codes its boxes carry, and a hint for buyers. */
+export function PartnerDialog({ existing, onClose, onDone }: { existing: Partner | null; onClose: () => void; onDone: () => void }) {
+  const t = useT();
+  const toast = useToast();
+  const errText = useRedemptionError();
+  const [name, setName] = useState(existing?.name ?? "");
+  const [fields, setFields] = useState<PartnerField[]>(existing?.fields?.length ? existing.fields : [blankField()]);
+  const [hint, setHint] = useState<Record<string, string>>(existing?.hint ?? {});
+  const [busy, setBusy] = useState(false);
+  const setField = (i: number, patch: Partial<PartnerField>) => setFields((fs) => fs.map((f, j) => (j === i ? { ...f, ...patch } : f)));
+  const langLabel = (l: string) => langName(l, t.current());
+
+  const submit = async () => {
+    const body: PartnerSetup = { name: name.trim(), fields, hint };
+    setBusy(true);
+    try {
+      if (existing) await updatePartner(existing.id, body);
+      else await addPartner(body);
+      toast.ok(existing ? t.t("Saved") : t.t("Partner added"));
+      onDone();
+    } catch (e) {
+      toast.err(errText(e));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog
+      wide
+      title={existing ? t.t("Edit {{partner}}", { partner: existing.name }) : t.t("Add partner")}
+      onClose={onClose}
+      onSubmit={submit}
+      footer={<><Button onClick={onClose}>{t.t("Cancel")}</Button><Button type="submit" variant="primary" loading={busy}>{existing ? t.t("Save") : t.t("Add partner")}</Button></>}
+    >
+      <Field label={t.t("Partner name")} hint={t.t("As buyers know it, such as the company that sold the box.")}>
+        <input type="text" required maxLength={60} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+      </Field>
+      <Field label={t.t("Codes on each box")}>
+        <select value={fields.length} onChange={(e) => setFields((fs) => (e.target.value === "2" ? [fs[0]!, fs[1] ?? blankField()] : [fs[fs.length - 1]!]))}>
+          <option value={1}>{t.t("One code")}</option>
+          <option value={2}>{t.t("Two codes, such as a box number and a security code")}</option>
+        </select>
+      </Field>
+      {fields.map((f, i) => (
+        <fieldset key={i} className="rd-fieldset">
+          <legend>{fields.length === 2 ? t.t("Code {{n}}", { n: i + 1 }) : t.t("Code")}</legend>
+          <div className="rd-grid">
+            {PARTNER_LANGS.map((l) => (
+              <Field key={l} label={t.t("Label in {{language}}", { language: langLabel(l) })} hint={l === "en" ? t.t("What buyers are asked for, such as “Box number (on the back of the box)”.") : t.t("Empty uses the English one.")}>
+                <input type="text" required={l === "en"} maxLength={60} value={f.label[l] ?? ""} onChange={(e) => setField(i, { label: { ...f.label, [l]: e.target.value } })} />
+              </Field>
+            ))}
+          </div>
+          <div className="rd-grid">
+            <Field label={t.t("Example (optional)")} hint={t.t("Shown greyed out in the empty input.")}>
+              <input type="text" maxLength={64} className="rd-mono" value={f.example} onChange={(e) => setField(i, { example: e.target.value })} />
+            </Field>
+            <Field label={t.t("Characters")}>
+              <select value={f.digits ? "digits" : "alnum"} onChange={(e) => setField(i, { digits: e.target.value === "digits" })}>
+                <option value="alnum">{t.t("Letters and digits")}</option>
+                <option value="digits">{t.t("Digits only")}</option>
+              </select>
+            </Field>
+            <Field label={t.t("Shortest")}>
+              <input type="number" min={1} max={64} required value={f.min} onChange={(e) => setField(i, { min: Number.parseInt(e.target.value, 10) || 0 })} />
+            </Field>
+            <Field label={t.t("Longest")} hint={t.t("Spaces and dashes don't count.")}>
+              <input type="number" min={1} max={64} required value={f.max} onChange={(e) => setField(i, { max: Number.parseInt(e.target.value, 10) || 0 })} />
+            </Field>
+          </div>
+        </fieldset>
+      ))}
+      <div className="rd-grid">
+        {PARTNER_LANGS.map((l) => (
+          <Field key={l} label={t.t("Hint in {{language}} (optional)", { language: langLabel(l) })} hint={l === "en" ? t.t("Where buyers find the codes, shown under them.") : t.t("Empty uses the English one.")}>
+            <textarea rows={2} maxLength={300} value={hint[l] ?? ""} onChange={(e) => setHint((h) => ({ ...h, [l]: e.target.value }))} />
+          </Field>
+        ))}
+      </div>
     </Dialog>
   );
 }

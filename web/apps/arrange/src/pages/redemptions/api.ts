@@ -13,11 +13,30 @@ export interface PartnerProduct {
   letter: { languages: string[]; countries: string[] } | null;
 }
 
+/** internal/admin/partner_fields.go partnerField: one code a partner's boxes carry. */
+export interface PartnerField {
+  /** By language; "en" is the fallback. */
+  label: Record<string, string>;
+  example: string;
+  min: number;
+  max: number;
+  /** Digits only; otherwise letters and digits. */
+  digits: boolean;
+}
+
+/** internal/admin/partner_fields.go partnerSetup: one or two fields, two being box number then security code. */
+export interface PartnerSetup {
+  name: string;
+  fields: PartnerField[];
+  hint: Record<string, string>;
+}
+
 /** internal/admin/redemptions.go partnerDTO */
 export interface Partner {
   id: number;
-  kind: string;
   name: string;
+  fields: PartnerField[] | null;
+  hint: Record<string, string> | null;
   enabled: boolean;
   products: PartnerProduct[] | null;
 }
@@ -28,8 +47,9 @@ export interface Redemption {
   id: number;
   /** A purchase is "paid". */
   state: "pending" | "approved" | "rejected" | "cancelled" | "paid";
-  partner_kind: string;
   partner_name: string;
+  /** What box_number and security_code are called; null on a purchase. */
+  partner_fields: PartnerField[] | null;
   product_id: number;
   product_name: string;
   event_id: number;
@@ -115,7 +135,8 @@ export const updateRedemption = (id: number, body: { posted?: boolean; post_at?:
 export const updatePurchase = (id: number, body: { posted?: boolean; post_at?: string; note?: string; letter_lang?: string }) => patch<unknown>(`/api/admin/ticket-purchases/${id}`, body);
 export const createRedemption = (body: NewRedemption) => post<Redemption>("/api/admin/redemptions", body);
 
-export const addPartner = (kind: string) => post<unknown>("/api/admin/partners", { kind });
+export const addPartner = (body: PartnerSetup) => post<unknown>("/api/admin/partners", body);
+export const updatePartner = (id: number, body: PartnerSetup) => patch<unknown>(`/api/admin/partners/${id}`, body);
 export const setPartnerEnabled = (id: number, enabled: boolean) => patch<unknown>(`/api/admin/partners/${id}`, { enabled });
 export const deletePartner = (id: number) => request<void>(`/api/admin/partners/${id}`, { method: "DELETE" });
 export const addProduct = (partnerId: number, body: ProductInput) => post<unknown>(`/api/admin/partners/${partnerId}/products`, body);

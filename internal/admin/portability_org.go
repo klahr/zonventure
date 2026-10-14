@@ -921,7 +921,7 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 			INSERT INTO purchases(org_id, adventure_slug, max_players, amount_cents, currency,
 				provider, state, created_at, paid_at, invoice_number, assignment_id, top_up_assignment_id, pre_migration)
 			VALUES ($1, $2, $3, $4, $5, 'invoice', 'paid', COALESCE($6, now_text()), $7, $8, $9, $10, TRUE)
-		`, orgID, p.AdventureSlug, p.MaxPlayers, p.AmountCents, defaultStr(p.Currency, "SEK"),
+		`, orgID, p.AdventureSlug, p.MaxPlayers, p.AmountCents, defaultStr(p.Currency, strings.ToUpper(settings.Currency)),
 			sqlNullStr(p.CreatedAt), sqlNullStr(p.PaidAt), p.InvoiceNumber, assignArg, topUpArg); err != nil {
 			cleanupOrg()
 			return summary, fmt.Errorf("create invoice purchase %d: %w", i, err)

@@ -219,7 +219,7 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		r.Post("/api/trail/mine", adminH.ListMyTrails)
 		r.Get("/api/trail/keep/{token}", adminH.GetKeepTrail)
 
-		// Gift box redemption (Live it, TrueStory). The bare /redeem
+		// Gift box redemption (partner_fields.go). The bare /redeem
 		// offers every organisation's products; /o/{slug}/redeem only
 		// that organisation's. A redemption waits for an organiser to
 		// check the code; see admin/redemptions.go.

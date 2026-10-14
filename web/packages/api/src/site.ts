@@ -8,6 +8,15 @@ export function siteName(): string {
   return v || "Zonventure";
 }
 
+// The currency this instance sells in (ZV_CURRENCY), ISO 4217 upper
+// case; the server writes it into each app's index.html like the name.
+export function siteCurrency(): string {
+  const v = typeof document === "undefined"
+    ? undefined
+    : document.querySelector<HTMLMetaElement>('meta[name="zv-currency"]')?.content.trim();
+  return (v || "sek").toUpperCase();
+}
+
 // The header wordmark: Zonventure's lowercase "zonventure" by default,
 // the site name as written otherwise.
 export function siteWordmark(): string {

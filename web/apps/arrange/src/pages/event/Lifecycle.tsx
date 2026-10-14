@@ -402,7 +402,7 @@ export function TopUpDialog({ event, adventure, user, initial, onClose, onDone, 
   const toast = useToast();
   const pricing = (user.pricing ?? {}) as Pricing;
   const price = pricing.player_cents || 4900;
-  const currency = pricing.currency || "SEK";
+  const currency = pricing.currency;
   const trusted = !!user.memberships.find((m) => m.org_id === user.org_id)?.trusted;
   const dialogs = useDialogs();
   const [n, setN] = useState(String(initial ?? 5));

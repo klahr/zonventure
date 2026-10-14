@@ -271,6 +271,16 @@ func main() {
 	if plainHTTPPublicURL(os.Getenv("ZV_PUBLIC_URL")) {
 		logx.Warn("public_url.plain_http", "msg", "ZV_PUBLIC_URL is plain http on a non-local host: links in mail and session cookies travel unencrypted; use https")
 	}
+	if err := settings.LoadCurrency(); err != nil {
+		log.Fatalf("ZV_CURRENCY: %v", err)
+	}
+	if err := settings.LoadLocale(); err != nil {
+		log.Fatal(err)
+	}
+	mapCenter := strings.TrimSpace(os.Getenv("ZV_MAP_CENTER"))
+	if mapCenter != "" && !server.ValidMapCenter(mapCenter) {
+		log.Fatalf("ZV_MAP_CENTER: %q is not \"lat,lng\"", mapCenter)
+	}
 	// Optional ZV_TOTP_KEY: the AES-256-GCM key wrapping
 	// users.totp_secret_encrypted. When set we surface MFA in the
 	// components panel and accept TOTP enrolments; when missing the
@@ -375,6 +385,7 @@ func main() {
 			MapTileAttribution: os.Getenv("ZV_MAP_TILE_ATTRIBUTION"),
 			MapStyleURL:        os.Getenv("ZV_MAP_STYLE_URL"),
 			MapProvider:        os.Getenv("ZV_MAP_PROVIDER"),
+			MapCenter:          mapCenter,
 		},
 		StripeSecretKey:     os.Getenv("ZV_STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"),

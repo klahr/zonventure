@@ -3,7 +3,7 @@ import { Copy, Eye } from "lucide-react";
 import type { Whoami } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
-import { Button, Callout, Card, Field, fmtDateTime, fmtMoney, ICON, ImageDrop, ListingStatus, SubmitListingDialog, canSubmitListing, platformFeeOn, relTime, Row, Stat, Stats, toDate, useLoad, useToast } from "../../ui/index.ts";
+import { Button, Callout, Card, Field, currencySymbol, fmtDateTime, fmtMoney, ICON, ImageDrop, ListingStatus, SubmitListingDialog, canSubmitListing, platformFeeOn, relTime, Row, Stat, Stats, toDate, useLoad, useToast } from "../../ui/index.ts";
 import { useSession } from "../../session.tsx";
 import * as api from "./api.ts";
 import type { ConnectStatus, EventInfo, Team } from "./api.ts";
@@ -287,7 +287,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
   const fees = session.status === "authenticated" ? (session.user.pricing ?? {}) as Parameters<typeof platformFeeOn>[0] : {};
   const typed = Math.round(Number.parseFloat(price) * 100);
   const fee = typed > 0 ? platformFeeOn(fees, typed) : 0;
-  const receive = fee > 0 ? t.t("You receive {{amount}} per ticket after the platform fee of {{fee}}.", { amount: fmtMoney(typed - fee, event.ticket_currency || "SEK", t.current()), fee: fmtMoney(fee, event.ticket_currency || "SEK", t.current()) }) : undefined;
+  const receive = fee > 0 ? t.t("You receive {{amount}} per ticket after the platform fee of {{fee}}.", { amount: fmtMoney(typed - fee, event.ticket_currency, t.current()), fee: fmtMoney(fee, event.ticket_currency, t.current()) }) : undefined;
 
   const save = async () => {
     const major = price.trim();
@@ -326,7 +326,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
       toast.err(e);
     }
   };
-  const perTicket = (cents: number, cur?: string) => t.t("{{price}} per ticket", { price: fmtMoney(cents, cur || "SEK", t.current()) });
+  const perTicket = (cents: number, cur?: string) => t.t("{{price}} per ticket", { price: fmtMoney(cents, cur, t.current()) });
   // The store sells at the approved price until a changed one is approved.
   const live = event.listed && event.listed_price_cents ? event.listed_price_cents : 0;
   const subtitle = live
@@ -394,7 +394,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
         </div>
       </Row>
       <Row>
-        <Field label={t.t("Ticket price (SEK)")} hint={receive}>
+        <Field label={t.t("Ticket price ({{cur}})", { cur: currencySymbol(t.current()) })} hint={receive}>
           <input type="number" step="0.01" min="0" placeholder="199" className="ev-w8" value={price} onChange={(e) => setPrice(e.target.value)} />
         </Field>
         <Field label={t.t("Players per ticket")}>

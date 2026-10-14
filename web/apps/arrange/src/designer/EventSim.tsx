@@ -7,7 +7,7 @@ import { useT } from "../i18n.tsx";
 import { mapStyle, loadMapLibre, mapLocale, shape } from "./ZoneMap.tsx";
 import { conceptColor } from "./dz/concepts.tsx";
 import { Button, ICON } from "./dz/ui.tsx";
-import { DEFAULT_CENTRE } from "./zones.ts";
+import { defaultCentre } from "./zones.ts";
 
 /**
  * A whole event, played by bot teams on the draft.
@@ -337,7 +337,7 @@ function TeamMap({ graph, result, clock, chosen }: { graph: Graph; result: play.
     loadMapLibre()
       .then((lib) => {
         if (cancelled || !box.current) return;
-        const first = zones[0] ?? DEFAULT_CENTRE;
+        const first = zones[0] ?? defaultCentre();
         const map = new lib.Map({ container: box.current, style: mapStyle(), center: [first.lng, first.lat], zoom: 14, attributionControl: { compact: true }, locale: mapLocale(t) });
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         map.on("load", () => {

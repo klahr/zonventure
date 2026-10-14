@@ -14,7 +14,7 @@ import { PrintQueueButton, printable } from "./PrintQueue.tsx";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
 import { PartnersCard } from "./Partners.tsx";
 import { TicketSalesCard } from "../settings/TicketSales.tsx";
-import { langName, partnerLabel, regionName, useRedemptionError } from "./shared.ts";
+import { langName, localText, regionName, useRedemptionError } from "./shared.ts";
 import "./redemptions.css";
 
 const STATES = ["pending", "to_post", "approved", "rejected", "cancelled", "all"] as const;
@@ -215,11 +215,11 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
         ) : (
         <div className="rd-item__col">
           <span className="rd-label">{t.t("Code")}</span>
-          <strong>{partnerLabel(rd.partner_kind, rd.partner_name)}</strong>
+          <strong>{rd.partner_name}</strong>
           <span className="rd-codes">
             {rd.box_number && (
               <button type="button" className="rd-code" title={t.t("Copy")} onClick={() => copy(rd.box_number)}>
-                {t.t("Box")} {rd.box_number}<Copy size={ICON.xs} aria-hidden />
+                {localText(rd.partner_fields?.[0]?.label, locale) || t.t("Box")} {rd.box_number}<Copy size={ICON.xs} aria-hidden />
               </button>
             )}
             <button type="button" className="rd-code" title={t.t("Copy")} onClick={() => copy(rd.security_code)}>

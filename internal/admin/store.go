@@ -16,6 +16,7 @@ import (
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/payments"
 	"github.com/klahr/zonventure/internal/printmat"
+	"github.com/klahr/zonventure/internal/settings"
 )
 
 // BuyTicketRequest is the body of POST /api/store/buy. The buyer
@@ -69,7 +70,7 @@ func (h *Handlers) eventShipCountries(ctx context.Context, eventID int64) ([]str
 	`, eventID).Scan(&list); err != nil {
 		return nil, err
 	}
-	return strings.Split(list, ","), nil
+	return settings.OrgShipCountries(list), nil
 }
 
 // BuyTicketResponse carries the hosted Checkout URL the buyer's

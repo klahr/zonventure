@@ -109,7 +109,7 @@ func (h *Handlers) ListPartyOffers(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT a.id, a.slug, COALESCE(NULLIF(a.title, ''), a.slug),
 		       COALESCE(o.id, 0), COALESCE(o.enabled, FALSE), COALESCE(o.base_cents, 0),
-		       COALESCE(o.per_kid_cents, 0), COALESCE(o.currency, 'sek'), COALESCE(o.max_kids, 20),
+		       COALESCE(o.per_kid_cents, 0), COALESCE(o.currency, $2), COALESCE(o.max_kids, 20),
 		       COALESCE(o.name, ''), COALESCE(o.blurb, ''), COALESCE(o.listing_review, ''), COALESCE(o.listing_reject_reason, ''),
 		       EXISTS (SELECT 1 FROM party_offer_listings l WHERE l.offer_id = o.id),
 		       EXISTS (SELECT 1 FROM party_offer_listings l WHERE l.offer_id = o.id AND l.graph_id IS DISTINCT FROM a.published_graph_id)
@@ -119,7 +119,7 @@ func (h *Handlers) ListPartyOffers(w http.ResponseWriter, r *http.Request) {
 		  AND (a.org_id = $1
 		   OR EXISTS (SELECT 1 FROM adventure_shares s WHERE s.adventure_slug = a.slug AND s.org_id = $1))
 		ORDER BY 3
-	`, *me.OrgID)
+	`, *me.OrgID, settings.Currency)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "offers lookup failed", err)
 		return
@@ -218,7 +218,7 @@ func (h *Handlers) PutPartyOffer(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	// Parties are sold in SEK only; an empty currency means it.
+	// Parties are sold in the platform's currency only; an empty currency means it.
 	req.Currency = strings.ToLower(strings.TrimSpace(req.Currency))
 	if req.Currency == "" {
 		req.Currency = settings.Currency
@@ -231,7 +231,7 @@ func (h *Handlers) PutPartyOffer(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "max_kids must be 1–50")
 		return
 	case req.Currency != settings.Currency:
-		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "parties are sold in SEK", "code": "currency_not_supported"})
+		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "parties are sold in " + strings.ToUpper(settings.Currency), "code": "currency_not_supported"})
 		return
 	}
 	blurb, err := validateBlurb(strings.TrimSpace(req.Blurb), MaxBlurbLen)

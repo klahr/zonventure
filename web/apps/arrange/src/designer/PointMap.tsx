@@ -5,7 +5,7 @@ import { ICON } from "./dz/ui.tsx";
 import { isTouch } from "./device.ts";
 import { mapStyle, circleRing, collapseCredits, loadMapLibre, mapLocale } from "./ZoneMap.tsx";
 import { conceptColor } from "./dz/concepts.tsx";
-import { DEFAULT_CENTRE, locate } from "./zones.ts";
+import { defaultCentre, locate } from "./zones.ts";
 import "./pointmap.css";
 
 type Point = { lat: number; lng: number };
@@ -34,7 +34,7 @@ export function PointMap({ value, onChange, fallback, radius }: { value: Point |
 
   useEffect(() => {
     let cancelled = false;
-    const start = value ?? fallback ?? DEFAULT_CENTRE;
+    const start = value ?? fallback ?? defaultCentre();
     loadMapLibre()
       .then((lib) => {
         if (cancelled || !box.current) return;

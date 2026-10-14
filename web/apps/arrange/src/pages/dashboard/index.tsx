@@ -436,7 +436,7 @@ function AdminDashboard({ full }: { full: boolean }) {
     { key: "org", header: t.t("Organization"), cell: (p) => <span className="db-ellipsis">{p.org_name || "—"}</span> },
     { key: "adventure", header: t.t("Adventure"), wide: true, cell: (p) => <span className="db-ellipsis">{p.adventure_title || p.adventure_slug}</span> },
     { key: "players", header: t.t("Players"), wide: true, align: "end", cell: (p) => p.max_players },
-    { key: "total", header: t.t("Total"), align: "end", cell: (p) => fmtMoney(p.amount_cents, p.currency || "SEK", t.current()) },
+    { key: "total", header: t.t("Total"), align: "end", cell: (p) => fmtMoney(p.amount_cents, p.currency, t.current()) },
     { key: "when", header: t.t("Bought"), cell: (p) => relTime(p.paid_at || p.created_at, t.current()) },
   ];
 

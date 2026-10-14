@@ -304,7 +304,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusCreated, map[string]any{
 			"id":            purchaseID,
 			"amount_cents":  amount,
-			"currency":      "SEK",
+			"currency":      strings.ToUpper(settings.Currency),
 			"state":         "paid",
 			"provider":      provider,
 			"assignment_id": assID,
@@ -320,9 +320,9 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
 		                      amount_cents, currency, provider, state, top_up_assignment_id)
-		VALUES ($1, $2, $3, $4, $5, 'SEK', $6, 'pending', $7)
+		VALUES ($1, $2, $3, $4, $5, $8, $6, 'pending', $7)
 		RETURNING id
-	`, *me.OrgID, me.ID, req.AdventureSlug, req.MaxPlayers, amount, provider, topUpArg).Scan(&id); err != nil {
+	`, *me.OrgID, me.ID, req.AdventureSlug, req.MaxPlayers, amount, provider, topUpArg, strings.ToUpper(settings.Currency)).Scan(&id); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "insert failed", err)
 		return
 	}
@@ -364,7 +364,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusCreated, map[string]any{
 		"id":           id,
 		"amount_cents": amount,
-		"currency":     "SEK",
+		"currency":     strings.ToUpper(settings.Currency),
 		"state":        "pending",
 		"provider":     provider,
 		"checkout_url": checkoutURL,
@@ -417,9 +417,9 @@ func (h *Handlers) createOffPlatformPurchase(ctx context.Context, orgID, buyerUs
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
 		                      amount_cents, currency, provider, state, paid_at, assignment_id, top_up_assignment_id)
-		VALUES ($1, $2, $3, $4, $5, 'SEK', $6, 'paid', now_text(), $7, $8)
+		VALUES ($1, $2, $3, $4, $5, $9, $6, 'paid', now_text(), $7, $8)
 		RETURNING id
-	`, orgID, buyerUserID, advSlug, addedPlayers, amountCents, provider, assignmentID, topUpArg).Scan(&purchaseID); err != nil {
+	`, orgID, buyerUserID, advSlug, addedPlayers, amountCents, provider, assignmentID, topUpArg, strings.ToUpper(settings.Currency)).Scan(&purchaseID); err != nil {
 		return 0, 0, fmt.Errorf("purchase insert: %w", err)
 	}
 	if err := tx.Commit(); err != nil {

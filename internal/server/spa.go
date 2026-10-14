@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/settings"
 	"github.com/klahr/zonventure/internal/sitename"
 )
 
@@ -97,16 +98,19 @@ func registerSPARoutes(r chi.Router) {
 // site; brandSPAIndex swaps in ZV_SITE_NAME. The apps read the
 // application-name meta at runtime (siteName() in @zonventure/api).
 // The source keeps the literal default so the Vite dev server shows
-// a sensible title.
+// a sensible title. spaCurrency carries ZV_CURRENCY the same way
+// (siteCurrency()).
 const (
-	spaTitle   = "<title>Zonventure</title>"
-	spaAppName = `<meta name="application-name" content="Zonventure" />`
+	spaTitle    = "<title>Zonventure</title>"
+	spaAppName  = `<meta name="application-name" content="Zonventure" />`
+	spaCurrency = `<meta name="zv-currency" content="sek" />`
 )
 
 func brandSPAIndex(index []byte) []byte {
 	n := html.EscapeString(sitename.Name())
 	s := strings.Replace(string(index), spaTitle, "<title>"+n+"</title>", 1)
 	s = strings.Replace(s, spaAppName, `<meta name="application-name" content="`+n+`" />`, 1)
+	s = strings.Replace(s, spaCurrency, `<meta name="zv-currency" content="`+settings.Currency+`" />`, 1)
 	return []byte(s)
 }
 

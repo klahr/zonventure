@@ -67,7 +67,7 @@ export function PurchasesTab() {
   if (!load.data) return <Loading label={t.t("Loading…")} />;
   const purchases = load.data.purchases ?? [];
   const shown = purchases.filter((p) => matches(p, filter));
-  const money = (p: Purchase) => fmtMoney(p.amount_cents, p.currency || "SEK", locale);
+  const money = (p: Purchase) => fmtMoney(p.amount_cents, p.currency, locale);
   const hasStripePaid = purchases.some((p) => p.state === "paid" && p.provider === "stripe");
 
   const portal = async () => {
@@ -284,7 +284,7 @@ export function PurchasesTab() {
             <p style={{ margin: 0, color: "var(--dz-muted)", fontSize: "var(--dz-text-sm)" }}>
               {t.plural(shown.length, { one: t.t("{{n}} purchase"), other: t.t("{{n}} purchases") })}
               {" · "}
-              {orgs === 1 ? t.t("{{total}} from one org", { total: fmtMoney(total, "SEK", locale) }) : t.t("{{total}} across {{orgs}} orgs", { total: fmtMoney(total, "SEK", locale), orgs })}
+              {orgs === 1 ? t.t("{{total}} from one org", { total: fmtMoney(total, undefined, locale) }) : t.t("{{total}} across {{orgs}} orgs", { total: fmtMoney(total, undefined, locale), orgs })}
             </p>
           )}
         </div>

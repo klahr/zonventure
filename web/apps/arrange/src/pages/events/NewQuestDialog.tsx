@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { post } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { CATALOG_ENABLED, navigate } from "../../router.ts";
-import { Button, Dialog, ErrorBox, Field, ImageDrop, Loading, errorText, useLoad, useToast } from "../../ui/index.ts";
+import { Button, Dialog, ErrorBox, Field, ImageDrop, Loading, currencySymbol, errorText, useLoad, useToast } from "../../ui/index.ts";
 import { createEvent, listAdventures, startEvent, updateEvent, uploadEventCover } from "./api.ts";
 import { submitListingURL } from "../event/api.ts";
 import { iconOrCover } from "../adventures/parts.tsx";
@@ -162,7 +162,7 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
         <textarea rows={4} maxLength={1000} value={blurb} onChange={(e) => setBlurb(e.target.value)} placeholder={t.t("Short description shown in your store.")} />
       </Field>
       <div className="evs-grid3">
-        <Field label={t.t("Ticket price (SEK)")}>
+        <Field label={t.t("Ticket price ({{cur}})", { cur: currencySymbol(t.current()) })}>
           <input type="number" min={1} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
         </Field>
         <Field label={t.t("Players per ticket")}>

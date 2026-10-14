@@ -39,6 +39,8 @@
 .dz .rd-product__text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 12rem; overflow-wrap: anywhere; }
 .dz .rd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--dz-space-3); }
 .dz .rd-grid--postal { grid-template-columns: 9rem 1fr; }
+.dz .rd-fieldset { display: flex; flex-direction: column; gap: var(--dz-space-3); margin: 0; padding: var(--dz-space-3) 0 0; border: 0; border-top: 1px solid var(--dz-border); }
+.dz .rd-fieldset legend { padding: 0 0 var(--dz-space-2); font-weight: 700; }
 .dz .rd-check { display: inline-flex; align-items: center; gap: var(--dz-space-2); cursor: pointer; }
 .dz .rd-check input { width: 18px; height: 18px; accent-color: var(--dz-accent); }
 @media (max-width: 40rem) { .dz .rd-grid--postal { grid-template-columns: 1fr; } }

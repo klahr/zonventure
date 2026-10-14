@@ -23,7 +23,7 @@ func TestClearPostedAddresses(t *testing.T) {
 		}
 	}
 	must(db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).Scan(&orgID))
-	must(db.QueryRow(`INSERT INTO partners(org_id, kind) VALUES ($1, 'truestory') RETURNING id`, orgID).Scan(&partnerID))
+	must(db.QueryRow(`INSERT INTO partners(org_id, name) VALUES ($1, 'TrueStory') RETURNING id`, orgID).Scan(&partnerID))
 	_, err := db.Exec(`INSERT INTO adventures(slug, title, org_id) VALUES ('demo', 'Demo', $1)`, orgID)
 	must(err)
 	must(db.QueryRow(`INSERT INTO events(adventure_slug, org_id, state, live_token, name) VALUES ('demo', $1, 'running', 'lt-addr', 'Demo') RETURNING id`, orgID).Scan(&eventID))
@@ -32,8 +32,8 @@ func TestClearPostedAddresses(t *testing.T) {
 		t.Helper()
 		var id int64
 		must(db.QueryRow(`
-			INSERT INTO partner_redemptions(partner_id, product_name, kind, security_code, name, email, street_address, postal_code, city, state, posted_at, decided_at)
-			VALUES ($1, 'Walk', 'truestory', $2, 'Ada', 'ada@buyer.test', 'Storgatan 1', '111 22', 'Stockholm', $3,
+			INSERT INTO partner_redemptions(partner_id, product_name, security_code, name, email, street_address, postal_code, city, state, posted_at, decided_at)
+			VALUES ($1, 'Walk', $2, 'Ada', 'ada@buyer.test', 'Storgatan 1', '111 22', 'Stockholm', $3,
 			        CASE WHEN $4 = '' THEN NULL ELSE to_char(now() - $4::interval, 'YYYY-MM-DD HH24:MI:SS') END,
 			        CASE WHEN $5 = '' THEN NULL ELSE to_char(now() - $5::interval, 'YYYY-MM-DD HH24:MI:SS') END)
 			RETURNING id`, partnerID, code, state, postedAgo, decidedAgo).Scan(&id))

@@ -10,6 +10,7 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/settings"
 )
 
 // orgContactDTO is how an organisation is reached and which clock it
@@ -43,6 +44,7 @@ func (h *Handlers) writeOrgContact(w http.ResponseWriter, r *http.Request, orgID
 		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 		return
 	}
+	out.TimeZone = settings.OrgTimeZone(out.TimeZone)
 	httpx.JSON(w, http.StatusOK, out)
 }
 

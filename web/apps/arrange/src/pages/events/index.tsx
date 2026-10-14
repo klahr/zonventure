@@ -142,11 +142,11 @@ export function QuestsPage() {
     // What the store sells at: the approved price, with a changed one
     // noted until it is approved.
     { key: "price", header: t.t("Price"), align: "end", cell: (r) => {
-      const draft = r.ticket_price_cents && r.ticket_price_cents > 0 ? fmtMoney(r.ticket_price_cents, r.ticket_currency || "SEK", loc) : "";
+      const draft = r.ticket_price_cents && r.ticket_price_cents > 0 ? fmtMoney(r.ticket_price_cents, r.ticket_currency, loc) : "";
       if (!r.listed || !r.listed_price_cents) return draft || <span className="evs-muted">—</span>;
       return (
         <span className="evs-stack">
-          {fmtMoney(r.listed_price_cents, r.listed_currency || "SEK", loc)}
+          {fmtMoney(r.listed_price_cents, r.listed_currency, loc)}
           {draft && r.ticket_price_cents !== r.listed_price_cents && <span className="evs-sub">{t.t("{{price}} after review", { price: draft })}</span>}
         </span>
       );

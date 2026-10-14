@@ -1,3 +1,5 @@
+import { siteCurrency } from "@zonventure/api";
+
 /**
  * Times, durations and money as the console shows them. The server
  * writes timestamps two ways — RFC 3339, and "YYYY-MM-DD HH:MM:SS" in
@@ -78,9 +80,15 @@ export function fmtDuration(totalSeconds: number): string {
   return h > 0 ? `${h}:${p(m)}:${p(s)}` : `${m}:${p(s)}`;
 }
 
-/** Minor units to "49,00 kr" in the viewer's locale. */
-export function fmtMoney(cents: number, currency = "SEK", locale?: string): string {
-  return new Intl.NumberFormat(locale, { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
+/** Minor units to "49,00 kr" in the viewer's locale; no currency is the site's. */
+export function fmtMoney(cents: number, currency?: string, locale?: string): string {
+  return new Intl.NumberFormat(locale, { style: "currency", currency: (currency || siteCurrency()).toUpperCase() }).format(cents / 100);
+}
+
+/** The site currency's symbol as written beside a price input: "kr", "€". */
+export function currencySymbol(locale?: string): string {
+  return new Intl.NumberFormat(locale, { style: "currency", currency: siteCurrency(), currencyDisplay: "narrowSymbol" })
+    .formatToParts(0).find((p) => p.type === "currency")?.value ?? siteCurrency();
 }
 
 /** payments.PlatformFee.Compute: the platform's cut of a sale of price, kept below the price. */

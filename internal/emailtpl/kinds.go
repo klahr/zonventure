@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/zonventure/internal/settings"
 	"github.com/klahr/zonventure/internal/sitename"
 )
 
@@ -226,15 +227,15 @@ func TeamInvitation(lang, team, event, org string, players []PlayerLink, calenda
 	}
 }
 
-// Location is time zone tz, an organisation's; Europe/Stockholm when it
-// names none this server knows.
+// Location is time zone tz, an organisation's; the instance's
+// (settings.TimeZone) when it names none this server knows.
 func Location(tz string) *time.Location {
 	if tz != "" {
 		if l, err := time.LoadLocation(tz); err == nil {
 			return l
 		}
 	}
-	if l, err := time.LoadLocation("Europe/Stockholm"); err == nil {
+	if l, err := time.LoadLocation(settings.TimeZone); err == nil {
 		return l
 	}
 	return time.UTC

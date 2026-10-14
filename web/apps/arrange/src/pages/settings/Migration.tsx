@@ -304,7 +304,7 @@ function MigrateOut({ orgs, mode, maint, onReset }: { orgs: Org[]; mode: Redirec
             </select>
           </Field>
           <Field label={t.t("Destination URL")}>
-            <input type="url" placeholder="https://app.zonventure.com" value={target} onChange={(e) => setTarget(e.target.value)} />
+            <input type="url" placeholder="https://zonventure.example.com" value={target} onChange={(e) => setTarget(e.target.value)} />
           </Field>
           <Row>
             <Button variant="primary" icon={<Upload size={ICON.md} aria-hidden />} onClick={() => void start()}>{t.t("Start migration")}</Button>

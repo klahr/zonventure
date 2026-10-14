@@ -8,6 +8,7 @@ import (
 
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/settings"
 )
 
 var countryRe = regexp.MustCompile(`^[A-Z]{2}$`)
@@ -28,7 +29,7 @@ func (h *Handlers) GetMyShipCountries(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"countries": strings.Split(list, ",")})
+	httpx.JSON(w, http.StatusOK, map[string]any{"countries": settings.OrgShipCountries(list)})
 }
 
 // SetMyShipCountries sets them: {"countries": ["SE", "NO"]}, at least

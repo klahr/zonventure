@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { ApiError } from "@zonventure/api";
+import { ApiError, siteCurrency } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { Button, Callout, Dialog, Field, ICON, fmtMoney, useToast } from "../../ui/index.ts";
@@ -410,10 +410,10 @@ export function GrantSlotsDialog({ org, event, onClose, onDone }: Done & { org: 
   const { state } = useSession();
   const pricing = (state.status === "authenticated" ? state.user.pricing : undefined) as { player_cents?: number; currency?: string } | undefined;
   const PRICE = pricing?.player_cents || 500;
-  const CURRENCY = pricing?.currency || "SEK";
+  const CURRENCY = pricing?.currency || siteCurrency();
   const trusted = org.trusted;
   const [players, setPlayers] = useState("5");
-  // Typed in whole currency units (kronor), sent in cents.
+  // Typed in whole currency units, sent in cents.
   const suggest = (p: string) => String((Math.max(1, Number.parseInt(p, 10) || 0) * PRICE) / 100);
   const cents = (p: string) => Math.max(0, Math.round((Number.parseFloat(p) || 0) * 100));
   const [price, setPrice] = useState(trusted ? suggest("5") : "0");

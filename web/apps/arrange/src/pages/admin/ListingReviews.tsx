@@ -333,7 +333,7 @@ function ReviewCard({ review: r, reviewed, onDone, onChanged, readOnly }: { revi
 export function ListingFacts({ kind, draft: d, live }: { kind: ListingKind; draft: ListingFields; live?: ListingFields | undefined }) {
   const t = useT();
   const changed = (k: keyof ListingFields) => !!live && (live[k] ?? "") !== (d[k] ?? "");
-  const money = (cents: number) => fmtMoney(cents, d.currency || "SEK", t.current());
+  const money = (cents: number) => fmtMoney(cents, d.currency, t.current());
   return (
     <div className="adm-listing">
       {d.cover_url ? (

@@ -75,6 +75,10 @@ short tour:
 | `ZV_PUBLIC_URL` | Origin used in outbound emails (set to your real https URL) | `http://localhost:8080` |
 | `ZV_HOME_ORG` | Slug of the organisation the site is: `/store` redirects to its page `/o/<slug>`, and the landing page lists its adventures | unset (`/store` not found) |
 | `ZV_SITE_NAME` | Name the instance shows players and arrangers (titles, player header, emails, authenticator entry). Set your own brand so players know who runs the service | `Zonventure` |
+| `ZV_CURRENCY` | ISO 4217 code every price, ticket and party is sold in. Must have two decimals (not JPY, KRW, …). Set it before the first sale: amounts already saved keep their numbers, not their value | `sek` |
+| `ZV_TIME_ZONE` | IANA time zone an organisation writes start times in until it picks its own (Settings → Organisation) | `Europe/Stockholm` |
+| `ZV_SHIP_COUNTRIES` | Comma-separated ISO 3166-1 alpha-2 codes an organisation posts printed letters to until it picks its own | `SE` |
+| `ZV_MAP_CENTER` | `lat,lng` where a map opens when there is no place to show yet | central Stockholm |
 | `ZV_BIND_ADDR` | Host interface to bind on; `0.0.0.0` to expose directly | `127.0.0.1` |
 | `ZV_PORT` | Host port for the app | `8080` |
 | `ZV_LOG_FORMAT` | `text` (dev) or `json` (aggregator) | `text` |

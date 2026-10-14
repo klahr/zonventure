@@ -3,7 +3,7 @@ import type { Zone } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { mapStyle, loadMapLibre, mapLocale, shape } from "./ZoneMap.tsx";
 import { conceptColor } from "./dz/concepts.tsx";
-import { DEFAULT_CENTRE } from "./zones.ts";
+import { defaultCentre } from "./zones.ts";
 
 export interface Point {
   lat: number;
@@ -33,7 +33,7 @@ export function SpoofMap({ zones, position, focus, onPick, disabled }: { zones: 
     loadMapLibre()
       .then((lib) => {
         if (cancelled || !box.current) return;
-        const first = position ?? zones[0] ?? DEFAULT_CENTRE;
+        const first = position ?? zones[0] ?? defaultCentre();
         const map = new lib.Map({ container: box.current, style: mapStyle(), center: [first.lng, first.lat], zoom: 15, attributionControl: { compact: true }, locale: mapLocale(t) });
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         map.on("load", () => {

@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   Gift box redemption (/redeem, /o/{slug}/redeem). A buyer who got a
-  Zonventure adventure in a Live it or TrueStory box enters its code;
+  Zonventure adventure in a gift box enters its code;
   the request waits until an organiser has checked it with the partner.
 
   Substitutions: every topbar placeholder (LANG_CODE, NAV_*, FOOTER_*, …),
@@ -127,22 +127,17 @@
         </select>
 
         <div id="fields" hidden>
-          <div class="pair" id="liveit-codes">
-            <div>
-              <label for="box-number">{{REDEEM_BOX_NUMBER_LABEL}}</label>
-              <input id="box-number" type="text" inputmode="numeric" autocomplete="off" class="code">
+          <div id="codes">
+            <div id="box-field">
+              <label for="box-number" id="box-label"></label>
+              <input id="box-number" type="text" autocomplete="off" class="code">
             </div>
             <div>
-              <label for="security-code">{{REDEEM_SECURITY_CODE_LABEL}}</label>
+              <label for="security-code" id="code-label"></label>
               <input id="security-code" type="text" autocomplete="off" class="code">
             </div>
           </div>
-          <p class="hint" id="liveit-hint">{{REDEEM_LIVEIT_HINT}}</p>
-          <div id="truestory-codes">
-            <label for="experience-code">{{REDEEM_EXPERIENCE_CODE_LABEL}}</label>
-            <input id="experience-code" type="text" maxlength="11" autocomplete="off" class="code">
-          </div>
-          <p class="hint" id="truestory-hint">{{REDEEM_TRUESTORY_HINT}}</p>
+          <p class="hint" id="partner-hint"></p>
 
           <label for="product">{{REDEEM_PRODUCT_LABEL}}</label>
           <select id="product" required></select>
@@ -226,7 +221,7 @@
 
   // The product's letter languages, each named in its own language.
   function letterLangs() {
-    var p = partners.find(function (x) { return x.kind === partnerSel.value; });
+    var p = partners.find(function (x) { return String(x.id) === partnerSel.value; });
     var pr = p && p.products.find(function (x) { return String(x.id) === productSel.value; });
     return (pr && pr.letter && pr.letter.languages) || [];
   }
@@ -237,7 +232,7 @@
     } catch (e) { return code.toUpperCase(); }
   }
   function letter() {
-    var p = partners.find(function (x) { return x.kind === partnerSel.value; });
+    var p = partners.find(function (x) { return String(x.id) === partnerSel.value; });
     var pr = p && p.products.find(function (x) { return String(x.id) === productSel.value; });
     return (pr && pr.letter) || null;
   }
@@ -275,16 +270,32 @@
     return checked ? checked.value : (letterLangs()[0] || '');
   }
 
+  // A partner's text in the page's language, else its English one.
+  function local(m) {
+    m = m || {};
+    return m[document.documentElement.lang] || m.en || '';
+  }
+
   function showPartner() {
-    var p = partners.find(function (x) { return x.kind === partnerSel.value; });
+    var p = partners.find(function (x) { return String(x.id) === partnerSel.value; });
     $('fields').hidden = !p;
     $('err').textContent = '';
     if (!p) return;
-    var liveit = p.kind === 'liveit';
-    $('liveit-codes').hidden = !liveit;
-    $('liveit-hint').hidden = !liveit;
-    $('truestory-codes').hidden = liveit;
-    $('truestory-hint').hidden = liveit;
+    // A partner's codes: two are box_number then security_code, one is
+    // security_code alone (internal/admin/partner_fields.go).
+    var two = p.fields.length === 2;
+    $('codes').className = two ? 'pair' : '';
+    $('box-field').hidden = !two;
+    [two ? p.fields[0] : null, p.fields[p.fields.length - 1]].forEach(function (f, i) {
+      var input = $(i ? 'security-code' : 'box-number');
+      input.value = '';
+      if (!f) return;
+      $(i ? 'code-label' : 'box-label').textContent = local(f.label);
+      input.placeholder = f.example || '';
+      input.inputMode = f.digits ? 'numeric' : 'text';
+    });
+    $('partner-hint').textContent = local(p.hint);
+    $('partner-hint').hidden = !local(p.hint);
     productSel.replaceChildren();
     p.products.forEach(function (pr) {
       var o = document.createElement('option');
@@ -308,11 +319,11 @@
       }
       partners.forEach(function (p) {
         var o = document.createElement('option');
-        o.value = p.kind;
+        o.value = p.id;
         o.textContent = p.name;
         partnerSel.append(o);
       });
-      if (partners.length === 1) partnerSel.value = partners[0].kind;
+      if (partners.length === 1) partnerSel.value = partners[0].id;
       form.hidden = false;
       showPartner();
     })
@@ -332,11 +343,11 @@
     ev.preventDefault();
     var err = $('err');
     err.textContent = '';
-    var liveit = partnerSel.value === 'liveit';
+    var two = !$('box-field').hidden;
     var body = {
       product_id: parseInt(productSel.value, 10) || 0,
-      box_number: liveit ? $('box-number').value.trim() : '',
-      security_code: (liveit ? $('security-code') : $('experience-code')).value.trim(),
+      box_number: two ? $('box-number').value.trim() : '',
+      security_code: $('security-code').value.trim(),
       name: $('name').value.trim(),
       email: $('email').value.trim(),
       street_address: $('street').value.trim(),
@@ -348,7 +359,7 @@
       accepted_terms: $('terms').checked,
     };
     var posted = !!letter();
-    if (!body.product_id || !body.security_code || (liveit && !body.box_number) || !body.name ||
+    if (!body.product_id || !body.security_code || (two && !body.box_number) || !body.name ||
         !body.email || (posted && (!body.street_address || !body.postal_code || !body.city))) {
       err.textContent = t('errMissing');
       return;

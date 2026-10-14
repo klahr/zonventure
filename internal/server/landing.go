@@ -264,43 +264,38 @@ type landingStrings struct {
 	StoreEventOffSaleHeading string
 
 	// Gift box redemption page (redeem.html).
-	RedeemTitle               string
-	RedeemIntro               string
-	RedeemPartnerLabel        string
-	RedeemPartnerChoose       string
-	RedeemBoxNumberLabel      string
-	RedeemSecurityCodeLabel   string
-	RedeemExperienceCodeLabel string
-	RedeemLiveitHint          string
-	RedeemTrueStoryHint       string
-	RedeemProductLabel        string
-	RedeemAddressHeading      string
-	RedeemAddressHint         string
-	RedeemLetterLangLabel     string
-	RedeemLetterLangHint      string
-	RedeemNameLabel           string
-	RedeemEmailLabel          string
-	RedeemStreetLabel         string
-	RedeemAddress2Label       string
-	RedeemPostalCodeLabel     string
-	RedeemCityLabel           string
-	RedeemCountryLabel        string
-	RedeemTermsHTML           string
-	RedeemSubmit              string
-	RedeemSending             string
-	RedeemDoneHeading         string
-	RedeemDoneBody            string
-	RedeemDoneLetter          string
-	RedeemNone                string
-	RedeemErrMissing          string
-	RedeemErrTerms            string
-	RedeemErrEmail            string
-	RedeemErrCode             string
-	RedeemErrUsed             string
-	RedeemErrUsedContact      string
-	RedeemErrProduct          string
-	RedeemErrGeneric          string
-	RedeemErrRateLimited      string
+	RedeemTitle           string
+	RedeemIntro           string
+	RedeemPartnerLabel    string
+	RedeemPartnerChoose   string
+	RedeemProductLabel    string
+	RedeemAddressHeading  string
+	RedeemAddressHint     string
+	RedeemLetterLangLabel string
+	RedeemLetterLangHint  string
+	RedeemNameLabel       string
+	RedeemEmailLabel      string
+	RedeemStreetLabel     string
+	RedeemAddress2Label   string
+	RedeemPostalCodeLabel string
+	RedeemCityLabel       string
+	RedeemCountryLabel    string
+	RedeemTermsHTML       string
+	RedeemSubmit          string
+	RedeemSending         string
+	RedeemDoneHeading     string
+	RedeemDoneBody        string
+	RedeemDoneLetter      string
+	RedeemNone            string
+	RedeemErrMissing      string
+	RedeemErrTerms        string
+	RedeemErrEmail        string
+	RedeemErrCode         string
+	RedeemErrUsed         string
+	RedeemErrUsedContact  string
+	RedeemErrProduct      string
+	RedeemErrGeneric      string
+	RedeemErrRateLimited  string
 
 	// Per-org landing page (org-landing.html). Used for the hero
 	// CTA, the featured-quests strip, and the description fallback
@@ -652,11 +647,6 @@ func redeemSubs(s landingStrings) [][2]string {
 		{"{{REDEEM_INTRO}}", s.RedeemIntro},
 		{"{{REDEEM_PARTNER_LABEL}}", s.RedeemPartnerLabel},
 		{"{{REDEEM_PARTNER_CHOOSE}}", s.RedeemPartnerChoose},
-		{"{{REDEEM_BOX_NUMBER_LABEL}}", s.RedeemBoxNumberLabel},
-		{"{{REDEEM_SECURITY_CODE_LABEL}}", s.RedeemSecurityCodeLabel},
-		{"{{REDEEM_EXPERIENCE_CODE_LABEL}}", s.RedeemExperienceCodeLabel},
-		{"{{REDEEM_LIVEIT_HINT}}", s.RedeemLiveitHint},
-		{"{{REDEEM_TRUESTORY_HINT}}", s.RedeemTrueStoryHint},
 		{"{{REDEEM_PRODUCT_LABEL}}", s.RedeemProductLabel},
 		{"{{REDEEM_ADDRESS_HEADING}}", s.RedeemAddressHeading},
 		{"{{REDEEM_ADDRESS_HINT}}", s.RedeemAddressHint},

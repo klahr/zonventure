@@ -2,11 +2,6 @@ import { useT } from "../../i18n.tsx";
 import { errorText } from "../../ui/index.ts";
 import { reasonOf } from "./api.ts";
 
-export const PARTNER_KINDS = [
-  { kind: "liveit", label: "Live it" },
-  { kind: "truestory", label: "TrueStory" },
-];
-
 /** A language code by its name in locale, e.g. "sv" as "Swedish". */
 export function langName(code: string, locale: string): string {
   try {
@@ -25,7 +20,8 @@ export function regionName(code: string, locale: string): string {
   }
 }
 
-export const partnerLabel = (kind: string, name?: string) => name || PARTNER_KINDS.find((p) => p.kind === kind)?.label || kind;
+/** A partner's text in locale's language, else its English one. */
+export const localText = (m: Record<string, string> | null | undefined, locale: string) => m?.[locale.split("-")[0] ?? ""] || m?.en || "";
 
 const REASONS: Record<string, string> = {
   not_pending: "This redemption has already been decided.",
@@ -38,7 +34,7 @@ const REASONS: Record<string, string> = {
   unknown_product: "Pick a product.",
   invalid_language: "The envelope can't be printed in that language.",
   invalid_country: "Letters aren't posted to that country.",
-  exists: "That partner is already added.",
+  exists: "A partner by that name already exists.",
   in_use: "It has redemptions, so it can't be deleted. Disable it instead.",
 };
 

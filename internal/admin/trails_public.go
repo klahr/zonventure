@@ -720,20 +720,13 @@ func (h *Handlers) sendTrailPaid(ctx context.Context, eventID int64, to, hostTok
 
 // trailDate is a day as a trail's emails write it: "5 December 2026".
 func trailDate(lang string, t time.Time) string {
-	t = t.In(stockholm)
+	t = t.In(emailtpl.Location(""))
 	if lang == "sv" {
 		months := []string{"januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"}
 		return fmt.Sprintf("%d %s %d", t.Day(), months[t.Month()-1], t.Year())
 	}
 	return t.Format("2 January 2006")
 }
-
-var stockholm = func() *time.Location {
-	if l, err := time.LoadLocation("Europe/Stockholm"); err == nil {
-		return l
-	}
-	return time.UTC
-}()
 
 // SendTrailHostLink mails a paid trail's host link again, to the email
 // it was paid with. It is the link the host has: one open elsewhere

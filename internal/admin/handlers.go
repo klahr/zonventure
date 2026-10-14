@@ -1146,10 +1146,10 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
-	// Tickets are sold in SEK only: the one value accepted, kept for
-	// clients that still send it.
+	// Tickets are sold in the platform's currency only: the one value
+	// accepted, kept for clients that still send it.
 	if req.TicketCurrency != nil && !strings.EqualFold(strings.TrimSpace(*req.TicketCurrency), settings.Currency) {
-		httpx.Error(w, http.StatusBadRequest, "tickets are sold in SEK")
+		httpx.Error(w, http.StatusBadRequest, "tickets are sold in "+strings.ToUpper(settings.Currency))
 		return
 	}
 	if req.Name != nil {
@@ -1250,8 +1250,8 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		if *req.TicketPriceCents > 0 {
 			v = sql.NullInt64{Int64: int64(*req.TicketPriceCents), Valid: true}
 		}
-		// A price is always in SEK: saving one moves an older listing
-		// in another currency over.
+		// A price is always in the platform's currency: saving one moves
+		// an older listing in another currency over.
 		if _, err := h.DB.ExecContext(r.Context(),
 			`UPDATE events SET ticket_price_cents = $1, ticket_currency = $3 WHERE id = $2`, v, eventID, settings.Currency); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")

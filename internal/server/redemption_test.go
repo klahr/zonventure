@@ -15,10 +15,27 @@ import (
 	"github.com/klahr/zonventure/internal/server"
 )
 
+// trueStoryPartner and liveitPartner set up partners shaped like the
+// two migration 0166 converted.
+var (
+	trueStoryPartner = map[string]any{
+		"name":   "TrueStory",
+		"fields": []map[string]any{{"label": map[string]string{"en": "Experience code"}, "min": 9, "max": 9}},
+		"hint":   map[string]string{"en": "The 9-character code on your gift card."},
+	}
+	liveitPartner = map[string]any{
+		"name": "Live it",
+		"fields": []map[string]any{
+			{"label": map[string]string{"en": "Box number"}, "min": 1, "max": 20, "digits": true},
+			{"label": map[string]string{"en": "Security code"}, "min": 1, "max": 32},
+		},
+	}
+)
+
 type redemptionView struct {
 	ID           int64  `json:"id"`
 	State        string `json:"state"`
-	PartnerKind  string `json:"partner_kind"`
+	PartnerName  string `json:"partner_name"`
 	BoxNumber    string `json:"box_number"`
 	SecurityCode string `json:"security_code"`
 	Email        string `json:"email"`
@@ -127,10 +144,10 @@ func TestRedemption_TrueStoryLifecycle(t *testing.T) {
 	var partner struct {
 		ID int64 `json:"id"`
 	}
-	if s := boss.do("POST", "/api/admin/partners", map[string]string{"kind": "truestory"}, &partner); s != 201 {
+	if s := boss.do("POST", "/api/admin/partners", trueStoryPartner, &partner); s != 201 {
 		t.Fatalf("create partner = %d", s)
 	}
-	if s := boss.do("POST", "/api/admin/partners", map[string]string{"kind": "truestory"}, nil); s != 409 {
+	if s := boss.do("POST", "/api/admin/partners", trueStoryPartner, nil); s != 409 {
 		t.Fatalf("second truestory partner = %d, want 409", s)
 	}
 	var product struct {
@@ -148,7 +165,6 @@ func TestRedemption_TrueStoryLifecycle(t *testing.T) {
 	buyer := newClient(t, boss.ts)
 	var opts struct {
 		Partners []struct {
-			Kind     string `json:"kind"`
 			Name     string `json:"name"`
 			Products []struct {
 				ID int64 `json:"id"`
@@ -326,7 +342,7 @@ func TestRedemption_ScopingAndLiveit(t *testing.T) {
 	var partner struct {
 		ID int64 `json:"id"`
 	}
-	if s := boss.do("POST", "/api/admin/partners", map[string]string{"kind": "liveit"}, &partner); s != 201 {
+	if s := boss.do("POST", "/api/admin/partners", liveitPartner, &partner); s != 201 {
 		t.Fatalf("create partner = %d", s)
 	}
 	var product struct {
@@ -387,7 +403,7 @@ func TestRedemption_ScopingAndLiveit(t *testing.T) {
 	}
 
 	jane := login("jane")
-	if s := jane.do("POST", "/api/admin/partners", map[string]string{"kind": "truestory"}, nil); s != 403 {
+	if s := jane.do("POST", "/api/admin/partners", trueStoryPartner, nil); s != 403 {
 		t.Errorf("member creating a partner = %d, want 403", s)
 	}
 	if s := jane.do("GET", "/api/admin/redemptions", nil, nil); s != 200 {
@@ -437,7 +453,7 @@ func TestRedemption_LetterLanguage(t *testing.T) {
 	var partner, product struct {
 		ID int64 `json:"id"`
 	}
-	if s := boss.do("POST", "/api/admin/partners", map[string]string{"kind": "truestory"}, &partner); s != 201 {
+	if s := boss.do("POST", "/api/admin/partners", trueStoryPartner, &partner); s != 201 {
 		t.Fatalf("create partner = %d", s)
 	}
 	if s := boss.do("POST", "/api/admin/partners/"+itoa(partner.ID)+"/products",
@@ -640,7 +656,7 @@ func TestRedemption_PrintDelivery(t *testing.T) {
 	var partner, product struct {
 		ID int64 `json:"id"`
 	}
-	boss.do("POST", "/api/admin/partners", map[string]string{"kind": "truestory"}, &partner)
+	boss.do("POST", "/api/admin/partners", trueStoryPartner, &partner)
 	boss.do("POST", "/api/admin/partners/"+itoa(partner.ID)+"/products", map[string]any{"name": "Walk", "event_id": eventID}, &product)
 	buyer := newClient(t, boss.ts)
 	if s := buyer.do("POST", "/api/redeem", map[string]any{

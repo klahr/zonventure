@@ -4,9 +4,9 @@ import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
 import { Button, Card, Field, HelpPopover, ICON, Pill, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 import { MoreMenu } from "../event/Menu.tsx";
-import { addPartner, deletePartner, deleteProduct, listSelfGuided, orgSlug, setPartnerEnabled, updateProduct, type Partner, type PartnerProduct, type SelfGuidedEvent } from "./api.ts";
-import { ProductDialog } from "./dialogs.tsx";
-import { PARTNER_KINDS, partnerLabel, useRedemptionError } from "./shared.ts";
+import { deletePartner, deleteProduct, listSelfGuided, orgSlug, setPartnerEnabled, updateProduct, type Partner, type PartnerProduct, type SelfGuidedEvent } from "./api.ts";
+import { PartnerDialog, ProductDialog } from "./dialogs.tsx";
+import { useRedemptionError } from "./shared.ts";
 
 /**
  * The setup side: which partners' codes the organisation takes, and
@@ -20,6 +20,8 @@ export function PartnersCard({ partners, isOrgAdmin, reload }: { partners: Partn
   const errText = useRedemptionError();
   const slug = useLoad((s) => orgSlug(s).catch(() => ""), []);
   const [editing, setEditing] = useState<{ partner: Partner; existing: PartnerProduct | null; events: SelfGuidedEvent[] } | null>(null);
+  /** The partner being set up: null adds one, undefined is no dialog. */
+  const [settingUp, setSettingUp] = useState<Partner | null | undefined>(undefined);
   const url = location.origin + (slug.data ? `/o/${slug.data}/redeem` : "/redeem");
 
   const run = async (fn: () => Promise<unknown>, ok: string) => {
@@ -53,7 +55,7 @@ export function PartnersCard({ partners, isOrgAdmin, reload }: { partners: Partn
 
   const removePartner = async (p: Partner) => {
     const ok = await dialogs.confirm({
-      title: t.t("Delete {{partner}}?", { partner: partnerLabel(p.kind, p.name) }),
+      title: t.t("Delete {{partner}}?", { partner: p.name }),
       message: t.t("Its products go too, and customers can no longer redeem its codes."),
       confirmLabel: t.t("Delete"),
       danger: true,
@@ -70,8 +72,6 @@ export function PartnersCard({ partners, isOrgAdmin, reload }: { partners: Partn
     });
     if (ok) await run(() => deleteProduct(x.id), t.t("Product deleted"));
   };
-
-  const missing = PARTNER_KINDS.filter((k) => !partners.some((p) => p.kind === k.kind));
 
   return (
     <Card
@@ -99,10 +99,10 @@ export function PartnersCard({ partners, isOrgAdmin, reload }: { partners: Partn
       {partners.map((p) => {
         const products = p.products ?? [];
         return (
-          <section key={p.id} className="rd-partner" aria-label={partnerLabel(p.kind, p.name)}>
+          <section key={p.id} className="rd-partner" aria-label={p.name}>
             <div className="rd-partner__head">
               <h3 className="rd-partner__title">
-                {partnerLabel(p.kind, p.name)}
+                {p.name}
                 {!p.enabled && <Pill>{t.t("Disabled")}</Pill>}
               </h3>
               {isOrgAdmin && (
@@ -111,6 +111,7 @@ export function PartnersCard({ partners, isOrgAdmin, reload }: { partners: Partn
                   <MoreMenu size="sm"
                     label={t.t("More")}
                     items={[
+                      { label: t.t("Edit partner"), icon: <Pencil size={ICON.sm} aria-hidden />, onClick: () => setSettingUp(p) },
                       { label: p.enabled ? t.t("Disable") : t.t("Enable"), onClick: () => void run(() => setPartnerEnabled(p.id, !p.enabled), p.enabled ? t.t("Partner disabled") : t.t("Partner enabled")) },
                       { separator: true },
                       { label: t.t("Delete partner"), icon: <Trash2 size={ICON.sm} aria-hidden />, danger: true, onClick: () => void removePartner(p) },
@@ -150,14 +151,18 @@ export function PartnersCard({ partners, isOrgAdmin, reload }: { partners: Partn
         );
       })}
 
-      {isOrgAdmin && missing.length > 0 && (
+      {isOrgAdmin && (
         <div className="rd-actions rd-actions--start">
-          {missing.map((k) => (
-            <Button key={k.kind} icon={<Plus size={ICON.md} aria-hidden />} onClick={() => run(() => addPartner(k.kind), t.t("Partner added"))}>
-              {t.t("Add {{partner}}", { partner: k.label })}
-            </Button>
-          ))}
+          <Button icon={<Plus size={ICON.md} aria-hidden />} onClick={() => setSettingUp(null)}>{t.t("Add partner")}</Button>
         </div>
+      )}
+
+      {settingUp !== undefined && (
+        <PartnerDialog
+          existing={settingUp}
+          onClose={() => setSettingUp(undefined)}
+          onDone={() => { setSettingUp(undefined); reload(); }}
+        />
       )}
 
       {editing && (

@@ -4,7 +4,7 @@ import { ApiError, request } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { href, navigate } from "../../router.ts";
-import { Button, Callout, Card, Dialog, Empty, ErrorBox, Field, HelpPopover, ICON, ListingStatus, Loading, Page, PageHeader, Pill, SubmitListingDialog, Table, canSubmitListing, fmtMoney, useLoad, useToast, type Column } from "../../ui/index.ts";
+import { Button, Callout, Card, Dialog, Empty, ErrorBox, Field, HelpPopover, ICON, ListingStatus, Loading, Page, PageHeader, Pill, SubmitListingDialog, Table, canSubmitListing, currencySymbol, fmtMoney, useLoad, useToast, type Column } from "../../ui/index.ts";
 import { SPOTS } from "@zonventure/ui";
 import { iconOrCover } from "../adventures/parts.tsx";
 import { listAdventures, listEvents } from "../events/api.ts";
@@ -282,7 +282,7 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
     try {
       const saved = await request<{ listing_review?: string }>(`/api/admin/party-offers/${encodeURIComponent(target.adventure_slug)}`, {
         method: "PUT",
-        body: { enabled: enabled && !blocked, base_cents: minor(base), per_kid_cents: minor(perKid), currency: "sek", max_kids: kidsN, name: name.trim(), blurb },
+        body: { enabled: enabled && !blocked, base_cents: minor(base), per_kid_cents: minor(perKid), max_kids: kidsN, name: name.trim(), blurb },
       });
       toast.ok(isNew ? t.t("Party adventure created") : t.t("Saved"));
       // A draft waits to be submitted for review: the list opens that next.
@@ -348,10 +348,10 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
         <input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} placeholder={target?.title} />
       </Field>
       <div className="pt-terms">
-        <Field label={t.t("Base price (kr)")}>
+        <Field label={t.t("Base price ({{cur}})", { cur: currencySymbol(loc) })}>
           <input inputMode="decimal" value={base} onChange={(e) => setBase(e.target.value)} placeholder="0" />
         </Field>
-        <Field label={t.t("Per child (kr)")}>
+        <Field label={t.t("Per child ({{cur}})", { cur: currencySymbol(loc) })}>
           <input inputMode="decimal" value={perKid} onChange={(e) => setPerKid(e.target.value)} placeholder="0" />
         </Field>
         <Field label={t.t("Most children")}>
@@ -360,7 +360,7 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
       </div>
       {exampleCents > 0 && (
         <p className="evs-muted evs-small">
-          {t.t("A party adventure for {{n}} children costs {{price}}.", { n: example, price: fmtMoney(exampleCents, "SEK", loc) })}
+          {t.t("A party adventure for {{n}} children costs {{price}}.", { n: example, price: fmtMoney(exampleCents, undefined, loc) })}
         </p>
       )}
       <Field label={t.t("Description on the booking page")}>

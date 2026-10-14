@@ -4,17 +4,43 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"unicode/utf8"
 )
 
-// Currency is the one currency the platform and its orgs sell in.
-const Currency = "sek"
+// Currency is the one currency the platform and its orgs sell in, ISO
+// 4217 lower case. LoadCurrency sets it from ZV_CURRENCY at startup.
+var Currency = "sek"
+
+// zeroDecimal are currencies without a minor unit. Amounts are stored
+// in hundredths, so they would be charged a hundredfold.
+var zeroDecimal = map[string]bool{
+	"bif": true, "clp": true, "djf": true, "gnf": true, "jpy": true, "kmf": true, "krw": true, "mga": true,
+	"pyg": true, "rwf": true, "ugx": true, "vnd": true, "vuv": true, "xaf": true, "xof": true, "xpf": true,
+}
+
+// LoadCurrency sets Currency from ZV_CURRENCY; unset keeps sek.
+func LoadCurrency() error {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("ZV_CURRENCY")))
+	if v == "" {
+		return nil
+	}
+	if len(v) != 3 || strings.Trim(v, "abcdefghijklmnopqrstuvwxyz") != "" {
+		return fmt.Errorf("%q is not a three-letter ISO 4217 code", v)
+	}
+	if zeroDecimal[v] {
+		return fmt.Errorf("%s has no minor unit; amounts are stored in hundredths", v)
+	}
+	Currency = v
+	return nil
+}
 
 // Pricing is what the platform charges, edited by the platform admin
-// under Settings → Pricing. Amounts are öre, VAT included unless
+// under Settings → Pricing. Amounts are in Currency's minor unit, VAT included unless
 // VATExcluded.
 type Pricing struct {
 	// PlayerCents is the event pass: each player slot beyond FreePlayers.

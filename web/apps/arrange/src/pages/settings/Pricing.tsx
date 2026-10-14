@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { get, put } from "@zonventure/api";
+import { get, put, siteCurrency } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
-import { Button, Callout, Card, ErrorBox, Field, Loading, Row, fmtMoney, platformFeeOn, useDialogs, useLoad, useToast } from "../../ui/index.ts";
+import { Button, Callout, Card, ErrorBox, Field, Loading, Row, currencySymbol, fmtMoney, platformFeeOn, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 
-/** pricingResponse, internal/admin/pricing.go. Amounts in öre. */
+/** pricingResponse, internal/admin/pricing.go. Amounts in minor units. */
 interface Pricing {
   player_cents: number;
   free_players: number;
@@ -24,7 +24,7 @@ interface Seller {
 
 type Price = "player_cents" | "free_players" | "hosted_block_cents" | "fee_percent_bps" | "fee_fixed_cents" | "fee_min_cents";
 
-/** What the fields hold while typed: kronor and percent as written. */
+/** What the fields hold while typed: amounts and percent as written. */
 type Draft = Record<Price, string>;
 
 const KRONOR: Price[] = ["player_cents", "hosted_block_cents", "fee_fixed_cents", "fee_min_cents"];
@@ -66,7 +66,7 @@ function fromDraft(d: Draft, saved: Pricing): Pricing | Price {
 
 /**
  * What the platform charges, for the platform admin: the event pass,
- * the hosted pass and the cut of what orgs sell. In SEK, VAT included.
+ * the hosted pass and the cut of what orgs sell. In the site currency, VAT included.
  * Each card saves on its own and applies to the next checkout; nothing
  * is set in Stripe.
  */
@@ -85,7 +85,7 @@ export function PricingTab() {
   const onSaved = (p: Pricing & { unconnected_sellers?: Seller[] }) => load.set(p);
   const parsed = fromDraft(draft, saved);
   const now = typeof parsed === "string" ? saved : parsed;
-  const kr = (cents: number) => fmtMoney(cents, "SEK", t.current());
+  const kr = (cents: number) => fmtMoney(cents, undefined, t.current());
   const set = (k: Price) => (e: { target: { value: string } }) => setDraft({ ...draft, [k]: e.target.value });
   const input = (k: Price, suffix: string) => (
     <span className="cs-row cs-row--sm">
@@ -93,15 +93,15 @@ export function PricingTab() {
       <span>{suffix}</span>
     </span>
   );
-  const krIncl = saved.vat_excluded ? t.t("kr excl. VAT") : t.t("kr incl. VAT");
+  const krIncl = saved.vat_excluded ? t.t("{{cur}} excl. VAT", { cur: currencySymbol(t.current()) }) : t.t("{{cur}} incl. VAT", { cur: currencySymbol(t.current()) });
   const fee = platformFeeOn(now, 19900);
 
   return (
     <>
       <p className="cs-field__hint st-intro">
         {saved.vat_excluded
-          ? t.t("What the platform charges, in SEK excluding VAT. A saved price applies to the next checkout; purchases already made or started keep theirs.")
-          : t.t("What the platform charges, in SEK including VAT. A saved price applies to the next checkout; purchases already made or started keep theirs.")}
+          ? t.t("What the platform charges, in {{cur}} excluding VAT. A saved price applies to the next checkout; purchases already made or started keep theirs.", { cur: siteCurrency() })
+          : t.t("What the platform charges, in {{cur}} including VAT. A saved price applies to the next checkout; purchases already made or started keep theirs.", { cur: siteCurrency() })}
       </p>
       <VATCard saved={saved} onSaved={onSaved} />
       <PriceCard
@@ -297,7 +297,7 @@ function PriceCard(props: {
     >
       {props.children}
       <p className="cs-field__hint st-example" role="status">
-        {bad ? t.t("Use whole kronor and öre, 0 or more.") : props.example}
+        {bad ? t.t("Use an amount with at most two decimals, 0 or more.") : props.example}
       </p>
     </Card>
   );
