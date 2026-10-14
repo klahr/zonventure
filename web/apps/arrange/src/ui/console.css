@@ -12,7 +12,7 @@
 .dz .cs-head__row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--dz-space-4); flex-wrap: wrap; }
 .dz .cs-head__text { min-width: 0; }
 .dz .cs-title { display: flex; align-items: center; flex-wrap: wrap; gap: var(--dz-space-2); margin: 0; font-size: 1.5rem; font-weight: 700; line-height: 1.25; color: var(--dz-ink); }
-.dz .cs-head__badges { display: inline-flex; gap: var(--dz-space-1); }
+.dz .cs-head__badges { display: inline-flex; gap: var(--dz-space-1); font-family: var(--dz-font-sans); }
 .dz .cs-subtitle { margin: var(--dz-space-1) 0 0; color: var(--dz-muted); font-size: var(--dz-text-md); }
 .dz .cs-head__actions { display: flex; flex-wrap: wrap; gap: var(--dz-space-2); }
 
