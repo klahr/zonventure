@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-10-14
+
 ### Added
 
 - Voucher codes you pay later, for selling adventures as envelopes or
