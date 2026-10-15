@@ -3,7 +3,9 @@ package admin_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -11,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/dbtest"
 	"github.com/klahr/zonventure/internal/payments"
 	"github.com/klahr/zonventure/internal/settings"
@@ -24,6 +27,7 @@ type marketProvider struct {
 	checkouts  []payments.CheckoutParams
 	refunds    []payments.RefundParams
 	feeRefunds []string
+	accounts   []payments.ConnectedAccountParams
 }
 
 func (m *marketProvider) CreateCheckout(_ context.Context, p payments.CheckoutParams) (payments.CheckoutSession, error) {
@@ -38,8 +42,11 @@ func (m *marketProvider) Refund(_ context.Context, p payments.RefundParams) (pay
 	m.refunds = append(m.refunds, p)
 	return payments.Refund{ID: "re_market", Status: "succeeded"}, nil
 }
-func (m *marketProvider) CreateConnectedAccount(context.Context, payments.ConnectedAccountParams) (string, error) {
-	return "acct_new", nil
+func (m *marketProvider) CreateConnectedAccount(_ context.Context, p payments.ConnectedAccountParams) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.accounts = append(m.accounts, p)
+	return fmt.Sprintf("acct_new%d", len(m.accounts)), nil
 }
 func (m *marketProvider) CreateAccountLink(context.Context, payments.AccountLinkParams) (string, error) {
 	return "https://fake/onboarding", nil
@@ -191,5 +198,37 @@ func TestStoreRefund_FeeBackOnlyBeforePlay(t *testing.T) {
 	}
 	if got := strings.Join(f.pay.feeRefunds, ","); got != "acct_acme/ch_unplayed" {
 		t.Errorf("fees refunded: %q, want only the unplayed sale's", got)
+	}
+}
+
+// TestConnect_AccountCountry: Stripe needs a new account's country; it
+// is the first one the org posts to, else the platform's.
+func TestConnect_AccountCountry(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newMarketFixture(t, 49900, 3)
+	defer cleanup()
+	r := chi.NewRouter()
+	r.Post("/api/admin/organizations/{orgID}/stripe-connect/start", f.h.StartStripeConnect)
+	start := func(org int64) {
+		t.Helper()
+		req := httptest.NewRequest("POST", "/api/admin/organizations/"+itoa64(org)+"/stripe-connect/start", nil)
+		req = req.WithContext(auth.WithUser(req.Context(), auth.User{ID: 1, Username: "boss", Role: auth.RoleOrgAdmin, OrgID: &org}))
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("start: %d %s", w.Code, w.Body)
+		}
+	}
+	var norway, plain int64
+	if err := f.db.QueryRow(`INSERT INTO organizations(name, slug, ship_countries) VALUES ('Fjord', 'fjord', '{NO,SE}') RETURNING id`).Scan(&norway); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRow(`INSERT INTO organizations(name, slug) VALUES ('Plain', 'plain') RETURNING id`).Scan(&plain); err != nil {
+		t.Fatal(err)
+	}
+	start(norway)
+	start(plain)
+	if len(f.pay.accounts) != 2 || f.pay.accounts[0].Country != "NO" || f.pay.accounts[1].Country != settings.ShipCountries[0] {
+		t.Errorf("accounts made: %+v, want NO then the platform's %s", f.pay.accounts, settings.ShipCountries[0])
 	}
 }

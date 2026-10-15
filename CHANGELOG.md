@@ -11,6 +11,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed
+
+- Connecting an organisation's Stripe account failed: Stripe needs the
+  account's country. It is now the first country the organisation posts
+  letters to, else the platform's (`ZV_SHIP_COUNTRIES`, default SE).
+
 ## [0.32.4] - 2026-10-15
 
 ### Changed

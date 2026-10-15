@@ -12,6 +12,7 @@ import (
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/payments"
+	"github.com/klahr/zonventure/internal/settings"
 )
 
 // Stripe Connect onboarding for the /store marketplace flow.
@@ -107,27 +108,33 @@ func (h *Handlers) StartStripeConnect(w http.ResponseWriter, r *http.Request) {
 	// endpoint is idempotent at the org level: re-clicking "Connect
 	// Stripe" never produces a second account.
 	var (
-		existing sql.NullString
-		orgName  string
+		existing      sql.NullString
+		orgName, ship string
 	)
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT stripe_connect_account_id, name FROM organizations WHERE id = $1`,
-		orgID).Scan(&existing, &orgName); err != nil {
+		`SELECT stripe_connect_account_id, name, array_to_string(ship_countries, ',') FROM organizations WHERE id = $1`,
+		orgID).Scan(&existing, &orgName, &ship); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "org lookup failed")
 		return
 	}
 
 	accountID := existing.String
 	if accountID == "" {
+		// Stripe needs the account's country before it can sell: the
+		// first one the org posts letters to, else the platform's.
+		country := settings.OrgShipCountries(ship)[0]
 		newID, err := mp.CreateConnectedAccount(r.Context(), payments.ConnectedAccountParams{
 			Email:       strings.TrimSpace(me.Email),
 			DisplayName: orgName,
+			Country:     country,
 			// Stable per-org: even if the local UPDATE below fails
 			// after a successful CreateConnectedAccount, a retry
 			// must hit Stripe with the same key and get the original
 			// account id back rather than provisioning a second
 			// acct_xxx (with its own KYC requirements).
-			IdempotencyKey: fmt.Sprintf("connect-org-%d", orgID),
+			// The country is in it: a request refused for want of one
+			// keeps its key's refusal.
+			IdempotencyKey: fmt.Sprintf("connect-org-%d-%s", orgID, country),
 		})
 		if err != nil {
 			logx.Warn("admin.stripe_connect.create", "org", orgID, "err", err.Error())
