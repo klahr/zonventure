@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.32.3] - 2026-10-15
+
 ### Added
 
 - Requests for a quote. An organisation can turn on a guided form on its
