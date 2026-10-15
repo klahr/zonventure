@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.32.6] - 2026-10-15
+
 ### Added
 
 - A platform admin can disconnect an organisation's Stripe account from
