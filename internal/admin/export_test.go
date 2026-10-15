@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"time"
 
 	"github.com/klahr/zonventure/internal/payments"
 )
@@ -24,4 +25,10 @@ func ExportedCreatePurchaseCheckoutSession(h *Handlers, ctx context.Context, pur
 	advSlug, advTitle string, maxPlayers, amountCents int, customerEmail, existingCustomerID string,
 ) (string, string, error) {
 	return h.createPurchaseCheckoutSession(ctx, purchaseID, advSlug, advTitle, maxPlayers, amountCents, customerEmail, existingCustomerID)
+}
+
+// ExportedQuoteStamp signs a request form's load time, as GetQuoteForm
+// does, so a test can send a form that loaded long enough ago.
+func ExportedQuoteStamp(key []byte, at time.Time) string {
+	return quoteStamp(key, at)
 }

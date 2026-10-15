@@ -73,6 +73,7 @@
   .hero .website { display: inline-block; margin-top: 1.4rem; color: rgba(255,255,255,.8); font-weight: 600; font-size: .95rem; }
   .verified-badge { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 700; color: #1b6b43; background: #fff; }
   .verified-badge[data-verified="false"] { display: none; }
+  .request-cta[data-open="false"] { display: none; }
 
   /* The adventures. */
   .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin: 0 0 2.25rem; }
@@ -194,6 +195,7 @@
       <div class="hero-ctas">
         <a class="btn primary lg" href="#adventures">{{STORE_BROWSE_CTA}} <span aria-hidden="true">↓</span></a>
         <a class="btn glass lg" href="#code">{{STORE_CODE_CTA}}</a>
+        <a class="btn glass lg request-cta" data-open="{{ORG_REQUESTS_OPEN}}" href="{{ORG_REQUEST_PATH}}">{{STORE_REQUEST_CTA}}</a>
       </div>
       <p><span class="verified-badge" data-verified="{{ORG_VERIFIED}}" title="{{VERIFIED_CREATOR_HINT}}">✓ {{VERIFIED_CREATOR}}</span></p>
       {{WEBSITE_LINK_BLOCK}}

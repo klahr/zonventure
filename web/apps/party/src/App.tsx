@@ -4,6 +4,7 @@ import { SPOTS } from "@zonventure/ui";
 import { Book, Resend } from "./Book.tsx";
 import { Host } from "./Host.tsx";
 import { Join } from "./Join.tsx";
+import { Request } from "./Request.tsx";
 import { TrailEdit } from "./TrailEdit.tsx";
 import { TrailMine, TrailPaid, TrailStart, TrailVerify } from "./TrailPages.tsx";
 import { useT } from "./i18n.tsx";
@@ -16,11 +17,12 @@ import { embedded, fitFrame } from "./embed.ts";
  * host link again), /app/party/join/{token}, and /app/party/paid, where a payment made from
  * the host page lands. The quiz trail's pages are under /app/party/trail/:
  * start/{org}, edit (#id), host (#hostToken), mine, verify (#token), paid.
+ * /app/party/request/{org} asks an organisation for a quote.
  */
 type Route =
   | { page: "book"; org: string; offer: string }
   | { page: "host" | "join"; token: string }
-  | { page: "trail-start"; org: string }
+  | { page: "trail-start" | "request"; org: string }
   | { page: "paid" | "host-find" | "none" | "trail-edit" | "trail-host" | "trail-mine" | "trail-verify" | "trail-paid" };
 
 export function route(path: string): Route {
@@ -31,6 +33,7 @@ export function route(path: string): Route {
     const page = parts.length === 2 ? sub[parts[1] as keyof typeof sub] : undefined;
     return page ? { page } : { page: "none" };
   }
+  if (parts[0] === "request" && parts.length === 2) return { page: "request", org: parts[1]! };
   if (parts[0] === "book" && parts.length === 3) return { page: "book", org: parts[1]!, offer: parts[2]! };
   if (parts[0] === "host" && parts.length === 2) return { page: "host", token: parts[1]! };
   if (parts[0] === "host" && parts.length === 1) return { page: "host-find" };
@@ -44,7 +47,8 @@ export function App() {
   const t = i18n.t;
   const sv = i18n.current().startsWith("sv");
   const r = route(location.pathname);
-  const editing = r.page === "trail-edit" || r.page === "trail-host";
+  // Fullscreen guides: the editor, and the request form.
+  const editing = r.page === "trail-edit" || r.page === "trail-host" || r.page === "request";
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => fitFrame(root.current!, editing ? "screen" : "content"), [editing]);
   return (
@@ -66,6 +70,8 @@ export function App() {
           <Host token={r.token} />
         ) : r.page === "join" ? (
           <Join token={r.token} />
+        ) : r.page === "request" ? (
+          <Request org={r.org} />
         ) : r.page === "trail-start" ? (
           <TrailStart org={r.org} />
         ) : r.page === "trail-edit" || r.page === "trail-host" ? (

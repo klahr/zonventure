@@ -194,6 +194,7 @@ type landingStrings struct {
 	// gift card or an email starts an adventure.
 	StoreBrowseCTA     string
 	StoreCodeCTA       string
+	StoreRequestCTA    string // the request form's button, when it takes requests
 	StoreCountOne      string
 	StoreCountPlural   string
 	StoreCodeEyebrow   string
@@ -559,6 +560,7 @@ func storeSubs(s landingStrings) [][2]string {
 		{"{{STORE_STEP3_BODY}}", s.StoreStep3Body},
 		{"{{STORE_BROWSE_CTA}}", s.StoreBrowseCTA},
 		{"{{STORE_CODE_CTA}}", s.StoreCodeCTA},
+		{"{{STORE_REQUEST_CTA}}", s.StoreRequestCTA},
 		{"{{STORE_CODE_EYEBROW}}", s.StoreCodeEyebrow},
 		{"{{STORE_CODE_HEADING}}", s.StoreCodeHeading},
 		{"{{STORE_CODE_BODY}}", s.StoreCodeBody},
@@ -660,6 +662,9 @@ func renderOrgPage(w http.ResponseWriter, r *http.Request, org orgProfile) {
 		{"{{ORG_CONTACT_BLOCK}}", org.contactBlock(s.StoreFooterContact)},
 		{"{{ORG_BRAND_OVERRIDES}}", org.brandStyle()},
 		{"{{ORG_VERIFIED}}", boolAttr(org.Verified)},
+		// "Ask for a quote": shown when the organisation takes requests.
+		{"{{ORG_REQUESTS_OPEN}}", boolAttr(org.RequestsOpen)},
+		{"{{ORG_REQUEST_PATH}}", "/o/" + org.Slug + "/request"},
 	}
 	for _, sub := range orgSubs {
 		out = strings.ReplaceAll(out, sub[0], sub[1])

@@ -131,6 +131,11 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.Post("/redemptions/{redemptionID}/approve", adminH.ApproveRedemption)
 		r.Post("/redemptions/{redemptionID}/reject", adminH.RejectRedemption)
 		r.Post("/redemptions/{redemptionID}/cancel", adminH.CancelRedemption)
+		// Requests for a quote from the organisation's public form
+		// (admin/quote_requests.go). Org admins only, checked inside.
+		r.Get("/requests", adminH.ListQuoteRequests)
+		r.Patch("/requests/{id}", adminH.UpdateQuoteRequest)
+		r.Delete("/requests/{id}", adminH.DeleteQuoteRequest)
 		r.Get("/purchases/{purchaseID}", adminH.GetPurchase)
 		r.Get("/purchases/{purchaseID}/receipt", adminH.PurchaseReceipt)
 		r.Post("/purchases/{purchaseID}/confirm", adminH.ConfirmPurchase)
@@ -484,6 +489,9 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// The contact address its mails reply to, and its time zone.
 			r.Get("/orgs/me/contact", adminH.GetMyOrgContact)
 			r.Put("/orgs/me/contact", adminH.SetMyOrgContact)
+			// Whether it takes requests for a quote, and the form's intro.
+			r.Get("/orgs/me/requests", adminH.GetMyQuoteSettings)
+			r.Put("/orgs/me/requests", adminH.SetMyQuoteSettings)
 			r.Get("/orgs/me/email-theme", adminH.GetOrgEmailTheme)
 			r.Put("/orgs/me/email-theme", adminH.SetOrgEmailTheme)
 			r.Get("/orgs/me/profile", adminH.GetMyOrgProfile)

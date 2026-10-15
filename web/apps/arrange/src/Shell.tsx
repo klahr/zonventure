@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from "react";
 import { createPortal } from "react-dom";
-import { Menu as MenuIcon, X, Building2, CalendarDays, ClipboardCheck, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, Gift, LogOut, Map as MapIcon, Monitor, Moon, PartyPopper, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
+import { Menu as MenuIcon, X, Building2, CalendarDays, ClipboardCheck, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, Gift, Inbox, LogOut, Map as MapIcon, Monitor, Moon, PartyPopper, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
 import { auth, readsAsAdmin, runsEvents, siteName, siteWordmark, type Whoami } from "@zonventure/api";
 import { readTheme, setTheme, type Theme } from "@zonventure/ui";
 import { chooseLocale, useT } from "./i18n.tsx";
@@ -76,6 +76,7 @@ const OrganizationsPage = page(() => import("./pages/admin/index.tsx"), "Organiz
 const OrganizationPage = page(() => import("./pages/admin/index.tsx"), "OrganizationPage");
 const WebhookLogPage = page(() => import("./pages/admin/index.tsx"), "WebhookLogPage");
 const RedemptionsPage = page(() => import("./pages/redemptions/index.tsx"), "RedemptionsPage");
+const RequestsPage = page(() => import("./pages/requests/index.tsx"), "RequestsPage");
 
 /**
  * Authenticated shell: sidebar, header and the content region.
@@ -104,7 +105,7 @@ const ROLE: Record<Whoami["role"], string> = { admin: "Administrator", support: 
  * before joining an organisation — only the way out. `adventures`
  * marks the section the designer belongs to.
  */
-type Section = "dashboard" | "organizations" | "listing-reviews" | "logs" | "settings" | "adventures" | "events" | "quests" | "parties" | "redemptions";
+type Section = "dashboard" | "organizations" | "listing-reviews" | "logs" | "settings" | "adventures" | "events" | "quests" | "parties" | "redemptions" | "requests";
 
 // Settings is not listed here: the account menu at the foot of the
 // sidebar leads there, on every screen.
@@ -130,6 +131,8 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
     item("Self-guided", Compass, { name: "quests" }, "quests"),
     ...(user.role === "org_admin" ? [item("Hosted", PartyPopper, { name: "parties" }, "parties")] : []),
     item("Orders", Gift, { name: "redemptions" }, "redemptions"),
+    // Requests hold customers' contact details: admins only.
+    ...(user.role === "org_admin" ? [item("Requests", Inbox, { name: "requests" }, "requests")] : []),
     ...review,
   ];
 }
@@ -160,6 +163,8 @@ function sectionOf(r: Route): { section: Section; label: string } {
       return { section: "parties", label: "Hosted" };
     case "redemptions":
       return { section: "redemptions", label: "Orders" };
+    case "requests":
+      return { section: "requests", label: "Requests" };
     case "organizations":
     case "organization":
       return { section: "organizations", label: "Organizations" };
@@ -606,6 +611,8 @@ function Page({ route, user }: { route: Route; user: Whoami }) {
       return <PartiesPage slug={route.slug} />;
     case "redemptions":
       return <RedemptionsPage tab={route.tab} />;
+    case "requests":
+      return <RequestsPage tab={route.tab} />;
     case "organizations":
       return <OrganizationsPage />;
     case "organization":

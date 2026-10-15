@@ -94,6 +94,10 @@
       and during an event the player's GPS location and answer text.
       Used to display progress on the live board and verify location
       gates.</li>
+  <li><strong>Requests for a quote</strong>: the name, company, email,
+      phone and answers someone sends an organisation through its
+      request form. The organisation asked is responsible for them;
+      we deliver them to it and keep them for it.</li>
   <li><strong>Operational logs</strong>: login successes/failures, IPs,
       access timestamps. Used to detect abuse and investigate issues.</li>
   <li><strong>Email-verification and password-reset tokens</strong>,
@@ -130,6 +134,8 @@
       30 days.</li>
   <li>Postal addresses for letters we post to you: the name and address
       {{ADDRESS_RETENTION}} The order is kept for bookkeeping.</li>
+  <li>Requests for a quote: deleted a year after their last change,
+      or sooner when the organisation deletes one.</li>
   <li>Audit logs: {{AUDIT_RETENTION}}</li>
   <li>Verification / reset tokens: 24 hours (verification) or 1 hour
       (reset), or until used.</li>

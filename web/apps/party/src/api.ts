@@ -57,3 +57,45 @@ export function money(cents: number, currency: string, locale: string): string {
     return `${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
   }
 }
+
+/** An organisation's request form: internal/admin/quote_requests.go GetQuoteForm. */
+export interface QuoteForm {
+  org_name: string;
+  org_slug: string;
+  intro: string;
+  currency: string;
+  /** When the form loaded, signed: sent back with the request. */
+  started: string;
+  /** The organisation's brand: its colours and title typeface. */
+  look?: play.Brand;
+  logo_url?: string;
+  cover_url?: string;
+  /** What the organisation doesn't offer: adventure kinds, "game_master", extras, languages. */
+  off?: string[];
+}
+
+/** The company form's answers: internal/admin/quote_requests.go quoteAnswers. */
+export interface QuoteAnswers {
+  occasion: string;
+  date?: string;
+  month?: string;
+  time_of_day?: string;
+  duration?: string;
+  people: number;
+  city: string;
+  venue?: string;
+  help_choose?: boolean;
+  scope: string;
+  game_master?: boolean;
+  extras?: string[];
+  languages?: string[];
+  budget?: string;
+  message?: string;
+}
+
+export const getQuoteForm = (slug: string) => request<QuoteForm>(`/api/o/${enc(slug)}/request`);
+
+export const sendQuoteRequest = (
+  slug: string,
+  body: { answers: QuoteAnswers; name: string; company: string; email: string; phone: string; website: string; started: string },
+) => request<{ ok: boolean }>(`/api/o/${enc(slug)}/request`, { method: "POST", body });

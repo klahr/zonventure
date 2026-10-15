@@ -1044,3 +1044,454 @@ body {
   opacity: 0.35;
   cursor: default;
 }
+
+/* Asking for a quote (Request.tsx): the guide's shell in the
+   organisation's look (its colours, title typeface, cover and logo), one
+   question a screen, the answers as big tiles and chips. */
+.req-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-weight: 700;
+  font-family: var(--trail-heading, var(--font-brand));
+}
+.req-brand > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.req-brand img,
+.req-brand__initial {
+  flex: none;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  object-fit: contain;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border-soft);
+}
+.req-brand__initial {
+  display: grid;
+  place-items: center;
+  background: var(--trail-brand, var(--accent));
+  color: var(--trail-on-brand, #fff);
+  font-size: 0.95rem;
+  text-transform: uppercase;
+}
+
+/* The welcome's cover: the organisation's picture, or its colours. */
+.req-hero {
+  position: relative;
+  height: clamp(9rem, 26vh, 16rem);
+  margin: 0 calc(-1 * var(--sp-4)) 0;
+  background: var(--trail-brand, var(--accent)) center / cover no-repeat;
+}
+.req-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent 45%, color-mix(in srgb, var(--trail-bg, var(--bg)) 92%, transparent));
+}
+.req-hero__logo {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  bottom: -2.25rem;
+  transform: translateX(-50%);
+  width: 4.5rem;
+  height: 4.5rem;
+  padding: 0.4rem;
+  box-sizing: border-box;
+  border-radius: 50%;
+  object-fit: contain;
+  background: var(--surface);
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.45), 0 0 0 3px var(--surface);
+}
+.trail-guide__main.has-hero:has(.req-hero__logo) .trail-guide__body {
+  padding-top: 2.25rem;
+}
+
+.req-step {
+  margin: var(--sp-3) 0 calc(-1 * var(--sp-3));
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.req-intro {
+  margin: 0;
+  padding: var(--sp-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  box-shadow: inset 4px 0 0 var(--accent);
+  font-size: var(--text-lg);
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+/* How it works, three numbered steps. */
+.req-how {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.req-how li {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-start;
+}
+.req-how li > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.req-how small {
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
+.req-how__icon,
+.req-tile__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 13%, var(--surface));
+  color: var(--accent);
+}
+
+.req-choices,
+.req-ticks,
+.req-summary {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.req-choices button,
+.req-check--card {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 2px solid transparent;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 0 1px var(--border-soft);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.req-choices button:hover,
+.req-check--card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px -12px color-mix(in srgb, var(--accent) 60%, rgba(0, 0, 0, 0.4)), 0 0 0 1px var(--border-soft);
+}
+.req-choices button.is-on,
+.req-check--card:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+.req-choices button.is-on .req-tile__icon,
+.req-check--card:has(input:checked) .req-tile__icon {
+  background: var(--trail-brand, var(--accent));
+  color: var(--trail-on-brand, #fff);
+}
+.req-tile__text,
+.req-check--card > span:last-child {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.req-choices strong,
+.req-check--card strong {
+  font-size: var(--text-lg);
+  line-height: 1.25;
+}
+.req-choices small,
+.req-check--card small {
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+.req-tile__tick {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  border: 2px solid var(--border-soft);
+  color: transparent;
+}
+.req-choices button.is-on .req-tile__tick {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--trail-on-brand, #fff);
+}
+.req-check--card input {
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin: 0;
+  accent-color: var(--accent);
+  order: 3;
+}
+
+.req-chips,
+.req-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.req-switch {
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.req-chips button,
+.req-switch button {
+  min-height: 2.75rem;
+  padding: 0 var(--sp-4);
+  border: 2px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.req-switch button {
+  flex: 1;
+  border-color: transparent;
+  background: transparent;
+}
+.req-chips button.is-on,
+.req-switch button.is-on {
+  border-color: transparent;
+  background: var(--trail-brand, var(--accent));
+  color: var(--trail-on-brand, #fff);
+  box-shadow: 0 6px 16px -10px var(--accent);
+}
+.req-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.req-group legend {
+  margin-bottom: var(--sp-2);
+  font-weight: 700;
+}
+.req-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-weight: 700;
+}
+.req-field input,
+.req-field select,
+.req-field textarea {
+  min-height: 3.1rem;
+  box-sizing: border-box;
+  padding: var(--sp-2) var(--sp-3);
+  border: 2px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 400;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.req-field textarea {
+  resize: vertical;
+}
+.req-field :focus,
+.req-people input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.req-check {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  cursor: pointer;
+}
+.req-check > input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.req-people {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+.req-people button {
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 13%, var(--surface));
+  color: var(--accent);
+  font-size: 1.6rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.req-people button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.req-people input {
+  width: 8rem;
+  min-height: 4.5rem;
+  border: 2px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--trail-heading, var(--font-brand));
+  font-size: 2.6rem;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+.req-people input::-webkit-inner-spin-button,
+.req-people input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.req-note {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.req-people + .req-note {
+  align-self: center;
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--accent);
+  font-size: var(--text-base);
+  font-weight: 700;
+}
+
+.req-summary {
+  gap: 0;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 0 1px var(--border-soft);
+  overflow: hidden;
+}
+.req-summary li + li {
+  border-top: 1px solid var(--border-soft);
+}
+.req-summary button,
+.req-summary__row {
+  width: 100%;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 7rem 1fr auto;
+  gap: var(--sp-3);
+  align-items: baseline;
+  padding: var(--sp-3) var(--sp-4);
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.req-summary button:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.req-summary__label {
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+.req-summary__value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+.req-summary .trail-icon {
+  color: var(--accent);
+}
+@media (max-width: 30rem) {
+  .req-summary button,
+  .req-summary__row {
+    grid-template-columns: 1fr auto;
+    gap: 2px var(--sp-3);
+  }
+  .req-summary__label {
+    grid-column: 1 / -1;
+  }
+}
+
+.req-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-4);
+}
+.req-done__mark {
+  display: grid;
+  place-items: center;
+  width: 5rem;
+  height: 5rem;
+  margin-top: var(--sp-4);
+  border-radius: 50%;
+  background: var(--trail-brand, var(--accent));
+  color: var(--trail-on-brand, #fff);
+  box-shadow: 0 12px 30px -12px var(--accent);
+  animation: req-pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes req-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .req-done__mark {
+    animation: none;
+  }
+  .req-choices button,
+  .req-check--card {
+    transition: none;
+  }
+}
+
+/* The spam trap's field: there for a script, never seen or reached by
+   a person. Off-screen rather than display:none, which some bots skip. */
+.req-trap {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}

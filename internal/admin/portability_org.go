@@ -78,6 +78,23 @@ type orgExportEnvelope struct {
 	// Purchases are the org's invoice purchases not yet billed, so the
 	// money owed moves with the org.
 	Purchases []orgExportPurchase `json:"purchases,omitempty"`
+	// Requests are its requests for a quote, which it is responsible for.
+	Requests []orgExportRequest `json:"requests,omitempty"`
+}
+
+// orgExportRequest is a request for a quote (org_requests).
+type orgExportRequest struct {
+	Form      string          `json:"form"`
+	Answers   json.RawMessage `json:"answers"`
+	Name      string          `json:"name"`
+	Company   string          `json:"company,omitempty"`
+	Email     string          `json:"email"`
+	Phone     string          `json:"phone,omitempty"`
+	Lang      string          `json:"lang,omitempty"`
+	Status    string          `json:"status"`
+	Notes     string          `json:"notes,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
 }
 
 // orgExportOrg carries the org and the flags a platform admin set on
@@ -89,6 +106,10 @@ type orgExportOrg struct {
 	Trusted         bool   `json:"trusted,omitempty"`
 	PartyAdventures bool   `json:"party_adventures,omitempty"`
 	VerifiedCreator bool   `json:"verified_creator,omitempty"`
+	// Whether it takes requests for a quote, and its form's intro.
+	RequestsOpen  bool     `json:"requests_open,omitempty"`
+	RequestsIntro string   `json:"requests_intro,omitempty"`
+	RequestsOff   []string `json:"requests_off,omitempty"`
 }
 
 // orgExportPurchase is a paid, unbilled, unvoided invoice purchase.
@@ -223,17 +244,23 @@ func (h *Handlers) ExportOrgEnvelope(ctx context.Context, orgID int64) (orgExpor
 
 	// 1. Org row + logo blob.
 	var (
-		logoMime sql.NullString
-		logoBlob []byte
+		logoMime    sql.NullString
+		logoBlob    []byte
+		requestsOff string
 	)
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT name, logo_mime_type, logo_content, trusted <> 0, quiz_trail_enabled, verified_creator
+		SELECT name, logo_mime_type, logo_content, trusted <> 0, quiz_trail_enabled, verified_creator, requests_open, requests_intro,
+		       array_to_string(requests_off, ',')
 		FROM organizations WHERE id = $1
-	`, orgID).Scan(&env.Org.Name, &logoMime, &logoBlob, &env.Org.Trusted, &env.Org.PartyAdventures, &env.Org.VerifiedCreator); err != nil {
+	`, orgID).Scan(&env.Org.Name, &logoMime, &logoBlob, &env.Org.Trusted, &env.Org.PartyAdventures, &env.Org.VerifiedCreator,
+		&env.Org.RequestsOpen, &env.Org.RequestsIntro, &requestsOff); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return env, nil, fmt.Errorf("org %d: not found", orgID)
 		}
 		return env, nil, fmt.Errorf("load org: %w", err)
+	}
+	if requestsOff != "" {
+		env.Org.RequestsOff = strings.Split(requestsOff, ",")
 	}
 
 	files := []exportFile{}
@@ -358,6 +385,9 @@ func (h *Handlers) ExportOrgEnvelope(ctx context.Context, orgID int64) (orgExpor
 	if err := h.exportOrgInvoicePurchases(ctx, orgID, &env, assignIdxByID); err != nil {
 		return env, nil, err
 	}
+	if err := h.exportOrgRequests(ctx, orgID, &env); err != nil {
+		return env, nil, err
+	}
 
 	// 5. Events + nested teams, slots, ticket_purchases.
 	if err := h.exportOrgEvents(ctx, orgID, &env, &files, assignIdxByID); err != nil {
@@ -365,6 +395,29 @@ func (h *Handlers) ExportOrgEnvelope(ctx context.Context, orgID int64) (orgExpor
 	}
 
 	return env, files, nil
+}
+
+// exportOrgRequests adds the org's requests for a quote.
+func (h *Handlers) exportOrgRequests(ctx context.Context, orgID int64, env *orgExportEnvelope) error {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT form, answers, name, company, email, phone, lang, status, notes, created_at, updated_at
+		FROM org_requests WHERE org_id = $1 ORDER BY id
+	`, orgID)
+	if err != nil {
+		return fmt.Errorf("load requests: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var q orgExportRequest
+		if err := rows.Scan(&q.Form, &q.Answers, &q.Name, &q.Company, &q.Email, &q.Phone, &q.Lang, &q.Status, &q.Notes, &q.CreatedAt, &q.UpdatedAt); err != nil {
+			return fmt.Errorf("scan request: %w", err)
+		}
+		env.Requests = append(env.Requests, q)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("request rows: %w", err)
+	}
+	return nil
 }
 
 // exportOrgInvoicePurchases adds the org's invoice purchases still to
@@ -702,6 +755,8 @@ type OrgImportSummary struct {
 	Assignments int   `json:"assignments"`
 	// InvoicePurchases counts the unbilled invoice purchases carried.
 	InvoicePurchases int `json:"invoice_purchases"`
+	// Requests counts the requests for a quote carried.
+	Requests int `json:"requests"`
 	// Flags names the org flags carried over ("invoice_billing",
 	// "party_adventures", "verified_creator"), for the destination
 	// admin to review.
@@ -784,10 +839,11 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 	var orgID int64
 	if err := db.QueryRowContext(ctx, `
 		INSERT INTO organizations(name, slug, logo_mime_type, logo_content, logo_size_bytes,
-			trusted, quiz_trail_enabled, verified_creator)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
+			trusted, quiz_trail_enabled, verified_creator, requests_open, requests_intro, requests_off)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE(string_to_array(NULLIF($11, ''), ','), '{}')) RETURNING id
 	`, resolvedName, slug, sqlNullStr(env.Org.LogoMime), assets[env.Org.LogoFile], int64(len(assets[env.Org.LogoFile])),
-		boolToInt(env.Org.Trusted), env.Org.PartyAdventures, env.Org.VerifiedCreator).Scan(&orgID); err != nil {
+		boolToInt(env.Org.Trusted), env.Org.PartyAdventures, env.Org.VerifiedCreator, env.Org.RequestsOpen, env.Org.RequestsIntro,
+		strings.Join(env.Org.RequestsOff, ",")).Scan(&orgID); err != nil {
 		return summary, fmt.Errorf("create org: %w", err)
 	}
 	summary.OrgID = orgID
@@ -927,6 +983,19 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 			return summary, fmt.Errorf("create invoice purchase %d: %w", i, err)
 		}
 		summary.InvoicePurchases++
+	}
+
+	// Requests for a quote. A form or status this server doesn't know
+	// fails the check constraint, and the import with it.
+	for i, q := range env.Requests {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO org_requests(org_id, form, answers, name, company, email, phone, lang, status, notes, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		`, orgID, q.Form, []byte(q.Answers), q.Name, q.Company, q.Email, q.Phone, q.Lang, q.Status, q.Notes, q.CreatedAt, q.UpdatedAt); err != nil {
+			cleanupOrg()
+			return summary, fmt.Errorf("create request %d: %w", i, err)
+		}
+		summary.Requests++
 	}
 
 	// Events + teams + slots + purchases.

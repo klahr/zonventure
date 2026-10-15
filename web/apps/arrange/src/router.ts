@@ -34,6 +34,7 @@ export type Route =
   | { name: "quests" }
   | { name: "parties"; slug?: string }
   | { name: "redemptions"; tab?: string }
+  | { name: "requests"; tab?: string }
   | { name: "organizations" }
   | { name: "organization"; id: number }
   | { name: "logs" }
@@ -102,6 +103,8 @@ export function parseRoute(hash: string): Route {
       return arg ? { name: "parties", slug: arg } : { name: "parties" };
     case "redemptions":
       return arg ? { name: "redemptions", tab: arg } : { name: "redemptions" };
+    case "requests":
+      return arg ? { name: "requests", tab: arg } : { name: "requests" };
     case "organizations": {
       const id = num(arg);
       return id ? { name: "organization", id } : { name: "organizations" };
@@ -174,6 +177,8 @@ export function href(r: Route): string {
       return r.slug ? `#/parties/${e(r.slug)}` : "#/parties";
     case "redemptions":
       return r.tab ? `#/redemptions/${e(r.tab)}` : "#/redemptions";
+    case "requests":
+      return r.tab ? `#/requests/${e(r.tab)}` : "#/requests";
     case "organizations":
       return "#/organizations";
     case "organization":

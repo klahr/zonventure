@@ -248,6 +248,14 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		// other capability endpoints in this group.
 		r.Post("/api/play/voucher", env.playerH.VoucherRedeem)
 
+		// Requests for a quote (admin/quote_requests.go): the form is
+		// the party app's page; the organisation must have turned it on.
+		r.Get("/o/{slug}/request", func(w http.ResponseWriter, req *http.Request) {
+			redirectKeepingQuery(w, req, "/app/party/request/"+url.PathEscape(chi.URLParam(req, "slug")))
+		})
+		r.Get("/api/o/{slug}/request", adminH.GetQuoteForm)
+		r.Post("/api/o/{slug}/request", adminH.SendQuoteRequest)
+
 		r.Get("/api/redeem/options", adminH.RedeemOptions)
 		r.Post("/api/redeem", adminH.Redeem)
 		r.Get("/api/o/{slug}/redeem/options", adminH.RedeemOptionsByOrg)

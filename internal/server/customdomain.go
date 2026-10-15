@@ -119,6 +119,8 @@ func customDomains(mainBase string) func(http.Handler) http.Handler {
 				return
 			case p == "/redeem":
 				r = rewritePath(r, own+"/redeem")
+			case p == "/request":
+				r = rewritePath(r, own+"/request")
 			case p == "/favicon.ico" || p == "/favicon.svg":
 				if e.HasLogo {
 					r = rewritePath(r, "/org-logo/"+strconv.FormatInt(e.OrgID, 10))

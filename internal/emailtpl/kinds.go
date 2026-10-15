@@ -636,6 +636,245 @@ func BoxWaiting(lang, link string) (string, Content) {
 	return subject, c
 }
 
+// --- requests for a quote ----------------------------------------------------
+
+// Request is a quote request as its emails show it. The choices are the
+// form's keys (Occasion "kickoff", Budget "5k_15k", …); Date is
+// YYYY-MM-DD, or Month YYYY-MM when the date is open.
+type Request struct {
+	Org                         string
+	Occasion, Date, Month       string
+	TimeOfDay, Duration         string
+	People                      int
+	City, Venue                 string
+	HelpChoose                  bool
+	Scope                       string
+	GameMaster                  bool
+	Extras, Languages           []string
+	Budget, Currency, Message   string
+	Name, Company, Email, Phone string
+}
+
+// RequestOccasion is an occasion's name, "" for one the form doesn't have.
+func RequestOccasion(lang, key string) string {
+	switch key {
+	case "kickoff":
+		return T(lang, "Kickoff")
+	case "team_day":
+		return T(lang, "Team day")
+	case "conference":
+		return T(lang, "Conference activity")
+	case "customer_event":
+		return T(lang, "Customer event")
+	case "other":
+		return T(lang, "Other occasion")
+	}
+	return ""
+}
+
+// requestWhen is when the event is meant to be: a date, or a month that
+// is open, with the time of day and the length after it.
+func requestWhen(lang string, r Request) string {
+	var parts []string
+	if d, err := time.Parse("2006-01-02", r.Date); err == nil {
+		if lang == "sv" {
+			parts = append(parts, fmt.Sprintf("%d %s %d", d.Day(), svMonths[d.Month()-1], d.Year()))
+		} else {
+			parts = append(parts, d.Format("2 January 2006"))
+		}
+	} else if m, err := time.Parse("2006-01", r.Month); err == nil {
+		month := m.Format("January 2006")
+		if lang == "sv" {
+			month = fmt.Sprintf("%s %d", svMonths[m.Month()-1], m.Year())
+		}
+		parts = append(parts, T(lang, "sometime in %s", month))
+	}
+	switch r.TimeOfDay {
+	case "morning":
+		parts = append(parts, T(lang, "morning"))
+	case "afternoon":
+		parts = append(parts, T(lang, "afternoon"))
+	case "evening":
+		parts = append(parts, T(lang, "evening"))
+	}
+	switch r.Duration {
+	case "1h":
+		parts = append(parts, T(lang, "1 hour"))
+	case "2h":
+		parts = append(parts, T(lang, "2 hours"))
+	case "3h":
+		parts = append(parts, T(lang, "3 hours"))
+	case "half_day":
+		parts = append(parts, T(lang, "half a day"))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// requestBudget is a budget range in the instance's currency.
+func requestBudget(lang, key, currency string) string {
+	k := func(n int) string { return wholeMoney(lang, n, currency) }
+	switch key {
+	case "under_5k":
+		return T(lang, "under %s", k(5000))
+	case "5k_15k":
+		return k(5000) + " – " + k(15000)
+	case "15k_40k":
+		return k(15000) + " – " + k(40000)
+	case "over_40k":
+		return T(lang, "over %s", k(40000))
+	case "unknown":
+		return T(lang, "doesn't know yet")
+	}
+	return ""
+}
+
+// wholeMoney is a round amount with its thousands grouped: "15 000 SEK"
+// in Swedish, "15,000 SEK" in English.
+func wholeMoney(lang string, units int, currency string) string {
+	sep := ","
+	if lang == "sv" {
+		sep = "\u00a0"
+	}
+	s := strconv.Itoa(units)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + sep + s[i:]
+	}
+	return s + " " + strings.ToUpper(currency)
+}
+
+// requestLines are a request's answers, a line each, as Markdown.
+func requestLines(lang string, r Request) []string {
+	line := func(label, value string) string { return "**" + label + ":** " + value }
+	out := []string{line(T(lang, "Occasion"), RequestOccasion(lang, r.Occasion))}
+	if w := requestWhen(lang, r); w != "" {
+		out = append(out, line(T(lang, "When"), w))
+	}
+	out = append(out, line(T(lang, "People"), fmt.Sprint(r.People)))
+	where := mdEscape(r.City)
+	if r.Venue != "" {
+		where += ", " + mdEscape(r.Venue)
+	}
+	if r.HelpChoose {
+		where += " " + T(lang, "(wants help choosing where)")
+	}
+	out = append(out, line(T(lang, "Where"), where))
+	var scope string
+	switch r.Scope {
+	case "ready_made":
+		scope = T(lang, "a ready-made adventure they run themselves")
+	case "adapted":
+		scope = T(lang, "an adventure adapted for them")
+	case "new":
+		scope = T(lang, "a new adventure made for them")
+	}
+	if r.GameMaster {
+		scope += ", " + T(lang, "with a game master on the day")
+	}
+	out = append(out, line(T(lang, "Wants"), scope))
+	var extras []string
+	for _, x := range r.Extras {
+		switch x {
+		case "own_questions":
+			extras = append(extras, T(lang, "their own questions"))
+		case "logo":
+			extras = append(extras, T(lang, "their logo"))
+		case "accessibility":
+			extras = append(extras, T(lang, "accessible for everyone"))
+		case "prize_ceremony":
+			extras = append(extras, T(lang, "a prize ceremony"))
+		case "big_screen":
+			extras = append(extras, T(lang, "results on a big screen"))
+		}
+	}
+	if len(extras) > 0 {
+		out = append(out, line(T(lang, "Also"), strings.Join(extras, ", ")))
+	}
+	var langs []string
+	for _, l := range r.Languages {
+		switch l {
+		case "sv":
+			langs = append(langs, T(lang, "Swedish"))
+		case "en":
+			langs = append(langs, T(lang, "English"))
+		}
+	}
+	if len(langs) > 0 {
+		out = append(out, line(T(lang, "Language"), strings.Join(langs, ", ")))
+	}
+	if b := requestBudget(lang, r.Budget, r.Currency); b != "" {
+		out = append(out, line(T(lang, "Budget"), b))
+	}
+	if strings.TrimSpace(r.Message) != "" {
+		out = append(out, line(T(lang, "Message"), "  \n"+strings.Join(strings.Split(mdEscape(strings.TrimSpace(r.Message)), "\n"), "  \n")))
+	}
+	return out
+}
+
+// requestTitle is a request in a few words: "Kickoff, 12 May 2026, 100
+// people".
+func requestTitle(lang string, r Request) string {
+	parts := []string{RequestOccasion(lang, r.Occasion)}
+	if d, err := time.Parse("2006-01-02", r.Date); err == nil {
+		if lang == "sv" {
+			parts = append(parts, fmt.Sprintf("%d %s", d.Day(), svMonths[d.Month()-1]))
+		} else {
+			parts = append(parts, d.Format("2 January"))
+		}
+	}
+	parts = append(parts, T(lang, "%d people", r.People))
+	return strings.Join(parts, ", ")
+}
+
+// RequestNew brings an organisation a request for a quote: the answers,
+// and who asked. Replying goes to the requester; link opens the
+// organisation's requests.
+func RequestNew(lang string, r Request, link string) (string, Content) {
+	subject := T(lang, "Quote request: %s", requestTitle(lang, r))
+	who := []string{"**" + mdEscape(r.Name) + "**"}
+	if r.Company != "" {
+		who = append(who, mdEscape(r.Company))
+	}
+	who = append(who, contactLink(r.Email))
+	if r.Phone != "" {
+		who = append(who, "["+mdEscape(r.Phone)+"](tel:"+telDigits(r.Phone)+")")
+	}
+	body := T(lang, "%s asks for a quote. Reply to this email to answer them.", mdEscape(r.Name)) +
+		"\n\n" + strings.Join(requestLines(lang, r), "  \n") +
+		"\n\n" + strings.Join(who, "  \n")
+	c := Content{Lang: lang, Preheader: requestTitle(lang, r), Heading: T(lang, "A request for a quote"), Body: body}
+	if link != "" {
+		c.Buttons = []Button{{T(lang, "Open your requests"), link}}
+	}
+	return subject, c
+}
+
+// RequestReceived tells a requester their request reached the
+// organisation, with what they asked for, so a mistake is caught. contact
+// is the organisation's address, when there is one.
+func RequestReceived(lang string, r Request, contact string) (string, Content) {
+	subject := T(lang, "Your request to %s", r.Org)
+	body := T(lang, "Thanks, %[1]s. %[2]s has your request and will get back to you with a quote.", mdEscape(r.Name), mdEscape(r.Org)) +
+		"\n\n" + strings.Join(requestLines(lang, r), "  \n")
+	if contact != "" {
+		body += "\n\n" + T(lang, "Something to add? Write to %s.", contactLink(contact))
+	} else {
+		body += "\n\n" + T(lang, "Something to add? Reply to this email.")
+	}
+	return subject, Content{Lang: lang, Preheader: requestTitle(lang, r), Heading: T(lang, "Thanks for your request"), Body: body}
+}
+
+// telDigits is a phone number as a tel: link takes it: its digits, and a
+// leading plus.
+func telDigits(phone string) string {
+	var b strings.Builder
+	for i, r := range strings.TrimSpace(phone) {
+		if (r >= '0' && r <= '9') || (r == '+' && i == 0) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // ListingWaiting tells the platform's admins an organisation's listing
 // waits for review before it goes public.
 func ListingWaiting(lang, org, link string) (string, Content) {

@@ -102,6 +102,8 @@ func sweep(ctx context.Context, db *sql.DB, cfg Config) {
 	// past Stripe's window so a clock skew between us and them
 	// doesn't accidentally re-fulfil an old event.
 	pruneProcessedWebhookEvents(ctx, db)
+	// Requests for a quote: a year after their last change.
+	pruneOrgRequests(ctx, db)
 }
 
 func prunePlayerActionDedup(ctx context.Context, db *sql.DB) {

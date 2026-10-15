@@ -71,6 +71,14 @@ var PurchaseEvents = prometheus.NewCounterVec(prometheus.CounterOpts{
 	Help: "Purchase lifecycle events.",
 }, []string{"event"})
 
+// RequestsTrapped counts quote requests the spam trap caught, labeled
+// by trap: "honeypot" (the hidden field was filled in) or "too_fast"
+// (sent too soon after the form loaded, or with a bad load stamp).
+var RequestsTrapped = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "zv_requests_trapped_total",
+	Help: "Quote requests caught by the spam trap, labeled by trap (honeypot/too_fast).",
+}, []string{"trap"})
+
 func init() {
 	Registry.MustRegister(
 		HTTPRequests,
@@ -78,6 +86,7 @@ func init() {
 		AuthLogins,
 		AuthSecondFactor,
 		PurchaseEvents,
+		RequestsTrapped,
 	)
 }
 

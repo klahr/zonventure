@@ -37,6 +37,8 @@ type orgProfile struct {
 	// Contact is the address it set for buyers to reach it, "" for none
 	// (never its admins' own addresses).
 	Contact string
+	// RequestsOpen shows "Ask for a quote" (admin/quote_requests.go).
+	RequestsOpen bool
 }
 
 // loadOrgProfile looks an organisation up by slug. sql.ErrNoRows means
@@ -47,11 +49,12 @@ func loadOrgProfile(ctx context.Context, db *sql.DB, slug string) (orgProfile, e
 		SELECT id, name, tagline, public_website,
 		       (logo_content IS NOT NULL AND length(logo_content) > 0),
 		       (cover_image_content IS NOT NULL AND length(cover_image_content) > 0),
-		       accent_color, accent_secondary_color, background_color, text_color, verified_creator, contact_email, brand_font
+		       accent_color, accent_secondary_color, background_color, text_color, verified_creator, contact_email, brand_font,
+		       requests_open
 		FROM organizations
 		WHERE slug = $1
 	`, slug).Scan(&p.ID, &p.Name, &p.Tagline, &p.Website, &p.HasLogo, &p.HasCover,
-		&p.Accent, &p.Accent2, &p.Bg, &p.Ink, &p.Verified, &p.Contact, &p.Font)
+		&p.Accent, &p.Accent2, &p.Bg, &p.Ink, &p.Verified, &p.Contact, &p.Font, &p.RequestsOpen)
 	return p, err
 }
 
