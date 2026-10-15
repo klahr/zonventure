@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.32.5] - 2026-10-15
+
 ### Fixed
 
 - Connecting an organisation's Stripe account failed: Stripe needs the
