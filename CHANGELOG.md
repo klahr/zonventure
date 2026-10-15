@@ -11,14 +11,6 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
-## [0.32.6] - 2026-10-15
-
-### Added
-
-- A platform admin can disconnect an organisation's Stripe account from
-  its page in the console, say one onboarded with the wrong company. The
-  organisation's next "Connect Stripe" creates a new account.
-
 ### Fixed
 
 - "Stripe dashboard" in the console opens the organisation's own Stripe
@@ -26,6 +18,14 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 - A ticket priced at or below the platform's price for its team is
   refused when the price or team size is saved, with the reason, instead
   of failing when a buyer tries to pay.
+
+## [0.32.6] - 2026-10-15
+
+### Added
+
+- A platform admin can disconnect an organisation's Stripe account from
+  its page in the console, say one onboarded with the wrong company. The
+  organisation's next "Connect Stripe" creates a new account.
 
 ## [0.32.5] - 2026-10-15
 
