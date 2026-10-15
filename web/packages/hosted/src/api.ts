@@ -85,13 +85,17 @@ export interface HostedEvent {
   round_open: boolean;
   /** Each game's results stay off the phones and the live board until the host finishes it. */
   hold_results: boolean;
+  /** The teams a game holds and the games played, 0 for no limit. */
   teams_limit: number;
+  game_limit: number;
+  /** "teams": each team is charged to the organisation as it joins. */
+  billing: string;
   /** The teams the game being played turned away, full. */
   turned_away?: number;
   /** The most teams a game can be bought up to. */
   max_teams: number;
-  /** What one more block of teams costs (block_cents 0: free). */
-  price: { block_cents: number; currency: string; teams_per_block: number; free_teams: number };
+  /** What one more team costs (team_cents 0: free). */
+  price: { team_cents: number; currency: string; free_teams: number; games: number; vat_excluded: boolean };
   /** A quiz trail: its cards print as a PDF; reprint when they changed since. */
   trail: boolean;
   reprint: boolean;
@@ -132,8 +136,8 @@ export interface Checkout {
 
 export interface HostedApi {
   get(): Promise<HostedEvent>;
-  /** Buys blocks more blocks of teams per game. */
-  addBlocks(blocks: number): Promise<Checkout>;
+  /** Buys teams more teams per game. */
+  addTeams(teams: number): Promise<Checkout>;
   finishGame(): Promise<void>;
   holdResults(hold: boolean): Promise<void>;
   sendPlayerLink(email: string): Promise<void>;
@@ -157,7 +161,7 @@ const enc = encodeURIComponent;
 export function hostedApi(base: string, extra: Pick<HostedApi, "removeTeam" | "action"> = {}): HostedApi {
   return {
     get: () => request<HostedEvent>(base),
-    addBlocks: (blocks) => request<Checkout>(`${base}/blocks`, { method: "POST", body: { blocks } }),
+    addTeams: (teams) => request<Checkout>(`${base}/teams`, { method: "POST", body: { teams } }),
     finishGame: () => request<void>(`${base}/finish-game`, { method: "POST" }),
     holdResults: (hold) => request<void>(`${base}/hold-results`, { method: "PUT", body: { hold } }),
     sendPlayerLink: (email) => request<void>(`${base}/send-player-link`, { method: "POST", body: { email } }),

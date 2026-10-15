@@ -1,5 +1,5 @@
 import { Suspense, lazy, useState, type ReactNode } from "react";
-import { CalendarPlus, ChevronLeft, Coins, Compass, Copy, Download, ExternalLink, ListOrdered, MapPin, PartyPopper, Pencil, Play, Trash2, Workflow } from "lucide-react";
+import { CalendarPlus, ChevronLeft, Compass, Copy, Download, ExternalLink, ListOrdered, MapPin, PartyPopper, Pencil, Play, Trash2, Workflow } from "lucide-react";
 import { ApiError, request, runsEvents } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
@@ -196,15 +196,9 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
             {t.t("Open designer")}
           </a>
         ))}
-      {!user || !runsEvents(user) ? null : own || shared || passes.length ? (
-        !designed && (
-          <Button variant={a.mine_to_edit ? "secondary" : "primary"} icon={<CalendarPlus size={ICON.md} aria-hidden />} onClick={openSchedule}>
-            {t.t("Schedule event")}
-          </Button>
-        )
-      ) : (
-        <Button variant="primary" icon={<Coins size={ICON.md} aria-hidden />} onClick={openSchedule}>
-          {t.t("Buy an event pass")}
+      {user && runsEvents(user) && !designed && (
+        <Button variant={a.mine_to_edit ? "secondary" : "primary"} icon={<CalendarPlus size={ICON.md} aria-hidden />} onClick={openSchedule}>
+          {t.t("Schedule event")}
         </Button>
       )}
       {a.mine_to_edit && (

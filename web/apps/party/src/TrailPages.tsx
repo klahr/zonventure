@@ -210,12 +210,12 @@ export function TrailStart({ org }: { org: string }) {
     );
   }
 
-  const price = start.price.block_cents > 0 ? money(start.price.block_cents, start.price.currency, i18n.current()) : null;
+  const price = start.price.team_cents > 0 ? money(start.price.team_cents, start.price.currency, i18n.current()) : null;
   const priceLine = (
     <p className="trail-guide__chip">
       <Icon name="users" size={18} />
       {price
-        ? t("{{free}} teams free · more from {{price}}", { free: start.price.free_teams, price })
+        ? t("{{free}} teams free · {{price}} per team after", { free: start.price.free_teams, price })
         : t("Free to play for {{days}} days", { days: start.play_days })}
     </p>
   );

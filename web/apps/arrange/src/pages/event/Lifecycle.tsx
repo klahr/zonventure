@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { CalendarClock, Coins, Download, Flag, Mail, MonitorPlay, Moon, Play, Terminal, Trash2 } from "lucide-react";
-import { ApiError, type Whoami } from "@zonventure/api";
+import { CalendarClock, Download, Flag, Mail, MonitorPlay, Moon, Play, Terminal, Trash2 } from "lucide-react";
+import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
-import { Button, Callout, Dialog, Field, fmtDateTime, fmtMoney, ICON, toLocalInput, useDialogs, useToast } from "../../ui/index.ts";
+import { Button, Callout, Dialog, Field, fmtDateTime, ICON, toLocalInput, useDialogs, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
-import type { Adventure, EventInfo, Team } from "./api.ts";
+import type { EventInfo, Team } from "./api.ts";
 import { LiveViewDialog } from "./Links.tsx";
 import { MoreMenu, type MenuItem } from "./Menu.tsx";
 import { isQuest, members } from "./util.ts";
 
-type Open = null | "start" | "no-teams" | "schedule" | "top-up" | "live-view";
+type Open = null | "start" | "no-teams" | "schedule" | "live-view";
 
 /**
  * The event's lifecycle actions, at the top of the page: the one thing
@@ -18,7 +18,7 @@ type Open = null | "start" | "no-teams" | "schedule" | "top-up" | "live-view";
  * during, the report after — the one everyday companion to it
  * (reschedule, pause/resume for quests), and everything else under More.
  */
-export function LifecycleActions({ event, teams, adventure, user, reload }: { event: EventInfo; teams: Team[]; adventure: Adventure | null; user: Whoami; reload: () => void }) {
+export function LifecycleActions({ event, teams, reload }: { event: EventInfo; teams: Team[]; reload: () => void }) {
   const t = useT();
   const toast = useToast();
   const dialogs = useDialogs();
@@ -154,9 +154,6 @@ export function LifecycleActions({ event, teams, adventure, user, reload }: { ev
     );
   }
   const cancellable = event.state === "scheduled" || live;
-  if (cancellable && event.assignment_id && !quest) {
-    more.push({ label: t.t("Add player seats"), icon: <Coins size={ICON.sm} aria-hidden />, title: t.t("Add players to this event's pass"), onClick: () => setOpen("top-up") });
-  }
   if (teams.length > 0 && !quest) {
     const pdf = {
       label: t.t("Download report (PDF)"),
@@ -218,7 +215,6 @@ export function LifecycleActions({ event, teams, adventure, user, reload }: { ev
       {open === "start" && <StartDialog event={event} teams={teams} onClose={() => setOpen(null)} onStart={() => { setOpen(null); void transition("start"); }} />}
       {open === "schedule" && <ScheduleDialog event={event} emailable={emailable} onClose={() => setOpen(null)} onDone={reload} />}
       {open === "live-view" && <LiveViewDialog event={event} onChanged={reload} onClose={() => setOpen(null)} />}
-      {open === "top-up" && <TopUpDialog event={event} adventure={adventure} user={user} onClose={() => setOpen(null)} onDone={reload} />}
     </>
   );
 }
@@ -381,86 +377,6 @@ export function RenameDialog({ event, onClose, onDone }: { event: EventInfo; onC
       <Field label={t.t("Event name")} hint={t.t('Empty resets to "Event #{{id}}".', { id: event.id })}>
         <input value={name} autoFocus placeholder={t.t("Event name")} onChange={(e) => setName(e.target.value)} />
       </Field>
-    </Dialog>
-  );
-}
-
-interface Pricing {
-  player_cents?: number;
-  currency?: string;
-  vat_excluded?: boolean;
-}
-
-/**
- * Buy more player slots on the event's pass. Top-ups are linear: the
- * free band was spent on the original pass. Trusted orgs may add it to
- * their invoice instead of paying now. initial is how many to offer;
- * beforeCheckout runs before the page leaves for the payment provider.
- */
-export function TopUpDialog({ event, adventure, user, initial, onClose, onDone, beforeCheckout }: { event: EventInfo; adventure: Adventure | null; user: Whoami; initial?: number; onClose: () => void; onDone: () => void; beforeCheckout?: () => void }) {
-  const t = useT();
-  const toast = useToast();
-  const pricing = (user.pricing ?? {}) as Pricing;
-  const price = pricing.player_cents || 4900;
-  const currency = pricing.currency;
-  const trusted = !!user.memberships.find((m) => m.org_id === user.org_id)?.trusted;
-  const dialogs = useDialogs();
-  const [n, setN] = useState(String(initial ?? 5));
-  const [busy, setBusy] = useState(false);
-  const count = Math.max(1, Number.parseInt(n, 10) || 0);
-  const money = (c: number) => fmtMoney(c, currency, t.current());
-  const submit = async (provider?: string) => {
-    // An invoice commits the money in one click: say what goes on it first.
-    if (provider === "invoice" && !(await dialogs.confirm({
-      title: t.t("Add to invoice?"),
-      message: t.t("{{amount}} for {{n}} players goes on your organisation's next invoice.", { amount: money(count * price), n: count }),
-      confirmLabel: t.t("Add to invoice"),
-    }))) return;
-    setBusy(true);
-    try {
-      const r = await api.topUp({ adventure_slug: event.adventure_slug, max_players: count, top_up_assignment_id: event.assignment_id, ...(provider ? { provider } : {}) });
-      if (r.state === "paid") {
-        toast.ok(t.t("{{n}} more players added", { n: count }));
-        onClose();
-        onDone();
-        return;
-      }
-      if (r.checkout_url) {
-        beforeCheckout?.();
-        location.href = r.checkout_url;
-      }
-    } catch (e) {
-      toast.err(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Dialog
-      title={t.t("Add players")}
-      onClose={onClose}
-      onSubmit={() => void submit()}
-      footer={
-        <>
-          <Button onClick={onClose}>{t.t("Cancel")}</Button>
-          {trusted && (
-            <Button disabled={busy} title={t.t("Skip Stripe — your finance team will get an invoice from us.")} onClick={() => void submit("invoice")}>
-              {t.t("Add to invoice")}
-            </Button>
-          )}
-          <Button type="submit" variant="primary" loading={busy}>{t.t("Continue")}</Button>
-        </>
-      }
-    >
-      <p>{t.t('The event pass for "{{title}}" covers {{n}} players. How many more do you want?', { title: adventure?.title || event.adventure_slug || t.t("this event"), n: event.max_players || 0 })}</p>
-      <Field label={t.t("Additional players")}>
-        <input type="number" min={1} max={500} required value={n} autoFocus onChange={(e) => setN(e.target.value)} />
-      </Field>
-      <p>
-        {t.t("Total: ")}
-        <strong>{money(count * price)}</strong>{" "}
-        <span className="ev-muted">{t.t("({{price}} per added player)", { price: money(price) })} {pricing.vat_excluded ? t.t("excl. VAT") : t.t("incl. VAT")}</span>
-      </p>
     </Dialog>
   );
 }

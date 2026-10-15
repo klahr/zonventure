@@ -3,10 +3,10 @@ package payments
 import "context"
 
 // MarketplaceProvider is the optional Connect-style extension to
-// Provider. Impls that support marketplace flows — where the
-// platform charges a buyer and routes most of the money to a
-// connected sub-account, keeping a per-charge application fee —
-// satisfy this interface in addition to Provider. The split keeps
+// Provider. Impls that support marketplace flows — where an
+// organisation sells into an account of its own and the platform
+// keeps a per-sale application fee — satisfy this interface in
+// addition to Provider. The split keeps
 // non-marketplace providers (the simulated dev impl, future
 // Mollie / Paddle if/when they land) unburdened by methods they
 // don't implement.
@@ -27,13 +27,12 @@ import "context"
 type MarketplaceProvider interface {
 	Provider
 
-	// CreateConnectedAccount creates a fresh connected account
-	// suitable for receiving destination-charged transfers.
-	// Standard / Express / Custom is up to the impl; today the
-	// Stripe impl creates Express accounts: Stripe-hosted KYC,
-	// with the platform owning the customer relationship and the
-	// seller seeing payouts through the Express dashboard.
-	// Returns the provider-specific account id (Stripe: acct_xxx).
+	// CreateConnectedAccount creates a fresh account the
+	// organisation owns, with the provider's full dashboard: it is
+	// the seller of its store sales (direct charges), pays the
+	// provider's fees on them, and handles its own refunds and
+	// disputes. Returns the provider-specific account id (Stripe:
+	// acct_xxx).
 	CreateConnectedAccount(ctx context.Context, p ConnectedAccountParams) (string, error)
 
 	// CreateAccountLink mints a hosted onboarding URL the buyer
@@ -50,10 +49,10 @@ type MarketplaceProvider interface {
 	// "refresh" affordance on the Connect settings page.
 	GetConnectedAccount(ctx context.Context, accountID string) (ConnectedAccount, error)
 
-	// CreateLoginLink mints a single-use URL into the connected
-	// account's provider-hosted dashboard (Stripe: the Express
-	// dashboard), where the seller sees balance and payouts.
-	CreateLoginLink(ctx context.Context, accountID string) (string, error)
+	// RefundApplicationFee gives back the platform's application
+	// fee on chargeID, a direct charge on accountID: for a sale the
+	// organisation refunded itself before its team played.
+	RefundApplicationFee(ctx context.Context, accountID, chargeID string) error
 }
 
 // ConnectedAccountParams describes a fresh connected account.

@@ -22,6 +22,8 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
   const [offer, setOffer] = useState<Offer | null>(null);
   const [missing, setMissing] = useState(false);
   const [kids, setKids] = useState(8);
+  // Null until chosen: about three children a phone.
+  const [teamsIn, setTeams] = useState<number | null>(null);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [consent, setConsent] = useState(false);
@@ -53,12 +55,14 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
 
   const loc = i18n.current();
   const total = offer.base_cents + offer.per_kid_cents * kids;
+  const maxTeams = Math.max(1, Math.min(kids, offer.teams));
+  const teams = Math.min(teamsIn ?? Math.ceil(kids / 3), maxTeams);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const r = await book(org, offerID, { email, kids, party_name: name, consent });
+      const r = await book(org, offerID, { email, kids, teams, party_name: name, consent });
       location.href = r.checkout_url;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("Something went wrong. Try again."));
@@ -95,15 +99,19 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
               </button>
             </div>
             <small className="party-muted">{t("Up to {{n}} children.", { n: offer.max_kids })}</small>
-            {offer.teams > 0 && (
-              <small className="party-muted">
-                {t("The children play in teams, with one phone per team. A game has room for {{max}} teams, so {{kids}} children can play as up to {{teams}} teams.", {
-                  kids,
-                  teams: Math.min(kids, offer.teams),
-                  max: offer.teams,
-                })}
-              </small>
-            )}
+          </label>
+          <label className="party-field">
+            <span>{t("Teams")}</span>
+            <div className="party-stepper">
+              <button type="button" onClick={() => setTeams(Math.max(1, teams - 1))} disabled={teams <= 1} aria-label={t("Fewer")}>
+                −
+              </button>
+              <output aria-live="polite">{teams}</output>
+              <button type="button" onClick={() => setTeams(Math.min(maxTeams, teams + 1))} disabled={teams >= maxTeams} aria-label={t("More")}>
+                +
+              </button>
+            </div>
+            <small className="party-muted">{t("The children play in teams, one phone per team: up to {{n}} teams.", { n: maxTeams })}</small>
           </label>
           <label className="party-field">
             <span>{t("Name of the party (optional)")}</span>

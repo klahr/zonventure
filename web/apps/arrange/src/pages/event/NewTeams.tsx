@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { ApiError, type Whoami } from "@zonventure/api";
+import { ApiError } from "@zonventure/api";
 import { contentT, useT } from "../../i18n.tsx";
-import { Button, Callout, Dialog, errorText, Field, useDialogs, useToast } from "../../ui/index.ts";
+import { Button, Dialog, errorText, Field, useDialogs, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
-import type { Adventure, BulkResult, EventInfo, ImportColumn, RosterTeam, Team } from "./api.ts";
-import { TopUpDialog } from "./Lifecycle.tsx";
+import type { BulkResult, ImportColumn, RosterTeam, Team } from "./api.ts";
 
 type Mode = "single" | "bulk" | "roster" | "import";
 
@@ -26,37 +25,20 @@ export function parseRoster(text: string): RosterTeam[] {
   return out;
 }
 
-/** Teams that didn't fit the event pass while its seats are bought on the payment provider's page. */
-const retryKey = (eventId: number) => `zv-seat-retry-${eventId}`;
-
-function takeRetry(eventId: number): RosterTeam[] | null {
-  try {
-    const raw = sessionStorage.getItem(retryKey(eventId));
-    sessionStorage.removeItem(retryKey(eventId));
-    const list = raw ? (JSON.parse(raw) as RosterTeam[]) : null;
-    return Array.isArray(list) && list.length ? list : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Add teams four ways: one team with its players, many placeholder
  * teams at once, a pasted roster, or an uploaded file (CSV, Excel,
  * OpenDocument, IOF XML) the server reads and previews column by column
  * before anything is created. Rosters and files land through the same
- * /teams/bulk writer; teams the event pass had no seats for can be
- * retried once seats are added (topUp, when the pass has a cap).
+ * /teams/bulk writer.
  */
-export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, topUp, onClose, onDone }: { eventId: number; teams: Team[]; seatsLeft: number | null; lang?: string | undefined; topUp: { event: EventInfo; adventure: Adventure | null; user: Whoami } | null; onClose: () => void; onDone: () => void }) {
+export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, onClose, onDone }: { eventId: number; teams: Team[]; seatsLeft: number | null; lang?: string | undefined; onClose: () => void; onDone: () => void }) {
   const t = useT();
   const ct = contentT(lang);
   const toast = useToast();
   const dialogs = useDialogs();
   const existing = new Set(teams.map((tm) => tm.name));
-  // Teams left over from before the payment page come back ready to create.
-  const [restored] = useState(() => takeRetry(eventId));
-  const [mode, setMode] = useState<Mode>(restored ? "import" : "single");
+  const [mode, setMode] = useState<Mode>("single");
   const [busy, setBusy] = useState(false);
   // single
   const [name, setName] = useState("");
@@ -72,11 +54,9 @@ export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, topUp, onClose
   // roster
   const [roster, setRoster] = useState("");
   // import
-  const [imported, setImported] = useState<{ format: string; teams: RosterTeam[]; columns: ImportColumn[] } | null>(restored ? { format: "", teams: restored, columns: [] } : null);
-  const [importMsg, setImportMsg] = useState<{ text: string; err?: boolean } | null>(restored ? { text: t.t("These teams didn't fit the event pass. Create them now that seats are added.") } : null);
+  const [imported, setImported] = useState<{ format: string; teams: RosterTeam[]; columns: ImportColumn[] } | null>(null);
+  const [importMsg, setImportMsg] = useState<{ text: string; err?: boolean } | null>(null);
   // Teams the pass had no seats for, and how many seats they lack.
-  const [retry, setRetry] = useState<{ teams: RosterTeam[]; need: number } | null>(null);
-  const [buying, setBuying] = useState(false);
 
   const nameErr = !name.trim() ? (touched.name ? t.t("Team name required.") : null) : existing.has(name.trim()) ? t.t('A team named "{{name}}" already exists in this event.', { name: name.trim() }) : null;
   const namesErr = touched.names && splitNames(names).length === 0 ? t.t("Add at least one member — each line becomes a player slot.") : null;
@@ -127,35 +107,19 @@ export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, topUp, onClose
     return cols.length ? " " + t.t("Not imported: {{cols}}.", { cols: cols.join(", ") }) : "";
   };
 
-  /**
-   * Create a roster's teams. Teams the pass had no seats for stay in the
-   * dialog, with how many seats they lack, for "Add seats and retry";
-   * false then keeps the dialog open.
-   */
-  const runBulk = async (list: RosterTeam[], ok: (n: number) => string, partKey: string, note = "") => {
-    const r = await api.bulkTeams(eventId, list);
-    reportBulk(r, ok, partKey, note);
-    const full = (r.results ?? []).filter((x) => x.code === "pass_full").flatMap((x) => (list[x.index] ? [list[x.index]!] : []));
-    if (full.length === 0 || !topUp) return true;
-    const placed = (r.results ?? []).reduce((n, x) => n + (x.team?.members?.length ?? 0), 0);
-    const left = Math.max(0, (seatsLeft ?? 0) - placed);
-    setRetry({ teams: full, need: Math.max(1, full.reduce((n, tm) => n + tm.member_names.length, 0) - left) });
-    if ((r.created || 0) > 0) onDone();
-    return false;
-  };
+  const runBulk = async (list: RosterTeam[], ok: (n: number) => string, partKey: string, note = "") =>
+    reportBulk(await api.bulkTeams(eventId, list), ok, partKey, note);
 
   const submit = async () => {
     setBusy(true);
     try {
-      if (retry) {
-        if (!(await runBulk(retry.teams, importedText, "Imported {{c}}, {{f}} failed: {{err}}"))) return;
-      } else if (mode === "import") {
+      if (mode === "import") {
         if (!imported?.teams.length) return toast.err(t.t("Pick a file with at least one team first"));
-        if (!(await runBulk(imported.teams, importedText, "Imported {{c}}, {{f}} failed: {{err}}", ignoredNote()))) return;
+        await runBulk(imported.teams, importedText, "Imported {{c}}, {{f}} failed: {{err}}", ignoredNote());
       } else if (mode === "roster") {
         if (parsed.length === 0) return toast.err(t.t("Add at least one team line"));
         if (offender) return toast.err(t.t("“{{name}}” has no players", { name: offender.name }));
-        if (!(await runBulk(parsed, createdText, "Created {{c}}, {{f}} failed: {{err}}"))) return;
+        await runBulk(parsed, createdText, "Created {{c}}, {{f}} failed: {{err}}");
       } else if (mode === "single") {
         setTouched({ name: true, names: true });
         const n = name.trim(), list = splitNames(names);
@@ -212,27 +176,6 @@ export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, topUp, onClose
   };
   const PREVIEW_ROWS = 8;
 
-  if (buying && retry && topUp) {
-    return (
-      <TopUpDialog
-        event={topUp.event}
-        adventure={topUp.adventure}
-        user={topUp.user}
-        initial={retry.need}
-        onClose={() => setBuying(false)}
-        // Paid at once (an invoice, a free pass): create the teams now.
-        onDone={() => void submit()}
-        beforeCheckout={() => {
-          try {
-            sessionStorage.setItem(retryKey(eventId), JSON.stringify(retry.teams));
-          } catch {
-            /* private mode: the file is uploaded again */
-          }
-        }}
-      />
-    );
-  }
-
   return (
     <Dialog
       title={t.t("Add teams")}
@@ -255,19 +198,6 @@ export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, topUp, onClose
           </label>
         ))}
       </fieldset>
-
-      {retry && (
-        <Callout variant="warning">
-          <p>
-            {t.plural(retry.teams.length, {
-              one: t.t("{{n}} team didn't fit the event pass: {{names}}.", { names: retry.teams.map((tm) => tm.name).join(", ") }),
-              other: t.t("{{n}} teams didn't fit the event pass: {{names}}.", { names: retry.teams.map((tm) => tm.name).join(", ") }),
-            })}{" "}
-            {t.plural(retry.need, { one: t.t("They need {{n}} more player seat."), other: t.t("They need {{n}} more player seats.") })}
-          </p>
-          {topUp && <Button size="sm" variant="primary" onClick={() => setBuying(true)}>{t.t("Add seats and retry")}</Button>}
-        </Callout>
-      )}
 
       {mode === "single" && (
         <>
@@ -321,7 +251,7 @@ export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, topUp, onClose
         </Field>
       )}
 
-      {mode === "import" && !retry && imported && imported.teams.length > 0 && (
+      {mode === "import" && imported && imported.teams.length > 0 && (
         <ImportPreview imported={imported} roleLabel={roleLabel} rows={PREVIEW_ROWS} />
       )}
     </Dialog>

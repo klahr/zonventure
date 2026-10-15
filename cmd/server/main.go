@@ -387,8 +387,9 @@ func main() {
 			MapProvider:        os.Getenv("ZV_MAP_PROVIDER"),
 			MapCenter:          mapCenter,
 		},
-		StripeSecretKey:     os.Getenv("ZV_STRIPE_SECRET_KEY"),
-		StripeWebhookSecret: os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"),
+		StripeSecretKey:            os.Getenv("ZV_STRIPE_SECRET_KEY"),
+		StripeWebhookSecret:        os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"),
+		StripeConnectWebhookSecret: os.Getenv("ZV_STRIPE_CONNECT_WEBHOOK_SECRET"),
 		// PaymentsProvider lets the operator override which
 		// payments.Provider impl gets wired. Empty = auto (stripe
 		// when keys present, else nil); "simulated" picks the

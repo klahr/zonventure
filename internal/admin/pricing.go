@@ -3,12 +3,10 @@ package admin
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
-	"github.com/klahr/zonventure/internal/payments"
 	"github.com/klahr/zonventure/internal/settings"
 )
 
@@ -20,16 +18,9 @@ func (h *Handlers) pricing() settings.Pricing {
 	return settings.CurrentPricing()
 }
 
-// platformFee is the cut of tickets and parties orgs sell; zero disables
-// the marketplace flow (no Connect gate, no application fee).
-func (h *Handlers) platformFee() payments.PlatformFee { return payments.FeeFrom(h.pricing()) }
-
-// hosted is the hosted event pass, per block of teams: see hosted_pricing.go.
-func (h *Handlers) hosted() payments.HostedPass { return payments.HostedFrom(h.pricing()) }
-
 // pricingResponse is GET/PUT /api/admin/pricing: the prices in force,
 // the one currency they are in, and the orgs with a listing up that
-// a platform fee stops selling until they connect Stripe.
+// can't sell until they connect a Stripe account of their own.
 type pricingResponse struct {
 	settings.Pricing
 	Currency           string              `json:"currency"`
@@ -44,8 +35,9 @@ type unconnectedSeller struct {
 	Listings int    `json:"listings"`
 }
 
-// unconnectedSellers lists the orgs whose listings sell only while
-// there is no platform fee (public/store.go storeItemRowFilter).
+// unconnectedSellers lists the orgs whose listings the store holds
+// back until their own Stripe account can take charges
+// (public/store.go storeItemRowFilter).
 func (h *Handlers) unconnectedSellers(ctx context.Context) ([]unconnectedSeller, error) {
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT o.id, o.name, COUNT(*)
@@ -97,7 +89,6 @@ func (h *Handlers) SetPricing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	before := settings.CurrentPricing()
-	p.PayoutTerms = strings.TrimSpace(p.PayoutTerms)
 	if err := settings.SetPricing(r.Context(), h.DB, p); err != nil {
 		logx.Error("admin.pricing.set_failed", "err", err.Error())
 		httpx.Error(w, http.StatusInternalServerError, "could not save the prices")

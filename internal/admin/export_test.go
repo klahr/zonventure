@@ -19,16 +19,22 @@ func ExportedHandleChargeRefunded(h *Handlers, ctx context.Context, ev payments.
 	return h.handleChargeRefunded(ctx, ev)
 }
 
-// ExportedCreatePurchaseCheckoutSession exposes the unexported helper
-// so tests can assert request shape (notably IdempotencyKey).
-func ExportedCreatePurchaseCheckoutSession(h *Handlers, ctx context.Context, purchaseID int64,
-	advSlug, advTitle string, maxPlayers, amountCents int, customerEmail, existingCustomerID string,
-) (string, string, error) {
-	return h.createPurchaseCheckoutSession(ctx, purchaseID, advSlug, advTitle, maxPlayers, amountCents, customerEmail, existingCustomerID)
-}
-
 // ExportedQuoteStamp signs a request form's load time, as GetQuoteForm
 // does, so a test can send a form that loaded long enough ago.
 func ExportedQuoteStamp(key []byte, at time.Time) string {
 	return quoteStamp(key, at)
 }
+
+func ExportedHandleTopUpCompleted(h *Handlers, ctx context.Context, ev payments.Event) error {
+	return h.handleTopUpCompleted(ctx, ev)
+}
+
+func ExportedHandleCardSaved(h *Handlers, ctx context.Context, ev payments.Event) error {
+	return h.handleCardSaved(ctx, ev)
+}
+
+func ExportedBillMonth(h *Handlers, ctx context.Context, now time.Time) { h.billLastMonth(ctx, now) }
+
+func ExportedChargeDueBills(h *Handlers, ctx context.Context) { h.chargeDueBills(ctx, 0) }
+
+func ExportedAlertLowBalances(h *Handlers, ctx context.Context) { h.alertLowBalances(ctx) }

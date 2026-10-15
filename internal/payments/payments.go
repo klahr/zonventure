@@ -136,6 +136,8 @@ type CheckoutParams struct {
 type CheckoutSession struct {
 	URL       string
 	SessionID string
+	// CustomerID is the customer a card setup made, when it made one.
+	CustomerID string
 }
 
 // EventType is the canonical event family — every provider speaks
@@ -158,7 +160,10 @@ const (
 	// the next manual refresh. Stripe Connect-specific; non-
 	// marketplace providers never emit it.
 	EventConnectedAccountUpdated EventType = "account.updated"
-	EventOther                   EventType = "other"
+	// EventCardSaved fires when a card setup (CardBiller) completes:
+	// Card holds the card, Metadata the setup's.
+	EventCardSaved EventType = "card.saved"
+	EventOther     EventType = "other"
 )
 
 // Event is the parsed shape of an incoming webhook. Provider names
@@ -171,12 +176,17 @@ type Event struct {
 	ID       string
 	Created  time.Time
 	Metadata map[string]string
+	// Account is the connected account the event happened on: a store
+	// sale charged on an organisation's own account. Empty for the
+	// platform's own.
+	Account string
 
 	// Exactly one of these is populated based on Type. EventOther
 	// leaves them all nil.
 	Checkout         *CheckoutDetail
 	Charge           *ChargeDetail
 	ConnectedAccount *ConnectedAccount
+	Card             *SavedCard
 }
 
 // CheckoutDetail is the post-payment view of a CheckoutSession.
@@ -269,17 +279,16 @@ func (c ChargeDetail) FullyRefunded() bool {
 type RefundParams struct {
 	ChargeID string
 
-	// RefundApplicationFee, when true on a destination-charged
-	// refund, proportionally claws back the platform's
-	// application fee from the connected account so the platform
-	// doesn't profit from refunded sales. Marketplace-specific;
-	// providers that don't satisfy MarketplaceProvider ignore.
+	// RefundApplicationFee, when true, gives back the platform's
+	// application fee with the refund: the organisation then gets
+	// back what it paid the platform for the sale. Marketplace-
+	// specific; providers that don't satisfy MarketplaceProvider
+	// ignore it.
 	RefundApplicationFee bool
 
-	// ConnectedAccountID names the connected account the original
-	// charge landed in. Required when RefundApplicationFee is true
-	// because the refund call has to be issued against the
-	// connected account, not the platform account.
+	// ConnectedAccountID names the organisation's account a store
+	// sale was charged on (a direct charge): the refund is made
+	// there. Empty for a charge on the platform's own account.
 	ConnectedAccountID string
 
 	// IdempotencyKey deduplicates retried Refund calls. A double-

@@ -62,27 +62,6 @@ export interface Assignment {
   event_id?: number;
 }
 
-/** internal/admin/purchases.go: CreatePurchase's 201 body. */
-export interface PurchaseCreated {
-  id: number;
-  amount_cents: number;
-  currency: string;
-  state: "paid" | "pending" | string;
-  provider: string;
-  assignment_id?: number;
-  checkout_url?: string;
-}
-
-/** internal/admin/purchases.go: purchaseDTO (the fields read here). */
-export interface Purchase {
-  id: number;
-  adventure_slug: string;
-  adventure_title?: string;
-  max_players: number;
-  state: string;
-  assignment_id?: number;
-}
-
 const opts = (signal?: AbortSignal) => (signal ? { signal } : {});
 
 /**
@@ -113,10 +92,6 @@ export interface CreateEventBody {
 }
 export const createEvent = (body: CreateEventBody) => post<{ id: number }>("/api/admin/events", body);
 
-export const createPurchase = (body: { adventure_slug: string; max_players: number; provider?: string }) =>
-  post<PurchaseCreated>("/api/admin/purchases", body);
-
-export const getPurchase = (id: number, signal?: AbortSignal) => get<Purchase>(`/api/admin/purchases/${id}`, opts(signal));
 
 export const createTeam = (eventId: number, name: string, memberNames: string[]) =>
   post<unknown>(`/api/admin/events/${eventId}/teams`, { name, member_names: memberNames });
@@ -131,25 +106,26 @@ export function uploadEventCover(eventId: number, file: File) {
   return request<unknown>(`/api/admin/events/${eventId}/cover`, { method: "POST", form });
 }
 
-/** internal/auth/handlers.go: Pricing, on whoami. */
+/** internal/auth/handlers.go: Pricing, on whoami: what a team costs. */
 export interface Pricing {
-  player_cents: number;
-  free_players_per_event: number;
+  team_cents: number;
+  team_phones: number;
+  phone_cents: number;
   currency: string;
   /** The platform's prices are before VAT; else VAT is included. */
   vat_excluded?: boolean;
-  fee_percent_bps?: number;
-  fee_fixed_cents?: number;
-  fee_min_cents?: number;
 }
 
-/** The classic console's pricingHelpers: what a pass of n players costs. */
+/** What teams cost the organisation: n teams of phones phones each. */
 export function pricing(user: Whoami) {
   const p = (user.pricing ?? {}) as Partial<Pricing>;
-  const priceCents = p.player_cents || 500;
-  const free = p.free_players_per_event ?? 15;
-  const currency = p.currency;
-  return { priceCents, free, currency, vatExcluded: !!p.vat_excluded, chargeable: (n: number) => Math.max(0, n - free) * priceCents };
+  const team = p.team_cents ?? 4900;
+  const included = p.team_phones ?? 3;
+  const phone = p.phone_cents ?? 1500;
+  return {
+    team, included, phone, currency: p.currency, vatExcluded: !!p.vat_excluded,
+    cost: (teams: number, phones: number) => teams * (team + Math.max(0, phones - included) * phone),
+  };
 }
 
 /** The membership of the org the user is working in. */

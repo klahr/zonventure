@@ -848,11 +848,12 @@ func renderTopbarPage(w http.ResponseWriter, r *http.Request, name string) {
 	_, _ = w.Write(out)
 }
 
-// pricingSubs renders {{FREE_PLAYERS_PER_EVENT}},
-// {{PRICE_PER_EXTRA_PLAYER}} and the own-domain offer
-// ({{DOMAIN_PRICE_EN}}, {{DOMAIN_PRICE_SV}}, {{DOMAIN_CONTACT_URL}})
-// from the prices in force (Settings → Pricing), so the manual never
-// disagrees with the charge.
+// pricingSubs renders the price of a team ({{TEAM_PRICE}}, its
+// {{TEAM_PHONES}} phones included, {{PHONE_PRICE}} each phone after),
+// a family's party's free teams and games ({{PARTY_FREE_TEAMS}},
+// {{PARTY_GAMES}}) and the own-domain offer ({{DOMAIN_PRICE_EN}},
+// {{DOMAIN_PRICE_SV}}, {{DOMAIN_CONTACT_URL}}) from the prices in force
+// (Settings → Pricing), so the pages never disagree with the charge.
 func pricingSubs() [][2]string {
 	p := settings.CurrentPricing()
 	domainEN, domainSV := "Price on request", "Pris på förfrågan"
@@ -864,8 +865,11 @@ func pricingSubs() [][2]string {
 		contact = "/arrange"
 	}
 	return [][2]string{
-		{"{{FREE_PLAYERS_PER_EVENT}}", strconv.FormatInt(p.FreePlayers, 10)},
-		{"{{PRICE_PER_EXTRA_PLAYER}}", kronor(p.PlayerCents)},
+		{"{{TEAM_PRICE}}", kronor(p.TeamCents)},
+		{"{{TEAM_PHONES}}", strconv.FormatInt(p.TeamPhones, 10)},
+		{"{{PHONE_PRICE}}", kronor(p.PhoneCents)},
+		{"{{PARTY_FREE_TEAMS}}", strconv.FormatInt(p.PartyFreeTeams, 10)},
+		{"{{PARTY_GAMES}}", strconv.FormatInt(p.PartyGames, 10)},
 		{"{{DOMAIN_PRICE_EN}}", domainEN},
 		{"{{DOMAIN_PRICE_SV}}", domainSV},
 		{"{{DOMAIN_CONTACT_URL}}", html.EscapeString(contact)},
@@ -883,7 +887,7 @@ func kronor(cents int64) string {
 
 func pricingKey() string {
 	p := settings.CurrentPricing()
-	return strconv.FormatInt(p.PlayerCents, 10) + "/" + strconv.FormatInt(p.FreePlayers, 10) + "/" + strconv.FormatInt(p.DomainYearCents, 10) + "/" + p.DomainContactURL
+	return fmt.Sprint(p.TeamCents, "/", p.TeamPhones, "/", p.PhoneCents, "/", p.PartyFreeTeams, "/", p.PartyGames, "/", p.DomainYearCents, "/", p.DomainContactURL)
 }
 
 // renderLandingPage substitutes the locale's strings into the embedded

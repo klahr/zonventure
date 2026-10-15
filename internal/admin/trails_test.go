@@ -177,7 +177,7 @@ func TestTrail_HostedGame(t *testing.T) {
 	defer cleanup()
 	f.trailRoutes()
 	slug := f.newTrail(t, "kids")
-	if w := call(t, f.console, "POST", "/api/admin/adventures/"+slug+"/host", map[string]any{"blocks": 1}); w.Code != http.StatusCreated {
+	if w := call(t, f.console, "POST", "/api/admin/adventures/"+slug+"/host", map[string]any{}); w.Code != http.StatusCreated {
 		t.Fatalf("host it: %d %s", w.Code, w.Body)
 	}
 	m := regexp.MustCompile(`/party/([A-Za-z0-9_-]+)`).FindStringSubmatch(f.mail.messages[len(f.mail.messages)-1].Text)

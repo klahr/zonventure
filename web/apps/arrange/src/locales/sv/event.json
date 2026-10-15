@@ -225,5 +225,8 @@
   "Meeting place": "Mötesplats",
   "Where teams meet before the start. Invitations and the calendar entry say it; leave it empty to give only the start's map position.": "Var lagen samlas före start. Inbjudningarna och kalenderposten anger den; lämna tomt för att bara ge startens kartposition.",
   "e.g. By the fountain in the main square": "t.ex. Vid fontänen på stora torget",
-  "meeting_place is too long (max 200 chars)": "mötesplatsen är för lång (högst 200 tecken)"
+  "meeting_place is too long (max 200 chars)": "mötesplatsen är för lång (högst 200 tecken)",
+  "The price must be more than the platform's {{fee}} for the team.": "Priset måste vara högre än plattformens {{fee}} för laget.",
+  "You receive {{amount}} per ticket after the platform's {{fee}} for the team, less Stripe's card fee.": "Du får {{amount}} per biljett efter plattformens {{fee}} för laget, minus Stripes kortavgift.",
+  "The event pass is full.": "Eventpasset är fullt."
 }

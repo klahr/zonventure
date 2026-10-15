@@ -52,5 +52,9 @@
   "Running live events instead? Show those steps": "Kör ni hellre liveevent? Visa de stegen",
   "To invoice": "Att fakturera",
   "Open purchases": "Öppna köphistoriken",
-  "Bought": "Köpt"
+  "Bought": "Köpt",
+  "Pay per team": "Betala per lag",
+  "each team costs {{price}} as it starts, from your organisation's balance.": "varje lag kostar {{price}} när det startar, från organisationens saldo.",
+  "Two steps from here to your first event.": "Två steg härifrån till ditt första event.",
+  "Pick a date, add teams, share each player’s magic link. Each team is charged as it starts.": "Välj ett datum, lägg till lag, dela varje spelares magiska länk. Varje lag debiteras när det startar."
 }

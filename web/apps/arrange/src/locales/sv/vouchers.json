@@ -42,5 +42,8 @@
   "{{n}} players per code": "{{n}} spelare per kod",
   "{{n}} used, {{amount}}": "{{n}} använda, {{amount}}",
   "{{price}} {{vat}} per code used, on your monthly invoice. Unused codes cost nothing.": "{{price}} {{vat}} per använd kod, på er månadsfaktura. Oanvända koder kostar inget.",
-  "{{used}} of {{codes}} used": "{{used}} av {{codes}} använda"
+  "{{used}} of {{codes}} used": "{{used}} av {{codes}} använda",
+  "Each code used costs {{price}} {{vat}}, from your organisation's balance: at most {{total}} if all are used. Unused codes cost nothing.": "Varje använd kod kostar {{price}} {{vat}}, från organisationens saldo: högst {{total}} om alla används. Oanvända koder kostar ingenting.",
+  "The {{n}} unused codes in “{{label}}” will stop working, say for a print run that was never sold. Teams already playing keep playing, and codes already used stay charged.": "De {{n}} oanvända koderna i ”{{label}}” slutar fungera, till exempel för en tryckupplaga som aldrig såldes. Lag som redan spelar fortsätter spela, och koder som redan använts förblir debiterade.",
+  "{{price}} {{vat}} per code used, from your organisation's balance. Unused codes cost nothing.": "{{price}} {{vat}} per använd kod, från organisationens saldo. Oanvända koder kostar ingenting."
 }

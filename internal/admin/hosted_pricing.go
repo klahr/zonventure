@@ -16,39 +16,50 @@ import (
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/payments"
+	"github.com/klahr/zonventure/internal/settings"
 	"github.com/klahr/zonventure/internal/ws"
 )
 
-// Paying for hosted events: free for up to FreeTeams teams a game (no
-// blocks), else a pass of h.hosted()'s price per started block of
-// TeamsPerBlock teams a game may hold. "Host it" buys an
-// arranger a hosted event of their own adventure; "Add teams" buys an
-// event more blocks. Both are charged on the platform's own account
-// (no connected account: the platform is the seller), as ticket
-// purchases of kind 'hosted' and 'hosted_blocks' that the checkout
-// webhook fulfils (fulfilHostedCheckout). Where hosting is free (a
-// self-host without a pass price) both happen at once. A party an org
-// sells is the third way in: see BookParty, whose platform fee is the
-// pass price. See migration 0110.
+// Paying for hosted events (PLATFORM_PRICING.md, pay per team). An
+// organisation's own hosted event ("Host it") costs nothing to make:
+// each team is charged to the organisation as it joins a game
+// (internal/billing). A family's party adventure, made in the public
+// creator, holds the teams it was bought for, its first PartyFreeTeams
+// free and each one after at the team price, for PartyGames games;
+// "Add teams" buys it more. Those are charged on the platform's own
+// account (the platform is the seller), as ticket purchases of kind
+// 'hosted' and 'hosted_teams' that the checkout webhook fulfils
+// (fulfilHostedCheckout). A party an org sells is the third way in: see
+// BookParty.
 
-// maxBlocks caps the blocks one purchase buys: 150 teams in one game.
-const maxBlocks = 10
-
-// hostedPriceDTO is what the pages show of the pass price.
+// hostedPriceDTO is what the pages show of a party's price.
 type hostedPriceDTO struct {
-	BlockCents int64  `json:"block_cents"`
-	Currency   string `json:"currency"`
-	TeamsPer   int    `json:"teams_per_block"`
-	FreeTeams  int    `json:"free_teams"`
+	TeamCents int64  `json:"team_cents"`
+	Currency  string `json:"currency"`
+	// FreeTeams are a family's party's free teams a game, for Games games.
+	FreeTeams int `json:"free_teams"`
+	Games     int `json:"games"`
 	// VATExcluded: the price is shown "excl. VAT", else "incl. VAT".
 	VATExcluded bool `json:"vat_excluded"`
 }
 
 func (h *Handlers) hostedPrice() hostedPriceDTO {
-	return hostedPriceDTO{BlockCents: h.hosted().BlockCents, Currency: h.hosted().Currency, TeamsPer: TeamsPerBlock, FreeTeams: FreeTeams, VATExcluded: h.pricing().VATExcluded}
+	p := h.pricing()
+	return hostedPriceDTO{TeamCents: p.TeamCents, Currency: strings.ToUpper(settings.Currency),
+		FreeTeams: int(p.PartyFreeTeams), Games: int(p.PartyGames), VATExcluded: p.VATExcluded}
 }
 
-// GetHostedPrice is the pass price, for the console's Host it dialog.
+// partyPrice is what a family's party of teams teams costs: its free
+// teams cost nothing.
+func (h *Handlers) partyPrice(teams int) int64 {
+	p := h.pricing()
+	if paid := int64(teams) - p.PartyFreeTeams; paid > 0 {
+		return paid * p.TeamCents
+	}
+	return 0
+}
+
+// GetHostedPrice is the party price, for the console.
 //
 // GET /api/admin/hosted-price
 func (h *Handlers) GetHostedPrice(w http.ResponseWriter, _ *http.Request) {
@@ -56,8 +67,7 @@ func (h *Handlers) GetHostedPrice(w http.ResponseWriter, _ *http.Request) {
 }
 
 type hostAdventureRequest struct {
-	Name   string `json:"name"`
-	Blocks int    `json:"blocks"`
+	Name string `json:"name"`
 }
 
 // hostedCheckout is what a purchase answers: the checkout to pay at, or,
@@ -70,10 +80,11 @@ type hostedCheckout struct {
 	HostURL string `json:"host_url,omitempty"`
 }
 
-// HostAdventure buys the caller's org a hosted event of one of its
+// HostAdventure makes the caller's org a hosted event of one of its
 // adventures — its own or one shared with it — to run privately: the
 // same host page and player link as a party, opened in the console or
-// by the host link mailed to the caller.
+// by the host link mailed to the caller. Nothing is paid now: each team
+// that joins is charged to the organisation.
 //
 // POST /api/admin/adventures/{slug}/host
 func (h *Handlers) HostAdventure(w http.ResponseWriter, r *http.Request) {
@@ -84,10 +95,6 @@ func (h *Handlers) HostAdventure(w http.ResponseWriter, r *http.Request) {
 	}
 	var req hostAdventureRequest
 	if !httpx.DecodeJSON(w, r, &req) {
-		return
-	}
-	if req.Blocks < 0 || req.Blocks > maxBlocks {
-		httpx.Error(w, http.StatusBadRequest, fmt.Sprintf("blocks must be 0–%d", maxBlocks))
 		return
 	}
 	name := strings.TrimSpace(req.Name)
@@ -143,42 +150,23 @@ func (h *Handlers) HostAdventure(w http.ResponseWriter, r *http.Request) {
 		name = title + " " + trailDate(emailtpl.Lang(lang), time.Now())
 	}
 
-	if h.hosted().Free() || req.Blocks == 0 {
-		eventID, err := h.hostFree(ctx, *me.OrgID, slug, name, req.Blocks, me.Email)
-		if err != nil {
-			httpx.ServerErr(w, http.StatusInternalServerError, "host failed", err)
-			return
-		}
-		httpx.JSON(w, http.StatusCreated, hostedCheckout{EventID: eventID})
-		return
-	}
-	if !h.paymentsEnabled() {
-		httpx.Error(w, http.StatusConflict, "payments are not set up on this server")
-		return
-	}
-	amount := h.hosted().Price(req.Blocks)
-	var purchaseID int64
-	if err := h.DB.QueryRowContext(ctx, `
-		INSERT INTO ticket_purchases (kind, buyer_org_id, adventure_slug, party_name, buyer_email,
-		                              team_size, amount_cents, currency, blocks)
-		VALUES ('hosted', $1, $2, $3, $4, 0, $5, $6, $7) RETURNING id
-	`, *me.OrgID, slug, name, strings.ToLower(me.Email), amount, h.hosted().Currency, req.Blocks).Scan(&purchaseID); err != nil {
+	eventID, err := h.hostFree(ctx, *me.OrgID, slug, name, hostedLimits{Billing: "teams"}, me.Email)
+	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "host failed", err)
 		return
 	}
-	product := fmt.Sprintf("%s — hosted, %d teams per game", name, req.Blocks*TeamsPerBlock)
-	h.startHostedCheckout(w, r, purchaseID, product, amount, me.Email, "/app/arrange/", "")
+	httpx.JSON(w, http.StatusCreated, hostedCheckout{EventID: eventID})
 }
 
-// hostFree makes a hosted event where hosting costs nothing, and mails
-// its host link to the caller.
-func (h *Handlers) hostFree(ctx context.Context, orgID int64, slug, name string, blocks int, email string) (int64, error) {
+// hostFree makes a hosted event with nothing to pay now, and mails its
+// host link to the caller.
+func (h *Handlers) hostFree(ctx context.Context, orgID int64, slug, name string, lim hostedLimits, email string) (int64, error) {
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	eventID, hostToken, err := createHostedEvent(ctx, tx, orgID, slug, name, 0, blocks, "")
+	eventID, hostToken, err := createHostedEvent(ctx, tx, orgID, slug, name, 0, lim, "")
 	if err != nil {
 		return 0, err
 	}
@@ -199,7 +187,7 @@ func (h *Handlers) hostFree(ctx context.Context, orgID int64, slug, name string,
 // where the buyer lands afterwards; hostURL, when set, the admin page
 // the purchase opens once paid.
 func (h *Handlers) startHostedCheckout(w http.ResponseWriter, r *http.Request, purchaseID int64, product string, amount int64, email, back, hostURL string) {
-	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, product, h.hosted().Currency, amount,
+	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, product, settings.Currency, amount,
 		email, "", 0, back, nil)
 	if err != nil {
 		_, _ = h.DB.ExecContext(r.Context(),
@@ -215,33 +203,39 @@ func (h *Handlers) startHostedCheckout(w http.ResponseWriter, r *http.Request, p
 	httpx.JSON(w, http.StatusOK, hostedCheckout{CheckoutURL: url, HostURL: hostURL})
 }
 
-// AddHostedBlocks buys a hosted event more teams per game: Blocks more
-// blocks. From the host page the buyer is the event's own buyer; from
-// the console, the arranger.
+// AddHostedTeams buys a party more teams per game: Teams more, at the
+// team price. From the host page the buyer is the event's own buyer;
+// from the console, the arranger. An organisation's own hosted event
+// has no limit to raise: each team is charged as it joins.
 //
-// POST /api/party/{token}/blocks
-// POST /api/admin/events/{eventID}/hosted/blocks
-func (h *Handlers) AddHostedBlocks(w http.ResponseWriter, r *http.Request) {
+// POST /api/party/{token}/teams
+// POST /api/admin/events/{eventID}/hosted/teams
+func (h *Handlers) AddHostedTeams(w http.ResponseWriter, r *http.Request) {
 	p, ok := h.hostedParty(w, r)
 	if !ok {
 		return
 	}
 	var req struct {
-		Blocks int `json:"blocks"`
+		Teams int `json:"teams"`
 	}
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if req.Blocks < 1 || p.Blocks+req.Blocks > maxBlocks {
-		httpx.Error(w, http.StatusBadRequest, fmt.Sprintf("a game holds at most %d teams", maxBlocks*TeamsPerBlock))
+	if p.TeamLimit == 0 {
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "this game takes any number of teams: each is charged as it joins", "code": "no_limit"})
+		return
+	}
+	if req.Teams < 1 || p.TeamLimit+req.Teams > maxPartyTeams {
+		httpx.Error(w, http.StatusBadRequest, fmt.Sprintf("a game holds at most %d teams", maxPartyTeams))
 		return
 	}
 	if !h.partyOpen(w, p) {
 		return
 	}
 	ctx := r.Context()
-	if h.hosted().Free() {
-		if _, err := h.DB.ExecContext(ctx, `UPDATE events SET hosted_blocks = hosted_blocks + $2 WHERE id = $1`, p.EventID, req.Blocks); err != nil {
+	amount := int64(req.Teams) * h.pricing().TeamCents
+	if amount <= 0 {
+		if _, err := h.DB.ExecContext(ctx, `UPDATE events SET team_limit = team_limit + $2 WHERE id = $1`, p.EventID, req.Teams); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "add teams failed", err)
 			return
 		}
@@ -267,42 +261,41 @@ func (h *Handlers) AddHostedBlocks(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "add teams failed", err)
 		return
 	}
-	amount := h.hosted().Price(req.Blocks)
 	var purchaseID int64
 	if err := h.DB.QueryRowContext(ctx, `
-		INSERT INTO ticket_purchases (kind, event_id, buyer_email, team_size, amount_cents, currency, blocks)
-		VALUES ('hosted_blocks', $1, $2, 0, $3, $4, $5) RETURNING id
-	`, p.EventID, strings.ToLower(email), amount, h.hosted().Currency, req.Blocks).Scan(&purchaseID); err != nil {
+		INSERT INTO ticket_purchases (kind, event_id, buyer_email, team_size, amount_cents, currency, teams)
+		VALUES ('hosted_teams', $1, $2, 0, $3, $4, $5) RETURNING id
+	`, p.EventID, strings.ToLower(email), amount, strings.ToUpper(settings.Currency), req.Teams).Scan(&purchaseID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "add teams failed", err)
 		return
 	}
-	// The total a game then holds: a free event's first block replaces its free teams.
 	var name string
 	if err := h.DB.QueryRowContext(ctx, `SELECT party_name FROM events WHERE id = $1`, p.EventID).Scan(&name); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "add teams failed", err)
 		return
 	}
-	product := emailtpl.T(h.eventLook(ctx, p.EventID).Lang, "%[1]s — more teams, up to %[2]d teams per game", name, teamsLimit(p.Blocks+req.Blocks))
+	product := emailtpl.T(h.eventLook(ctx, p.EventID).Lang, "%[1]s — more teams, up to %[2]d teams per game", name, p.TeamLimit+req.Teams)
 	h.startHostedCheckout(w, r, purchaseID, product, amount, email, back, "")
 }
 
-// fulfilHostedCheckout fulfils a paid 'hosted' or 'hosted_blocks'
-// purchase inside the webhook's transaction tx, which it commits.
+// fulfilHostedCheckout fulfils a paid 'hosted' (a family's party) or
+// 'hosted_teams' purchase inside the webhook's transaction tx, which it
+// commits.
 func (h *Handlers) fulfilHostedCheckout(ctx context.Context, tx *sql.Tx, event payments.Event, purchaseID int64, kind string) error {
 	var (
 		orgID     sql.NullInt64
 		slug      string
 		name      string
 		email     string
-		blocks    int
+		teams     int
 		eventID   int64
 		hostToken string
 		minted    sql.NullString
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT buyer_org_id, adventure_slug, party_name, buyer_email, blocks, COALESCE(event_id, 0), host_token
+		SELECT buyer_org_id, adventure_slug, party_name, buyer_email, teams, COALESCE(event_id, 0), host_token
 		FROM ticket_purchases WHERE id = $1
-	`, purchaseID).Scan(&orgID, &slug, &name, &email, &blocks, &eventID, &minted); err != nil {
+	`, purchaseID).Scan(&orgID, &slug, &name, &email, &teams, &eventID, &minted); err != nil {
 		return err
 	}
 	switch kind {
@@ -314,7 +307,8 @@ func (h *Handlers) fulfilHostedCheckout(ctx context.Context, tx *sql.Tx, event p
 			return nil
 		}
 		var err error
-		if eventID, hostToken, err = createHostedEvent(ctx, tx, orgID.Int64, slug, name, 0, blocks, minted.String); err != nil {
+		lim := hostedLimits{Teams: teams, Games: int(h.pricing().PartyGames), Billing: "prepaid"}
+		if eventID, hostToken, err = createHostedEvent(ctx, tx, orgID.Int64, slug, name, 0, lim, minted.String); err != nil {
 			return fmt.Errorf("hosted create: %w", err)
 		}
 		if err := h.keepHostToken(ctx, tx, eventID, hostToken); err != nil {
@@ -324,12 +318,12 @@ func (h *Handlers) fulfilHostedCheckout(ctx context.Context, tx *sql.Tx, event p
 		if _, err := attachTrailEvent(ctx, tx, slug, eventID, email, true); err != nil {
 			return fmt.Errorf("trail attach: %w", err)
 		}
-	case "hosted_blocks":
+	case "hosted_teams":
 		if eventID == 0 {
 			logx.Warn("payments.hosted_checkout.event_gone", "ticket_purchase_id", purchaseID)
 			return nil
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE events SET hosted_blocks = hosted_blocks + $2 WHERE id = $1`, eventID, blocks); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE events SET team_limit = team_limit + $2 WHERE id = $1`, eventID, teams); err != nil {
 			return err
 		}
 	}
@@ -353,6 +347,6 @@ func (h *Handlers) fulfilHostedCheckout(ctx context.Context, tx *sql.Tx, event p
 			logx.Warn("admin.hosted.mail", "purchase_id", purchaseID, "event_id", eventID, "err", err.Error())
 		}
 	}
-	logx.Info("admin.hosted.paid", "purchase_id", purchaseID, "event_id", eventID, "kind", kind, "blocks", blocks)
+	logx.Info("admin.hosted.paid", "purchase_id", purchaseID, "event_id", eventID, "kind", kind, "teams", teams)
 	return nil
 }

@@ -20,24 +20,18 @@ type voucherOfferView struct {
 	} `json:"batches"`
 }
 
-// A publisher prints pay-later codes for a self-guided event: refused
-// without invoice billing; a code's first use starts a team and is
-// charged once; the next use opens the same team; voiding the batch
-// stops its unused codes; a platform admin marks the uses invoiced.
+// A publisher prints codes for a self-guided event: a code's first use
+// starts a team, which is paid for like any other as its first phone
+// joins; the next use opens the same team; voiding the batch stops its
+// unused codes.
 func TestVoucherBatchFlow(t *testing.T) {
 	boss, db, hc, orgID, eventID, cleanup := redemptionStack(t)
 	defer cleanup()
 	base := fmt.Sprintf("/api/admin/events/%d/voucher-batches", eventID)
 
 	var offer voucherOfferView
-	if s := boss.do("GET", base, nil, &offer); s != 200 || offer.Allowed || offer.PriceCents <= 0 {
+	if s := boss.do("GET", base, nil, &offer); s != 200 || !offer.Allowed || offer.PriceCents <= 0 {
 		t.Fatalf("offer: %d %+v", s, offer)
-	}
-	if s, e := doErr(boss, "POST", base, map[string]any{"count": 3}); s != 403 || e.Reason != "not_invoice" {
-		t.Fatalf("without invoice billing: %d %+v", s, e)
-	}
-	if _, err := db.Exec(`UPDATE organizations SET trusted = 1 WHERE id = $1`, orgID); err != nil {
-		t.Fatal(err)
 	}
 	if s, e := doErr(boss, "POST", base, map[string]any{"count": 5000}); s != 400 || e.Reason != "invalid_count" {
 		t.Fatalf("too many: %d %+v", s, e)
@@ -80,22 +74,15 @@ func TestVoucherBatchFlow(t *testing.T) {
 		t.Fatalf("first use: %d %+v", s, hit)
 	}
 	first := hit.TeamURL
-	var slots, price int
+	var slots int
 	if err := db.QueryRow(`
-		SELECT (SELECT COUNT(*) FROM player_slots s WHERE s.team_id = c.team_id), c.price_cents
-		FROM voucher_codes c WHERE c.code = $1`, code1).Scan(&slots, &price); err != nil || slots != 4 || price <= 0 {
-		t.Fatalf("activated: slots %d price %d %v", slots, price, err)
+		SELECT (SELECT COUNT(*) FROM player_slots s WHERE s.team_id = c.team_id)
+		FROM voucher_codes c WHERE c.code = $1`, code1).Scan(&slots); err != nil || slots != 4 {
+		t.Fatalf("activated: slots %d %v", slots, err)
 	}
-	// A teammate types the same code: the same team, charged once.
+	// A teammate types the same code: the same team.
 	if s := player.do("POST", "/api/play/voucher", map[string]string{"code": code1}, &hit); s != 200 || hit.TeamURL != first {
 		t.Fatalf("second use: %d %q, want %q", s, hit.TeamURL, first)
-	}
-	var use struct {
-		Codes       int   `json:"codes"`
-		AmountCents int64 `json:"amount_cents"`
-	}
-	if s := boss.do("GET", "/api/admin/orgs/me/voucher-use", nil, &use); s != 200 || use.Codes != 1 || use.AmountCents != int64(price) {
-		t.Fatalf("owed: %d %+v", s, use)
 	}
 
 	// Voided: the unused codes stop; the started team plays on.
@@ -111,40 +98,14 @@ func TestVoucherBatchFlow(t *testing.T) {
 	if s, _ := doErr(player, "POST", "/api/play/voucher", map[string]string{"code": "ZZZZZ9"}); s != 404 {
 		t.Fatalf("unknown code: %d", s)
 	}
-
-	// The platform admin invoices it.
-	if _, err := db.Exec(`UPDATE users SET is_admin = true WHERE username = 'boss'`); err != nil {
-		t.Fatal(err)
-	}
-	var orgs struct {
-		Orgs []struct {
-			OrgID int64 `json:"org_id"`
-			Codes int   `json:"codes"`
-		} `json:"orgs"`
-	}
-	if s := boss.do("GET", "/api/admin/voucher-billing", nil, &orgs); s != 200 || len(orgs.Orgs) != 1 || orgs.Orgs[0].Codes != 1 {
-		t.Fatalf("to invoice: %d %+v", s, orgs)
-	}
-	var billed struct {
-		Billed int `json:"billed"`
-	}
-	if s := boss.do("POST", fmt.Sprintf("/api/admin/organizations/%d/voucher-billing", orgID), map[string]string{"invoice_number": "2026-117"}, &billed); s != 200 || billed.Billed != 1 {
-		t.Fatalf("mark billed: %d %+v", s, billed)
-	}
-	if s := boss.do("GET", "/api/admin/voucher-billing", nil, &orgs); s != 200 || len(orgs.Orgs) != 0 {
-		t.Fatalf("after invoicing: %d %+v", s, orgs)
-	}
-	_ = hc
+	_, _ = hc, orgID
 }
 
-// Five phones type the same new code at once: one team, charged once,
-// and every phone lands on it.
+// Five phones type the same new code at once: one team, and every
+// phone lands on it.
 func TestVoucherBatchConcurrentFirstUse(t *testing.T) {
-	boss, db, _, orgID, eventID, cleanup := redemptionStack(t)
+	boss, db, _, _, eventID, cleanup := redemptionStack(t)
 	defer cleanup()
-	if _, err := db.Exec(`UPDATE organizations SET trusted = 1 WHERE id = $1`, orgID); err != nil {
-		t.Fatal(err)
-	}
 	var offer voucherOfferView
 	if s := boss.do("POST", fmt.Sprintf("/api/admin/events/%d/voucher-batches", eventID), map[string]any{"count": 1}, &offer); s != 200 {
 		t.Fatalf("create: %d", s)

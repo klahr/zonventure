@@ -56,6 +56,10 @@ const PartyValidity = 60 * 24 * time.Hour
 // maxPartyNameLen caps the party's name ("Elsa turns 8").
 const maxPartyNameLen = 80
 
+// maxOfferTeams is the most teams a party bought from an organisation
+// holds: phones, one a team.
+const maxOfferTeams = 15
+
 var errNoPartyGraph = errors.New("publish the adventure before offering it as a party")
 
 /* ---------------- offers: the seller's console ---------------- */
@@ -262,18 +266,6 @@ func (h *Handlers) PutPartyOffer(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusBadRequest, "set a price before offering the party")
 			return
 		}
-		// The platform's cut of a party is its pass price: the smallest
-		// party must cost more than that.
-		if h.platformFee().Enabled() && !h.hosted().Free() {
-			if fee := h.hosted().Price(1); int64(req.BaseCents+req.PerKidCents) <= fee {
-				httpx.JSON(w, http.StatusBadRequest, map[string]any{
-					"error":     fmt.Sprintf("a party must cost more than the platform's %s", formatMinor(fee, h.hosted().Currency)),
-					"code":      "price_below_fee",
-					"fee_cents": fee,
-				})
-				return
-			}
-		}
 		g, err := h.partyGraph(r.Context(), advID)
 		if errors.Is(err, errNoPartyGraph) {
 			httpx.Error(w, http.StatusConflict, err.Error())
@@ -327,10 +319,13 @@ type PublicPartyOfferDTO struct {
 	Currency      string `json:"currency"`
 	MaxKids       int    `json:"max_kids"`
 	// Teams is how many teams a game of the booked party takes, so the
-	// page can put the children in teams.
-	Teams   int    `json:"teams"`
-	OrgName string `json:"org_name"`
-	OrgSlug string `json:"org_slug"`
+	// page can put the children in teams. TeamCents is what the
+	// platform takes of the price for each team booked (0 off a
+	// marketplace): a party must cost more than its teams.
+	Teams     int    `json:"teams"`
+	TeamCents int64  `json:"team_cents"`
+	OrgName   string `json:"org_name"`
+	OrgSlug   string `json:"org_slug"`
 	// OrgVerified is a verified creator: the page shows a badge.
 	OrgVerified bool `json:"org_verified"`
 	// PaymentsOpen is false when the org can't take the money yet: the
@@ -363,10 +358,11 @@ func (h *Handlers) scanPublicOffer(row interface{ Scan(...any) error }) (PublicP
 	)
 	err := row.Scan(&d.ID, &d.AdventureSlug, &d.Title, &d.Blurb, &d.BaseCents, &d.PerKidCents,
 		&d.Currency, &d.MaxKids, &d.OrgName, &d.OrgSlug, &d.OrgVerified, &connectOK)
-	// With a platform fee the money goes through the org's connected
-	// account, which must be able to take charges.
-	d.PaymentsOpen = h.paymentsEnabled() && (!h.platformFee().Enabled() || connectOK)
-	d.Teams = teamsLimit(1)
+	// In a marketplace the money goes to the org's own Stripe account,
+	// which must be able to take charges.
+	d.PaymentsOpen = h.paymentsEnabled() && (!h.marketplace() || connectOK)
+	d.Teams = maxOfferTeams
+	d.TeamCents = h.storeFee(1, 1)
 	return d, err
 }
 
@@ -449,8 +445,11 @@ func PartyPriceCents(baseCents, perKidCents, kids int) int64 {
 // declaration that they are the children's guardian, or have their
 // guardians' consent.
 type BookPartyRequest struct {
-	Email     string `json:"email"`
-	Kids      int    `json:"kids"`
+	Email string `json:"email"`
+	Kids  int    `json:"kids"`
+	// Teams is how many teams a game of the party holds: phones, one a
+	// team.
+	Teams     int    `json:"teams"`
 	PartyName string `json:"party_name"`
 	Consent   bool   `json:"consent"`
 }
@@ -482,6 +481,10 @@ func (h *Handlers) BookParty(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, fmt.Sprintf("a party is for 1–%d children", offer.MaxKids))
 		return
 	}
+	if req.Teams < 1 || req.Teams > maxOfferTeams || req.Teams > req.Kids {
+		httpx.Error(w, http.StatusBadRequest, fmt.Sprintf("a party plays as 1–%d teams, no more than the children", maxOfferTeams))
+		return
+	}
 	if !req.Consent {
 		httpx.JSON(w, http.StatusBadRequest, map[string]string{
 			"error": "confirm that you are the children's guardian, or have their guardians' consent",
@@ -504,11 +507,19 @@ func (h *Handlers) BookParty(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var (
-		connectedAccountID string
-		applicationFee     int64
-	)
-	if h.platformFee().Enabled() {
+	// The platform's price for the party's teams comes out of the
+	// payment; the party must cost more than that.
+	applicationFee := h.storeFee(req.Teams, 1)
+	if applicationFee >= amount {
+		httpx.JSON(w, http.StatusConflict, map[string]any{
+			"error":     "this party costs less than its teams: book fewer teams, or ask the organiser",
+			"code":      "price_below_fee",
+			"fee_cents": applicationFee,
+		})
+		return
+	}
+	var connectedAccountID string
+	if h.marketplace() {
 		acct, err := h.stripeConnectAccountForOrgSlug(r.Context(), offer.OrgSlug)
 		if errors.Is(err, ErrConnectNotReady) {
 			httpx.Error(w, http.StatusConflict, "this party can't be booked right now")
@@ -519,17 +530,14 @@ func (h *Handlers) BookParty(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		connectedAccountID = acct
-		// A party is a hosted event of one block: the platform takes
-		// the pass price.
-		applicationFee = h.hosted().Fee(amount, 1)
 	}
 
 	var purchaseID int64
 	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO ticket_purchases (kind, party_offer_id, party_name, consent_at, buyer_email,
-		                              team_size, amount_cents, currency, application_fee_cents, blocks)
-		VALUES ('party', $1, $2, now(), $3, $4, $5, $6, $7, 1) RETURNING id
-	`, offer.ID, name, email, req.Kids, amount, offer.Currency, applicationFee).Scan(&purchaseID); err != nil {
+		                              team_size, amount_cents, currency, application_fee_cents, teams)
+		VALUES ('party', $1, $2, now(), $3, $4, $5, $6, $7, $8) RETURNING id
+	`, offer.ID, name, email, req.Kids, amount, offer.Currency, applicationFee, req.Teams).Scan(&purchaseID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "booking failed", err)
 		return
 	}
@@ -575,7 +583,7 @@ func (h *Handlers) stripeConnectAccountForOrgSlug(ctx context.Context, slug stri
 // webhook's transaction: the seller's hosted event of the offered
 // adventure. It returns the host link's secret, which only the email
 // carries.
-func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, partyName string, kids int) (eventID int64, hostToken string, err error) {
+func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, partyName string, kids int, lim hostedLimits) (eventID int64, hostToken string, err error) {
 	var (
 		orgID   int64
 		advSlug string
@@ -595,7 +603,7 @@ func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, par
 	if strings.TrimSpace(partyName) == "" {
 		partyName = title
 	}
-	eventID, hostToken, err = createHostedEvent(ctx, tx, orgID, advSlug, partyName, kids, 1, "")
+	eventID, hostToken, err = createHostedEvent(ctx, tx, orgID, advSlug, partyName, kids, lim, "")
 	if err != nil {
 		return 0, "", err
 	}
@@ -610,13 +618,20 @@ func fulfilParty(ctx context.Context, tx *sql.Tx, purchaseID, offerID int64, par
 	return eventID, hostToken, nil
 }
 
+// hostedLimits is what a hosted event holds: teams a game and games, 0
+// for no limit, and how its teams are paid for: 'teams', each charged to
+// the organisation, or 'prepaid', paid at checkout.
+type hostedLimits struct {
+	Teams, Games int
+	Billing      string
+}
+
 // createHostedEvent makes a hosted event of orgID's, unstarted, playing
 // advSlug: with a station card for every zone, a host link and a player
-// link, blocks blocks of teams per game, and 60 days to start its first
-// game. hostToken is the host link's secret when one was minted already
-// (at checkout); empty, a new one is. It returns the event and the
-// secret.
-func createHostedEvent(ctx context.Context, tx *sql.Tx, orgID int64, advSlug, name string, kids, blocks int, hostToken string) (eventID int64, _ string, err error) {
+// link, the limits lim, and 60 days to start its first game. hostToken
+// is the host link's secret when one was minted already (at checkout);
+// empty, a new one is. It returns the event and the secret.
+func createHostedEvent(ctx context.Context, tx *sql.Tx, orgID int64, advSlug, name string, kids int, lim hostedLimits, hostToken string) (eventID int64, _ string, err error) {
 	var advID int64
 	if err := tx.QueryRowContext(ctx, `SELECT id FROM adventures WHERE slug = $1`, advSlug).Scan(&advID); err != nil {
 		return 0, "", fmt.Errorf("adventure %q: %w", advSlug, err)
@@ -646,11 +661,12 @@ func createHostedEvent(ctx context.Context, tx *sql.Tx, orgID int64, advSlug, na
 	}
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO events (adventure_slug, org_id, state, live_token, name, attested_no_minors_at,
-		                    party, host_token_hash, party_name, party_kids, party_mode, valid_until, player_token, hosted_blocks)
-		VALUES ($1, $2, 'scheduled', $3, $4, now_text(), TRUE, $5, $4, $6, $7, $8, $9, $10)
+		                    party, host_token_hash, party_name, party_kids, party_mode, valid_until, player_token,
+		                    team_limit, game_limit, billing)
+		VALUES ($1, $2, 'scheduled', $3, $4, now_text(), TRUE, $5, $4, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING id
 	`, advSlug, orgID, liveToken, name, hashHostToken(hostToken), kids, mode,
-		time.Now().Add(PartyValidity), playerToken, blocks).Scan(&eventID); err != nil {
+		time.Now().Add(PartyValidity), playerToken, lim.Teams, lim.Games, lim.Billing).Scan(&eventID); err != nil {
 		return 0, "", fmt.Errorf("hosted event: %w", err)
 	}
 	// Cards for the zones the adventure has now, so the host can print
@@ -661,7 +677,7 @@ func createHostedEvent(ctx context.Context, tx *sql.Tx, orgID int64, advSlug, na
 		}
 	}
 	activity.Record(ctx, tx, eventID, nil, activity.Actor{}, activity.EventCreated,
-		map[string]any{"adventure_slug": advSlug, "party": true, "kids": kids, "blocks": blocks})
+		map[string]any{"adventure_slug": advSlug, "party": true, "kids": kids, "teams": lim.Teams, "games": lim.Games})
 	return eventID, hostToken, nil
 }
 
@@ -781,8 +797,13 @@ type hostParty struct {
 	Mode        string
 	Overrides   graph.PartyOverrides
 	PlayerToken string
-	Blocks      int
-	Round       int
+	// TeamLimit is the teams a game may hold and GameLimit the games it
+	// may play, 0 for no limit: a party's, paid at checkout. Billing is
+	// 'teams' for an organisation's own hosted event, every team charged.
+	TeamLimit int
+	GameLimit int
+	Billing   string
+	Round     int
 	// RoundOpen is whether game Round is being played.
 	RoundOpen bool
 	// HoldResults keeps each game's results secret until the host
@@ -862,11 +883,11 @@ func (h *Handlers) loadParty(ctx context.Context, q graphstore.Querier, cond str
 	)
 	err := q.QueryRowContext(ctx, `
 		SELECT e.id, e.org_id, e.adventure_slug, e.state, e.party_kids, e.valid_until, e.graph_id, e.party_mode,
-		       e.party_overrides, e.player_token, e.hosted_blocks, e.current_round,
+		       e.party_overrides, e.player_token, e.team_limit, e.game_limit, e.billing, e.current_round,
 		       EXISTS (SELECT 1 FROM event_rounds r WHERE r.event_id = e.id AND r.round = e.current_round AND r.finished_at IS NULL),
 		       e.party_hold_results
 		FROM events e WHERE e.party AND `+cond, arg).Scan(&p.EventID, &p.OrgID, &p.AdvSlug, &p.State, &p.Kids, &p.ValidUntil,
-		&p.GraphID, &p.Mode, &overrides, &player, &p.Blocks, &p.Round, &p.RoundOpen, &p.HoldResults)
+		&p.GraphID, &p.Mode, &overrides, &player, &p.TeamLimit, &p.GameLimit, &p.Billing, &p.Round, &p.RoundOpen, &p.HoldResults)
 	if err != nil {
 		return p, err
 	}
@@ -924,10 +945,15 @@ type hostPartyDTO struct {
 
 	// The player link teams join from, and the games played so far.
 	// Teams are those of the game being played, or of the last one.
-	PlayerURL  string `json:"player_url"`
-	Round      int    `json:"round"`
-	RoundOpen  bool   `json:"round_open"`
+	PlayerURL string `json:"player_url"`
+	Round     int    `json:"round"`
+	RoundOpen bool   `json:"round_open"`
+	// TeamsLimit is the teams a game holds and GameLimit the games the
+	// party plays, 0 for no limit; Billing 'teams' when each team is
+	// charged to the organisation rather than paid at checkout.
 	TeamsLimit int    `json:"teams_limit"`
+	GameLimit  int    `json:"game_limit"`
+	Billing    string `json:"billing"`
 	// TurnedAway counts the teams the game being played turned away,
 	// full.
 	TurnedAway int `json:"turned_away"`
@@ -935,7 +961,7 @@ type hostPartyDTO struct {
 	// board until the host finishes it.
 	HoldResults bool `json:"hold_results"`
 	// MaxTeams is the most teams a game can be bought up to, and Price
-	// what each block more costs (0 where hosting is free).
+	// what each team more costs (0 where hosting is free).
 	MaxTeams int            `json:"max_teams"`
 	Price    hostedPriceDTO `json:"price"`
 	// Trail is set for a quiz trail, whose cards print as a PDF
@@ -981,7 +1007,7 @@ func (h *Handlers) GetHostParty(w http.ResponseWriter, r *http.Request) {
 	out := hostPartyDTO{State: p.State, Kids: p.Kids, ValidUntil: p.ValidUntil,
 		Expired: partyLapsed(p), PlayURL: base + "/play",
 		PlayerURL: base + "/j/" + p.PlayerToken, Round: p.Round, RoundOpen: p.RoundOpen, HoldResults: p.HoldResults,
-		TeamsLimit: teamsLimit(p.Blocks), MaxTeams: maxBlocks * TeamsPerBlock, Price: h.hostedPrice()}
+		TeamsLimit: p.TeamLimit, GameLimit: p.GameLimit, Billing: p.Billing, MaxTeams: maxPartyTeams, Price: h.hostedPrice()}
 	var liveToken string
 	if err := h.DB.QueryRowContext(ctx, `
 		SELECT e.party_name, COALESCE(NULLIF(a.title, ''), a.slug), o.name, e.live_token, e.first_game_at
@@ -1557,7 +1583,12 @@ func (h *Handlers) fulfilPartyCheckout(ctx context.Context, tx *sql.Tx, event pa
 		logx.Warn("payments.party_checkout.offer_gone", "ticket_purchase_id", purchaseID)
 		return nil
 	}
-	eventID, hostToken, err := fulfilParty(ctx, tx, purchaseID, offerID.Int64, partyName, kids)
+	var teams int
+	if err := tx.QueryRowContext(ctx, `SELECT teams FROM ticket_purchases WHERE id = $1`, purchaseID).Scan(&teams); err != nil {
+		return err
+	}
+	lim := hostedLimits{Teams: teams, Games: int(h.pricing().PartyGames), Billing: "prepaid"}
+	eventID, hostToken, err := fulfilParty(ctx, tx, purchaseID, offerID.Int64, partyName, kids, lim)
 	if err != nil {
 		return fmt.Errorf("party create: %w", err)
 	}

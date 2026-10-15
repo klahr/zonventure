@@ -240,7 +240,7 @@ export function PurchasesTab() {
       illustration={SPOTS.noPurchases}
       action={<a className="btn primary" href={href({ name: CATALOG_ENABLED ? "catalog" : "adventures" })}><Coins size={ICON.md} aria-hidden />{CATALOG_ENABLED ? t.t("Open the store") : t.t("Open your adventures")}</a>}
     >
-      {CATALOG_ENABLED ? t.t("Browse the catalog and get an event pass to start scheduling events.") : t.t("Get an event pass from an adventure's page to start scheduling events.")}
+      {t.t("Event passes bought before pay per team show here.")}
     </Empty>
   );
 

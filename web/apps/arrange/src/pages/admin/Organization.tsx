@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Ban, Coins, ExternalLink, Pencil, Plus, RefreshCw, Trash2, Users } from "lucide-react";
+import { Ban, ExternalLink, Pencil, Plus, RefreshCw, Trash2, Users } from "lucide-react";
 import { ApiError, isGlobalAdmin } from "@zonventure/api";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
@@ -15,7 +15,8 @@ import {
   resetUserTOTP, totpAvailable, unvoidPurchase, uploadLogo, verifyEmail, voidPurchase,
   type Assignment, type CatalogAdventure, type ConnectStatus, type OrgEvent, type OrgMember, type OrgTeam, type Organization, type Purchase,
 } from "./api.ts";
-import { AddMemberDialog, EditPassDialog, GrantPassDialog, GrantSlotsDialog, MarkBilledDialog, PickDialog, RenameOrgDialog, SetPasswordDialog } from "./OrgDialogs.tsx";
+import { OrgBillingCard } from "./OrgBilling.tsx";
+import { AddMemberDialog, EditPassDialog, GrantPassDialog, MarkBilledDialog, PickDialog, RenameOrgDialog, SetPasswordDialog } from "./OrgDialogs.tsx";
 import { OrgLogo } from "./OrgLogo.tsx";
 import { OrgDomainCard } from "./OrgDomain.tsx";
 import { TicketSalesCard } from "../settings/TicketSales.tsx";
@@ -37,7 +38,6 @@ type Open =
   | { kind: "set-password"; member: OrgMember }
   | { kind: "grant-pass" }
   | { kind: "edit-pass"; pass: Assignment }
-  | { kind: "grant-slots"; event: OrgEvent }
   | { kind: "teams"; event: OrgEvent }
   | { kind: "commission"; candidates: CatalogAdventure[] }
   | { kind: "share"; adventure: CatalogAdventure; orgs: Organization[] };
@@ -353,6 +353,7 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
 
       <SetupCard org={org} connect={data.connect} onTrusted={() => act(() => setTrusted(org.id, !org.trusted), org.trusted ? t.t("Invoice billing disabled") : t.t("Invoice billing enabled"))} onParty={() => act(() => setPartyAdventures(org.id, !org.party_adventures), org.party_adventures ? t.t("Public party creator disabled") : t.t("Public party creator enabled"))} onVerified={toggleVerified} onPublisher={togglePublisher} onRequireTotp={toggleRequireTotp} reload={reload} readOnly={!full} />
       <OrgDomainCard orgID={org.id} readOnly={!full} />
+      <OrgBillingCard orgId={org.id} readOnly={!full} />
 
       <Card
         title={t.t("Users")}
@@ -400,7 +401,6 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           caption={t.t("Events")}
           empty={<p className="adm-muted">{t.t("No events yet.")}</p>}
           columns={eventColumns(t, (e) => setOpen({ kind: "teams", event: e }), full ? {
-            add: (e) => setOpen({ kind: "grant-slots", event: e }),
             cancel: cancelEvent,
             pass: (e) => passOf.get(e.assignment_id),
             editPass: (pass) => setOpen({ kind: "edit-pass", pass }),
@@ -460,7 +460,7 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           actions={full && candidates.length > 0 && <Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={() => setOpen({ kind: "commission", candidates })}>{t.t("Commission adventure")}</Button>}
         >
           {commissioned.length === 0 ? (
-            <p className="adm-muted">{t.t("None — commission a catalog adventure to let them run it without buying event passes.")}</p>
+            <p className="adm-muted">{t.t("None — commission a catalog adventure to list it among their own.")}</p>
           ) : (
             <div className="adm-chips">
               {commissioned.map((a) => (
@@ -497,7 +497,6 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
       {open?.kind === "set-password" && <SetPasswordDialog member={open.member} onClose={close} onDone={done} />}
       {open?.kind === "grant-pass" && <GrantPassDialog org={org} adventures={passable} onClose={close} onDone={done} />}
       {open?.kind === "edit-pass" && <EditPassDialog org={org} pass={open.pass} adventures={passable} onClose={close} onDone={done} />}
-      {open?.kind === "grant-slots" && <GrantSlotsDialog org={org} event={open.event} onClose={close} onDone={done} />}
       {open?.kind === "teams" && <TeamsDialog org={org} event={open.event} onClose={close} />}
       {open?.kind === "commission" && (
         <PickDialog
@@ -524,7 +523,6 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
 type T = ReturnType<typeof useT>;
 
 interface EventActions {
-  add: (e: OrgEvent) => void;
   cancel: (e: OrgEvent) => void;
   pass: (e: OrgEvent) => Assignment | undefined;
   editPass: (a: Assignment) => void;
@@ -566,10 +564,6 @@ function eventColumns(t: T, teams: (e: OrgEvent) => void, on: EventActions | nul
         return (
           <span className="adm-actions adm-actions--icons">
             <Button size="icon" variant="ghost" icon={<Users size={ICON.sm} aria-hidden />} aria-label={`${t.t("Teams")} · ${name}`} title={t.t("Teams and their links")} onClick={() => teams(e)} />
-            {/* Self-guided adventures grow per ticket, not from a pass. */}
-            {on && live(e) && e.assignment_id > 0 && !e.public_for_sale && (
-              <Button size="icon" variant="ghost" icon={<Coins size={ICON.sm} aria-hidden />} aria-label={`${t.t("Add players")} · ${name}`} title={t.t("Add players to this event's pass on the org's behalf")} onClick={() => on.add(e)} />
-            )}
             {on && pass && (
               <Button size="icon" variant="ghost" icon={<Pencil size={ICON.sm} aria-hidden />} aria-label={`${t.t("Edit event pass")} · ${name}`} title={t.t("Click to edit player cap")} onClick={() => on.editPass(pass)} />
             )}
@@ -677,7 +671,7 @@ function SetupCard({ org, connect, onTrusted, onParty, onVerified, onPublisher, 
           />
         </div>
       </div>
-      <Toggle disabled={readOnly} checked={org.trusted} onChange={onTrusted} label={t.t("Invoice billing")} hint={t.t("Lets the org pay for event passes by invoice instead of via Stripe.")} />
+      <Toggle disabled={readOnly} checked={org.trusted} onChange={onTrusted} label={t.t("Invoice billing")} hint={t.t("Bills the org's month by invoice instead of charging a card.")} />
       <Toggle disabled={readOnly} checked={org.verified_creator} onChange={onVerified} label={t.t("Verified creator")} hint={t.t("Their store listings and party adventures go public without review, and the store shows a Verified creator badge. Turning it on approves what of theirs is waiting.")} />
       <Toggle disabled={readOnly} checked={org.party_adventures} onChange={onParty} label={t.t("Public party creator (no account)")} hint={<>{t.t("Opens the public creator, where anyone makes a party adventure without an account:")} {org.slug && <a href={`/o/${org.slug}/trail`} target="_blank" rel="noreferrer">/o/{org.slug}/trail</a>}</>} />
       <Toggle

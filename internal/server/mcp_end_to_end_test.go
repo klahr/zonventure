@@ -126,24 +126,9 @@ func TestMCPFromAdventureToStartedEvents(t *testing.T) {
 	}
 	must("give_free_ticket", map[string]any{"event_id": quest, "email": "tester@example.com"})
 
-	// Scheduled: refused without an event pass, with where to get one;
-	// with a pass, teams invited and the event started.
-	text, isErr := call("create_event", map[string]any{"adventure_slug": "harbour", "attest_no_minors": true})
-	if !isErr || !strings.Contains(text, "event pass") || !strings.Contains(text, "http://zv.test/app/arrange/#/adventures/harbour") {
-		t.Errorf("a scheduled event without a pass: %v %s", isErr, text)
-	}
-	var purchase struct {
-		ID int64 `json:"id"`
-	}
-	_ = json.Unmarshal([]byte(must("create_purchase", map[string]any{"adventure_slug": "harbour", "max_players": 15})), &purchase)
-	var paid struct {
-		AssignmentID int64 `json:"assignment_id"`
-	}
-	_ = json.Unmarshal([]byte(must("confirm_purchase", map[string]any{"purchase_id": purchase.ID})), &paid)
-	if paid.AssignmentID == 0 {
-		t.Fatalf("no assignment from the purchase %d", purchase.ID)
-	}
-	scheduled := eventID(must("create_event", map[string]any{"assignment_id": paid.AssignmentID, "attest_no_minors": true, "name": "Team day", "scheduled_at": "2030-06-01T10:00:00Z"}))
+	// Scheduled: no pass needed (each team is paid for as it starts);
+	// teams invited and the event started.
+	scheduled := eventID(must("create_event", map[string]any{"adventure_slug": "harbour", "attest_no_minors": true, "name": "Team day", "scheduled_at": "2030-06-01T10:00:00Z"}))
 	must("create_team", map[string]any{"event_id": scheduled, "name": "Gulls", "member_names": []string{"Ada", "Bo"}, "email": "gulls@example.com"})
 	must("send_event_invitations", map[string]any{"event_id": scheduled})
 	must("start_event", map[string]any{"event_id": scheduled})

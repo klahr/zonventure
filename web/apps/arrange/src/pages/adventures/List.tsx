@@ -319,7 +319,7 @@ export function CatalogPage() {
             {t.t("Published adventures from other organizations.")}{" "}
             <HelpPopover
               label={t.t("About the Catalog")}
-              body={publisher ? t.t("Your own published adventures are what other organizations find here.") : t.t("Buy an event pass to add one to your own Adventures list.")}
+              body={publisher ? t.t("Your own published adventures are what other organizations find here.") : t.t("Schedule an event of any of them; each team is charged as it starts.")}
             />
           </>
         }

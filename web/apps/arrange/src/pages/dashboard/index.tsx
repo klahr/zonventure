@@ -11,7 +11,6 @@ import { EventsTable } from "../events/parts.tsx";
 import { NewEventDialog, canStartEvent, type NewEventProps } from "../events/NewEventDialog.tsx";
 import { NewQuestDialog } from "../events/NewQuestDialog.tsx";
 import { getConnectStatus } from "../event/api.ts";
-import { useHostedPaid, useJustPurchased } from "../events/justPurchased.ts";
 import { createOrganization, createOwnOrganization, getCatalog, listOrganizations, listToInvoice, type OrgRow, type PurchaseRow } from "./api.ts";
 import { SetupCard, type SetupStepProps } from "./Setup.tsx";
 import { Agenda, LiveCard, Tile } from "./Overview.tsx";
@@ -45,8 +44,6 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
   const [dialog, setDialog] = useState<Omit<NewEventProps, "onClose"> | null>(null);
   const [selling, setSelling] = useState(false);
   const [sellSteps, setSellSteps] = useSellSteps(user.org_id);
-  useJustPurchased((assignmentId) => setDialog({ assignmentId }));
-  useHostedPaid();
 
   const data = useLoad(async (signal) => {
     const [events, advs, assigns] = await Promise.all([listEvents(undefined, signal), listAdventures(signal), listAssignments(signal)]);
@@ -146,13 +143,12 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
       };
     } else {
       setup = {
-        lead: t.t("Three steps from here to your first event."),
+        lead: t.t("Two steps from here to your first event."),
         steps: [
           canAuthor(user)
             ? { done: mine.length > 0 || unused.length > 0, title: t.t("Pick an adventure"), hint: CATALOG_ENABLED ? t.t("Browse the catalog or write your own.") : t.t("Puzzles, places and story, in the designer."), action: { label: t.t("Create"), href: href({ name: "adventures" }) } }
             : { done: advs.length > 0 || unused.length > 0, title: t.t("Pick an adventure"), hint: t.t("Your organization's admins write the adventures; you run events with them."), action: { label: t.t("Open adventures"), href: href({ name: "adventures" }) } },
-          { done: unused.length > 0, title: t.t("Get an event pass"), hint: t.t("One pass per event, sized by players. The first 15 players are free."), action: CATALOG_ENABLED ? { label: t.t("Open the catalog"), href: href({ name: "catalog" }) } : { label: t.t("Get a pass from an adventure"), href: href({ name: "adventures" }) } },
-          { done: false, title: t.t("Schedule and start"), hint: t.t("Pick a date, add teams, share each player’s magic link."), action: unused.length > 0 ? { label: t.t("Schedule"), onClick: () => setDialog({ assignmentId: unused[0]!.id }) } : null },
+          { done: false, title: t.t("Schedule and start"), hint: t.t("Pick a date, add teams, share each player’s magic link. Each team is charged as it starts."), action: canStart ? { label: t.t("Schedule"), onClick: () => setDialog({}) } : null },
         ],
       };
     }
@@ -179,13 +175,15 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
           hint={next ? t.t("Next {{when}}", { when: relTime(next.scheduled_at, loc) }) : scheduled.length > 0 ? t.t("No start time set") : t.t("Nothing booked")}
           href={href({ name: "events" })}
         />
-        <Tile
-          icon={<Ticket size={20} />}
-          value={unused.length}
-          label={t.t("Unused event passes")}
-          hint={unused.length > 0 ? t.t("Ready to schedule") : CATALOG_ENABLED ? t.t("Get one in the catalog") : t.t("Buy an event pass")}
-          href={unused.length > 0 ? href({ name: "settings", tab: "purchases" }) : href({ name: CATALOG_ENABLED ? "catalog" : "adventures" })}
-        />
+        {unused.length > 0 && (
+          <Tile
+            icon={<Ticket size={20} />}
+            value={unused.length}
+            label={t.t("Unused event passes")}
+            hint={t.t("Ready to schedule")}
+            href={href({ name: "settings", tab: "purchases" })}
+          />
+        )}
       </div>
 
       {setup && <SetupCard {...setup} foot={switchSteps} />}

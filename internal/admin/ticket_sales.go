@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -28,8 +29,7 @@ type ticketSaleDTO struct {
 	OrgName        string `json:"org_name,omitempty"`
 	BuyerEmail     string `json:"buyer_email"`
 	TeamSize       int    `json:"team_size"`
-	Blocks         int    `json:"blocks"`
-	// Teams is how many teams a game holds for what a hosted pass bought.
+	// Teams is how many teams a game holds for what a party bought.
 	Teams       int    `json:"teams,omitempty"`
 	AmountCents int64  `json:"amount_cents"`
 	Currency    string `json:"currency"`
@@ -63,7 +63,7 @@ func (h *Handlers) ListTicketSales(w http.ResponseWriter, r *http.Request) {
 		SELECT p.id, p.kind, p.state, COALESCE(p.event_id, 0),
 		       COALESCE(NULLIF(p.party_name, ''), NULLIF(e.party_name, ''), e.name, ''),
 		       COALESCE(NULLIF(a.title, ''), a.slug, ''), COALESCE(org.name, ''),
-		       p.buyer_email, p.team_size, p.blocks, p.amount_cents, p.currency, p.application_fee_cents,
+		       p.buyer_email, p.team_size, p.teams, p.amount_cents, p.currency, p.application_fee_cents,
 		       COALESCE(p.stripe_charge_id, '') <> '', COALESCE(p.stripe_invoice_url, ''),
 		       p.created_at, COALESCE(p.paid_at, ''), COALESCE(p.refunded_at, ''),
 		       p.state = 'paid' AND p.refund_requested_at IS NOT NULL,
@@ -111,14 +111,13 @@ func (h *Handlers) ListTicketSales(w http.ResponseWriter, r *http.Request) {
 			hasCharge bool
 		)
 		if err := rows.Scan(&d.ID, &d.Kind, &d.State, &d.EventID, &d.EventName, &d.AdventureTitle, &d.OrgName,
-			&d.BuyerEmail, &d.TeamSize, &d.Blocks, &d.AmountCents, &d.Currency, &d.FeeCents,
+			&d.BuyerEmail, &d.TeamSize, &d.Teams, &d.AmountCents, &d.Currency, &d.FeeCents,
 			&hasCharge, &d.InvoiceURL, &d.CreatedAt, &d.PaidAt, &d.RefundedAt, &d.RefundPending, &d.Abandoned); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "list failed", err)
 			return
 		}
 		d.Refundable = d.State == "paid" && !d.RefundPending && hasCharge && d.AmountCents > 0 &&
 			(isAdmin(me) || me.Role == auth.RoleOrgAdmin && sellerRefundable(d.Kind, d.FeeCents))
-		d.Teams = d.Blocks * TeamsPerBlock
 		out = append(out, d)
 	}
 	if err := rows.Err(); err != nil {
@@ -205,11 +204,19 @@ func (h *Handlers) RefundTicketSale(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "a refund of this purchase is already under way", "code": "refund_pending"})
 		return
 	}
-	rf, err := h.Provider.Refund(r.Context(), payments.RefundParams{
-		ChargeID:             chargeID.String,
-		RefundApplicationFee: fee > 0,
-		IdempotencyKey:       fmt.Sprintf("refund-ticket-purchase-%d", purchaseID),
-	})
+	// A sale with a platform fee was charged on the org's own account,
+	// and is refunded there. The fee comes back to the org only when
+	// what it paid for never played.
+	params := payments.RefundParams{ChargeID: chargeID.String, IdempotencyKey: fmt.Sprintf("refund-ticket-purchase-%d", purchaseID)}
+	if fee > 0 {
+		acct, played, err := h.saleAccountAndPlay(r.Context(), purchaseID)
+		if err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "refund failed", err)
+			return
+		}
+		params.ConnectedAccountID, params.RefundApplicationFee = acct, !played
+	}
+	rf, err := h.Provider.Refund(r.Context(), params)
 	if err != nil {
 		logx.Error("payments.ticket_refund.new_failed",
 			"ticket_purchase_id", purchaseID, "charge_id", chargeID.String, "err", err.Error())
@@ -222,7 +229,7 @@ func (h *Handlers) RefundTicketSale(w http.ResponseWriter, r *http.Request) {
 	}
 	logx.Info("payments.ticket_refund.created",
 		"ticket_purchase_id", purchaseID, "charge_id", chargeID.String, "by_user", me.ID,
-		"refund_id", rf.ID, "status", rf.Status, "reverse_transfer", fee > 0)
+		"refund_id", rf.ID, "status", rf.Status, "fee_refunded", params.RefundApplicationFee)
 	httpx.JSON(w, http.StatusAccepted, map[string]any{
 		"purchase_id": purchaseID,
 		"refund_id":   rf.ID,
@@ -230,10 +237,31 @@ func (h *Handlers) RefundTicketSale(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// saleAccountAndPlay is the Stripe account a store sale was charged on
+// (its organisation's own) and whether what it bought has played: a
+// ticket's team has opened a seat, a party has started a game.
+func (h *Handlers) saleAccountAndPlay(ctx context.Context, purchaseID int64) (string, bool, error) {
+	var (
+		acct   sql.NullString
+		played bool
+	)
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT g.stripe_connect_account_id,
+		       EXISTS (SELECT 1 FROM player_slots s WHERE s.team_id = p.team_id AND s.claimed_at IS NOT NULL)
+		       OR EXISTS (SELECT 1 FROM events e WHERE e.id = p.event_id AND p.kind = 'party' AND e.first_game_at IS NOT NULL)
+		FROM ticket_purchases p
+		LEFT JOIN events e ON e.id = p.event_id
+		LEFT JOIN party_offers o ON o.id = p.party_offer_id
+		LEFT JOIN organizations g ON g.id = COALESCE(e.org_id, o.org_id)
+		WHERE p.id = $1
+	`, purchaseID).Scan(&acct, &played)
+	return acct.String, played, err
+}
+
 // sellerRefundable reports whether an org admin may refund a sale
-// themselves: a ticket or party they sold through their own connected
+// themselves: a ticket or party they sold through their own Stripe
 // account (a platform fee marks it), since their buyers are theirs to
-// serve and the refund reverses the transfer, so the org pays it back.
+// serve and the money is theirs.
 // A sale that settled on the platform account is the platform's money,
 // and hosted passes the org bought are the platform's sale: both stay
 // with the platform admin.

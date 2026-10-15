@@ -210,6 +210,7 @@ export function App() {
         {linkProblem === "invalid" && <p className="app-menu__error" role="alert">{t("That link doesn't work any more. It may have been replaced by a newer one, or its play data erased: use the latest link you were sent, or ask for fresh links below.")}</p>}
         {linkProblem === "expired" && <p className="app-menu__error" role="alert">{t("That link has expired. Ask your organiser for a new one, or ask for fresh links below.")}</p>}
         {linkProblem === "busy" && <p className="app-menu__error" role="alert">{t("Too many tries just now. Wait a minute, then open your link again.")}</p>}
+        {linkProblem === "unpaid" && <p className="app-menu__error" role="alert">{t("This game can't start just now. Ask the organiser, then open your link again.")}</p>}
         <p>{t("Use the link you were sent to join your team. It signs you in on this phone.")}</p>
         <RecoverLink t={t} />
       </Screen>

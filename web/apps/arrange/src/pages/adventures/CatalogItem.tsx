@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarPlus, ChevronLeft, Coins, Eye, Plus } from "lucide-react";
+import { CalendarPlus, ChevronLeft, Eye, Plus } from "lucide-react";
 import { canAuthor, runsEvents } from "@zonventure/api";
 import { flagFor } from "@zonventure/i18n";
 import { useT } from "../../i18n.tsx";
@@ -103,14 +103,12 @@ export function CatalogItemPage({ slug }: { slug: string }) {
               {t.t("Preview")}
             </a>
           )}
-          {!user || !runsEvents(user) ? null : shared || passes.length > 0 ? (
+          {user && runsEvents(user) && (
             <Button variant="primary" icon={<CalendarPlus size={ICON.md} aria-hidden />} onClick={openSchedule}>{t.t("Schedule event")}</Button>
-          ) : (
-            <Button icon={<Coins size={ICON.md} aria-hidden />} onClick={openSchedule} title={t.t("Run it as it is: buy an event pass and schedule")}>{t.t("Buy an event pass")}</Button>
           )}
           {user && canAuthor(user) && (
             <Button
-              variant={shared || passes.length > 0 ? "secondary" : "primary"}
+              variant="secondary"
               icon={<Plus size={ICON.md} aria-hidden />}
               loading={busy === a.slug}
               onClick={() => adopt(a.slug)}

@@ -3,7 +3,7 @@ import { canAuthor, siteName, type Whoami } from "@zonventure/api";
 import { WIDE, wideSrcSet } from "@zonventure/ui";
 import { useT } from "../../i18n.tsx";
 import { CATALOG_ENABLED, href, navigate, type Route } from "../../router.ts";
-import { Button, Dialog } from "../../ui/index.ts";
+import { Button, Dialog, fmtMoney } from "../../ui/index.ts";
 import { activeMembership, pricing } from "../events/api.ts";
 import { account } from "../settings/account-api.ts";
 
@@ -67,6 +67,8 @@ export function Onboarding({ user }: { user: Whoami }) {
 
 export function OnboardingDialog({ user, onClose }: { user: Whoami; onClose: () => void }) {
   const t = useT();
+  const loc = t.current();
+  const price = pricing(user);
   const variant = onboardingVariant(user);
   const steps: { title: string; text: string }[] =
     variant === "admin"
@@ -88,8 +90,8 @@ export function OnboardingDialog({ user, onClose }: { user: Whoami; onClose: () 
               : CATALOG_ENABLED
                 ? { title: t.t("Browse adventures"), text: t.t("the catalog has ready-made adventures, or you can author your own.") }
                 : { title: t.t("Author an adventure"), text: t.t("puzzles, places and story, in the designer.") },
-            { title: t.t("Get an event pass"), text: t.t("one per event, covering all its players. The first {{n}} play free.", { n: pricing(user).free }) },
             { title: t.t("Schedule an event"), text: t.t("add teams, share magic links, and start when ready.") },
+            { title: t.t("Pay per team"), text: t.t("each team costs {{price}} as it starts, from your organisation's balance.", { price: fmtMoney(price.team, price.currency, loc) }) },
           ];
   const intro =
     variant === "admin"

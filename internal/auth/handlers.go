@@ -62,32 +62,24 @@ type Handlers struct {
 	MCPEnabled bool
 }
 
-// Pricing is the small slice of catalog data the frontend needs to
-// render totals before submitting a purchase. Mirrors what the server
-// will charge so the UI doesn't have to keep its own constant. Surfaced
-// on /whoami so the bootstrap fetch already carries it.
-//
-// FreePlayersPerEvent is subtracted from the player count before
-// multiplying by PlayerCents — the buyer sees "first N free, then X kr
-// per player" without doing arithmetic in their head. Read from the
-// prices in force (Settings → Pricing) on every /whoami.
+// Pricing is what the platform charges for teams (pay per team), so the
+// console can say what an event or a ticket costs the organisation:
+// TeamCents a team, its first TeamPhones phones included, PhoneCents
+// each phone after. Read from the prices in force (Settings → Pricing)
+// on every /whoami.
 type Pricing struct {
-	PlayerCents         int    `json:"player_cents"`
-	FreePlayersPerEvent int    `json:"free_players_per_event"`
-	Currency            string `json:"currency"`
+	TeamCents  int64  `json:"team_cents"`
+	TeamPhones int64  `json:"team_phones"`
+	PhoneCents int64  `json:"phone_cents"`
+	Currency   string `json:"currency"`
 	// VATExcluded: prices are shown "excl. VAT", else "incl. VAT".
 	VATExcluded bool `json:"vat_excluded"`
-	// The platform fee on what orgs sell (payments.PlatformFee), so a
-	// price field can say what the org receives. All 0 is none.
-	FeePercentBPS int64 `json:"fee_percent_bps"`
-	FeeFixedCents int64 `json:"fee_fixed_cents"`
-	FeeMinCents   int64 `json:"fee_min_cents"`
 }
 
 func currentPricing() Pricing {
 	p := settings.CurrentPricing()
-	return Pricing{PlayerCents: int(p.PlayerCents), FreePlayersPerEvent: int(p.FreePlayers), Currency: strings.ToUpper(settings.Currency),
-		VATExcluded: p.VATExcluded, FeePercentBPS: p.FeePercentBPS, FeeFixedCents: p.FeeFixedCents, FeeMinCents: p.FeeMinCents}
+	return Pricing{TeamCents: p.TeamCents, TeamPhones: p.TeamPhones, PhoneCents: p.PhoneCents,
+		Currency: strings.ToUpper(settings.Currency), VATExcluded: p.VATExcluded}
 }
 
 type loginRequest struct {

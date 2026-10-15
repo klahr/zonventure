@@ -65,6 +65,8 @@ const ACTION: Record<string, string> = {
   "POST /api/admin/purchases/{purchaseID}/billed": "Marked a purchase billed",
   "POST /api/admin/purchases/{purchaseID}/void": "Voided a purchase",
   "POST /api/admin/purchases/{purchaseID}/unvoid": "Undid a void",
+  "PUT /api/admin/organizations/{orgID}/billing": "Changed an organization's billing",
+  "POST /api/admin/billing/bills/{billID}/paid": "Marked a bill paid",
   "POST /api/admin/ticket-purchases/{purchaseID}/refund": "Refunded a ticket sale",
   "PATCH /api/admin/ticket-purchases/{purchaseID}": "Changed a ticket order",
   "POST /api/admin/listing-reviews/{kind}/{id}/sign": "Signed a listing decision",

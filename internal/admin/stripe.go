@@ -5,10 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/klahr/zonventure/internal/settings"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -35,71 +33,9 @@ func (h *Handlers) paymentsEnabled() bool { return payments.Enabled(h.Provider) 
 // simulatedActive reports whether the dev-only simulated payments
 // provider is the one wired on this server. It only wires under
 // ZV_ENV=dev (see server.go), so on any real deployment this is false —
-// which is what gates the self-fulfil-for-free paths (CreatePurchase's
-// "simulated" provider and the ConfirmPurchase endpoint) to dev.
+// which is what keeps refunding a simulated pass to dev.
 func (h *Handlers) simulatedActive() bool {
 	return h.Provider != nil && h.Provider.Name() == "simulated"
-}
-
-// createPurchaseCheckoutSession opens a hosted checkout session for
-// an org purchase (one slot pack tied to an adventure). The price
-// is inlined via the params bag, metadata carries our purchase id
-// so the webhook can find the row, and success/cancel both bounce
-// back to /arrange.
-//
-// B2B-flavoured: tax id + billing address are collected so the
-// resulting invoice is deductible for company buyers. Consumer
-// ticket sales (createTicketCheckoutSession in store.go) leave
-// those off.
-func (h *Handlers) createPurchaseCheckoutSession(ctx context.Context, purchaseID int64,
-	advSlug, advTitle string, maxPlayers, amountCents int, customerEmail, existingCustomerID string,
-) (string, string, error) {
-	publicURL := strings.TrimRight(h.PublicURL, "/")
-	if publicURL == "" {
-		// Provider needs absolute URLs; bail loudly rather than building
-		// a Checkout Session that would land users somewhere broken.
-		return "", "", errors.New("payments checkout requires PublicURL to be configured")
-	}
-
-	productName := advTitle
-	if productName == "" {
-		productName = advSlug
-	}
-	productName = fmt.Sprintf("%s — %d player slot(s)", productName, maxPlayers)
-
-	sess, err := h.Provider.CreateCheckout(ctx, payments.CheckoutParams{
-		AmountCents: int64(amountCents),
-		Currency:    settings.Currency,
-		ProductName: productName,
-		// Both URLs return to the arrange app. The query param tells
-		// the front-end which toast to flash; the actual paid-state
-		// flip happens via the webhook, not via the redirect.
-		SuccessURL:    fmt.Sprintf("%s/arrange#purchase-success/%d", publicURL, purchaseID),
-		CancelURL:     fmt.Sprintf("%s/arrange#purchase-cancelled/%d", publicURL, purchaseID),
-		CustomerID:    existingCustomerID,
-		CustomerEmail: customerEmail,
-		Metadata: map[string]string{
-			"zv_purchase_id": fmt.Sprintf("%d", purchaseID),
-		},
-		// Auto-tax + tax id + billing address + invoice creation are
-		// the B2B-friendly bundle: VAT-deductible PDF invoices for
-		// company buyers, the customer's tax id printed on the bill-
-		// to block. Auto-tax is opt-in: Stripe rejects the session
-		// unless Stripe Tax is set up on the account.
-		AutoTax:         os.Getenv("ZV_STRIPE_AUTOMATIC_TAX") == "1",
-		CollectTaxID:    true,
-		CollectAddress:  true,
-		InvoiceCreation: true,
-		// Stable, derived from the local row id: a retried handler
-		// (transport timeout, browser double-submit) hits Stripe with
-		// the same key and gets the original session back instead of
-		// minting a duplicate.
-		IdempotencyKey: fmt.Sprintf("checkout-purchase-%d", purchaseID),
-	})
-	if err != nil {
-		return "", "", err
-	}
-	return sess.URL, sess.SessionID, nil
 }
 
 // PaymentsWebhook receives provider webhooks. The provider impl
@@ -171,6 +107,17 @@ func (h *Handlers) PaymentsWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := h.handleTicketCheckoutCompleted(r.Context(), event); err != nil {
 			logx.Error("payments.webhook.ticket_checkout_completed", "event_id", event.ID, "err", err.Error())
+			http.Error(w, "handler failed", http.StatusInternalServerError)
+			return
+		}
+		if err := h.handleTopUpCompleted(r.Context(), event); err != nil {
+			logx.Error("payments.webhook.top_up_completed", "event_id", event.ID, "err", err.Error())
+			http.Error(w, "handler failed", http.StatusInternalServerError)
+			return
+		}
+	case payments.EventCardSaved:
+		if err := h.handleCardSaved(r.Context(), event); err != nil {
+			logx.Error("payments.webhook.card_saved", "event_id", event.ID, "err", err.Error())
 			http.Error(w, "handler failed", http.StatusInternalServerError)
 			return
 		}
@@ -645,7 +592,7 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event payments.Even
 		 WHERE state = 'paid'
 		   AND (stripe_charge_id = $1
 		        OR (stripe_charge_id IS NULL AND $2 <> '' AND stripe_session_id = $2))
-		 RETURNING id, COALESCE(team_id, 0), kind, COALESCE(event_id, 0)
+		 RETURNING id, COALESCE(team_id, 0), kind, COALESCE(event_id, 0), refund_requested_at IS NOT NULL, application_fee_cents
 	`, chargeID, sessionID)
 	if err != nil {
 		return err
@@ -655,11 +602,15 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event payments.Even
 		teamID     int64
 		kind       string
 		eventID    int64
+		// ours: the refund was made here (RefundTicketSale), which
+		// decided about the fee already.
+		ours bool
+		fee  int64
 	}
 	var tickets []refundedTicket
 	for ticketRows.Next() {
 		var rr refundedTicket
-		if err := ticketRows.Scan(&rr.purchaseID, &rr.teamID, &rr.kind, &rr.eventID); err != nil {
+		if err := ticketRows.Scan(&rr.purchaseID, &rr.teamID, &rr.kind, &rr.eventID, &rr.ours, &rr.fee); err != nil {
 			ticketRows.Close()
 			return err
 		}
@@ -670,14 +621,20 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event payments.Even
 		return err
 	}
 	for _, rr := range tickets {
-		if rr.kind == "hosted_blocks" && rr.eventID != 0 {
+		// A sale the org refunded in its own Stripe dashboard: the
+		// platform's fee goes back too when what it paid for never
+		// played, as for a refund made here.
+		if !rr.ours && rr.fee > 0 && event.Account != "" {
+			h.refundUnplayedFee(ctx, rr.purchaseID, event.Account, chargeID)
+		}
+		if rr.kind == "hosted_teams" && rr.eventID != 0 {
 			// Refunded teams: the event holds that many fewer per game, from
-			// the next team to join.
+			// the next team to join; never fewer than one.
 			if _, berr := h.DB.ExecContext(ctx, `
-				UPDATE events SET hosted_blocks = GREATEST(0, hosted_blocks - (SELECT blocks FROM ticket_purchases WHERE id = $2))
-				 WHERE id = $1
+				UPDATE events SET team_limit = GREATEST(1, team_limit - (SELECT teams FROM ticket_purchases WHERE id = $2))
+				 WHERE id = $1 AND team_limit > 0
 			`, rr.eventID, rr.purchaseID); berr != nil {
-				logx.Warn("payments.hosted_blocks.refund", "purchase_id", rr.purchaseID, "event_id", rr.eventID, "err", berr.Error())
+				logx.Warn("payments.hosted_teams.refund", "purchase_id", rr.purchaseID, "event_id", rr.eventID, "err", berr.Error())
 			}
 			continue
 		}

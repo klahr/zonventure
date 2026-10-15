@@ -86,7 +86,8 @@ short tour:
 | `ZV_LOG_FORMAT` | `text` (dev) or `json` (aggregator) | `text` |
 | `ZV_SMTP_*` | SMTP relay for verification + reset mail (optional) | unset |
 | _Legal pages, retention_ | Set under **Settings → Legal** (platform admin): company, contacts, jurisdiction, sub-processors, days data is kept, lawyer review. The old `ZV_COMPANY_*`, `ZV_CONTACT_EMAIL`, `ZV_DPO_EMAIL`, `ZV_JURISDICTION`, `ZV_HOSTING_PROVIDER`, `ZV_EMAIL_PROVIDER`, `ZV_LEGAL_*` and `ZV_*_RETENTION_DAYS` are copied in once on the first start after upgrading, then ignored | — |
-| `ZV_STRIPE_SECRET_KEY` / `ZV_STRIPE_WEBHOOK_SECRET` | Real payments + Customer Portal (optional). Prices — event pass, hosted pass, platform fee — are set by the platform admin under **Settings → Pricing**, in SEK including VAT; without Stripe nothing is charged | unset |
+| `ZV_STRIPE_SECRET_KEY` / `ZV_STRIPE_WEBHOOK_SECRET` | Real payments + Customer Portal (optional). Prices — per team, per extra phone, parties, top-ups, credit — are set by the platform admin under **Settings → Pricing**, in SEK including VAT; without Stripe nothing is charged | unset |
+| `ZV_STRIPE_CONNECT_WEBHOOK_SECRET` | Signing secret of the Connect webhook endpoint (events from organisations' own Stripe accounts: store sales, their refunds). Empty: the platform endpoint's secret is tried | unset |
 | `ZV_TRUSTED_PROXIES` | Comma-separated IPs/CIDRs of the reverse proxies whose `X-Forwarded-For` / `X-Forwarded-Proto` are honoured. Empty ignores them. See [Reverse proxy](#reverse-proxy-tls-termination) | unset |
 | `ZV_TOTP_KEY` | 32-byte base64 key wrapping each user's TOTP secret at rest. Set to enable opt-in 2FA. **Treat like a database password** — losing it forces every enrolled user to re-enrol | unset |
 | `ZV_OIDC_ENABLED` | `1` enables single sign-on (see [Single sign-on (Google Workspace)](#single-sign-on-google-workspace)) | unset |

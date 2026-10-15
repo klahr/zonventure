@@ -102,7 +102,7 @@ func newPartyFixture(t *testing.T) (*partyFixture, func()) {
 	public.Post("/api/party/{token}/finish-game", f.h.FinishHostedGame)
 	public.Put("/api/party/{token}/hold-results", f.h.PutHoldResults)
 	public.Post("/api/party/{token}/send-player-link", f.h.SendHostedPlayerLink)
-	public.Post("/api/party/{token}/blocks", f.h.AddHostedBlocks)
+	public.Post("/api/party/{token}/teams", f.h.AddHostedTeams)
 	public.Get("/api/join/{token}", f.h.GetJoin)
 	public.Post("/api/join/{token}", f.h.Join)
 	public.Put("/api/party/{token}/personalise", f.h.PutHostPersonalise)
@@ -139,7 +139,7 @@ func (f *partyFixture) book(t *testing.T, kids int) (int64, string) {
 	offer := struct{ ID int64 }{offerID}
 
 	w := call(t, f.public, "POST", "/api/o/acme/parties/"+strconv.FormatInt(offer.ID, 10)+"/book", map[string]any{
-		"email": "Parent@Example.com", "kids": kids, "party_name": "Elsa turns 8", "consent": true,
+		"email": "Parent@Example.com", "kids": kids, "teams": kids, "party_name": "Elsa turns 8", "consent": true,
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("book: %d %s", w.Code, w.Body)
@@ -405,16 +405,16 @@ func TestParty_Console(t *testing.T) {
 	}
 }
 
-// TestParty_GameIsFull: a game takes 15 teams per block bought; the
-// host page counts the teams turned away, each once. A finished game
-// lists its teams.
+// TestParty_GameIsFull: a game takes the teams booked; the host page
+// counts the teams turned away, each once. A finished game lists its
+// teams.
 func TestParty_GameIsFull(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
-	_, token := f.book(t, 5)
+	_, token := f.book(t, 12)
 	player := f.host(t, token).playerToken()
-	for i := range admin.TeamsPerBlock {
+	for i := range 12 {
 		if w := f.join(t, player, "Team "+strconv.Itoa(i), 1); w.Code != http.StatusCreated {
 			t.Fatalf("team %d: %d %s", i, w.Code, w.Body)
 		}
@@ -438,7 +438,7 @@ func TestParty_GameIsFull(t *testing.T) {
 	if w := call(t, f.public, "POST", "/api/party/"+token+"/finish-game", nil); w.Code != http.StatusNoContent {
 		t.Fatalf("finish: %d %s", w.Code, w.Body)
 	}
-	if v := f.host(t, token); len(v.Rounds) != 1 || len(v.Rounds[0].Results) != admin.TeamsPerBlock {
+	if v := f.host(t, token); len(v.Rounds) != 1 || len(v.Rounds[0].Results) != 12 {
 		t.Errorf("finished game's results: %+v", v.Rounds)
 	}
 }

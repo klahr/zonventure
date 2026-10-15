@@ -7,7 +7,7 @@ import { Button, Card, Empty, ErrorBox, Loading, Pill, Table, fmtDate, fmtDateTi
 /** ticketSaleDTO, internal/admin/ticket_sales.go. */
 interface Sale {
   id: number;
-  kind: "ticket" | "party" | "hosted" | "hosted_blocks" | string;
+  kind: "ticket" | "party" | "hosted" | "hosted_teams" | string;
   state: "pending" | "paid" | "failed" | "refunded" | string;
   event_id?: number;
   event_name?: string;
@@ -15,7 +15,6 @@ interface Sale {
   org_name?: string;
   buyer_email: string;
   team_size: number;
-  blocks: number;
   teams?: number;
   amount_cents: number;
   currency: string;
@@ -62,10 +61,10 @@ export function TicketSalesCard({ orgId }: { orgId?: number | undefined } = {}) 
     ticket: t.t("Self-guided ticket"),
     party: t.t("Party adventure booking"),
     hosted: t.t("Hosted pass"),
-    hosted_blocks: t.t("More teams"),
+    hosted_teams: t.t("More teams"),
   };
   const what = (s: Sale) =>
-    s.kind === "hosted" || s.kind === "hosted_blocks"
+    s.kind === "hosted" || s.kind === "hosted_teams"
       ? t.plural(s.teams ?? 0, { one: t.t("{{n}} team per game"), other: t.t("{{n}} teams per game") })
       : s.kind === "party"
         ? t.plural(s.team_size, { one: t.t("{{n}} child"), other: t.t("{{n}} children") })

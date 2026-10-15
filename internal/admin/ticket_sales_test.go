@@ -52,7 +52,7 @@ func TestTicketSales_ListAndRefund(t *testing.T) {
 		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, state, stripe_charge_id, application_fee_cents, paid_at)
 		VALUES ($1, 'buyer@example.com', 4, 20000, 'sek', 'paid', 'ch_ticket', 2000, now_text()) RETURNING id`, acmeEvent).Scan(&ticket))
 	must(db.QueryRow(`
-		INSERT INTO ticket_purchases(kind, buyer_org_id, adventure_slug, buyer_email, team_size, blocks, amount_cents, currency, state, stripe_charge_id, paid_at)
+		INSERT INTO ticket_purchases(kind, buyer_org_id, adventure_slug, buyer_email, team_size, teams, amount_cents, currency, state, stripe_charge_id, paid_at)
 		VALUES ('hosted', $1, 'treasure', 'host@example.com', 0, 1, 29900, 'sek', 'paid', 'ch_hosted', now_text()) RETURNING id`, acme).Scan(&hosted))
 	must(db.QueryRow(`
 		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, state, stripe_charge_id, application_fee_cents)

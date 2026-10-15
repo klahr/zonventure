@@ -62,7 +62,7 @@ func TestDescribeEventLifecycle_Content(t *testing.T) {
 		// observation tools (cadence section)
 		"list_positions", "list_activity", "list_tracks", "get_event_state_summary",
 		// security gates
-		"password", "admin-only", "simulated",
+		"password", "operator tools",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("lifecycle doc missing %q", want)

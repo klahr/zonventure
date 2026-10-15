@@ -105,7 +105,7 @@ export function TeamsCard(props: {
           {...(teams.length === 0 ? { variant: "primary" as const } : {})}
           icon={<Plus size={ICON.sm} aria-hidden />}
           disabled={!canCreate || full}
-          title={!canCreate ? (event.state === "completed" ? t.t("Event is completed — read-only.") : t.t("Event is active.")) : full ? t.t("The event pass is full. Add player seats from More to make room.") : undefined}
+          title={!canCreate ? (event.state === "completed" ? t.t("Event is completed — read-only.") : t.t("Event is active.")) : full ? t.t("The event pass is full.") : undefined}
           onClick={props.onNew}
         >
           {t.t("New team")}

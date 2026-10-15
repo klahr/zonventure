@@ -3,10 +3,11 @@ import { Copy, Eye } from "lucide-react";
 import type { Whoami } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
-import { Button, Callout, Card, Field, currencySymbol, fmtDateTime, fmtMoney, ICON, ImageDrop, ListingStatus, SubmitListingDialog, canSubmitListing, platformFeeOn, relTime, Row, Stat, Stats, toDate, useLoad, useToast } from "../../ui/index.ts";
+import { Button, Callout, Card, Field, currencySymbol, fmtDateTime, fmtMoney, ICON, ImageDrop, ListingStatus, SubmitListingDialog, canSubmitListing, relTime, Row, Stat, Stats, toDate, useLoad, useToast } from "../../ui/index.ts";
 import { useSession } from "../../session.tsx";
 import * as api from "./api.ts";
 import type { ConnectStatus, EventInfo, Team } from "./api.ts";
+import { pricing } from "../events/api.ts";
 import { copyText, fmtElapsedShort, fmtPoints, joinedCount, members, recapURL, teamStuck } from "./util.ts";
 
 /**
@@ -282,12 +283,15 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
     }
   };
   const v = version.data;
-  // What the org keeps of a ticket once the platform fee is taken.
+  // What the org keeps of a ticket once the platform's price for its team is taken.
   const { state: session } = useSession();
-  const fees = session.status === "authenticated" ? (session.user.pricing ?? {}) as Parameters<typeof platformFeeOn>[0] : {};
   const typed = Math.round(Number.parseFloat(price) * 100);
-  const fee = typed > 0 ? platformFeeOn(fees, typed) : 0;
-  const receive = fee > 0 ? t.t("You receive {{amount}} per ticket after the platform fee of {{fee}}.", { amount: fmtMoney(typed - fee, event.ticket_currency, t.current()), fee: fmtMoney(fee, event.ticket_currency, t.current()) }) : undefined;
+  const sizeN = Number.parseInt(size, 10) || 1;
+  const fee = session.status === "authenticated" && typed > 0 ? pricing(session.user).cost(1, sizeN) : 0;
+  const receive =
+    fee <= 0 ? undefined
+    : typed <= fee ? t.t("The price must be more than the platform's {{fee}} for the team.", { fee: fmtMoney(fee, event.ticket_currency, t.current()) })
+    : t.t("You receive {{amount}} per ticket after the platform's {{fee}} for the team, less Stripe's card fee.", { amount: fmtMoney(typed - fee, event.ticket_currency, t.current()), fee: fmtMoney(fee, event.ticket_currency, t.current()) });
 
   const save = async () => {
     const major = price.trim();

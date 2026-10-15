@@ -15,20 +15,16 @@ import "./events.css";
 
 /** internal/admin/hosted_pricing.go hostedPriceDTO */
 interface HostedPrice {
-  block_cents: number;
+  team_cents: number;
   currency: string;
-  teams_per_block: number;
-  free_teams: number;
   vat_excluded?: boolean;
 }
-
-const MAX_BLOCKS = 10;
 
 /**
  * Host it: a hosted event of one of the org's adventures, run privately
  * from the console or a host link — game after game for 14 days from
- * the first. Paid at the platform's pass price per block of teams, or
- * made at once where hosting is free.
+ * the first. Made at once; each team is charged to the organisation as
+ * it joins a game.
  */
 export function HostItDialog({
   slug,
@@ -46,30 +42,24 @@ export function HostItDialog({
     [],
   );
   const [name, setName] = useState("");
-  const [more, setMore] = useState(false);
-  const [blocks, setBlocks] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const p = price.data;
-  // No blocks: free, for up to free_teams teams a game.
-  const n = more ? blocks : 0;
-  const cost = p ? p.block_cents * n : 0;
 
   async function submit() {
     if (busy) return;
     setError(null);
     setBusy(true);
     try {
-      const r = await request<{ checkout_url?: string; event_id?: number }>(
+      const r = await request<{ event_id?: number }>(
         `/api/admin/adventures/${encodeURIComponent(slug)}/host`,
         {
           method: "POST",
-          body: { name: name.trim(), blocks: n },
+          body: { name: name.trim() },
         },
       );
-      if (r.checkout_url) location.assign(r.checkout_url);
-      else if (r.event_id) {
+      if (r.event_id) {
         onClose();
         navigate({ name: "event", id: r.event_id });
       }
@@ -90,9 +80,7 @@ export function HostItDialog({
             {t.t("Cancel")}
           </Button>
           <Button type="submit" variant="primary" loading={busy} disabled={!p}>
-            {p && cost > 0
-              ? t.t("Pay {{price}}", { price: fmtMoney(cost, p.currency, loc) })
-              : t.t("Host it")}
+            {t.t("Host it")}
           </Button>
         </>
       }
@@ -123,46 +111,12 @@ export function HostItDialog({
               onChange={(e) => setName(e.target.value)}
             />
           </Field>
-          <label className="evs-check">
-            <input
-              type="checkbox"
-              checked={more}
-              onChange={(e) => setMore(e.target.checked)}
-            />
-            <span>
-              {t.t("More than {{n}} teams in one game?", { n: p.free_teams })}
-            </span>
-          </label>
-          {more && (
-            <Field label={t.t("Teams per game")}>
-              <select
-                value={blocks}
-                onChange={(e) => setBlocks(Number(e.target.value))}
-              >
-                {Array.from({ length: MAX_BLOCKS }, (_, i) => i + 1).map(
-                  (b) => (
-                    <option key={b} value={b}>
-                      {t.t("Up to {{n}} teams", { n: b * p.teams_per_block })}
-                      {p.block_cents > 0
-                        ? ` · ${fmtMoney(p.block_cents * b, p.currency, loc)}`
-                        : ""}
-                    </option>
-                  ),
-                )}
-              </select>
-            </Field>
-          )}
           <p className="evs-muted evs-small">
-            {n === 0
-              ? t.t("Free for up to {{n}} teams per game.", { n: p.free_teams })
-              : p.block_cents > 0
-                ? `${t.t("{{price}} for up to {{n}} teams per game.", {
-                    price: fmtMoney(cost, p.currency, loc),
-                    n: n * p.teams_per_block,
-                  })} ${p.vat_excluded ? t.t("Excl. VAT.") : t.t("Incl. VAT.")}`
-                : t.t("Free on this server, for up to {{n}} teams per game.", {
-                    n: n * p.teams_per_block,
-                  })}
+            {p.team_cents > 0
+              ? `${t.t("Each team costs {{price}} as it joins a game, from your organisation's balance.", {
+                  price: fmtMoney(p.team_cents, p.currency, loc),
+                })} ${p.vat_excluded ? t.t("Excl. VAT.") : t.t("Incl. VAT.")}`
+              : t.t("Free on this server.")}
           </p>
           {error && <ErrorBox message={error} />}
         </>

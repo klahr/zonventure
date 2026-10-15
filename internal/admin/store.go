@@ -162,32 +162,12 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Marketplace routing: when the platform fee is configured
-	// (= the hosted instance), the charge must destination-charge
-	// into the org's connected Stripe account with the platform
-	// fee captured off the top. Self-host (no fee) skips this
-	// entirely and the charge lands on the platform account.
-	var (
-		connectedAccountID string
-		applicationFee     int64
-	)
-	if h.platformFee().Enabled() {
-		acct, err := h.stripeConnectAccountForEvent(r.Context(), req.EventID)
-		if err != nil {
-			if errors.Is(err, ErrConnectNotReady) {
-				// The /store listing filter should have hidden this
-				// quest already, but a stale tab or someone hitting
-				// the API directly can race past it. Return a clear
-				// 409 the buyer's UI can translate into "this quest
-				// isn't selling tickets right now."
-				httpx.Error(w, http.StatusConflict, "this adventure is not selling tickets right now")
-				return
-			}
-			httpx.ServerErr(w, http.StatusInternalServerError, "connect account lookup failed", err)
-			return
-		}
-		connectedAccountID = acct
-		applicationFee = h.platformFee().Compute(priceCents.Int64)
+	// The sale goes to the org's own Stripe account in a marketplace,
+	// the platform's price for the team coming out of it; else to the
+	// platform's account.
+	connectedAccountID, applicationFee, ok := h.ticketSaleRouting(w, r, req.EventID, priceCents.Int64, teamSize)
+	if !ok {
+		return
 	}
 
 	letterLang, shipTo, ok, err := h.ticketLetter(r.Context(), req.EventID, req.LetterLang)
@@ -324,22 +304,12 @@ func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var (
-		connectedAccountID string
-		applicationFee     int64
-	)
-	if h.platformFee().Enabled() {
-		acct, err := h.stripeConnectAccountForEvent(r.Context(), req.EventID)
-		if err != nil {
-			if errors.Is(err, ErrConnectNotReady) {
-				httpx.Error(w, http.StatusConflict, "this adventure is not selling tickets right now")
-				return
-			}
-			httpx.ServerErr(w, http.StatusInternalServerError, "connect account lookup failed", err)
-			return
-		}
-		connectedAccountID = acct
-		applicationFee = h.platformFee().Compute(priceCents.Int64)
+	// The sale goes to the org's own Stripe account in a marketplace,
+	// the platform's price for the team coming out of it; else to the
+	// platform's account.
+	connectedAccountID, applicationFee, ok := h.ticketSaleRouting(w, r, req.EventID, priceCents.Int64, teamSize)
+	if !ok {
+		return
 	}
 
 	letterLang, shipTo, ok, err := h.ticketLetter(r.Context(), req.EventID, req.LetterLang)
@@ -398,7 +368,7 @@ func storeProductName(eventName, advTitle sql.NullString, advSlug string, teamSi
 }
 
 // createTicketCheckoutSession is the ticket-flow analogue of
-// createPurchaseCheckoutSession. Differences:
+// the event pass checkout it was modelled on. Differences:
 //   - Customer email is always passed inline (the buyer is anonymous;
 //     no org → no stripe_customer_id to reuse).
 //   - Tax + invoice + billing-address collection are off: a $30
@@ -535,7 +505,7 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 	switch kind {
 	case "party":
 		return h.fulfilPartyCheckout(ctx, tx, event, purchaseID, offerID, partyName, buyerEmail, teamSize)
-	case "hosted", "hosted_blocks":
+	case "hosted", "hosted_teams":
 		return h.fulfilHostedCheckout(ctx, tx, event, purchaseID, kind)
 	}
 	if eventID == 0 {
@@ -550,7 +520,9 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 		return fmt.Errorf("ticket team create: %w", err)
 	}
 	// The team starts in the posted letter's language; it can switch.
-	if _, err := tx.ExecContext(ctx, `UPDATE teams SET lang = $1 WHERE id = $2`, letterLang, teamID); err != nil {
+	// Its ticket paid for it and its phones: nothing more is charged to
+	// the organisation until a phone past them joins.
+	if _, err := tx.ExecContext(ctx, `UPDATE teams SET lang = $1, paid_phones = $3 WHERE id = $2`, letterLang, teamID, teamSize); err != nil {
 		return fmt.Errorf("team language: %w", err)
 	}
 	var address []string

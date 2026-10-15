@@ -373,6 +373,23 @@ var catalog = map[string]map[string]string{
 		"Change it again":                 "Ändra igen",
 		"Questions? Reply to this email.": "Frågor? Svara på det här mejlet.",
 
+		// Paying for teams.
+		"Your balance is running low": "Ert saldo börjar ta slut",
+		"Your balance is %[1]s: room for about %[2]d more teams. Top up so no team is turned away at the start.": "Ert saldo är %[1]s: plats för ungefär %[2]d lag till. Fyll på så att inget lag nekas vid starten.",
+		"Top up":                  "Fyll på",
+		"Your balance is used up": "Ert saldo är slut",
+		"Your balance is %s. New teams can't start until you top up; teams already playing play on.": "Ert saldo är %s. Nya lag kan inte starta förrän ni fyller på; lag som redan spelar spelar vidare.",
+		"We couldn't charge your card for %s":                                                        "Vi kunde inte dra pengar från ert kort för %s",
+		"Your bill for %[1]s, %[2]s, couldn't be charged to your card.":                              "Er faktura för %[1]s, %[2]s, kunde inte dras från ert kort.",
+		"The bank said: %s": "Banken svarade: %s",
+		"New teams can't start until the bill is paid. Add a working card and pay it now.": "Nya lag kan inte starta förrän fakturan är betald. Lägg till ett fungerande kort och betala nu.",
+		"We'll try again tomorrow. To avoid that, check your card or add another.":         "Vi försöker igen i morgon. Kontrollera ert kort eller lägg till ett annat för att slippa det.",
+		"Open Billing": "Öppna Fakturering",
+
+		"Balance top-up, %s": "Påfyllning av saldo, %s",
+
+		"Balance top-up, %[1]s, with %[2]s bonus": "Påfyllning av saldo, %[1]s, med %[2]s i bonus",
+
 		// Requests for a quote.
 		"Kickoff":                     "Kickoff",
 		"Team day":                    "Teamdag",

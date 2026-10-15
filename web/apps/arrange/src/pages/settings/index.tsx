@@ -19,7 +19,7 @@ import { ThemesTab } from "./Themes.tsx";
 import { PricingTab } from "./Pricing.tsx";
 import { LegalTab } from "./Legal.tsx";
 import { DomainTab } from "./Domain.tsx";
-import { VoucherBillingCard, VoucherUseCard } from "./VoucherBilling.tsx";
+import { BillsCard, TeamBillingCard } from "./teams-billing.tsx";
 import "./settings.css";
 
 /**
@@ -106,14 +106,14 @@ function SettingsTab({ id, admin }: { id: string; admin: boolean }) {
           <PurchasesTab />
           {/* An organisation's ticket sales are under Orders; here, the platform's. */}
           {admin && <TicketSalesCard />}
-          {admin && <VoucherBillingCard />}
+          {admin && <BillsCard />}
         </>
       );
     case "billing":
       return (
         <>
+          <TeamBillingCard />
           <BillingTab />
-          <VoucherUseCard />
         </>
       );
     case "domain":

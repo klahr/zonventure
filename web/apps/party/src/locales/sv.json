@@ -129,7 +129,6 @@
   "How many legs does a spider have?": "Hur många ben har en spindel?",
   "Free": "Gratis",
   "You go straight to the page you run it from, and we email you the link to it.": "Du kommer direkt till sidan du kör det från, och vi mejlar länken dit till dig.",
-  "Free for up to {{free}} teams, then {{price}} per {{n}} teams.": "Gratis för upp till {{free}} lag, sedan {{price}} per {{n}} lag.",
   "Add a card": "Lägg till ett kort",
   "All cards": "Alla kort",
   "Back": "Tillbaka",
@@ -172,7 +171,6 @@
   "We put the name and the age in the example questions.": "Vi skriver in namnet och åldern i exempelfrågorna.",
   "Whose birthday is it?": "Vem fyller år?",
   "You get example cards to make your own.": "Du får exempelkort att göra till dina egna.",
-  "{{free}} teams free · more from {{price}}": "{{free}} lag gratis · fler från {{price}}",
   "Play as often as you like for {{n}} days": "Spela hur många gånger ni vill i {{n}} dagar",
   "Get it ready – free": "Gör det redo – gratis",
   "One phone each": "En mobil per lag",
@@ -197,7 +195,6 @@
   "Anyone with the link can run your party. If it got to someone it shouldn't have, replace it.": "Den som har länken kan styra ditt party. Om den har hamnat hos fel person kan du byta ut den.",
   "Replace the link? Older links stop working, on every phone and in your emails. This page opens with the new link: bookmark it, or have it emailed to you again.": "Byta ut länken? Äldre länkar slutar fungera, på alla telefoner och i dina mejl. Sidan öppnas med den nya länken: spara den som bokmärke eller få den mejlad igen.",
   "Replace link": "Byt ut länken",
-  "The children play in teams, with one phone per team. A game has room for {{max}} teams, so {{kids}} children can play as up to {{teams}} teams.": "Barnen spelar i lag, med en telefon per lag. En omgång har plats för {{max}} lag, så {{kids}} barn kan spela som högst {{teams}} lag.",
   "1 card isn't finished: it has no right answer, or something else is missing. Fill it in now?": "1 kort är inte klart: det saknar rätt svar eller något annat. Vill du fylla i det nu?",
   "{{n}} cards aren't finished: they have no right answer, or something else is missing. Fill them in now?": "{{n}} kort är inte klara: de saknar rätt svar eller något annat. Vill du fylla i dem nu?",
   "Fill it in": "Fyll i",
@@ -320,5 +317,9 @@
   "You answer": "Du svarar",
   "{{org}} sends a quote": "{{org}} skickar en offert",
   "By email, with what they suggest and what it costs.": "Per mejl, med vad de föreslår och vad det kostar.",
-  "You decide": "Du bestämmer"
+  "You decide": "Du bestämmer",
+  "error.org_cannot_pay": "Spelet kan inte ta emot fler lag just nu. Fråga arrangören.",
+  "Free for up to {{free}} teams, then {{price}} per team.": "Gratis för upp till {{free}} lag, sedan {{price}} per lag.",
+  "The children play in teams, one phone per team: up to {{n}} teams.": "Barnen spelar i lag, en telefon per lag: upp till {{n}} lag.",
+  "{{free}} teams free · {{price}} per team after": "{{free}} lag gratis · sedan {{price}} per lag"
 }

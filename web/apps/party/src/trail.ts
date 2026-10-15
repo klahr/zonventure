@@ -13,7 +13,7 @@ export interface TrailStart {
   org_slug: string;
   enabled: boolean;
   payments_open: boolean;
-  price: { block_cents: number; currency: string; teams_per_block: number; free_teams: number };
+  price: { team_cents: number; currency: string; free_teams: number; games: number; vat_excluded: boolean };
   play_days: number;
   start_days: number;
   templates: TemplateInfo[];
@@ -25,7 +25,7 @@ export interface PublicTrail extends TrailDoc {
   state: "draft" | "paid" | "playing" | "ended";
   email?: string;
   payments_open: boolean;
-  price: { block_cents: number; currency: string; teams_per_block: number; free_teams: number };
+  price: { team_cents: number; currency: string; free_teams: number; games: number; vat_excluded: boolean };
   valid_until?: string;
   first_game_at?: string;
   round_open: boolean;
@@ -120,11 +120,11 @@ export const setPaidHost = (url: string | null) => write(PAID_HOST, url ? { url,
 const CHECKOUT = "zv.trail-checkout";
 
 /** What this browser last sent to checkout for draft id, so a cancelled payment doesn't lose it. */
-export const lastCheckout = (id: number): { email: string; blocks: number } | null => {
-  const c = read<{ id: number; email: string; blocks: number } | null>(CHECKOUT, null);
+export const lastCheckout = (id: number): { email: string; teams: number } | null => {
+  const c = read<{ id: number; email: string; teams: number } | null>(CHECKOUT, null);
   return c && c.id === id ? c : null;
 };
-export const setLastCheckout = (c: { id: number; email: string; blocks: number }) => write(CHECKOUT, c);
+export const setLastCheckout = (c: { id: number; email: string; teams: number }) => write(CHECKOUT, c);
 
 const HOSTS = "zv.trail-hosts";
 
@@ -175,7 +175,7 @@ export const deleteDraft = (id: number) => request<void>(draft(id), { method: "D
 export const duplicateDraft = (id: number) =>
   request<{ id: number; secret: string; trail: PublicTrail }>(`${draft(id)}/duplicate`, { method: "POST", headers: trailHeaders(id) });
 
-export const checkout = (id: number, body: { email: string; blocks: number; consent: boolean }) =>
+export const checkout = (id: number, body: { email: string; teams: number; consent: boolean }) =>
   request<{ checkout_url?: string; host_url?: string }>(`${draft(id)}/checkout`, { method: "POST", body, headers: trailHeaders(id) });
 
 export const sendHostLink = (id: number) => request<void>(`${draft(id)}/host-link`, { method: "POST", headers: trailHeaders(id) });

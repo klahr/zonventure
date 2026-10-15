@@ -82,6 +82,9 @@ type Config struct {
 	// the only purchase flow.
 	StripeSecretKey     string
 	StripeWebhookSecret string
+	// StripeConnectWebhookSecret signs the Connect endpoint's events:
+	// those of organisations' own accounts (their store sales).
+	StripeConnectWebhookSecret string
 	// PaymentsProvider names which payments.Provider impl to wire.
 	// Empty (default) auto-picks: Stripe when both Stripe credentials
 	// are set, otherwise nil ("payments not configured"). Setting
@@ -368,6 +371,7 @@ func New(cfg Config) http.Handler {
 			if !strings.HasPrefix(cfg.StripeSecretKey, "sk_") && !strings.HasPrefix(cfg.StripeSecretKey, "rk_") {
 				logx.Warn("payments.stripe.key", "msg", "ZV_STRIPE_SECRET_KEY does not look like a secret key (sk_… or rk_…): checkouts will fail at Stripe")
 			}
+			p.ConnectWebhookSecret = cfg.StripeConnectWebhookSecret
 			paymentProvider = p
 		} else if cfg.StripeSecretKey != "" || cfg.StripeWebhookSecret != "" || cfg.PaymentsProvider != "" {
 			logx.Warn("payments.stripe.incomplete", "msg", "Stripe needs both ZV_STRIPE_SECRET_KEY and ZV_STRIPE_WEBHOOK_SECRET; with one missing, paid checkout stays unavailable",
@@ -416,12 +420,16 @@ func New(cfg Config) http.Handler {
 	periodic.Start(bgCtx, time.Hour, adminH.SweepDeletionReminders)
 	// Organisations' own domains: DNS checks, going live, endings.
 	periodic.Start(bgCtx, time.Minute, adminH.SweepDomains)
+	// Paying for teams: monthly bills on the 1st, card retries, low
+	// balance warnings. See admin/billing.go.
+	periodic.Start(bgCtx, time.Hour, adminH.SweepBilling)
 	playerH.ActivateVoucher = adminH.ActivateVoucherCode
 	publicH := &public.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL, Engine: playerH.Engine,
 		SecureCookie: cfg.SecureCookie,
 		Looks:        public.LookAssets{ThemeCover: themeCoverURL, Font: lookFontURL},
 		Payments:     paymentProvider != nil,
+		Marketplace:  adminH.Marketplace,
 	}
 
 	// Read-only sitemap template + computed version metadata —

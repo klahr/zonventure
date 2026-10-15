@@ -255,8 +255,6 @@ export const uploadCover = (id: number, file: File) => {
 export const deleteCover = (id: number) => request<void>(E(id) + "/cover", { method: "DELETE" });
 /** Where a self-guided event's store listing is submitted for review (SubmitListingDialog). */
 export const submitListingURL = (id: number) => E(id) + "/listing/submit";
-export const topUp = (body: { adventure_slug: string; max_players: number; top_up_assignment_id: number; provider?: string }) =>
-  post<{ state: string; checkout_url?: string }>("/api/admin/purchases", body);
 
 export const sendMessage = (id: number, text: string, teamIds?: number[]) =>
   post<void>(E(id) + "/messages", { text, ...(teamIds ? { team_ids: teamIds } : {}) });

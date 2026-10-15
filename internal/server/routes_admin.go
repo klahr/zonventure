@@ -138,7 +138,6 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.Delete("/requests/{id}", adminH.DeleteQuoteRequest)
 		r.Get("/purchases/{purchaseID}", adminH.GetPurchase)
 		r.Get("/purchases/{purchaseID}/receipt", adminH.PurchaseReceipt)
-		r.Post("/purchases/{purchaseID}/confirm", adminH.ConfirmPurchase)
 
 		// Auth audit feed. The handler scopes per role: admins see
 		// every event, org_admins see only their org's users, anyone
@@ -283,7 +282,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Get("/events/{eventID}/hosted/qr", adminH.HostPartyQR)
 			r.Post("/events/{eventID}/hosted/finish-game", adminH.FinishHostedGame)
 			r.Post("/events/{eventID}/hosted/send-player-link", adminH.SendHostedPlayerLink)
-			r.Post("/events/{eventID}/hosted/blocks", adminH.AddHostedBlocks)
+			r.Post("/events/{eventID}/hosted/teams", adminH.AddHostedTeams)
 			r.Post("/events/{eventID}/hosted/resend-host-link", adminH.ResendHostLinkToBuyer)
 			// Host it: a hosted event of the org's own adventure, at the
 			// platform's pass price (hosted_pricing.go).
@@ -489,6 +488,14 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// The contact address its mails reply to, and its time zone.
 			r.Get("/orgs/me/contact", adminH.GetMyOrgContact)
 			r.Put("/orgs/me/contact", adminH.SetMyOrgContact)
+			// Its balance, how it pays for its teams, top-ups and the
+			// saved card (admin/billing.go). Org admins only, checked inside.
+			r.Get("/orgs/me/billing", adminH.GetMyBilling)
+			r.Put("/orgs/me/billing", adminH.SetMyBilling)
+			r.Post("/orgs/me/billing/top-up", adminH.TopUpMyBalance)
+			r.Post("/orgs/me/billing/card", adminH.SaveMyCard)
+			r.Delete("/orgs/me/billing/card", adminH.RemoveMyCard)
+			r.Post("/orgs/me/billing/pay", adminH.PayMyBills)
 			// Whether it takes requests for a quote, and the form's intro.
 			r.Get("/orgs/me/requests", adminH.GetMyQuoteSettings)
 			r.Put("/orgs/me/requests", adminH.SetMyQuoteSettings)
@@ -515,12 +522,10 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Get("/orgs/me/domain/guide/{provider}", adminH.DomainGuide)
 			r.Get("/orgs/me/domain/brand", adminH.GetMyDomainBrand)
 			r.Put("/orgs/me/domain/brand", adminH.SetMyDomainBrand)
-			r.Get("/orgs/me/voucher-use", adminH.MyVoucherUse)
 
 			// Purchases: arrangers buy player-slot assignments here. The
 			// simulated flow just needs the confirm endpoint; a future
 			// Stripe integration will also hit /confirm from a webhook.
-			r.Post("/purchases", adminH.CreatePurchase)
 
 			// Outbound webhooks: per-org subscription CRUD. Org-scoped
 			// (handlers reject callers without an org). The kinds catalog
@@ -584,8 +589,13 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 				r.Get("/organizations/{orgID}/custom-domain", adminH.GetOrgCustomDomain)
 				r.Put("/organizations/{orgID}/custom-domain", adminH.SetOrgCustomDomain)
 				// Used voucher codes to invoice, and marking them invoiced.
-				r.Get("/voucher-billing", adminH.VoucherBilling)
-				r.Post("/organizations/{orgID}/voucher-billing", adminH.MarkVoucherBilled)
+				// Paying for teams: every org's bills, invoices marked
+				// paid, an org's credit limit and adjustments
+				// (admin/billing.go).
+				r.Get("/billing/bills", adminH.ListBills)
+				r.Post("/billing/bills/{billID}/paid", adminH.MarkBillPaid)
+				r.Get("/organizations/{orgID}/billing", adminH.GetOrgBilling)
+				r.Put("/organizations/{orgID}/billing", adminH.SetOrgBilling)
 				// Who may review listings (the review itself is below).
 				r.Post("/listing-reviewers", adminH.SetListingReviewer)
 				r.Delete("/organizations/{orgID}", adminH.DeleteOrganization)
@@ -673,15 +683,8 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 				// without unwinding the assignment grant. Idempotent.
 				r.Post("/purchases/{purchaseID}/void", adminH.VoidPurchase)
 				r.Post("/purchases/{purchaseID}/unvoid", adminH.UnvoidPurchase)
-				// Admin-on-behalf-of grant: add player slots to an org's
-				// event. Free for non-trusted orgs (forced); for trusted
-				// orgs the admin chooses zero (goodwill) or a positive
-				// amount routed via the invoice provider.
-				r.Post("/events/{eventID}/grant-slots", adminH.GrantSlotsToEvent)
-
 				// Operator view of one org's events (Organizations page):
-				// cancel (the list is in the group above). Grant slots is the
-				// route above.
+				// cancel (the list is in the group above).
 				r.Post("/organizations/{orgID}/events/{eventID}/cancel", adminH.OperatorCancelEvent)
 
 				// Catalog curation: the publisher org authors the catalog;
@@ -707,5 +710,4 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 	// The simulated-checkout HTML page. Lives outside /api/admin so the
 	// arranger's browser lands at a clean URL after clicking "Pay".
 	// With Stripe this becomes a redirect target from Checkout Sessions.
-	r.Get("/purchase/{purchaseID}", adminH.SimulatedCheckoutPage)
 }

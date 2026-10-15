@@ -11,6 +11,38 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- Pay per team. Every team that plays an organisation's event costs one
+  price (49 kr by default), its first 3 phones included, and 15 kr for
+  each phone after: counted once, as its first phone joins a game; a
+  team that never plays costs nothing. The same count everywhere: live
+  events, hosted games, voucher codes, free tickets. Event passes,
+  hosted passes, free players per event and the percentage platform fee
+  are gone; passes already bought still work.
+- Organisations pay from a balance under Settings → Billing: top up by
+  card (bigger top-ups give a bonus), or be billed monthly for last
+  month's teams, to a saved card on the 1st or by invoice, within a
+  credit limit that grows after paid bills. When the balance runs out,
+  new teams can't start; the org admins are emailed before it does.
+- Store sales are paid to the organisation's own Stripe account; the
+  team's price is the platform's share of each sale, and Stripe's card
+  fee is the seller's. A refund before the team played gives that share
+  back, also when made in the seller's Stripe dashboard.
+- Kids' parties from the public creator: the first 5 teams a game are
+  free for 3 games; the buyer picks more teams at checkout, at the team
+  price each. A party booked from an organisation's offer picks its
+  number of teams.
+- Scheduling an event needs no pass: pick an adventure and go. Host it
+  is free to start, each team charged as it joins.
+- Platform admins set every price under Settings → Pricing, see an
+  organisation's balance on its page, credit or charge it with a note,
+  set its credit limit, and mark invoice bills paid.
+
+### Fixed
+
+- "Ask for a quote" opens the form in the page's language.
+
 ## [0.32.3] - 2026-10-15
 
 ### Added

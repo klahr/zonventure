@@ -10,11 +10,9 @@ import { listAdventures, listAssignments, listEvents, type EventRow } from "./ap
 import { AdventureCover, EventsTable, StatePill, StorePill, eventCover, eventLabel } from "./parts.tsx";
 import { NewEventDialog, canStartEvent, type NewEventProps } from "./NewEventDialog.tsx";
 import { NewQuestDialog } from "./NewQuestDialog.tsx";
-import { useJustPurchased } from "./justPurchased.ts";
 import "./events.css";
 
 export { NewEventDialog, type NewEventProps } from "./NewEventDialog.tsx";
-export { useJustPurchased } from "./justPurchased.ts";
 export { EventsTable, StatePill, eventLabel } from "./parts.tsx";
 
 type Filter = "all" | "running" | "paused" | "scheduled" | "completed" | "cancelled";
@@ -63,7 +61,6 @@ export function EventsPage() {
   }, []);
   const [filter, setFilter] = useState<Filter>("all");
   const [dialog, setDialog] = useState<Omit<NewEventProps, "onClose"> | null>(null);
-  useJustPurchased((assignmentId) => setDialog({ assignmentId }));
 
   const rows = events.data ?? [];
   const count = (f: Filter) => (f === "all" ? rows.length : rows.filter((r) => r.state === f).length);

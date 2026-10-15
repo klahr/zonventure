@@ -91,14 +91,6 @@ export function currencySymbol(locale?: string): string {
     .formatToParts(0).find((p) => p.type === "currency")?.value ?? siteCurrency();
 }
 
-/** payments.PlatformFee.Compute: the platform's cut of a sale of price, kept below the price. */
-export function platformFeeOn(p: { fee_percent_bps?: number; fee_fixed_cents?: number; fee_min_cents?: number }, price: number): number {
-  const bps = p.fee_percent_bps ?? 0, fixed = p.fee_fixed_cents ?? 0, min = p.fee_min_cents ?? 0;
-  if (!(bps || fixed || min) || price <= 0) return 0;
-  const fee = Math.max(Math.floor((price * bps) / 10000) + fixed, min);
-  return Math.max(0, Math.min(fee, price - 1));
-}
-
 /** An <input type="datetime-local"> value for a timestamp, in local time. */
 export function toLocalInput(s: string | null | undefined): string {
   const d = toDate(s);

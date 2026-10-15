@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klahr/zonventure/internal/billing"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/settings"
 	"github.com/klahr/zonventure/internal/tokenx"
 )
 
@@ -57,6 +59,11 @@ var ErrSlotTokenUnknown = errors.New("unknown slot token")
 // rotate.
 var ErrSlotTokenExpired = errors.New("slot token expired")
 
+// ErrOrgCannotPay is a seat that would start a team, or add a phone,
+// that the organisation's balance can't pay for (billing.ErrCannotPay):
+// the player is told to ask the organiser.
+var ErrOrgCannotPay = billing.ErrCannotPay
+
 // slotCtxKey is the context key used to stash the Slot.
 type slotCtxKey struct{}
 
@@ -79,16 +86,23 @@ func LoginSlotByToken(ctx context.Context, db *sql.DB, magic string) (Slot, stri
 	if magic == "" {
 		return Slot{}, "", ErrSlotTokenUnknown
 	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return Slot{}, "", err
+	}
+	defer tx.Rollback() //nolint:errcheck
 	var (
 		s         Slot
 		expiresAt sql.NullString
+		claimed   bool
 	)
-	err := db.QueryRowContext(ctx, `
-		SELECT ps.id, ps.name, ps.team_id, t.event_id, ps.expires_at
+	err = tx.QueryRowContext(ctx, `
+		SELECT ps.id, ps.name, ps.team_id, t.event_id, ps.expires_at, ps.claimed_at IS NOT NULL
 		FROM player_slots ps
 		JOIN teams t ON t.id = ps.team_id
 		WHERE ps.token = $1
-	`, magic).Scan(&s.ID, &s.Name, &s.TeamID, &s.EventID, &expiresAt)
+		FOR UPDATE OF ps
+	`, magic).Scan(&s.ID, &s.Name, &s.TeamID, &s.EventID, &expiresAt, &claimed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Slot{}, "", ErrSlotTokenUnknown
 	}
@@ -104,15 +118,25 @@ func LoginSlotByToken(ctx context.Context, db *sql.DB, magic string) (Slot, stri
 	// Stamp last_login_at every exchange; stamp claimed_at only the
 	// first time so it preserves the original activation moment for
 	// audit. COALESCE keeps the existing value once set.
-	if _, err := db.ExecContext(ctx,
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE player_slots
 		    SET last_login_at = now_text(),
 		        claimed_at    = COALESCE(claimed_at, now_text())
 		  WHERE id = $1`, s.ID); err != nil {
 		return Slot{}, "", err
 	}
-	session, err := newSlotSession(ctx, db, s.ID)
+	// The seat's first opening starts its team, or adds a phone: both
+	// paid for from the organisation's balance.
+	if !claimed {
+		if err := billing.ClaimSeat(ctx, tx, s.ID, settings.CurrentPricing()); err != nil {
+			return Slot{}, "", err
+		}
+	}
+	session, err := newSlotSession(ctx, tx, s.ID)
 	if err != nil {
+		return Slot{}, "", err
+	}
+	if err := tx.Commit(); err != nil {
 		return Slot{}, "", err
 	}
 	return s, session, nil
@@ -402,6 +426,9 @@ func ClaimFreeSlot(ctx context.Context, db *sql.DB, teamID int64) (Slot, string,
 		`UPDATE player_slots SET last_login_at = now_text(), claimed_at = now_text() WHERE id = $1`, s.ID); err != nil {
 		return Slot{}, "", err
 	}
+	if err := billing.ClaimSeat(ctx, tx, s.ID, settings.CurrentPricing()); err != nil {
+		return Slot{}, "", err
+	}
 	token, err := newToken()
 	if err != nil {
 		return Slot{}, "", err
@@ -418,7 +445,9 @@ func ClaimFreeSlot(ctx context.Context, db *sql.DB, teamID int64) (Slot, string,
 	return s, token, nil
 }
 
-func newSlotSession(ctx context.Context, db *sql.DB, slotID int64) (string, error) {
+func newSlotSession(ctx context.Context, db interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}, slotID int64) (string, error) {
 	token, err := newToken()
 	if err != nil {
 		return "", err

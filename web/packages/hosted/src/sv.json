@@ -67,7 +67,6 @@
   "{{placed}} of {{total}} places put.": "{{placed}} av {{total}} platser utlagda.",
   "{{score}} points so far": "{{score}} poäng hittills",
   "{{teams}} teams, {{players}} players": "{{teams}} lag, {{players}} spelare",
-  "Up to {{n}} teams for {{price}}": "Upp till {{n}} lag för {{price}}",
   "1 team is still playing.": "1 lag spelar fortfarande.",
   "{{n}} teams are still playing.": "{{n}} lag spelar fortfarande.",
   "Up to {{n}} teams can play in one game, one phone per team and any number of players in each.": "Upp till {{n}} lag kan spela i en omgång, en telefon per lag och hur många spelare som helst i varje.",
@@ -78,5 +77,8 @@
   "No teams played this game.": "Inga lag var med i den här omgången.",
   "A": "1",
   "B": "X",
-  "C": "2"
+  "C": "2",
+  "Add a team for {{price}}": "Lägg till ett lag för {{price}}",
+  "Add a team": "Lägg till ett lag",
+  "{{n}} teams": "{{n}} lag"
 }

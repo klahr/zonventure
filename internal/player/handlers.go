@@ -138,6 +138,9 @@ func (h *Handlers) MagicLinkLogin(w http.ResponseWriter, r *http.Request) bool {
 		// wants the team's recap, not a sign-in error. A cancelled
 		// event's has no recap to show; the player app says so.
 		link := "invalid"
+		if errors.Is(err, auth.ErrOrgCannotPay) {
+			link = "unpaid"
+		}
 		if errors.Is(err, auth.ErrSlotTokenExpired) {
 			link = "expired"
 			recap, state := h.recapForExpiredLink(r.Context(), token)

@@ -23,10 +23,10 @@ import (
 
 	stripego "github.com/stripe/stripe-go/v87"
 	"github.com/stripe/stripe-go/v87/account"
-	"github.com/stripe/stripe-go/v87/accountlink"
 	portalsession "github.com/stripe/stripe-go/v87/billingportal/session"
+	"github.com/stripe/stripe-go/v87/charge"
 	checkoutsession "github.com/stripe/stripe-go/v87/checkout/session"
-	"github.com/stripe/stripe-go/v87/loginlink"
+	"github.com/stripe/stripe-go/v87/feerefund"
 	"github.com/stripe/stripe-go/v87/refund"
 	"github.com/stripe/stripe-go/v87/webhook"
 )
@@ -35,6 +35,10 @@ import (
 type Provider struct {
 	SecretKey     string
 	WebhookSecret string
+	// ConnectWebhookSecret signs the events of organisations' own
+	// accounts (store sales, their refunds): a Connect webhook
+	// endpoint of its own in Stripe, posting to the same URL.
+	ConnectWebhookSecret string
 }
 
 // Compile-time assertion that *Provider satisfies both interfaces.
@@ -143,20 +147,15 @@ func (p *Provider) CreateCheckout(ctx context.Context, params payments.CheckoutP
 		}
 	}
 
-	// Marketplace path: the charge is destination-charged into a
-	// connected Express account, with the platform's application
-	// fee captured off the top. Both fields must be set together —
-	// a non-empty ConnectedAccountID with no fee would produce a
-	// "free passthrough" charge that benefits nobody, and a fee
-	// without a destination has nowhere to send the rest of the
-	// money. Caller is expected to honour both-or-neither; we
-	// defensively branch on the destination.
+	// Marketplace path: a direct charge on the organisation's own
+	// account, which is the seller and pays Stripe's fee; the
+	// platform's application fee comes out of it.
 	if params.ConnectedAccountID != "" {
-		csParams.PaymentIntentData = &stripego.CheckoutSessionPaymentIntentDataParams{
-			ApplicationFeeAmount: stripego.Int64(params.ApplicationFeeCents),
-			TransferData: &stripego.CheckoutSessionPaymentIntentDataTransferDataParams{
-				Destination: stripego.String(params.ConnectedAccountID),
-			},
+		csParams.SetStripeAccount(params.ConnectedAccountID)
+		if params.ApplicationFeeCents > 0 {
+			csParams.PaymentIntentData = &stripego.CheckoutSessionPaymentIntentDataParams{
+				ApplicationFeeAmount: stripego.Int64(params.ApplicationFeeCents),
+			}
 		}
 	}
 
@@ -187,6 +186,11 @@ func (p *Provider) CreateCheckout(ctx context.Context, params payments.CheckoutP
 func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (payments.Event, error) {
 	sig := headers.Get("Stripe-Signature")
 	ev, err := webhook.ConstructEvent(body, sig, p.WebhookSecret)
+	// An organisation's account's events come signed by the Connect
+	// endpoint's secret.
+	if err != nil && p.ConnectWebhookSecret != "" {
+		ev, err = webhook.ConstructEvent(body, sig, p.ConnectWebhookSecret)
+	}
 	if err != nil {
 		return payments.Event{}, err
 	}
@@ -195,6 +199,7 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 		ID:       ev.ID,
 		Created:  time.Unix(ev.Created, 0),
 		Type:     payments.EventOther,
+		Account:  ev.Account,
 	}
 	switch ev.Type {
 	case "checkout.session.completed",
@@ -203,6 +208,20 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 		var sess stripego.CheckoutSession
 		if err := json.Unmarshal(ev.Data.Raw, &sess); err != nil {
 			return payments.Event{}, fmt.Errorf("decode checkout.session: %w", err)
+		}
+		// A card saved for monthly billing (CreateCardSetup).
+		if sess.Mode == stripego.CheckoutSessionModeSetup {
+			if ev.Type != "checkout.session.completed" {
+				return out, nil
+			}
+			card, err := p.savedCard(sess.ID)
+			if err != nil {
+				return payments.Event{}, err
+			}
+			out.Type = payments.EventCardSaved
+			out.Metadata = sess.Metadata
+			out.Card = card
+			return out, nil
 		}
 		// async_payment_succeeded carries payment_status="paid" and
 		// fulfils through the same path as a synchronous completion.
@@ -226,7 +245,7 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 		// the hosted invoice URL need the session re-read with those
 		// expanded. Only for a paid session: that's the one we fulfil.
 		if detail.PaymentStatus == payments.PaymentStatusPaid && needsExpand(&sess) {
-			if err := p.expandSession(&sess); err != nil {
+			if err := p.expandSession(&sess, ev.Account); err != nil {
 				return payments.Event{}, fmt.Errorf("expand checkout.session %s: %w", sess.ID, err)
 			}
 		}
@@ -267,7 +286,7 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 		// Rows fulfilled before the charge id was recorded can only be
 		// matched through their checkout session, so name it.
 		if ch.PaymentIntent != nil && ch.PaymentIntent.ID != "" {
-			sessID, err := p.sessionForPaymentIntent(ch.PaymentIntent.ID)
+			sessID, err := p.sessionForPaymentIntent(ch.PaymentIntent.ID, ev.Account)
 			if err != nil {
 				return payments.Event{}, fmt.Errorf("checkout session for %s: %w", ch.PaymentIntent.ID, err)
 			}
@@ -310,13 +329,17 @@ func needsExpand(sess *stripego.CheckoutSession) bool {
 }
 
 // expandSession replaces sess's payment intent and invoice with the
-// expanded objects from a fresh read of the session.
-func (p *Provider) expandSession(sess *stripego.CheckoutSession) error {
+// expanded objects from a fresh read of the session, on account when
+// it was made on an organisation's own.
+func (p *Provider) expandSession(sess *stripego.CheckoutSession, account string) error {
 	stripego.Key = p.SecretKey
 	ctx, cancel := context.WithTimeout(context.Background(), webhookAPITimeout)
 	defer cancel()
 	params := &stripego.CheckoutSessionParams{}
 	params.Context = ctx
+	if account != "" {
+		params.SetStripeAccount(account)
+	}
 	params.AddExpand("payment_intent.latest_charge")
 	params.AddExpand("invoice")
 	full, err := checkoutsession.Get(sess.ID, params)
@@ -329,13 +352,17 @@ func (p *Provider) expandSession(sess *stripego.CheckoutSession) error {
 }
 
 // sessionForPaymentIntent returns the id of the checkout session that
-// created the payment intent, or "" when it wasn't one of ours.
-func (p *Provider) sessionForPaymentIntent(paymentIntentID string) (string, error) {
+// created the payment intent, or "" when it wasn't one of ours; on
+// account when the payment was an organisation's own.
+func (p *Provider) sessionForPaymentIntent(paymentIntentID, account string) (string, error) {
 	stripego.Key = p.SecretKey
 	ctx, cancel := context.WithTimeout(context.Background(), webhookAPITimeout)
 	defer cancel()
 	params := &stripego.CheckoutSessionListParams{PaymentIntent: stripego.String(paymentIntentID)}
 	params.Context = ctx
+	if account != "" {
+		params.SetStripeAccount(account)
+	}
 	params.Limit = stripego.Int64(1)
 	it := checkoutsession.List(params)
 	if it.Next() {
@@ -349,12 +376,9 @@ func (p *Provider) sessionForPaymentIntent(paymentIntentID string) (string, erro
 // distinctions live in the Stripe dashboard and don't have a
 // generic counterpart in payments.RefundParams yet.
 //
-// For destination-charged refunds (RefundApplicationFee=true), we
-// set ReverseTransfer so the connected account's transfer is
-// undone proportionally and RefundApplicationFee so the platform
-// returns its cut. The original charge always lives on the
-// platform account (that's where destination charges originate),
-// so the refund call doesn't need a Stripe-Account header.
+// A store sale's charge lives on the organisation's own account
+// (ConnectedAccountID): the refund is made there, and gives back the
+// platform's application fee when RefundApplicationFee is set.
 func (p *Provider) Refund(ctx context.Context, params payments.RefundParams) (payments.Refund, error) {
 	if params.ChargeID == "" {
 		return payments.Refund{}, errors.New("stripe: missing charge id")
@@ -365,9 +389,9 @@ func (p *Provider) Refund(ctx context.Context, params payments.RefundParams) (pa
 		Charge: stripego.String(params.ChargeID),
 	}
 	rp.Context = ctx
-	if params.RefundApplicationFee {
-		rp.RefundApplicationFee = stripego.Bool(true)
-		rp.ReverseTransfer = stripego.Bool(true)
+	if params.ConnectedAccountID != "" {
+		rp.SetStripeAccount(params.ConnectedAccountID)
+		rp.RefundApplicationFee = stripego.Bool(params.RefundApplicationFee)
 	}
 	if params.IdempotencyKey != "" {
 		rp.IdempotencyKey = stripego.String(params.IdempotencyKey)
@@ -384,59 +408,46 @@ func (p *Provider) Refund(ctx context.Context, params payments.RefundParams) (pa
 
 /* ---------------- MarketplaceProvider ---------------- */
 
-// CreateConnectedAccount creates an Express Connect account. Stripe
-// runs the KYC during hosted onboarding; the platform owns the
-// customer relationship: charges are destination-charged on the
-// platform account (which carries refunds and disputes), and the
-// seller sees only the Express dashboard (balance, payouts) via
-// CreateLoginLink. Stripe bills the platform per active account
-// and per payout.
+// CreateConnectedAccount creates an account the organisation owns
+// (Accounts v2): Stripe's full dashboard, the merchant configuration to
+// take card payments, and Stripe collecting its fees from, and
+// carrying the losses of, the account itself. The organisation is the
+// seller of its store sales (direct charges), refunds and answers
+// disputes in its own dashboard, and is paid out on its own schedule.
+// Stripe runs the KYC during hosted onboarding.
 //
-// card_payments + transfers are both requested: transfers is what
-// destination charges need, card_payments lets Stripe settle card
-// charges on the account's behalf should on_behalf_of come later.
-//
-// Payouts run monthly, on the 1st: the platform pays Stripe per
-// payout, so one payout a month per org keeps that cost down.
-// Express sellers can't change the schedule themselves.
-//
-// Country is ISO 3166-1 alpha-2; an empty value means "let Stripe
-// infer from the platform's default", which works for most
-// single-country deployments.
+// Country is ISO 3166-1 alpha-2; empty lets the onboarding ask.
 func (p *Provider) CreateConnectedAccount(ctx context.Context, params payments.ConnectedAccountParams) (string, error) {
-	stripego.Key = p.SecretKey
-
-	ap := &stripego.AccountParams{
-		Type: stripego.String(string(stripego.AccountTypeExpress)),
-		Capabilities: &stripego.AccountCapabilitiesParams{
-			CardPayments: &stripego.AccountCapabilitiesCardPaymentsParams{Requested: stripego.Bool(true)},
-			Transfers:    &stripego.AccountCapabilitiesTransfersParams{Requested: stripego.Bool(true)},
-		},
-		Settings: &stripego.AccountSettingsParams{
-			Payouts: &stripego.AccountSettingsPayoutsParams{
-				Schedule: &stripego.AccountSettingsPayoutsScheduleParams{
-					Interval:      stripego.String(string(stripego.AccountSettingsPayoutsScheduleIntervalMonthly)),
-					MonthlyAnchor: stripego.Int64(1),
+	c := stripego.NewClient(p.SecretKey)
+	ap := &stripego.V2CoreAccountCreateParams{
+		Dashboard: stripego.String("full"),
+		Configuration: &stripego.V2CoreAccountCreateConfigurationParams{
+			Merchant: &stripego.V2CoreAccountCreateConfigurationMerchantParams{
+				Capabilities: &stripego.V2CoreAccountCreateConfigurationMerchantCapabilitiesParams{
+					CardPayments: &stripego.V2CoreAccountCreateConfigurationMerchantCapabilitiesCardPaymentsParams{Requested: stripego.Bool(true)},
 				},
 			},
 		},
+		Defaults: &stripego.V2CoreAccountCreateDefaultsParams{
+			Responsibilities: &stripego.V2CoreAccountCreateDefaultsResponsibilitiesParams{
+				FeesCollector:   stripego.String("stripe"),
+				LossesCollector: stripego.String("stripe"),
+			},
+		},
 	}
-	ap.Context = ctx
 	if params.Email != "" {
-		ap.Email = stripego.String(params.Email)
-	}
-	if params.Country != "" {
-		ap.Country = stripego.String(strings.ToUpper(params.Country))
+		ap.ContactEmail = stripego.String(params.Email)
 	}
 	if params.DisplayName != "" {
-		ap.BusinessProfile = &stripego.AccountBusinessProfileParams{
-			Name: stripego.String(params.DisplayName),
-		}
+		ap.DisplayName = stripego.String(params.DisplayName)
+	}
+	if params.Country != "" {
+		ap.Identity = &stripego.V2CoreAccountCreateIdentityParams{Country: stripego.String(strings.ToLower(params.Country))}
 	}
 	if params.IdempotencyKey != "" {
 		ap.IdempotencyKey = stripego.String(params.IdempotencyKey)
 	}
-	a, err := account.New(ap)
+	a, err := c.V2CoreAccounts.Create(ctx, ap)
 	if err != nil {
 		return "", err
 	}
@@ -444,7 +455,7 @@ func (p *Provider) CreateConnectedAccount(ctx context.Context, params payments.C
 }
 
 // CreateAccountLink mints a hosted onboarding URL the arranger
-// follows to complete (or resume) Connect onboarding. The link is
+// follows to complete (or resume) setting up the account. The link is
 // single-use — once the user clicks it, follow-up retries need a
 // fresh link generated server-side.
 func (p *Provider) CreateAccountLink(ctx context.Context, params payments.AccountLinkParams) (string, error) {
@@ -454,42 +465,45 @@ func (p *Provider) CreateAccountLink(ctx context.Context, params payments.Accoun
 	if params.RefreshURL == "" || params.ReturnURL == "" {
 		return "", errors.New("stripe: missing refresh/return URL")
 	}
-	stripego.Key = p.SecretKey
-
-	alParams := &stripego.AccountLinkParams{
-		Account:    stripego.String(params.AccountID),
-		RefreshURL: stripego.String(params.RefreshURL),
-		ReturnURL:  stripego.String(params.ReturnURL),
-		Type:       stripego.String("account_onboarding"),
-	}
-	alParams.Context = ctx
-	link, err := accountlink.New(alParams)
+	c := stripego.NewClient(p.SecretKey)
+	link, err := c.V2CoreAccountLinks.Create(ctx, &stripego.V2CoreAccountLinkCreateParams{
+		Account: stripego.String(params.AccountID),
+		UseCase: &stripego.V2CoreAccountLinkCreateUseCaseParams{
+			Type: stripego.String("account_onboarding"),
+			AccountOnboarding: &stripego.V2CoreAccountLinkCreateUseCaseAccountOnboardingParams{
+				RefreshURL: stripego.String(params.RefreshURL),
+				ReturnURL:  stripego.String(params.ReturnURL),
+			},
+		},
+	})
 	if err != nil {
 		return "", err
 	}
 	return link.URL, nil
 }
 
-// CreateLoginLink mints a single-use URL into the connected
-// account's Express dashboard, where the seller sees their balance
-// and payouts. Stripe refuses it for accounts without the Express
-// dashboard (orgs onboarded as Standard before the switch); those
-// sellers sign in at dashboard.stripe.com instead.
-func (p *Provider) CreateLoginLink(ctx context.Context, accountID string) (string, error) {
-	if accountID == "" {
-		return "", errors.New("stripe: missing account id")
+// RefundApplicationFee gives back the platform's application fee on a
+// direct charge on accountID.
+func (p *Provider) RefundApplicationFee(ctx context.Context, accountID, chargeID string) error {
+	if accountID == "" || chargeID == "" {
+		return errors.New("stripe: missing account or charge id")
 	}
 	stripego.Key = p.SecretKey
-
-	llParams := &stripego.LoginLinkParams{
-		Account: stripego.String(accountID),
-	}
-	llParams.Context = ctx
-	link, err := loginlink.New(llParams)
+	cp := &stripego.ChargeParams{}
+	cp.Context = ctx
+	cp.SetStripeAccount(accountID)
+	ch, err := charge.Get(chargeID, cp)
 	if err != nil {
-		return "", err
+		return err
 	}
-	return link.URL, nil
+	if ch.ApplicationFee == nil || ch.ApplicationFee.ID == "" {
+		return nil
+	}
+	fp := &stripego.FeeRefundParams{ID: stripego.String(ch.ApplicationFee.ID)}
+	fp.Context = ctx
+	fp.IdempotencyKey = stripego.String("fee-refund-" + ch.ApplicationFee.ID)
+	_, err = feerefund.New(fp)
+	return err
 }
 
 // GetConnectedAccount fetches the live status flags from Stripe.

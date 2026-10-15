@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Ban, Download, Ticket } from "lucide-react";
-import { ApiError, get, post } from "@zonventure/api";
+import { get, post } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
-import { Button, Callout, Card, ErrorBox, Field, ICON, Loading, Row, errorText, fmtDate, fmtMoney, useDialogs, useLoad, useToast } from "../../ui/index.ts";
+import { Button, Card, ErrorBox, Field, ICON, Loading, Row, errorText, fmtDate, fmtMoney, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 import type { EventInfo } from "./api.ts";
 
 /** voucherOfferDTO, internal/admin/voucher_batches.go. */
@@ -33,8 +33,8 @@ const MAX_BATCH = 2000;
  * Pay-later voucher codes for a self-guided event: printed in an
  * envelope or on a gift card and sold anywhere, a bookstore say. A
  * buyer types one at /play and its first use starts a team; each code
- * used is on the organisation's monthly invoice, unused ones cost
- * nothing. Organisations with invoice billing only.
+ * used is charged to the organisation like any team, unused ones cost
+ * nothing.
  */
 export function VoucherCodesCard({ event }: { event: EventInfo }) {
   const t = useT();
@@ -73,7 +73,7 @@ export function VoucherCodesCard({ event }: { event: EventInfo }) {
     const ok = await dialogs.confirm({
       title: t.t("Make {{n}} codes?", { n: String(n) }),
       message: d.price_cents > 0
-        ? t.t("You pay {{price}} {{vat}} for each code that is used, on your monthly invoice: at most {{total}} if all are used. Unused codes cost nothing.", { price, vat, total: fmtMoney(d.price_cents * n, d.currency, t.current()) })
+        ? t.t("Each code used costs {{price}} {{vat}}, from your organisation's balance: at most {{total}} if all are used. Unused codes cost nothing.", { price, vat, total: fmtMoney(d.price_cents * n, d.currency, t.current()) })
         : t.t("Using these codes is free right now."),
       confirmLabel: t.t("Make codes"),
     });
@@ -84,8 +84,7 @@ export function VoucherCodesCard({ event }: { event: EventInfo }) {
       setLabel("");
       toast.ok(t.t("{{n}} codes made. Download them for printing.", { n: String(n) }));
     } catch (e) {
-      const reason = e instanceof ApiError ? (e.body as { reason?: string } | undefined)?.reason : undefined;
-      setErr(reason === "not_invoice" ? t.t("Voucher codes you pay later need invoice billing. Ask us to turn it on.") : errorText(e));
+      setErr(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -94,7 +93,7 @@ export function VoucherCodesCard({ event }: { event: EventInfo }) {
   const voidBatch = async (b: VoucherBatch) => {
     const ok = await dialogs.confirm({
       title: t.t("Void these codes?"),
-      message: t.t("The {{n}} unused codes in “{{label}}” will stop working, say for a print run that was never sold. Teams already playing keep playing, and codes already used stay on your invoice.", { n: String(b.codes - b.used), label: b.label || t.t("Codes from {{date}}", { date: fmtDate(b.created_at, t.current()) }) }),
+      message: t.t("The {{n}} unused codes in “{{label}}” will stop working, say for a print run that was never sold. Teams already playing keep playing, and codes already used stay charged.", { n: String(b.codes - b.used), label: b.label || t.t("Codes from {{date}}", { date: fmtDate(b.created_at, t.current()) }) }),
       confirmLabel: t.t("Void codes"),
       danger: true,
     });
@@ -114,13 +113,11 @@ export function VoucherCodesCard({ event }: { event: EventInfo }) {
     >
       {!d ? (
         <Loading label={t.t("Loading…")} />
-      ) : !d.allowed ? (
-        <Callout variant="info">{t.t("Voucher codes you pay later need invoice billing. Ask us to turn it on, and you can print codes here and pay for those used on a monthly invoice.")}</Callout>
       ) : (
         <div className="vc">
           <p className="vc-price">
             {d.price_cents > 0
-              ? t.t("{{price}} {{vat}} per code used, on your monthly invoice. Unused codes cost nothing.", { price, vat })
+              ? t.t("{{price}} {{vat}} per code used, from your organisation's balance. Unused codes cost nothing.", { price, vat })
               : t.t("Using codes is free right now.")}
           </p>
           {canEdit && (

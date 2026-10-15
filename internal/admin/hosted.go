@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/activity"
 	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/billing"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graphstore"
@@ -32,21 +33,8 @@ import (
 // the next. "Finish game" — or an idle game, or the end of the party's
 // days — closes it and mails the host its summary. See migration 0109.
 
-// TeamsPerBlock is how many teams one block of a hosted event lets play
-// in one game.
-const TeamsPerBlock = 15
-
-// FreeTeams is how many teams a hosted event of no blocks lets play in
-// one game: free, for a small party. Paying for blocks replaces it.
-const FreeTeams = 3
-
-// teamsLimit is how many teams blocks let play in one game.
-func teamsLimit(blocks int) int {
-	if blocks == 0 {
-		return FreeTeams
-	}
-	return blocks * TeamsPerBlock
-}
+// maxPartyTeams is the most teams a party's game can be bought up to.
+const maxPartyTeams = 150
 
 // HostedPlayPeriod is how long a hosted event plays from its first game.
 const HostedPlayPeriod = 14 * 24 * time.Hour
@@ -160,6 +148,10 @@ func (h *Handlers) joinStatus(ctx context.Context, q play.Querier, p hostParty) 
 	if p.State == "completed" || p.State == "cancelled" || partyLapsed(p) {
 		return "ended", nil
 	}
+	// A party plays the games it was bought for; another one ends it.
+	if !p.RoundOpen && p.GameLimit > 0 && p.Round >= p.GameLimit {
+		return "ended", nil
+	}
 	if !p.RoundOpen {
 		if err := h.checkReadyToStart(ctx, p); err != nil {
 			if errors.Is(err, errPlacesMissing) {
@@ -175,7 +167,7 @@ func (h *Handlers) joinStatus(ctx context.Context, q play.Querier, p hostParty) 
 	`, p.EventID, p.Round).Scan(&teams); err != nil {
 		return "", err
 	}
-	if teams >= teamsLimit(p.Blocks) {
+	if p.TeamLimit > 0 && teams >= p.TeamLimit {
 		return "full", nil
 	}
 	return "open", nil
@@ -280,6 +272,15 @@ func (h *Handlers) Join(w http.ResponseWriter, r *http.Request) {
 	}
 	teamID, slotToken, err := createPartyTeam(ctx, tx, p.EventID, round, name, req.Headcount)
 	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "join failed", err)
+		return
+	}
+	// The team is paid for as it joins: from the organisation's balance,
+	// unless the game was paid at checkout.
+	if err := billing.ChargeTeam(ctx, tx, teamID, h.pricing()); errors.Is(err, billing.ErrCannotPay) {
+		httpx.JSON(w, http.StatusPaymentRequired, map[string]string{"error": "this game can't take more teams just now: ask the organiser", "code": "org_cannot_pay"})
+		return
+	} else if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "join failed", err)
 		return
 	}

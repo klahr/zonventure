@@ -244,6 +244,8 @@ function Creator({
 }
 
 const CHECKOUT_FORM = "trail-checkout";
+/** The most teams the stepper offers; the server takes up to 150. */
+const MAX_TEAMS = 50;
 
 /**
  * The guide's last screen: how many teams (free up to the free number;
@@ -263,17 +265,16 @@ function useCheckout(
   const t = i18n.t;
   const loc = i18n.current();
   const [ask, confirmDialog] = useConfirm();
-  // No blocks: free, for up to free_teams teams a game. Back from a
-  // cancelled payment, what was asked for then.
+  // Up to free_teams teams a game are free. Back from a cancelled
+  // payment, what was asked for then.
   const [last] = useState(() => lastCheckout(id));
-  const [blocks, setBlocks] = useState(last?.blocks ?? 0);
+  const minTeams = doc.price.free_teams;
+  const [teams, setTeams] = useState(Math.max(minTeams, last?.teams ?? 0));
   const [email, setEmail] = useState(trailSession()?.email ?? last?.email ?? "");
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const per = doc.price.teams_per_block;
-  const limit = (b: number) => (b === 0 ? doc.price.free_teams : b * per);
-  const total = doc.price.block_cents * blocks;
+  const total = doc.price.team_cents * Math.max(0, teams - minTeams);
   const free = total <= 0;
   const price = money(total, doc.price.currency, loc);
 
@@ -295,8 +296,8 @@ function useCheckout(
     setError(null);
     try {
       if (!(await flush())) throw new Error();
-      setLastCheckout({ id, email: email.trim(), blocks });
-      const r = await checkout(id, { email: email.trim(), blocks, consent });
+      setLastCheckout({ id, email: email.trim(), teams });
+      const r = await checkout(id, { email: email.trim(), teams, consent });
       if (r.checkout_url) {
         setPaidHost(r.host_url ?? null);
         leave(r.checkout_url);
@@ -330,31 +331,30 @@ function useCheckout(
           <div className="party-stepper">
             <button
               type="button"
-              onClick={() => setBlocks((b) => Math.max(0, b - 1))}
-              disabled={blocks === 0}
+              onClick={() => setTeams((n) => Math.max(minTeams, n - 1))}
+              disabled={teams <= minTeams}
               aria-label={t("Fewer")}
             >
               −
             </button>
             <output aria-live="polite">
-              {t("up to {{n}}", { n: limit(blocks) })}
+              {t("up to {{n}}", { n: teams })}
             </output>
             <button
               type="button"
-              onClick={() => setBlocks((b) => Math.min(10, b + 1))}
-              disabled={!doc.payments_open || blocks >= 10}
+              onClick={() => setTeams((n) => Math.min(MAX_TEAMS, n + 1))}
+              disabled={!doc.payments_open || teams >= MAX_TEAMS}
               aria-label={t("More")}
             >
               +
             </button>
           </div>
           {doc.payments_open ? (
-            doc.price.block_cents > 0 && (
+            doc.price.team_cents > 0 && (
               <small className="trail-guide__teams-note">
-                {t("Free for up to {{free}} teams, then {{price}} per {{n}} teams.", {
-                  free: doc.price.free_teams,
-                  n: per,
-                  price: money(doc.price.block_cents, doc.price.currency, loc),
+                {t("Free for up to {{free}} teams, then {{price}} per team.", {
+                  free: minTeams,
+                  price: money(doc.price.team_cents, doc.price.currency, loc),
                 })}
               </small>
             )

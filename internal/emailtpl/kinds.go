@@ -636,6 +636,53 @@ func BoxWaiting(lang, link string) (string, Content) {
 	return subject, c
 }
 
+// --- paying for teams --------------------------------------------------------
+
+// BalanceLow tells an organisation's admins its balance has room for
+// few more teams; teams says how many, link opens Billing.
+func BalanceLow(lang, balance string, teams int64, link string) (string, Content) {
+	subject := T(lang, "Your balance is running low")
+	c := Content{Lang: lang, Heading: subject,
+		Body: T(lang, "Your balance is %[1]s: room for about %[2]d more teams. Top up so no team is turned away at the start.", balance, teams)}
+	if link != "" {
+		c.Buttons = []Button{{T(lang, "Top up"), link}}
+	}
+	return subject, c
+}
+
+// BalanceEmpty tells an organisation's admins its balance is used up:
+// new teams can't start until it is topped up.
+func BalanceEmpty(lang, balance, link string) (string, Content) {
+	subject := T(lang, "Your balance is used up")
+	c := Content{Lang: lang, Heading: subject,
+		Body: T(lang, "Your balance is %s. New teams can't start until you top up; teams already playing play on.", balance)}
+	if link != "" {
+		c.Buttons = []Button{{T(lang, "Top up"), link}}
+	}
+	return subject, c
+}
+
+// BillFailed tells an organisation's admins its monthly bill couldn't
+// be charged to its card; final says the retries are over and no new
+// team can start until it is paid.
+func BillFailed(lang, period, amount, reason string, final bool, link string) (string, Content) {
+	subject := T(lang, "We couldn't charge your card for %s", period)
+	body := T(lang, "Your bill for %[1]s, %[2]s, couldn't be charged to your card.", period, amount)
+	if reason != "" {
+		body += " " + T(lang, "The bank said: %s", mdEscape(reason))
+	}
+	if final {
+		body += "\n\n" + T(lang, "New teams can't start until the bill is paid. Add a working card and pay it now.")
+	} else {
+		body += "\n\n" + T(lang, "We'll try again tomorrow. To avoid that, check your card or add another.")
+	}
+	c := Content{Lang: lang, Heading: subject, Body: body}
+	if link != "" {
+		c.Buttons = []Button{{T(lang, "Open Billing"), link}}
+	}
+	return subject, c
+}
+
 // --- requests for a quote ----------------------------------------------------
 
 // Request is a quote request as its emails show it. The choices are the
@@ -1241,4 +1288,13 @@ func KindByID(id string) (Kind, bool) {
 		}
 	}
 	return Kind{}, false
+}
+
+// Money is an amount in cents as an email states it: "245.00 SEK", with
+// a decimal comma in Swedish.
+func Money(lang string, cents int64, currency string) string {
+	if cents < 0 {
+		return "−" + money(lang, int(-cents), currency)
+	}
+	return money(lang, int(cents), currency)
 }

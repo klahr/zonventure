@@ -1,21 +1,30 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Plus, X } from "lucide-react";
 import { get, put, siteCurrency } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
-import { Button, Callout, Card, ErrorBox, Field, Loading, Row, currencySymbol, fmtMoney, platformFeeOn, useDialogs, useLoad, useToast } from "../../ui/index.ts";
+import { Button, Callout, Card, ErrorBox, Field, ICON, Loading, Row, currencySymbol, fmtMoney, useLoad, useToast } from "../../ui/index.ts";
+
+/** settings.TopUp: a prepaid amount and its bonus, in minor units. */
+interface TopUp {
+  amount_cents: number;
+  bonus_cents: number;
+}
 
 /** pricingResponse, internal/admin/pricing.go. Amounts in minor units. */
 interface Pricing {
-  player_cents: number;
-  free_players: number;
-  hosted_block_cents: number;
-  fee_percent_bps: number;
-  fee_fixed_cents: number;
-  fee_min_cents: number;
+  team_cents: number;
+  team_phones: number;
+  phone_cents: number;
+  party_free_teams: number;
+  party_games: number;
+  overdraft_cents: number;
+  credit_new_cents: number;
+  credit_grown_cents: number;
+  credit_grown_after: number;
+  top_ups: TopUp[];
   vat_excluded: boolean;
-  payout_terms: string;
   domain_year_cents: number;
   domain_contact_url: string;
-  voucher_cents: number;
 }
 
 /** unconnectedSeller, internal/admin/pricing.go. */
@@ -25,27 +34,28 @@ interface Seller {
   listings: number;
 }
 
-type Price = "player_cents" | "free_players" | "hosted_block_cents" | "fee_percent_bps" | "fee_fixed_cents" | "fee_min_cents" | "domain_year_cents" | "voucher_cents";
+type Price =
+  | "team_cents" | "team_phones" | "phone_cents" | "party_free_teams" | "party_games"
+  | "overdraft_cents" | "credit_new_cents" | "credit_grown_cents" | "credit_grown_after" | "domain_year_cents";
 
-/** What the fields hold while typed: amounts and percent as written. */
+/** What the fields hold while typed: amounts as written. */
 type Draft = Record<Price, string>;
 
-const KRONOR: Price[] = ["player_cents", "hosted_block_cents", "fee_fixed_cents", "fee_min_cents", "domain_year_cents", "voucher_cents"];
+const KRONOR: Price[] = ["team_cents", "phone_cents", "overdraft_cents", "credit_new_cents", "credit_grown_cents", "domain_year_cents"];
 
-const FIELDS: Price[] = ["player_cents", "free_players", "hosted_block_cents", "fee_percent_bps", "fee_fixed_cents", "fee_min_cents", "domain_year_cents", "voucher_cents"];
+const FIELDS: Price[] = ["team_cents", "team_phones", "phone_cents", "party_free_teams", "party_games",
+  "overdraft_cents", "credit_new_cents", "credit_grown_cents", "credit_grown_after", "domain_year_cents"];
 
 /** The settings alone: the server's response also carries its currency and the unconnected sellers, which are no field here. */
 function pick(p: Pricing): Pricing {
-  const out = { vat_excluded: !!p.vat_excluded, payout_terms: p.payout_terms ?? "", domain_contact_url: p.domain_contact_url ?? "" } as Pricing;
+  const out = { vat_excluded: !!p.vat_excluded, domain_contact_url: p.domain_contact_url ?? "", top_ups: p.top_ups ?? [] } as Pricing;
   for (const k of FIELDS) out[k] = p[k];
   return out;
 }
 
 function toDraft(p: Pricing): Draft {
   const d = {} as Draft;
-  for (const k of FIELDS) {
-    d[k] = KRONOR.includes(k) ? String(p[k] / 100) : k === "fee_percent_bps" ? String(p[k] / 100) : String(p[k]);
-  }
+  for (const k of FIELDS) d[k] = KRONOR.includes(k) ? String(p[k] / 100) : String(p[k]);
   return d;
 }
 
@@ -60,7 +70,7 @@ function fromDraft(d: Draft, saved: Pricing): Pricing | Price {
   const p = { ...saved };
   for (const k of FIELDS) {
     const n = num(d[k]);
-    const v = KRONOR.includes(k) || k === "fee_percent_bps" ? Math.round(n * 100) : n;
+    const v = KRONOR.includes(k) ? Math.round(n * 100) : n;
     if (!Number.isFinite(n) || n < 0 || !Number.isInteger(v)) return k;
     p[k] = v;
   }
@@ -68,10 +78,11 @@ function fromDraft(d: Draft, saved: Pricing): Pricing | Price {
 }
 
 /**
- * What the platform charges, for the platform admin: the event pass,
- * the hosted pass and the cut of what orgs sell. In the site currency, VAT included.
- * Each card saves on its own and applies to the next checkout; nothing
- * is set in Stripe.
+ * What the platform charges, for the platform admin (PLATFORM_PRICING.md):
+ * every team that plays an org's event, its phones past those included,
+ * a family's party past its free teams; how orgs pay (top-ups, overdraft,
+ * monthly credit); and an org's own domain. In the site currency. Each
+ * card saves on its own; nothing is set in Stripe.
  */
 export function PricingTab() {
   const t = useT();
@@ -97,83 +108,38 @@ export function PricingTab() {
     </span>
   );
   const krIncl = saved.vat_excluded ? t.t("{{cur}} excl. VAT", { cur: currencySymbol(t.current()) }) : t.t("{{cur}} incl. VAT", { cur: currencySymbol(t.current()) });
-  const fee = platformFeeOn(now, 19900);
+  const extra = Math.max(0, 5 - now.team_phones);
+  const partyPaid = Math.max(0, 10 - now.party_free_teams);
+  const card = { saved, draft, parsed, onSaved };
 
   return (
     <>
       <p className="cs-field__hint st-intro">
         {saved.vat_excluded
-          ? t.t("What the platform charges, in {{cur}} excluding VAT. A saved price applies to the next checkout; purchases already made or started keep theirs.", { cur: siteCurrency() })
-          : t.t("What the platform charges, in {{cur}} including VAT. A saved price applies to the next checkout; purchases already made or started keep theirs.", { cur: siteCurrency() })}
+          ? t.t("What the platform charges, in {{cur}} excluding VAT. A saved price applies to the next team, sale or top-up; what was charged already stays.", { cur: siteCurrency() })
+          : t.t("What the platform charges, in {{cur}} including VAT. A saved price applies to the next team, sale or top-up; what was charged already stays.", { cur: siteCurrency() })}
       </p>
       <VATCard saved={saved} onSaved={onSaved} />
       <PriceCard
-        title={t.t("Event pass")}
-        who={t.t("Orgs pay it for a scheduled event, to the platform's account.")}
-        keys={["player_cents", "free_players"]}
-        saved={saved}
-        draft={draft}
-        parsed={parsed}
-        onSaved={onSaved}
-        example={t.t("40 players: {{free}} free, {{paid}} × {{price}} = {{total}}", {
-          free: Math.min(40, now.free_players),
-          paid: Math.max(0, 40 - now.free_players),
-          price: kr(now.player_cents),
-          total: kr(Math.max(0, 40 - now.free_players) * now.player_cents),
+        {...card}
+        title={t.t("A team")}
+        who={t.t("Every team that plays an org's event: charged to the org as the team's first phone joins, or taken out of the sale when the team is bought in the store. 0 makes teams free.")}
+        keys={["team_cents", "team_phones", "phone_cents"]}
+        example={t.t("A team of 5 phones: {{team}} + {{extra}} × {{phone}} = {{total}}.", {
+          team: kr(now.team_cents),
+          extra,
+          phone: kr(now.phone_cents),
+          total: kr(now.team_cents + extra * now.phone_cents),
         })}
       >
         <Row>
-          <Field label={t.t("Price per player")}>{input("player_cents", krIncl)}</Field>
-          <Field label={t.t("Free players per event")}>{input("free_players", t.t("players"))}</Field>
-        </Row>
-      </PriceCard>
-      <PriceCard
-        title={t.t("Hosted pass")}
-        who={t.t("Paid for a hosted game or a party adventure, per block of 15 teams, to the platform's account. 0 makes hosting free.")}
-        keys={["hosted_block_cents"]}
-        saved={saved}
-        draft={draft}
-        parsed={parsed}
-        onSaved={onSaved}
-        example={
-          now.hosted_block_cents > 0
-            ? t.t("1 block (15 teams): {{one}}. 2 blocks (30 teams): {{two}}.", { one: kr(now.hosted_block_cents), two: kr(2 * now.hosted_block_cents) })
-            : t.t("Hosting is free.")
-        }
-      >
-        <Field label={t.t("Price per block of 15 teams")}>{input("hosted_block_cents", krIncl)}</Field>
-      </PriceCard>
-      <PriceCard
-        title={t.t("Platform fee")}
-        who={t.t("The platform's cut of the tickets and party adventures orgs sell, taken from the sale; the rest goes to the org's Stripe account. All 0 turns it off.")}
-        keys={["fee_percent_bps", "fee_fixed_cents", "fee_min_cents"]}
-        saved={saved}
-        draft={draft}
-        parsed={parsed}
-        onSaved={onSaved}
-        {...(fee > 0 && platformFeeOn(saved, 19900) === 0 && sellers.length > 0 ? {
-          confirm: {
-            title: t.plural(sellers.length, { one: t.t("Pause sales for {{n}} org?"), other: t.t("Pause sales for {{n}} orgs?") }),
-            message: t.t("With a platform fee, the listings of orgs without a connected Stripe account stop selling until they connect one."),
-            confirmLabel: t.t("Save and pause"),
-          },
-        } : {})}
-        example={
-          fee > 0
-            ? t.t("On a {{price}} ticket the platform keeps {{fee}} and the org gets {{rest}}.", { price: kr(19900), fee: kr(fee), rest: kr(19900 - fee) })
-            : t.t("No platform fee: orgs keep their whole sale.")
-        }
-      >
-        <Row>
-          <Field label={t.t("Percent of the price")}>{input("fee_percent_bps", "%")}</Field>
-          <Field label={t.t("Plus a fixed part")}>{input("fee_fixed_cents", krIncl)}</Field>
-          <Field label={t.t("At least")}>{input("fee_min_cents", krIncl)}</Field>
+          <Field label={t.t("Price per team")}>{input("team_cents", krIncl)}</Field>
+          <Field label={t.t("Phones included")}>{input("team_phones", t.t("phones"))}</Field>
+          <Field label={t.t("Each phone after")}>{input("phone_cents", krIncl)}</Field>
         </Row>
         {sellers.length > 0 && (
-          <Callout variant={fee > 0 ? "warning" : "info"}>
-            {fee > 0
-              ? t.t("These orgs have listings in the store but no Stripe account that can take payments, so their sales are paused until they connect Stripe:")
-              : t.t("With a platform fee, these orgs' listings stop selling until they connect a Stripe account:")}
+          <Callout variant="info">
+            {t.t("These orgs have listings in the store but no Stripe account of their own that can take payments, so their sales wait until they connect one:")}
             <ul>
               {sellers.map((o) => (
                 <li key={o.id}>{o.name} · {t.plural(o.listings, { one: t.t("{{n}} listing"), other: t.t("{{n}} listings") })}</li>
@@ -183,31 +149,55 @@ export function PricingTab() {
         )}
       </PriceCard>
       <PriceCard
-        title={t.t("Voucher codes")}
-        who={t.t("Orgs with invoice billing print codes for a self-guided event and pay this for each code used, on a monthly invoice you send. Unused codes cost nothing; 0 makes them free.")}
-        keys={["voucher_cents"]}
-        saved={saved}
-        draft={draft}
-        parsed={parsed}
-        onSaved={onSaved}
-        example={now.voucher_cents > 0 ? t.t("100 codes, 60 used: 60 × {{price}} = {{total}}.", { price: kr(now.voucher_cents), total: kr(60 * now.voucher_cents) }) : t.t("Using codes is free.")}
+        {...card}
+        title={t.t("Family parties")}
+        who={t.t("A party made in the public creator, with no account: its first teams are free, each team after costs the team price, paid to the platform's account at checkout.")}
+        keys={["party_free_teams", "party_games"]}
+        example={t.t("10 teams: {{free}} free, {{paid}} × {{price}} = {{total}}, for {{games}} games.", {
+          free: Math.min(10, now.party_free_teams),
+          paid: partyPaid,
+          price: kr(now.team_cents),
+          total: kr(partyPaid * now.team_cents),
+          games: now.party_games,
+        })}
       >
-        <Field label={t.t("Price per code used")}>{input("voucher_cents", krIncl)}</Field>
+        <Row>
+          <Field label={t.t("Free teams a game")}>{input("party_free_teams", t.t("teams"))}</Field>
+          <Field label={t.t("Games a party plays")}>{input("party_games", t.t("games"))}</Field>
+        </Row>
       </PriceCard>
       <PriceCard
+        {...card}
+        title={t.t("Balance and credit")}
+        who={t.t("How far an org's teams may run past what it paid. A prepaid org may go a little below zero; a monthly one, billed on the 1st, up to its credit limit, which grows once it has paid enough bills.")}
+        keys={["overdraft_cents", "credit_new_cents", "credit_grown_cents", "credit_grown_after"]}
+        example={t.t("Prepaid: down to −{{overdraft}}. Monthly: {{new}}, then {{grown}} after {{after}} paid bills.", {
+          overdraft: kr(now.overdraft_cents),
+          new: kr(now.credit_new_cents),
+          grown: kr(now.credit_grown_cents),
+          after: now.credit_grown_after,
+        })}
+      >
+        <Row>
+          <Field label={t.t("Overdraft, prepaid")}>{input("overdraft_cents", krIncl)}</Field>
+          <Field label={t.t("Credit, new monthly org")}>{input("credit_new_cents", krIncl)}</Field>
+        </Row>
+        <Row>
+          <Field label={t.t("Credit, grown")}>{input("credit_grown_cents", krIncl)}</Field>
+          <Field label={t.t("After paid bills")}>{input("credit_grown_after", t.t("bills"))}</Field>
+        </Row>
+      </PriceCard>
+      <TopUpsCard saved={saved} onSaved={onSaved} />
+      <PriceCard
+        {...card}
         title={t.t("Own domain")}
         who={t.t("Paid by an org, per year, for its store on its own address. You grant it under Organizations once paid. 0 shows “Contact us” without a price.")}
         keys={["domain_year_cents"]}
-        saved={saved}
-        draft={draft}
-        parsed={parsed}
-        onSaved={onSaved}
         example={now.domain_year_cents > 0 ? t.t("Orgs see: {{price}} per year.", { price: kr(now.domain_year_cents) }) : t.t("Orgs see “Contact us”, with no price.")}
       >
         <Field label={t.t("Price per year")}>{input("domain_year_cents", krIncl)}</Field>
       </PriceCard>
       <DomainContactCard saved={saved} onSaved={onSaved} />
-      <PayoutTermsCard saved={saved} onSaved={onSaved} />
     </>
   );
 }
@@ -238,16 +228,27 @@ function VATCard({ saved, onSaved }: { saved: Pricing; onSaved: (p: Pricing) => 
   );
 }
 
-/** When orgs are paid for their ticket sales while there is no platform fee, shown on their Billing page. */
-function PayoutTermsCard({ saved, onSaved }: { saved: Pricing; onSaved: (p: Pricing) => void }) {
+const MAX_TOP_UPS = 4;
+
+/** The amounts an org can top up its balance with, each with its bonus. */
+function TopUpsCard({ saved, onSaved }: { saved: Pricing; onSaved: (p: Pricing) => void }) {
   const t = useT();
   const toast = useToast();
-  const [text, setText] = useState(saved.payout_terms);
+  const toRows = (list: TopUp[]) => list.map((u) => ({ amount: String(u.amount_cents / 100), bonus: String(u.bonus_cents / 100) }));
+  const [rows, setRows] = useState(() => toRows(saved.top_ups));
   const [busy, setBusy] = useState(false);
+  const parsed = rows.map((r) => ({ amount_cents: Math.round(num(r.amount) * 100), bonus_cents: Math.round(num(r.bonus) * 100) }));
+  const amounts = parsed.map((p) => p.amount_cents);
+  const bad = parsed.some((p) => !Number.isFinite(p.amount_cents) || !Number.isFinite(p.bonus_cents) || p.amount_cents <= 0 || p.bonus_cents < 0)
+    || new Set(amounts).size !== amounts.length || rows.length === 0;
+  const changed = JSON.stringify(parsed) !== JSON.stringify(saved.top_ups.map((u) => ({ amount_cents: u.amount_cents, bonus_cents: u.bonus_cents })));
+  const kr = (cents: number) => fmtMoney(cents, undefined, t.current());
   const save = async () => {
     setBusy(true);
     try {
-      onSaved(await put<Pricing>("/api/admin/pricing", { ...saved, payout_terms: text.trim() }));
+      const next = await put<Pricing>("/api/admin/pricing", { ...saved, top_ups: [...parsed].sort((a, b) => a.amount_cents - b.amount_cents) });
+      onSaved(next);
+      setRows(toRows(next.top_ups));
       toast.ok(t.t("Saved"));
     } catch (e) {
       toast.err(e);
@@ -255,19 +256,43 @@ function PayoutTermsCard({ saved, onSaved }: { saved: Pricing; onSaved: (p: Pric
       setBusy(false);
     }
   };
+  const best = parsed.filter((p) => p.amount_cents > 0).sort((a, b) => b.amount_cents - a.amount_cents)[0];
   return (
     <Card
-      title={t.t("Payout terms")}
-      subtitle={t.t("With no platform fee, ticket sales are paid to the platform's account. Say when and how orgs get their money; it shows on their Billing page.")}
+      title={t.t("Top-ups")}
+      subtitle={t.t("What a prepaid org can top up its balance with, by card to the platform's account. A bonus is added on top: bigger top-ups, cheaper teams.")}
       actions={
-        <Button variant="primary" loading={busy} disabled={text.trim() === saved.payout_terms} onClick={() => void save()}>
+        <Button variant="primary" loading={busy} disabled={!changed || bad} onClick={() => void save()}>
           {t.t("Save")}
         </Button>
       }
     >
-      <Field label={t.t("Payout terms")} hint={t.t("Empty shows the built-in terms: {{terms}}", { terms: t.t(DEFAULT_PAYOUT_TERMS) })}>
-        <textarea rows={3} maxLength={1000} value={text} onChange={(e) => setText(e.target.value)} />
-      </Field>
+      <div className="st-topups">
+        {rows.map((r, i) => (
+          <Row key={i}>
+            <Field label={t.t("Amount")}>
+              <input className="st-num" inputMode="decimal" value={r.amount} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))} />
+            </Field>
+            <Field label={t.t("Bonus")}>
+              <input className="st-num" inputMode="decimal" value={r.bonus} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, bonus: e.target.value } : x)))} />
+            </Field>
+            <Button size="icon" variant="ghost" icon={<X size={ICON.sm} aria-hidden />} aria-label={t.t("Remove")} title={t.t("Remove")}
+              disabled={rows.length <= 1} onClick={() => setRows(rows.filter((_, j) => j !== i))} />
+          </Row>
+        ))}
+        {rows.length < MAX_TOP_UPS && (
+          <div>
+            <Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={() => setRows([...rows, { amount: "", bonus: "0" }])}>{t.t("Add an amount")}</Button>
+          </div>
+        )}
+      </div>
+      <p className="cs-field__hint st-example" role="status">
+        {bad
+          ? t.t("Each amount once, more than 0, with a bonus of 0 or more.")
+          : best && best.bonus_cents > 0
+            ? t.t("Topping up {{amount}} gives {{total}}.", { amount: kr(best.amount_cents), total: kr(best.amount_cents + best.bonus_cents) })
+            : t.t("No bonus on any amount.")}
+      </p>
     </Card>
   );
 }
@@ -306,10 +331,6 @@ function DomainContactCard({ saved, onSaved }: { saved: Pricing; onSaved: (p: Pr
   );
 }
 
-/** The payout terms an org sees when the platform admin has set none. */
-export const DEFAULT_PAYOUT_TERMS =
-  "The platform collects your ticket sales and pays them out to your organisation once a month, for the month before, less refunds. Questions about a payout go to the platform's contact address.";
-
 /** One price's card: its fields, an example in the typed prices, and its own Save. */
 function PriceCard(props: {
   title: string;
@@ -320,20 +341,16 @@ function PriceCard(props: {
   parsed: Pricing | Price;
   example: string;
   onSaved: (p: Pricing) => void;
-  /** Asked before saving, when saving has side effects worth a second look. */
-  confirm?: { title: string; message: string; confirmLabel: string };
   children: ReactNode;
 }) {
   const t = useT();
   const toast = useToast();
-  const dialogs = useDialogs();
   const [busy, setBusy] = useState(false);
   const bad = typeof props.parsed === "string" && props.keys.includes(props.parsed);
   const mine = typeof props.parsed === "string" ? null : props.parsed;
   const changed = !!mine && props.keys.some((k) => mine[k] !== props.saved[k]);
   const save = async () => {
     if (!mine) return;
-    if (props.confirm && !(await dialogs.confirm({ ...props.confirm, danger: true }))) return;
     // Only this card's prices change; the others stay as saved.
     const next = { ...props.saved };
     for (const k of props.keys) next[k] = mine[k];

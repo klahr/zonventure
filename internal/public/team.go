@@ -235,6 +235,13 @@ func (h *Handlers) JoinTeamByToken(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if errors.Is(err, auth.ErrOrgCannotPay) {
+		httpx.JSON(w, http.StatusPaymentRequired, map[string]string{
+			"error": "this game can't start just now: ask the organiser",
+			"code":  "org_cannot_pay",
+		})
+		return
+	}
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "join failed")
 		return
@@ -447,6 +454,7 @@ var teamSV = map[string]string{
 	"Files from the organisers":                                                "Filer från arrangörerna",
 	"Download them before you set off. They are also in the menu of the game.": "Ladda ner dem innan ni ger er av. De finns också i spelets meny.",
 	"Everyone's already joined this team. Ask whoever's hosting.":              "Alla har redan gått med i laget. Fråga den som håller i spelet.",
+	"This game can't start just now. Ask the organiser, then try again.":       "Spelet kan inte starta just nu. Fråga arrangören och försök sedan igen.",
 	"Couldn't join — please try again.":                                        "Det gick inte att gå med – försök igen.",
 	"Couldn't reach the server. Check your connection.":                        "Når inte servern. Kontrollera din anslutning.",
 	"upload failed":            "uppladdningen misslyckades",
@@ -791,6 +799,7 @@ var teamShareTmpl = template.Must(template.New("team").Funcs(template.FuncMap{"t
         if(res.s===200 && res.b && res.b.redirect){ handoff(res.b.redirect); return; }
         joining=false; joinBtn.disabled=false;
         if(res.s===409){ if(joinMsg) joinMsg.textContent={{t $.Lang "Everyone's already joined this team. Ask whoever's hosting."}}; }
+        else if(res.s===402){ if(joinMsg) joinMsg.textContent={{t $.Lang "This game can't start just now. Ask the organiser, then try again."}}; }
         else { if(joinMsg) joinMsg.textContent=(res.b&&res.b.error)||{{t $.Lang "Couldn't join — please try again."}}; }
       })
       .catch(function(){ joining=false; joinBtn.disabled=false; if(joinMsg) joinMsg.textContent={{t $.Lang "Couldn't reach the server. Check your connection."}}; });

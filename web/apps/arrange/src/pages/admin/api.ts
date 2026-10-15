@@ -186,8 +186,6 @@ export const updateAssignment = (id: number, assignmentId: number, body: { max_p
 export const deleteAssignment = (id: number, assignmentId: number) =>
   request<void>(`${org(id)}/assignments/${assignmentId}`, { method: "DELETE" });
 
-export const grantSlots = (eventId: number, addedPlayers: number, amountCents: number) =>
-  post<unknown>(`/api/admin/events/${eventId}/grant-slots`, { added_players: addedPlayers, amount_cents: amountCents });
 export const cancelOrgEvent = (id: number, eventId: number, password: string) =>
   post<void>(`${org(id)}/events/${eventId}/cancel`, undefined, pw(password));
 

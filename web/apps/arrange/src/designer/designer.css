@@ -806,7 +806,7 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
    balanced columns (one on a phone). */
 /* Adventure settings: one section beside the rail, as wide as reads well. */
 .dz .modal.settings-modal { height: min(calc(100dvh - 2 * var(--dz-space-4)), 48rem); }
-.dz-settings { max-width: 46rem; }
+.dz-settings { display: flex; flex-direction: column; gap: var(--sp-6); max-width: 46rem; }
 .dz-settings .res { display: contents; }
 .dz-settings .insp__section { gap: var(--sp-3); }
 .dz-settings .insp__section > h3 { min-height: 28px; font-size: var(--dz-text-lg); font-weight: 700; color: var(--ink); }

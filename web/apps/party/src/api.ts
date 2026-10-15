@@ -10,7 +10,7 @@ export interface Offer {
   per_kid_cents: number;
   currency: string;
   max_kids: number;
-  /** How many teams a game of the booked party takes. */
+  /** The most teams a game of the booked party takes. */
   teams: number;
   org_name: string;
   org_slug: string;
@@ -25,7 +25,7 @@ const enc = encodeURIComponent;
 
 export const getOffer = (slug: string, id: string) => request<Offer>(`/api/o/${enc(slug)}/parties/${enc(id)}`);
 
-export const book = (slug: string, id: string, body: { email: string; kids: number; party_name: string; consent: boolean }) =>
+export const book = (slug: string, id: string, body: { email: string; kids: number; teams: number; party_name: string; consent: boolean }) =>
   request<{ checkout_url: string }>(`/api/o/${enc(slug)}/parties/${enc(id)}/book`, { method: "POST", body });
 
 export const resend = (email: string) => request<void>("/api/party/resend", { method: "POST", body: { email } });

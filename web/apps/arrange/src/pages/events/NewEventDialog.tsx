@@ -3,58 +3,28 @@ import { ApiError, canAuthor } from "@zonventure/api";
 import { contentT, useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { CATALOG_ENABLED, navigate } from "../../router.ts";
-import { Button, Callout, Dialog, Empty, ErrorBox, Field, Loading, Row, fmtMoney, useDialogs, useLoad, useToast, errorText } from "../../ui/index.ts";
+import { Button, Callout, Dialog, Empty, ErrorBox, Field, Loading, fmtMoney, useLoad, useToast, errorText } from "../../ui/index.ts";
 import { SPOTS } from "@zonventure/ui";
-import { activeMembership, createEvent, createPurchase, createTeam, listAdventures, listAssignments, pricing, type AdventureRow, type Assignment } from "./api.ts";
+import { createEvent, createTeam, listAdventures, listAssignments, pricing, type AdventureRow, type Assignment } from "./api.ts";
 import { iconOrCover } from "../adventures/parts.tsx";
 import { AdventureCover } from "./parts.tsx";
 import "./events.css";
 
 /**
  * Schedule an event: pick the adventure (unless given), name it, start
- * manually or at a time, optionally add teams — buying an event pass
- * first when one is needed. Opened from the dashboard, the events list,
- * an adventure's page and the catalog. On success it navigates to the
- * new event.
+ * manually or at a time, optionally add teams. Nothing is paid up
+ * front: each team is charged to the organisation as it starts. Opened
+ * from the dashboard, the events list, an adventure's page and the
+ * catalog. On success it navigates to the new event.
  *
  * Props are the contract other areas code against:
  *   slug          — preselect this adventure
- *   assignmentId  — use this event pass
- *   ownsIt        — the adventure is the org's own (buy-before-create flow)
+ *   assignmentId  — use this event pass (one bought before pay per team)
  */
 export interface NewEventProps {
   slug?: string;
   assignmentId?: number;
-  ownsIt?: boolean;
   onClose: () => void;
-}
-
-/** The free tier's floor: a smaller pass costs the same and only caps the event. */
-const MIN_PLAYERS = 15;
-
-/**
- * What was typed before a Stripe checkout, so the dialog that reopens
- * on the way back (useJustPurchased) starts filled in rather than empty.
- */
-const DRAFT_KEY = "zv-new-event-draft";
-interface Draft {
-  name: string;
-  later: boolean;
-  when: string;
-  teamCount: string;
-  perTeam: string;
-  teamPrefix: string;
-  playerPrefix: string;
-  /** The no-minors statement, ticked for this event before paying. */
-  attest: boolean;
-}
-function peekDraft(): Partial<Draft> {
-  try {
-    const raw = sessionStorage.getItem(DRAFT_KEY);
-    return raw ? (JSON.parse(raw) as Partial<Draft>) : {};
-  } catch {
-    return {};
-  }
 }
 
 /** The adventures the dialog offers: with the catalog off, only what the Adventures page shows (the org's own, the commissioned, and those it holds a pass for). */
@@ -68,11 +38,10 @@ export function canStartEvent(all: AdventureRow[], assigns: Assignment[]): boole
 }
 
 /**
- * How the dialog gets the event its pass: an existing one, a share the
- * platform commissioned for the org (no pass needed), or a purchase
- * made on submit.
+ * What the event is made from: an unused event pass from before pay per
+ * team, or the adventure itself.
  */
-type Ctx = { mode: "preset"; assignmentId: number } | { mode: "share"; slug: string } | { mode: "buy"; slug: string };
+type Ctx = { mode: "preset"; assignmentId: number } | { mode: "slug"; slug: string };
 
 export function NewEventDialog(props: NewEventProps) {
   const t = useT();
@@ -95,15 +64,13 @@ export function NewEventDialog(props: NewEventProps) {
   return <NewEventForm {...props} />;
 }
 
-function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
+function NewEventForm({ slug, assignmentId, onClose }: NewEventProps) {
   const t = useT();
   const toast = useToast();
   const { state, refresh } = useSession();
   const user = state.status === "authenticated" ? state.user : null!;
   const loc = t.current();
   const price = pricing(user);
-  const dialogs = useDialogs();
-  const trusted = !!activeMembership(user)?.trusted;
   const needsPicker = assignmentId === undefined && slug === undefined;
 
   const lists = useLoad(async (signal) => {
@@ -115,34 +82,26 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
     return { advs, unused };
   }, []);
 
-  // Only the dialog reopened with the pass just paid for takes the draft.
-  // It stays until the event exists, so closing the dialog on the way
-  // back from Stripe doesn't throw the typing away.
-  const [draft] = useState<Partial<Draft>>(() => (assignmentId !== undefined ? peekDraft() : {}));
-  // Billing options an operator turned on since login (invoice) show without a reload.
+  // Prices an operator changed since login show without a reload.
   useEffect(() => {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [picked, setPicked] = useState<string | null>(slug ?? null);
   const [filter, setFilter] = useState("");
-  const [players, setPlayers] = useState(String(MIN_PLAYERS));
-  const [name, setName] = useState(draft.name ?? "");
-  const [later, setLater] = useState(draft.later ?? false);
-  const [when, setWhen] = useState(draft.when ?? "");
-  const [teamsOpen, setTeamsOpen] = useState(Number(draft.teamCount) > 0);
-  const [teamCount, setTeamCount] = useState(draft.teamCount ?? "0");
-  const [perTeam, setPerTeam] = useState(draft.perTeam ?? "3");
+  const [name, setName] = useState("");
+  const [later, setLater] = useState(false);
+  const [when, setWhen] = useState("");
+  const [teamsOpen, setTeamsOpen] = useState(false);
+  const [teamCount, setTeamCount] = useState("0");
+  const [perTeam, setPerTeam] = useState("3");
   // Null until typed in: the default follows the adventure's language.
-  const [teamPrefixIn, setTeamPrefix] = useState<string | null>(draft.teamPrefix || null);
-  const [playerPrefixIn, setPlayerPrefix] = useState<string | null>(draft.playerPrefix || null);
-  const [attest, setAttest] = useState(draft.attest ?? false);
+  const [teamPrefixIn, setTeamPrefix] = useState<string | null>(null);
+  const [playerPrefixIn, setPlayerPrefix] = useState<string | null>(null);
+  const [attest, setAttest] = useState(false);
   const [attestErr, setAttestErr] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // A pass bought on an earlier submit whose event then failed: the
-  // retry uses it rather than buying a second one.
-  const [bought, setBought] = useState<number | null>(null);
   const whenRef = useRef<HTMLInputElement>(null);
   const attestRef = useRef<HTMLInputElement>(null);
   const attestErrRef = useRef<HTMLParagraphElement>(null);
@@ -171,28 +130,21 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
   const pickedAdv = advs.find((a) => a.slug === picked);
 
   const ctx: Ctx | null = (() => {
-    if (bought) return { mode: "preset", assignmentId: bought };
     if (assignmentId !== undefined) return { mode: "preset", assignmentId };
     if (needsPicker) {
       if (!pickedAdv) return null;
       const pass = unused.find((x) => x.adventure_slug === pickedAdv.slug);
       if (pass) return { mode: "preset", assignmentId: pass.id };
-      if (pickedAdv.shared) return { mode: "share", slug: pickedAdv.slug };
-      return { mode: "buy", slug: pickedAdv.slug };
+      return { mode: "slug", slug: pickedAdv.slug };
     }
-    if (ownsIt) return { mode: "buy", slug: slug! };
-    return { mode: "share", slug: slug! };
+    return { mode: "slug", slug: slug! };
   })();
 
-  const buying = ctx?.mode === "buy";
-  const playersN = Math.max(0, parseInt(players, 10) || 0);
   const pass: Assignment | undefined = ctx?.mode === "preset" ? unused.find((x) => x.id === ctx.assignmentId) : undefined;
-  const cap = buying ? playersN : pass?.max_players ?? 0;
+  const cap = pass?.max_players ?? 0;
   const teamN = teamsOpen ? Math.max(0, parseInt(teamCount, 10) || 0) : 0;
   const perN = Math.max(1, parseInt(perTeam, 10) || 0);
   const overCap = cap > 0 && teamN * perN > cap;
-  const total = price.chargeable(Math.max(1, playersN));
-  const toCheckout = buying && total > 0;
 
   const localTZ = (() => {
     try {
@@ -208,7 +160,7 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
   const teamPrefix = teamPrefixIn ?? ct("Team");
   const playerPrefix = playerPrefixIn ?? ct("Player");
 
-  async function submit(provider: "invoice" | null) {
+  async function submit() {
     if (busy || !ctx) return;
     setError(null);
     if (!attest) {
@@ -217,10 +169,6 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
       // The statement sits at the foot of the form, under the footer on
       // a phone: bring its message into view, on every try, once drawn.
       requestAnimationFrame(() => attestErrRef.current?.scrollIntoView({ block: "nearest" }));
-      return;
-    }
-    if (ctx.mode === "buy" && playersN < MIN_PLAYERS) {
-      setError(t.t("Minimum {{n}} players per event", { n: MIN_PLAYERS }));
       return;
     }
     // Teams made up front must fit the event pass, or the extra
@@ -246,56 +194,18 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
       scheduledAt = d.toISOString();
     }
 
-    // An invoice commits the money in one click: say what goes on it first.
-    if (provider === "invoice" && !(await dialogs.confirm({
-      title: t.t("Add to invoice?"),
-      message: t.t("{{amount}} for {{n}} players goes on your organisation's next invoice.", { amount: fmtMoney(total, price.currency, loc), n: playersN }),
-      confirmLabel: t.t("Add to invoice"),
-    }))) return;
     setBusy(true);
-    let passId: number | undefined = ctx.mode === "preset" ? ctx.assignmentId : undefined;
-    if (ctx.mode === "buy") {
-      try {
-        const pr = await createPurchase({ adventure_slug: ctx.slug, max_players: playersN, ...(provider ? { provider } : {}) });
-        if (pr.state === "paid" && pr.assignment_id) {
-          passId = pr.assignment_id;
-          setBought(pr.assignment_id);
-          if (pr.provider === "invoice") toast.ok(t.t("{{amount}} for {{n}} players added to your organisation's next invoice", { amount: fmtMoney(total, price.currency, loc), n: playersN }));
-        } else if (pr.checkout_url) {
-          try {
-            const d: Draft = { name, later, when, teamCount: teamsOpen ? teamCount : "0", perTeam, teamPrefix, playerPrefix, attest };
-            sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d));
-          } catch {
-            /* the form is simply empty on the way back */
-          }
-          location.href = pr.checkout_url;
-          return;
-        } else {
-          setError(t.t("Payment did not complete"));
-          setBusy(false);
-          return;
-        }
-      } catch (e) {
-        setError((e instanceof ApiError ? t.tError(e.code, e.message) : errorText(e)) || t.t("Purchase failed"));
-        setBusy(false);
-        return;
-      }
-    }
+    const passId: number | undefined = ctx.mode === "preset" ? ctx.assignmentId : undefined;
 
     let id: number;
     try {
       const body = {
         name: name.trim(),
         attest_no_minors: true as const,
-        ...(passId ? { assignment_id: passId } : ctx.mode === "share" ? { adventure_slug: ctx.slug } : {}),
+        ...(passId ? { assignment_id: passId } : ctx.mode === "slug" ? { adventure_slug: ctx.slug } : {}),
         ...(scheduledAt ? { scheduled_at: scheduledAt } : {}),
       };
       id = (await createEvent(body)).id;
-      try {
-        sessionStorage.removeItem(DRAFT_KEY);
-      } catch {
-        /* nothing stored */
-      }
     } catch (e) {
       setError(e instanceof ApiError && e.code === "verification_required" ? t.t("Verify your email before scheduling events — check your inbox for the link.") : errorText(e));
       setBusy(false);
@@ -375,17 +285,12 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
       title={t.t("New event")}
       wide={picker}
       onClose={() => !busy && onClose()}
-      onSubmit={() => void submit(null)}
+      onSubmit={() => void submit()}
       footer={
         <>
           <Button onClick={onClose} disabled={busy}>{t.t("Cancel")}</Button>
-          {trusted && buying && (
-            <Button onClick={() => void submit("invoice")} disabled={busy || overCap} title={t.t("Skip Stripe — your finance team will get an invoice from us.")}>
-              {t.t("Add to invoice")}
-            </Button>
-          )}
           <Button type="submit" variant="primary" loading={busy} disabled={!ctx || overCap}>
-            {toCheckout ? t.t("Continue to payment") : t.t("Create event")}
+            {t.t("Create event")}
           </Button>
         </>
       }
@@ -398,7 +303,7 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
           )}
           <div className="evs-picker" role="radiogroup" aria-label={t.t("Adventure")}>
             {shown.map((a) => (
-              <AdventureChoice key={a.slug} adv={a} checked={a.slug === picked} pass={unused.find((x) => x.adventure_slug === a.slug)} onPick={() => { setPicked(a.slug); setBought(null); }} />
+              <AdventureChoice key={a.slug} adv={a} checked={a.slug === picked} pass={unused.find((x) => x.adventure_slug === a.slug)} onPick={() => setPicked(a.slug)} />
             ))}
             {shown.length === 0 && <p className="evs-muted evs-small">{t.t("No adventures match.")}</p>}
           </div>
@@ -425,27 +330,11 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
         <Callout variant="success">{t.t("Uses your unused event pass for {{n}} players.", { n: pass.max_players })}</Callout>
       )}
 
-      {buying && (
-        <div className="evs-capacity">
-          <Row>
-            <Field label={t.t("Players")}>
-              <input type="number" min={MIN_PLAYERS} max={500} value={players} onChange={(e) => setPlayers(e.target.value)} className="evs-num" />
-            </Field>
-            <p className="evs-total" aria-live="polite">
-              {t.t("Total: ")}
-              <strong>{fmtMoney(total, price.currency, loc)}</strong>{" "}
-              <span className="evs-muted evs-small">{t.t("(first {{n}} free, then {{price}} per player)", { n: price.free, price: fmtMoney(price.priceCents, price.currency, loc) })}</span>{" "}
-              <span className="evs-muted evs-small">{price.vatExcluded ? t.t("excl. VAT") : t.t("incl. VAT")}</span>
-            </p>
-          </Row>
-          {price.free >= MIN_PLAYERS && (
-            <p className="evs-muted evs-small">{t.t("Fewer players, such as a test with 4? Leave it at {{n}}: the first {{free}} are free, so it costs nothing.", { n: MIN_PLAYERS, free: price.free })}</p>
-          )}
-          <p className="evs-muted evs-small">
-            {t.t("You can grow this later from the event page.")}
-            {toCheckout && <> {trusted ? t.t("Add it to your invoice, or pay on Stripe and come back here to finish the event.") : t.t("You'll pay on Stripe, then come back here to finish the event.")}</>}
-          </p>
-        </div>
+      {!pass && (
+        <p className="evs-muted evs-small">
+          {t.t("Nothing to pay now: each team costs {{price}} as it starts, its first {{n}} phones included, from your organisation's balance.", { price: fmtMoney(price.team, price.currency, loc), n: price.included })}{" "}
+          <span>{price.vatExcluded ? t.t("excl. VAT") : t.t("incl. VAT")}</span>
+        </p>
       )}
 
       <Field label={t.t("Name (optional)")}>
@@ -490,12 +379,9 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
           <p className={"evs-small" + (overCap ? " evs-bad" : " evs-muted")} aria-live="polite">
             {cap > 0
               ? t.t("{{total}} players of the {{cap}} the event pass covers.", { total: teamN * perN, cap })
-              : t.t("{{total}} players in all.", { total: teamN * perN })}
-            {overCap && <> {buying ? t.t("Raise Players to {{total}}, or make fewer teams.", { total: teamN * perN }) : t.t("Make fewer or smaller teams.")}</>}
+              : t.t("{{teams}} teams cost {{cost}} as they start.", { teams: teamN, cost: fmtMoney(price.cost(teamN, perN), price.currency, loc) })}
+            {overCap && <> {t.t("Make fewer or smaller teams.")}</>}
           </p>
-        )}
-        {overCap && buying && (
-          <Button variant="ghost" size="sm" onClick={() => setPlayers(String(teamN * perN))}>{t.t("Raise Players to {{total}}", { total: teamN * perN })}</Button>
         )}
       </details>
 

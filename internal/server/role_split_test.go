@@ -133,8 +133,6 @@ func TestPlatformAdmin(t *testing.T) {
 			{"POST", "/api/admin/events/" + itoa(ev.ID) + "/start"},
 			{"POST", "/api/admin/events/" + itoa(ev.ID) + "/teams"},
 			{"GET", "/api/admin/assignments"},
-			// Admins aren't org-scoped, so a buy would have no target.
-			{"POST", "/api/admin/purchases"},
 			{"GET", "/api/admin/webhooks"},
 			{"GET", "/ws/arrange"},
 		} {

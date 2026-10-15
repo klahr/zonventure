@@ -21,14 +21,12 @@ export function Game({ event }: { event: HostedEvent }) {
       hour: "2-digit",
       minute: "2-digit",
     });
-  const block = event.price.teams_per_block;
-  // A free event (fewer teams than a block) buys its first block.
-  const first = event.teams_limit < block;
-  const canAdd =
-    !over && (first ? block : event.teams_limit + block) <= event.max_teams;
-  const addTeams = () =>
+  // A game with no team limit charges each team as it joins.
+  const canAdd = (n: number) =>
+    !over && event.teams_limit > 0 && event.teams_limit + n <= event.max_teams;
+  const addTeams = (n: number) =>
     run(async () => {
-      const r = await api.addBlocks(1);
+      const r = await api.addTeams(n);
       // Paid in a tab of its own: this page keeps its link, and shows the
       // new limit once the payment lands.
       if (!r.checkout_url) return;
@@ -47,10 +45,12 @@ export function Game({ event }: { event: HostedEvent }) {
               {t("Game {{n}} is being played", { n: event.round })}
             </strong>{" "}
             <span className="hosted-muted">
-              {t("{{n}} of {{max}} teams", {
-                n: event.teams.length,
-                max: event.teams_limit,
-              })}
+              {event.teams_limit > 0
+                ? t("{{n}} of {{max}} teams", {
+                    n: event.teams.length,
+                    max: event.teams_limit,
+                  })
+                : t("{{n}} teams", { n: event.teams.length })}
             </span>
             {event.state === "paused" && (
               <span className="hosted-pill hosted-pill--paused">
@@ -202,43 +202,35 @@ export function Game({ event }: { event: HostedEvent }) {
           {event.turned_away === 1
             ? t("1 team couldn't join: the game is full.")
             : t("{{n}} teams couldn't join: the game is full.", { n: event.turned_away ?? 0 })}{" "}
-          {canAdd && t("Add more teams below.")}
+          {canAdd(1) && t("Add more teams below.")}
         </p>
       )}
 
-      {canAdd && (
+      {canAdd(1) && (
         <p className="hosted-muted">
           {t("Up to {{n}} teams can play in one game, one phone per team and any number of players in each.", {
             n: event.teams_limit,
           })}{" "}
-          <button
-            type="button"
-            className="hosted-link-btn"
-            disabled={busy}
-            onClick={() => void addTeams()}
-          >
-            {event.price.block_cents > 0
-              ? first
-                ? t("Up to {{n}} teams for {{price}}", {
-                    n: block,
+          {[1, 5].filter(canAdd).map((n) => (
+            <button
+              key={n}
+              type="button"
+              className="hosted-link-btn"
+              disabled={busy}
+              onClick={() => void addTeams(n)}
+            >
+              {event.price.team_cents > 0
+                ? t(n === 1 ? "Add a team for {{price}}" : "Add {{n}} teams for {{price}}", {
+                    n,
                     price: money(
-                      event.price.block_cents,
+                      n * event.price.team_cents,
                       event.price.currency,
                       i18n.current(),
                     ),
                   })
-                : t("Add {{n}} teams for {{price}}", {
-                    n: block,
-                    price: money(
-                      event.price.block_cents,
-                      event.price.currency,
-                      i18n.current(),
-                    ),
-                  })
-              : t("Add {{n}} teams", {
-                  n: first ? block - event.teams_limit : block,
-                })}
-          </button>
+                : t(n === 1 ? "Add a team" : "Add {{n}} teams", { n })}
+            </button>
+          ))}
         </p>
       )}
 

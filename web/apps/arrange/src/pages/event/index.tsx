@@ -23,7 +23,7 @@ import { HostedCards } from "./Hosted.tsx";
 import { StatisticsCard } from "./Statistics.tsx";
 import { ResultsRecordCard } from "./ResultsRecord.tsx";
 import { VoucherCodesCard } from "./Vouchers.tsx";
-import { isLive, isQuest, isTerminal, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
+import { isQuest, isTerminal, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
 import "./event.css";
 
 type Open = null | { kind: "rename" } | { kind: "new-team" } | { kind: "team"; id: number } | { kind: "edit-team"; id: number };
@@ -157,7 +157,7 @@ export function EventPage({ id }: { id: number }) {
               <span>{when}</span>
             </span>
           }
-          actions={<LifecycleActions event={event} teams={teams} adventure={adv} user={user} reload={reload} />}
+          actions={<LifecycleActions event={event} teams={teams} reload={reload} />}
         />
       </div>
 
@@ -203,7 +203,7 @@ export function EventPage({ id }: { id: number }) {
       </div>
 
       {open?.kind === "rename" && <RenameDialog event={event} onClose={() => setOpen(null)} onDone={reload} />}
-      {open?.kind === "new-team" && <NewTeamsDialog eventId={event.id} teams={teams} seatsLeft={event.max_players > 0 ? Math.max(0, event.max_players - (event.player_slots_count || 0)) : null} lang={adv?.language} topUp={event.assignment_id && !isQuest(event) && (event.state === "scheduled" || isLive(event)) ? { event, adventure: adv, user } : null} onClose={() => setOpen(null)} onDone={reload} />}
+      {open?.kind === "new-team" && <NewTeamsDialog eventId={event.id} teams={teams} seatsLeft={event.max_players > 0 ? Math.max(0, event.max_players - (event.player_slots_count || 0)) : null} lang={adv?.language} onClose={() => setOpen(null)} onDone={reload} />}
       {open?.kind === "team" && openTeam && (
         <TeamDetailDialog
           event={event}

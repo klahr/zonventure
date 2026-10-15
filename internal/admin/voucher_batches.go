@@ -43,7 +43,9 @@ type voucherBatchDTO struct {
 // whether the organisation may make codes, what a used code costs, and
 // the event's batches.
 type voucherOfferDTO struct {
-	// Allowed is invoice billing: only those organisations pay later.
+	// Allowed: any organisation makes codes. PriceCents is what a used
+	// code costs it, a team of the default size, charged as its first
+	// phone joins (internal/billing).
 	Allowed         bool              `json:"allowed"`
 	PriceCents      int64             `json:"price_cents"`
 	Currency        string            `json:"currency"`
@@ -88,12 +90,12 @@ func (h *Handlers) ListVoucherBatches(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) writeVoucherOffer(w http.ResponseWriter, r *http.Request, eventID, orgID int64, teamSize int) {
-	p := settings.CurrentPricing()
-	out := voucherOfferDTO{PriceCents: p.VoucherCents, Currency: settings.Currency, VATExcluded: p.VATExcluded, DefaultTeamSize: teamSize, Batches: []voucherBatchDTO{}}
-	if err := h.DB.QueryRowContext(r.Context(), `SELECT trusted <> 0 FROM organizations WHERE id = $1`, orgID).Scan(&out.Allowed); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
-		return
+	p := h.pricing()
+	price := p.TeamCents
+	if extra := int64(teamSize) - p.TeamPhones; extra > 0 {
+		price += extra * p.PhoneCents
 	}
+	out := voucherOfferDTO{Allowed: true, PriceCents: price, Currency: settings.Currency, VATExcluded: p.VATExcluded, DefaultTeamSize: teamSize, Batches: []voucherBatchDTO{}}
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT b.id, b.label, b.team_size, b.created_at, b.voided_at IS NOT NULL,
 		       (SELECT COUNT(*) FROM voucher_codes c WHERE c.batch_id = b.id),
@@ -129,15 +131,6 @@ func (h *Handlers) CreateVoucherBatch(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	if me.Role != auth.RoleOrgAdmin && !me.IsAdmin {
 		httpx.Error(w, http.StatusForbidden, "only an organisation's admins make voucher codes")
-		return
-	}
-	var trusted bool
-	if err := h.DB.QueryRowContext(r.Context(), `SELECT trusted <> 0 FROM organizations WHERE id = $1`, orgID).Scan(&trusted); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
-		return
-	}
-	if !trusted {
-		httpx.JSON(w, http.StatusForbidden, map[string]string{"error": "voucher codes you pay later need invoice billing", "reason": "not_invoice"})
 		return
 	}
 	var req struct {
@@ -328,10 +321,10 @@ func (h *Handlers) ActivateVoucherCode(ctx context.Context, code string) (teamUR
 		logx.Warn("admin.voucher.activate", "err", err.Error())
 		return "", false, false
 	}
-	p := settings.CurrentPricing()
+	// The team is paid for like any other, as its first phone joins.
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE voucher_codes SET team_id = $2, activated_at = now(), price_cents = $3, currency = $4 WHERE code = $1
-	`, code, teamID, p.VoucherCents, settings.Currency); err != nil {
+		UPDATE voucher_codes SET team_id = $2, activated_at = now() WHERE code = $1
+	`, code, teamID); err != nil {
 		logx.Warn("admin.voucher.activate", "err", err.Error())
 		return "", false, false
 	}
@@ -359,96 +352,3 @@ const voucherUnbilledSQL = `
 	SELECT b.org_id, o.name, COUNT(*), COALESCE(SUM(c.price_cents), 0), MIN(c.currency), MIN(c.activated_at)
 	FROM voucher_codes c JOIN voucher_batches b ON b.id = c.batch_id JOIN organizations o ON o.id = b.org_id
 	WHERE c.activated_at IS NOT NULL AND c.billed_at IS NULL AND c.price_cents > 0`
-
-// MyVoucherUse is the caller's organisation's used codes not yet
-// invoiced, for its Billing page.
-//
-// GET /api/admin/orgs/me/voucher-use
-func (h *Handlers) MyVoucherUse(w http.ResponseWriter, r *http.Request) {
-	me, _ := auth.FromContext(r.Context())
-	if me.OrgID == nil {
-		httpx.Error(w, http.StatusForbidden, "forbidden")
-		return
-	}
-	out := voucherUseDTO{OrgID: *me.OrgID, Currency: settings.Currency}
-	var since sql.NullTime
-	var cur sql.NullString
-	err := h.DB.QueryRowContext(r.Context(), voucherUnbilledSQL+` AND b.org_id = $1 GROUP BY b.org_id, o.name`, *me.OrgID).
-		Scan(&out.OrgID, &out.OrgName, &out.Codes, &out.AmountCents, &cur, &since)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
-		return
-	}
-	if cur.Valid {
-		out.Currency = cur.String
-	}
-	if since.Valid {
-		out.Since = &since.Time
-	}
-	httpx.JSON(w, http.StatusOK, out)
-}
-
-// VoucherBilling is every organisation's used codes not yet invoiced,
-// for the platform admin's monthly invoicing. Platform admins.
-//
-// GET /api/admin/voucher-billing
-func (h *Handlers) VoucherBilling(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.DB.QueryContext(r.Context(), voucherUnbilledSQL+` GROUP BY b.org_id, o.name ORDER BY o.name`)
-	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
-		return
-	}
-	defer rows.Close()
-	out := []voucherUseDTO{}
-	for rows.Next() {
-		var u voucherUseDTO
-		var since sql.NullTime
-		var cur sql.NullString
-		if err := rows.Scan(&u.OrgID, &u.OrgName, &u.Codes, &u.AmountCents, &cur, &since); err != nil {
-			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
-			return
-		}
-		u.Currency = cur.String
-		if since.Valid {
-			u.Since = &since.Time
-		}
-		out = append(out, u)
-	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"orgs": out})
-}
-
-// MarkVoucherBilled records the invoice that charged an organisation for
-// every code it had used up to now: {"invoice_number": "2026-117"}.
-// Platform admins.
-//
-// POST /api/admin/organizations/{orgID}/voucher-billing
-func (h *Handlers) MarkVoucherBilled(w http.ResponseWriter, r *http.Request) {
-	orgID, ok := orgIDFromURL(r)
-	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad organisation id")
-		return
-	}
-	var req struct {
-		InvoiceNumber string `json:"invoice_number"`
-	}
-	if !httpx.DecodeJSON(w, r, &req) {
-		return
-	}
-	req.InvoiceNumber = strings.TrimSpace(req.InvoiceNumber)
-	if req.InvoiceNumber == "" || len(req.InvoiceNumber) > 100 {
-		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "enter the invoice's number", "reason": "invalid_invoice"})
-		return
-	}
-	res, err := h.DB.ExecContext(r.Context(), `
-		UPDATE voucher_codes c SET billed_at = now(), invoice_number = $2
-		FROM voucher_batches b
-		WHERE b.id = c.batch_id AND b.org_id = $1 AND c.activated_at IS NOT NULL AND c.billed_at IS NULL AND c.price_cents > 0
-	`, orgID, req.InvoiceNumber)
-	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
-		return
-	}
-	n, _ := res.RowsAffected()
-	noteAction(r, fmt.Sprintf("%s: %d codes", req.InvoiceNumber, n))
-	httpx.JSON(w, http.StatusOK, map[string]int64{"billed": n})
-}

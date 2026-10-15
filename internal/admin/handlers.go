@@ -388,13 +388,13 @@ type eventDTO struct {
 
 // storeBlocked is why the store keeps an approved listing out
 // (public/store.go storeItemRowFilter): "no_payments" when this server
-// has no payment provider, "connect_required" when a platform fee is
-// set and the org's Stripe account can't take charges (connect false).
+// has no payment provider, "connect_required" in a marketplace when the
+// org's own Stripe account can't take charges (connect false).
 func (h *Handlers) storeBlocked(connect bool) string {
 	switch {
 	case !h.paymentsEnabled():
 		return "no_payments"
-	case h.platformFee().Enabled() && !connect:
+	case h.marketplace() && !connect:
 		return "connect_required"
 	}
 	return ""
@@ -421,24 +421,11 @@ type createEventRequest struct {
 	PublicForSale bool `json:"public_for_sale,omitempty"`
 }
 
-// CreateEvent schedules an event in one of two modes:
-//
-//  1. Assignment-backed: the caller holds an unused adventure_assignments
-//     row (from the per-event purchase flow). `assignment_id` picks it,
-//     and the assignment is consumed on creation. The same path covers
-//     legacy assignments minted before pay-at-schedule and the new
-//     "buy then schedule" path the schedule modal walks through for
-//     org-owned content.
-//  2. Share-backed: an admin has commissioned the adventure for the
-//     caller's org via adventure_shares. `adventure_slug` names it, and
-//     no assignment is consumed — runs are effectively unlimited.
-//
-// Org-owned content (self-authored or forked from the Catalog) does
-// NOT get a free fast-path here any more — the schedule modal mints
-// an assignment via /api/admin/purchases first, free or paid, and
-// then loops back to this endpoint with `assignment_id`. The
-// uniform per-player meter is the entire point: a forked adventure
-// runs through identical billing to a self-authored one.
+// CreateEvent schedules an event on an adventure the caller's org owns
+// or was shared (`adventure_slug`). Nothing is paid up front: every
+// team that plays it is charged as it starts (internal/billing). An
+// unused event pass from before pay per team (`assignment_id`) still
+// names its adventure and is consumed.
 func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	var req createEventRequest
 	if !httpx.DecodeJSON(w, r, &req) {
@@ -498,30 +485,19 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		assignmentArg = req.AssignmentID
 	} else if strings.TrimSpace(req.AdventureSlug) != "" {
 		slug = strings.TrimSpace(req.AdventureSlug)
-		// Slug-only path covers two cases:
-		//   1. Share-backed regular events — an admin has commissioned
-		//      this adventure for the caller's org, so per-event
-		//      billing is handled out-of-band via the bilateral deal.
-		//   2. Quests on org-owned adventures — per-ticket billing at
-		//      /store handles revenue, so the upfront-assignment step
-		//      doesn't apply: ownership of the adventure is enough.
-		// Regular events on org-owned content still bounce through
-		// the buy-an-assignment flow (so per-event billing is
-		// recorded before play); the 409 below tells the frontend
-		// to start that flow rather than retrying.
+		// The org must own the adventure, have it shared, or take it
+		// from the catalog.
 		var hasShare bool
 		if err := h.DB.QueryRowContext(r.Context(), `
 			SELECT EXISTS (
 			  SELECT 1 FROM adventure_shares s
 			  WHERE s.adventure_slug = $1 AND s.org_id = $2
-			)
+			) OR EXISTS (SELECT 1 FROM adventures a WHERE a.slug = $1 AND `+CatalogFilter()+`)
 		`, slug, *me.OrgID).Scan(&hasShare); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 			return
 		}
 		if !hasShare {
-			// Confirm the org can at least see the adventure; if so,
-			// branch on quest-vs-regular; otherwise, plain 403.
 			var advOrg sql.NullInt64
 			if err := h.DB.QueryRowContext(r.Context(),
 				`SELECT org_id FROM adventures WHERE slug = $1`, slug).Scan(&advOrg); err != nil {
@@ -532,16 +508,8 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 				httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 				return
 			}
-			ownsIt := advOrg.Valid && *me.OrgID == advOrg.Int64
-			if !ownsIt && advOrg.Valid {
+			if !advOrg.Valid || *me.OrgID != advOrg.Int64 {
 				httpx.Error(w, http.StatusForbidden, "no access to that adventure")
-				return
-			}
-			if !(ownsIt && req.PublicForSale) {
-				httpx.JSON(w, http.StatusConflict, map[string]string{
-					"error": "buy a player-slot assignment for this adventure first",
-					"code":  "assignment_required",
-				})
 				return
 			}
 		}
@@ -1516,7 +1484,7 @@ type bulkTeamResultDTO struct {
 type passFullError struct{ room, need int }
 
 func (e *passFullError) Error() string {
-	return fmt.Sprintf("the event pass has room for %d more players, and this team has %d; add players to the event pass to continue", e.room, e.need)
+	return fmt.Sprintf("the event pass has room for %d more players, and this team has %d", e.room, e.need)
 }
 
 // BulkCreateTeams ingests a roster — multiple teams with their member

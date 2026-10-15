@@ -411,55 +411,6 @@ func stubStripeAPI(t *testing.T, sessionsByPI map[string]string) func() url.Valu
 	}
 }
 
-// Automatic tax is opt-in, prices go to Stripe tax-inclusive, and a
-// repeat buyer's customer may be updated with the collected address and
-// name (Stripe refuses tax id collection / automatic tax otherwise).
-func TestCreatePurchase_StripeCheckoutTaxParams(t *testing.T) {
-	cfg := server.Config{
-		StripeSecretKey:     testStripeSecretKey,
-		StripeWebhookSecret: testStripeWebhookKey,
-		Env:                 "dev",
-		PublicURL:           "https://zv.example",
-	}
-	ts, db, orgID, cleanup := seedPurchaseStack(t, cfg)
-	defer cleanup()
-	lastCreate := stubStripeAPI(t, nil)
-	if _, err := db.Exec(`UPDATE organizations SET stripe_customer_id = 'cus_1' WHERE id = $1`, orgID); err != nil {
-		t.Fatalf("seed customer: %v", err)
-	}
-	c := newClient(t, ts)
-	if s := c.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
-		t.Fatalf("login = %d", s)
-	}
-	buy := func() url.Values {
-		t.Helper()
-		if s := c.do("POST", "/api/admin/purchases", map[string]any{"adventure_slug": "demo", "max_players": 20}, nil); s != 201 {
-			t.Fatalf("create purchase = %d", s)
-		}
-		return lastCreate()
-	}
-
-	form := buy()
-	if form.Get("automatic_tax[enabled]") != "" {
-		t.Fatalf("automatic tax sent without ZV_STRIPE_AUTOMATIC_TAX: %v", form)
-	}
-	if form.Get("customer") != "cus_1" || form.Get("customer_update[name]") != "auto" || form.Get("customer_update[address]") != "auto" {
-		t.Fatalf("customer/customer_update = %v", form)
-	}
-
-	t.Setenv("ZV_STRIPE_AUTOMATIC_TAX", "1")
-	form = buy()
-	if form.Get("automatic_tax[enabled]") != "true" {
-		t.Fatalf("automatic_tax[enabled] = %q, want true", form.Get("automatic_tax[enabled]"))
-	}
-	if got := form.Get("line_items[0][price_data][tax_behavior]"); got != "inclusive" {
-		t.Fatalf("tax_behavior = %q, want inclusive", got)
-	}
-	if got := form.Get("line_items[0][price_data][unit_amount]"); got != "24500" {
-		t.Fatalf("unit_amount = %q, want 24500", got)
-	}
-}
-
 // A session with no invoice records the charge's Stripe receipt as the
 // purchase's receipt link.
 func TestStripeWebhook_ReceiptWithoutInvoice(t *testing.T) {

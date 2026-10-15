@@ -46,6 +46,8 @@ import (
 type session struct {
 	params  payments.CheckoutParams
 	created time.Time
+	// setup: a card saved for monthly billing, not a payment.
+	setup bool
 }
 
 // Provider implements payments.Provider with a fake processor. Self-
@@ -221,11 +223,11 @@ button.pay{background:linear-gradient(135deg,#ad1357,#e24080);color:#fff;border:
 </style></head><body>
 <div class="banner">⚠️ This is a SIMULATED payment provider. No real money moves. Do not deploy in production.</div>
 <h1>` + html.EscapeString(s.params.ProductName) + `</h1>
-<div class="row"><span>Amount</span><strong>` + formatPrice(s.params.AmountCents, s.params.Currency) + `</strong></div>
+` + amountRow(s) + `
 <div class="row"><span>Buyer</span><span>` + html.EscapeString(s.params.CustomerEmail) + `</span></div>
 <div class="row"><span>Session id</span><code>` + html.EscapeString(sid) + `</code></div>
 <div style="margin-top:1.5rem">
-  <form action="/dev/payments/checkout/` + html.EscapeString(sid) + `/confirm" method="post"><button class="pay" type="submit">Pay (simulate)</button></form>
+  <form action="/dev/payments/checkout/` + html.EscapeString(sid) + `/confirm" method="post"><button class="pay" type="submit">` + payLabel(s) + `</button></form>
   <form action="/dev/payments/checkout/` + html.EscapeString(sid) + `/cancel" method="post"><button type="submit">Cancel</button></form>
 </div>
 </body></html>`
@@ -249,6 +251,20 @@ func (p *Provider) devConfirm(w http.ResponseWriter, r *http.Request) {
 	p.mu.Unlock()
 	if !ok {
 		http.NotFound(w, r)
+		return
+	}
+	if s.setup {
+		ev := payments.Event{
+			Provider: "simulated", Type: payments.EventCardSaved, ID: "sim_evt_" + newSessionID(), Created: time.Now(),
+			Metadata: s.params.Metadata,
+			Card: &payments.SavedCard{CustomerID: s.params.CustomerID, PaymentMethodID: "sim_pm_" + newSessionID(),
+				Label: "Visa •••• 4242"},
+		}
+		if err := p.deliver(r.Context(), ev); err != nil {
+			http.Error(w, "simulated webhook delivery failed: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		http.Redirect(w, r, s.params.SuccessURL, http.StatusSeeOther)
 		return
 	}
 	// Synthesise a charge id alongside the session id so the
@@ -368,4 +384,45 @@ func formatPrice(cents int64, currency string) string {
 	default:
 		return amount + " " + strings.ToUpper(c)
 	}
+}
+
+var _ payments.CardBiller = (*Provider)(nil)
+
+// CreateCardSetup is CreateCheckout for saving a card: its dev page
+// "saves" a test card and delivers the card.saved event.
+func (p *Provider) CreateCardSetup(ctx context.Context, params payments.CardSetupParams) (payments.CheckoutSession, error) {
+	if params.SuccessURL == "" || params.CancelURL == "" {
+		return payments.CheckoutSession{}, errors.New("simulated: missing success/cancel URL")
+	}
+	cust := params.CustomerID
+	if cust == "" {
+		cust = "sim_cus_" + newSessionID()
+	}
+	id := newSessionID()
+	p.mu.Lock()
+	p.sessions[id] = &session{setup: true, created: time.Now(), params: payments.CheckoutParams{
+		ProductName: "Save a card for monthly billing", Currency: params.Currency, CustomerEmail: params.Email,
+		CustomerID: cust, SuccessURL: params.SuccessURL, CancelURL: params.CancelURL, Metadata: params.Metadata,
+	}}
+	p.mu.Unlock()
+	return payments.CheckoutSession{URL: "/dev/payments/checkout/" + id, SessionID: id, CustomerID: cust}, nil
+}
+
+// ChargeCard always succeeds: no money moves.
+func (p *Provider) ChargeCard(ctx context.Context, params payments.CardChargeParams) (payments.CardCharge, error) {
+	return payments.CardCharge{ID: "sim_pi_" + newSessionID(), Succeeded: true}, nil
+}
+
+func amountRow(s *session) string {
+	if s.setup {
+		return `<div class="row"><span>Card</span><strong>Visa •••• 4242 (test)</strong></div>`
+	}
+	return `<div class="row"><span>Amount</span><strong>` + formatPrice(s.params.AmountCents, s.params.Currency) + `</strong></div>`
+}
+
+func payLabel(s *session) string {
+	if s.setup {
+		return "Save card (simulate)"
+	}
+	return "Pay (simulate)"
 }

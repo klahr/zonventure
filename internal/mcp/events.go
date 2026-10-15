@@ -1,13 +1,11 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/klahr/zonventure/internal/admin"
@@ -57,15 +55,14 @@ func (s *Server) registerEventTools() {
 		Scope: scopeWrite,
 		Description: "Create an event for an adventure, which must be published first (publish_adventure_graph). Two kinds: " +
 			"a self-guided adventure (public_for_sale: true, adventure_slug of one of the organisation's own adventures) is sold in the store and played whenever buyers like — set its price with update_event, then start_event to open it, empty of teams; " +
-			"a scheduled event (public_for_sale false) for invited teams needs an event pass: an unused assignment_id from list_purchases (on a shared adventure, adventure_slug instead). Without a pass the reply links to where the user buys one. " +
+			"a scheduled event (public_for_sale false) for invited teams, on one of the organisation's own or shared adventures. Nothing is paid up front: each team is charged to the organisation as it starts, so its balance (the console's Billing page) must cover the teams. " +
 			"attest_no_minors must be true: no players under 13, or with parental consent. public_for_sale cannot change later. Returns the event with its id.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"attest_no_minors"},
 			"properties": map[string]any{
 				"name":             map[string]any{"type": "string", "description": "Optional event name shown in the dashboard and webhooks."},
-				"assignment_id":    map[string]any{"type": "integer", "description": "Unused adventure_assignments row to consume. Mutually exclusive with adventure_slug."},
-				"adventure_slug":   map[string]any{"type": "string", "description": "Adventure slug: for a self-guided adventure (public_for_sale), one of the organisation's own; for a scheduled event, only a shared adventure, which needs no pass. Mutually exclusive with assignment_id."},
+				"adventure_slug":   map[string]any{"type": "string", "description": "Adventure slug: one of the organisation's own adventures, or one shared with it."},
 				"scheduled_at":     map[string]any{"type": "string", "description": "Optional ISO 8601 start time. Empty leaves it unscheduled (ad-hoc start)."},
 				"attest_no_minors": map[string]any{"type": "boolean", "description": "Must be true. Confirms no under-13 players (or that you have parental consent)."},
 				"public_for_sale":  map[string]any{"type": "boolean", "description": "When true, creates a Quest: listed at /store, ticket-purchased, always-on. Default false (regular event). Immutable after creation."},
@@ -325,7 +322,6 @@ func redactEventCapabilityTokens(body []byte) []byte {
 // shape.
 type createEventArgs struct {
 	Name           string `json:"name"`
-	AssignmentID   int64  `json:"assignment_id"`
 	AdventureSlug  string `json:"adventure_slug"`
 	ScheduledAt    string `json:"scheduled_at"`
 	AttestNoMinors bool   `json:"attest_no_minors"`
@@ -345,7 +341,6 @@ func createEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallR
 	}
 	body := map[string]any{
 		"name":             a.Name,
-		"assignment_id":    a.AssignmentID,
 		"adventure_slug":   a.AdventureSlug,
 		"scheduled_at":     a.ScheduledAt,
 		"attest_no_minors": a.AttestNoMinors,
@@ -355,13 +350,6 @@ func createEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallR
 		"POST", "/api/admin/events", nil, nil, body)
 	if err != nil {
 		return errorResult("call: " + err.Error()), nil
-	}
-	if bytes.Contains(respBody, []byte(`"assignment_required"`)) {
-		msg := "A scheduled event on this adventure needs an event pass, bought on the website"
-		if base := strings.TrimRight(s.Admin.PublicURL, "/"); base != "" && a.AdventureSlug != "" {
-			msg += ": " + base + "/app/arrange/#/adventures/" + a.AdventureSlug + " (Schedule event)"
-		}
-		return errorResult(msg + ". Where payments are simulated, create_purchase and confirm_purchase get one here instead. Then list_purchases shows its assignment_id; call create_event with it. A self-guided adventure (public_for_sale: true) needs no pass."), nil
 	}
 	return adminCallResult(status, respBody), nil
 }

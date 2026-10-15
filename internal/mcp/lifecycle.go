@@ -75,7 +75,7 @@ The MCP surface has no streaming. To watch a live event, poll:
 | Events           | list_events · get_event · create_event · update_event · start_event · pause_event · resume_event · end_event · cancel_event |
 | Teams + players  | create_team · bulk_create_teams · update_team · delete_team · give_free_ticket · withdraw_team · unwithdraw_team · unlock_team · let_team_start_anywhere · add_slot · remove_slot · rotate_slot_token |
 | Watching         | get_event_state_summary · list_activity · list_positions · list_tracks · send_event_message · list_event_messages · delete_event_message |
-| Event passes     | list_purchases · get_purchase · create_purchase (simulated only) · confirm_purchase · grant_slots_to_event (admin) |
+| Event passes     | list_purchases · get_purchase (passes bought before teams were paid for as they start) |
 | Invitations      | send_event_invitations · send_team_invitation · get_event_invite_ics |
 | Printed letters  | set_print_delivery · list_orders · mark_order_posted · update_event_version |
 | Results          | export_event_results_csv · describe_event_lifecycle (this tool) |
@@ -84,10 +84,8 @@ The MCP surface has no streaming. To watch a live event, poll:
 ## Security boundaries
 
 - ` + "`end_event`" + `, ` + "`cancel_event`" + ` and ` + "`delete_team`" + ` need ` + "`confirm: true`" + `: ask the user before passing it. Never ask for their password.
-- ` + "`grant_slots_to_event`" + ` is admin-only and refused at the MCP layer when the token's user isn't a global admin.
-- A global admin's token reaches only the operator tools (` + "`grant_slots_to_event`" + `, the purchase reads, listing review, this reference): authoring and running events belong to org users.
+- A global admin's token reaches only the operator tools (the purchase reads, listing review, this reference): authoring and running events belong to org users.
 - ` + "`submit_listing_for_review`" + ` needs ` + "`attest: true`" + `, the user's own confirmation that the content follows the terms: ask them first. Decisions made through ` + "`approve_listing`" + ` / ` + "`reject_listing`" + ` are logged as an assistant's, for the console's spot-checks.
-- ` + "`create_purchase`" + ` is hard-coded to provider="simulated" and refuses on Stripe-enabled deployments — real-money buys go through the web checkout.
 
 ## Self-guided adventures vs scheduled events
 

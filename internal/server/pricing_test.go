@@ -24,32 +24,49 @@ func TestPricing(t *testing.T) {
 	root := newClient(t, ts)
 	login(t, root, "root", "rootpw")
 	var got struct {
-		PlayerCents int64  `json:"player_cents"`
-		FreePlayers int64  `json:"free_players"`
-		Currency    string `json:"currency"`
+		TeamCents  int64  `json:"team_cents"`
+		TeamPhones int64  `json:"team_phones"`
+		PhoneCents int64  `json:"phone_cents"`
+		Currency   string `json:"currency"`
+		TopUps     []struct {
+			AmountCents int64 `json:"amount_cents"`
+			BonusCents  int64 `json:"bonus_cents"`
+		} `json:"top_ups"`
 	}
-	if s := root.do("GET", "/api/admin/pricing", nil, &got); s != 200 || got.PlayerCents != 4900 || got.FreePlayers != 15 || got.Currency != "sek" {
+	if s := root.do("GET", "/api/admin/pricing", nil, &got); s != 200 || got.TeamCents != 4900 || got.TeamPhones != 3 || got.PhoneCents != 1500 || got.Currency != "sek" || len(got.TopUps) != 4 {
 		t.Fatalf("defaults = %d %+v", s, got)
 	}
-	if s := root.do("PUT", "/api/admin/pricing", map[string]any{"player_cents": -1}, nil); s != 400 {
-		t.Fatalf("negative price = %d, want 400", s)
+	valid := func() map[string]any {
+		return map[string]any{"team_cents": 3900, "team_phones": 4, "phone_cents": 1000, "party_free_teams": 5, "party_games": 3,
+			"overdraft_cents": 20000, "credit_new_cents": 50000, "credit_grown_cents": 500000, "credit_grown_after": 3,
+			"top_ups": []map[string]any{{"amount_cents": 50000, "bonus_cents": 0}}}
 	}
-	if s := root.do("PUT", "/api/admin/pricing", map[string]any{"fee_percent_bps": 10001}, nil); s != 400 {
-		t.Fatalf("fee over 100 %% = %d, want 400", s)
+	for name, spoil := range map[string]func(map[string]any){
+		"a negative price":   func(m map[string]any) { m["team_cents"] = -1 },
+		"no phone in a team": func(m map[string]any) { m["team_phones"] = 0 },
+		"no top-ups":         func(m map[string]any) { m["top_ups"] = []any{} },
+		"a top-up twice": func(m map[string]any) {
+			m["top_ups"] = []map[string]any{{"amount_cents": 50000}, {"amount_cents": 50000}}
+		},
+	} {
+		m := valid()
+		spoil(m)
+		if s := root.do("PUT", "/api/admin/pricing", m, nil); s != 400 {
+			t.Errorf("%s = %d, want 400", name, s)
+		}
 	}
-	set := map[string]any{"player_cents": 3900, "free_players": 10, "hosted_block_cents": 9900, "fee_percent_bps": 500}
-	if s := root.do("PUT", "/api/admin/pricing", set, nil); s != 200 {
+	if s := root.do("PUT", "/api/admin/pricing", valid(), nil); s != 200 {
 		t.Fatalf("save = %d", s)
 	}
 
 	var who struct {
 		Pricing struct {
-			PlayerCents int    `json:"player_cents"`
-			Free        int    `json:"free_players_per_event"`
-			Currency    string `json:"currency"`
+			TeamCents  int64  `json:"team_cents"`
+			TeamPhones int64  `json:"team_phones"`
+			Currency   string `json:"currency"`
 		} `json:"pricing"`
 	}
-	if s := boss.do("GET", "/api/auth/whoami", nil, &who); s != 200 || who.Pricing.PlayerCents != 3900 || who.Pricing.Free != 10 || who.Pricing.Currency != "SEK" {
+	if s := boss.do("GET", "/api/auth/whoami", nil, &who); s != 200 || who.Pricing.TeamCents != 3900 || who.Pricing.TeamPhones != 4 || who.Pricing.Currency != "SEK" {
 		t.Fatalf("whoami after save = %d %+v", s, who.Pricing)
 	}
 }

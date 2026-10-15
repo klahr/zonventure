@@ -4,7 +4,6 @@ import { get, post } from "@zonventure/api";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { Button, Callout, Card, ErrorBox, HelpPopover, ICON, Loading, Pill, Row, fmtDateTime, relTime, useLoad, useToast } from "../../ui/index.ts";
-import { DEFAULT_PAYOUT_TERMS } from "./Pricing.tsx";
 
 /** connectStatusDTO, internal/admin/stripe_connect.go. */
 interface ConnectStatus {
@@ -12,9 +11,8 @@ interface ConnectStatus {
   charges_enabled: boolean;
   payouts_enabled: boolean;
   synced_at?: string;
+  /** Orgs sell into Stripe accounts of their own on this server. */
   platform_fee_enabled: boolean;
-  /** When the platform pays out ticket sales without a platform fee; empty is the built-in terms. */
-  payout_terms?: string;
 }
 
 // Stripe's onboarding sends the browser back with ?stripe_connect=return
@@ -27,8 +25,10 @@ function takeReturnFlag(): string | null {
 }
 
 /**
- * Stripe Connect for the org's store: connect an account, resume an
- * unfinished onboarding, and see whether charges and payouts flow.
+ * The org's own Stripe account, for its store sales: connect one, resume
+ * an unfinished setup, and see whether it takes payments. Buyers pay the
+ * org; the platform's price for each team comes out of the sale, and
+ * Stripe's card fee is the org's.
  */
 export function BillingTab() {
   const t = useT();
@@ -73,7 +73,6 @@ export function BillingTab() {
     }
   };
 
-  // Login links are single-use and short-lived, so mint one per click.
   // The tab is opened before the request so popup blockers allow it.
   const openDashboard = async () => {
     setOpening(true);
@@ -93,12 +92,12 @@ export function BillingTab() {
 
   const about = (
     <HelpPopover
-      label={t.t("About Stripe Connect")}
-      body={t.t("Stripe Connect pays out your org's ticket sales. Buyers pay the platform, which keeps a per-charge fee and transfers the rest to your Stripe account; Stripe then pays it out to your bank.")}
+      label={t.t("About your Stripe account")}
+      body={t.t("Buyers in your store pay your own Stripe account: you are the seller, and you see payments, refunds and payouts in your Stripe dashboard. The platform's price for each team comes out of the sale; Stripe's card fee is yours, as in any shop.")}
     />
   );
   const card = (subtitle: ReactNode, body: ReactNode, badge?: ReactNode) => (
-    <Card title={<>{t.t("Stripe Connect")} {badge}</>} subtitle={subtitle} actions={about}>{body}</Card>
+    <Card title={<>{t.t("Selling in your store")} {badge}</>} subtitle={subtitle} actions={about}>{body}</Card>
   );
   if (!orgID) return <ErrorBox message={t.t("Org admin only.")} />;
   if (load.error && !load.data) return card(null, <ErrorBox message={load.error || t.t("Failed to load Connect status")} retry={load.reload} retryLabel={t.t("Retry")} />);
@@ -118,15 +117,14 @@ export function BillingTab() {
   if (!s.platform_fee_enabled) {
     // Nothing to connect here, so neither the Connect title nor its popover applies.
     return (
-      <Card title={t.t("Ticket payouts")}>
-        <p style={muted}>{t.t("Ticket sales in your store are paid to the platform's own Stripe account on this server, so you have no Stripe account to connect here.")}</p>
-        <p style={muted}><strong>{t.t("Payout terms")}:</strong> {s.payout_terms || t.t(DEFAULT_PAYOUT_TERMS)}</p>
+      <Card title={t.t("Selling in your store")}>
+        <p style={muted}>{t.t("Ticket sales in your store are paid to this server's own Stripe account, so you have no Stripe account to connect here.")}</p>
       </Card>
     );
   }
   if (!s.account_id) {
     return card(
-      t.t("Connect a Stripe account to start selling tickets to your self-guided adventures in your store. Stripe-hosted verification takes a few minutes; afterwards you follow your balance and payouts in the Stripe dashboard."),
+      t.t("Connect a Stripe account of your own to sell tickets and parties in your store. Setting it up at Stripe takes a few minutes; afterwards you follow payments and payouts in your Stripe dashboard."),
       <Row>
         <Button variant="primary" icon={<Compass size={ICON.md} aria-hidden />} loading={starting} onClick={() => void start()}>{t.t("Connect Stripe")}</Button>
       </Row>,
@@ -149,7 +147,7 @@ export function BillingTab() {
     account(s.account_id),
     <>
       {s.payouts_enabled ? (
-        <p style={muted}>{t.t("Payouts enabled — your balance is paid out to your bank once a month, on the 1st.")}</p>
+        <p style={muted}>{t.t("Payouts enabled — Stripe pays your sales out to your bank on the schedule set in your Stripe dashboard.")}</p>
       ) : (
         <Callout variant="warning">{t.t("Charges accepted but payouts are paused — usually means a missing bank account. Visit your Stripe dashboard to fix.")}</Callout>
       )}

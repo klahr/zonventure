@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graphstore"
@@ -235,24 +234,26 @@ func TestPublicTrail_PayHostKeep(t *testing.T) {
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
 	f.publicTrailRoutes()
-	f.h.Pricing = func() settings.Pricing { return settings.Pricing{HostedBlockCents: 14900} }
+	f.h.Pricing = func() settings.Pricing {
+		return settings.Pricing{TeamCents: 4900, TeamPhones: 3, PartyFreeTeams: 5, PartyGames: 3}
+	}
 	d := f.newDraft(t, "kids")
 	path := draftPath(d)
 
-	if w := callH(t, f.public, "POST", path+"/checkout", map[string]any{"email": "anna@example.com", "blocks": 1}, secretOf(d)); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "consent") {
+	if w := callH(t, f.public, "POST", path+"/checkout", map[string]any{"email": "anna@example.com", "teams": 7}, secretOf(d)); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "consent") {
 		t.Errorf("kids' trail without consent: %d %s", w.Code, w.Body)
 	}
-	if w := callH(t, f.public, "POST", path+"/checkout", map[string]any{"email": "nope", "blocks": 1, "consent": true}, secretOf(d)); w.Code != http.StatusBadRequest {
+	if w := callH(t, f.public, "POST", path+"/checkout", map[string]any{"email": "nope", "teams": 7, "consent": true}, secretOf(d)); w.Code != http.StatusBadRequest {
 		t.Errorf("bad email: %d", w.Code)
 	}
-	w := callH(t, f.public, "POST", path+"/checkout", map[string]any{"email": "Anna@Example.com", "blocks": 2, "consent": true}, secretOf(d))
+	w := callH(t, f.public, "POST", path+"/checkout", map[string]any{"email": "Anna@Example.com", "teams": 11, "consent": true}, secretOf(d))
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "checkout_url") {
 		t.Fatalf("checkout: %d %s", w.Code, w.Body)
 	}
 	var amount int64
 	_ = f.h.DB.QueryRow(`SELECT amount_cents FROM ticket_purchases WHERE kind = 'hosted'`).Scan(&amount)
-	if amount != 29800 {
-		t.Errorf("amount = %d", amount)
+	if amount != 6*4900 {
+		t.Errorf("amount = %d, want the 6 teams past the free 5", amount)
 	}
 	f.pay(t, "hosted")
 	mail := f.lastMail(t)
@@ -285,7 +286,7 @@ func TestPublicTrail_PayHostKeep(t *testing.T) {
 	if v.State != "paid" || v.Email != "anna@…" || !v.Published {
 		t.Errorf("paid trail: %+v", v)
 	}
-	if w := callH(t, f.public, "POST", path+"/checkout", map[string]any{"email": "anna@example.com", "blocks": 1, "consent": true}, secretOf(d)); w.Code != http.StatusConflict {
+	if w := callH(t, f.public, "POST", path+"/checkout", map[string]any{"email": "anna@example.com", "teams": 7, "consent": true}, secretOf(d)); w.Code != http.StatusConflict {
 		t.Errorf("paying twice: %d", w.Code)
 	}
 
@@ -426,11 +427,11 @@ func TestPublicTrail_Sweep(t *testing.T) {
 
 	// Free hosting: paid at once.
 	playing := f.newDraft(t, "kids")
-	if w := callH(t, f.public, "POST", draftPath(playing)+"/checkout", map[string]any{"email": "c@example.com", "blocks": 1, "consent": true}, secretOf(playing)); w.Code != http.StatusCreated {
+	if w := callH(t, f.public, "POST", draftPath(playing)+"/checkout", map[string]any{"email": "c@example.com", "teams": 7, "consent": true}, secretOf(playing)); w.Code != http.StatusCreated {
 		t.Fatalf("free checkout: %d %s", w.Code, w.Body)
 	}
 	ended := f.newDraft(t, "kids")
-	if w := callH(t, f.public, "POST", draftPath(ended)+"/checkout", map[string]any{"email": "e@example.com", "blocks": 1, "consent": true}, secretOf(ended)); w.Code != http.StatusCreated {
+	if w := callH(t, f.public, "POST", draftPath(ended)+"/checkout", map[string]any{"email": "e@example.com", "teams": 7, "consent": true}, secretOf(ended)); w.Code != http.StatusCreated {
 		t.Fatalf("free checkout: %d %s", w.Code, w.Body)
 	}
 	_, _ = f.h.DB.Exec(`UPDATE events SET state = 'running', first_game_at = now() - interval '8 days', valid_until = now() + interval '6 days'
@@ -462,8 +463,8 @@ func TestPublicTrail_Sweep(t *testing.T) {
 	}
 }
 
-// TestPublicTrail_Free: with no blocks a draft is hosted at once, free,
-// for FreeTeams teams a game. The admin link is mailed (no receipt
+// TestPublicTrail_Free: with no more than the free teams a draft is
+// hosted at once, free, for those teams a game. The admin link is mailed (no receipt
 // promised); nothing paid vouches for the email, so the address is
 // confirmed only once the mailed link is opened; the answer opens the
 // admin page.
@@ -472,11 +473,13 @@ func TestPublicTrail_Free(t *testing.T) {
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
 	f.publicTrailRoutes()
-	f.h.Pricing = func() settings.Pricing { return settings.Pricing{HostedBlockCents: 14900} }
+	f.h.Pricing = func() settings.Pricing {
+		return settings.Pricing{TeamCents: 4900, TeamPhones: 3, PartyFreeTeams: 5, PartyGames: 3}
+	}
 	d := f.newDraft(t, "birthday")
 	mailed := len(f.mail.messages)
 
-	w := callH(t, f.public, "POST", draftPath(d)+"/checkout", map[string]any{"email": "someone@example.com", "blocks": 0, "consent": true}, secretOf(d))
+	w := callH(t, f.public, "POST", draftPath(d)+"/checkout", map[string]any{"email": "someone@example.com", "teams": 3, "consent": true}, secretOf(d))
 	if w.Code != http.StatusCreated {
 		t.Fatalf("free: %d %s", w.Code, w.Body)
 	}
@@ -488,8 +491,8 @@ func TestPublicTrail_Free(t *testing.T) {
 	if m == nil {
 		t.Fatalf("no admin page: %s", w.Body)
 	}
-	if got := f.teamsLimit(t, m[1]); got != admin.FreeTeams {
-		t.Errorf("teams limit = %d, want %d", got, admin.FreeTeams)
+	if got := f.teamsLimit(t, m[1]); got != 5 {
+		t.Errorf("teams limit = %d, want the 5 free", got)
 	}
 	if len(f.mail.messages) != mailed+1 {
 		t.Fatalf("mails: %d, want the admin link", len(f.mail.messages)-mailed)
@@ -524,15 +527,15 @@ func TestPublicTrail_Free(t *testing.T) {
 
 	// A top-up, even one never paid, still leaves the game's results
 	// going to the trail's address.
-	if w := call(t, f.public, "POST", "/api/party/"+m[1]+"/blocks", map[string]any{"blocks": 1}); w.Code != http.StatusOK {
+	if w := call(t, f.public, "POST", "/api/party/"+m[1]+"/teams", map[string]any{"teams": 1}); w.Code != http.StatusOK {
 		t.Fatalf("add teams: %d %s", w.Code, w.Body)
 	}
 	var buyer string
-	_ = f.h.DB.QueryRow(`SELECT buyer_email FROM ticket_purchases WHERE kind = 'hosted_blocks'`).Scan(&buyer)
+	_ = f.h.DB.QueryRow(`SELECT buyer_email FROM ticket_purchases WHERE kind = 'hosted_teams'`).Scan(&buyer)
 	if buyer != "someone@example.com" {
 		t.Errorf("top-up buyer = %q", buyer)
 	}
-	_, _ = f.h.DB.Exec(`UPDATE ticket_purchases SET buyer_email = '' WHERE kind = 'hosted_blocks'`)
+	_, _ = f.h.DB.Exec(`UPDATE ticket_purchases SET buyer_email = '' WHERE kind = 'hosted_teams'`)
 	if w := f.join(t, f.host(t, m[1]).playerToken(), "Ugglorna", 3); w.Code != http.StatusCreated {
 		t.Fatalf("join: %d %s", w.Code, w.Body)
 	}

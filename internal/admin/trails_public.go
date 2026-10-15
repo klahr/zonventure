@@ -21,6 +21,7 @@ import (
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/settings"
 	"github.com/klahr/zonventure/internal/tokenx"
 	"github.com/klahr/zonventure/internal/trail"
 )
@@ -94,7 +95,7 @@ func (h *Handlers) trailOrg(ctx context.Context, slug string) (id int64, name st
 }
 
 // trailPaymentsOpen is whether a trail can be paid for now.
-func (h *Handlers) trailPaymentsOpen() bool { return h.hosted().Free() || h.paymentsEnabled() }
+func (h *Handlers) trailPaymentsOpen() bool { return h.pricing().TeamCents <= 0 || h.paymentsEnabled() }
 
 // GetTrailStart is the start page of an org's quiz trails.
 //
@@ -524,15 +525,17 @@ func copyTrailLook(ctx context.Context, tx *sql.Tx, from, to int64) error {
 /* ---------------- checkout ---------------- */
 
 type trailCheckoutRequest struct {
-	Email   string `json:"email"`
-	Blocks  int    `json:"blocks"`
-	Consent bool   `json:"consent"`
+	Email string `json:"email"`
+	// Teams is how many teams a game holds; up to the free ones, nothing
+	// is paid.
+	Teams   int  `json:"teams"`
+	Consent bool `json:"consent"`
 }
 
-// CheckoutTrailDraft buys a draft its hosted event: the pass for Blocks
-// blocks of teams, charged on the platform's own account. With no blocks
-// (FreeTeams teams a game), or where hosting is free, the event is made
-// at once, and the answer holds its host link.
+// CheckoutTrailDraft buys a draft its hosted event: Teams teams a game
+// for PartyGames games, the first PartyFreeTeams free and each one after
+// at the team price, charged on the platform's own account. Free, the
+// event is made at once, and the answer holds its host link.
 //
 // POST /api/trail/drafts/{id}/checkout
 func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
@@ -553,10 +556,19 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "enter a valid email address")
 		return
 	}
-	if req.Blocks < 0 || req.Blocks > maxBlocks {
-		httpx.Error(w, http.StatusBadRequest, fmt.Sprintf("blocks must be 0–%d", maxBlocks))
+	if req.Teams == 0 {
+		req.Teams = int(h.pricing().PartyFreeTeams)
+	}
+	if req.Teams < 1 || req.Teams > maxPartyTeams {
+		httpx.Error(w, http.StatusBadRequest, fmt.Sprintf("a game holds 1–%d teams", maxPartyTeams))
 		return
 	}
+	// A party holds at least its free teams.
+	if free := int(h.pricing().PartyFreeTeams); req.Teams < free {
+		req.Teams = free
+	}
+	lim := hostedLimits{Teams: req.Teams, Games: int(h.pricing().PartyGames), Billing: "prepaid"}
+	amount := h.partyPrice(req.Teams)
 	ctx := r.Context()
 	t, err := loadTrail(ctx, h.DB, p.Slug, false)
 	if err != nil {
@@ -571,7 +583,7 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "confirm that you have the children's guardians' consent", "code": "consent"})
 		return
 	}
-	free := h.hosted().Free() || req.Blocks == 0
+	free := amount <= 0
 	if !free && !h.trailPaymentsOpen() {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "booking isn't open right now", "code": "payments_closed"})
 		return
@@ -589,14 +601,14 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		// this browser signed in with it, or once the mailed link is
 		// opened (sendTrailPaid). The answer opens the admin page.
 		session, _ := h.trailSession(ctx, r)
-		vouched := h.hosted().Free() || strings.EqualFold(session, email)
+		vouched := h.pricing().TeamCents <= 0 || strings.EqualFold(session, email)
 		tx, err := h.DB.BeginTx(ctx, nil)
 		if err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 			return
 		}
 		defer tx.Rollback() //nolint:errcheck
-		eventID, hostToken, err := createHostedEvent(ctx, tx, p.OrgID, p.Slug, t.dto.Title, 0, req.Blocks, "")
+		eventID, hostToken, err := createHostedEvent(ctx, tx, p.OrgID, p.Slug, t.dto.Title, 0, lim, "")
 		if err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 			return
@@ -629,17 +641,16 @@ func (h *Handlers) CheckoutTrailDraft(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 		return
 	}
-	amount := h.hosted().Price(req.Blocks)
 	var purchaseID int64
 	if err := h.DB.QueryRowContext(ctx, `
 		INSERT INTO ticket_purchases (kind, buyer_org_id, adventure_slug, party_name, buyer_email,
-		                              team_size, amount_cents, currency, blocks, host_token)
+		                              team_size, amount_cents, currency, teams, host_token)
 		VALUES ('hosted', $1, $2, $3, $4, 0, $5, $6, $7, $8) RETURNING id
-	`, p.OrgID, p.Slug, t.dto.Title, email, amount, h.hosted().Currency, req.Blocks, hostToken).Scan(&purchaseID); err != nil {
+	`, p.OrgID, p.Slug, t.dto.Title, email, amount, strings.ToUpper(settings.Currency), req.Teams, hostToken).Scan(&purchaseID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "checkout failed", err)
 		return
 	}
-	product := emailtpl.T(emailtpl.Lang(t.dto.Language), "%[1]s — party adventure, up to %[2]d teams per game", t.dto.Title, teamsLimit(req.Blocks))
+	product := emailtpl.T(emailtpl.Lang(t.dto.Language), "%[1]s — party adventure, up to %[2]d teams per game", t.dto.Title, req.Teams)
 	h.startHostedCheckout(w, r, purchaseID, product, amount, email, "/app/party/trail/paid",
 		strings.TrimRight(h.PublicURL, "/")+"/party/"+hostToken)
 }
@@ -684,12 +695,14 @@ func (h *Handlers) sendTrailPaid(ctx context.Context, eventID int64, to, hostTok
 		validUntil    time.Time
 		orgID         int64
 		lang, slug    string
-		blocks, round int
+		round         int
+		paid          bool
 	)
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT e.party_name, COALESCE(e.player_token, ''), e.valid_until, e.org_id, a.language, a.slug, COALESCE(e.hosted_blocks, 0), e.current_round
+		SELECT e.party_name, COALESCE(e.player_token, ''), e.valid_until, e.org_id, a.language, a.slug, e.current_round,
+		       EXISTS (SELECT 1 FROM ticket_purchases p WHERE p.event_id = e.id AND p.kind = 'hosted' AND p.amount_cents > 0 AND p.state = 'paid')
 		FROM events e JOIN adventures a ON a.slug = e.adventure_slug WHERE e.id = $1
-	`, eventID).Scan(&title, &player, &validUntil, &orgID, &lang, &slug, &blocks, &round); err != nil {
+	`, eventID).Scan(&title, &player, &validUntil, &orgID, &lang, &slug, &round, &paid); err != nil {
 		return err
 	}
 	hostURL := base + "/party/" + hostToken
@@ -708,7 +721,7 @@ func (h *Handlers) sendTrailPaid(ctx context.Context, eventID int64, to, hostTok
 	l := h.orgLook(ctx, orgID)
 	l.Lang = emailtpl.Lang(lang)
 	subject, c := emailtpl.TrailPaid(l.Lang, hostURL, base+"/j/"+player, title,
-		trailDate(l.Lang, validUntil), l.Brand.Name, round > 0, !again && blocks > 0 && !h.hosted().Free() && h.stripeReceipts())
+		trailDate(l.Lang, validUntil), l.Brand.Name, round > 0, !again && paid && h.stripeReceipts())
 	c.Picture = h.emailCover(ctx, l.Lang, slug)
 	if h.SellerIdentity != nil {
 		if seller := h.SellerIdentity(l.Lang); seller != "" {

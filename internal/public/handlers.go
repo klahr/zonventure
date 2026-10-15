@@ -11,7 +11,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/klahr/zonventure/internal/settings"
 	"math"
 	"net/http"
 	"sort"
@@ -20,7 +19,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/httpx"
-	"github.com/klahr/zonventure/internal/payments"
 	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/ws"
@@ -53,16 +51,12 @@ type Handlers struct {
 	// Payments is whether a payment provider is wired. Without one no
 	// ticket can be bought, so the store lists nothing.
 	Payments bool
+	// Marketplace reports whether organisations sell into Stripe
+	// accounts of their own (admin.Handlers.Marketplace): then only
+	// those whose account can take charges are listed.
+	Marketplace func() bool
 	// tracks caches each event's tracks for tracksTTL; see buildTracks.
 	tracks tracksCache
-}
-
-// platformFee gates the marketplace-aware /store filter: with a
-// platform fee set, only quests whose org has completed Stripe Connect
-// onboarding are listed (un-onboarded quests can't take a payment).
-// Zero = no marketplace = no extra filter.
-func (h *Handlers) platformFee() payments.PlatformFee {
-	return payments.FeeFrom(settings.CurrentPricing())
 }
 
 type memberDTO struct {

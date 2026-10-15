@@ -79,7 +79,7 @@ func TestTrail_Cover(t *testing.T) {
 		t.Errorf("cover after a change of theme = %d, want %d", cover, media)
 	}
 
-	if w := call(t, f.console, "POST", "/api/admin/adventures/"+slug+"/host", map[string]any{"blocks": 1}); w.Code != http.StatusCreated {
+	if w := call(t, f.console, "POST", "/api/admin/adventures/"+slug+"/host", map[string]any{}); w.Code != http.StatusCreated {
 		t.Fatalf("host it: %d %s", w.Code, w.Body)
 	}
 	host := regexp.MustCompile(`/party/([A-Za-z0-9_-]+)`).FindStringSubmatch(f.lastMail(t))[1]

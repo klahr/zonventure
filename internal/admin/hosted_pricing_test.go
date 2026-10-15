@@ -3,7 +3,6 @@ package admin_test
 import (
 	"context"
 	"encoding/json"
-	"github.com/klahr/zonventure/internal/settings"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/klahr/zonventure/internal/admin"
+	"github.com/klahr/zonventure/internal/settings"
 )
 
 // pay lands the checkout of the latest purchase of kind, as the webhook
@@ -39,120 +39,122 @@ func (f *partyFixture) teamsLimit(t *testing.T, token string) int {
 	return v.TeamsLimit
 }
 
-// TestHosted_HostIt: an arranger buys a hosted event of their own
-// adventure at the pass price per block; once paid it is their org's,
-// with the teams they bought, and the host link is in their mail.
+// balance is the org's billing balance, in öre.
+func (f *partyFixture) balance(t *testing.T) int64 {
+	t.Helper()
+	var b int64
+	if err := f.h.DB.QueryRow(`SELECT COALESCE(SUM(amount_cents), 0) FROM billing_entries WHERE org_id = $1`, f.orgID).Scan(&b); err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// TestHosted_HostIt: an arranger hosts their own adventure at once, with
+// nothing to pay: each team that joins is charged to the org, and none
+// can join past what its balance pays for.
 func TestHosted_HostIt(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
-	f.h.Pricing = func() settings.Pricing { return settings.Pricing{HostedBlockCents: 14900} }
+	f.h.Pricing = func() settings.Pricing { return settings.Pricing{TeamCents: 4900, TeamPhones: 3} }
 	f.consoleRoute("POST", "/api/admin/adventures/{slug}/host", f.h.HostAdventure)
 
-	if w := call(t, f.console, "POST", "/api/admin/adventures/nope/host", map[string]any{"blocks": 1}); w.Code != http.StatusNotFound {
+	if w := call(t, f.console, "POST", "/api/admin/adventures/nope/host", map[string]any{}); w.Code != http.StatusNotFound {
 		t.Errorf("someone else's adventure: %d", w.Code)
 	}
-	if w := call(t, f.console, "POST", "/api/admin/adventures/treasure/host", map[string]any{"blocks": -1}); w.Code != http.StatusBadRequest {
-		t.Errorf("negative blocks: %d", w.Code)
-	}
-	w := call(t, f.console, "POST", "/api/admin/adventures/treasure/host", map[string]any{"name": "Office quiz", "blocks": 2})
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "checkout_url") {
+	w := call(t, f.console, "POST", "/api/admin/adventures/treasure/host", map[string]any{"name": "Office quiz"})
+	if w.Code != http.StatusCreated || strings.Contains(w.Body.String(), "checkout_url") {
 		t.Fatalf("host it: %d %s", w.Code, w.Body)
 	}
-	var amount, org int64
-	if err := f.h.DB.QueryRow(`SELECT amount_cents, buyer_org_id FROM ticket_purchases WHERE kind = 'hosted'`).Scan(&amount, &org); err != nil {
+	var purchases int
+	if err := f.h.DB.QueryRow(`SELECT COUNT(*) FROM ticket_purchases`).Scan(&purchases); err != nil {
 		t.Fatal(err)
 	}
-	if amount != 29800 || org != f.orgID {
-		t.Errorf("purchase: %d cents for org %d", amount, org)
-	}
-
-	f.pay(t, "hosted")
-	var name string
-	var blocks int
-	if err := f.h.DB.QueryRow(`SELECT party_name, hosted_blocks FROM events WHERE party AND org_id = $1`, f.orgID).Scan(&name, &blocks); err != nil {
-		t.Fatal(err)
-	}
-	if name != "Office quiz" || blocks != 2 {
-		t.Errorf("event: %q with %d blocks", name, blocks)
+	if purchases != 0 {
+		t.Errorf("hosting made %d purchases", purchases)
 	}
 	m := regexp.MustCompile(`/party/([A-Za-z0-9_-]+)`).FindStringSubmatch(f.mail.messages[len(f.mail.messages)-1].Text)
 	if m == nil {
 		t.Fatal("no host link mailed")
 	}
-	if got := f.teamsLimit(t, m[1]); got != 30 {
-		t.Errorf("teams limit = %d, want 30", got)
+	token := m[1]
+	if got := f.teamsLimit(t, token); got != 0 {
+		t.Errorf("teams limit = %d, want none", got)
+	}
+	if w := call(t, f.public, "POST", "/api/party/"+token+"/teams", map[string]any{"teams": 5}); w.Code != http.StatusConflict {
+		t.Errorf("more teams for a game without a limit: %d", w.Code)
 	}
 
-	// No blocks: free for FreeTeams teams a game, made at once, unpaid.
-	w = call(t, f.console, "POST", "/api/admin/adventures/treasure/host", map[string]any{"name": "Small party", "blocks": 0})
-	if w.Code != http.StatusCreated || strings.Contains(w.Body.String(), "checkout_url") {
-		t.Fatalf("free: %d %s", w.Code, w.Body)
+	player := f.host(t, token).playerToken()
+	// No balance and no overdraft: the first team can't join.
+	if w := f.join(t, player, "Owls", 1); w.Code != http.StatusPaymentRequired {
+		t.Fatalf("join with nothing to pay: %d %s", w.Code, w.Body)
 	}
-	var purchases int
-	if err := f.h.DB.QueryRow(`SELECT COUNT(*) FROM ticket_purchases WHERE kind = 'hosted'`).Scan(&purchases); err != nil {
+	if _, err := f.h.DB.Exec(`INSERT INTO billing_entries(org_id, kind, amount_cents, currency) VALUES ($1, 'top_up', 10000, 'SEK')`, f.orgID); err != nil {
 		t.Fatal(err)
 	}
-	if purchases != 1 {
-		t.Errorf("free hosting made a purchase: %d", purchases)
+	for _, team := range []string{"Owls", "Foxes"} {
+		if w := f.join(t, player, team, 1); w.Code != http.StatusCreated {
+			t.Fatalf("join %s: %d %s", team, w.Code, w.Body)
+		}
 	}
-	m = regexp.MustCompile(`/party/([A-Za-z0-9_-]+)`).FindStringSubmatch(f.mail.messages[len(f.mail.messages)-1].Text)
-	if m == nil {
-		t.Fatal("no host link mailed for the free event")
+	if w := f.join(t, player, "Bears", 1); w.Code != http.StatusPaymentRequired {
+		t.Errorf("a third team on 100 kr: %d", w.Code)
 	}
-	if got := f.teamsLimit(t, m[1]); got != admin.FreeTeams {
-		t.Errorf("free teams limit = %d, want %d", got, admin.FreeTeams)
+	if got := f.balance(t); got != 10000-2*4900 {
+		t.Errorf("balance = %d, want two teams charged", got)
 	}
 }
 
-// TestHosted_AddBlocks: a host buys 15 more teams per game; a refund
-// takes them back.
-func TestHosted_AddBlocks(t *testing.T) {
+// TestHosted_AddTeams: a party's host buys more teams per game at the
+// team price; a refund takes them back.
+func TestHosted_AddTeams(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
-	f.h.Pricing = func() settings.Pricing { return settings.Pricing{HostedBlockCents: 14900} }
 	_, token := f.book(t, 5)
+	f.h.Pricing = func() settings.Pricing { return settings.Pricing{TeamCents: 4900, TeamPhones: 3} }
 
-	if w := call(t, f.public, "POST", "/api/party/"+token+"/blocks", map[string]any{"blocks": 10}); w.Code != http.StatusBadRequest {
+	if w := call(t, f.public, "POST", "/api/party/"+token+"/teams", map[string]any{"teams": 200}); w.Code != http.StatusBadRequest {
 		t.Errorf("past the most teams: %d", w.Code)
 	}
-	w := call(t, f.public, "POST", "/api/party/"+token+"/blocks", map[string]any{"blocks": 1})
+	w := call(t, f.public, "POST", "/api/party/"+token+"/teams", map[string]any{"teams": 3})
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "checkout_url") {
 		t.Fatalf("add teams: %d %s", w.Code, w.Body)
 	}
 	var email string
-	_ = f.h.DB.QueryRow(`SELECT buyer_email FROM ticket_purchases WHERE kind = 'hosted_blocks'`).Scan(&email)
-	if email != "parent@example.com" {
-		t.Errorf("buyer = %q, want the party's booker", email)
+	var amount int64
+	_ = f.h.DB.QueryRow(`SELECT buyer_email, amount_cents FROM ticket_purchases WHERE kind = 'hosted_teams'`).Scan(&email, &amount)
+	if email != "parent@example.com" || amount != 3*4900 {
+		t.Errorf("purchase by %q of %d, want the party's booker paying 3 teams", email, amount)
 	}
-	if got := f.teamsLimit(t, token); got != 15 {
+	if got := f.teamsLimit(t, token); got != 5 {
 		t.Errorf("before paying: %d teams", got)
 	}
-	id := f.pay(t, "hosted_blocks")
-	if got := f.teamsLimit(t, token); got != 30 {
-		t.Fatalf("after paying: %d teams, want 30", got)
+	id := f.pay(t, "hosted_teams")
+	if got := f.teamsLimit(t, token); got != 8 {
+		t.Fatalf("after paying: %d teams, want 8", got)
 	}
 
-	if _, err := f.h.DB.Exec(`UPDATE ticket_purchases SET stripe_charge_id = 'ch_blocks' WHERE id = $1`, id); err != nil {
+	if _, err := f.h.DB.Exec(`UPDATE ticket_purchases SET stripe_charge_id = 'ch_teams' WHERE id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
-	if err := admin.ExportedHandleChargeRefunded(f.h, context.Background(), buildChargeRefundedEvent(t, "ch_blocks")); err != nil {
+	if err := admin.ExportedHandleChargeRefunded(f.h, context.Background(), buildChargeRefundedEvent(t, "ch_teams")); err != nil {
 		t.Fatalf("refund: %v", err)
 	}
-	if got := f.teamsLimit(t, token); got != 15 {
-		t.Errorf("after the refund: %d teams, want 15", got)
+	if got := f.teamsLimit(t, token); got != 5 {
+		t.Errorf("after the refund: %d teams, want 5", got)
 	}
 }
 
-// TestHosted_Free: where hosting costs nothing, Host it and more teams
-// happen at once.
+// TestHosted_Free: where teams cost nothing, Host it happens at once and
+// a party's teams are added at once.
 func TestHosted_Free(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newPartyFixture(t)
 	defer cleanup()
 	f.consoleRoute("POST", "/api/admin/adventures/{slug}/host", f.h.HostAdventure)
-	w := call(t, f.console, "POST", "/api/admin/adventures/treasure/host", map[string]any{"blocks": 1})
+	w := call(t, f.console, "POST", "/api/admin/adventures/treasure/host", map[string]any{})
 	if w.Code != http.StatusCreated || !strings.Contains(w.Body.String(), "event_id") {
 		t.Fatalf("free host it: %d %s", w.Code, w.Body)
 	}
@@ -163,43 +165,11 @@ func TestHosted_Free(t *testing.T) {
 	if !strings.Contains(name, strconv.Itoa(time.Now().Year())) || strings.TrimSpace(name) == strconv.Itoa(time.Now().Year()) {
 		t.Errorf("default name = %q, want the adventure's title and the date", name)
 	}
-	m := regexp.MustCompile(`/party/([A-Za-z0-9_-]+)`).FindStringSubmatch(f.mail.messages[len(f.mail.messages)-1].Text)
-	if m == nil {
-		t.Fatal("no host link mailed")
-	}
-	if w := call(t, f.public, "POST", "/api/party/"+m[1]+"/blocks", map[string]any{"blocks": 2}); w.Code != http.StatusOK {
+	_, token := f.book(t, 4)
+	if w := call(t, f.public, "POST", "/api/party/"+token+"/teams", map[string]any{"teams": 2}); w.Code != http.StatusOK {
 		t.Fatalf("free teams: %d %s", w.Code, w.Body)
 	}
-	if got := f.teamsLimit(t, m[1]); got != 45 {
-		t.Errorf("teams limit = %d, want 45", got)
-	}
-}
-
-// TestHosted_PartyFee: where the platform takes a fee, its cut of a
-// party is the pass price, and a party must cost more than that, in the
-// pass's currency.
-func TestHosted_PartyFee(t *testing.T) {
-	t.Parallel()
-	f, cleanup := newPartyFixture(t)
-	defer cleanup()
-	f.h.Pricing = func() settings.Pricing { return settings.Pricing{HostedBlockCents: 14900, FeePercentBPS: 500} }
-	if _, err := f.h.DB.Exec(`UPDATE organizations SET stripe_connect_account_id = 'acct_acme', stripe_connect_charges_enabled = TRUE WHERE id = $1`, f.orgID); err != nil {
-		t.Fatal(err)
-	}
-	for name, body := range map[string]map[string]any{
-		"below the fee": {"enabled": true, "base_cents": 10000, "per_kid_cents": 2000, "currency": "sek", "max_kids": 10},
-		"other money":   {"enabled": true, "base_cents": 50000, "currency": "eur", "max_kids": 10},
-	} {
-		if w := call(t, f.console, "PUT", "/api/admin/party-offers/treasure", body); w.Code != http.StatusBadRequest {
-			t.Errorf("%s: %d %s", name, w.Code, w.Body)
-		}
-	}
-	f.book(t, 5)
-	var fee int64
-	if err := f.h.DB.QueryRow(`SELECT application_fee_cents FROM ticket_purchases WHERE kind = 'party'`).Scan(&fee); err != nil {
-		t.Fatal(err)
-	}
-	if fee != 14900 {
-		t.Errorf("application fee = %d, want the pass price", fee)
+	if got := f.teamsLimit(t, token); got != 6 {
+		t.Errorf("teams limit = %d, want 6", got)
 	}
 }

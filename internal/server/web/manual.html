@@ -246,7 +246,7 @@
     <li><a href="#adventure">Authoring an adventure</a></li>
     <li><a href="#puzzles">Adding puzzles</a></li>
     <li><a href="#event-flow">How the event flow fits together</a></li>
-    <li><a href="#assignments">Buying event passes</a></li>
+    <li><a href="#assignments">Paying for teams</a></li>
     <li><a href="#create-event">Creating an event</a></li>
     <li><a href="#player-age">The player-age statement</a></li>
     <li><a href="#teams">Adding teams and sharing magic links</a></li>
@@ -271,27 +271,26 @@
   <h2>Welcome</h2>
   <p>Zonventure is a platform for running location-based adventure games — treasure hunts, team-building events, school field trips. As an arranger you author the puzzles, set up an event, and the players walk around with their phones answering them.</p>
 
-  <h3>Four words to know</h3>
+  <h3>Three words to know</h3>
   <ul>
     <li><strong>Adventure</strong> — a reusable script. Pages of puzzles in order. Like a book.</li>
-    <li><strong>Event pass</strong> — the right to run an adventure once, for up to N players. You buy one under Live events, when you create the event.</li>
-    <li><strong>Event</strong> — one specific playthrough at a specific time. Created with an event pass.</li>
-    <li><strong>Team</strong> — a group of players in an event, identified by a team name. Each player gets their own magic-link to log in as part of the team.</li>
+    <li><strong>Event</strong> — one specific playthrough at a specific time, or a self-guided adventure on sale in your store.</li>
+    <li><strong>Team</strong> — a group of players in an event, identified by a team name. Each player gets their own magic-link to log in as part of the team. You pay for each team that plays.</li>
   </ul>
 
-  <div class="callout">Mental model: an Adventure is a recipe; an Event pass is the right to cook it once; an Event is one specific dinner; a Team is the people sitting at a table.</div>
+  <div class="callout">Mental model: an Adventure is a recipe; an Event is one specific dinner; a Team is the people sitting at a table — and you pay per table served.</div>
 </section>
 
 <section id="first-steps">
   <h2>First steps</h2>
-  <p>When you sign up, you create an organization. Everyone in your organization shares the same adventures, event passes, and events.</p>
+  <p>When you sign up, you create an organization. Everyone in your organization shares the same adventures, events and balance.</p>
 
   <h3>Verify your email</h3>
-  <p>After signup we email a verification link. You can log in before clicking it, but money-touching actions (buying event passes, scheduling events) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn't arrive.</p>
+  <p>After signup we email a verification link. You can log in before clicking it, but money-touching actions (topping up, scheduling events) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn't arrive.</p>
   <div class="shot">[Screenshot: dashboard with the unverified-email banner]</div>
 
   <h3>The dashboard</h3>
-  <p>The dashboard is your home: at-a-glance view of upcoming events, event passes ready to schedule, and shortcuts to the things you most often do.</p>
+  <p>The dashboard is your home: at-a-glance view of upcoming events and shortcuts to the things you most often do.</p>
   <div class="shot">[Screenshot: a populated arranger dashboard]</div>
 </section>
 
@@ -354,36 +353,32 @@
 <section id="event-flow">
   <h2>How the event flow fits together</h2>
   <p>Before scheduling your first event, take a moment to understand the chain:</p>
-  <pre>Adventure  →  Event pass  →  Event  →  Teams  →  Players</pre>
+  <pre>Adventure  →  Event  →  Teams  →  Players</pre>
   <ul>
     <li>You author or pick an Adventure (free).</li>
-    <li>You buy an Event pass for that adventure: it pays for up to N teams.</li>
-    <li>You create an Event with the Event pass: it ties it to a specific date and time.</li>
+    <li>You create an Event for it: a specific date and time, or a self-guided adventure for sale.</li>
     <li>You add Teams to the Event: each team is a group of players.</li>
-    <li>You share each Player a magic link: they tap, the event starts, they play.</li>
+    <li>You share each Player a magic link: they tap, the event starts, they play. Each team is paid for as its first phone joins.</li>
   </ul>
-  <div class="callout">One event pass = one event. To run the same adventure twice, buy two event passes.</div>
 </section>
 
 <section id="assignments">
-  <h2>Buying event passes</h2>
-  <p>An event pass covers one event for up to N players — across however many teams you want to form. Pricing is per player: the first {{FREE_PLAYERS_PER_EVENT}} in any event are free, and each additional player has a fixed cost configured by your operator (currently {{PRICE_PER_EXTRA_PLAYER}}).</p>
-  <ol>
-    <li>Click "Live events" in the sidebar, then "Schedule event".</li>
-    <li>Pick the adventure you want to run.</li>
-    <li>Choose how many players will join (1–500). Buys at or below 15 are free and skip the checkout step entirely.</li>
-    <li>Click "Continue to payment". Paid buys go to Stripe Checkout; free buys create the event straight away.</li>
-    <li>After payment, you're sent back with the new event pass ready to schedule.</li>
-  </ol>
-  <div class="shot">[Screenshot: the schedule-event dialog]</div>
-  <div class="callout warn">Refunds: if you bought the wrong event pass, contact support. Refunds are admin-only — they touch real money.</div>
+  <h2>Paying for teams</h2>
+  <p>Nothing is paid up front. Every team that plays one of your events costs {{TEAM_PRICE}}, its first {{TEAM_PHONES}} phones included, and {{PHONE_PRICE}} for each phone after: charged when the team's first phone joins, once. A team bought as a ticket in your store paid in the ticket — the price of its team came out of the sale — and costs nothing more.</p>
+  <p>Everything else comes off your organisation's balance, under Settings → Billing. Pay one of two ways:</p>
+  <ul>
+    <li><strong>Prepaid</strong> — top up by card, with a bonus on bigger amounts. The balance may go a little below zero, so a team at the start line isn't turned away; past that, new teams can't start until you top up. Admins get an email when it runs low.</li>
+    <li><strong>Monthly</strong> — save a card and you're billed on the 1st for last month's teams, up to a credit limit that grows as bills are paid. Organisations your operator allows can be invoiced instead.</li>
+  </ul>
+  <p>Selling in the store: connect a Stripe account of your own under Settings → Billing. Buyers pay you; the price of each team comes out of the sale and Stripe's card fee is yours, as in any shop. Refund a sale before its team has played and that price comes back to you too.</p>
+  <div class="callout">A family's party made in the public creator is free for its first {{PARTY_FREE_TEAMS}} teams, for {{PARTY_GAMES}} games.</div>
 </section>
 
 <section id="create-event">
   <h2>Creating an event</h2>
   <ol>
     <li>Click "Events" in the sidebar, then "Schedule event".</li>
-    <li>Pick the event pass you want to use (only unused ones are listed).</li>
+    <li>Pick the adventure you want to run.</li>
     <li>Give the event a name (eg. "Office team-build, Friday afternoon"). This is for your benefit; players don't see it.</li>
     <li>Pick a date and time. You can also leave it blank and start the event manually later.</li>
     <li>Confirm the no-minors attestation, or pick the COPPA path if you're running for under-13s.</li>
@@ -477,7 +472,7 @@
     <li><code>event.completed</code> — all teams finished.</li>
     <li><code>team.created</code> — a new team was added to an event.</li>
     <li><code>team.completed</code> — a team finished. Includes their name and event id.</li>
-    <li><code>purchase.paid</code> — an event pass was bought.</li>
+    <li><code>purchase.paid</code> — an event pass was bought (before teams were paid for as they start).</li>
     <li><code>purchase.refunded</code> — a purchase was refunded.</li>
   </ul>
 
@@ -523,8 +518,8 @@ process(parse_json(body))</pre>
   <ul>
     <li><strong>Change password</strong> — Requires the current password. Other sessions are signed out on success.</li>
     <li><strong>Change email</strong> — Requires the current password. We send a confirmation link to the new address. The change only takes effect when you click it, and the old address then gets a notice. Password and two-factor changes send a notice too.</li>
-    <li><strong>Download my data</strong> — A single JSON file with your account info plus your organization's events, teams, adventures, event passes and purchases. The GDPR-friendly export.</li>
-    <li><strong>Delete account</strong> — Requires your password and signs you out. The deletion happens after a 7-day grace period; log back in before then to cancel. If you're the last member, your organization is deleted with you: all events, teams, adventures, event passes. After the grace period it cannot be undone.</li>
+    <li><strong>Download my data</strong> — A single JSON file with your account info plus your organization's events, teams, adventures and purchases. The GDPR-friendly export.</li>
+    <li><strong>Delete account</strong> — Requires your password and signs you out. The deletion happens after a 7-day grace period; log back in before then to cancel. If you're the last member, your organization is deleted with you: all events, teams, adventures and its balance. After the grace period it cannot be undone.</li>
   </ul>
 </section>
 
@@ -543,14 +538,14 @@ docker compose up -d</code></pre>
   <h3>What's the same on any instance</h3>
   <ul>
     <li>The arranger surface, the play surface, the live audience display — same code, same shapes, same UX.</li>
-    <li>Adventures, event passes, events, teams, magic links, recap PDF.</li>
+    <li>Adventures, events, teams, magic links, recap PDF.</li>
     <li>Webhooks for outbound integration.</li>
     <li>Email verification + password reset (if SMTP is configured).</li>
   </ul>
 
   <h3>What's different on self-host</h3>
   <ul>
-    <li><strong>No Stripe by default.</strong> Without <code>ZV_STRIPE_SECRET_KEY</code> set, event passes within the free player allowance still work, but paid purchases are refused. Wire Stripe in if you want to sell passes or tickets to other organisations on your instance, and set your own prices with <code>ZV_PRICE_PER_PLAYER_CENTS</code> / <code>ZV_FREE_PLAYERS_PER_EVENT</code>.</li>
+    <li><strong>No Stripe by default.</strong> Without <code>ZV_STRIPE_SECRET_KEY</code> set nothing is bought, and with a team price of 0 under Settings → Pricing teams cost nothing. Wire Stripe in to sell tickets, or to charge other organisations on your instance for their teams.</li>
     <li><strong>No SSO by default.</strong> Username + password is the front door. Set <code>ZV_OIDC_*</code> to enable Google Workspace (or any OIDC provider) sign-in for your domain. The login page picks up the SSO button automatically.</li>
     <li><strong>You're the global admin.</strong> The seeded admin account manages every org on the instance, curates the catalog and watches the system — it doesn't author adventures or run events. To author, make an organisation the catalog publisher (Organizations page) and add yourself to it as a separate, non-admin user. Treat the admin account like a root password — store it in the same place you keep <code>POSTGRES_PASSWORD</code>.</li>
     <li><strong>Backups are your job.</strong> All durable state lives in the <code>zv_pg_data</code> volume — adventures, events, uploaded images and audio, recap tokens. <code>docker compose down -v</code> wipes everything. docs/selfhosting.md has a tested <code>pg_dump</code>-based backup recipe.</li>

@@ -34,7 +34,7 @@ func TestPostedTicket(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(db.QueryRow(`INSERT INTO organizations(name, ship_countries) VALUES ('Acme', '{SE,NO}') RETURNING id`).Scan(&orgID))
+	must(db.QueryRow(`INSERT INTO organizations(name, ship_countries, stripe_connect_account_id, stripe_connect_charges_enabled) VALUES ('Acme', '{SE,NO}', 'acct_acme', TRUE) RETURNING id`).Scan(&orgID))
 	must(db.QueryRow(`INSERT INTO users(username, email, email_verified) VALUES ('boss', 'boss@acme.test', 1) RETURNING id`).Scan(&userID))
 	must(db.QueryRow(`INSERT INTO adventures(slug, title, org_id, language) VALUES ('walk', 'Walk', $1, 'en') RETURNING id`, orgID).Scan(&advID))
 	var pdf int64

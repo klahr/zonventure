@@ -90,7 +90,7 @@ function Gate() {
       );
     }
     if (once.verified === true) {
-      toast.ok(t.t("Email verified — you can now schedule events and buy event passes."));
+      toast.ok(t.t("Email verified — you can now schedule events."));
       void refresh();
     }
     if (once.verified === false) {

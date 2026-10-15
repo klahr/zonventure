@@ -1,12 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { ApiError, siteCurrency } from "@zonventure/api";
+import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
-import { useSession } from "../../session.tsx";
-import { Button, Callout, Dialog, Field, ICON, fmtMoney, useToast } from "../../ui/index.ts";
+import { Button, Dialog, Field, ICON, useToast } from "../../ui/index.ts";
 import {
-  addMember, createAssignment, deleteAssignment, grantSlots, renameOrganization, searchUsers, setBilled, setUserPassword, updateAssignment,
-  type Assignment, type CatalogAdventure, type OrgEvent, type OrgMember, type Organization,
+  addMember, createAssignment, deleteAssignment, renameOrganization, searchUsers, setBilled, setUserPassword, updateAssignment,
+  type Assignment, type CatalogAdventure, type OrgMember, type Organization,
 } from "./api.ts";
 
 type Done = { onClose: () => void; onDone: () => void };
@@ -399,75 +398,12 @@ export function EditPassDialog({ org, pass, adventures, onClose, onDone }: Done 
   );
 }
 
-/**
- * Add players to a live event's pass on the org's behalf. Only an org on
- * invoice billing can be charged; for the rest the grant is free, as the
- * server would force it anyway.
- */
-export function GrantSlotsDialog({ org, event, onClose, onDone }: Done & { org: Organization; event: OrgEvent }) {
-  const t = useT();
-  const toast = useToast();
-  const { state } = useSession();
-  const pricing = (state.status === "authenticated" ? state.user.pricing : undefined) as { player_cents?: number; currency?: string } | undefined;
-  const PRICE = pricing?.player_cents || 500;
-  const CURRENCY = pricing?.currency || siteCurrency();
-  const trusted = org.trusted;
-  const [players, setPlayers] = useState("5");
-  // Typed in whole currency units, sent in cents.
-  const suggest = (p: string) => String((Math.max(1, Number.parseInt(p, 10) || 0) * PRICE) / 100);
-  const cents = (p: string) => Math.max(0, Math.round((Number.parseFloat(p) || 0) * 100));
-  const [price, setPrice] = useState(trusted ? suggest("5") : "0");
-  const [busy, setBusy] = useState(false);
-  const title = event.adventure_title || event.adventure_slug || t.t("this event");
-  const submit = async () => {
-    const added = Math.max(1, Number.parseInt(players, 10) || 0);
-    const amount = trusted ? cents(price) : 0;
-    setBusy(true);
-    try {
-      await grantSlots(event.id, added, amount);
-      toast.ok(amount > 0
-        ? t.t("{{n}} players added — {{price}} on next invoice", { n: added, price: fmtMoney(amount, CURRENCY, t.current()) })
-        : t.t("{{n}} players added to the pass (free)", { n: added }));
-      onDone();
-    } catch (e) {
-      toast.err(e);
-      setBusy(false);
-    }
-  };
-  return (
-    <Dialog
-      title={t.t("Add players")}
-      onClose={onClose}
-      onSubmit={submit}
-      footer={<><Button onClick={onClose}>{t.t("Cancel")}</Button><Button type="submit" variant="primary" loading={busy}>{t.t("Add players")}</Button></>}
-    >
-      <p>{t.t("The event pass for \"{{title}}\" covers {{n}} players. How many more?", { title, n: event.max_players || 0 })}</p>
-      <Callout variant="info">
-        {trusted
-          ? t.t("Adding to \"{{org}}\" — the price below appears on their next invoice. Set it to 0 for a free grant.", { org: org.name })
-          : t.t("\"{{org}}\" is not on invoice billing, so this grant is free. Turn on its \"Invoice billing\" switch on this page to enable priced grants.", { org: org.name })}
-      </Callout>
-      <Field label={t.t("Additional players")}>
-        <input type="number" min={1} max={500} required autoFocus value={players} onChange={(e) => { setPlayers(e.target.value); if (trusted) setPrice(suggest(e.target.value)); }} />
-      </Field>
-      {trusted && (
-        <Field
-          label={t.t("Price ({{currency}})", { currency: CURRENCY })}
-          hint={`${fmtMoney(cents(price), CURRENCY, t.current())} · ${t.t("Whatever you enter here lands on the next invoice. Zero is fine — that's a free goodwill grant.")}`}
-        >
-          <input type="number" min={0} step={0.01} inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} />
-        </Field>
-      )}
-    </Dialog>
-  );
-}
-
 /** Pick one of a list: an adventure to commission, or an organisation to share with. */
 export function PickDialog<T>({ title, items, label, onPick, onClose }: { title: string; items: T[]; label: (x: T) => string; onPick: (x: T) => void; onClose: () => void }) {
   const t = useT();
   return (
     <Dialog title={title} onClose={onClose} footer={<Button onClick={onClose}>{t.t("Cancel")}</Button>}>
-      <p className="adm-muted">{t.t("Pick one. The organization can schedule events of this adventure without buying event passes.")}</p>
+      <p className="adm-muted">{t.t("Pick one. It shows among the organization's own adventures.")}</p>
       <div className="adm-picklist">
         {items.map((x, i) => (
           <Button key={i} block autoFocus={i === 0} onClick={() => onPick(x)}>{label(x)}</Button>

@@ -59,14 +59,10 @@ type stripeConnectStatusDTO struct {
 	ChargesEnabled bool   `json:"charges_enabled"`
 	PayoutsEnabled bool   `json:"payouts_enabled"`
 	SyncedAt       string `json:"synced_at,omitempty"`
-	// PlatformFeeEnabled mirrors PlatformFee.Enabled() — the UI
-	// uses it to suppress the entire Connect panel on self-host
-	// (no platform fee = no marketplace = nothing to onboard).
+	// PlatformFeeEnabled is the marketplace (Handlers.marketplace):
+	// orgs sell into Stripe accounts of their own. Off (a self-host),
+	// the UI shows no Connect panel: there is nothing to set up.
 	PlatformFeeEnabled bool `json:"platform_fee_enabled"`
-	// PayoutTerms is when the platform pays the org for its ticket
-	// sales while there is no platform fee (Settings → Pricing); empty
-	// shows the built-in terms.
-	PayoutTerms string `json:"payout_terms,omitempty"`
 }
 
 type startStripeConnectResp struct {
@@ -95,9 +91,9 @@ func (h *Handlers) StartStripeConnect(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	if !h.platformFee().Enabled() {
+	if !h.marketplace() {
 		httpx.Error(w, http.StatusServiceUnavailable,
-			"marketplace fee is not configured on this server (set it under Settings → Pricing)")
+			"selling into organisations' own Stripe accounts is not set up on this server")
 		return
 	}
 	mp, ok := h.Provider.(payments.MarketplaceProvider)
@@ -254,13 +250,13 @@ func (h *Handlers) RefreshStripeConnectStatus(w http.ResponseWriter, r *http.Req
 }
 
 type stripeConnectDashboardResp struct {
-	// URL is a single-use link into the Express dashboard; the
-	// frontend opens it straight away.
+	// URL is where the org signs in to its Stripe dashboard.
 	URL string `json:"url"`
 }
 
-// OpenStripeConnectDashboard mints a login link into the org's
-// Express dashboard (balance, payouts, bank details).
+// OpenStripeConnectDashboard says where the org's Stripe dashboard is:
+// the account is its own, with Stripe's full dashboard (balance,
+// payouts, refunds, disputes), signed in to at Stripe.
 //
 // POST /api/admin/orgs/{orgID}/stripe-connect/dashboard
 func (h *Handlers) OpenStripeConnectDashboard(w http.ResponseWriter, r *http.Request) {
@@ -273,33 +269,7 @@ func (h *Handlers) OpenStripeConnectDashboard(w http.ResponseWriter, r *http.Req
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	mp, ok := h.Provider.(payments.MarketplaceProvider)
-	if !ok {
-		httpx.Error(w, http.StatusServiceUnavailable,
-			"payment provider does not support marketplace flows")
-		return
-	}
-	var accountID sql.NullString
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT stripe_connect_account_id FROM organizations WHERE id = $1`,
-		orgID).Scan(&accountID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "org lookup failed")
-		return
-	}
-	if !accountID.Valid || accountID.String == "" {
-		httpx.Error(w, http.StatusConflict, "no Stripe account yet — start onboarding first")
-		return
-	}
-	link, err := mp.CreateLoginLink(r.Context(), accountID.String)
-	if err != nil {
-		// Typically a Standard account from before the switch to
-		// Express: it has no Express dashboard to log into.
-		logx.Warn("admin.stripe_connect.dashboard", "org", orgID, "err", err.Error())
-		httpx.ServerErr(w, http.StatusBadGateway, "stripe dashboard link failed", err)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	httpx.JSON(w, http.StatusOK, stripeConnectDashboardResp{URL: link})
+	httpx.JSON(w, http.StatusOK, stripeConnectDashboardResp{URL: "https://dashboard.stripe.com/"})
 }
 
 /* ---------------- helpers ---------------- */
@@ -338,8 +308,7 @@ func (h *Handlers) loadStripeConnectStatus(ctx context.Context, orgID int64) (st
 	if synced.Valid {
 		out.SyncedAt = synced.String
 	}
-	out.PlatformFeeEnabled = h.platformFee().Enabled()
-	out.PayoutTerms = h.pricing().PayoutTerms
+	out.PlatformFeeEnabled = h.marketplace()
 	return out, nil
 }
 

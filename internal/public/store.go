@@ -277,7 +277,7 @@ func (h *Handlers) storeItemRowFilter() string {
 		  AND FALSE
 		`
 	}
-	if h.platformFee().Enabled() {
+	if h.Marketplace != nil && h.Marketplace() {
 		return storeItemRowFilterBase + `
 		  AND o.stripe_connect_charges_enabled
 		`

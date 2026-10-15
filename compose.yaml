@@ -116,6 +116,7 @@ services:
       ZV_MAP_PROVIDER:            ${ZV_MAP_PROVIDER:-}
       ZV_STRIPE_SECRET_KEY:       ${ZV_STRIPE_SECRET_KEY:-}
       ZV_STRIPE_WEBHOOK_SECRET:   ${ZV_STRIPE_WEBHOOK_SECRET:-}
+      ZV_STRIPE_CONNECT_WEBHOOK_SECRET: ${ZV_STRIPE_CONNECT_WEBHOOK_SECRET:-}
       ZV_STRIPE_AUTOMATIC_TAX:    ${ZV_STRIPE_AUTOMATIC_TAX:-}
       # ZV_PAYMENTS_PROVIDER overrides which payments.Provider impl
       # gets wired. Empty (default) auto-picks Stripe when both
@@ -127,8 +128,8 @@ services:
       ZV_PAYMENTS_PROVIDER:       ${ZV_PAYMENTS_PROVIDER:-}
       ZV_ENV:                     ${ZV_ENV:-}
       ZV_TOTP_KEY:                ${ZV_TOTP_KEY:-}
-      # Prices (event pass, hosted pass, platform fee) are set under
-      # Settings → Pricing, not here.
+      # Prices (per team, per extra phone, parties, top-ups, credit) are
+      # set under Settings → Pricing, not here.
       # Postgres pool sizing; empty → server defaults (25 open / 5 idle).
       ZV_DB_MAX_OPEN_CONNS:       ${ZV_DB_MAX_OPEN_CONNS:-}
       ZV_DB_MAX_IDLE_CONNS:       ${ZV_DB_MAX_IDLE_CONNS:-}

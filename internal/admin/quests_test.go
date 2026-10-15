@@ -170,11 +170,9 @@ func TestEvent_UnpublishedRefused(t *testing.T) {
 	}
 }
 
-// TestEvent_SlugOnlyOwnedStillBlocked is the inverse: a regular
-// event on an org-owned adventure must still hit the buy-an-
-// assignment 409 — the relaxation is conditioned on public_for_sale,
-// not adventure ownership.
-func TestEvent_SlugOnlyOwnedStillBlocked(t *testing.T) {
+// TestEvent_SlugOnlyOwned: a regular event on an org-owned adventure
+// needs no pass any more; its teams are paid for as they start.
+func TestEvent_SlugOnlyOwned(t *testing.T) {
 	t.Parallel()
 	_, _, _, r := questFixture(t)
 
@@ -188,9 +186,8 @@ func TestEvent_SlugOnlyOwnedStillBlocked(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/admin/events", strings.NewReader(string(createBody)))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusConflict {
-		t.Errorf("create: status=%d body=%s, want 409 (regular events still need an assignment)",
-			w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Errorf("create: status=%d body=%s, want 201 (no pass needed)", w.Code, w.Body.String())
 	}
 }
 
