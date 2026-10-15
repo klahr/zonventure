@@ -49,8 +49,24 @@ func TestShop_Book(t *testing.T) {
 		t.Errorf("checkout: %+v, want 199 kr on acct_acme, no fee, an address asked for", c)
 	}
 
+	if !strings.HasSuffix(c.SuccessURL, "/shop/success") {
+		t.Errorf("back to %q, want the shop's success page", c.SuccessURL)
+	}
+
+	// Bought on the shop's own host, the buyer comes back to it.
+	f.h.ShopHost = "shop.example.com"
+	req := httptest.NewRequest("POST", "/api/shop/checkout", strings.NewReader(`{"product": "blackis", "buyer_email": "kim@example.com"}`))
+	req.Host = "shop.example.com"
+	req.Header.Set("Content-Type", "application/json")
+	if w := httptest.NewRecorder(); func() int { r.ServeHTTP(w, req); return w.Code }() != http.StatusOK {
+		t.Fatal("buy on the shop host failed")
+	}
+	if got := f.pay.checkouts[len(f.pay.checkouts)-1].SuccessURL; got != "https://shop.example.com/success" {
+		t.Errorf("back to %q from the shop host", got)
+	}
+
 	var id int64
-	if err := f.db.QueryRow(`SELECT id FROM ticket_purchases WHERE kind = 'book'`).Scan(&id); err != nil {
+	if err := f.db.QueryRow(`SELECT id FROM ticket_purchases WHERE kind = 'book' ORDER BY id LIMIT 1`).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
 	ev := buildSessionCompletedEvent(t, id, "cs_market")
@@ -58,7 +74,7 @@ func TestShop_Book(t *testing.T) {
 	if err := admin.ExportedHandleTicketCheckoutCompleted(f.h, context.Background(), ev); err != nil {
 		t.Fatalf("fulfil: %v", err)
 	}
-	req := httptest.NewRequest("GET", "/api/admin/redemptions?state=to_post", nil)
+	req = httptest.NewRequest("GET", "/api/admin/redemptions?state=to_post", nil)
 	req = req.WithContext(auth.WithUser(req.Context(), auth.User{ID: 1, Username: "boss", Role: auth.RoleOrgAdmin, OrgID: &f.orgID}))
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

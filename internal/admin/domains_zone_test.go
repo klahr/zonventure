@@ -43,3 +43,15 @@ func TestOwnZoneNames(t *testing.T) {
 		}
 	}
 }
+
+// The shop's own hostname is the instance's: no organisation may claim
+// it, nor a name under it.
+func TestShopHostReserved(t *testing.T) {
+	t.Setenv("ZV_DOMAIN_CNAME_SUFFIX", "cname.zonventure.com")
+	h := &Handlers{PublicURL: "https://v4.zonventure.com", ShopHost: "shop.zonventure.com"}
+	for _, in := range []string{"shop.zonventure.com", "x.shop.zonventure.com"} {
+		if _, refuse := domains.Normalize(in, h.ourHosts()...); refuse != domains.RefuseOurs {
+			t.Errorf("%s: refused %q, want %q", in, refuse, domains.RefuseOurs)
+		}
+	}
+}

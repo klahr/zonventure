@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/mail"
 	"os"
@@ -121,7 +122,16 @@ func (h *Handlers) BuyBook(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "order failed", err)
 		return
 	}
+	// Back where the buyer came from: the shop's own host serves the
+	// shop at its root.
 	base := strings.TrimRight(h.PublicURL, "/") + "/shop/"
+	host := r.Host
+	if hp, _, err := net.SplitHostPort(host); err == nil {
+		host = hp
+	}
+	if h.ShopHost != "" && strings.EqualFold(host, h.ShopHost) {
+		base = "https://" + h.ShopHost + "/"
+	}
 	sess, err := h.Provider.CreateCheckout(ctx, payments.CheckoutParams{
 		AmountCents:        product.PriceCents,
 		Currency:           currency,

@@ -76,6 +76,7 @@ short tour:
 | `ZV_DOMAIN_CNAME_SUFFIX` | Turns on organisations' own domains: the name their CNAMEs point at (`cname.example.org`), with a wildcard DNS record to this server. See [Organisations' own domains](#organisations-own-domains) | unset (off) |
 | `ZV_DOMAIN_PROBE_ADDR` | Where the "does this domain answer" check dials your TLS proxy (`172.17.0.1:443`), when the server can't reach its own public IP | unset |
 | `ZV_HOME_ORG` | Slug of the organisation the site is: `/store` redirects to its page `/o/<slug>`, and the landing page lists its adventures | unset (`/store` not found) |
+| `ZV_SHOP_HOST` | A hostname of its own for the shop (`/shop` in `ZV_WEB_OVERRIDE_DIR`), e.g. `shop.example.com`: it serves the shop at its root (`/book` is `/shop/book`), the TLS check allows it, and no organisation can claim it as its own domain. Point its DNS at the server | unset |
 | `ZV_SITE_NAME` | Name the instance shows players and arrangers (titles, player header, emails, authenticator entry). Set your own brand so players know who runs the service | `Zonventure` |
 | `ZV_CURRENCY` | ISO 4217 code every price, ticket and party is sold in. Must have two decimals (not JPY, KRW, …). Set it before the first sale: amounts already saved keep their numbers, not their value | `sek` |
 | `ZV_TIME_ZONE` | IANA time zone an organisation writes start times in until it picks its own (Settings → Organisation) | `Europe/Stockholm` |

@@ -75,6 +75,10 @@ type Handlers struct {
 	// ZV_WEB_OVERRIDE_DIR, with products.json; "" for none.
 	HomeOrg string
 	ShopDir string
+	// ShopHost is the shop's own hostname (ZV_SHOP_HOST), "" for none:
+	// no organisation may claim it, and a book bought there comes back
+	// to it after checkout.
+	ShopHost string
 	// SellerIdentity is the operator's seller line ("Sold by …", in the
 	// given language) for the footer of sale mail; empty, or nil, until
 	// ZV_COMPANY_NAME is set.

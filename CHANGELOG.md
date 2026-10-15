@@ -24,6 +24,11 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   order is in the organisation's Orders to post and its Sales, the buyer
   gets an order confirmation, and the organisation's contact address the
   order.
+- `ZV_SHOP_HOST` gives the shop a hostname of its own, such as
+  `shop.example.com`: it serves the shop at its root, so `/book` is
+  `/shop/book` and an old shop's links keep working; the TLS check lets
+  the proxy fetch its certificate; a book bought there comes back to it
+  after checkout; and no organisation can claim it as its own domain.
 
 ### Changed
 

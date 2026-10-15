@@ -196,10 +196,14 @@ func (h *Handlers) publicHost() string {
 // the bare registered domain, the apex rule refuses it already and its
 // subdomains are ownZone's to judge.
 func (h *Handlers) ourHosts() []string {
+	var out []string
 	if p := h.publicHost(); p != "" && p != domains.Apex(p) {
-		return []string{p}
+		out = append(out, p)
 	}
-	return nil
+	if h.ShopHost != "" {
+		out = append(out, h.ShopHost)
+	}
+	return out
 }
 
 // ownZone reports whether host is under the instance's registered

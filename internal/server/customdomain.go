@@ -54,18 +54,48 @@ var staffPrefixes = []string{
 // organisation's domain doesn't show.
 var platformPages = []string{"/manual", "/pricing", "/create", "/shop"}
 
+// hostOnly is a Host header without its port.
+func hostOnly(h string) string {
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		return host
+	}
+	return h
+}
+
 func hasPathPrefix(p, prefix string) bool {
 	return p == prefix || strings.HasPrefix(p, prefix+"/") || strings.HasPrefix(p, prefix+"?")
 }
 
-// customDomains routes requests by Host. mainBase is ZV_PUBLIC_URL.
-func customDomains(mainBase string) func(http.Handler) http.Handler {
+// shopPassThrough are what the shop's own host serves as they are: the
+// shop's pages under /shop, and what they call.
+var shopPassThrough = []string{"/shop", "/api", "/assets", "/dev"}
+
+// customDomains routes requests by Host. mainBase is ZV_PUBLIC_URL;
+// shopHost is ZV_SHOP_HOST, the shop's own hostname, "" for none.
+func customDomains(mainBase, shopHost string) func(http.Handler) http.Handler {
 	mainBase = strings.TrimRight(strings.TrimSpace(mainBase), "/")
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// The TLS proxy asks before fetching a certificate; any host.
 			if r.URL.Path == "/internal/tls-allowed" {
+				if shopHost != "" && strings.EqualFold(r.URL.Query().Get("domain"), shopHost) {
+					w.WriteHeader(http.StatusOK)
+					return
+				}
 				tlsAllowed(w, r)
+				return
+			}
+			// The shop's own host is the shop: /book is /shop/book, so
+			// the old shop's links keep working.
+			if shopHost != "" && strings.EqualFold(hostOnly(r.Host), shopHost) {
+				pass := false
+				for _, s := range shopPassThrough {
+					pass = pass || hasPathPrefix(r.URL.Path, s)
+				}
+				if !pass {
+					r = rewritePath(r, "/shop"+r.URL.Path)
+				}
+				next.ServeHTTP(w, r)
 				return
 			}
 			e, ok := domains.ByHost(r.Host)

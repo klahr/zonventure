@@ -71,6 +71,9 @@ services:
       # The site's own organisation (its slug): /store and the landing
       # page's adventures. Empty → /store is not found.
       ZV_HOME_ORG:      ${ZV_HOME_ORG:-}
+      # The shop's own hostname (shop.example.com), serving /shop at its
+      # root. Empty → the shop is at /shop only.
+      ZV_SHOP_HOST:     ${ZV_SHOP_HOST:-}
       # Name shown to players and arrangers; empty → "Zonventure".
       ZV_SITE_NAME:     ${ZV_SITE_NAME:-}
       ZV_LOG_FORMAT:    ${ZV_LOG_FORMAT:-text}

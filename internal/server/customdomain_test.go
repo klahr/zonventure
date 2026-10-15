@@ -34,7 +34,7 @@ func TestCustomDomainRouting(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(`<title>Store · Zonventure</title><!--platform--><a href="/manual">Manual</a><!--/platform--><link rel="icon" href="/favicon.svg" type="image/svg+xml">`))
 	})
-	h := customDomains("https://zonventure.com")(next)
+	h := customDomains("https://zonventure.com", "")(next)
 	do := func(host, path string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Host = host
@@ -115,7 +115,7 @@ func TestTLSAllowed(t *testing.T) {
 		domains.Entry{OrgID: 2, Slug: "b", Host: "waiting.b.se", Status: domains.StatusWaiting, Until: until},
 		domains.Entry{OrgID: 3, Slug: "c", Host: "lapsed.c.se", Status: domains.StatusLive},
 	)
-	h := customDomains("https://zonventure.com")(http.NotFoundHandler())
+	h := customDomains("https://zonventure.com", "")(http.NotFoundHandler())
 	for host, want := range map[string]int{"ok.a.se": 200, "waiting.b.se": 404, "lapsed.c.se": 404, "unknown.se": 404} {
 		req := httptest.NewRequest(http.MethodGet, "/internal/tls-allowed?domain="+host, nil)
 		w := httptest.NewRecorder()
@@ -123,6 +123,39 @@ func TestTLSAllowed(t *testing.T) {
 		if w.Code != want {
 			t.Errorf("%s: %d, want %d", host, w.Code, want)
 		}
+	}
+}
+
+// TestShopHost: the shop's own host serves the shop at its root, so the
+// old shop's links work, passes through what its pages call, and gets a
+// certificate; another host is left alone.
+func TestShopHost(t *testing.T) {
+	stageDomains(t)
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Path", r.URL.Path)
+	})
+	h := customDomains("https://zonventure.com", "shop.zonventure.com")(next)
+	for _, c := range []struct{ host, path, want string }{
+		{"shop.zonventure.com", "/", "/shop/"},
+		{"shop.zonventure.com:443", "/pa-aventyr-med-blackis", "/shop/pa-aventyr-med-blackis"},
+		{"shop.zonventure.com", "/success", "/shop/success"},
+		{"shop.zonventure.com", "/shop/img/cover.webp", "/shop/img/cover.webp"},
+		{"shop.zonventure.com", "/api/shop/checkout", "/api/shop/checkout"},
+		{"zonventure.com", "/success", "/success"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, c.path, nil)
+		req.Host = c.host
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if got := w.Header().Get("X-Path"); got != c.want {
+			t.Errorf("%s%s: served %q, want %q", c.host, c.path, got, c.want)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/internal/tls-allowed?domain=shop.zonventure.com", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("certificate for the shop host: %d", w.Code)
 	}
 }
 

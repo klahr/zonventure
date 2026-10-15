@@ -72,6 +72,9 @@ type Config struct {
 	// visitors to its page, and the landing page shows its adventures.
 	// Empty, /store is not found and the landing page lists none.
 	HomeOrg string
+	// ShopHost is a hostname of its own for the shop (/shop), such as
+	// shop.example.com: it serves the shop at its root. "" for none.
+	ShopHost string
 	// Legal is the operator-supplied content for /privacy and /terms.
 	// Unset fields render "[set ZV_*]" so missing config is obvious
 	// to an operator visiting the page in dev.
@@ -236,7 +239,7 @@ func New(cfg Config) http.Handler {
 			logx.Warn("domains.load", "err", err.Error())
 		}
 	}
-	r.Use(customDomains(cfg.PublicURL))
+	r.Use(customDomains(cfg.PublicURL, cfg.ShopHost))
 	// Hide links to /privacy, /terms, /pricing and /store while they'd
 	// answer 503 / 404 (legal identity unset, landing off, no home org).
 	r.Use(hideUnavailableLinks(func() LegalConfig { return legalNow(cfg.Legal) }, cfg.HomeOrg))
@@ -397,6 +400,7 @@ func New(cfg Config) http.Handler {
 		PublicURL:      cfg.PublicURL,
 		HomeOrg:        cfg.HomeOrg,
 		ShopDir:        shopDir(cfg.WebOverrideDir),
+		ShopHost:       cfg.ShopHost,
 		SellerIdentity: func(lang string) string { return legalNow(cfg.Legal).SellerIdentityText(lang) },
 		Provider:       paymentProvider,
 		SecureCookie:   cfg.SecureCookie,
