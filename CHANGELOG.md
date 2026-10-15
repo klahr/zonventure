@@ -19,6 +19,14 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   its page in the console, say one onboarded with the wrong company. The
   organisation's next "Connect Stripe" creates a new account.
 
+### Fixed
+
+- "Stripe dashboard" in the console opens the organisation's own Stripe
+  account, not whichever account the user last had open in Stripe.
+- A ticket priced at or below the platform's price for its team is
+  refused when the price or team size is saved, with the reason, instead
+  of failing when a buyer tries to pay.
+
 ## [0.32.5] - 2026-10-15
 
 ### Fixed

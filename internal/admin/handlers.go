@@ -31,6 +31,7 @@ import (
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/components"
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/mailer"
@@ -1119,6 +1120,34 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	if req.TicketCurrency != nil && !strings.EqualFold(strings.TrimSpace(*req.TicketCurrency), settings.Currency) {
 		httpx.Error(w, http.StatusBadRequest, "tickets are sold in "+strings.ToUpper(settings.Currency))
 		return
+	}
+	// A ticket must cost more than the platform takes for its team, or
+	// it couldn't be sold (ticketSaleRouting): refused here, where the
+	// price is set, with the new price and team size together.
+	if req.TicketPriceCents != nil || req.TicketTeamSize != nil {
+		var (
+			price sql.NullInt64
+			size  int
+		)
+		if err := h.DB.QueryRowContext(r.Context(),
+			`SELECT ticket_price_cents, ticket_team_size FROM events WHERE id = $1`, eventID).Scan(&price, &size); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+			return
+		}
+		if req.TicketPriceCents != nil {
+			price = sql.NullInt64{Int64: int64(*req.TicketPriceCents), Valid: *req.TicketPriceCents > 0}
+		}
+		if req.TicketTeamSize != nil {
+			size = *req.TicketTeamSize
+		}
+		if fee := h.storeFee(1, size); price.Valid && fee > 0 && price.Int64 <= fee {
+			httpx.JSON(w, http.StatusConflict, map[string]any{
+				"error":     fmt.Sprintf("a ticket must cost more than the platform's %s for its team", emailtpl.Money("en", fee, settings.Currency)),
+				"code":      "price_below_fee",
+				"fee_cents": fee,
+			})
+			return
+		}
 	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)

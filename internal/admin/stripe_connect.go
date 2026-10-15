@@ -277,7 +277,19 @@ func (h *Handlers) OpenStripeConnectDashboard(w http.ResponseWriter, r *http.Req
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	httpx.JSON(w, http.StatusOK, stripeConnectDashboardResp{URL: "https://dashboard.stripe.com/"})
+	// The account's own dashboard: someone signed in to several Stripe
+	// accounts would otherwise land on the one they used last.
+	var account sql.NullString
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT stripe_connect_account_id FROM organizations WHERE id = $1`, orgID).Scan(&account); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "org lookup failed", err)
+		return
+	}
+	url := "https://dashboard.stripe.com/"
+	if account.String != "" {
+		url += "b/" + account.String
+	}
+	httpx.JSON(w, http.StatusOK, stripeConnectDashboardResp{URL: url})
 }
 
 /* ---------------- helpers ---------------- */

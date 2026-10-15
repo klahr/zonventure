@@ -288,6 +288,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
   const typed = Math.round(Number.parseFloat(price) * 100);
   const sizeN = Number.parseInt(size, 10) || 1;
   const fee = session.status === "authenticated" && typed > 0 ? pricing(session.user).cost(1, sizeN) : 0;
+  const tooLow = fee > 0 && typed > 0 && typed <= fee;
   const receive =
     fee <= 0 ? undefined
     : typed <= fee ? t.t("The price must be more than the platform's {{fee}} for the team.", { fee: fmtMoney(fee, event.ticket_currency, t.current()) })
@@ -297,6 +298,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
     const major = price.trim();
     const cents = major === "" ? 0 : Math.round(Number.parseFloat(major) * 100);
     if (major !== "" && (Number.isNaN(cents) || cents < 0)) return toast.err(t.t("Enter a valid price (or leave blank to clear)"));
+    if (tooLow) return;
     const n = Number.parseInt(size, 10);
     if (!Number.isFinite(n) || n < 1 || n > 50) return toast.err(t.t("Team size must be between 1 and 50"));
     setBusy(true);
@@ -409,7 +411,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
         <textarea rows={2} maxLength={1000} placeholder={t.t("Two-hour treasure hunt around the old town.")} value={blurb} onChange={(e) => setBlurb(e.target.value)} />
       </Field>
       <Row>
-        <Button variant="primary" size="sm" loading={busy} onClick={() => void save()}>{t.t("Save")}</Button>
+        <Button variant="primary" size="sm" loading={busy} disabled={tooLow} onClick={() => void save()}>{t.t("Save")}</Button>
         {/* Its own page in the organisation's store; the short link leads there. */}
         <a href={`/store/event/${event.id}`} target="_blank" rel="noopener">{t.t("Open store ↗")}</a>
       </Row>

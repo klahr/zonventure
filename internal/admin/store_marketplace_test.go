@@ -243,22 +243,29 @@ func TestConnect_Disconnect(t *testing.T) {
 	r := chi.NewRouter()
 	r.Post("/api/admin/organizations/{orgID}/stripe-connect/start", f.h.StartStripeConnect)
 	r.Post("/api/admin/organizations/{orgID}/stripe-connect/disconnect", f.h.DisconnectStripeConnect)
+	r.Post("/api/admin/organizations/{orgID}/stripe-connect/dashboard", f.h.OpenStripeConnectDashboard)
 	var org int64
 	if err := f.db.QueryRow(`INSERT INTO organizations(name, slug) VALUES ('Wrong', 'wrong') RETURNING id`).Scan(&org); err != nil {
 		t.Fatal(err)
 	}
+	var body string
 	call := func(path string, u auth.User) int {
 		t.Helper()
 		req := httptest.NewRequest("POST", "/api/admin/organizations/"+itoa64(org)+"/stripe-connect/"+path, nil)
 		req = req.WithContext(auth.WithUser(req.Context(), u))
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
+		body = w.Body.String()
 		return w.Code
 	}
 	orgAdmin := auth.User{ID: 1, Username: "boss", Role: auth.RoleOrgAdmin, OrgID: &org}
 	admin := auth.User{ID: 2, Username: "root", Role: auth.RoleAdmin}
 	if c := call("start", orgAdmin); c != http.StatusOK {
 		t.Fatalf("start: %d", c)
+	}
+	// The dashboard link opens this account, not the last one used.
+	if c := call("dashboard", orgAdmin); c != http.StatusOK || !strings.Contains(body, "dashboard.stripe.com/b/acct_new") {
+		t.Errorf("dashboard: %d %s", c, body)
 	}
 	if c := call("disconnect", orgAdmin); c != http.StatusForbidden {
 		t.Errorf("org admin disconnect: %d, want 403", c)
@@ -275,5 +282,38 @@ func TestConnect_Disconnect(t *testing.T) {
 	}
 	if n := len(f.pay.accounts); n != 2 || f.pay.accounts[0].IdempotencyKey == f.pay.accounts[1].IdempotencyKey {
 		t.Errorf("accounts asked for: %+v, want two under different request ids", f.pay.accounts)
+	}
+}
+
+// TestTicketPrice_BelowFeeRefused: a ticket price at or below the
+// platform's price for its team is refused when it is set, also when
+// it is the team size that grows past it.
+func TestTicketPrice_BelowFeeRefused(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newMarketFixture(t, 49900, 3)
+	defer cleanup()
+	r := chi.NewRouter()
+	r.Patch("/api/admin/events/{eventID}", f.h.UpdateEvent)
+	patch := func(body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest("PATCH", "/api/admin/events/"+itoa64(f.eventID), strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req = req.WithContext(auth.WithUser(req.Context(), auth.User{ID: 1, Username: "boss", Role: auth.RoleOrgAdmin, OrgID: &f.orgID}))
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+	if w := patch(`{"ticket_price_cents": 4900}`); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "price_below_fee") {
+		t.Errorf("49 kr for a team of 3: %d %s", w.Code, w.Body)
+	}
+	if w := patch(`{"ticket_price_cents": 5000}`); w.Code != http.StatusNoContent {
+		t.Errorf("50 kr for a team of 3: %d %s", w.Code, w.Body)
+	}
+	// 5 phones cost 49 + 2 × 15 = 79 kr.
+	if w := patch(`{"ticket_team_size": 5}`); w.Code != http.StatusConflict {
+		t.Errorf("team of 5 at 50 kr: %d %s", w.Code, w.Body)
+	}
+	if w := patch(`{"ticket_price_cents": 0}`); w.Code != http.StatusNoContent {
+		t.Errorf("clearing the price: %d %s", w.Code, w.Body)
 	}
 }
