@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.32.8] - 2026-10-15
+
 ### Added
 
 - Books in the shop can be bought. A book page asks for an email address
