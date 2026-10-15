@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.32.7] - 2026-10-15
+
 ### Fixed
 
 - "Stripe dashboard" in the console opens the organisation's own Stripe
