@@ -11,6 +11,33 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Requests for a quote. An organisation can turn on a guided form on its
+  public page (`/o/{slug}/request`, `/request` on its own domain) where
+  a company planning a kickoff, a team day, a conference activity or a
+  customer event asks it for a price: one question a screen (the
+  occasion, when, how many, where, how much to do, extras, budget,
+  contact), then a summary to check. The form wears the organisation's
+  look — its colours, title typeface, cover and logo — in English and
+  Swedish. The organisation's page shows "Ask for a quote" while the
+  form is on.
+- Each request is emailed to the organisation's contact address,
+  replying to the requester, who gets a copy of what they asked for.
+  Org admins find them under Requests in the console, mark each New,
+  Answered, Won or Lost, keep notes on it and reply by email. The quote
+  itself is written outside Zonventure.
+- On the Requests page an organisation turns the form on, writes the
+  few lines at its top, and unticks what it doesn't offer (a kind of
+  adventure, a game master, a prize ceremony, results on a big screen,
+  its own questions, a logo, accessibility, a language); the form then
+  doesn't ask for it.
+- The form has a spam trap: a hidden field, a signed stamp of when the
+  form loaded, and at most 5 requests an hour from one address.
+- Requests are deleted a year after their last change, travel with an
+  organisation's export, and are covered in the terms and the privacy
+  page: each organisation is responsible for its own requests.
+
 ## [0.32.2] - 2026-10-14
 
 0.32.0 and 0.32.1 were tagged but their images never published (CI
