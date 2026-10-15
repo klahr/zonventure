@@ -453,6 +453,7 @@ func storeI18nJSON(s landingStrings) string {
 		"mapPanHint":           s.StoreMapPanHint,
 		"cardCTA":              s.StoreCardCTA,
 		"perTicket":            s.StorePerTicket,
+		"perTeam":              s.StorePerTeam,
 		"emptyHeading":         s.StoreEmptyHeading,
 		"emptyBody":            s.StoreEmptyBody,
 		"errorHeading":         s.StoreErrorHeading,

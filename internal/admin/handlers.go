@@ -70,6 +70,11 @@ type Handlers struct {
 	// be empty in dev — the admin handlers fall back to the request
 	// Host the same way auth.Handlers does.
 	PublicURL string
+	// HomeOrg is the slug of the organisation the site is (ZV_HOME_ORG):
+	// it sells the shop's books. ShopDir is the shop's folder in
+	// ZV_WEB_OVERRIDE_DIR, with products.json; "" for none.
+	HomeOrg string
+	ShopDir string
 	// SellerIdentity is the operator's seller line ("Sold by …", in the
 	// given language) for the footer of sale mail; empty, or nil, until
 	// ZV_COMPANY_NAME is set.

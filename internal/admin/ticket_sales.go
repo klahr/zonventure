@@ -50,7 +50,7 @@ type ticketSaleDTO struct {
 // ticketSaleOrg is the org a ticket_purchases row belongs to: the
 // event's, the party offer's while its event is still to be made, or
 // the buyer's for a hosted pass.
-const ticketSaleOrg = `COALESCE(e.org_id, o.org_id, p.buyer_org_id)`
+const ticketSaleOrg = `COALESCE(e.org_id, o.org_id, p.seller_org_id, p.buyer_org_id)`
 
 // ListTicketSales returns the ticket purchases visible to the caller:
 // the platform admin sees every org's, or one org's with ?org_id=, an
@@ -61,7 +61,7 @@ func (h *Handlers) ListTicketSales(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	query := `
 		SELECT p.id, p.kind, p.state, COALESCE(p.event_id, 0),
-		       COALESCE(NULLIF(p.party_name, ''), NULLIF(e.party_name, ''), e.name, ''),
+		       COALESCE(NULLIF(p.party_name, ''), NULLIF(e.party_name, ''), e.name, p.product_name),
 		       COALESCE(NULLIF(a.title, ''), a.slug, ''), COALESCE(org.name, ''),
 		       p.buyer_email, p.team_size, p.teams, p.amount_cents, p.currency, p.application_fee_cents,
 		       COALESCE(p.stripe_charge_id, '') <> '', COALESCE(p.stripe_invoice_url, ''),
@@ -252,7 +252,7 @@ func (h *Handlers) saleAccountAndPlay(ctx context.Context, purchaseID int64) (st
 		FROM ticket_purchases p
 		LEFT JOIN events e ON e.id = p.event_id
 		LEFT JOIN party_offers o ON o.id = p.party_offer_id
-		LEFT JOIN organizations g ON g.id = COALESCE(e.org_id, o.org_id)
+		LEFT JOIN organizations g ON g.id = COALESCE(e.org_id, o.org_id, p.seller_org_id)
 		WHERE p.id = $1
 	`, purchaseID).Scan(&acct, &played)
 	return acct.String, played, err
@@ -264,7 +264,8 @@ func (h *Handlers) saleAccountAndPlay(ctx context.Context, purchaseID int64) (st
 // serve and the money is theirs.
 // A sale that settled on the platform account is the platform's money,
 // and hosted passes the org bought are the platform's sale: both stay
-// with the platform admin.
+// with the platform admin. A book from the shop is the home org's own
+// sale.
 func sellerRefundable(kind string, feeCents int64) bool {
-	return (kind == "ticket" || kind == "party") && feeCents > 0
+	return (kind == "ticket" || kind == "party") && feeCents > 0 || kind == "book"
 }

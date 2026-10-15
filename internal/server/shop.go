@@ -16,6 +16,14 @@ import (
 // .html sibling so /shop/book serves shop/book.html. Unknown paths get
 // shop/404.html when there is one. Without an override dir, or without
 // a shop/ in it, /shop/ is an ordinary 404.
+// shopDir is the shop's folder in the override dir, "" without one.
+func shopDir(overrideDir string) string {
+	if overrideDir == "" {
+		return ""
+	}
+	return filepath.Join(overrideDir, "shop")
+}
+
 func serveShop(w http.ResponseWriter, r *http.Request) {
 	if webOverrideDir == "" {
 		render404(w, r)

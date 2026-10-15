@@ -145,6 +145,8 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		r.Get("/api/o/{slug}/store/items", publicH.StoreListByOrg)
 		r.Get("/api/o/{slug}/store/items/{event_id}", publicH.StoreEventByOrg)
 		r.Post("/api/o/{slug}/store/buy", adminH.BuyTicketByOrg)
+		// A book from the operator's shop (/shop), sold by the home org.
+		r.Post("/api/shop/checkout", adminH.BuyBook)
 
 		// Parties: an org's party offers, booked with no account, and
 		// the host page the booker runs the party from. The host link's

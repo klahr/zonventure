@@ -395,6 +395,8 @@ func New(cfg Config) http.Handler {
 		Mailer:         mail,
 		MailOutbox:     mailOutbox,
 		PublicURL:      cfg.PublicURL,
+		HomeOrg:        cfg.HomeOrg,
+		ShopDir:        shopDir(cfg.WebOverrideDir),
 		SellerIdentity: func(lang string) string { return legalNow(cfg.Legal).SellerIdentityText(lang) },
 		Provider:       paymentProvider,
 		SecureCookie:   cfg.SecureCookie,

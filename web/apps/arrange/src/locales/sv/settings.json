@@ -430,5 +430,7 @@
   "you get {{total}}": "du får {{total}}",
   "no bonus": "ingen bonus",
   "a team then costs {{price}}": "ett lag kostar då {{price}}",
-  "Paid by card. Top-ups don't expire and aren't refunded. You'll get a receipt by email.": "Betalas med kort. Påfyllningar förfaller inte och återbetalas inte. Du får ett kvitto via e-post."
+  "Paid by card. Top-ups don't expire and aren't refunded. You'll get a receipt by email.": "Betalas med kort. Påfyllningar förfaller inte och återbetalas inte. Du får ett kvitto via e-post.",
+  "Book": "Bok",
+  "1 copy": "1 exemplar"
 }

@@ -11,6 +11,24 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Books in the shop can be bought. A book page asks for an email address
+  and opens Stripe Checkout, which asks where to post the book. The sale
+  is the home organisation's (`ZV_HOME_ORG`), paid to its own Stripe
+  account with nothing taken by the platform. The books and their prices
+  are in `shop/products.json` beside the shop's pages in
+  `ZV_WEB_OVERRIDE_DIR`; the price is always read from there. A paid
+  order is in the organisation's Orders to post and its Sales, the buyer
+  gets an order confirmation, and the organisation's contact address the
+  order.
+
+### Changed
+
+- The store's adventure cards look like the ones on the landing page:
+  the adventure's icon on the cover, where it starts, the team size, and
+  the price per team with "Buy" at the foot.
+
 ## [0.32.7] - 2026-10-15
 
 ### Fixed

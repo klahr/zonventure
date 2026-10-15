@@ -507,6 +507,8 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 		return h.fulfilPartyCheckout(ctx, tx, event, purchaseID, offerID, partyName, buyerEmail, teamSize)
 	case "hosted", "hosted_teams":
 		return h.fulfilHostedCheckout(ctx, tx, event, purchaseID, kind)
+	case "book":
+		return h.fulfilBookCheckout(ctx, tx, event, purchaseID)
 	}
 	if eventID == 0 {
 		// Event deleted while the payment was in flight; the row is

@@ -88,18 +88,20 @@
   .card .cover { position: relative; aspect-ratio: 16 / 10; overflow: hidden; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
   .card .cover-img { position: absolute; inset: 0; background-size: cover; background-position: center; transition: transform .6s ease; }
   .card:hover .cover-img { transform: scale(1.05); }
-  .card .cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 55%, rgba(0,0,0,.35)); }
-  .card .cover-icon { position: absolute; inset: 0; display: grid; place-items: center; }
-  .card .cover-icon img { width: 34%; max-width: 6rem; border-radius: 22%; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
-  .price-tag { position: absolute; right: .9rem; bottom: .9rem; z-index: 1; padding: .35rem .8rem; border-radius: 999px; background: rgba(255,255,255,.95); color: #111827; font-weight: 800; font-size: .95rem; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
-  .price-tag small { font-weight: 600; color: #4b5563; font-size: .75rem; }
-  .card .body { display: flex; flex-direction: column; gap: .7rem; padding: 1.3rem 1.4rem 1.4rem; flex: 1; }
-  .card h3 { margin: 0; font-size: 1.3rem; line-height: 1.2; color: var(--ink); }
-  .card .blurb { margin: 0; color: var(--ink-soft); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .facts { list-style: none; margin: auto 0 0; padding: .3rem 0 0; display: flex; flex-direction: column; gap: .35rem; font-size: .88rem; color: var(--muted); }
-  .facts li { display: flex; gap: .5rem; align-items: flex-start; }
-  .facts svg { flex: none; width: 1.05rem; height: 1.05rem; margin-top: .15rem; color: var(--accent-text); }
-  .card .go { margin-top: .4rem; font-weight: 700; color: var(--accent-text); }
+  .card .body { display: flex; flex-direction: column; padding: 1.3rem 1.4rem 1.4rem; flex: 1; }
+  /* The adventure's icon, a badge riding the cover's bottom edge. */
+  .card .adv-icon { position: relative; z-index: 1; width: 56px; height: 56px; margin: calc(-1.3rem - 31px) 0 .7rem; border-radius: 14px; object-fit: cover; background: var(--surface); border: 3px solid var(--surface); box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+  .card h3 { margin: 0 0 .5rem; font-family: var(--font-brand); font-size: 1.3rem; line-height: 1.2; color: var(--ink); }
+  .card .blurb { flex: 1; margin: 0 0 1rem; color: var(--ink-soft); font-size: .95rem; }
+  .card .where { display: flex; align-items: flex-start; gap: .45rem; margin-bottom: .8rem; font-size: .88rem; font-weight: 600; line-height: 1.35; color: var(--ink-soft); }
+  .card .where svg { flex: none; width: 1.05rem; height: 1.05rem; margin-top: .05rem; color: var(--accent-text); }
+  .card .meta { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: 1.1rem; }
+  .card .chip { display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .65rem; border-radius: 999px; background: color-mix(in srgb, var(--ink) 6%, var(--surface)); color: var(--ink-soft); font-size: .78rem; font-weight: 600; }
+  .card .chip svg { width: .95rem; height: .95rem; }
+  .card .foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border-soft); }
+  .card .price { font: 1.5rem/1 var(--font-brand); color: var(--ink); }
+  .card .price small { display: block; margin-top: .3rem; font: 600 .75rem/1 var(--font-body); color: var(--muted); }
+  .card .go { font-weight: 700; color: var(--accent-text); white-space: nowrap; }
   .card:hover .go { text-decoration: underline; }
 
   /* How it works. */
@@ -445,34 +447,31 @@
     // The listing's name, the seller's public title for it.
     var title = item.event_name || item.adventure_title || item.adventure_slug;
     card.innerHTML =
-      '<div class="cover">' +
-        '<div class="cover-img" aria-hidden="true"></div>' +
-        '<span class="price-tag">' + escapeHTML(formatPrice(item.price_cents, item.currency)) +
-          ' <small>' + escapeHTML(t('perTicket')) + '</small></span>' +
-      '</div>' +
+      '<div class="cover"><div class="cover-img" aria-hidden="true"></div></div>' +
       '<div class="body">' +
         '<h3>' + escapeHTML(title) + '</h3>' +
-        (item.blurb ? '<p class="blurb">' + escapeHTML(item.blurb) + '</p>' : '') +
-        '<ul class="facts">' +
-          '<li>' + ICON_PEOPLE + '<span>' + escapeHTML(teamSizeLabel(item.team_size)) + '</span></li>' +
-          (item.start_label ? '<li>' + ICON_PIN + '<span>' + escapeHTML(item.start_label) + '</span></li>' : '') +
-        '</ul>' +
-        '<span class="go">' + escapeHTML(t('cardCTA')) + '</span>' +
+        '<p class="blurb">' + escapeHTML(item.blurb || '') + '</p>' +
+        (item.start_label ? '<div class="where" title="' + escapeHTML(t('meetsAt') + ' ' + item.start_label) + '">' + ICON_PIN +
+          '<span>' + escapeHTML(item.start_label) + '</span></div>' : '') +
+        '<div class="meta"><span class="chip">' + ICON_PEOPLE + escapeHTML(teamSizeLabel(item.team_size)) + '</span></div>' +
+        '<div class="foot">' +
+          '<div class="price">' + escapeHTML(formatPrice(item.price_cents, item.currency)) +
+            '<small>' + escapeHTML(t(item.team_size > 1 ? 'perTeam' : 'perTicket')) + '</small></div>' +
+          '<span class="go">' + escapeHTML(t('cardCTA')) + '</span>' +
+        '</div>' +
       '</div>';
     // Pictures go in through style and src, never through innerHTML;
     // cssURLEncode keeps a URL inside url("…").
-    var cover = card.querySelector('.cover');
     if (item.cover_image_url) {
       card.querySelector('.cover-img').style.backgroundImage = 'url("' + cssURLEncode(item.cover_image_url) + '")';
-    } else if (item.adventure_icon_url) {
-      var wrap = document.createElement('div');
-      wrap.className = 'cover-icon';
+    }
+    if (item.adventure_icon_url) {
       var icon = document.createElement('img');
+      icon.className = 'adv-icon';
       icon.alt = '';
       icon.loading = 'lazy';
       icon.setAttribute('src', item.adventure_icon_url);
-      wrap.appendChild(icon);
-      cover.appendChild(wrap);
+      card.querySelector('.body').prepend(icon);
     }
     // The title in the adventure's look's typeface.
     if (item.look && item.look.font_css) {

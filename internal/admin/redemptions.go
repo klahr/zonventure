@@ -1097,22 +1097,23 @@ const redemptionToPost = `r.state = 'approved' AND r.street_address <> '' AND r.
 // postedPurchase picks the store purchases with a letter to post: paid
 // tickets whose checkout collected an address, which it does only when
 // the event posts something.
-const postedPurchase = `tp.kind = 'ticket' AND tp.state = 'paid' AND tp.street_address <> ''`
+const postedPurchase = `tp.kind IN ('ticket', 'book') AND tp.state = 'paid' AND tp.street_address <> ''`
 
 // purchaseOrders are the organisation's store purchases with a letter to
-// post, as orders beside its redemptions: only those not yet posted when
-// toPost, only purchase id when it isn't 0.
+// post, and the shop's books it sold, as orders beside its redemptions:
+// only those not yet posted when toPost, only purchase id when it isn't 0.
 func (h *Handlers) purchaseOrders(ctx context.Context, orgID int64, toPost bool, id int64) ([]redemptionDTO, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT tp.id, tp.event_id, COALESCE(NULLIF(e.name, ''), a.title, e.adventure_slug), COALESCE(NULLIF(a.title, ''), e.adventure_slug),
+		SELECT tp.id, COALESCE(tp.event_id, 0), COALESCE(NULLIF(e.name, ''), a.title, e.adventure_slug, tp.product_name),
+		       COALESCE(NULLIF(a.title, ''), e.adventure_slug, tp.product_name),
 		       tp.buyer_email, tp.ship_name, tp.street_address, tp.address_2, tp.postal_code, tp.city, tp.country,
 		       tp.letter_lang, tp.post_at, COALESCE(tp.posted_at, ''), tp.note, COALESCE(tp.paid_at, tp.created_at),
 		       COALESCE(tp.team_id, 0), COALESCE(t.name, ''), COALESCE(e.graph_id, 0), e.print_delivery
 		FROM ticket_purchases tp
-		JOIN events e ON e.id = tp.event_id
+		LEFT JOIN events e ON e.id = tp.event_id
 		LEFT JOIN adventures a ON a.slug = e.adventure_slug
 		LEFT JOIN teams t ON t.id = tp.team_id
-		WHERE e.org_id = $1 AND `+postedPurchase+` AND (NOT $2 OR tp.posted_at IS NULL) AND ($3::bigint = 0 OR tp.id = $3)
+		WHERE COALESCE(e.org_id, tp.seller_org_id) = $1 AND `+postedPurchase+` AND (NOT $2 OR tp.posted_at IS NULL) AND ($3::bigint = 0 OR tp.id = $3)
 		ORDER BY tp.id DESC
 		LIMIT 500
 	`, orgID, toPost, id)

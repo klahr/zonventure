@@ -910,6 +910,36 @@ func RequestReceived(lang string, r Request, contact string) (string, Content) {
 	return subject, Content{Lang: lang, Preheader: requestTitle(lang, r), Heading: T(lang, "Thanks for your request"), Body: body}
 }
 
+// BookOrdered confirms a book order to its buyer: what was bought and
+// where it will be posted. contact is the seller's address, when there
+// is one.
+func BookOrdered(lang, org, book string, address []string, contact string) (string, Content) {
+	subject := T(lang, "Your order: %s", book)
+	body := T(lang, "Thanks for your order! %[1]s posts **%[2]s** to:", mdEscape(org), mdEscape(book)) +
+		"\n\n" + addressBlock(address)
+	if contact != "" {
+		body += "\n\n" + T(lang, "Questions about your order? Write to %s.", contactLink(contact))
+	}
+	return subject, Content{Lang: lang, Preheader: book, Heading: T(lang, "Thanks for your order"), Body: body}
+}
+
+// BookOrderNew tells the seller a book was ordered and is to be posted,
+// with a button to its orders.
+func BookOrderNew(lang, book string, address []string, link string) (string, Content) {
+	subject := T(lang, "New order: %s", book)
+	body := T(lang, "**%s** was ordered. Post it to:", mdEscape(book)) + "\n\n" + addressBlock(address)
+	return subject, Content{Lang: lang, Heading: subject, Body: body, Buttons: []Button{{T(lang, "Orders to post"), link}}}
+}
+
+// addressBlock is a postal address, a line each.
+func addressBlock(lines []string) string {
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = mdEscape(l)
+	}
+	return strings.Join(out, "  \n")
+}
+
 // telDigits is a phone number as a tel: link takes it: its digits, and a
 // leading plus.
 func telDigits(phone string) string {

@@ -7,7 +7,7 @@ import { Button, Card, Empty, ErrorBox, Loading, Pill, Table, fmtDate, fmtDateTi
 /** ticketSaleDTO, internal/admin/ticket_sales.go. */
 interface Sale {
   id: number;
-  kind: "ticket" | "party" | "hosted" | "hosted_teams" | string;
+  kind: "ticket" | "party" | "hosted" | "hosted_teams" | "book" | string;
   state: "pending" | "paid" | "failed" | "refunded" | string;
   event_id?: number;
   event_name?: string;
@@ -62,13 +62,16 @@ export function TicketSalesCard({ orgId }: { orgId?: number | undefined } = {}) 
     party: t.t("Party adventure booking"),
     hosted: t.t("Hosted pass"),
     hosted_teams: t.t("More teams"),
+    book: t.t("Book"),
   };
   const what = (s: Sale) =>
     s.kind === "hosted" || s.kind === "hosted_teams"
       ? t.plural(s.teams ?? 0, { one: t.t("{{n}} team per game"), other: t.t("{{n}} teams per game") })
-      : s.kind === "party"
-        ? t.plural(s.team_size, { one: t.t("{{n}} child"), other: t.t("{{n}} children") })
-        : t.plural(s.team_size, { one: t.t("{{n}} player"), other: t.t("{{n}} players") });
+      : s.kind === "book"
+        ? t.t("1 copy")
+        : s.kind === "party"
+          ? t.plural(s.team_size, { one: t.t("{{n}} child"), other: t.t("{{n}} children") })
+          : t.plural(s.team_size, { one: t.t("{{n}} player"), other: t.t("{{n}} players") });
 
   const refund = async (s: Sale) => {
     // A wrong password asks again rather than dropping the refund.
