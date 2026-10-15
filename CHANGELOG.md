@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.32.9] - 2026-10-15
+
 ### Added
 
 - `ZV_SHOP_HOST` gives the shop a hostname of its own, such as
