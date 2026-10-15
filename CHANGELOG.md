@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.32.4] - 2026-10-15
+
 ### Changed
 
 - Pay per team. Every team that plays an organisation's event costs one
