@@ -11,6 +11,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- A platform admin can disconnect an organisation's Stripe account from
+  its page in the console, say one onboarded with the wrong company. The
+  organisation's next "Connect Stripe" creates a new account.
+
 ## [0.32.5] - 2026-10-15
 
 ### Fixed

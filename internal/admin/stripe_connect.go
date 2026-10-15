@@ -110,10 +110,11 @@ func (h *Handlers) StartStripeConnect(w http.ResponseWriter, r *http.Request) {
 	var (
 		existing      sql.NullString
 		orgName, ship string
+		attempt       int
 	)
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT stripe_connect_account_id, name, array_to_string(ship_countries, ',') FROM organizations WHERE id = $1`,
-		orgID).Scan(&existing, &orgName, &ship); err != nil {
+		`SELECT stripe_connect_account_id, name, array_to_string(ship_countries, ','), stripe_connect_attempt FROM organizations WHERE id = $1`,
+		orgID).Scan(&existing, &orgName, &ship, &attempt); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "org lookup failed")
 		return
 	}
@@ -132,9 +133,9 @@ func (h *Handlers) StartStripeConnect(w http.ResponseWriter, r *http.Request) {
 			// must hit Stripe with the same key and get the original
 			// account id back rather than provisioning a second
 			// acct_xxx (with its own KYC requirements).
-			// The country is in it: a request refused for want of one
-			// keeps its key's refusal.
-			IdempotencyKey: fmt.Sprintf("connect-org-%d-%s", orgID, country),
+			// The attempt is in it: after a disconnect the next
+			// account is a new one.
+			IdempotencyKey: fmt.Sprintf("connect-org-%d-%s-%d", orgID, country, attempt),
 		})
 		if err != nil {
 			logx.Warn("admin.stripe_connect.create", "org", orgID, "err", err.Error())
@@ -280,6 +281,47 @@ func (h *Handlers) OpenStripeConnectDashboard(w http.ResponseWriter, r *http.Req
 }
 
 /* ---------------- helpers ---------------- */
+
+// DisconnectStripeConnect forgets an organisation's Stripe account, so
+// the next connect creates a new one: for an account onboarded with the
+// wrong company. The account itself is closed in Stripe's dashboard.
+// Platform admin only.
+//
+// POST /api/admin/organizations/{orgID}/stripe-connect/disconnect
+func (h *Handlers) DisconnectStripeConnect(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := orgIDFromURL(r)
+	if !ok {
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	if me.Role != auth.RoleAdmin {
+		httpx.Error(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	var old sql.NullString
+	if err := h.DB.QueryRowContext(r.Context(), `
+		UPDATE organizations o
+		   SET stripe_connect_account_id = NULL, stripe_connect_charges_enabled = FALSE,
+		       stripe_connect_payouts_enabled = FALSE, stripe_connect_synced_at = NULL,
+		       stripe_connect_attempt = o.stripe_connect_attempt + 1
+		  FROM organizations prev
+		 WHERE o.id = $1 AND prev.id = o.id
+		RETURNING prev.stripe_connect_account_id`, orgID).Scan(&old); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.Error(w, http.StatusNotFound, "no such organisation")
+			return
+		}
+		httpx.ServerErr(w, http.StatusInternalServerError, "disconnect failed", err)
+		return
+	}
+	logx.Info("admin.stripe_connect.disconnect", "org", orgID, "account", old.String, "by", me.Username)
+	status, err := h.loadStripeConnectStatus(r.Context(), orgID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "status lookup failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, status)
+}
 
 // canManageOrgConnect gates the Connect endpoints. Org admins of
 // the named org may manage their own org's Connect account; global

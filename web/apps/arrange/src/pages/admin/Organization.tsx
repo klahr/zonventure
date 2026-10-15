@@ -11,7 +11,7 @@ import {
 } from "../../ui/index.ts";
 import {
   cancelOrgEvent, connectStatus, deleteLogo, deleteOrganization, getOrganization, getPurchase, grantShare, listCatalog, listOrganizations,
-  listOrgEvents, listOrgEventTeams, listPurchases, refreshConnect, resendTeamLinks, refundPurchase, removeMember, revokeShare, setBilled, setPartyAdventures, setPublished, setPublisher, setRequireTotp, setTrusted, setVerifiedCreator,
+  disconnectConnect, listOrgEvents, listOrgEventTeams, listPurchases, refreshConnect, resendTeamLinks, refundPurchase, removeMember, revokeShare, setBilled, setPartyAdventures, setPublished, setPublisher, setRequireTotp, setTrusted, setVerifiedCreator,
   resetUserTOTP, totpAvailable, unvoidPurchase, uploadLogo, verifyEmail, voidPurchase,
   type Assignment, type CatalogAdventure, type ConnectStatus, type OrgEvent, type OrgMember, type OrgTeam, type Organization, type Purchase,
 } from "./api.ts";
@@ -709,7 +709,26 @@ function Toggle({ checked, onChange, label, hint, disabled }: { checked: boolean
 function ConnectRow({ org, status, reload, readOnly }: { org: Organization; status: ConnectStatus; reload: () => void; readOnly: boolean }) {
   const t = useT();
   const toast = useToast();
+  const dialogs = useDialogs();
   const [busy, setBusy] = useState(false);
+  const disconnect = async () => {
+    if (!(await dialogs.confirm({
+      title: t.t("Disconnect the Stripe account?"),
+      message: t.t("{{org}} stops selling until it connects again, which creates a new Stripe account. Close the old one ({{account}}) in Stripe's dashboard under Connect → Accounts.", { org: org.name, account: status.account_id ?? "" }),
+      confirmLabel: t.t("Disconnect"),
+      danger: true,
+    }))) return;
+    setBusy(true);
+    try {
+      await disconnectConnect(org.id);
+      toast.ok(t.t("Stripe account disconnected"));
+      reload();
+    } catch (e) {
+      toast.err(e);
+    } finally {
+      setBusy(false);
+    }
+  };
   const refresh = async () => {
     setBusy(true);
     try {
@@ -743,7 +762,12 @@ function ConnectRow({ org, status, reload, readOnly }: { org: Organization; stat
         )}
         {status.synced_at && <span className="adm-sub">{t.t("Last verified {{when}}", { when: fmtDateTime(status.synced_at, t.current()) })}</span>}
       </div>
-      {status.account_id && !readOnly && <Button size="sm" icon={<RefreshCw size={ICON.sm} aria-hidden />} loading={busy} onClick={refresh}>{t.t("Refresh status")}</Button>}
+      {status.account_id && !readOnly && (
+        <span className="adm-actions">
+          <Button size="sm" icon={<RefreshCw size={ICON.sm} aria-hidden />} loading={busy} onClick={refresh}>{t.t("Refresh status")}</Button>
+          <Button size="sm" variant="danger" disabled={busy} onClick={() => void disconnect()}>{t.t("Disconnect")}</Button>
+        </span>
+      )}
     </div>
   );
 }

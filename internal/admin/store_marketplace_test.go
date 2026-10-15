@@ -232,3 +232,48 @@ func TestConnect_AccountCountry(t *testing.T) {
 		t.Errorf("accounts made: %+v, want NO then the platform's %s", f.pay.accounts, settings.ShipCountries[0])
 	}
 }
+
+// TestConnect_Disconnect: a platform admin's disconnect forgets the
+// account, and the next connect asks Stripe for a new one under a new
+// request id. An org admin can't disconnect.
+func TestConnect_Disconnect(t *testing.T) {
+	t.Parallel()
+	f, cleanup := newMarketFixture(t, 49900, 3)
+	defer cleanup()
+	r := chi.NewRouter()
+	r.Post("/api/admin/organizations/{orgID}/stripe-connect/start", f.h.StartStripeConnect)
+	r.Post("/api/admin/organizations/{orgID}/stripe-connect/disconnect", f.h.DisconnectStripeConnect)
+	var org int64
+	if err := f.db.QueryRow(`INSERT INTO organizations(name, slug) VALUES ('Wrong', 'wrong') RETURNING id`).Scan(&org); err != nil {
+		t.Fatal(err)
+	}
+	call := func(path string, u auth.User) int {
+		t.Helper()
+		req := httptest.NewRequest("POST", "/api/admin/organizations/"+itoa64(org)+"/stripe-connect/"+path, nil)
+		req = req.WithContext(auth.WithUser(req.Context(), u))
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+	orgAdmin := auth.User{ID: 1, Username: "boss", Role: auth.RoleOrgAdmin, OrgID: &org}
+	admin := auth.User{ID: 2, Username: "root", Role: auth.RoleAdmin}
+	if c := call("start", orgAdmin); c != http.StatusOK {
+		t.Fatalf("start: %d", c)
+	}
+	if c := call("disconnect", orgAdmin); c != http.StatusForbidden {
+		t.Errorf("org admin disconnect: %d, want 403", c)
+	}
+	if c := call("disconnect", admin); c != http.StatusOK {
+		t.Fatalf("disconnect: %d", c)
+	}
+	var acct sql.NullString
+	if err := f.db.QueryRow(`SELECT stripe_connect_account_id FROM organizations WHERE id = $1`, org).Scan(&acct); err != nil || acct.Valid {
+		t.Fatalf("account after disconnect: %v %v", acct, err)
+	}
+	if c := call("start", orgAdmin); c != http.StatusOK {
+		t.Fatalf("start again: %d", c)
+	}
+	if n := len(f.pay.accounts); n != 2 || f.pay.accounts[0].IdempotencyKey == f.pay.accounts[1].IdempotencyKey {
+		t.Errorf("accounts asked for: %+v, want two under different request ids", f.pay.accounts)
+	}
+}

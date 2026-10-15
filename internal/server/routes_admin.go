@@ -102,6 +102,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.Get("/organizations/{orgID}/stripe-connect/status", adminH.GetStripeConnectStatus)
 		r.Post("/organizations/{orgID}/stripe-connect/refresh", adminH.RefreshStripeConnectStatus)
 		r.Post("/organizations/{orgID}/stripe-connect/dashboard", adminH.OpenStripeConnectDashboard)
+		r.Post("/organizations/{orgID}/stripe-connect/disconnect", adminH.DisconnectStripeConnect)
 
 		// Purchases read-side + confirm: arrangers see their own org's,
 		// the platform admin reconciles across orgs. Buying is org-only.

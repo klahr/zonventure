@@ -133,6 +133,8 @@ export const getPurchase = (id: number) => get<Purchase>(`/api/admin/purchases/$
 export const connectStatus = (id: number, signal?: AbortSignal) =>
   get<ConnectStatus>(`${org(id)}/stripe-connect/status`, signal ? { signal } : {});
 export const refreshConnect = (id: number) => post<ConnectStatus>(`${org(id)}/stripe-connect/refresh`);
+/** Forgets the org's Stripe account; the next connect creates a new one. */
+export const disconnectConnect = (id: number) => post<ConnectStatus>(`${org(id)}/stripe-connect/disconnect`);
 
 export const createOrganization = (name: string) => post<Organization>("/api/admin/organizations", { name });
 export const renameOrganization = (id: number, name: string) => patch<void>(org(id), { name });
