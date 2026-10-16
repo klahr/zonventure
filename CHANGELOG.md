@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.32.11] - 2026-10-16
+
 ### Changed
 
 - `.env.example` runs the release image from ghcr.io (`COMPOSE_FILE`
