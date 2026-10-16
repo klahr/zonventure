@@ -11,6 +11,28 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- The stylesheets are simpler: rules repeated across the console, the
+  player, the party creator and the public pages are shared, fixed sizes
+  and colours use the design tokens, and unused rules are gone. Pages
+  look the same, apart from slightly taller body lines and a smaller
+  footer on the public pages, and small shifts in a few radii and gaps.
+- The start-code field takes the adventure's own accent.
+
+### Fixed
+
+- In dark mode, the admin change list, the designer's modal banner, the
+  trail chips and the recap receipt no longer show light borders or
+  backgrounds.
+- On phones, the designer's inspector sheet has no stray left border.
+- The quick palette's free-text box is borderless, like its search box.
+- The roles tick is readable on a light accent.
+
+### Removed
+
+- The unused `/assets/fsmap.css`.
+
 ## [0.32.9] - 2026-10-15
 
 ### Added
