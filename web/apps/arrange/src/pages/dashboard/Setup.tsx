@@ -25,9 +25,9 @@ export function SetupCard({ lead, steps, foot }: { lead: string; steps: SetupSte
     <section className="db-setup" aria-labelledby="db-setup-title">
       <div className="db-setup__head">
         <h2 id="db-setup-title" className="cs-card__title">{t.t("Getting started")}</h2>
-        <span className="db-muted db-small">{t.t("{{done}} of {{total}} done", { done, total: steps.length })}</span>
+        <span className="cs-sub">{t.t("{{done}} of {{total}} done", { done, total: steps.length })}</span>
       </div>
-      <p className="db-muted">{lead}</p>
+      <p className="cs-muted cs-flush">{lead}</p>
       <ol className="db-steps">
         {steps.map((s, i) => (
           <SetupStep key={i} n={i + 1} {...s} />
@@ -54,7 +54,7 @@ function SetupStep({ n, done, title, hint, action }: SetupStepProps & { n: numbe
           {title}
           {done && <span className="cs-sr"> — {t.t("done")}</span>}
         </span>
-        {hint && <span className="db-muted db-small">{hint}</span>}
+        {hint && <span className="cs-sub">{hint}</span>}
       </span>
       {cta && <span className="db-step__cta">{cta}</span>}
     </li>

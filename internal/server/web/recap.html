@@ -24,7 +24,7 @@
 <script src="/assets/map-config.js"></script>
 <script src="/i18n.js"></script>
 <style>
-:root {
+:root, :root[data-tone="light"] {
   --accent:       #ad1357;
   --accent-fg:    #ffffff;
   --ink:          #0b1220;
@@ -49,22 +49,20 @@
 /* A look with a page colour of its own picks the light or dark palette
    by that colour (data-tone, set by applyColors), whatever the system's
    scheme, so cards and text stay readable on it. */
-:root[data-tone="light"] {
-  --ink: #0b1220; --muted: #4f6478; --surface: #ffffff; --surface-2: #f0f2f6;
-  --border: #d8dde6; --border-soft: #e8eaf0;
-}
 :root[data-tone="dark"] {
   --ink: #e6ebf5; --muted: #8b94a8; --surface: #131c2e; --surface-2: #1b2640;
   --border: #2a3550; --border-soft: #1f2940;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
 body {
+  margin: 0;
   font-family: 'Open Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', system-ui, -apple-system, 'Segoe UI', sans-serif;
   background: var(--bg);
   color: var(--ink);
   line-height: 1.5;
   min-height: 100vh;
+  /* The look's two colours, as a band across the top. */
+  border-top: 4px solid var(--accent); border-image: linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent))) 1;
 }
 .wrap { max-width: 48rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
 .brand {
@@ -76,8 +74,6 @@ body {
   font-family: 'Open Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; font-size: .7rem;
   color: var(--muted); font-weight: 600; text-transform: lowercase;
 }
-/* The look's two colours, as a band across the top. */
-body { border-top: 4px solid var(--accent); border-image: linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent))) 1; }
 /* The look's cover picture, above the title. */
 .cover {
   aspect-ratio: 16 / 7; margin: 0 0 1rem;
@@ -91,7 +87,7 @@ body { border-top: 4px solid var(--accent); border-image: linear-gradient(90deg,
 .head .who {
   color: var(--muted); font-size: .95rem; margin-bottom: 1rem;
 }
-.receipt { margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--line, #ddd); border-radius: 12px; }
+.receipt { margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; }
 .receipt h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
 .receipt code { display: block; font-family: ui-monospace, monospace; font-size: .8rem; word-break: break-all; margin: .3rem 0; }
 .receipt .ok { color: #1b6b43; font-weight: 600; }
@@ -178,7 +174,6 @@ body { border-top: 4px solid var(--accent); border-image: linear-gradient(90deg,
      apps and opened on phones — 35 px was too small for outdoor /
      gloved use. */
   width: 2.75rem; height: 2.75rem;
-  min-width: 2.75rem; min-height: 2.75rem;
   padding: 0;
   border-radius: 50%;
   border: 1px solid var(--border);

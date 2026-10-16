@@ -9,16 +9,16 @@
   gap: 1px;
   padding: 3px;
   border-radius: 9px;
-  background: var(--ink, #1f2937);
+  background: var(--ink);
   box-shadow: 0 6px 20px rgb(15 23 42 / 0.25);
   transform: translate(-50%, -100%);
-  animation: md-menu-in 120ms var(--ease-out, ease-out) both;
+  animation: md-menu-in 120ms var(--ease-out) both;
   white-space: nowrap;
 }
 .md-menu.is-below { transform: translate(-50%, 0); }
 /* The little arrow towards the selection. */
-.md-menu::after { content: ""; position: absolute; left: 50%; top: 100%; margin-left: -5px; border: 5px solid transparent; border-top-color: var(--ink, #1f2937); }
-.md-menu.is-below::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--ink, #1f2937); }
+.md-menu::after { content: ""; position: absolute; left: 50%; top: 100%; margin-left: -5px; border: 5px solid transparent; border-top-color: var(--ink); }
+.md-menu.is-below::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--ink); }
 .md-menu__btn {
   display: inline-grid;
   place-items: center;
@@ -30,12 +30,12 @@
   border-radius: 6px;
   background: none;
   box-shadow: none;
-  color: var(--surface, #fff);
+  color: var(--surface);
   cursor: pointer;
 }
-.md-menu__btn:hover { background: color-mix(in srgb, var(--surface, #fff) 18%, transparent); }
+.md-menu__btn:hover { background: color-mix(in srgb, var(--surface) 18%, transparent); }
 /* A divider between the words' formats and the lines'. */
 .md-menu__btn--split { position: relative; margin-left: 7px; }
-.md-menu__btn--split::before { content: ""; position: absolute; left: -4px; top: 6px; width: 1px; height: 16px; background: color-mix(in srgb, var(--surface, #fff) 28%, transparent); }
+.md-menu__btn--split::before { content: ""; position: absolute; left: -4px; top: 6px; width: 1px; height: 16px; background: color-mix(in srgb, var(--surface) 28%, transparent); }
 @keyframes md-menu-in { from { opacity: 0; margin-top: 4px; } }
 @media (prefers-reduced-motion: reduce) { .md-menu { animation: none; } }

@@ -403,7 +403,7 @@ export function PickDialog<T>({ title, items, label, onPick, onClose }: { title:
   const t = useT();
   return (
     <Dialog title={title} onClose={onClose} footer={<Button onClick={onClose}>{t.t("Cancel")}</Button>}>
-      <p className="adm-muted">{t.t("Pick one. It shows among the organization's own adventures.")}</p>
+      <p className="cs-note cs-note--md">{t.t("Pick one. It shows among the organization's own adventures.")}</p>
       <div className="adm-picklist">
         {items.map((x, i) => (
           <Button key={i} block autoFocus={i === 0} onClick={() => onPick(x)}>{label(x)}</Button>

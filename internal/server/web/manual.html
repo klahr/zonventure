@@ -61,7 +61,6 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme]) { --border: #3a5172; }
   }
-  body { line-height: 1.6; }
   /* Topbar / nav / hamburger CSS comes from /assets/topbar.css. */
   /* Article width pinned by .layout on desktop; on mobile the
      padding is on .layout itself so main can fill the row. */
@@ -122,12 +121,11 @@
     margin: 0 0 2rem;
     padding: .75rem 1rem;
     border-radius: var(--radius-xs);
-    background: var(--surface-soft, color-mix(in srgb, var(--accent) 4%, var(--surface)));
+    background: color-mix(in srgb, var(--accent) 4%, var(--surface));
     border: 1px solid var(--border-soft);
     font-size: .92rem;
     color: var(--ink-soft);
   }
-  .lang-note a { color: var(--accent); }
   .toc {
     margin: 1.5rem 0 2rem;
     padding: 1rem 1.25rem;
@@ -139,9 +137,7 @@
     text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
   }
   .toc ol { margin: 0; padding-left: 1.5rem; }
-  .toc a { text-decoration: none; }
-  .toc a:hover { text-decoration: underline; }
-  footer { margin-top: 3rem; padding: 1.5rem 1.25rem; font-size: .85rem; }
+  footer { margin-top: 3rem; padding: 1.5rem 1.25rem; }
   .updated {
     color: var(--muted); font-size: .85rem; margin: 0 0 1.5rem;
   }
@@ -169,9 +165,7 @@
       margin: 0;
       font-size: .9rem;
     }
-    .toc h2 {
-      margin: 0 0 .5rem; padding: 0; border: 0; font-size: .85rem;
-    }
+    .toc h2 { font-size: .85rem; }
   }
   /* Print: drop the chrome, keep the content. Each top-level section
      starts on a new page so a printed copy has a clean shape. */

@@ -1,4 +1,4 @@
 .dz .blk-cipher__shift .field__input { width: 6rem; }
-.dz .blk-cipher__key { font-family: var(--font-mono, monospace); }
+.dz .blk-cipher__key { font-family: var(--font-mono); }
 /* A sheet can run long; the preview is a glance, not the full page. */
 .dz .blk-cipher__preview { max-height: 18rem; overflow: auto; border-radius: var(--radius-lg); }

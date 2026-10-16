@@ -58,7 +58,7 @@ export function App() {
           {/* Not a link: the site's root is the console, and leaving loses the host link's page. */}
           <span className="party-brand">{siteName()}</span>
           {/* Each language by its own name; the choice sticks (zv-lang). */}
-          <button type="button" className="party-link party-lang" lang={sv ? "en" : "sv"} aria-label={t("Language")} onClick={() => i18n.setLocale(sv ? "en" : "sv")}>
+          <button type="button" className="zv-link party-link party-lang" lang={sv ? "en" : "sv"} aria-label={t("Language")} onClick={() => i18n.setLocale(sv ? "en" : "sv")}>
             {sv ? "English" : "Svenska"}
           </button>
         </header>

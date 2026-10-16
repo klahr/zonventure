@@ -248,7 +248,7 @@ export function Guide(props: GuideProps) {
       <div ref={top} />
       {confirmDialog}
       {props.note && (
-        <p className="party-note" role="status">
+        <p className="zv-note" role="status">
           {props.note}
         </p>
       )}
@@ -343,7 +343,7 @@ export function Guide(props: GuideProps) {
           />
           {/* Beside the card when there is room; behind a link when not. */}
           <aside className={"trail-stage__phone" + (peek ? " is-open" : "")} aria-label={t("On the teams' phones")}>
-            <button type="button" className="trail-link trail-stage__peek" aria-expanded={peek} onClick={() => setPeek((v) => !v)}>
+            <button type="button" className="zv-link trail-link trail-stage__peek" aria-expanded={peek} onClick={() => setPeek((v) => !v)}>
               <Icon name="phone" size={16} />
               {peek ? t("Hide the phone") : t("See it on a phone")}
             </button>
@@ -378,7 +378,7 @@ export function Guide(props: GuideProps) {
       <>
         <h1 className="trail-guide__title">{t("Your party adventure")}</h1>
         {props.notes}
-        <label className="party-field">
+        <label className="zv-field">
           <span>{t("Name")}</span>
           <input value={title} maxLength={120} readOnly={readOnly} onChange={(e) => onChange({ title: e.target.value })} />
         </label>
@@ -401,7 +401,7 @@ export function Guide(props: GuideProps) {
                 <p>
                   {t("Finish these cards first:")}{" "}
                   {unfinished.map(({ c, i }) => (
-                    <button key={c.id} type="button" className="trail-link" onClick={() => go({ at: "card", id: c.id })}>
+                    <button key={c.id} type="button" className="zv-link trail-link" onClick={() => go({ at: "card", id: c.id })}>
                       {nums[i] ? t("Question {{n}}", { n: nums[i] }) : t("Information card")}
                     </button>
                   ))}

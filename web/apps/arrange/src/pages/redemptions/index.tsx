@@ -71,7 +71,7 @@ export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
         current={st}
         tabs={STATES.map((s) => {
           const n = s === "all" ? 0 : counts[s] ?? 0;
-          return { id: s, href: href({ name: "redemptions", tab: s }), label: <>{t.t(LABEL[s])}{n > 0 && <span className="rd-count">{n}</span>}</> };
+          return { id: s, href: href({ name: "redemptions", tab: s }), label: <>{t.t(LABEL[s])}{n > 0 && <span className="cs-count">{n}</span>}</> };
         })}
       />}
       {(langs.length > 1 || rows.some(printable)) && (
@@ -95,7 +95,7 @@ export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
       ) : rows.length === 0 ? (
         <Empty title={total === 0 ? t.t("No redemptions yet.") : st === "pending" ? t.t("No redemptions waiting for review.") : st === "to_post" ? t.t("Nothing left to post.") : t.t("No redemptions here.")} {...(total === 0 ? { illustration: SPOTS.noRedemptions } : {})} />
       ) : (
-        <ul className="rd-list">
+        <ul className="cs-records">
           {rows.map((rd) => <RedemptionItem key={`${rd.kind}-${rd.id}`} rd={rd} showState={st === "all"} reload={list.reload} />)}
         </ul>
       )}
@@ -186,7 +186,7 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
 
   const closed = rd.state === "rejected" || rd.state === "cancelled";
   const decided = rd.decided_at && (
-    <span className="rd-sub" title={fmtDateTime(rd.decided_at, locale)}>
+    <span className="cs-sub" title={fmtDateTime(rd.decided_at, locale)}>
       {rd.decided_by ? t.t("{{when}} by {{who}}", { when: relTime(rd.decided_at, locale), who: rd.decided_by }) : relTime(rd.decided_at, locale)}
     </span>
   );
@@ -204,17 +204,17 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
     </Button>
   ));
   return (
-    <li className="rd-item">
-      <div className="rd-item__main">
+    <li className="cs-card">
+      <div className="cs-record__cols">
         {purchase ? (
-        <div className="rd-item__col">
-          <span className="rd-label">{t.t("Order")}</span>
+        <div className="cs-record__col">
+          <span className="cs-sub">{t.t("Order")}</span>
           <strong>{t.t("Store purchase")}</strong>
-          <span className="rd-sub" title={fmtDateTime(rd.created_at, locale)}>{t.t("Paid {{when}}", { when: relTime(rd.created_at, locale) })}</span>
+          <span className="cs-sub" title={fmtDateTime(rd.created_at, locale)}>{t.t("Paid {{when}}", { when: relTime(rd.created_at, locale) })}</span>
         </div>
         ) : (
-        <div className="rd-item__col">
-          <span className="rd-label">{t.t("Code")}</span>
+        <div className="cs-record__col">
+          <span className="cs-sub">{t.t("Code")}</span>
           <strong>{rd.partner_name}</strong>
           <span className="rd-codes">
             {rd.box_number && (
@@ -226,51 +226,51 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
               {rd.security_code}<Copy size={ICON.xs} aria-hidden />
             </button>
           </span>
-          <span className="rd-sub" title={fmtDateTime(rd.created_at, locale)}>{t.t("Received {{when}}", { when: relTime(rd.created_at, locale) })}</span>
+          <span className="cs-sub" title={fmtDateTime(rd.created_at, locale)}>{t.t("Received {{when}}", { when: relTime(rd.created_at, locale) })}</span>
         </div>
         )}
-        <div className="rd-item__col">
-          <span className="rd-label">{t.t("Product")}</span>
+        <div className="cs-record__col">
+          <span className="cs-sub">{t.t("Product")}</span>
           <span>{rd.product_name || "—"}</span>
-          {rd.event_id > 0 && <a className="rd-sub" href={href({ name: "event", id: rd.event_id })}>{rd.event_name || `#${rd.event_id}`}</a>}
+          {rd.event_id > 0 && <a className="cs-sub" href={href({ name: "event", id: rd.event_id })}>{rd.event_name || `#${rd.event_id}`}</a>}
         </div>
-        <div className="rd-item__col">
-          <span className="rd-label">{t.t("Customer")}</span>
+        <div className="cs-record__col">
+          <span className="cs-sub">{t.t("Customer")}</span>
           <strong>{rd.name}</strong>
-          {rd.email && <a className="rd-sub" href={`mailto:${rd.email}`}>{rd.email}</a>}
-          {address.length > 0 && <span className="rd-sub rd-address">{address.join("\n")}</span>}
+          {rd.email && <a className="cs-sub" href={`mailto:${rd.email}`}>{rd.email}</a>}
+          {address.length > 0 && <span className="cs-sub rd-address">{address.join("\n")}</span>}
         </div>
         {(!closed || rd.posted_at || rd.post_at || rd.note) && (
-          <div className="rd-item__col">
-            <span className="rd-label">{t.t("Post")}</span>
-            {rd.post_at && <span className="rd-sub">{t.t("Post on {{date}}", { date: rd.post_at })}</span>}
+          <div className="cs-record__col">
+            <span className="cs-sub">{t.t("Post")}</span>
+            {rd.post_at && <span className="cs-sub">{t.t("Post on {{date}}", { date: rd.post_at })}</span>}
             <span className="rd-pills">
               {rd.posted_at ? <span title={fmtDateTime(rd.posted_at, locale)}><Pill tone="good">{t.t("Posted")}</Pill></span> : <Pill>{t.t("Not posted")}</Pill>}
               {rd.letter_lang && (rd.letter_languages?.length ?? 0) > 1 && (
                 <Pill title={t.t("Envelope language")}>{langName(rd.letter_lang, locale)}</Pill>
               )}
             </span>
-            {rd.note && <span className="rd-sub rd-note">{rd.note}</span>}
+            {rd.note && <span className="cs-sub rd-note">{rd.note}</span>}
           </div>
         )}
         {(showState || decided || ((rd.state === "approved" || purchase) && rd.team_id)) && (
-          <div className="rd-item__col">
-            <span className="rd-label">{showState ? t.t("State") : t.t(stateLabel(rd.state))}</span>
+          <div className="cs-record__col">
+            <span className="cs-sub">{showState ? t.t("State") : t.t(stateLabel(rd.state))}</span>
             {showState && <span><Pill tone={TONE[rd.state] ?? "neutral"}>{t.t(stateLabel(rd.state))}</Pill></span>}
             {decided}
             {(rd.state === "approved" || purchase) && rd.team_id && (
-              <a className="rd-sub" href={href({ name: "event", id: rd.event_id })}>{t.t("Team: {{name}}", { name: rd.team_name || `#${rd.team_id}` })}</a>
+              <a className="cs-sub" href={href({ name: "event", id: rd.event_id })}>{t.t("Team: {{name}}", { name: rd.team_name || `#${rd.team_id}` })}</a>
             )}
           </div>
         )}
       </div>
-      <div className="rd-item__actions">
+      <div className="cs-record__bar">
         {rd.state === "pending" && (
           <>
             <Button size="sm" disabled={busy} onClick={() => act("approve")}>{t.t("Approve")}</Button>
             <Button size="sm" disabled={busy} onClick={() => setRejecting(true)}>{t.t("Reject")}</Button>
             {prints}
-            <span className="rd-spacer" />
+            <span className="cs-spacer" />
             <MoreMenu size="sm" label={t.t("More")} items={[postItem, postedItem, { separator: true }, cancelItem]} />
           </>
         )}
@@ -278,7 +278,7 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
           <>
             {prints}
             <Button size="sm" disabled={busy} icon={postedIcon} onClick={() => void togglePosted()}>{postedLabel}</Button>
-            <span className="rd-spacer" />
+            <span className="cs-spacer" />
             <MoreMenu size="sm" label={t.t("More")} items={[postItem, { separator: true }, cancelItem]} />
           </>
         )}
@@ -286,7 +286,7 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
           <>
             {prints}
             <Button size="sm" disabled={busy} icon={postedIcon} onClick={() => void togglePosted()}>{postedLabel}</Button>
-            <span className="rd-spacer" />
+            <span className="cs-spacer" />
             <MoreMenu size="sm" label={t.t("More")} items={[postItem]} />
           </>
         )}

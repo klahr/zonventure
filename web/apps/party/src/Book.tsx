@@ -51,7 +51,7 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
       </section>
     );
   }
-  if (!offer) return <p className="party-muted">{t("Loading…")}</p>;
+  if (!offer) return <p className="zv-muted">{t("Loading…")}</p>;
 
   const loc = i18n.current();
   const total = offer.base_cents + offer.per_kid_cents * kids;
@@ -73,7 +73,7 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
   const cover = coverOf(offer.theme, offer.cover_url);
   return (
     <section className={"party-card" + (cover ? " party-card--cover" : "")}>
-      {cover && <div className="party-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
+      {cover && <div className="pv-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
       <p className="party-eyebrow">{t("A party by {{org}}", { org: offer.org_name })}</p>
       <h1>{offer.title}</h1>
       {offer.blurb && <p className="party-lead">{offer.blurb}</p>}
@@ -82,12 +82,12 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
         <li>{t("Each team plays on a phone. No app and no accounts.")}</li>
         <li>{t("Start whenever you like within 60 days of booking. From the first game, play as many games as you like for 14 days.")}</li>
       </ul>
-      {cancelled && <p className="party-note">{t("The payment was cancelled. Nothing was charged.")}</p>}
+      {cancelled && <p className="zv-note">{t("The payment was cancelled. Nothing was charged.")}</p>}
       {!offer.payments_open ? (
-        <p className="party-note">{t("Booking isn't open right now. Check back soon.")}</p>
+        <p className="zv-note">{t("Booking isn't open right now. Check back soon.")}</p>
       ) : (
         <form className="party-form" onSubmit={submit}>
-          <label className="party-field">
+          <label className="zv-field">
             <span>{t("Children")}</span>
             <div className="party-stepper">
               <button type="button" onClick={() => setKids((k) => Math.max(1, k - 1))} disabled={kids <= 1} aria-label={t("Fewer")}>
@@ -98,9 +98,9 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
                 +
               </button>
             </div>
-            <small className="party-muted">{t("Up to {{n}} children.", { n: offer.max_kids })}</small>
+            <small className="zv-muted">{t("Up to {{n}} children.", { n: offer.max_kids })}</small>
           </label>
-          <label className="party-field">
+          <label className="zv-field">
             <span>{t("Teams")}</span>
             <div className="party-stepper">
               <button type="button" onClick={() => setTeams(Math.max(1, teams - 1))} disabled={teams <= 1} aria-label={t("Fewer")}>
@@ -111,16 +111,16 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
                 +
               </button>
             </div>
-            <small className="party-muted">{t("The children play in teams, one phone per team: up to {{n}} teams.", { n: maxTeams })}</small>
+            <small className="zv-muted">{t("The children play in teams, one phone per team: up to {{n}} teams.", { n: maxTeams })}</small>
           </label>
-          <label className="party-field">
+          <label className="zv-field">
             <span>{t("Name of the party (optional)")}</span>
             <input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} placeholder={t("Elsa turns 8")} />
           </label>
-          <label className="party-field">
+          <label className="zv-field">
             <span>{t("Your email")}</span>
             <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
-            <small className="party-muted">{t("We send the link you run the party from here.")}</small>
+            <small className="zv-muted">{t("We send the link you run the party from here.")}</small>
           </label>
           <label className="party-check">
             <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} required />
@@ -135,11 +135,11 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
             <strong>{money(total, offer.currency, loc)}</strong>
           </div>
           {error && (
-            <p className="party-error" role="alert">
+            <p className="zv-error" role="alert">
               {error}
             </p>
           )}
-          <button className="party-btn party-btn--primary" disabled={busy || !consent || !email}>
+          <button className="zv-btn zv-btn--primary" disabled={busy || !consent || !email}>
             {busy ? t("Opening checkout…") : t("Book and pay {{total}}", { total: money(total, offer.currency, loc) })}
           </button>
         </form>
@@ -156,7 +156,7 @@ function Paid() {
       <ThankYouBanner />
       <h1>{t("Thank you — your party is booked")}</h1>
       <p className="party-lead">{t("We're emailing you the link to your host page. From there you set up the teams, print the cards and start the game.")}</p>
-      <p className="party-muted">{t("It can take a minute or two. Check your spam folder if it doesn't arrive.")}</p>
+      <p className="zv-muted">{t("It can take a minute or two. Check your spam folder if it doesn't arrive.")}</p>
       <Resend />
     </section>
   );
@@ -168,10 +168,10 @@ export function Resend() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
-  if (sent) return <p className="party-note">{t("If that email has a party, its link is on its way.")}</p>;
+  if (sent) return <p className="zv-note">{t("If that email has a party, its link is on its way.")}</p>;
   return (
     <form
-      className="party-inline"
+      className="zv-inline"
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
@@ -183,11 +183,11 @@ export function Resend() {
         }
       }}
     >
-      <label className="party-field">
+      <label className="zv-field">
         <span>{t("No email? Send the link again")}</span>
         <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("Your email")} autoComplete="email" />
       </label>
-      <button className="party-btn" disabled={busy}>
+      <button className="zv-btn" disabled={busy}>
         {t("Send")}
       </button>
     </form>

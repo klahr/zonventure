@@ -1,5 +1,5 @@
 /* Adventures and the catalog: what the kit lacks — the cover tile, the
- * adventure cards with actions, the hero, the map and puzzle cards. */
+ * adventure cards with actions, the hero and the map. */
 
 .dz .adv-cover { display: inline-grid; place-items: center; flex: none; overflow: hidden; color: #fff; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid rgb(0 0 0 / 0.08); box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
 .dz .adv-cover--img { background: transparent; border: 0; box-shadow: none; }
@@ -8,14 +8,7 @@
 .dz .adv-cover--photo img { object-fit: cover; }
 
 .dz .adv-lang { text-transform: uppercase; letter-spacing: 0.05em; }
-.dz .adv-mono { font-family: var(--dz-font-mono, ui-monospace, monospace); font-size: var(--dz-text-sm); }
-.dz .adv-muted { color: var(--dz-muted); }
-.dz .adv-small { font-size: var(--dz-text-sm); font-weight: 400; }
-.dz .adv-strong { margin: 0; font-weight: 600; }
 .dz .adv-pre { margin: 0; white-space: pre-wrap; color: var(--dz-ink); }
-.dz .adv-grow { flex: 1; min-width: 12rem; }
-.dz .adv-pad { margin: 0; padding: var(--dz-space-3) var(--dz-space-4); }
-.dz .adv-block { display: block; margin-top: 2px; }
 .dz .adv-h3 { display: flex; align-items: center; flex-wrap: wrap; gap: var(--dz-space-2); margin: 0 0 var(--dz-space-2); font-size: var(--dz-text-md); font-weight: 700; color: var(--dz-ink); }
 .dz .adv-list { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: var(--dz-space-1); }
 
@@ -31,7 +24,7 @@
 .dz .adv-card__link:focus-visible { outline: none; }
 .dz .adv-card__tags { display: flex; flex-wrap: wrap; gap: var(--dz-space-1); }
 .dz .adv-card__desc { margin: 0; color: var(--dz-ink-soft); font-size: var(--dz-text-md); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.dz .adv-card__meta { margin: 0; color: var(--dz-muted); font-family: var(--dz-font-mono, ui-monospace, monospace); font-size: var(--dz-text-xs); overflow-wrap: anywhere; }
+.dz .adv-card__meta { margin: 0; color: var(--dz-muted); font-family: var(--dz-font-mono); font-size: var(--dz-text-xs); overflow-wrap: anywhere; }
 .dz .adv-card__actions { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); margin-top: auto; padding-top: var(--dz-space-1); }
 .dz .adv-card__hint { color: var(--dz-muted); font-size: var(--dz-text-sm); }
 
@@ -67,22 +60,7 @@
 .dz .adv-step { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--dz-space-2); padding: var(--dz-space-2) var(--dz-space-4); border-top: 1px solid var(--dz-border); }
 .dz .adv-step:first-child { border-top: 0; }
 .dz .adv-step .cs-pill { min-width: 4.5rem; justify-content: center; }
-.dz .adv-step__zone { display: inline-flex; align-items: center; gap: 4px; font-size: var(--dz-text-sm); }
-
-/* A lane adventure's puzzles. */
-.dz .adv-lane + .adv-lane { margin-top: var(--dz-space-4); }
-.dz .adv-puzzles { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.dz .adv-pz { display: flex; flex-direction: column; gap: var(--dz-space-2); padding: var(--dz-space-3) 0; border-top: 1px solid var(--dz-border); }
-.dz .adv-pz:first-child { border-top: 0; padding-top: 0; }
-.dz .adv-pz__head { display: flex; align-items: center; gap: var(--dz-space-2); min-width: 0; }
-.dz .adv-pz__num { display: inline-grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--dz-surface-2); color: var(--dz-ink-soft); font-size: var(--dz-text-xs); font-weight: 700; }
-.dz .adv-pz__title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.dz .adv-pz__images { display: flex; flex-wrap: wrap; gap: var(--dz-space-2); }
-.dz .adv-pz__images img { width: 96px; height: 72px; object-fit: cover; border-radius: var(--dz-r-1, 4px); border: 1px solid var(--dz-border); }
-.dz .adv-pz__hints summary { cursor: pointer; font-size: var(--dz-text-sm); font-weight: 600; color: var(--dz-ink-soft); }
-.dz .adv-pz__hint { display: flex; flex-direction: column; gap: var(--dz-space-1); margin-top: var(--dz-space-2); padding-left: var(--dz-space-3); border-left: 2px solid var(--dz-border); }
-.dz .adv-answers { display: flex; flex-wrap: wrap; gap: var(--dz-space-1); margin: 0; }
-.dz .adv-chip { display: inline-flex; padding: 2px 8px; border-radius: var(--dz-r-pill); background: var(--dz-surface-2); border: 1px solid var(--dz-border); font-size: var(--dz-text-sm); color: var(--dz-ink); }
+.dz .adv-step__zone { display: inline-flex; align-items: center; gap: var(--dz-space-1); font-size: var(--dz-text-sm); }
 
 /* Dialogs. */
 .dz .adv-choices { display: flex; flex-direction: column; gap: var(--dz-space-2); }
@@ -90,7 +68,7 @@
 .dz .adv-cover-row__text { display: flex; flex-direction: column; gap: var(--dz-space-1); }
 .dz .adv-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--dz-space-3); }
 .dz .adv-more { display: flex; flex-direction: column; gap: var(--dz-space-3); }
-.dz .adv-more > summary { cursor: pointer; color: var(--muted); font-size: var(--dz-text-sm, 0.875rem); }
+.dz .adv-more > summary { cursor: pointer; color: var(--dz-muted); font-size: var(--dz-text-sm); }
 .dz .adv-fieldset { display: flex; flex-direction: column; gap: var(--dz-space-2); margin: 0; padding: var(--dz-space-3); border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); min-width: 0; }
 .dz .adv-fieldset legend { padding: 0 var(--dz-space-1); }
 .dz .adv-check { display: flex; align-items: flex-start; gap: var(--dz-space-2); font-size: var(--dz-text-md); }
@@ -100,4 +78,3 @@
 /* Field mode: one big button and what it is doing. */
 .dz .adv-field { display: flex; flex-direction: column; align-items: flex-start; gap: var(--dz-space-3); max-width: 32rem; }
 .dz .adv-field__status { margin: 0; font-size: var(--dz-text-md); }
-.dz .adv-field__note { margin: 0; color: var(--muted); font-size: var(--dz-text-sm); }

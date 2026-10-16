@@ -125,7 +125,7 @@ export function MembersTab() {
           caption={t.t("Members")}
           rows={members}
           rowKey={(m) => m.id}
-          empty={<div className="mb-pad"><Empty title={t.t("No other users yet.")} /></div>}
+          empty={<div className="cs-card__pad"><Empty title={t.t("No other users yet.")} /></div>}
           columns={[
             {
               key: "user",
@@ -133,7 +133,7 @@ export function MembersTab() {
               cell: (m) => (
                 <span className="mb-user">
                   <strong>{m.username}</strong>
-                  {m.id === me.id && <span className="mb-muted"> {t.t("(you)")}</span>}
+                  {m.id === me.id && <span className="cs-muted"> {t.t("(you)")}</span>}
                 </span>
               ),
             },
@@ -264,8 +264,8 @@ function RequireTotpCard({ org, onChange }: { org: OrgDetail; onChange: (on: boo
         </label>
         <HelpPopover label={t.t("About “{{name}}”", { name: label })} body={t.t("Every member must set up two-factor authentication: until they do, the console shows them only the setup and their API tokens are refused. SSO sign-in counts as meeting it. The 2FA column shows who has it on.")} />
       </div>
-      {status.data && !available && <p className="mb-mode">{t.t("Two-factor authentication is not available on this server: set ZV_TOTP_KEY first.")}</p>}
-      {err && <p className="mb-err" role="status">{err}</p>}
+      {status.data && !available && <p className="cs-note">{t.t("Two-factor authentication is not available on this server: set ZV_TOTP_KEY first.")}</p>}
+      {err && <p className="cs-err" role="status">{err}</p>}
     </Card>
   );
 }
@@ -384,7 +384,7 @@ function AddMemberDialog({ org, onClose, onAdded }: { org: OrgDetail; onClose: (
           <option value="org_admin">{t.t("Admin")}</option>
         </select>
       </Field>
-      {err && <p className="mb-err" role="alert">{err}</p>}
+      {err && <p className="cs-err" role="alert">{err}</p>}
     </Dialog>
   );
 }

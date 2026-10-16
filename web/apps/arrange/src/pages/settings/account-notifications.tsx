@@ -55,7 +55,7 @@ export function NotificationsCard() {
             />
           ))}
         </div>
-        {err && <p className="acct-err" role="alert">{err}</p>}
+        {err && <p className="cs-err" role="alert">{err}</p>}
       </>
     );
   }

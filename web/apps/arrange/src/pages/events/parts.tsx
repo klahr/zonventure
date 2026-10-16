@@ -89,7 +89,7 @@ export function EventsTable({ rows, empty }: { rows: EventRow[]; empty?: ReactNo
       return (
         <span className="evs-namecell">
           {cover && <AdventureCover title={r.adventure_title || r.adventure_slug} src={cover} />}
-          <span className="evs-stack">
+          <span className="cs-stack">
             <strong>{eventLabel(r)} {r.party && <Pill tone="accent">{t.t("Hosted")}</Pill>}</strong>
             <span className="evs-sub">
               <span>{r.adventure_title || r.adventure_slug}</span>

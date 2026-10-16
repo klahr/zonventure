@@ -5,12 +5,8 @@
 @import "@zonventure/play-ui/play-ui.css";
 @import "@zonventure/play-ui/cover.css";
 
-html,
-body {
-  margin: 0;
+html {
   background: var(--bg);
-  color: var(--ink);
-  font-family: var(--font-body);
   -webkit-text-size-adjust: 100%;
 }
 
@@ -79,7 +75,8 @@ body {
 
 /* The organisers' messages: a bell with an unread count, and a banner
  * under the bar when one arrives. */
-.app-inbox {
+.app-inbox,
+.app-burger {
   position: relative;
   display: inline-grid;
   place-items: center;
@@ -92,7 +89,8 @@ body {
   color: var(--ink-soft);
   cursor: pointer;
 }
-.app-inbox:hover { background: var(--surface-2); }
+.app-inbox:hover,
+.app-burger:hover { background: var(--surface-2); }
 .app-inbox__count {
   position: absolute;
   top: 2px;
@@ -179,15 +177,14 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3);
+  /* At the very top, the dev bar keeps clear of the notch in the bar's place. */
+  padding: calc(var(--sp-2) + env(safe-area-inset-top)) var(--sp-3) var(--sp-2);
   background: repeating-linear-gradient(135deg, #1f2937, #1f2937 12px, #111827 12px 24px);
   color: #fff;
   font-size: var(--text-sm);
 }
-/* At the very top, the dev bar keeps clear of the notch in the bar's place. */
-.app-dev { padding-top: calc(var(--sp-2) + env(safe-area-inset-top)); }
 .app-dev + .app-bar { padding-top: var(--sp-2); }
-.app-dev__tag { padding: 0.1em 0.5em; border-radius: 4px; background: #facc15; color: #111827; font-weight: 800; letter-spacing: 0.08em; }
+.app-dev__tag { padding: 0.1em 0.5em; border-radius: var(--radius-sm); background: #facc15; color: #111827; font-weight: 800; letter-spacing: 0.08em; }
 .app-dev__steps { flex: 1; min-width: 0; padding: var(--sp-1) var(--sp-2); border-radius: var(--radius); border: 0; font: inherit; }
 .app-dev__reset { padding: var(--sp-1) var(--sp-3); border: 1px solid rgba(255, 255, 255, 0.5); border-radius: var(--radius); background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .app-dev__error { flex-basis: 100%; color: #fca5a5; }
@@ -229,7 +226,7 @@ body {
   padding-top: 0;
   overflow: hidden;
 }
-.app-lobby__cover {
+.app-lobby--cover > .pv-cover {
   margin: 0 calc(-1 * var(--sp-5)) calc(-1 * var(--sp-4));
 }
 .app-lobby--cover h1 {
@@ -310,12 +307,12 @@ body {
 .app-menu__locked { margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); font-size: var(--text-sm); color: var(--ink); }
 .app-team-pic { flex: none; display: grid; place-items: center; width: 3.25rem; height: 3.25rem; border-radius: 50%; overflow: hidden; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); font-weight: 800; font-size: 1.25rem; }
 .app-team-pic img { width: 100%; height: 100%; object-fit: cover; }
-.app-pic-drop { flex: none; display: grid; place-items: center; width: 5rem; height: 5rem; padding: 0; border: 2px dashed var(--muted); border-radius: var(--radius); background: var(--surface-2, var(--surface)); color: var(--muted); font-size: var(--text-xs); text-align: center; overflow: hidden; cursor: pointer; }
+.app-pic-drop { flex: none; display: grid; place-items: center; width: 5rem; height: 5rem; padding: 0; border: 2px dashed var(--muted); border-radius: var(--radius); background: var(--surface-2); color: var(--muted); font-size: var(--text-xs); text-align: center; overflow: hidden; cursor: pointer; }
 .app-pic-drop span { padding: var(--sp-1); }
 .app-pic-drop:hover:not(:disabled), .app-pic-drop:focus-visible { border-color: var(--accent); }
 .app-pic-drop.has-image { border-style: solid; border-color: var(--border-soft); }
 .app-pic-drop img { width: 100%; height: 100%; object-fit: cover; }
-.app-menu__field .pv-input[readonly] { background: var(--surface-2, var(--surface)); color: var(--muted); }
+.app-menu__field .pv-input[readonly] { background: var(--surface-2); color: var(--muted); }
 .app-menu__toggle { display: flex; gap: var(--sp-3); align-items: flex-start; cursor: pointer; }
 .app-menu__toggle input { width: 1.4rem; height: 1.4rem; margin-top: 0.1rem; flex: none; accent-color: var(--accent); }
 .app-menu__toggle > span { display: flex; flex-direction: column; gap: var(--sp-1); }
@@ -324,19 +321,9 @@ body {
 .app-menu__danger { color: var(--danger); border-color: currentColor; }
 .app-menu__confirm { padding: var(--sp-3); border-radius: var(--radius); background: var(--danger-bg); display: flex; flex-direction: column; gap: var(--sp-2); }
 .app-menu__confirm p { margin: 0; }
+.app-menu__confirm--calm { background: var(--surface-2); }
 .app-menu__confirm .app-menu__row .pv-btn { flex: 1; }
 .app-menu__error { color: var(--danger); font-size: var(--text-sm); margin: 0; }
-/* Roles: one card each, the player's own picked out. */
-.app-roles { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-.app-role { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-soft); border-radius: var(--radius); }
-.app-role.is-mine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
-.app-role__head { display: flex; gap: var(--sp-2); align-items: center; }
-.app-role__holder { margin-left: auto; }
-.app-role__name { font-weight: 700; color: var(--ink); }
-.app-role__pic { flex: none; width: 2.5rem; height: 2.5rem; border-radius: var(--radius); object-fit: cover; align-self: center; }
-.app-role__holder { font-size: var(--text-xs); color: var(--muted); text-align: right; }
-.app-role__text { font-size: var(--text-sm); }
-.app-role .pv-btn { align-self: flex-start; }
 .app-bar__role { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--accent); }
 .app-menu__foot { margin: 0; font-size: var(--text-sm); color: var(--muted); text-align: center; }
 .app-menu__foot a { color: inherit; display: inline-block; padding: var(--sp-2); }
@@ -346,22 +333,10 @@ body {
  * sticky app bar's stacking context, below the ☰, which turns into the
  * ✕ that closes it. */
 .app-burger {
-  position: relative;
   z-index: 3;
-  display: inline-grid;
-  place-items: center;
   flex: none;
-  width: 2.75rem;
-  height: 2.75rem;
   margin-left: calc(-1 * var(--sp-2));
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--ink-soft);
-  cursor: pointer;
 }
-.app-burger:hover { background: var(--surface-2); }
 .app-burger__lines { position: relative; display: block; width: 22px; height: 16px; }
 .app-burger__lines span {
   position: absolute;
@@ -402,7 +377,6 @@ body {
   width: min(86vw, 22rem);
   overflow-y: auto;
   overscroll-behavior: contain;
-  box-sizing: border-box;
   padding: calc(var(--sp-2) + env(safe-area-inset-top)) var(--sp-4) calc(var(--sp-6) + env(safe-area-inset-bottom));
   background: var(--surface);
   box-shadow: var(--shadow-lg);
@@ -434,5 +408,3 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .app-drawer, .app-drawer.is-open, .app-drawer-back, .app-burger__lines span, .app-burger.is-open .app-burger__lines span { transition: none; }
 }
-.app-menu__confirm--calm { background: var(--surface-2); }
-.app-role.is-secret { border-style: dashed; }

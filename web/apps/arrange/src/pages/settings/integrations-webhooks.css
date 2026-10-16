@@ -1,9 +1,6 @@
 .dz .wh-url { margin: 0; font-family: var(--dz-font-mono); font-size: var(--dz-text-sm); color: var(--dz-muted); word-break: break-all; }
-.dz .wh-muted { margin: 0; color: var(--dz-muted); }
-.dz .wh-small { font-size: var(--dz-text-sm); }
 .dz .wh-kinds { display: flex; flex-wrap: wrap; gap: var(--dz-space-1); }
 .dz .wh-kind { padding: 1px 8px; border-radius: var(--dz-r-pill); background: var(--dz-surface-2); font-family: var(--dz-font-mono); font-size: var(--dz-text-xs); color: var(--dz-ink-soft); }
-.dz .wh-err { margin: 0; color: var(--dz-danger); font-size: var(--dz-text-sm); }
 .dz .wh-warn { margin: 0; color: var(--dz-accent); font-weight: 600; }
 .dz .wh-secret, .dz .wh-payload { margin: 0; padding: var(--dz-space-3); border-radius: var(--dz-r-2); background: var(--dz-surface-2); font-family: var(--dz-font-mono); font-size: var(--dz-text-sm); }
 .dz .wh-secret { word-break: break-all; white-space: pre-wrap; user-select: all; }
@@ -14,7 +11,6 @@
 .dz .wh-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: var(--dz-space-1) var(--dz-space-3); }
 .dz .wh-check { display: flex; align-items: center; gap: var(--dz-space-2); padding: var(--dz-space-1) 0; cursor: pointer; font-size: var(--dz-text-sm); }
 .dz .wh-log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--dz-space-2); }
-.dz .wh-row { background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); box-shadow: var(--dz-shadow); }
 .dz button.wh-row__head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--dz-space-2); width: 100%; padding: var(--dz-space-3) var(--dz-space-4); background: none; border: 0; border-radius: var(--dz-r-3); text-align: left; justify-content: flex-start; color: var(--dz-ink); }
 .dz button.wh-row__head:hover:not(:disabled) { background: var(--dz-surface-2); border-color: transparent; }
 .dz .wh-row__detail { display: flex; flex-direction: column; gap: var(--dz-space-2); padding: 0 var(--dz-space-4) var(--dz-space-4); min-width: 0; }

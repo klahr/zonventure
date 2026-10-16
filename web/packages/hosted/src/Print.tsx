@@ -10,13 +10,13 @@ export function TrailPrint({ event }: { event: HostedEvent }) {
   const t = i18n.t;
   return (
     <div>
-      <p className="hosted-muted">{t("Print the cards and hide them in order. The first page has the QR code the teams scan to join.")}</p>
-      {event.reprint && <p className="hosted-note">{t("The cards changed since you printed them. Print them again.")}</p>}
+      <p className="zv-muted">{t("Print the cards and hide them in order. The first page has the QR code the teams scan to join.")}</p>
+      {event.reprint && <p className="zv-note">{t("The cards changed since you printed them. Print them again.")}</p>}
       <div className="hosted-actions">
-        <a className="hosted-btn hosted-btn--primary hosted-btn--link" href={api.pdf()} target="_blank" rel="noopener">
+        <a className="zv-btn zv-btn--primary" href={api.pdf()} target="_blank" rel="noopener">
           {t("Print the cards (PDF)")}
         </a>
-        <a className="hosted-btn hosted-btn--link" href={api.pdf(true)} target="_blank" rel="noopener">
+        <a className="zv-btn" href={api.pdf(true)} target="_blank" rel="noopener">
           {t("Answer key (PDF)")}
         </a>
       </div>

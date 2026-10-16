@@ -229,7 +229,7 @@ function TopUpDialog(props: {
           );
         })}
       </div>
-      <p className="cs-field__hint st-flush">{t.t("Paid by card. Top-ups don't expire and aren't refunded. You'll get a receipt by email.")}</p>
+      <p className="cs-field__hint cs-flush">{t.t("Paid by card. Top-ups don't expire and aren't refunded. You'll get a receipt by email.")}</p>
     </Dialog>
   );
 }
@@ -287,7 +287,7 @@ export function BillsCard() {
     >
       {load.error && !load.data ? <ErrorBox message={load.error} retry={load.reload} retryLabel={t.t("Retry")} />
         : !load.data ? <Loading label={t.t("Loading…")} />
-        : load.data.bills.length === 0 ? <p className="cs-field__hint st-flush">{t.t("No bills here.")}</p>
+        : load.data.bills.length === 0 ? <p className="cs-field__hint cs-flush">{t.t("No bills here.")}</p>
         : <Table columns={columns} rows={load.data.bills} rowKey={(x) => String(x.id)} />}
       {marking && (
         <Dialog

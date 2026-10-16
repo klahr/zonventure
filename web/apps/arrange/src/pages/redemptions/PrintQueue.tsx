@@ -96,7 +96,7 @@ function PrintQueueDialog({ orders, onClose, reload }: { orders: Redemption[]; o
       ) : (
         <p>{t.t("All {{n}} opened. Print them, post the envelopes, then mark the orders as posted.", { n: items.length })}</p>
       )}
-      <p className="rd-sub">{t.t("Each click opens one PDF in a new tab: browsers don't let one click open more.")}</p>
+      <p className="cs-sub">{t.t("Each click opens one PDF in a new tab: browsers don't let one click open more.")}</p>
     </Dialog>
   );
 }

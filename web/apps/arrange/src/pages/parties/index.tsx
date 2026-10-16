@@ -135,7 +135,7 @@ function Offers({ slug }: { slug?: string | undefined }) {
     { key: "name", header: t.t("Party adventure"), cell: (o) => (
       <span className="evs-namecell">
         <AdventureCover title={o.title} src={o.cover} />
-        <span className="evs-stack">
+        <span className="cs-stack">
           <strong>{o.name || o.title}</strong>
           {o.name && <span className="evs-sub">{o.title}</span>}
           {o.stations > 0 && <span className="evs-sub">{t.plural(o.stations, { one: t.t("{{n}} card to hide"), other: t.t("{{n}} cards to hide") })}</span>}
@@ -199,7 +199,7 @@ function Offers({ slug }: { slug?: string | undefined }) {
             {unavailable.map((o) => (
               <li key={o.adventure_slug}>
                 <strong>{o.title}</strong>
-                <span className="evs-muted">{sentence(o.problems![0]!)}</span>
+                <span className="cs-muted">{sentence(o.problems![0]!)}</span>
               </li>
             ))}
           </ul>
@@ -220,7 +220,7 @@ function PriceCell({ offer, locale }: { offer: Row; locale: string }) {
   if (!offer.per_kid_cents) return <>{base}</>;
   const perKid = fmtMoney(offer.per_kid_cents, offer.currency, locale);
   return (
-    <span className="evs-stack pt-price">
+    <span className="cs-stack pt-price">
       <span>{base}</span>
       <span className="evs-sub">{t.t("+ {{price}} per child", { price: perKid })}</span>
     </span>
@@ -315,9 +315,9 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
               <label key={a.adventure_slug} className={"evs-choice" + (a.adventure_slug === picked ? " is-on" : "")}>
                 <input type="radio" name="pt-adventure" checked={a.adventure_slug === picked} onChange={() => setPicked(a.adventure_slug)} />
                 <AdventureCover title={a.title} src={a.cover} />
-                <span className="evs-stack">
-                  <strong className="evs-ellipsis">{a.title}</strong>
-                  <span className="evs-muted evs-small">{t.plural(a.stations, { one: t.t("{{n}} card to hide"), other: t.t("{{n}} cards to hide") })}</span>
+                <span className="cs-stack">
+                  <strong className="cs-ellipsis">{a.title}</strong>
+                  <span className="cs-sub">{t.plural(a.stations, { one: t.t("{{n}} card to hide"), other: t.t("{{n}} cards to hide") })}</span>
                 </span>
               </label>
             ))}
@@ -327,9 +327,9 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
         target && (
           <div className="evs-chosen">
             <AdventureCover title={target.title} src={target.cover} size={36} />
-            <span className="evs-stack">
+            <span className="cs-stack">
               <strong>{target.title}</strong>
-              {target.stations > 0 && <span className="evs-muted evs-small">{t.plural(target.stations, { one: t.t("{{n}} card to hide"), other: t.t("{{n}} cards to hide") })}</span>}
+              {target.stations > 0 && <span className="cs-sub">{t.plural(target.stations, { one: t.t("{{n}} card to hide"), other: t.t("{{n}} cards to hide") })}</span>}
             </span>
           </div>
         )
@@ -359,7 +359,7 @@ function OfferDialog(props: { offer?: Row; choices?: Row[]; onClose: () => void;
         </Field>
       </div>
       {exampleCents > 0 && (
-        <p className="evs-muted evs-small">
+        <p className="cs-note">
           {t.t("A party adventure for {{n}} children costs {{price}}.", { n: example, price: fmtMoney(exampleCents, undefined, loc) })}
         </p>
       )}

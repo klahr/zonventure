@@ -10,7 +10,7 @@
 /* A page in the starter's look: the player's own variables, painted here without the player. */
 .starters .starters__page.pv {
   display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem;
-  min-height: 15rem; padding: 0.9rem; border-radius: calc(var(--radius, 12px) - 2px);
+  min-height: 15rem; padding: 0.9rem; border-radius: calc(var(--radius) - 2px);
   /* .pv's inline-size containment would size it as if empty inside a
      button that fits its content: the page would shrink to its padding. */
   container-type: normal;
@@ -19,21 +19,21 @@
   background-attachment: scroll;
   animation: none; pointer-events: none;
 }
-.starters__title { font-family: var(--font-brand, inherit); font-size: 1.35rem; font-weight: 700; line-height: 1.15; color: var(--pv-accent-2nd, var(--accent)); }
+.starters__title { font-family: var(--font-brand); font-size: 1.35rem; font-weight: 700; line-height: 1.15; color: var(--pv-accent-2nd, var(--accent)); }
 .starters__card {
   align-self: stretch; padding: 0.7rem 0.8rem; font-size: 0.9rem; line-height: 1.45;
   background: var(--pv-card-bg, var(--surface)); -webkit-backdrop-filter: var(--pv-card-blur, none); backdrop-filter: var(--pv-card-blur, none);
   border: 1px solid var(--pv-card-line, transparent); border-radius: var(--radius); box-shadow: var(--shadow-sm);
 }
-.starters__btn { margin-top: auto; padding: 0.5rem 1.1rem; border-radius: var(--radius-pill, 999px); background: var(--accent); color: var(--pv-on-accent); font-weight: 700; font-size: 0.9rem; }
+.starters__btn { margin-top: auto; padding: 0.5rem 1.1rem; border-radius: var(--radius-pill); background: var(--accent); color: var(--pv-on-accent); font-weight: 700; font-size: 0.9rem; }
 .starters__group { display: flex; flex-direction: column; gap: var(--sp-2); }
 .starters__group-title { margin: var(--sp-2) 0 0; font-size: var(--text-sm); font-weight: 700; color: var(--ink); }
 .starters__name { font-size: var(--text-sm); font-weight: 700; }
 .starters .starters__pick.is-on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 /* Chips narrowing the gallery to one group. */
 .starters__chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
-.starters .starters__chip { min-height: 2rem; padding: 0.25rem 0.8rem; border: 1px solid var(--border-soft); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer; }
+.starters .starters__chip { min-height: 2rem; padding: 0.25rem 0.8rem; border: 1px solid var(--border-soft); border-radius: var(--radius-pill); background: var(--surface); color: var(--ink); font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer; }
 .starters .starters__chip:hover, .starters .starters__chip:focus-visible { border-color: var(--accent); }
 .starters .starters__chip.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); }
 /* A look's cover picture across the top of its page, as the players' welcome shows it. */
-.starters__cover { align-self: stretch; margin: -0.9rem -0.9rem 0; aspect-ratio: 16 / 9; background-size: cover; background-position: 70% center; background-repeat: no-repeat; border-radius: calc(var(--radius, 12px) - 2px) calc(var(--radius, 12px) - 2px) 0 0; }
+.starters__cover { align-self: stretch; margin: -0.9rem -0.9rem 0; aspect-ratio: 16 / 9; background-size: cover; background-position: 70% center; background-repeat: no-repeat; border-radius: calc(var(--radius) - 2px) calc(var(--radius) - 2px) 0 0; }

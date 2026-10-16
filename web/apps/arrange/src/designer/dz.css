@@ -40,7 +40,6 @@
   --dz-font-mono: var(--font-mono);
   --dz-font-sans: var(--font-body);
   --dz-accent-2: var(--accent-2);
-  --dz-canvas-dot: color-mix(in srgb, var(--ink) 14%, transparent);
   --dz-canvas-grid: color-mix(in srgb, var(--ink) 6%, transparent);
   --dz-canvas-grid-major: color-mix(in srgb, var(--ink) 11%, transparent);
 
@@ -72,7 +71,6 @@
   --dz-z-issues-pop: 130;
   --dz-z-modal: 200;
   --dz-z-context-menu: 210;
-  --dz-z-palette: 300;
   --dz-z-overlay: 500;
 }
 
@@ -83,24 +81,6 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.45;
-}
-.dz[data-theme="light"] body {
-  background:
-    radial-gradient(
-      ellipse 60vw 40vh at 85% -10%,
-      color-mix(in srgb, var(--dz-accent) 6%, transparent) 0%,
-      transparent 60%
-    ),
-    radial-gradient(
-      ellipse 50vw 50vh at -10% 110%,
-      color-mix(in srgb, var(--dz-accent-2) 5%, transparent) 0%,
-      transparent 55%
-    ),
-    var(--dz-bg);
-  background-attachment: fixed;
-}
-.dz .react-flow__background circle {
-  fill: var(--dz-canvas-dot);
 }
 .dz .react-flow__background.dz-grid-fine path {
   stroke: var(--dz-canvas-grid);
@@ -118,9 +98,6 @@
   text-decoration: none;
 }
 :where(.dz) a:hover {
-  text-decoration: none;
-}
-:where(.dz) a.primary, :where(.dz) a.ghost, :where(.dz) a.primary:hover, :where(.dz) a.ghost:hover {
   text-decoration: none;
 }
 :where(.dz) button, .dz .btn {
@@ -151,7 +128,7 @@
 }
 :where(.dz) button.primary, .dz .btn.primary {
   background: var(--dz-btn);
-  color: #fff;
+  color: var(--dz-accent-ink);
   border-color: transparent;
   box-shadow: var(--dz-glow-accent);
 }
@@ -207,9 +184,6 @@
   transform: none;
 }
 :where(.dz) button.icon, .dz .btn.icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 36px;
   height: 36px;
   padding: 0;
@@ -291,16 +265,6 @@
 }
 
 /* Editor chrome, from dazyflow app.css. */
-.dz .signin label {
-  display: block;
-  font-size: var(--dz-text-md);
-  color: var(--dz-muted);
-  margin: var(--dz-space-3) 0 var(--dz-space-1) 0;
-}
-.dz .signin button.primary {
-  width: 100%;
-  margin-top: var(--dz-space-4);
-}
 :where(.dz) button.warning {
   background: color-mix(in srgb, var(--dz-warning) 16%, transparent);
   color: var(--dz-warning);
@@ -317,7 +281,6 @@
   padding: var(--dz-space-2) var(--dz-space-3);
   background: var(--dz-surface);
   border-bottom: 1px solid var(--dz-border);
-  
   max-height: 40vh;
   overflow-y: auto;
 }
@@ -334,7 +297,8 @@
   font-weight: 500;
   color: var(--dz-success);
 }
-.dz .editor-live-chip.celebrate {
+.dz .editor-live-chip.celebrate,
+.dz .editor-publish.celebrate {
   animation: publish-pop 0.6s ease-out;
 }
 .dz .editor-live-dot {
@@ -356,6 +320,7 @@
   font-size: var(--dz-text-md);
   color: var(--dz-ink);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--dz-accent) 25%, transparent);
+  animation: dz-slide-down 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 /* A status, not a problem: the info callout's tint, not the alert's
  * accent frame — which read as a text field waiting for input. */
@@ -389,7 +354,8 @@
 .dz .editor-publish:hover:not(:disabled) {
   background: color-mix(in srgb, var(--dz-accent) 14%, transparent);
 }
-.dz .editor-publish:disabled {
+.dz .editor-publish:disabled,
+.dz .history-makelive:disabled {
   opacity: 0.5;
   cursor: default;
 }
@@ -397,9 +363,6 @@
   display: inline-flex;
   align-items: center;
   gap: var(--dz-space-2);
-}
-.dz .editor-publish.celebrate {
-  animation: publish-pop 0.6s ease-out;
 }
 .dz .publish-live {
   position: fixed;
@@ -470,49 +433,25 @@
   color: var(--dz-muted);
   line-height: 1.3;
 }
-@media (prefers-reduced-motion: reduce) {
-.dz .editor-publish.celebrate,
-.dz .editor-live-chip.celebrate {
-    animation: none;
-  }
-.dz .publish-live-card {
-    animation: publish-fade 1.1s ease-out both;
-  }
-.dz .publish-live-check-tick {
-    stroke-dashoffset: 0;
-    animation: none;
-  }
-.dz .publish-live-halo {
-    display: none;
-  }
-}
 .dz .history-badge.live {
   color: var(--dz-success);
   border-color: var(--dz-success);
 }
-.dz .history-makelive {
-  display: inline-flex;
-  align-items: center;
-  background: transparent;
-  border: none;
-  color: var(--dz-accent);
-  font-size: var(--dz-text-sm);
-  cursor: pointer;
-  padding: var(--dz-space-0) var(--dz-space-2) var(--dz-space-2);
-}
-.dz .history-makelive:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
+.dz .history-makelive,
 .dz .history-label-btn {
   display: inline-flex;
   align-items: center;
   background: transparent;
   border: none;
-  color: var(--dz-muted);
   font-size: var(--dz-text-sm);
   cursor: pointer;
   padding: var(--dz-space-0) var(--dz-space-2) var(--dz-space-2);
+}
+.dz .history-makelive {
+  color: var(--dz-accent);
+}
+.dz .history-label-btn {
+  color: var(--dz-muted);
 }
 .dz .history-label-btn:hover {
   color: var(--dz-ink);
@@ -536,10 +475,6 @@
   font-size: var(--dz-text-base);
   font-weight: 400;
 }
-.dz .publish-label-field input:focus {
-  outline: none;
-  border-color: var(--dz-accent);
-}
 .dz .diff-list {
   list-style: none;
   margin: 0;
@@ -549,7 +484,7 @@
 }
 .dz .diff-row {
   padding: var(--dz-space-1) var(--dz-space-2);
-  border-radius: 4px;
+  border-radius: var(--dz-r-1);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -572,7 +507,7 @@
 }
 .dz .text-diff__field + .text-diff__field { margin-top: var(--dz-space-2); }
 .dz .text-diff dt { color: var(--dz-muted); }
-.dz .text-diff dd { margin: 2px 0 0; padding: 2px var(--dz-space-2); border-radius: 4px; }
+.dz .text-diff dd { margin: var(--dz-space-0) 0 0; padding: var(--dz-space-0) var(--dz-space-2); border-radius: var(--dz-r-1); }
 .dz .text-diff__side { margin-right: var(--dz-space-2); color: var(--dz-muted); font-size: var(--dz-text-sm); }
 .dz .text-diff__del { background: color-mix(in srgb, var(--dz-danger) 8%, transparent); }
 .dz .text-diff__ins { background: color-mix(in srgb, var(--dz-success) 8%, transparent); }
@@ -586,6 +521,13 @@
   position: relative;
   overflow: hidden;
 }
+.dz .editor .inspector {
+  display: flex;
+  flex-direction: column;
+  background: var(--dz-surface);
+  border-left: 1px solid var(--dz-border);
+  min-height: 0;
+}
 @media (max-width: 768px) {
 .dz .editor-banner-stack {
     padding-right: 60px;
@@ -596,7 +538,6 @@
     height: 100%;
     max-height: none;
     border-left: none;
-    background: var(--dz-surface);
     transform: translateX(100%);
     transition: transform 200ms ease;
     z-index: var(--dz-z-inspector-sheet);
@@ -627,32 +568,11 @@
     padding-right: calc(var(--dz-inspector-w) + 12px);
   }
 }
-@media (min-width: 1101px) {
-.dz .editor[data-has-selection="true"] .canvas > .react-flow {
-    width: calc(100% - var(--dz-inspector-w)) !important;
-  }
-}
-.dz .editor .inspector {
-  display: flex;
-  flex-direction: column;
-  background: var(--dz-surface);
-  border-left: 1px solid var(--dz-border);
-  min-height: 0;
-}
-.dz .editor-conn-banner {
-  animation: dz-slide-down 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.dz .modal-backdrop {
-  animation: dz-fade-in 140ms ease-out;
-}
-.dz .modal {
-  animation: dz-pop-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
-}
 .dz .canvas-context-menu {
   position: fixed;
   z-index: var(--dz-z-context-menu);
   min-width: 168px;
-  padding: 4px;
+  padding: var(--dz-space-1);
   background: var(--dz-surface);
   border: 1px solid var(--dz-border);
   border-radius: var(--dz-r-2);
@@ -662,7 +582,7 @@
 .dz .canvas-context-menu button {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: var(--dz-space-5);
   justify-content: space-between;
   width: 100%;
   padding: 6px 10px;
@@ -674,9 +594,6 @@
   text-align: left;
   cursor: pointer;
   white-space: nowrap;
-}
-.dz .canvas-context-menu .context-menu-label {
-  text-align: left;
 }
 .dz .canvas-context-menu .context-menu-shortcut {
   display: none;
@@ -702,7 +619,7 @@
 }
 .dz .canvas-context-menu .context-menu-sep {
   height: 1px;
-  margin: 4px 6px;
+  margin: var(--dz-space-1) var(--dz-space-1h);
   background: var(--dz-border);
 }
 .dz .canvas-context-menu .context-menu-head {
@@ -727,25 +644,13 @@
 .dz .canvas-context-menu .context-menu-label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--dz-space-2);
+  text-align: left;
 }
 .dz .canvas-context-menu .context-menu-icon {
   display: inline-flex;
   flex: 0 0 auto;
   color: var(--dz-muted);
-}
-@media (prefers-reduced-motion: reduce) {
-.dz .canvas-context-menu {
-    animation: none;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-.dz .editor-conn-banner, .dz .modal-backdrop, .dz .modal {
-    animation: none;
-  }
-.dz .editor .inspector, .dz .editor .canvas > .react-flow {
-    transition: none;
-  }
 }
 .dz .editor-add-drop {
   display: inline-flex;
@@ -855,11 +760,6 @@
   flex-direction: column;
   container: editor-canvas / inline-size;
 }
-.dz .editor .canvas > .react-flow {
-  flex: 1;
-  min-height: 0;
-  transition: width 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
 .dz .panel-head {
   display: flex;
   align-items: center;
@@ -873,17 +773,10 @@
 }
 .dz .inspector-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--dz-space-4);
-}
-.dz .inspector .empty {
-  color: var(--dz-faint);
-  font-size: var(--dz-text-md);
-  padding: var(--dz-space-5);
-  text-align: center;
-}
-.dz .inspector .field {
-  margin-bottom: var(--dz-space-3);
+  background: color-mix(in srgb, var(--dz-bg) 95%, #000);
 }
 .dz .inspector .field label {
   display: block;
@@ -1047,12 +940,11 @@
   display: flex;
   flex-direction: column;
   gap: var(--dz-space-2);
+  padding-top: var(--dz-space-3);
+  border-top: 1px solid var(--dz-border);
 }
 .dz .modal input.invalid {
   border-color: var(--dz-warning);
-}
-.dz .modal input.invalid:focus {
-  outline-color: var(--dz-warning);
 }
 /* Modals (ui.tsx Modal): one shell for every dialog. A head with an
    optional icon tile, the title and a line under it; a body that scrolls;
@@ -1067,6 +959,7 @@
   place-items: center;
   z-index: var(--dz-z-modal);
   padding: var(--dz-space-4);
+  animation: dz-fade-in 140ms ease-out;
 }
 .dz .modal {
   width: 100%;
@@ -1081,11 +974,12 @@
   box-shadow: var(--dz-shadow-pop);
   overflow: hidden;
   outline: none;
+  animation: dz-pop-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .dz .modal--sm { max-width: 28rem; }
 .dz .modal--lg { max-width: 52rem; }
 .dz .modal--xl { max-width: 76rem; }
-.dz .modal-banner { flex: none; aspect-ratio: 3 / 1; overflow: hidden; background: #fbeef3; }
+.dz .modal-banner { flex: none; aspect-ratio: 3 / 1; overflow: hidden; background: color-mix(in srgb, var(--dz-accent) 7%, var(--dz-surface)); }
 .dz .modal-banner img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
 .dz .modal-head {
   flex: none;
@@ -1375,27 +1269,16 @@
 .dz .editor-toolbar .editor-saving .spin {
   animation: dz-spin 1s linear infinite;
 }
-.dz .editor-saving {
+.dz .editor-saving,
+.dz .editor-saved {
   color: var(--dz-muted);
   user-select: none;
 }
 .dz .editor-saving svg {
   color: var(--dz-accent);
 }
-.dz .editor-saved {
-  color: var(--dz-muted);
-  user-select: none;
-}
 .dz .editor-saved svg {
   color: var(--dz-success);
-}
-@media (prefers-reduced-motion: reduce) {
-.dz .react-flow__handle.connectingto:not(.valid) {
-    animation: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--dz-danger) 55%, transparent);
-  }
-
-
 }
 /* The scrolling strip goes to icons first: beside the console sidebar a
    laptop-width canvas cannot fit every label, and a strip scrolled to
@@ -1404,7 +1287,7 @@
 .dz .editor-toolbar .toolbar-scroll :not(.toolbar-main) > .toolbar-label {
     display: none;
   }
-.dz .editor-toolbar .toolbar-scroll button:not(.toolbar-nudge, .toolbar-main),
+.dz .editor-toolbar .toolbar-scroll button:not(.toolbar-main),
 .dz .editor-toolbar .toolbar-scroll .editor-saved,
 .dz .editor-toolbar .toolbar-scroll .editor-saving {
     width: 36px;
@@ -1417,7 +1300,7 @@
 .dz .editor-toolbar .toolbar-scroll.is-tight .toolbar-label {
   display: none;
 }
-.dz .editor-toolbar .toolbar-scroll.is-tight button:not(.toolbar-nudge),
+.dz .editor-toolbar .toolbar-scroll.is-tight button,
 .dz .editor-toolbar .toolbar-scroll.is-tight .editor-saved,
 .dz .editor-toolbar .toolbar-scroll.is-tight .editor-saving {
   width: 36px;
@@ -1432,7 +1315,7 @@
 .dz .editor-toolbar button.primary .toolbar-label {
     display: inline;
   }
-.dz .editor-toolbar button:not(.primary, .dz .toolbar-nudge, .toolbar-main) {
+.dz .editor-toolbar button:not(.primary, .toolbar-main) {
     width: 36px;
     padding: 0;
     gap: 0;
@@ -1494,7 +1377,7 @@
 .dz .callout-success .callout-icon {
   color: var(--dz-success);
 }
-:where(.dz) button, :where(.dz) a, .dz .btn, :where(.dz) input, :where(.dz) select, :where(.dz) textarea, .dz .card, .dz .nav a, .dz .sidebar a, .dz [role="button"] {
+:where(.dz) button, :where(.dz) a, .dz .btn, :where(.dz) input, :where(.dz) select, :where(.dz) textarea, .dz .card, .dz [role="button"] {
   transition:
     background-color var(--dz-dur-2) var(--dz-ease-out),
     border-color var(--dz-dur-2) var(--dz-ease-out),
@@ -1552,6 +1435,28 @@
   text-align: left;
   letter-spacing: normal;
   text-transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+.dz .editor-conn-banner, .dz .modal-backdrop, .dz .modal, .dz .canvas-context-menu,
+.dz .editor-publish.celebrate, .dz .editor-live-chip.celebrate, .dz .publish-live-check-tick {
+    animation: none;
+  }
+.dz .editor .inspector {
+    transition: none;
+  }
+.dz .publish-live-card {
+    animation: publish-fade 1.1s ease-out both;
+  }
+.dz .publish-live-check-tick {
+    stroke-dashoffset: 0;
+  }
+.dz .publish-live-halo {
+    display: none;
+  }
+.dz .react-flow__handle.connectingto:not(.valid) {
+    animation: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--dz-danger) 55%, transparent);
+  }
 }
 @keyframes publish-pop {
   0% {

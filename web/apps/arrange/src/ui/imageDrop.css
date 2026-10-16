@@ -1,10 +1,9 @@
 .dz .img-drop { display: flex; flex-direction: column; align-items: flex-start; gap: var(--dz-space-1); }
 .dz button.img-drop__box { display: flex; align-items: center; justify-content: center; padding: 0; border: 2px dashed var(--dz-border-strong); border-radius: var(--dz-r-3); background: var(--dz-surface-2); background-size: cover; background-position: center; color: var(--dz-muted); cursor: pointer; overflow: hidden; }
+.dz button.img-drop__box.has-image { border-style: solid; border-color: var(--dz-border); }
 .dz button.img-drop__box:hover:not(:disabled), .dz button.img-drop__box:focus-visible { border-color: var(--dz-accent); }
 .dz button.img-drop__box:disabled { cursor: default; }
 .dz button.img-drop__box.is-busy { opacity: 0.6; cursor: progress; }
-.dz button.img-drop__box.has-image { border-style: solid; border-color: var(--dz-border); }
-.dz button.img-drop__box.has-image:hover:not(:disabled), .dz button.img-drop__box.has-image:focus-visible { border-color: var(--dz-accent); }
 .dz .img-drop__box span { font-size: var(--dz-text-xs); padding: var(--dz-space-2); text-align: center; pointer-events: none; }
 .dz .img-drop__box--logo, .dz .img-drop__box--photo { width: 6rem; height: 6rem; }
 .dz .img-drop__box--logo img { max-width: 100%; max-height: 100%; object-fit: contain; }

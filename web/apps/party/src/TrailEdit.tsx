@@ -83,13 +83,13 @@ export function TrailEdit({ host }: { host: boolean }) {
                 "It may have been deleted, or it was made in another browser. Open it in the browser you made it in, or from My party adventures.",
               )}
         </p>
-        <a className="party-btn" href={MINE} target={outside}>
+        <a className="zv-btn" href={MINE} target={outside}>
           {t("My party adventures")}
         </a>
       </section>
     );
   }
-  if (!doc) return <p className="party-muted">{t("Loading…")}</p>;
+  if (!doc) return <p className="zv-muted">{t("Loading…")}</p>;
   return (
     <Creator
       key={doc.revision + ":" + nonce}
@@ -223,19 +223,19 @@ function Creator({
         <>
           {!byHost && <PrivateWarning />}
           {live.round_open && (
-            <p className="party-note">
+            <p className="zv-note">
               {t("A game is being played. Changes apply from the next game.")}
             </p>
           )}
           {live.reprint && live.state !== "draft" && (
-            <p className="party-note">
+            <p className="zv-note">
               {t(
                 "The cards changed since you printed them. Print them again from the host page before the next game.",
               )}
             </p>
           )}
           {ended && (
-            <p className="party-note">{t("This party adventure has ended.")}</p>
+            <p className="zv-note">{t("This party adventure has ended.")}</p>
           )}
         </>
       }
@@ -367,7 +367,7 @@ function useCheckout(
             {free ? t("Free") : price}
           </strong>
         </div>
-        <label className="party-field">
+        <label className="zv-field">
           <span>{t("Your email")}</span>
           <input
             type="email"
@@ -376,7 +376,7 @@ function useCheckout(
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="email"
           />
-          <small className="party-muted">
+          <small className="zv-muted">
             {free
               ? t(
                   "You go straight to the page you run it from, and we email you the link to it.",
@@ -396,14 +396,14 @@ function useCheckout(
               {t(
                 "I am the guardian of the children who will play, or I have their guardians' consent.",
               )}
-              <small className="party-muted">
+              <small className="zv-muted">
                 {t("We ask because children play: the game keeps their team names and answers for a while.")}
               </small>
             </span>
           </label>
         )}
         {error && (
-          <p className="party-error" role="alert">
+          <p className="zv-error" role="alert">
             {error}
           </p>
         )}

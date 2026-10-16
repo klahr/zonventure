@@ -103,7 +103,7 @@ export function FilesCard({ event, files, maxFiles, maxSize, reload }: { event: 
         }}
       />
       {files.length === 0 ? (
-        <p className="ev-muted">{t.t("Nothing yet. Add a PDF with the rules, a map to print or a packing list: players download it from the app before the start, and keep it at hand in the menu during the game.")}</p>
+        <p className="cs-muted">{t.t("Nothing yet. Add a PDF with the rules, a map to print or a packing list: players download it from the app before the start, and keep it at hand in the menu during the game.")}</p>
       ) : (
         <ul className="ev-msgs ev-files">
           {files.map((f) => (
@@ -112,16 +112,16 @@ export function FilesCard({ event, files, maxFiles, maxSize, reload }: { event: 
                 <Download size={ICON.sm} aria-hidden /> {f.name}
               </a>
               <Button variant="ghost" size="icon" aria-label={t.t("Delete file")} title={t.t("Delete file")} icon={<Trash2 size={ICON.sm} aria-hidden />} onClick={() => void remove(f)} />
-              <div className="ev-msgs__meta ev-muted">
+              <div className="ev-msgs__meta cs-muted">
                 {fmtSize(f.size, t.current())} · <time dateTime={f.created_at} title={fmtDateTime(f.created_at, t.current())}>{fmtWhen(f.created_at, t.current())}</time>
               </div>
             </li>
           ))}
         </ul>
       )}
-      {canAdd && <p className="ev-muted ev-small">{t.t("PDF, pictures, text or Office documents: up to {{n}} files, {{mb}} MB each.", { n: maxFiles, mb: Math.floor(maxSize / (1 << 20)) })}</p>}
+      {canAdd && <p className="cs-sub">{t.t("PDF, pictures, text or Office documents: up to {{n}} files, {{mb}} MB each.", { n: maxFiles, mb: Math.floor(maxSize / (1 << 20)) })}</p>}
       {event.public_for_sale && (
-        <p className="ev-muted ev-small">{t.t("This event is sold in the store, so a new file reaches players once the listing is approved with it. Deleting a file takes it away at once.")}</p>
+        <p className="cs-sub">{t.t("This event is sold in the store, so a new file reaches players once the listing is approved with it. Deleting a file takes it away at once.")}</p>
       )}
     </Card>
   );

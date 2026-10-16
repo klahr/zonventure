@@ -1,9 +1,6 @@
 /* Race control (#/events/:id/control): what the kit lacks. */
 
-.dz .cc-muted { margin: 0; color: var(--dz-muted); }
-.dz .cc-small { font-size: var(--dz-text-sm); }
-.dz .cc-mono { white-space: nowrap; font-variant-numeric: tabular-nums; font-family: var(--dz-font-mono, ui-monospace, monospace); }
-.dz .cc-pad { padding: 0 var(--dz-space-4) var(--dz-space-4); }
+.dz .cc-mono { white-space: nowrap; font-variant-numeric: tabular-nums; font-family: var(--dz-font-mono); }
 .dz .cc-scroll { max-height: 28rem; overflow-y: auto; }
 
 .dz .cc-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--dz-space-5); align-items: start; }
@@ -11,8 +8,8 @@
 
 .dz .cc-filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); }
 /* On a phone the chips scroll sideways in one row instead of pushing the stats a screen down. */
-@media (max-width: 720px) { .dz .cc-filter { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; } .dz .cc-chip { flex: none; white-space: nowrap; } }
-.dz .cc-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 12px; border: 1px solid var(--dz-border); border-radius: var(--dz-r-pill); background: var(--dz-surface); color: var(--dz-ink); font: inherit; font-size: var(--dz-text-sm); font-weight: 600; cursor: pointer; }
+@media (max-width: 720px) { .dz .cc-filter { flex-wrap: nowrap; overflow-x: auto; padding-bottom: var(--dz-space-0); } .dz .cc-chip { flex: none; white-space: nowrap; } }
+.dz .cc-chip { display: inline-flex; align-items: center; gap: var(--dz-space-1h); min-height: 32px; padding: var(--dz-space-1) var(--dz-space-3); border: 1px solid var(--dz-border); border-radius: var(--dz-r-pill); background: var(--dz-surface); color: var(--dz-ink); font: inherit; font-size: var(--dz-text-sm); font-weight: 600; cursor: pointer; }
 .dz .cc-chip:hover { border-color: var(--dz-border-strong); }
 .dz .cc-chip.is-on { background: color-mix(in srgb, var(--dz-accent) 12%, var(--dz-surface)); border-color: var(--dz-accent); color: var(--dz-accent); }
 .dz .cc-chip:focus-visible { outline: 2px solid var(--dz-accent); outline-offset: 2px; }
@@ -23,7 +20,7 @@
 .dz .cc-team__open { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: inherit; text-align: start; cursor: pointer; text-decoration: underline dotted; }
 .dz .cc-withdrawn { opacity: 0.55; }
 .dz .cc-narrow { display: none; }
-@media (max-width: 720px) { .dz .cc-narrow { display: block; margin-top: 2px; } }
+@media (max-width: 720px) { .dz .cc-narrow { display: block; margin-top: var(--dz-space-0); } }
 
 .dz .cc-map { display: flex; flex-direction: column; gap: var(--dz-space-2); }
 .dz .cc-map__frame { height: 420px; border-radius: var(--dz-r-2); overflow: hidden; border: 1px solid var(--dz-border); }

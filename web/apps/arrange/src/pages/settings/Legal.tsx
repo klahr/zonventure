@@ -79,7 +79,7 @@ export function LegalTab() {
         {missing.length > 0 ? (
           <Callout variant="warning">{t.t("Privacy and terms are not published yet. Fill in: {{missing}}.", { missing: missing.join(", ") })}</Callout>
         ) : (
-          <p className="cs-field__hint st-flush">
+          <p className="cs-field__hint cs-flush">
             <a href="/privacy" target="_blank" rel="noopener">{t.t("Privacy policy ↗")}</a> · <a href="/terms" target="_blank" rel="noopener">{t.t("Terms ↗")}</a>
           </p>
         )}

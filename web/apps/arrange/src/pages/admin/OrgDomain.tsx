@@ -58,7 +58,7 @@ export function OrgDomainCard({ orgID, readOnly }: { orgID: number; readOnly: bo
       ) : (
         <>
           {d.domain ? (
-            <p className="adm-sub">
+            <p className="cs-sub">
               <Globe size={ICON.sm} aria-hidden /> <a href={`https://${d.domain.host}`} target="_blank" rel="noopener">{d.domain.host}</a>{" "}
               {d.until ? (
                 <Pill tone={status[d.domain.status]?.[1] ?? "neutral"}>{status[d.domain.status]?.[0] ?? d.domain.status}</Pill>
@@ -67,11 +67,11 @@ export function OrgDomainCard({ orgID, readOnly }: { orgID: number; readOnly: bo
               )}
             </p>
           ) : d.until ? (
-            <p className="adm-sub">{t.t("They haven't chosen an address yet.")}</p>
+            <p className="cs-sub">{t.t("They haven't chosen an address yet.")}</p>
           ) : null}
           {d.until === FOREVER ? (
             <div className="cs-row">
-              <p className="adm-sub">{t.t("Included with no end date: never billed, never ends.")}</p>
+              <p className="cs-sub">{t.t("Included with no end date: never billed, never ends.")}</p>
               {!readOnly && <Button variant="ghost" onClick={() => void save("")} disabled={busy}>{t.t("Turn off")}</Button>}
             </div>
           ) : (

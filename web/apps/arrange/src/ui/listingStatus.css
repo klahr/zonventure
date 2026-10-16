@@ -4,10 +4,10 @@
 .dz .ls-note { color: var(--dz-muted); font-size: var(--dz-text-sm); }
 
 /* A held-back change to an organisation page or adventure presentation. */
-.ls-proposal { display: grid; gap: .6rem; margin-bottom: 1rem; }
-.ls-proposal__fields { display: grid; gap: .4rem; margin: 0; }
-.ls-proposal__fields > div { display: grid; grid-template-columns: minmax(8rem, max-content) 1fr; gap: .75rem; }
+.ls-proposal { display: grid; gap: var(--dz-space-2); margin-bottom: var(--dz-space-4); }
+.ls-proposal__fields { display: grid; gap: var(--dz-space-1h); margin: 0; }
+.ls-proposal__fields > div { display: grid; grid-template-columns: minmax(8rem, max-content) 1fr; gap: var(--dz-space-3); }
 .ls-proposal__fields dt { font-weight: 600; }
 .ls-proposal__fields dd { margin: 0; white-space: pre-wrap; word-break: break-word; }
-.ls-proposal__img { max-width: 200px; max-height: 120px; border-radius: 6px; display: block; }
-.ls-proposal__actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.ls-proposal__img { max-width: 200px; max-height: 120px; border-radius: var(--dz-r-2); display: block; }
+.ls-proposal__actions { display: flex; gap: var(--dz-space-2); flex-wrap: wrap; }

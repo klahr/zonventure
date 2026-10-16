@@ -21,7 +21,7 @@
   text-align: center;
 }
 .pv-gadget__hint { font-weight: 700; color: var(--ink); }
-.pv-gadget__note { font-size: 0.875rem; color: var(--muted); }
+.pv-gadget__note { font-size: var(--text-sm); color: var(--muted); }
 .pv-gadget__cheer {
   font: 800 var(--text-lg) / 1.2 var(--font-body);
   color: var(--accent);
@@ -86,8 +86,8 @@
   box-shadow: inset 0 0 0 2px #2a2f37;
 }
 .pv-flasher__lamp.is-lit { background: #fffbe6; box-shadow: 0 0 40px 8px rgb(255 245 200 / 0.7); }
-.pv-flasher__controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-3); }
-.pv-flasher__buzz { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: 0.875rem; color: var(--muted); }
+:is(.pv-flasher__controls, .pv-audiofx__controls) { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-3); }
+:is(.pv-flasher__buzz, .pv-audiofx__toggle) { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--text-sm); color: var(--muted); }
 @media (prefers-reduced-motion: reduce) {
   .pv-flasher__lamp { transition: background 120ms linear; }
   .pv-flasher__lamp.is-lit { background: #8a8470; box-shadow: none; }
@@ -157,8 +157,6 @@
   background: #000;
   image-rendering: pixelated;
 }
-.pv-audiofx__controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-3); }
-.pv-audiofx__toggle { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: 0.875rem; color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
   .pv-gadget__cheer,

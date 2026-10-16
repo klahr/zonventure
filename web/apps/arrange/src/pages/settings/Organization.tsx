@@ -334,7 +334,7 @@ export function OrganizationTab() {
       <input
         id={`og-${k}`}
         type="text"
-        className="og-mono"
+        className="cs-mono"
         maxLength={7}
         placeholder={DEFAULTS[k]}
         value={edit[k]}
@@ -360,7 +360,7 @@ export function OrganizationTab() {
           <div className="og-controls">
             <section className="og-section">
               <h3>{t.t("Identity")}</h3>
-              <p className="og-blurb">{t.t("Where customers find you.")}</p>
+              <p className="cs-note">{t.t("Where customers find you.")}</p>
               <div className="og-slug">
                 <Field label={<>{t.t("Organization name")} {saved("name")}</>} error={nameErr} hint={waits("name", orgName)}>
                   <input
@@ -374,7 +374,7 @@ export function OrganizationTab() {
                 <Button loading={busy} disabled={nextName === shownName} onClick={() => void saveName()}>{t.t("Save")}</Button>
               </div>
               <Row gap="sm">
-                <a className="og-mono og-url" href={storeURL} target="_blank" rel="noopener">
+                <a className="cs-mono og-url" href={storeURL} target="_blank" rel="noopener">
                   {storeURL}
                   <ExternalLink size={ICON.sm} aria-hidden />
                 </a>
@@ -385,7 +385,7 @@ export function OrganizationTab() {
                 <Field label={t.t("Short name in your address")} error={slugErr} hint={nextSlug && nextSlug !== profile.slug ? t.t("Becomes /o/{{slug}} — press Rename to switch.", { slug: nextSlug }) : t.t("The part after /o/. Edit it to rename.")}>
                   <input
                     type="text"
-                    className="og-mono"
+                    className="cs-mono"
                     spellCheck={false}
                     value={slug}
                     onChange={(e) => { setSlug(e.target.value); setSlugErr(""); }}
@@ -394,7 +394,7 @@ export function OrganizationTab() {
                 </Field>
                 <Button loading={busy} disabled={nextSlug === profile.slug} onClick={rename}>{t.t("Rename")}</Button>
               </div>
-              <p className="og-blurb">{t.t("Renaming breaks every link to /o/{{slug}} shared so far — share the new one.", { slug: profile.slug })}</p>
+              <p className="cs-note">{t.t("Renaming breaks every link to /o/{{slug}} shared so far — share the new one.", { slug: profile.slug })}</p>
             </section>
 
             <section className="og-section">
@@ -434,7 +434,7 @@ export function OrganizationTab() {
                 {colorRow("background_color", t.t("Background"))}
                 {colorRow("text_color", t.t("Text"))}
               </div>
-              {(!textOk || !buttonOk) && <p className="og-err" role="status">{t.t("Some text would be hard to read on these colours.")}</p>}
+              {(!textOk || !buttonOk) && <p className="cs-err" role="status">{t.t("Some text would be hard to read on these colours.")}</p>}
               <Row gap="sm">
                 {logoSrc && <Button size="sm" variant="ghost" icon={<Palette size={ICON.sm} aria-hidden />} onClick={() => void fromLogo()}>{t.t("Pick from my logo")}</Button>}
                 {(!textOk || !buttonOk) && <Button size="sm" variant="primary" onClick={fixColors}>{t.t("Fix contrast")}</Button>}
@@ -471,7 +471,7 @@ export function OrganizationTab() {
                 />
               </Field>
             </section>
-            {err && <p className="og-err" role="alert">{err}</p>}
+            {err && <p className="cs-err" role="alert">{err}</p>}
           </div>
 
           <div className="og-preview">

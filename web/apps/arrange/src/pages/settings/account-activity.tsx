@@ -71,7 +71,7 @@ export function SessionsCard() {
       <Loaded load={sessions}>
         {(list) =>
           list.length === 0 ? (
-            <p className="acct-muted">{t.t("No active sessions.")}</p>
+            <p className="cs-note">{t.t("No active sessions.")}</p>
           ) : (
             <div className="acct-list">
               {[...list].sort((a, b) => Number(b.current) - Number(a.current)).slice(0, all ? undefined : FEW).map((s) => (
@@ -168,7 +168,7 @@ export function AuditCard() {
             caption={t.t("Recent security activity")}
             rows={all ? list : list.slice(0, FEW)}
             rowKey={(e) => e.id}
-            empty={<div style={{ padding: "0 var(--dz-space-4) var(--dz-space-4)" }}><p className="acct-muted">{t.t("No recent activity.")}</p></div>}
+            empty={<div style={{ padding: "0 var(--dz-space-4) var(--dz-space-4)" }}><p className="cs-note">{t.t("No recent activity.")}</p></div>}
             columns={[
               { key: "ts", header: t.t("Time"), cell: (e) => <time dateTime={e.ts} title={fmtDateTime(e.ts, loc)} className="acct-nowrap">{relTime(e.ts, loc)}</time> },
               {
@@ -184,7 +184,7 @@ export function AuditCard() {
                   </div>
                 ),
               },
-              { key: "ip", header: t.t("IP"), wide: true, cell: (e) => <span className="acct-mono">{e.ip || "—"}</span> },
+              { key: "ip", header: t.t("IP"), wide: true, cell: (e) => <span className="cs-mono cs-small">{e.ip || "—"}</span> },
             ]}
           />
           {list.length > FEW && (
@@ -268,7 +268,7 @@ export function McpTokensCard({ mcpEnabled, admin = false }: { mcpEnabled: boole
             <li>{t.t("Set the header Authorization: Bearer followed by your token.")}</li>
             <li>{t.t("Ask it to list your adventures to check it works.")}</li>
           </ol>
-          <p className="acct-muted">{t.t("For example, with Claude Code:")}</p>
+          <p className="cs-note">{t.t("For example, with Claude Code:")}</p>
           <pre>{`claude mcp add --scope user --transport http zonventure ${endpoint} \
   --header "Authorization: Bearer <token>"`}</pre>
         </details>
@@ -289,7 +289,7 @@ export function McpTokensCard({ mcpEnabled, admin = false }: { mcpEnabled: boole
                         {tok.name}
                       </span>
                       <span className="acct-item__meta">
-                        <code className="acct-mono">{tok.prefix}…</code>
+                        <code className="cs-mono cs-small">{tok.prefix}…</code>
                         {" · "}
                         <span title={fmtDateTime(tok.created_at, loc)}>{t.t("Created {{when}}", { when: relTime(tok.created_at, loc) })}</span>
                         {" · "}
@@ -377,7 +377,7 @@ function CreateTokenDialog({ onClose, onCreated }: { onClose: () => void; onCrea
         </label>
         <span className="cs-field__hint">{t.t("Scopes can only narrow what the token can do — they never grant powers beyond your account.")}</span>
       </fieldset>
-      {error && <p className="acct-err" role="alert">{error}</p>}
+      {error && <p className="cs-err" role="alert">{error}</p>}
     </Dialog>
   );
 }
@@ -406,7 +406,7 @@ function ClaudeCodeSetup({ token }: { token: string }) {
   const command = claudeCodeCommand(os, `${location.origin}/mcp`, token);
   return (
     <div className="acct-setup">
-      <p className="acct-muted">{t.t("Add it to Claude Code with this command:")}</p>
+      <p className="cs-note">{t.t("Add it to Claude Code with this command:")}</p>
       <div className="acct-ostabs" role="tablist" aria-label={t.t("Operating system")}>
         {CLAUDE_CODE_OS.map((o) => (
           <button key={o.id} type="button" role="tab" aria-selected={os === o.id} className={os === o.id ? "is-on" : undefined} onClick={() => setOs(o.id)}>
@@ -427,7 +427,7 @@ function ClaudeCodeSetup({ token }: { token: string }) {
           {t.t("Copy command")}
         </Button>
       </div>
-      <p className="acct-muted">{os === "windows" ? t.t("Run it in PowerShell.") : t.t("Run it in a terminal (bash or zsh).")}</p>
+      <p className="cs-note">{os === "windows" ? t.t("Run it in PowerShell.") : t.t("Run it in a terminal (bash or zsh).")}</p>
     </div>
   );
 }
@@ -458,7 +458,7 @@ function NewTokenDialog({ token, mcpEnabled, onClose }: { token: string; mcpEnab
       }
     >
       <Callout variant="warning">{t.t("Copy this token now — it will not be shown again.")}</Callout>
-      <p className="acct-muted">{t.t("Send it as the bearer token from your script, agent or MCP client. Treat it like a password.")}</p>
+      <p className="cs-note">{t.t("Send it as the bearer token from your script, agent or MCP client. Treat it like a password.")}</p>
       <div className="acct-copy">
         <input ref={field} readOnly autoFocus value={token} aria-label={t.t("Your new token")} onFocus={(e) => e.currentTarget.select()} />
       </div>

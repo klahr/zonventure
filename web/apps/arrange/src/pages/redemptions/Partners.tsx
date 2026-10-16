@@ -84,7 +84,7 @@ export function PartnersCard({ partners, isOrgAdmin, reload }: { partners: Partn
     >
       {partners.length > 0 && (
         <Field label={t.t("Public redeem page")}>
-          <div className="rd-url">
+          <div className="cs-url">
             <input type="text" readOnly value={url} onFocus={(e) => e.target.select()} />
             <a className="btn" href={url} target="_blank" rel="noopener"><ExternalLink size={ICON.md} aria-hidden />{t.t("Open page")}</a>
             <Button icon={<Copy size={ICON.md} aria-hidden />} onClick={copyLink}>{t.t("Copy link")}</Button>
@@ -93,7 +93,7 @@ export function PartnersCard({ partners, isOrgAdmin, reload }: { partners: Partn
       )}
 
       {partners.length === 0 && (
-        <p className="rd-muted">{isOrgAdmin ? t.t("No partners yet. Add one to start taking its codes.") : t.t("No partners yet. An organization admin can add them.")}</p>
+        <p className="cs-note cs-note--md">{isOrgAdmin ? t.t("No partners yet. Add one to start taking its codes.") : t.t("No partners yet. An organization admin can add them.")}</p>
       )}
 
       {partners.map((p) => {
@@ -121,14 +121,14 @@ export function PartnersCard({ partners, isOrgAdmin, reload }: { partners: Partn
               )}
             </div>
             {products.length === 0 ? (
-              <p className="rd-muted">{t.t("No products yet: customers can't redeem this partner's codes until one points at a self-guided adventure.")}</p>
+              <p className="cs-note cs-note--md">{t.t("No products yet: customers can't redeem this partner's codes until one points at a self-guided adventure.")}</p>
             ) : (
               <ul className="rd-products">
                 {products.map((x) => (
                   <li key={x.id} className={"rd-product" + (x.enabled ? "" : " is-off")}>
                     <span className="rd-product__text">
                       <strong>{x.name || "—"}</strong>
-                      <span className="rd-sub">
+                      <span className="cs-sub">
                         <a href={href({ name: "event", id: x.event_id })}>{x.event_name || `#${x.event_id}`}</a>
                         {x.adventure_title && <> · {x.adventure_title}</>}
                         {" · "}

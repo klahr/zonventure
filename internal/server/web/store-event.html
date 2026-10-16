@@ -60,11 +60,9 @@
   /* Design tokens, .btn, .skip-link, focus outlines, prefers-reduced-motion
      all live in /assets/page-tokens.css. Page-specific overrides below. */
   :root { --shadow-lg: 0 8px 28px rgba(31,51,73,.14); }
-  body { line-height: 1.6; }
-  .wrap { max-width: 75rem; margin: 0 auto; padding: 0 1.5rem; }
+  .wrap { max-width: 75rem; padding: 0 1.5rem; }
   /* Buy buttons want a slightly bigger button than the marketing default. */
   .btn { padding: .9rem 1.9rem; font-size: 1rem; }
-  .btn.primary[disabled] { opacity: .55; cursor: not-allowed; transform: none; }
 
   main { padding: 0 0 5rem; }
 
@@ -72,19 +70,15 @@
      organisation's accent; without a cover, its colours alone. */
   .hero {
     position: relative; color: #fff; isolation: isolate;
+    --hero-art: radial-gradient(120% 120% at 85% 10%, color-mix(in srgb, var(--accent-2) 70%, #131722) 0%, #131722 60%);
     background-color: #131722;
     background-image:
       linear-gradient(180deg, rgba(12,14,20,.35) 0%, rgba(12,14,20,.55) 50%, rgba(12,14,20,.92) 100%),
       linear-gradient(120deg, color-mix(in srgb, var(--accent) 50%, transparent) 0%, transparent 65%),
-      radial-gradient(120% 120% at 85% 10%, color-mix(in srgb, var(--accent-2) 70%, #131722) 0%, #131722 60%);
+      var(--hero-art);
     background-size: cover; background-position: center;
   }
-  .hero[data-cover="true"] {
-    background-image:
-      linear-gradient(180deg, rgba(12,14,20,.35) 0%, rgba(12,14,20,.55) 50%, rgba(12,14,20,.92) 100%),
-      linear-gradient(120deg, color-mix(in srgb, var(--accent) 50%, transparent) 0%, transparent 65%),
-      var(--cover-img);
-  }
+  .hero[data-cover="true"] { --hero-art: var(--cover-img); }
   .hero-inner { min-height: min(62vh, 36rem); display: flex; flex-direction: column; justify-content: flex-end; padding-top: 6.5rem; padding-bottom: clamp(2.5rem, 6vw, 4rem); }
   .crumbs { font-size: .9rem; margin: 0 0 auto; padding-bottom: 2rem; }
   .crumbs a { color: rgba(255,255,255,.85); font-weight: 600; }
@@ -92,7 +86,7 @@
   .adv-icon[data-has="false"] { display: none; }
   .org { color: rgba(255,255,255,.75); font-size: .85rem; text-transform: uppercase; letter-spacing: .1em; margin: 0; }
   /* Verified creator (listing review): shown when the org is one. */
-  .verified-badge { display: inline-flex; align-items: center; gap: .3rem; margin-left: .5rem; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--success, #1b6b43); background: color-mix(in srgb, var(--success, #1b6b43) 12%, transparent); vertical-align: middle; }
+  .verified-badge { display: inline-flex; align-items: center; gap: .3rem; margin-left: .5rem; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 700; letter-spacing: 0; text-transform: none; color: #1b6b43; background: color-mix(in srgb, #1b6b43 12%, transparent); vertical-align: middle; }
   .verified-badge[data-verified="false"] { display: none; }
   h1 {
     font-family: var(--font-brand);
@@ -137,7 +131,6 @@
     border-radius: 14px;
     padding: 1rem 1.1rem;
   }
-  .meta-tile[hidden] { display: none; }
   .meta-tile .k { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; }
   .meta-tile .v { font-weight: 700; margin-top: .25rem; }
 
@@ -151,7 +144,7 @@
   .buy-card h2 { margin: 0 0 .5rem; font-size: 1.25rem; }
   .buy-card p { margin: 0 0 1.25rem; color: var(--ink-soft); }
   .buy-card form { display: grid; gap: .65rem; }
-  .buy-card label { font-size: .85rem; color: var(--ink-soft); font-weight: 600; }
+  .buy-card form > label { font-size: .85rem; color: var(--ink-soft); font-weight: 600; }
   .buy-card input[type=email] {
     padding: .75rem .9rem;
     border: 1px solid var(--border-soft);
@@ -160,30 +153,10 @@
     color: var(--ink);
     font: inherit;
   }
-  .buy-card .err { color: var(--danger); font-size: .9rem; min-height: 1.2em; }
   .buy-card .terms-note, .buy-card .seller { color: var(--muted); font-size: .8rem; margin: .5rem 0 0; }
 
-  .toast {
-    background: var(--surface);
-    border: 1px solid var(--border-soft);
-    border-left: 4px solid var(--accent);
-    border-radius: var(--radius-xs);
-    padding: 1rem 1.25rem;
-    margin: 0 0 1.5rem;
-    color: var(--ink);
-    box-shadow: var(--shadow);
-  }
-  .toast.cancelled { border-left-color: var(--muted); color: var(--ink-soft); }
-
-  .letter-lang { border: 0; margin: .75rem 0 0; padding: 0; display: grid; gap: .5rem; min-width: 0; }
-  .letter-lang legend { padding: 0; margin-bottom: .35rem; font-size: .85rem; color: var(--ink-soft); font-weight: 600; }
+  .letter-lang { margin-top: .75rem; }
   .letter-lang .hint { color: var(--muted); font-size: .85rem; margin: 0; }
-  .seg { display: flex; flex-wrap: wrap; gap: .5rem; }
-  .letter-lang[hidden], .seg[hidden] { display: none; }
-  .seg label { display: flex; align-items: center; gap: .45rem; padding: .6rem 1rem; border: 1px solid var(--border-soft);
-               border-radius: var(--radius-sm); background: var(--bg); color: var(--ink); font-size: 1rem; font-weight: 600; cursor: pointer; }
-  .seg label:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-  .seg input { margin: 0; accent-color: var(--accent); }
 </style>
 </head>
 <body class="has-hero">

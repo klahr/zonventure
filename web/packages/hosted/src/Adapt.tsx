@@ -64,7 +64,7 @@ export function PersonaliseSection({ party }: { party: HostedEvent }) {
       }}
     >
       {party.values.map((v) => (
-        <label className="hosted-field" key={v.slug}>
+        <label className="zv-field" key={v.slug}>
           <span>{v.label}</span>
           <input
             value={values[v.slug] ?? ""}
@@ -81,7 +81,7 @@ export function PersonaliseSection({ party }: { party: HostedEvent }) {
       {party.editables.map((e) => {
         if (!e.kind) {
           return (
-            <label className="hosted-field" key={e.key}>
+            <label className="zv-field" key={e.key}>
               <span>{t("Accepted answers in “{{step}}”", { step: e.step })}</span>
               <input
                 value={answers[e.key] ?? ""}
@@ -91,14 +91,14 @@ export function PersonaliseSection({ party }: { party: HostedEvent }) {
                   setAnswers((all) => ({ ...all, [e.key]: ev.target.value }));
                 }}
               />
-              <small className="hosted-muted">{t("Separate several with commas.")}</small>
+              <small className="zv-muted">{t("Separate several with commas.")}</small>
             </label>
           );
         }
         const b = blocks[e.key] ?? {};
         if (e.kind === "text") {
           return (
-            <label className="hosted-field" key={e.key}>
+            <label className="zv-field" key={e.key}>
               <span>{t("Text in “{{step}}”", { step: e.step })}</span>
               <textarea rows={3} value={b.text ?? ""} disabled={!editable} onChange={(ev) => setBlock(e.key, { ...b, text: ev.target.value })} />
             </label>
@@ -120,16 +120,16 @@ export function PersonaliseSection({ party }: { party: HostedEvent }) {
                 />
               </label>
             ))}
-            <small className="hosted-muted">{t("Tick the right answer.")}</small>
+            <small className="zv-muted">{t("Tick the right answer.")}</small>
           </fieldset>
         );
       })}
       {editable && (
         <div className="hosted-actions">
-          <button className="hosted-btn hosted-btn--primary" disabled={busy}>
+          <button className="zv-btn zv-btn--primary" disabled={busy}>
             {t("Save")}
           </button>
-          {saved && <span className="hosted-muted">{t("Saved. The next game uses your words.")}</span>}
+          {saved && <span className="zv-muted">{t("Saved. The next game uses your words.")}</span>}
         </div>
       )}
     </form>
@@ -178,17 +178,17 @@ export function PlacesSection({ party }: { party: HostedEvent }) {
   const movable = party.places.filter((p) => p.movable).length;
   return (
     <>
-      <p className="hosted-note">{t("Choose a park without traffic, where the children can be watched. Each place is a circle of at least 25 metres: phones aren't more exact than that.")}</p>
+      <p className="zv-note">{t("Choose a park without traffic, where the children can be watched. Each place is a circle of at least 25 metres: phones aren't more exact than that.")}</p>
       {editable && (
         <>
-          <p className="hosted-muted">{t("Walk to each spot and tap “Put it here”. Or stand in the middle of your park and move all the places at once, keeping the adventure's layout — then check each one.")}</p>
-          <button className="hosted-btn" disabled={busy} onClick={() => void here((lat, lng) => api.shiftTo(lat, lng))}>
+          <p className="zv-muted">{t("Walk to each spot and tap “Put it here”. Or stand in the middle of your park and move all the places at once, keeping the adventure's layout — then check each one.")}</p>
+          <button className="zv-btn" disabled={busy} onClick={() => void here((lat, lng) => api.shiftTo(lat, lng))}>
             {t("Move all places to around me")}
           </button>
         </>
       )}
       {note && (
-        <p className="hosted-muted" role="status">
+        <p className="zv-muted" role="status">
           {note}
         </p>
       )}
@@ -197,7 +197,7 @@ export function PlacesSection({ party }: { party: HostedEvent }) {
           <li key={p.slug}>
             <div>
               <strong>{p.name}</strong>
-              <span className="hosted-muted">
+              <span className="zv-muted">
                 {!p.movable ? t("Stays where the author put it") : p.placed ? t("Placed") : t("Not placed yet")}
                 {p.placed && (
                   <>
@@ -210,14 +210,14 @@ export function PlacesSection({ party }: { party: HostedEvent }) {
               </span>
             </div>
             {editable && p.movable && (
-              <button className="hosted-btn" disabled={busy} onClick={() => void here((lat, lng) => api.placeAt(p.slug, lat, lng))}>
+              <button className="zv-btn" disabled={busy} onClick={() => void here((lat, lng) => api.placeAt(p.slug, lat, lng))}>
                 {t("Put it here")}
               </button>
             )}
           </li>
         ))}
       </ul>
-      <p className="hosted-muted">{t("{{placed}} of {{total}} places put.", { placed, total: movable })}</p>
+      <p className="zv-muted">{t("{{placed}} of {{total}} places put.", { placed, total: movable })}</p>
     </>
   );
 }

@@ -228,7 +228,7 @@ export function Request({ org }: { org: string }) {
       </section>
     );
   }
-  if (!form) return <p className="party-muted">{t("Loading…")}</p>;
+  if (!form) return <p className="zv-muted">{t("Loading…")}</p>;
 
   const close = () => leave(`/o/${encodeURIComponent(org)}`);
   const at = steps.indexOf(step as (typeof STEPS)[number]);
@@ -613,7 +613,7 @@ export function Request({ org }: { org: string }) {
           ))}
       </ul>
       {error && (
-        <p className="party-error" role="alert">
+        <p className="zv-error" role="alert">
           {error}
         </p>
       )}

@@ -44,7 +44,7 @@ export function PrivateWarning() {
   }, []);
   if (!shown) return null;
   return (
-    <p className="party-note" role="status">
+    <p className="zv-note" role="status">
       {t(
         "This looks like a private window: what you make here is kept only until you close it. Copy the link from the address bar, or once your party adventure is ready, use \"Email me the host page\" under My party adventures.",
       )}
@@ -111,7 +111,7 @@ export function TrailStart({ org }: { org: string }) {
       </section>
     );
   }
-  if (!start) return <p className="party-muted">{t("Loading…")}</p>;
+  if (!start) return <p className="zv-muted">{t("Loading…")}</p>;
 
   const theme = themeById(chosen ?? undefined);
   const step = (url: string) => {
@@ -164,21 +164,21 @@ export function TrailStart({ org }: { org: string }) {
         <h1 className="trail-guide__title">{t("Whose birthday is it?")}</h1>
         <p className="trail-guide__lead">{t("We put the name and the age in the example questions.")}</p>
         {error && (
-          <p className="party-error" role="alert">
+          <p className="zv-error" role="alert">
             {error}
           </p>
         )}
         <div className="trail-guide__person">
-          <label className="party-field">
+          <label className="zv-field">
             <span>{t("Name")}</span>
             <input value={person} maxLength={40} autoFocus autoComplete="off" placeholder="Elsa" onChange={(e) => setPerson(e.target.value)} />
           </label>
-          <label className="party-field trail-guide__age">
+          <label className="zv-field trail-guide__age">
             <span>{t("Turns")}</span>
             <input type="number" inputMode="numeric" min={1} max={120} value={age} placeholder="8" onChange={(e) => setAge(e.target.value)} />
           </label>
         </div>
-        <button type="button" className="trail-link trail-guide__skip" disabled={busy} onClick={() => void make(template.name)}>
+        <button type="button" className="zv-link trail-link trail-guide__skip" disabled={busy} onClick={() => void make(template.name)}>
           {t("Skip, keep the example")}
         </button>
       </GuideShell>
@@ -191,7 +191,7 @@ export function TrailStart({ org }: { org: string }) {
         <h1 className="trail-guide__title">{t("Who is it for?")}</h1>
         <p className="trail-guide__lead">{t("You get example cards to make your own.")}</p>
         {error && (
-          <p className="party-error" role="alert">
+          <p className="zv-error" role="alert">
             {error}
           </p>
         )}
@@ -233,7 +233,7 @@ export function TrailStart({ org }: { org: string }) {
       )}
       <section className="party-card">
         <h2>{t("Pick a theme")}</h2>
-        <p className="party-muted">{t("The look of the cards and the phones. You can change it later.")}</p>
+        <p className="zv-muted">{t("The look of the cards and the phones. You can change it later.")}</p>
         {priceLine}
         <ul className="trail-guide-themes">
           {shown.map((th) => {
@@ -253,7 +253,7 @@ export function TrailStart({ org }: { org: string }) {
           })}
         </ul>
         {!more && (
-          <button type="button" className="party-btn trail-guide-themes__more" onClick={() => setMore(true)}>
+          <button type="button" className="zv-btn trail-guide-themes__more" onClick={() => setMore(true)}>
             {t("More themes")}
           </button>
         )}
@@ -312,11 +312,11 @@ export function TrailMine() {
       <section className="party-card">
         <h1>{t("My party adventures")}</h1>
         {email ? (
-          <p className="party-muted">
+          <p className="zv-muted">
             {t("Signed in as {{email}}.", { email })}{" "}
             <button
               type="button"
-              className="party-link"
+              className="zv-link party-link"
               onClick={() => {
                 setTrailSession(null);
                 setNonce((n) => n + 1);
@@ -328,21 +328,21 @@ export function TrailMine() {
         ) : null}
         <PrivateWarning />
         {error && (
-          <p className="party-error" role="alert">
+          <p className="zv-error" role="alert">
             {error}
           </p>
         )}
         {note && (
-          <p className="party-note" role="status">
+          <p className="zv-note" role="status">
             {note}
           </p>
         )}
         {!list ? (
-          <p className="party-muted">{t("Loading…")}</p>
+          <p className="zv-muted">{t("Loading…")}</p>
         ) : list.length === 0 ? (
           <div className="party-empty">
             <Spot src={SPOTS.noTrails} />
-            <p className="party-muted">{t("No party adventures here yet.")}</p>
+            <p className="zv-muted">{t("No party adventures here yet.")}</p>
           </div>
         ) : (
           <ul className="party-trails">
@@ -356,7 +356,7 @@ export function TrailMine() {
                   />
                   <div>
                     <strong>{x.title}</strong>
-                    <small className="party-muted">
+                    <small className="zv-muted">
                       {t("{{n}} cards", { n: x.cards })} · {stateText(x)}
                       {!x.saved && " · " + t("only in this browser")}
                     </small>
@@ -364,23 +364,23 @@ export function TrailMine() {
                 </div>
                 <div className="party-actions">
                   {x.state !== "ended" && (
-                    <a className="party-btn" href={editURL(x.id)}>
+                    <a className="zv-btn" href={editURL(x.id)}>
                       {x.state === "draft" ? t("Continue") : t("Edit")}
                     </a>
                   )}
                   {(x.state === "paid" || x.state === "playing") && hostLink(x.id) && (
-                    <a className="party-btn party-btn--primary" href={"/app/party/host/" + encodeURIComponent(hostLink(x.id)!)}>
+                    <a className="zv-btn zv-btn--primary" href={"/app/party/host/" + encodeURIComponent(hostLink(x.id)!)}>
                       {t("Open the host page")}
                     </a>
                   )}
                   {(x.state === "paid" || x.state === "playing") && (
-                    <button type="button" className="party-btn" onClick={() => void act(() => sendHostLink(x.id), t("We've emailed you the link to the host page."))}>
+                    <button type="button" className="zv-btn" onClick={() => void act(() => sendHostLink(x.id), t("We've emailed you the link to the host page."))}>
                       {t("Email me the host page")}
                     </button>
                   )}
                   <button
                     type="button"
-                    className="party-btn"
+                    className="zv-btn"
                     onClick={() =>
                       void act(async () => {
                         const d = await duplicateDraft(x.id);
@@ -393,7 +393,7 @@ export function TrailMine() {
                   {x.state === "draft" && (
                     <button
                       type="button"
-                      className="party-btn party-btn--danger"
+                      className="zv-btn zv-btn--danger"
                       onClick={async () => {
                         if (await ask({ message: t("Delete this party adventure? This can't be undone."), confirmLabel: t("Delete"), cancelLabel: t("Cancel"), danger: true }))
                           void act(() => deleteDraft(x.id).then(() => forgetTrails([x.id])));
@@ -428,7 +428,7 @@ function SignIn() {
         <p>{t("Check your inbox. If party adventures are saved to {{email}}, the link to them is on its way.", { email })}</p>
       ) : (
         <form
-          className="party-inline"
+          className="zv-inline"
           onSubmit={async (e) => {
             e.preventDefault();
             setBusy(true);
@@ -443,15 +443,15 @@ function SignIn() {
             }
           }}
         >
-          <label className="party-field">
+          <label className="zv-field">
             <span>{t("Get a link by email")}</span>
             <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("Your email")} autoComplete="email" />
           </label>
-          <button className="party-btn" disabled={busy}>
+          <button className="zv-btn" disabled={busy}>
             {t("Send")}
           </button>
           {error && (
-            <p className="party-error" role="alert">
+            <p className="zv-error" role="alert">
               {error}
             </p>
           )}
@@ -476,12 +476,12 @@ export function TrailVerify() {
       (e) => setError(e instanceof ApiError && e.status === 410 ? t("This link has expired or was used already. Ask for a new one.") : t("Something went wrong. Try again.")),
     );
   }, [t]);
-  if (!error) return <p className="party-muted">{t("Loading…")}</p>;
+  if (!error) return <p className="zv-muted">{t("Loading…")}</p>;
   return (
     <section className="party-card">
       <h1>{t("That didn't work")}</h1>
       <p>{error}</p>
-      <a className="party-btn" href={MINE}>
+      <a className="zv-btn" href={MINE}>
         {t("My party adventures")}
       </a>
     </section>
@@ -540,12 +540,12 @@ export function TrailPaid() {
         <h1>{t("The payment was cancelled. Nothing was charged.")}</h1>
         {retry && (
           <p>
-            <a className="party-btn party-btn--primary" href={editURL(retry.id)}>
+            <a className="zv-btn zv-btn--primary" href={editURL(retry.id)}>
               {t("Back to your party adventure")}
             </a>
           </p>
         )}
-        <a className="party-btn" href={MINE}>
+        <a className="zv-btn" href={MINE}>
           {t("My party adventures")}
         </a>
       </section>
@@ -563,7 +563,7 @@ export function TrailPaid() {
         <>
           {held && (
             <p>
-              <a className="party-btn party-btn--primary" href={held}>
+              <a className="zv-btn zv-btn--primary" href={held}>
                 {t("Open the host page")}
               </a>
             </p>
@@ -571,8 +571,8 @@ export function TrailPaid() {
           <p className="party-lead">{t("We're emailing you the link to the host page. There you print the cards and the answer key, and show the teams how to join.")}</p>
         </>
       )}
-      <p className="party-muted">{t("It can take a minute or two. Check your spam folder if it doesn't arrive.")}</p>
-      <a className="party-btn" href={MINE}>
+      <p className="zv-muted">{t("It can take a minute or two. Check your spam folder if it doesn't arrive.")}</p>
+      <a className="zv-btn" href={MINE}>
         {t("My party adventures")}
       </a>
     </section>

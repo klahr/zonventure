@@ -1,14 +1,9 @@
 /* Events, self-guided adventures and the new-event dialog: only what the kit lacks. */
 
-.dz .evs-muted { color: var(--dz-muted); }
-.dz .evs-small { font-size: var(--dz-text-sm); }
 .dz .evs-bad { color: var(--dz-danger); }
-.dz .evs-stack { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.dz .evs-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dz .evs-namecell { display: inline-flex; align-items: center; gap: var(--dz-space-3); min-width: 0; }
-.dz .evs-sub { display: flex; flex-wrap: wrap; gap: 0 6px; font-size: var(--dz-text-sm); color: var(--dz-muted); }
+.dz .evs-sub { display: flex; flex-wrap: wrap; gap: 0 var(--dz-space-1h); font-size: var(--dz-text-sm); color: var(--dz-muted); }
 .dz .evs-none { margin: 0; padding: var(--dz-space-4); color: var(--dz-muted); text-align: center; }
-.dz p.evs-muted, .dz p.evs-small { margin: 0; }
 
 .dz .evs-filters { display: flex; flex-wrap: wrap; gap: var(--dz-space-1); }
 .dz .evs-count { margin-left: var(--dz-space-1h); font-variant-numeric: tabular-nums; opacity: 0.7; }
@@ -17,7 +12,7 @@
 .dz .evs-fieldset > legend { padding: 0; margin-bottom: var(--dz-space-2); }
 .dz .evs-filter { width: 100%; }
 
-.dz .evs-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: var(--dz-space-2); max-height: 15rem; overflow-y: auto; padding: 2px; }
+.dz .evs-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: var(--dz-space-2); max-height: 15rem; overflow-y: auto; padding: var(--dz-space-0); }
 .dz .evs-choice { position: relative; display: flex; align-items: center; gap: var(--dz-space-2); padding: var(--dz-space-2) var(--dz-space-3); border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); cursor: pointer; min-width: 0; background: var(--dz-surface); }
 .dz .evs-choice:hover { border-color: var(--dz-border-strong); }
 .dz .evs-choice.is-on { border-color: var(--dz-accent); background: color-mix(in srgb, var(--dz-accent) 7%, var(--dz-surface)); }
@@ -27,10 +22,6 @@
 .dz .evs-choice.is-off:hover { border-color: var(--dz-border); }
 
 .dz .evs-chosen { display: flex; align-items: center; gap: var(--dz-space-3); }
-
-.dz .evs-capacity { display: flex; flex-direction: column; gap: var(--dz-space-1); }
-.dz .evs-num { width: 7rem; }
-.dz .evs-total { margin: 0; align-self: flex-end; padding-bottom: var(--dz-space-2); }
 
 .dz .evs-check { display: flex; align-items: flex-start; gap: var(--dz-space-2); font-size: var(--dz-text-md); color: var(--dz-ink); cursor: pointer; }
 .dz .evs-check > input { margin-top: 3px; flex: none; }
@@ -49,7 +40,7 @@
 .dz .evs-attest:has(> input:checked) { border-color: var(--dz-success); background: color-mix(in srgb, var(--dz-success) 8%, var(--dz-surface)); font-weight: 500; }
 .dz .evs-attest:has(> input[aria-invalid="true"]) { border-color: var(--dz-danger); background: color-mix(in srgb, var(--dz-danger) 8%, var(--dz-surface)); }
 .dz .evs-attest:focus-within { outline: 2px solid var(--dz-accent); outline-offset: 2px; }
-.dz .evs-attest-help { font-size: 0.875rem; color: var(--dz-muted); }
+.dz .evs-attest-help { font-size: var(--dz-text-md); color: var(--dz-muted); }
 .dz .evs-attest-help > summary { cursor: pointer; }
 .dz .evs-attest-help > p { margin: 0.4rem 0; }
 

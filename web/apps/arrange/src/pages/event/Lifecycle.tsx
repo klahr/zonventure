@@ -330,7 +330,7 @@ function ScheduleDialog({ event, emailable, onClose, onDone }: { event: EventInf
         </>
       }
     >
-      <p className="ev-muted">{t.t("The server will start the event automatically at the time below. Leave empty and hit Clear to remove the auto-start.")}</p>
+      <p className="cs-muted">{t.t("The server will start the event automatically at the time below. Leave empty and hit Clear to remove the auto-start.")}</p>
       <Field label={t.t("Auto-start at")} error={err}>
         <input type="datetime-local" value={when} autoFocus onChange={(e) => { setWhen(e.target.value); setErr(null); }} />
       </Field>

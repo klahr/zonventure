@@ -14,5 +14,5 @@
 .blk-bearing__dial { width: 100%; height: auto; }
 .blk-bearing__ring { fill: var(--surface); stroke: var(--border-soft); stroke-width: 2; }
 .blk-bearing__mark { font-size: 11px; font-weight: 700; fill: var(--muted); }
-.blk-bearing__needle { stroke: var(--c-place, var(--accent)); stroke-width: 4; stroke-linecap: round; }
+.blk-bearing__needle { stroke: var(--c-place); stroke-width: 4; stroke-linecap: round; }
 .blk-bearing__hub { fill: var(--ink); }

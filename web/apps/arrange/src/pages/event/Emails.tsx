@@ -66,19 +66,19 @@ export function EmailsCard({ event, teams, from, refresh }: { event: Info; teams
                 ))}
               </select>
             </Field>
-            <p className="ev-muted">
+            <p className="cs-muted">
               {t.t("{{n}} of {{total}} teams have a contact email.", { n: data.with_email, total: data.teams_total })}{" "}
               {t.t("Invitations and emails from steps use this theme too.")}
             </p>
           </div>
           {data.emails.length === 0 ? (
-            <p className="ev-muted">{t.t("Nothing emailed yet. Emails reach each team's contact address, outside the app.")}</p>
+            <p className="cs-muted">{t.t("Nothing emailed yet. Emails reach each team's contact address, outside the app.")}</p>
           ) : (
             <ul className="ev-mails ev-scroll">
               {data.emails.map((m) => (
                 <li key={m.id}>
                   <div className="ev-mails__subject">{m.subject}</div>
-                  <div className="ev-muted">
+                  <div className="cs-muted">
                     <time dateTime={m.sent_at} title={fmtDateTime(m.sent_at, t.current())}>
                       {fmtWhen(m.sent_at, t.current())}
                     </time>
@@ -193,7 +193,7 @@ function EmailComposer({
       onSubmit={() => void send()}
       footer={
         <>
-          <span className="ev-muted ev-mail__count">{t.t(to.length === 1 ? "To 1 team" : "To {{n}} teams", { n: to.length })}</span>
+          <span className="cs-muted ev-mail__count">{t.t(to.length === 1 ? "To 1 team" : "To {{n}} teams", { n: to.length })}</span>
           <Button onClick={onClose}>{t.t("Cancel")}</Button>
           <Button type="submit" variant="primary" loading={busy} disabled={to.length === 0} icon={<Send size={ICON.sm} aria-hidden />}>
             {t.t("Send")}
@@ -245,7 +245,7 @@ function EmailComposer({
             </div>
           )}
           {reachable.length < teams.length && (
-            <p className="ev-muted">{t.t("Teams without a contact email are left out. Add one in a team's settings.")}</p>
+            <p className="cs-muted">{t.t("Teams without a contact email are left out. Add one in a team's settings.")}</p>
           )}
           {err && (
             <p className="cs-field__error" role="alert">

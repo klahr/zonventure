@@ -128,7 +128,7 @@ export function QuestsPage() {
     { key: "name", header: t.t("Self-guided adventure"), cell: (r) => (
       <span className="evs-namecell">
         {eventCover(r) && <AdventureCover title={r.adventure_title || r.adventure_slug} src={eventCover(r)} />}
-        <span className="evs-stack">
+        <span className="cs-stack">
           <strong>{eventLabel(r)}</strong>
           <span className="evs-sub">{r.adventure_title || r.adventure_slug}</span>
         </span>
@@ -140,9 +140,9 @@ export function QuestsPage() {
     // noted until it is approved.
     { key: "price", header: t.t("Price"), align: "end", cell: (r) => {
       const draft = r.ticket_price_cents && r.ticket_price_cents > 0 ? fmtMoney(r.ticket_price_cents, r.ticket_currency, loc) : "";
-      if (!r.listed || !r.listed_price_cents) return draft || <span className="evs-muted">—</span>;
+      if (!r.listed || !r.listed_price_cents) return draft || <span className="cs-muted">—</span>;
       return (
-        <span className="evs-stack">
+        <span className="cs-stack">
           {fmtMoney(r.listed_price_cents, r.listed_currency, loc)}
           {draft && r.ticket_price_cents !== r.listed_price_cents && <span className="evs-sub">{t.t("{{price}} after review", { price: draft })}</span>}
         </span>

@@ -38,12 +38,11 @@
      all live in /assets/page-tokens.css. Page-specific styles below; the
      organisation's colours arrive as --accent, --accent-2, --bg, --ink
      from the brand override block in the head. */
-  body { line-height: 1.6; }
-  .wrap { max-width: 75rem; margin: 0 auto; padding: 0 1.5rem; }
+  .wrap { max-width: 75rem; padding: 0 1.5rem; }
   .eyebrow { display: block; font-size: .78rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-text); margin: 0 0 .6rem; }
   .section-title { font-family: var(--font-brand); font-size: clamp(1.9rem, 4vw, 2.8rem); line-height: 1.1; margin: 0; color: var(--ink); }
   section.block { padding: clamp(3.5rem, 7vw, 5.5rem) 0; }
-  section.alt { background: var(--surface-2, #f3f4f7); }
+  section.alt { background: var(--surface-2); }
 
   /* The hero: the organisation's cover, else an adventure's, under a
      shade tinted with its accent; without either, its colours alone. */
@@ -80,7 +79,7 @@
   .section-head .lede { color: var(--ink-soft); font-size: 1.05rem; margin: .75rem 0 0; max-width: 40rem; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); gap: 1.5rem; }
   .card {
-    display: flex; flex-direction: column; color: inherit; text-decoration: none;
+    display: flex; flex-direction: column; color: inherit;
     background: var(--surface); border: 1px solid var(--border-soft); border-radius: 20px; overflow: hidden;
     box-shadow: var(--shadow); transition: transform .25s ease, box-shadow .25s ease;
   }
@@ -91,7 +90,7 @@
   .card .body { display: flex; flex-direction: column; padding: 1.3rem 1.4rem 1.4rem; flex: 1; }
   /* The adventure's icon, a badge riding the cover's bottom edge. */
   .card .adv-icon { position: relative; z-index: 1; width: 56px; height: 56px; margin: calc(-1.3rem - 31px) 0 .7rem; border-radius: 14px; object-fit: cover; background: var(--surface); border: 3px solid var(--surface); box-shadow: 0 8px 24px rgba(0,0,0,.2); }
-  .card h3 { margin: 0 0 .5rem; font-family: var(--font-brand); font-size: 1.3rem; line-height: 1.2; color: var(--ink); }
+  .card h3 { margin: 0 0 .5rem; font-family: var(--font-brand); font-size: 1.3rem; line-height: 1.2; }
   .card .blurb { flex: 1; margin: 0 0 1rem; color: var(--ink-soft); font-size: .95rem; }
   .card .where { display: flex; align-items: flex-start; gap: .45rem; margin-bottom: .8rem; font-size: .88rem; font-weight: 600; line-height: 1.35; color: var(--ink-soft); }
   .card .where svg { flex: none; width: 1.05rem; height: 1.05rem; margin-top: .05rem; color: var(--accent-text); }
@@ -99,7 +98,7 @@
   .card .chip { display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .65rem; border-radius: 999px; background: color-mix(in srgb, var(--ink) 6%, var(--surface)); color: var(--ink-soft); font-size: .78rem; font-weight: 600; }
   .card .chip svg { width: .95rem; height: .95rem; }
   .card .foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border-soft); }
-  .card .price { font: 1.5rem/1 var(--font-brand); color: var(--ink); }
+  .card .price { font: 1.5rem/1 var(--font-brand); }
   .card .price small { display: block; margin-top: .3rem; font: 600 .75rem/1 var(--font-body); color: var(--muted); }
   .card .go { font-weight: 700; color: var(--accent-text); white-space: nowrap; }
   .card:hover .go { text-decoration: underline; }
@@ -109,8 +108,8 @@
   .steps { list-style: none; margin: 3rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem; position: relative; }
   .steps::before { content: ""; position: absolute; top: 2rem; left: 16%; right: 16%; border-top: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent); }
   .steps li { position: relative; }
-  .steps .num { display: grid; place-items: center; width: 4rem; height: 4rem; margin: 0 auto 1.2rem; border-radius: 50%; color: #fff; font-family: var(--font-brand); font-size: 1.5rem; background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 0 0 8px var(--surface-2, #f3f4f7), 0 10px 24px color-mix(in srgb, var(--accent) 35%, transparent); }
-  .steps h3 { margin: 0 0 .4rem; font-size: 1.15rem; color: var(--ink); }
+  .steps .num { display: grid; place-items: center; width: 4rem; height: 4rem; margin: 0 auto 1.2rem; border-radius: 50%; color: #fff; font-family: var(--font-brand); font-size: 1.5rem; background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 0 0 8px var(--surface-2), 0 10px 24px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .steps h3 { margin: 0 0 .4rem; font-size: 1.15rem; }
   .steps p { margin: 0 auto; color: var(--ink-soft); max-width: 20rem; }
 
   /* A code from an envelope, a gift card or an email. */
@@ -126,10 +125,9 @@
   .code-msg { min-height: 1.4rem; margin: .7rem .2rem 0; font-size: .92rem; font-weight: 600; }
 
   .empty { background: var(--surface); border: 1px dashed var(--border-soft); border-radius: 20px; padding: 3rem 1.5rem; text-align: center; color: var(--ink-soft); grid-column: 1 / -1; }
-  .toast { background: var(--surface); border: 1px solid var(--border-soft); border-left: 4px solid var(--accent); border-radius: var(--radius-xs); padding: 1rem 1.25rem; margin: 0 0 2rem; color: var(--ink); box-shadow: var(--shadow); }
-  .toast.cancelled { border-left-color: var(--muted); color: var(--ink-soft); }
+  .toast { margin-bottom: 2rem; }
 
-  footer[role="contentinfo"] { padding: 2.5rem 0 3rem; border-top: 1px solid var(--border-soft); font-size: .9rem; color: var(--muted); }
+  footer[role="contentinfo"] { padding: 2.5rem 0 3rem; font-size: .9rem; }
   .foot { display: flex; justify-content: space-between; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; text-align: left; }
   .foot-org strong { display: block; font-family: var(--font-brand); font-size: 1.25rem; color: var(--ink); margin-bottom: .25rem; }
   .foot-org p { margin: .15rem 0; }
@@ -141,7 +139,6 @@
     .code-card { grid-template-columns: minmax(0, 1fr); }
   }
   @media (prefers-reduced-motion: reduce) {
-    .card, .card .cover-img { transition: none; }
     .card:hover, .card:hover .cover-img { transform: none; }
   }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

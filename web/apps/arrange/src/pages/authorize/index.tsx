@@ -109,7 +109,7 @@ export function AuthorizePage() {
           {!r.verified && (
             <p className="az__warn">{t.t("Only allow it if you started this connection yourself, on this computer. It returns to {{host}}.", { host: r.redirect_host })}</p>
           )}
-          {memberships.length === 1 && <p className="az__muted">{t.t("It works in {{org}} only.", { org: memberships[0]!.org_name })}</p>}
+          {memberships.length === 1 && <p className="cs-note">{t.t("It works in {{org}} only.", { org: memberships[0]!.org_name })}</p>}
           {memberships.length > 1 && (
             <Field label={t.t("Organization")} hint={t.t("The assistant works in this organization only. Connect again to use another.")}>
               <select value={org} onChange={(e) => setOrg(Number(e.target.value))}>
@@ -119,7 +119,7 @@ export function AuthorizePage() {
               </select>
             </Field>
           )}
-          <p className="az__muted">{t.t("After you allow it, you go back to {{host}}. You can disconnect it any time under Settings → Account → API tokens.", { host: r.redirect_host })}</p>
+          <p className="cs-note">{t.t("After you allow it, you go back to {{host}}. You can disconnect it any time under Settings → Account → API tokens.", { host: r.redirect_host })}</p>
           {error && <ErrorBox message={error} />}
           <Row>
             <Button variant="primary" filled disabled={busy} onClick={() => answer(true)}>{t.t("Allow")}</Button>

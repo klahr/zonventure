@@ -40,7 +40,7 @@ export function PostDialog({ rd, onClose, onSave }: { rd: Redemption; onClose: (
       <Field label={t.t("Post on")}>
         <input type="date" value={postAt} onChange={(e) => setPostAt(e.target.value)} autoFocus />
       </Field>
-      <label className="rd-check">
+      <label className="cs-check">
         <input type="checkbox" checked={posted} onChange={(e) => setPosted(e.target.checked)} />
         <span>{t.t("Posted")}</span>
       </label>
@@ -218,7 +218,7 @@ function CodeInput({ field, value, onChange }: { field: PartnerField; value: str
   const t = useT();
   return (
     <Field label={localText(field.label, t.current())}>
-      <input type="text" required autoComplete="off" className="rd-mono" inputMode={field.digits ? "numeric" : "text"} placeholder={field.example} value={value} onChange={onChange} />
+      <input type="text" required autoComplete="off" className="cs-mono" inputMode={field.digits ? "numeric" : "text"} placeholder={field.example} value={value} onChange={onChange} />
     </Field>
   );
 }
@@ -283,7 +283,7 @@ export function PartnerDialog({ existing, onClose, onDone }: { existing: Partner
           </div>
           <div className="rd-grid">
             <Field label={t.t("Example (optional)")} hint={t.t("Shown greyed out in the empty input.")}>
-              <input type="text" maxLength={64} className="rd-mono" value={f.example} onChange={(e) => setField(i, { example: e.target.value })} />
+              <input type="text" maxLength={64} className="cs-mono" value={f.example} onChange={(e) => setField(i, { example: e.target.value })} />
             </Field>
             <Field label={t.t("Characters")}>
               <select value={f.digits ? "digits" : "alnum"} onChange={(e) => setField(i, { digits: e.target.value === "digits" })}>

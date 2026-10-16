@@ -47,7 +47,7 @@ export function PrintDeliveryCard({ eventId, materials, reload, invited }: { eve
                 <option key={d} value={d}>{d === m.adventure_delivery ? t.t("{{delivery}} (as in the adventure)", { delivery: label[d] }) : label[d]}</option>
               ))}
             </select>
-            {m.delivery !== m.adventure_delivery && <span className="ev-muted">{t.t("Changed for this event")}</span>}
+            {m.delivery !== m.adventure_delivery && <span className="cs-muted">{t.t("Changed for this event")}</span>}
           </li>
         ))}
       </ul>

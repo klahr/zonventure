@@ -45,7 +45,7 @@ export function Join({ token }: { token: string }) {
       </section>
     );
   }
-  if (!info) return <p className="party-muted">{t("Loading…")}</p>;
+  if (!info) return <p className="zv-muted">{t("Loading…")}</p>;
 
   const closed = {
     ended: t("This game has ended."),
@@ -75,14 +75,14 @@ export function Join({ token }: { token: string }) {
   const cover = coverOf(info.theme, info.cover_url);
   return (
     <section className={"party-card" + (cover ? " party-card--cover" : "")}>
-      {cover && <div className="party-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
+      {cover && <div className="pv-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
       {info.adventure_title !== info.name && <p className="party-eyebrow">{info.adventure_title}</p>}
       <h1>{info.name}</h1>
       {closed ? (
         <>
-          <p className="party-note">{closed}</p>
+          <p className="zv-note">{closed}</p>
           {waiting && (
-            <button type="button" className="party-btn" onClick={() => setNonce((n) => n + 1)}>
+            <button type="button" className="zv-btn" onClick={() => setNonce((n) => n + 1)}>
               {t("Try again")}
             </button>
           )}
@@ -95,8 +95,8 @@ export function Join({ token }: { token: string }) {
             submit(team.trim(), 0);
           }}
         >
-          <p className="party-muted">{t("Play on one phone per team. Give your team a name to start.")}</p>
-          <div className="party-field">
+          <p className="zv-muted">{t("Play on one phone per team. Give your team a name to start.")}</p>
+          <div className="zv-field">
             <span id="join-team">{t("Team name")}</span>
             <div className="party-roll">
               <input
@@ -124,11 +124,11 @@ export function Join({ token }: { token: string }) {
             </div>
           </div>
           {error && (
-            <p className="party-error" role="alert">
+            <p className="zv-error" role="alert">
               {error}
             </p>
           )}
-          <button className="party-btn party-btn--primary party-btn--wide" disabled={busy || !team.trim()}>
+          <button className="zv-btn zv-btn--primary zv-btn--wide" disabled={busy || !team.trim()}>
             {t("Start")}
           </button>
         </form>

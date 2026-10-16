@@ -305,19 +305,19 @@ function NewEventForm({ slug, assignmentId, onClose }: NewEventProps) {
             {shown.map((a) => (
               <AdventureChoice key={a.slug} adv={a} checked={a.slug === picked} pass={unused.find((x) => x.adventure_slug === a.slug)} onPick={() => setPicked(a.slug)} />
             ))}
-            {shown.length === 0 && <p className="evs-muted evs-small">{t.t("No adventures match.")}</p>}
+            {shown.length === 0 && <p className="cs-note">{t.t("No adventures match.")}</p>}
           </div>
         </fieldset>
       ) : (
         adventureTitle && (
           <div className="evs-chosen">
             <AdventureCover title={adventureTitle} src={chosenAdv && iconOrCover(chosenAdv)} size={36} />
-            <span className="evs-stack">
+            <span className="cs-stack">
               <strong>{adventureTitle}</strong>
               {pass ? (
-                <span className="evs-muted evs-small">{t.t("Event pass for {{n}} players", { n: pass.max_players })}</span>
+                <span className="cs-sub">{t.t("Event pass for {{n}} players", { n: pass.max_players })}</span>
               ) : needsPicker && pickedAdv && (pickedAdv.shared || !pickedAdv.playable) && (
-                <span className="evs-muted evs-small">
+                <span className="cs-sub">
                   {[pickedAdv.shared ? t.t("Commissioned for you") : null, !pickedAdv.playable ? t.t("not published yet") : null].filter(Boolean).join(" · ")}
                 </span>
               )}
@@ -331,7 +331,7 @@ function NewEventForm({ slug, assignmentId, onClose }: NewEventProps) {
       )}
 
       {!pass && (
-        <p className="evs-muted evs-small">
+        <p className="cs-note">
           {t.t("Nothing to pay now: each team costs {{price}} as it starts, its first {{n}} phones included, from your organisation's balance.", { price: fmtMoney(price.team, price.currency, loc), n: price.included })}{" "}
           <span>{price.vatExcluded ? t.t("excl. VAT") : t.t("incl. VAT")}</span>
         </p>
@@ -360,7 +360,7 @@ function NewEventForm({ slug, assignmentId, onClose }: NewEventProps) {
 
       <details className="evs-details" open={teamsOpen} onToggle={(e) => setTeamsOpen((e.target as HTMLDetailsElement).open)}>
         <summary>{t.t("Add teams now (optional)")}</summary>
-        <p className="evs-muted evs-small">{t.t("Bulk-create teams up front. Skip this and add them by hand on the event page later if you prefer.")}</p>
+        <p className="cs-note">{t.t("Bulk-create teams up front. Skip this and add them by hand on the event page later if you prefer.")}</p>
         <div className="evs-grid2">
           <Field label={t.t("Number of teams")}>
             <input ref={teamCountRef} type="number" min={0} max={50} value={teamCount} onChange={(e) => setTeamCount(e.target.value)} />
@@ -376,7 +376,7 @@ function NewEventForm({ slug, assignmentId, onClose }: NewEventProps) {
           </Field>
         </div>
         {teamN > 0 && (
-          <p className={"evs-small" + (overCap ? " evs-bad" : " evs-muted")} aria-live="polite">
+          <p className={"cs-small cs-flush" + (overCap ? " evs-bad" : " cs-muted")} aria-live="polite">
             {cap > 0
               ? t.t("{{total}} players of the {{cap}} the event pass covers.", { total: teamN * perN, cap })
               : t.t("{{teams}} teams cost {{cost}} as they start.", { teams: teamN, cost: fmtMoney(price.cost(teamN, perN), price.currency, loc) })}
@@ -415,9 +415,9 @@ function AdventureChoice({ adv, checked, pass, onPick }: { adv: AdventureRow; ch
     <label className={"evs-choice" + (checked ? " is-on" : "")}>
       <input type="radio" name="evs-adventure" checked={checked} onChange={onPick} />
       <AdventureCover title={adv.title} src={iconOrCover(adv)} size={32} />
-      <span className="evs-stack">
-        <strong className="evs-ellipsis">{adv.title}</strong>
-        <span className="evs-muted evs-small">
+      <span className="cs-stack">
+        <strong className="cs-ellipsis">{adv.title}</strong>
+        <span className="cs-sub">
           {adv.mine_to_edit ? t.t("yours") : CATALOG_ENABLED ? t.t("catalog") : t.t("shared")}
           {note && <> · {note}</>}
           {!adv.playable && <> · {t.t("not published yet")}</>}

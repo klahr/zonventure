@@ -118,7 +118,7 @@ function HostLinkCard() {
         </Row>
       </form>
       {found && (found.parties.length === 0 ? (
-        <p className="adm-muted">{t.t("No party still to come or under way was booked with {{email}}.", { email: found.email })}</p>
+        <p className="cs-note cs-note--md">{t.t("No party still to come or under way was booked with {{email}}.", { email: found.email })}</p>
       ) : (
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
           {found.parties.map((p) => (

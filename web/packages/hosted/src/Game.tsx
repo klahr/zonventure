@@ -44,7 +44,7 @@ export function Game({ event }: { event: HostedEvent }) {
             <strong>
               {t("Game {{n}} is being played", { n: event.round })}
             </strong>{" "}
-            <span className="hosted-muted">
+            <span className="zv-muted">
               {event.teams_limit > 0
                 ? t("{{n}} of {{max}} teams", {
                     n: event.teams.length,
@@ -53,7 +53,7 @@ export function Game({ event }: { event: HostedEvent }) {
                 : t("{{n}} teams", { n: event.teams.length })}
             </span>
             {event.state === "paused" && (
-              <span className="hosted-pill hosted-pill--paused">
+              <span className="zv-pill zv-pill--paused">
                 {t("Paused")}
               </span>
             )}
@@ -64,7 +64,7 @@ export function Game({ event }: { event: HostedEvent }) {
                 <li key={tm.id}>
                   <div>
                     <strong>{tm.name}</strong>
-                    <span className="hosted-muted">
+                    <span className="zv-muted">
                       {tm.headcount === 1 ? t("1 player") : t("{{n}} players", { n: tm.headcount })}
                       {" · "}
                       {tm.finished
@@ -75,7 +75,7 @@ export function Game({ event }: { event: HostedEvent }) {
                   {api.removeTeam && (
                     <button
                       type="button"
-                      className="hosted-btn hosted-btn--quiet"
+                      className="zv-btn zv-btn--quiet"
                       disabled={busy}
                       aria-label={t("Remove {{team}}", { team: tm.name })}
                       onClick={async () => {
@@ -104,7 +104,7 @@ export function Game({ event }: { event: HostedEvent }) {
               (event.state === "paused" ? (
                 <button
                   type="button"
-                  className="hosted-btn"
+                  className="zv-btn"
                   disabled={busy}
                   onClick={() => void run(() => api.action!("resume"))}
                 >
@@ -113,7 +113,7 @@ export function Game({ event }: { event: HostedEvent }) {
               ) : (
                 <button
                   type="button"
-                  className="hosted-btn"
+                  className="zv-btn"
                   disabled={busy}
                   onClick={() => void run(() => api.action!("pause"))}
                 >
@@ -122,7 +122,7 @@ export function Game({ event }: { event: HostedEvent }) {
               ))}
             <button
               type="button"
-              className="hosted-btn hosted-btn--primary"
+              className="zv-btn zv-btn--primary"
               disabled={busy}
               onClick={async () => {
                 // Say so when a team is still out: finishing stops it mid-game.
@@ -161,9 +161,9 @@ export function Game({ event }: { event: HostedEvent }) {
           </p>
         </>
       ) : over ? (
-        <p className="hosted-muted">{t("No more games can be played.")}</p>
+        <p className="zv-muted">{t("No more games can be played.")}</p>
       ) : (
-        <p className="hosted-muted">
+        <p className="zv-muted">
           {event.round === 0
             ? t(
                 "No game yet. The first team to join through the player link starts game 1.",
@@ -188,7 +188,7 @@ export function Game({ event }: { event: HostedEvent }) {
           />
           <span>
             {t("Keep the results secret until I finish the game")}
-            <small className="hosted-muted">
+            <small className="zv-muted">
               {t(
                 "The phones and the live scoreboard show no points or places while the teams play. Finish the game to reveal them.",
               )}
@@ -198,7 +198,7 @@ export function Game({ event }: { event: HostedEvent }) {
       )}
 
       {event.round_open && (event.turned_away ?? 0) > 0 && (
-        <p className="hosted-note" role="status">
+        <p className="zv-note" role="status">
           {event.turned_away === 1
             ? t("1 team couldn't join: the game is full.")
             : t("{{n}} teams couldn't join: the game is full.", { n: event.turned_away ?? 0 })}{" "}
@@ -207,7 +207,7 @@ export function Game({ event }: { event: HostedEvent }) {
       )}
 
       {canAdd(1) && (
-        <p className="hosted-muted">
+        <p className="zv-muted">
           {t("Up to {{n}} teams can play in one game, one phone per team and any number of players in each.", {
             n: event.teams_limit,
           })}{" "}
@@ -215,7 +215,7 @@ export function Game({ event }: { event: HostedEvent }) {
             <button
               key={n}
               type="button"
-              className="hosted-link-btn"
+              className="zv-link hosted-link-btn"
               disabled={busy}
               onClick={() => void addTeams(n)}
             >
@@ -243,7 +243,7 @@ export function Game({ event }: { event: HostedEvent }) {
                 <details>
                   <summary>
                     <strong>{t("Game {{n}}", { n: r.round })}</strong>{" "}
-                    <span className="hosted-muted">
+                    <span className="zv-muted">
                       {date(r.started_at)} ·{" "}
                       {t("{{teams}} teams, {{players}} players", {
                         teams: r.teams,
@@ -258,7 +258,7 @@ export function Game({ event }: { event: HostedEvent }) {
                         .map((tm) => (
                           <li key={tm.id}>
                             <strong>{tm.name}</strong>
-                            <span className="hosted-muted">
+                            <span className="zv-muted">
                               {tm.finished
                                 ? t("Finished · {{score}} points", { score: tm.score })
                                 : t("{{score}} points", { score: tm.score })}
@@ -267,13 +267,13 @@ export function Game({ event }: { event: HostedEvent }) {
                         ))}
                     </ol>
                   ) : (
-                    <p className="hosted-muted">{t("No teams played this game.")}</p>
+                    <p className="zv-muted">{t("No teams played this game.")}</p>
                   )}
                 </details>
               </li>
             ))}
           </ul>
-          <p className="hosted-muted">
+          <p className="zv-muted">
             {t(
               "The results of each game were emailed to you when it finished.",
             )}

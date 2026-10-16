@@ -72,7 +72,7 @@ export function RequestsPage({ tab }: { tab?: string | undefined }) {
           current={st}
           tabs={STATES.map((s) => {
             const n = s === "all" ? 0 : counts[s] ?? 0;
-            return { id: s, href: href({ name: "requests", tab: s }), label: <>{t.t(LABEL[s])}{n > 0 && <span className="rq-count">{n}</span>}</> };
+            return { id: s, href: href({ name: "requests", tab: s }), label: <>{t.t(LABEL[s])}{n > 0 && <span className="cs-count">{n}</span>}</> };
           })}
         />
       )}
@@ -86,7 +86,7 @@ export function RequestsPage({ tab }: { tab?: string | undefined }) {
           {...(total === 0 ? { illustration: SPOTS.noRedemptions } : {})}
         />
       ) : (
-        <ul className="rq-list">
+        <ul className="cs-records">
           {rows.map((q) => <RequestItem key={q.id} q={q} showState={st === "all"} reload={list.reload} />)}
         </ul>
       )}
@@ -139,7 +139,7 @@ function SettingsCard({ settings, onSaved }: { settings: QuoteSettings; onSaved:
       )}
     >
       <div className="rq-settings">
-        <label className="rq-check">
+        <label className="cs-check rq-check">
           <input type="checkbox" checked={open} onChange={(e) => setOpen(e.target.checked)} />
           <span>{t.t("Take requests: show “Ask for a quote” on your public page")}</span>
         </label>
@@ -148,13 +148,13 @@ function SettingsCard({ settings, onSaved }: { settings: QuoteSettings; onSaved:
         </Field>
         <fieldset className="rq-offers">
           <legend>{t.t("What you offer")}</legend>
-          <p className="rq-muted">{t.t("Untick what you can't do: the form doesn't ask for it.")}</p>
+          <p className="cs-note cs-note--md">{t.t("Untick what you can't do: the form doesn't ask for it.")}</p>
           <div className="rq-offers__groups">
             {OFFERS.map((g) => (
               <div key={g.title} className="rq-offers__group">
-                <span className="rq-label">{t.t(g.title)}</span>
+                <span className="cs-sub">{t.t(g.title)}</span>
                 {g.items.map((o) => (
-                  <label key={o.id} className="rq-check rq-check--plain" title={lastKind(o.id) ? t.t("Offer at least one kind of adventure.") : undefined}>
+                  <label key={o.id} className="cs-check" title={lastKind(o.id) ? t.t("Offer at least one kind of adventure.") : undefined}>
                     <input
                       type="checkbox"
                       checked={!off.includes(o.id)}
@@ -169,12 +169,12 @@ function SettingsCard({ settings, onSaved }: { settings: QuoteSettings; onSaved:
           </div>
         </fieldset>
         {settings.open && (
-          <div className="rq-url">
+          <div className="cs-url">
             <input readOnly value={settings.url} aria-label={t.t("The form's address")} onFocus={(e) => e.currentTarget.select()} />
             <Button size="sm" icon={<Copy size={ICON.sm} aria-hidden />} onClick={copy}>{t.t("Copy link")}</Button>
           </div>
         )}
-        <p className="rq-muted">
+        <p className="cs-note cs-note--md">
           {settings.contact
             ? t.t("Requests are emailed to {{email}}, your organisation's contact address.", { email: settings.contact })
             : t.t("Requests are emailed to your organisation's contact address.")}{" "}
@@ -233,29 +233,29 @@ function RequestItem({ q, showState, reload }: { q: QuoteRequest; showState: boo
   const subject = t.t("Your request: {{occasion}}", { occasion: t.t(OCCASION[a.occasion] ?? "Something else") });
 
   return (
-    <li className="rq-item">
-      <div className="rq-item__main">
-        <div className="rq-item__col">
-          <span className="rq-label">{t.t("Occasion")}</span>
+    <li className="cs-card">
+      <div className="cs-record__cols">
+        <div className="cs-record__col">
+          <span className="cs-sub">{t.t("Occasion")}</span>
           <strong>{t.t(OCCASION[a.occasion] ?? "Something else")}</strong>
-          <span className="rq-sub" title={fmtDateTime(q.created_at, locale)}>{t.t("Received {{when}}", { when: relTime(q.created_at, locale) })}</span>
+          <span className="cs-sub" title={fmtDateTime(q.created_at, locale)}>{t.t("Received {{when}}", { when: relTime(q.created_at, locale) })}</span>
           {showState && <Pill tone={TONE[q.status]}>{t.t(LABEL[q.status])}</Pill>}
         </div>
-        <div className="rq-item__col">
-          <span className="rq-label">{t.t("When")}</span>
+        <div className="cs-record__col">
+          <span className="cs-sub">{t.t("When")}</span>
           <span>{when}</span>
         </div>
-        <div className="rq-item__col">
-          <span className="rq-label">{t.t("Size and place")}</span>
+        <div className="cs-record__col">
+          <span className="cs-sub">{t.t("Size and place")}</span>
           <span>{t.plural(a.people, { one: t.t("{{n}} person"), other: t.t("{{n}} people") })}</span>
-          <span className="rq-sub">{[a.city, a.venue].filter(Boolean).join(", ")}{a.help_choose ? ` · ${t.t("wants help choosing where")}` : ""}</span>
+          <span className="cs-sub">{[a.city, a.venue].filter(Boolean).join(", ")}{a.help_choose ? ` · ${t.t("wants help choosing where")}` : ""}</span>
         </div>
-        <div className="rq-item__col">
-          <span className="rq-label">{t.t("Customer")}</span>
+        <div className="cs-record__col">
+          <span className="cs-sub">{t.t("Customer")}</span>
           <strong>{q.name}</strong>
           {q.company && <span>{q.company}</span>}
-          <a className="rq-sub" href={`mailto:${q.email}`}>{q.email}</a>
-          {q.phone && <a className="rq-sub" href={`tel:${q.phone.replace(/[^\d+]/g, "")}`}>{q.phone}</a>}
+          <a className="cs-sub" href={`mailto:${q.email}`}>{q.email}</a>
+          {q.phone && <a className="cs-sub" href={`tel:${q.phone.replace(/[^\d+]/g, "")}`}>{q.phone}</a>}
         </div>
       </div>
       <dl className="rq-details">
@@ -288,7 +288,7 @@ function RequestItem({ q, showState, reload }: { q: QuoteRequest; showState: boo
           <Button size="sm" disabled={busy} onClick={() => run(() => updateRequest(q.id, { notes }), t.t("Notes saved"))}>{t.t("Save notes")}</Button>
         )}
       </div>
-      <div className="rq-item__actions">
+      <div className="cs-record__bar">
         <Button size="sm" variant="primary" icon={<Mail size={ICON.sm} aria-hidden />}
           onClick={() => { window.location.href = `mailto:${q.email}?subject=${encodeURIComponent(subject)}`; }}>
           {t.t("Reply by email")}
@@ -298,7 +298,7 @@ function RequestItem({ q, showState, reload }: { q: QuoteRequest; showState: boo
             {t.t("Call")}
           </Button>
         )}
-        <span className="rq-spacer" />
+        <span className="cs-spacer" />
         {q.status === "new" && (
           <Button size="sm" disabled={busy} onClick={() => setStatus("answered")}>{t.t("Mark answered")}</Button>
         )}
@@ -307,7 +307,7 @@ function RequestItem({ q, showState, reload }: { q: QuoteRequest; showState: boo
         {q.status !== "new" && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setStatus("new")}>{t.t("Back to new")}</Button>}
         <Button size="icon" variant="danger" icon={<Trash2 size={ICON.sm} aria-hidden />} aria-label={t.t("Delete")} title={t.t("Delete")} disabled={busy} onClick={remove} />
       </div>
-      <p className="rq-sub rq-item__foot" title={fmtDateTime(q.updated_at, locale)}>
+      <p className="cs-sub rq-item__foot" title={fmtDateTime(q.updated_at, locale)}>
         {t.t("Deleted {{when}} unless it changes again.", { when: fmtDate(new Date(new Date(q.updated_at).getTime() + 365 * 86_400_000).toISOString(), locale) })}
       </p>
     </li>

@@ -99,7 +99,7 @@ export function FieldPage() {
               : t.t("Finding you…")}
         </p>
         {problem && <Callout variant="warning">{problem}</Callout>}
-        <p className="adv-field__note">{t.t("Only your latest position is kept, and only your assistant reads it.")}</p>
+        <p className="cs-note">{t.t("Only your latest position is kept, and only your assistant reads it.")}</p>
       </div>
     </Page>
   );

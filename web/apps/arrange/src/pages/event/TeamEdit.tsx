@@ -124,13 +124,13 @@ export function TeamEditDialog({ event, team, color, reload, onClose }: { event:
               removeLabel={t.t("Remove photo")}
             />
           ) : (
-            <span className="ev-muted ev-small">{t.t("Read-only.")}</span>
+            <span className="cs-sub">{t.t("Read-only.")}</span>
           )}
         </div>
       </div>
 
       <h3 className="ev-h3">{t.t("Share with the team")}</h3>
-      <p className="ev-muted ev-small ev-hint">{t.t("Send this single link to the captain. Each member taps their own name there to pick up their personal magic link.")}</p>
+      <p className="cs-sub cs-flush">{t.t("Send this single link to the captain. Each member taps their own name there to pick up their personal magic link.")}</p>
       <Row gap="sm">
         <LinkField url={teamURL(team)} label={t.t("Copy team share link")} />
         <a className="btn ghost icon" href={teamURL(team)} target="_blank" rel="noopener" aria-label={t.t("Open team page")} title={t.t("Open team page")}>
@@ -141,7 +141,7 @@ export function TeamEditDialog({ event, team, color, reload, onClose }: { event:
 
       <h3 className="ev-h3">{t.t("Members")}</h3>
       {members(team).length === 0 ? (
-        <p className="ev-muted">{t.t("No members yet. Add one below.")}</p>
+        <p className="cs-muted">{t.t("No members yet. Add one below.")}</p>
       ) : (
         <div className="ev-slots">
           {members(team).map((m) => <SlotRow key={m.id} event={event} teamId={team.id} slot={m} reload={reload} confirm={dialogs.confirm} />)}
@@ -203,7 +203,7 @@ function SlotRow({ event, teamId, slot, reload, confirm }: { event: EventInfo; t
       {canDo(event, "remove_slot") && (
         <Button variant="ghost" size="icon" className="danger" icon={<Trash2 size={ICON.sm} aria-hidden />} aria-label={t.t("Remove slot")} title={t.t("Remove slot")} onClick={() => void remove()} />
       )}
-      {slot.last_login_at && <span className="ev-muted ev-small ev-slot__seen">{t.t("Last login")} <Ago at={slot.last_login_at} /></span>}
+      {slot.last_login_at && <span className="cs-sub ev-slot__seen">{t.t("Last login")} <Ago at={slot.last_login_at} /></span>}
     </div>
   );
 }
@@ -253,7 +253,7 @@ export function TeamEmailsDialog({ teams, reload, onClose }: { teams: Team[]; re
         </>
       }
     >
-      <p className="ev-muted">{t.t("Invitations go to these addresses. Used by the arranger only — never shown on the team's share page.")}</p>
+      <p className="cs-muted">{t.t("Invitations go to these addresses. Used by the arranger only — never shown on the team's share page.")}</p>
       <div className="cs-table-wrap">
         <table className="cs-table">
           <thead>

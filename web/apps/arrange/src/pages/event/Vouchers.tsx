@@ -133,7 +133,7 @@ export function VoucherCodesCard({ event }: { event: EventInfo }) {
                   <input value={label} maxLength={100} placeholder={t.t("Bookstores, spring print run")} onChange={(e) => setLabel(e.target.value)} />
                 </Field>
               </Row>
-              {err && <p className="vc-err" role="alert">{err}</p>}
+              {err && <p className="cs-err" role="alert">{err}</p>}
               <div><Button type="submit" variant="primary" loading={busy}>{t.t("Make codes")}</Button></div>
             </form>
           )}
@@ -164,7 +164,7 @@ export function VoucherCodesCard({ event }: { event: EventInfo }) {
               ))}
             </ul>
           ) : (
-            <p className="vc-muted">{t.t("No codes yet. Make a batch, download it and send it to your print shop.")}</p>
+            <p className="cs-note">{t.t("No codes yet. Make a batch, download it and send it to your print shop.")}</p>
           )}
         </div>
       )}

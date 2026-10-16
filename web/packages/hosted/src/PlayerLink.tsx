@@ -28,16 +28,16 @@ export function PlayerLink({ event }: { event: HostedEvent }) {
     <div className="hosted-link">
       <img className="hosted-link__qr" src={api.qr()} alt={t("QR code for the player link")} width={200} height={200} />
       <div className="hosted-link__body">
-        <p className="hosted-muted">{t("Each team opens this on one phone, gives itself a name and plays. The first team to join starts a game.")}</p>
+        <p className="zv-muted">{t("Each team opens this on one phone, gives itself a name and plays. The first team to join starts a game.")}</p>
         <div className="hosted-link__url">
           <code>{event.player_url}</code>
-          <button type="button" className="hosted-btn" onClick={() => void copy()}>
+          <button type="button" className="zv-btn" onClick={() => void copy()}>
             {copied ? t("Copied") : t("Copy")}
           </button>
         </div>
         {open && (
           <form
-            className="hosted-inline"
+            className="zv-inline"
             onSubmit={(e) => {
               e.preventDefault();
               const to = email.trim();
@@ -48,17 +48,17 @@ export function PlayerLink({ event }: { event: HostedEvent }) {
               });
             }}
           >
-            <label className="hosted-field">
+            <label className="zv-field">
               <span>{t("Send the link by email")}</span>
               <input type="email" value={email} placeholder={t("name@example.com")} onChange={(e) => setEmail(e.target.value)} required />
             </label>
-            <button className="hosted-btn" disabled={busy || !email.trim()}>
+            <button className="zv-btn" disabled={busy || !email.trim()}>
               {t("Send")}
             </button>
           </form>
         )}
         {sent && (
-          <p className="hosted-muted" role="status">
+          <p className="zv-muted" role="status">
             {t("Sent to {{email}}.", { email: sent })}
           </p>
         )}

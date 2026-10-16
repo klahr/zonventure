@@ -263,7 +263,7 @@ export function EventControlPage({ id }: { id: number }) {
 
       {teams.length > 1 && (
         <div className="cc-filter" role="group" aria-label={t.t("Show:")}>
-          <span className="cc-muted cc-small">{t.t("Show:")}</span>
+          <span className="cs-sub">{t.t("Show:")}</span>
           <button type="button" className={"cc-chip" + (active.size === 0 ? " is-on" : "")} aria-pressed={active.size === 0} onClick={() => setFilter(new Set())}>
             {t.t("All teams")}
           </button>
@@ -350,7 +350,7 @@ function Leaderboard(props: {
   // The server's rank by points (level teams share it).
   const rows = [...props.teams].sort((a, b) => (a.rank || Infinity) - (b.rank || Infinity) || a.name.localeCompare(b.name, undefined, { numeric: true }));
   if (rows.length === 0) {
-    return <p className="cc-muted cc-pad">{props.teams.length === 0 && (detail.teams ?? []).length === 0 ? t.t("No teams yet.") : t.t("No teams match the current filter.")}</p>;
+    return <p className="cs-muted cs-flush cs-card__pad">{props.teams.length === 0 && (detail.teams ?? []).length === 0 ? t.t("No teams yet.") : t.t("No teams match the current filter.")}</p>;
   }
   const columns: Column<Team>[] = [
     { key: "rank", header: "#", width: "3rem", cell: (tm) => <span className="cc-mono">{tm.rank ? "#" + tm.rank : "—"}</span> },
@@ -366,7 +366,7 @@ function Leaderboard(props: {
             {tm.withdrawn_at && <Pill>{t.t("withdrew")}</Pill>}
             {tm.cheated && <Pill tone="warn">{t.t("cheated")}</Pill>}
           </span>
-          <span className="cc-narrow cc-muted cc-small"><LastSeen tm={tm} labelled /></span>
+          <span className="cc-narrow cs-sub"><LastSeen tm={tm} labelled /></span>
         </div>
       ),
     },
@@ -378,12 +378,12 @@ function Leaderboard(props: {
         return (
           <div className={tm.withdrawn_at ? "cc-withdrawn" : undefined}>
             <div className="cc-mono">{p.main}</div>
-            {p.step && <div className="cc-muted cc-small">{p.step}</div>}
+            {p.step && <div className="cs-sub">{p.step}</div>}
           </div>
         );
       },
     },
-    { key: "last", header: t.t("Last activity"), wide: true, cell: (tm) => <span className="cc-muted cc-small"><LastSeen tm={tm} /></span> },
+    { key: "last", header: t.t("Last activity"), wide: true, cell: (tm) => <span className="cs-sub"><LastSeen tm={tm} /></span> },
   ];
   if (props.canWithdraw) columns.push(
     {

@@ -72,11 +72,6 @@ func registerStaticAssetRoutes(r chi.Router, env *routesEnv) {
 		w.Header().Set("Cache-Control", "no-cache")
 		_, _ = w.Write(mapConfig)
 	})
-	// Shared fullscreen-map overlay CSS — used by both the player
-	// preview-debug coord overlay and the arranger's "show on map"
-	// links. Same theme tokens, same DOM contract; the JS that
-	// drives each surface still lives inline in its own page.
-	r.Get("/assets/fsmap.css", serveAsset("web/fsmap.css", "text/css; charset=utf-8"))
 	// jsQR — vendored fallback QR decoder for browsers that don't
 	// expose the native BarcodeDetector (Firefox today, older
 	// Safari/iOS). Both /play and the puzzle editor in /arrange

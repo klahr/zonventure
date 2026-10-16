@@ -100,7 +100,7 @@ export function Host({ token }: { token: string }) {
       </section>
     );
   }
-  if (!party) return <p className="party-muted">{t("Loading…")}</p>;
+  if (!party) return <p className="zv-muted">{t("Loading…")}</p>;
 
   const date = (s: string) => new Date(s).toLocaleDateString(i18n.current(), { day: "numeric", month: "long" });
   // The steps a host goes through, numbered by what this party needs.
@@ -119,13 +119,13 @@ export function Host({ token }: { token: string }) {
       {confirmDialog}
       <div className="party-screen">
         <section className={"party-card party-head" + (cover ? " party-card--cover" : "")}>
-          {cover && <div className="party-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
+          {cover && <div className="pv-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
           <p className="party-eyebrow">
             {t("Host page")}
             {party.adventure_title !== party.name && " · " + party.adventure_title}
           </p>
           <h1>{party.name}</h1>
-          <p className="party-muted">
+          <p className="zv-muted">
             <StatePill state={party.state} />{" "}
             {!party.expired &&
               (party.state === "scheduled"
@@ -135,21 +135,21 @@ export function Host({ token }: { token: string }) {
                   : null)}
           </p>
           {party.expired && party.state === "scheduled" && (
-            <p className="party-note">{t("This party wasn't started in time. Contact {{org}} if you still want to play.", { org: party.org_name })}</p>
+            <p className="zv-note">{t("This party wasn't started in time. Contact {{org}} if you still want to play.", { org: party.org_name })}</p>
           )}
-          {party.state === "cancelled" && <p className="party-note">{t("This party was called off.")}</p>}
+          {party.state === "cancelled" && <p className="zv-note">{t("This party was called off.")}</p>}
           {(party.state === "completed" || (party.expired && party.state !== "scheduled")) && (
-            <p className="party-note">{t("The party is over. The results stay open for a while, then everything about the players is deleted.")}</p>
+            <p className="zv-note">{t("The party is over. The results stay open for a while, then everything about the players is deleted.")}</p>
           )}
         </section>
 
         {error && (
-          <p className="party-error" role="alert">
+          <p className="zv-error" role="alert">
             {error}
           </p>
         )}
 
-        {party.round_open && personal && <p className="party-note">{t("A game is being played. Your own words below can be changed again when it is finished.")}</p>}
+        {party.round_open && personal && <p className="zv-note">{t("A game is being played. Your own words below can be changed again when it is finished.")}</p>}
 
         {chooseWhere && (
           <section className="party-card">
@@ -163,7 +163,7 @@ export function Host({ token }: { token: string }) {
             {heading(t("Cards"))}
             {party.public_trail && !party.expired && (party.state === "scheduled" || party.state === "running" || party.state === "paused") && (
               <p>
-                <a className="party-btn" href={hostEditURL(token)}>
+                <a className="zv-btn" href={hostEditURL(token)}>
                   {t("Edit the party adventure")}
                 </a>
               </p>
@@ -179,10 +179,10 @@ export function Host({ token }: { token: string }) {
           <section className="party-card">
             {heading(t("Cards"))}
             {party.stations.length === 0 ? (
-              <p className="party-muted">{t("This adventure has no cards to hide.")}</p>
+              <p className="zv-muted">{t("This adventure has no cards to hide.")}</p>
             ) : (
               <>
-                <p className="party-muted">
+                <p className="zv-muted">
                   {party.stations.length === 1
                     ? t("Print the card and hide it where the players can find it: under a cushion, behind a tree, in the letterbox.")
                     : t("Print the {{n}} cards and hide them where the players can find them: under a cushion, behind a tree, in the letterbox. The game tells each team which card to look for next.", {
@@ -196,7 +196,7 @@ export function Host({ token }: { token: string }) {
                     </li>
                   ))}
                 </ol>
-                <button className="party-btn party-btn--primary" onClick={() => setPrinting(true)}>
+                <button className="zv-btn zv-btn--primary" onClick={() => setPrinting(true)}>
                   {t("Print the cards")}
                 </button>
               </>
@@ -207,7 +207,7 @@ export function Host({ token }: { token: string }) {
         {personal && (
           <section className="party-card">
             {heading(t("Make it yours"))}
-            <p className="party-muted">{t("The adventure lets you put in your own words. Leave a field as it is to keep the original.")}</p>
+            <p className="zv-muted">{t("The adventure lets you put in your own words. Leave a field as it is to keep the original.")}</p>
             <PersonaliseSection party={party} />
           </section>
         )}
@@ -225,22 +225,22 @@ export function Host({ token }: { token: string }) {
         {party.public_trail && party.keep_from && new Date(party.keep_from) <= new Date() && (party.state === "running" || party.state === "paused") && !party.expired && (
           <section className="party-card">
             <h2>{t("Keep it")}</h2>
-            <p className="party-muted">
+            <p className="zv-muted">
               {t("Your party adventure is deleted on {{date}}. Create a free account and it moves there instead, to play again whenever you like. Moving it ends the games you have now.", {
                 date: date(party.valid_until),
               })}
             </p>
-            <button type="button" className="party-btn party-btn--primary" disabled={busy} onClick={() => void run(async () => (location.href = (await keepLink(token)).url))}>
+            <button type="button" className="zv-btn zv-btn--primary" disabled={busy} onClick={() => void run(async () => (location.href = (await keepLink(token)).url))}>
               {t("Create a free account to keep this party adventure")}
             </button>
           </section>
         )}
         <section className="party-card">
           <h2>{t("The link to this page")}</h2>
-          <p className="party-muted">{t("Anyone with the link can run your party. If it got to someone it shouldn't have, replace it.")}</p>
+          <p className="zv-muted">{t("Anyone with the link can run your party. If it got to someone it shouldn't have, replace it.")}</p>
           <button
             type="button"
-            className="party-btn"
+            className="zv-btn"
             disabled={busy}
             onClick={async () => {
               if (
@@ -278,7 +278,7 @@ function StatePill({ state }: { state: HostedEvent["state"] }) {
     completed: t("Over"),
     cancelled: t("Called off"),
   }[state];
-  return <span className={"party-pill party-pill--" + state}>{label}</span>;
+  return <span className={"zv-pill zv-pill--" + state}>{label}</span>;
 }
 
 /** What the printer gets: the player link to put up, and the cards to hide. */

@@ -129,7 +129,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
       <MapPin size={ICON.sm} aria-hidden />
       <span>
         <strong>{mapped ? t.t("Start: {{place}}", { place: start.label || t.t("Start here") }) : start.label || t.t("Start here")}</strong>{" "}
-        <span className="adv-mono adv-muted">{start.lat.toFixed(5)}, {start.lng.toFixed(5)}</span>
+        <span className="cs-mono cs-sub">{start.lat.toFixed(5)}, {start.lng.toFixed(5)}</span>
       </span>
     </div>
   );
@@ -239,7 +239,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
             <h1 className="cs-title">{a.title}</h1>
             <p className="adv-hero__meta">
               {a.author && <span>{a.author}</span>}
-              <span className="adv-mono">{a.slug}</span>
+              <span className="cs-mono cs-small">{a.slug}</span>
             </p>
             {pills.length > 0 && <div className="adv-hero__pills">{pills}</div>}
           </div>
@@ -290,7 +290,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
       {g && (
         <Card title={t.t("Steps")} flush>
           {g.steps.length === 0 ? (
-            <p className="adv-pad adv-muted">{t.t("Nothing designed yet.")}</p>
+            <p className="cs-card__note cs-muted">{t.t("Nothing designed yet.")}</p>
           ) : (
             <ol className="adv-steps">
               {g.steps.map((s, i) => (
@@ -298,7 +298,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
                   <Pill tone={s.type === "puzzle" ? "accent" : "neutral"}>{stepKind(t, s.type)}</Pill>
                   {s.title && <strong>{s.title}</strong>}
                   {s.zone && zoneNames.has(s.zone) && (
-                    <span className="adv-muted adv-step__zone">
+                    <span className="cs-muted adv-step__zone">
                       <MapPin size={ICON.xs} aria-hidden />
                       {zoneNames.get(s.zone)}
                     </span>
@@ -307,7 +307,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
               ))}
             </ol>
           )}
-          {g.has_quiz && <p className="adv-pad adv-muted">{t.t("Includes a quiz walk.")}</p>}
+          {g.has_quiz && <p className="cs-card__note cs-muted">{t.t("Includes a quiz walk.")}</p>}
         </Card>
       )}
 
@@ -387,7 +387,7 @@ function DesignedSteps({ slug, canRead }: { slug: string; canRead: boolean }) {
     body = (
       <>
         <p>{steps ? t.plural(steps, { one: t.t("{{n}} step"), other: t.t("{{n}} steps") }) + " · " + puzzleCount(t, puzzles) : t.t("Nothing designed yet.")}</p>
-        <p className="adv-muted">{pub ? t.t("Published (version {{n}}). New events use this version; ones already running keep theirs.", { n: pub.version }) : t.t("Not published yet, so players can't play it. Publish it from the designer.")}</p>
+        <p className="cs-muted">{pub ? t.t("Published (version {{n}}). New events use this version; ones already running keep theirs.", { n: pub.version }) : t.t("Not published yet, so players can't play it. Publish it from the designer.")}</p>
       </>
     );
   }

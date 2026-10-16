@@ -127,7 +127,7 @@ function Deliveries({ endpoint }: { endpoint: number }) {
       {rows.length > 0 && (
         <Row>
           {next > 0 && <Button onClick={() => void fetchPage("more", next)}>{t.t("Load more")}</Button>}
-          <span className="wh-muted" role="status">{t.plural(rows.length, { one: t.t("Showing {{n}} delivery"), other: t.t("Showing {{n}} deliveries") })}</span>
+          <span className="cs-muted" role="status">{t.plural(rows.length, { one: t.t("Showing {{n}} delivery"), other: t.t("Showing {{n}} deliveries") })}</span>
         </Row>
       )}
     </>
@@ -145,7 +145,7 @@ function DeliveryRow({ d, open, onToggle }: { d: WebhookDelivery; open: boolean;
     try { pretty = JSON.stringify(JSON.parse(d.payload), null, 2); } catch { /* show it raw */ }
   }
   return (
-    <li className="wh-row">
+    <li className="cs-card">
       <button type="button" className="wh-row__head" aria-expanded={open} aria-controls={detailID} onClick={onToggle}>
         {open ? <ChevronDown size={ICON.sm} aria-hidden /> : <ChevronRight size={ICON.sm} aria-hidden />}
         <Pill tone={statusTone}>{statusText}</Pill>
@@ -155,12 +155,12 @@ function DeliveryRow({ d, open, onToggle }: { d: WebhookDelivery; open: boolean;
           <Pill tone="bad">{t.t("No response")}</Pill>
         ) : null}
         <code className="wh-kind">{d.event_kind}</code>
-        <span className="wh-muted wh-small" title={fmtDateTime(d.created_at, locale)}>{relTime(d.created_at, locale)}</span>
+        <span className="cs-sub" title={fmtDateTime(d.created_at, locale)}>{relTime(d.created_at, locale)}</span>
       </button>
       {open && (
         <div id={detailID} className="wh-row__detail">
-          <p className="wh-muted wh-small"><strong>X-Zv-Delivery-Id: </strong><code>{d.delivery_uuid}</code></p>
-          <p className="wh-muted wh-small">
+          <p className="cs-note"><strong>X-Zv-Delivery-Id: </strong><code>{d.delivery_uuid}</code></p>
+          <p className="cs-note">
             <strong>{t.t("Attempts: ")}</strong>{d.attempts}
             {d.delivered_at && <> · <strong>{t.t("Delivered at: ")}</strong>{fmtDateTime(d.delivered_at, locale)}</>}
             {d.status === "pending" && d.next_attempt_at && <> · <strong>{t.t("Next attempt: ")}</strong>{fmtDateTime(d.next_attempt_at, locale)}</>}

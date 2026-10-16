@@ -140,8 +140,8 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
                 <li key={x.where}>
                   <span className="adm-texts__where">{label(x.where)}</span>
                   <span className="adm-texts__text">
-                    {x.text || <span className="adm-sub">{t.t("(removed)")}</span>}
-                    {x.was && <span className="adm-sub adm-listing__was">{t.t("Was: {{v}}", { v: x.was })}</span>}
+                    {x.text || <span className="cs-sub">{t.t("(removed)")}</span>}
+                    {x.was && <span className="cs-sub adm-listing__was">{t.t("Was: {{v}}", { v: x.was })}</span>}
                   </span>
                 </li>
               ))}
@@ -166,7 +166,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
         flush
       >
         {c.media.length === 0 ? (
-          <p className="adm-sub adm-pad">{t.t("None.")}</p>
+          <p className="cs-sub cs-card__note">{t.t("None.")}</p>
         ) : (
           <div className="adm-media">
             {c.media.map((m) => <MediaItem key={m.ref} m={m} />)}
@@ -190,7 +190,7 @@ function Review({ c, back, reload }: { c: ReviewContent; back: React.ReactNode; 
         flush
       >
         {texts.length === 0 ? (
-          <p className="adm-sub adm-pad">{filter ? t.t("No text matches.") : t.t("None.")}</p>
+          <p className="cs-sub cs-card__note">{filter ? t.t("No text matches.") : t.t("None.")}</p>
         ) : (
           <ul className="adm-texts">
             {texts.map((x, i) => (
@@ -276,9 +276,9 @@ function formatSize(n: number): string {
 /** What a proposal changes, field by field: public now, and proposed. */
 function Changes({ changes }: { changes: ReviewChange[] }) {
   const t = useT();
-  if (changes.length === 0) return <p className="adm-sub">{t.t("Nothing.")}</p>;
+  if (changes.length === 0) return <p className="cs-sub">{t.t("Nothing.")}</p>;
   const side = (text: string | undefined, url: string | undefined, empty: string) =>
-    url ? <img className="adm-change__img" src={url} alt="" /> : text ? <span className="adm-texts__text">{text}</span> : <span className="adm-sub">{empty}</span>;
+    url ? <img className="adm-change__img" src={url} alt="" /> : text ? <span className="adm-texts__text">{text}</span> : <span className="cs-sub">{empty}</span>;
   return (
     <table className="adm-changes">
       <thead>

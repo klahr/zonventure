@@ -54,7 +54,7 @@ function ExportRow({ admin }: { admin: boolean }) {
     >
       {/* Right-to-erasure follow-up: with the data in hand, deletion is one step away. */}
       {done && (
-        <p className="acct-muted">
+        <p className="cs-note">
           <a
             href="#acct-delete"
             onClick={(e) => {
@@ -167,7 +167,7 @@ export function DeleteCard({ user }: { user: Whoami }) {
   const when = user.scheduled_deletion_at;
   return (
     <Card title={t.t("Delete account")} tone="danger" id="acct-delete">
-      <p className="acct-muted">
+      <p className="cs-note">
         {when ? (
           <span title={fmtDateTime(when, loc)}>{t.t("Scheduled — your account is deleted {{when}}. You can cancel until then.", { when: relTime(when, loc) })}</span>
         ) : (

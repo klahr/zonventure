@@ -49,7 +49,7 @@ import (
 	"github.com/klahr/zonventure/internal/ws"
 )
 
-//go:embed web/play-sw.js web/play.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/og-image.png web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/redeem.html web/topbar.css web/topbar.js web/page-tokens.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/maplibre/*.mjs web/assets/maplibre/*.css web/assets/zv-maplibre.js web/assets/illustrations/not-found.webp web/assets/email/*.jpg web/assets/email/covers/*.jpg
+//go:embed web/play-sw.js web/play.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/og-image.png web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/redeem.html web/topbar.css web/topbar.js web/page-tokens.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/maplibre/*.mjs web/assets/maplibre/*.css web/assets/zv-maplibre.js web/assets/illustrations/not-found.webp web/assets/email/*.jpg web/assets/email/covers/*.jpg
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.

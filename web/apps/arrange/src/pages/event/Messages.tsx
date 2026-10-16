@@ -45,14 +45,14 @@ export function MessagesCard({ event, teams, messages, reload }: { event: Info; 
       actions={canSend && <Button size="sm" icon={<Mail size={ICON.sm} aria-hidden />} onClick={() => setComposing(true)}>{t.t("Message teams")}</Button>}
     >
       {messages.length === 0 ? (
-        <p className="ev-muted">{t.t("Nothing sent yet. Messages are information beside the game: teams see them in the app’s inbox.")}</p>
+        <p className="cs-muted">{t.t("Nothing sent yet. Messages are information beside the game: teams see them in the app’s inbox.")}</p>
       ) : (
         <ul className="ev-msgs ev-scroll">
           {messages.map((m) => {
             const to = !m.team_ids?.length ? t.t("All teams") : m.team_ids.map((id) => names.get(id) || "#" + id).join(", ");
             return (
               <li key={m.id}>
-                <div className="ev-msgs__meta ev-muted">
+                <div className="ev-msgs__meta cs-muted">
                   <time dateTime={m.created_at} title={fmtDateTime(m.created_at, t.current())}>{fmtWhen(m.created_at, t.current())}</time> · {to}
                 </div>
                 <Button variant="ghost" size="icon" aria-label={t.t("Delete message")} title={t.t("Delete message")} icon={<Trash2 size={ICON.sm} aria-hidden />} onClick={() => void remove(m)} />
@@ -164,7 +164,7 @@ export function PhotosCard({ event, graph, photos, challenges, reload }: { event
   return (
     <Card title={t.t("Team photos")} {...(waiting ? { subtitle: t.t("{{n}} waiting for review", { n: waiting }) } : {})}>
       {photos.length === 0 ? (
-        <p className="ev-muted">{t.t("No photos yet. Teams send them from the photo challenges, and you approve or deny each here.")}</p>
+        <p className="cs-muted">{t.t("No photos yet. Teams send them from the photo challenges, and you approve or deny each here.")}</p>
       ) : (
         <div className="ev-photos ev-scroll">
           {photos.map((p) => {
@@ -175,8 +175,8 @@ export function PhotosCard({ event, graph, photos, challenges, reload }: { event
                   <img src={api.photoSrc(event.id, p.id)} alt={p.prompt || t.t("Team photo")} loading="lazy" />
                 </button>
                 <div className="ev-row-sm"><Pill tone={tone}>{label}</Pill><strong>{p.team_name}</strong></div>
-                <div className="ev-muted ev-small">{(p.node_title || stepTitle(graph, p.node)) + " · " + t.t("{{n}} points", { n: p.worth }) + " · " + fmtWhen(p.created_at, t.current())}</div>
-                {p.prompt && <div className="ev-small">{p.prompt}</div>}
+                <div className="cs-sub">{(p.node_title || stepTitle(graph, p.node)) + " · " + t.t("{{n}} points", { n: p.worth }) + " · " + fmtWhen(p.created_at, t.current())}</div>
+                {p.prompt && <div className="cs-small">{p.prompt}</div>}
                 <div className="ev-row-sm">
                   {p.status !== "approved" && <Button size="sm" disabled={busy === p.id} onClick={() => void review(p, "approved")}>{t.t("Approve")}</Button>}
                   {p.status !== "denied" && <Button size="sm" variant="danger" disabled={busy === p.id} onClick={() => void review(p, "denied")}>{t.t("Deny")}</Button>}
@@ -190,7 +190,7 @@ export function PhotosCard({ event, graph, photos, challenges, reload }: { event
       {big && (
         <Dialog title={big.team_name} wide onClose={() => setBig(null)} footer={<Button autoFocus onClick={() => setBig(null)}>{t.t("Close")}</Button>}>
           <img className="ev-photo__big" src={api.photoSrc(event.id, big.id)} alt={big.prompt || t.t("Team photo")} />
-          {big.prompt && <p className="ev-muted">{big.prompt}</p>}
+          {big.prompt && <p className="cs-muted">{big.prompt}</p>}
         </Dialog>
       )}
     </Card>

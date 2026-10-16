@@ -110,14 +110,14 @@ export function ResultsCard({ event, teams }: { event: EventInfo; teams: Team[] 
       actions={<Button size="sm" icon={<Copy size={ICON.sm} aria-hidden />} onClick={() => void copyAll()}>{t.t("Copy recap links")}</Button>}
     >
       {rows.length === 0 ? (
-        <p className="ev-muted">{t.t("No teams yet.")}</p>
+        <p className="cs-muted">{t.t("No teams yet.")}</p>
       ) : (
         <ol className="ev-results">
           {rows.map((r) => (
             <li key={r.key} className={r.dnf ? "is-dnf" : undefined}>
               <span className="ev-results__rank">{r.rank}</span>
               <strong>{r.name}</strong>
-              <span className="ev-muted">{r.meta}</span>
+              <span className="cs-muted">{r.meta}</span>
               {r.link}
             </li>
           ))}
@@ -184,7 +184,7 @@ export function SecretRolesCard({ event, onSaved }: { event: EventInfo; onSaved:
         <input type="checkbox" checked={on} disabled={busy} onChange={(e) => void toggle(e.target.checked)} />
         {t.t("Deal secret roles in this event")}
       </label>
-      <span className="ev-muted">{t.t("Off plays the adventure without them. A team is dealt its secret roles as it makes its first move, so turning this off later leaves teams that already began as they are.")}</span>
+      <span className="cs-muted">{t.t("Off plays the adventure without them. A team is dealt its secret roles as it makes its first move, so turning this off later leaves teams that already began as they are.")}</span>
     </Card>
   );
 }
@@ -230,7 +230,7 @@ export function CheatCard({ password }: { password: string }) {
         <code>{shown ? password : "•".repeat(Math.min(password.length, 12))}</code>
         <Button size="sm" variant="ghost" onClick={() => setShown((v) => !v)}>{shown ? t.t("Hide password") : t.t("Show password")}</Button>
       </Row>
-      <p className="ev-muted">{t.t("On the phone, tap the adventure's title 7 times and enter the password: every answer then counts as right, for no points, and the team is left out of the rankings. It belongs to the adventure, so every event of it shares it; change it in the adventure's details.")}</p>
+      <p className="cs-muted">{t.t("On the phone, tap the adventure's title 7 times and enter the password: every answer then counts as right, for no points, and the team is left out of the rankings. It belongs to the adventure, so every event of it shares it; change it in the adventure's details.")}</p>
     </Card>
   );
 }
@@ -356,7 +356,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
       {event.sales_stopped && <Callout variant="warning">{t.t("Sales stopped: not in the store and nobody can buy a ticket. Teams that have one play on.")}</Callout>}
       <Row>
         <Button size="sm" loading={stopping} onClick={() => void toggleSales()}>{event.sales_stopped ? t.t("Resume selling") : t.t("Stop selling")}</Button>
-        {!event.sales_stopped && <span className="ev-muted">{t.t("Takes it out of the store without pausing the teams that are playing.")}</span>}
+        {!event.sales_stopped && <span className="cs-muted">{t.t("Takes it out of the store without pausing the teams that are playing.")}</span>}
       </Row>
       {v?.can_update && (
         <Callout variant="info">
@@ -368,7 +368,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
             </span>
             <Button size="sm" loading={moving} onClick={() => void update()}>{t.t("Update to version {{n}}", { n: v.latest })}</Button>
           </Row>
-          {v.reviewed && <span className="ev-muted">{t.t("It goes through review like any change to the listing: once it is approved, new teams and teams that haven't made a move yet play it. Teams already playing keep their version.")}</span>}
+          {v.reviewed && <span className="cs-muted">{t.t("It goes through review like any change to the listing: once it is approved, new teams and teams that haven't made a move yet play it. Teams already playing keep their version.")}</span>}
         </Callout>
       )}
       {v?.next ? (
@@ -379,7 +379,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
       {canSubmitListing(event.listing_review) && (
         <Row>
           <Button variant="primary" size="sm" onClick={() => setSubmitting(true)}>{t.t("Submit for review")}</Button>
-          <span className="ev-muted">{t.t("Save your changes first: what is saved is what is submitted.")}</span>
+          <span className="cs-muted">{t.t("Save your changes first: what is saved is what is submitted.")}</span>
         </Row>
       )}
       {submitting && (
@@ -387,7 +387,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
       )}
       <Row>
         <div className="ev-stack">
-          <span className="ev-muted">{t.t("Cover image (16:9 looks best)")}</span>
+          <span className="cs-muted">{t.t("Cover image (16:9 looks best)")}</span>
           <ImageDrop
             shape="cover"
             src={cover.has ? `/store-cover/event/${event.id}?draft=1${cover.bust ? "&v=" + cover.bust : ""}` : undefined}

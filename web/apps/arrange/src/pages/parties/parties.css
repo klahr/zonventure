@@ -1,5 +1,5 @@
 /* Parties: the offers table, its edit dialog, and the adventures that can't be offered. */
-.dz .pt-actions { display: inline-flex; gap: 2px; }
+.dz .pt-actions { display: inline-flex; gap: var(--dz-space-0); }
 .dz .pt-price { align-items: flex-end; }
 
 /* Base price, per child, most children: one row, one column on a phone. */

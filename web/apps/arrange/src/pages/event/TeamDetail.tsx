@@ -56,11 +56,11 @@ export function TeamDetailDialog(props: {
       <div className="ev-td__head">
         <TeamAvatar team={team} color={props.color} size={44} />
         <div>
-          <div><strong>{where}</strong>{step && <span className="ev-muted"> · {step}</span>}</div>
+          <div><strong>{where}</strong>{step && <span className="cs-muted"> · {step}</span>}</div>
           <div className="ev-row-sm">
             {team.withdrawn_at && <Pill>{t.t("withdrew")}</Pill>}
             {team.cheated && <Pill tone="warn">{t.t("cheated")}</Pill>}
-            {team.email && <a className="ev-small" href={"mailto:" + team.email}>{team.email}</a>}
+            {team.email && <a className="cs-small" href={"mailto:" + team.email}>{team.email}</a>}
           </div>
         </div>
       </div>
@@ -80,13 +80,13 @@ export function TeamDetailDialog(props: {
       </div>
       <h3 className="ev-h3">{t.t("Members")}</h3>
       {members(team).length === 0 ? (
-        <p className="ev-muted">{t.t("No members yet.")}</p>
+        <p className="cs-muted">{t.t("No members yet.")}</p>
       ) : (
         <ul className="ev-td__members">
           {members(team).map((m) => (
             <li key={m.id}>
               <span>{m.name}</span>
-              <span className="ev-muted ev-small">{m.last_login_at ? <>{t.t("Last login")} <Ago at={m.last_login_at} /></> : t.t("Not joined yet")}</span>
+              <span className="cs-sub">{m.last_login_at ? <>{t.t("Last login")} <Ago at={m.last_login_at} /></> : t.t("Not joined yet")}</span>
             </li>
           ))}
         </ul>

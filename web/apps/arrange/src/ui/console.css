@@ -16,10 +16,10 @@
 .dz .cs-subtitle { margin: var(--dz-space-1) 0 0; color: var(--dz-muted); font-size: var(--dz-text-md); }
 .dz .cs-head__actions { display: flex; flex-wrap: wrap; gap: var(--dz-space-2); }
 
-.dz .cs-card { background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); box-shadow: var(--dz-shadow); }
+.dz :is(.cs-card, .cs-stat, .cs-tile) { background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); box-shadow: var(--dz-shadow); }
 .dz .cs-card--danger { border-color: color-mix(in srgb, var(--dz-danger) 45%, var(--dz-border)); }
 .dz .cs-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--dz-space-3); padding: var(--dz-space-4) var(--dz-space-4) 0; flex-wrap: wrap; }
-.dz .cs-card__title { margin: 0; font-size: var(--dz-text-lg); font-weight: 700; color: var(--dz-ink); }
+.dz .cs-card__title, .dz .cs-section__title { margin: 0; font-size: var(--dz-text-lg); font-weight: 700; color: var(--dz-ink); }
 .dz .cs-card--danger .cs-card__title { color: var(--dz-danger); }
 .dz .cs-card__sub { margin: var(--dz-space-1) 0 0; color: var(--dz-muted); font-size: var(--dz-text-sm); }
 .dz .cs-card__actions { display: flex; flex-wrap: wrap; gap: var(--dz-space-2); }
@@ -27,12 +27,12 @@
 .dz .cs-card--flush .cs-card__body { padding: var(--dz-space-2) 0 0; }
 
 .dz .cs-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--dz-space-3); }
-.dz .cs-stat { display: flex; flex-direction: column; gap: var(--dz-space-1); padding: var(--dz-space-3) var(--dz-space-4); background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); box-shadow: var(--dz-shadow); text-decoration: none; color: inherit; }
+.dz .cs-stat { display: flex; flex-direction: column; gap: var(--dz-space-1); padding: var(--dz-space-3) var(--dz-space-4); text-decoration: none; color: inherit; }
 .dz .cs-stat--link:hover { border-color: var(--dz-border-strong); }
 .dz .cs-stat__value { font-size: 1.75rem; font-weight: 700; line-height: 1.1; color: var(--dz-ink); font-variant-numeric: tabular-nums; }
 .dz .cs-stat__value.is-good { color: var(--dz-success); }
 .dz .cs-stat__value.is-warn { color: var(--dz-warning); }
-.dz .cs-stat__label { font-size: var(--dz-text-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dz-muted); }
+.dz .cs-stat__label, .dz .cs-facts dt { font-size: var(--dz-text-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dz-muted); }
 /* Phones: three numbers stay on one row, compact, like the dashboard tiles. */
 @media (max-width: 40rem) {
   .dz .cs-stats { grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); gap: var(--dz-space-2); }
@@ -40,9 +40,10 @@
   .dz .cs-stat__value { font-size: 1.4rem; }
 }
 
-.dz .cs-table-wrap { overflow-x: auto; position: relative; }
 /* A table wider than its card scrolls sideways: a shadow at the cut edge says there is more. */
 .dz .cs-table-wrap {
+  overflow-x: auto;
+  position: relative;
   background:
     linear-gradient(to right, var(--dz-surface) 30%, transparent) left / 24px 100% no-repeat local,
     linear-gradient(to left, var(--dz-surface) 30%, transparent) right / 24px 100% no-repeat local,
@@ -68,7 +69,7 @@
 .dz .cs-tab:hover { color: var(--dz-ink); }
 .dz .cs-tab.is-on { color: var(--dz-accent); border-bottom-color: var(--dz-accent); }
 
-.dz .cs-pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--dz-r-pill); font-size: var(--dz-text-xs); font-weight: 600; white-space: nowrap; background: var(--dz-surface-2); color: var(--dz-ink-soft); }
+.dz .cs-pill { display: inline-flex; align-items: center; gap: var(--dz-space-1); padding: 1px 8px; border-radius: var(--dz-r-pill); font-size: var(--dz-text-xs); font-weight: 600; white-space: nowrap; background: var(--dz-surface-2); color: var(--dz-ink-soft); }
 .dz .cs-pill--good { background: color-mix(in srgb, var(--dz-success) 14%, var(--dz-surface)); color: color-mix(in srgb, var(--dz-success) 75%, var(--dz-ink)); }
 .dz .cs-pill--warn { background: color-mix(in srgb, var(--dz-warning) 18%, var(--dz-surface)); color: color-mix(in srgb, var(--dz-warning) 60%, var(--dz-ink)); }
 .dz .cs-pill--bad { background: color-mix(in srgb, var(--dz-danger) 14%, var(--dz-surface)); color: var(--dz-danger); }
@@ -97,15 +98,14 @@
 .dz .cs-row--end { justify-content: flex-end; }
 
 .dz .cs-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--dz-space-3); margin: 0; }
-.dz .cs-facts__item { display: flex; flex-direction: column; gap: 2px; }
-.dz .cs-facts dt { font-size: var(--dz-text-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dz-muted); }
+.dz .cs-facts__item { display: flex; flex-direction: column; gap: var(--dz-space-0); }
 .dz .cs-facts dd { margin: 0; color: var(--dz-ink); }
 
 .dz .cs-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: var(--dz-space-3); }
-.dz .cs-tile { display: flex; align-items: center; gap: var(--dz-space-3); padding: var(--dz-space-3) var(--dz-space-4); background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); box-shadow: var(--dz-shadow); color: inherit; text-decoration: none; }
+.dz .cs-tile { display: flex; align-items: center; gap: var(--dz-space-3); padding: var(--dz-space-3) var(--dz-space-4); color: inherit; text-decoration: none; }
 .dz .cs-tile:hover { border-color: var(--dz-border-strong); }
 .dz .cs-tile__media { flex: none; }
-.dz .cs-tile__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.dz .cs-tile__text { display: flex; flex-direction: column; gap: var(--dz-space-0); min-width: 0; flex: 1; }
 .dz .cs-tile__title { display: flex; align-items: center; gap: var(--dz-space-2); font-weight: 700; color: var(--dz-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dz .cs-tile__meta { font-size: var(--dz-text-sm); color: var(--dz-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dz .cs-tile__body { font-size: var(--dz-text-sm); color: var(--dz-ink-soft); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -116,6 +116,46 @@
 .dz .cs-loading { color: var(--dz-muted); }
 .dz .cs-error { display: flex; align-items: center; justify-content: space-between; gap: var(--dz-space-3); padding: var(--dz-space-3) var(--dz-space-4); border: 1px solid color-mix(in srgb, var(--dz-danger) 40%, var(--dz-border)); border-radius: var(--dz-r-2); background: color-mix(in srgb, var(--dz-danger) 8%, var(--dz-surface)); color: var(--dz-danger); }
 .dz .cs-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Text helpers the pages share: muted, small, a muted note (a paragraph
+   without its margins), an error line. */
+.dz .cs-muted { color: var(--dz-muted); }
+.dz .cs-small { font-size: var(--dz-text-sm); }
+.dz .cs-sub, .dz .cs-note { color: var(--dz-muted); font-size: var(--dz-text-sm); }
+.dz .cs-note--md { font-size: var(--dz-text-md); }
+.dz .cs-err { color: var(--dz-danger); font-size: var(--dz-text-sm); }
+.dz .cs-note, .dz .cs-err, .dz .cs-flush { margin: 0; }
+.dz .cs-mono { font-family: var(--dz-font-mono); }
+.dz .cs-hash { font-family: var(--dz-font-mono); font-size: var(--dz-text-sm); word-break: break-all; }
+.dz .cs-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dz .cs-stack { display: flex; flex-direction: column; gap: var(--dz-space-0); min-width: 0; }
+.dz .cs-spacer { flex: 1; }
+/* A count beside a tab's label. */
+.dz .cs-count { display: inline-grid; place-items: center; min-width: 1.4em; margin-left: var(--dz-space-1h); padding: 0 5px; border-radius: var(--dz-r-pill); background: var(--dz-surface-2); color: var(--dz-ink-soft); font-size: var(--dz-text-xs); font-variant-numeric: tabular-nums; }
+.dz .cs-tab.is-on .cs-count { background: color-mix(in srgb, var(--dz-accent) 14%, var(--dz-surface)); color: var(--dz-accent); }
+/* A read-only address to copy, its buttons beside it. */
+.dz .cs-url { display: flex; gap: var(--dz-space-2); flex-wrap: wrap; }
+.dz .cs-url input { flex: 1; min-width: 12rem; width: auto; }
+.dz .cs-check { display: inline-flex; align-items: center; gap: var(--dz-space-2); cursor: pointer; }
+.dz .cs-check input { width: 18px; height: 18px; accent-color: var(--dz-accent); }
+
+/* A card's own padding where it has no body: under its head, or one line. */
+.dz .cs-card__pad { padding: 0 var(--dz-space-4) var(--dz-space-4); }
+.dz .cs-card__note { margin: 0; padding: var(--dz-space-3) var(--dz-space-4); }
+
+/* A titled section straight on the page; the cards inside carry the chrome. */
+.dz .cs-section { display: flex; flex-direction: column; gap: var(--dz-space-3); }
+.dz .cs-section__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--dz-space-3); }
+.dz .cs-section__more { display: inline-flex; align-items: center; gap: var(--dz-space-1); font-size: var(--dz-text-sm); font-weight: 600; color: var(--dz-accent); text-decoration: none; }
+.dz .cs-section__more:hover { text-decoration: underline; }
+
+/* A list of records as cards (redemptions, quote requests): the fields in
+   columns, the actions in a bar along the foot. */
+.dz .cs-records { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--dz-space-3); }
+.dz .cs-record__cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: var(--dz-space-3) var(--dz-space-4); padding: var(--dz-space-4); }
+.dz .cs-record__col { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+.dz .cs-record__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); padding: var(--dz-space-2) var(--dz-space-4); border-top: 1px solid var(--dz-border); background: var(--dz-surface-2); }
+.dz .cs-record__bar:last-child { border-radius: 0 0 var(--dz-r-3) var(--dz-r-3); }
 
 
 /* Toasts (ui/toast.tsx): cards on the surface, the tone in the icon and
@@ -169,11 +209,11 @@
 }
 
 /* MoreMenu (pages/event/Menu.tsx): a small popup menu of links and actions. */
-.dz .ev-menu { z-index: var(--dz-z-context-menu); min-width: 200px; padding: 4px; background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); box-shadow: var(--dz-shadow-pop); }
+.dz .ev-menu { z-index: var(--dz-z-context-menu); min-width: 200px; padding: var(--dz-space-1); background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); box-shadow: var(--dz-shadow-pop); }
 .dz .ev-menu__item { display: flex; align-items: center; gap: var(--dz-space-2); width: 100%; padding: 6px 10px; border: 0; border-radius: calc(var(--dz-r-2) - 2px); background: transparent; box-shadow: none; color: var(--dz-ink); font-size: var(--dz-text-md); text-align: left; text-decoration: none; white-space: nowrap; cursor: pointer; min-height: 0; justify-content: flex-start; }
 .dz .ev-menu__item:hover, .dz .ev-menu__item:focus-visible { background: var(--dz-surface-3); }
 .dz .ev-menu__item.is-danger { color: var(--dz-danger); }
-.dz .ev-menu__sep { height: 1px; margin: 4px 6px; background: var(--dz-border); }
+.dz .ev-menu__sep { height: 1px; margin: var(--dz-space-1) var(--dz-space-1h); background: var(--dz-border); }
 
 /* A segmented control: every option in view, one picked. The designer's
  * toggles, the theme editor's presets (seg--fill spreads them across the

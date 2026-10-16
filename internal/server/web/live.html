@@ -26,46 +26,18 @@
 <style>
 :root {
   --accent:       #e24080;  /* raspberry lifted for dark bg */
-  --accent-2:     #ad1357;
   --accent-secondary: #e24080; /* per-adventure brand override; defaults to --accent */
   --gold:         #f5c452;
   --silver:       #cbd5e1;
   --bronze:       #d48a4a;
-  --ink:          #0b1220;
-  --bg-1:         #0b1220;
-  --bg-2:         #182238;
-  --surface:      #131c2e;
-  --surface-2:    #1b2640;
   --text:         #f1f5f9;
   --muted:        #94a3b8;
   --danger:       #f87171;
   --success:      #34d399;
-  --radius:       12px;
-  --radius-sm:    8px;
-  --space-1: .25rem;
-  --space-2: .5rem;
-  --space-3: .75rem;
-  --space-4: 1rem;
-  --space-5: 1.25rem;
-  --space-6: 1.75rem;
-  --ts-xs: .75rem;
-  --ts-sm: .85rem;
-  --ts-md: 1rem;
-  --ts-lg: 1.15rem;
-  --tap-target: 2.75rem;
   --font-body:    'Open Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --font-brand:   'Aclonica', 'Vollkorn', Georgia, serif;
   /* The adventure's title typeface, when its look has one (applyLook). */
   --font-title:   var(--font-brand);
-}
-.visually-hidden {
-  position: absolute !important;
-  width: 1px; height: 1px;
-  padding: 0; margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 :focus-visible {
   outline: 3px solid color-mix(in srgb, var(--accent) 60%, transparent);
@@ -148,7 +120,7 @@ html, body {
 .state-pill.running { color: var(--success); background: rgba(52,211,153,.12); border-color: rgba(52,211,153,.25); }
 .state-pill.paused  { color: var(--gold);    background: rgba(245,196,82,.14); border-color: rgba(245,196,82,.3); }
 .state-pill.completed, .state-pill.scheduled { color: var(--muted); }
-.state-pill.cancelled { color: var(--danger, #f47171); background: rgba(244,113,113,.12); border-color: rgba(244,113,113,.3); }
+.state-pill.cancelled { color: var(--danger); background: rgba(244,113,113,.12); border-color: rgba(244,113,113,.3); }
 .state-pill.held    { color: var(--text); }
 .cancelled-banner, .paused-banner, .held-banner { padding: 1rem 1.4rem; text-align: center; font-size: 1.4rem; }
 .state-pill .dot { width: .6rem; height: .6rem; border-radius: 50%; background: currentColor; }
@@ -242,15 +214,9 @@ html, body {
 }
 .mapwrap .mapinner { flex: 1; min-height: 0; }
 .mapwrap .maphint {
-  padding: .6rem 1rem; color: var(--muted); font-size: var(--ts-sm);
+  padding: .6rem 1rem; color: var(--muted); font-size: .85rem;
   text-align: center; border-top: 1px solid rgba(255,255,255,.05);
 }
-.team-dot {
-  width: 14px; height: 14px; border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0,0,0,.25);
-}
-
 .row {
   display: grid;
   /* rank | avatar | main content | optional right-side stat */
@@ -323,13 +289,6 @@ html, body {
   letter-spacing: -.01em;
   display: flex; align-items: center; gap: .75rem;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.team-dot {
-  display: inline-block;
-  width: .9em; height: .9em; border-radius: 50%;
-  background: var(--team-color, var(--accent));
-  box-shadow: 0 0 0 3px rgba(255,255,255,.08);
-  flex-shrink: 0;
 }
 /* Leaderboard team avatar: circular, same size as the old dot's em
    box so the layout doesn't shift. Coloured border acts as the team's
@@ -524,26 +483,19 @@ html, body {
 
 /* Finished-team pill on the leaderboard. Glanceable from across a
    venue: ✓ + label so the cue isn't color-only (WCAG AA). */
+.team-name .finished-pill, .team-name .withdrawn-pill {
+  margin-left: .7em;
+  padding: .05em .55em;
+  border-radius: 999px;
+  font-size: .55em; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .18em;
+}
 .team-name .finished-pill {
   display: inline-flex; align-items: center; gap: .25em;
-  margin-left: .7em;
-  padding: .05em .55em;
-  border-radius: 999px;
   background: color-mix(in srgb, var(--success) 28%, transparent);
   color: var(--success);
-  font-size: .55em; font-weight: 800;
-  text-transform: uppercase; letter-spacing: .18em;
 }
-
-.team-name .withdrawn-pill {
-  margin-left: .7em;
-  padding: .05em .55em;
-  border-radius: 999px;
-  background: rgba(255,255,255,.1);
-  color: var(--muted);
-  font-size: .55em; font-weight: 800;
-  text-transform: uppercase; letter-spacing: .18em;
-}
+.team-name .withdrawn-pill { background: rgba(255,255,255,.1); color: var(--muted); }
 
 /* Connection status: a thin stripe across the top of the live view so
    anyone glancing at the TV knows the leaderboard might be stale.

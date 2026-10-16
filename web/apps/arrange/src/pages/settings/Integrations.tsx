@@ -144,9 +144,9 @@ function EndpointRow({ ep, onEdit, onSecret, reload }: { ep: WebhookEndpoint; on
       {kinds.length ? (
         <div className="wh-kinds">{kinds.map((k) => <code key={k} className="wh-kind">{k}</code>)}</div>
       ) : (
-        <p className="wh-muted wh-small">{t.t("(no events subscribed)")}</p>
+        <p className="cs-note">{t.t("(no events subscribed)")}</p>
       )}
-      <p className="wh-muted wh-small">
+      <p className="cs-note">
         {t.t("Secret hint: ")}
         <code>{(ep.secret_hint || "") + "…"}</code>
         {" · "}
@@ -256,7 +256,7 @@ function WebhookForm({ kinds, existing, onClose, onSaved }: { kinds: string[]; e
           ))}
         </div>
       </fieldset>
-      {err && <p className="wh-err" role="alert">{err}</p>}
+      {err && <p className="cs-err" role="alert">{err}</p>}
     </Dialog>
   );
 }
@@ -285,8 +285,8 @@ function SecretReveal({ title, secret, onClose }: { title: string; secret: strin
     >
       <p className="wh-warn">{t.t("This is the only time the secret will be shown. Store it somewhere safe.")}</p>
       <pre className="wh-secret">{secret}</pre>
-      <p className="wh-muted wh-small">{t.t('Configure your verifier with this value. Compute HMAC-SHA256 over the raw request body and compare to the X-Zv-Signature header (after stripping the "sha256=" prefix).')}</p>
-      <p className="wh-muted wh-small">{t.t("A delivery can arrive more than once, after a retry or a replay. Skip any whose X-Zv-Delivery-Id header you have already handled: there is no timestamp header, so the delivery id is how you spot a repeat.")}</p>
+      <p className="cs-note">{t.t('Configure your verifier with this value. Compute HMAC-SHA256 over the raw request body and compare to the X-Zv-Signature header (after stripping the "sha256=" prefix).')}</p>
+      <p className="cs-note">{t.t("A delivery can arrive more than once, after a retry or a replay. Skip any whose X-Zv-Delivery-Id header you have already handled: there is no timestamp header, so the delivery id is how you spot a repeat.")}</p>
     </Dialog>
   );
 }

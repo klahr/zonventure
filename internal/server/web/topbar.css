@@ -26,19 +26,9 @@
 
 :root { --topbar-h: 4.25rem; }
 
-/* Force border-box on the topbar and its descendants regardless of
- * whether the host page sets `* { box-sizing }` globally. With
- * content-box the topbar's min-height stacks on top of its padding,
- * which on /manual produced a topbar ~40px taller than on landing /
- * pricing (both of those pages have a global `* { box-sizing }`
- * rule, /manual didn't). */
-.topbar, .topbar *, .nav-overlay, .nav-overlay * {
-  box-sizing: border-box;
-}
-
 /* Pages without their own dark hero band must push body content down
  * so the sticky topbar doesn't cover the first paragraph. Pages that
- * DO have a hero (landing, pricing) opt out with `body.has-hero` —
+ * DO have a hero (landing, store, store-event) opt out with `body.has-hero` —
  * their hero handles the topbar overlap via its own padding-top. */
 body { padding-top: var(--topbar-h); }
 body.has-hero { padding-top: 0; }
@@ -46,7 +36,6 @@ body.has-hero { padding-top: 0; }
 .topbar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 50;
   padding: 1.25rem 0;
-  background: transparent;
   border-bottom: 1px solid transparent;
   min-height: var(--topbar-h);
   /* Pin the line-height so the topbar's effective height is identical
@@ -99,14 +88,10 @@ body.has-hero .topbar {
   padding: 0 1.25rem;
 }
 .topbar nav { margin-left: auto; display: flex; gap: 1.25rem; align-items: center; }
-.topbar nav a {
-  color: var(--_nav); font-weight: 600; font-size: .95rem;
-  text-decoration: none;
-}
+.topbar nav a { color: var(--_nav); font-weight: 600; font-size: .95rem; }
 .topbar nav a:hover { color: var(--_nav-hi); text-decoration: none; }
 .topbar nav .btn {
   padding: .55rem 1.4rem;
-  border-radius: 999px;
   background: transparent;
   color: var(--_nav-hi);
   font-weight: 700;
@@ -115,7 +100,7 @@ body.has-hero .topbar {
 .topbar nav .btn:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
 
 .brand {
-  font-family: var(--font-brand, 'Aclonica', Georgia, serif);
+  font-family: var(--font-brand);
   font-size: 1.55rem;
   color: var(--_nav-hi);
   text-decoration: none;
@@ -249,7 +234,6 @@ body.has-hero .brand { text-shadow: 0 2px 12px rgba(0,0,0,.25); }
   }
   .nav-overlay a {
     color: var(--ink); font-weight: 600;
-    text-decoration: none;
     padding: 1.1rem 1.5rem;
     font-size: 1.15rem;
     border-bottom: 1px solid var(--border-soft);
@@ -259,7 +243,6 @@ body.has-hero .brand { text-shadow: 0 2px 12px rgba(0,0,0,.25); }
   .nav-overlay .btn {
     margin: 1.25rem 1.5rem 0;
     padding: .9rem 1.25rem;
-    border-radius: 999px;
     background: linear-gradient(135deg, var(--accent), var(--accent-2));
     color: #fff;
     text-align: center;
@@ -283,7 +266,7 @@ body.has-hero .brand { text-shadow: 0 2px 12px rgba(0,0,0,.25); }
 footer {
   padding: 1.75rem 0 2.5rem;
   color: var(--muted);
-  font-size: .88rem;
+  font-size: .85rem;
   text-align: center;
   border-top: 1px solid var(--border-soft);
 }

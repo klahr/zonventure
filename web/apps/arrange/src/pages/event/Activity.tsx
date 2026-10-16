@@ -18,7 +18,7 @@ export function Ago({ at }: { at: string }) {
 /** The event's activity, newest first, as readable lines. */
 export function ActivityFeed({ items, event, graph }: { items: Activity[]; event: Info; graph: EventGraph | null | undefined }) {
   const t = useT();
-  if (items.length === 0) return <p className="ev-muted">{t.t("No activity yet.")}</p>;
+  if (items.length === 0) return <p className="cs-muted">{t.t("No activity yet.")}</p>;
   return (
     <ul className="ev-feed">
       {items.map((e) => <ActivityLine key={e.id} e={e} event={event} graph={graph} />)}

@@ -11,7 +11,7 @@ type Status = { tone: "muted" | "ok" | "err"; text: string } | null;
 
 export function StatusLine({ status }: { status: Status }) {
   return (
-    <p className={status?.tone === "err" ? "acct-err" : status?.tone === "ok" ? "acct-ok" : "acct-muted"} role="status" aria-live="polite" hidden={!status}>
+    <p className={status?.tone === "err" ? "cs-err" : status?.tone === "ok" ? "acct-ok" : "cs-note"} role="status" aria-live="polite" hidden={!status}>
       {status?.text}
     </p>
   );
@@ -136,7 +136,7 @@ function PasswordRow({ isDefault }: { isDefault: boolean }) {
   const inline = usePasswordForm(() => {}, isDefault);
   if (isDefault) {
     return (
-      <Item name={t.t("Password")} meta={<span className="acct-err">{t.t("Still the seeded default — change it now.")}</span>}>
+      <Item name={t.t("Password")} meta={<span className="cs-err">{t.t("Still the seeded default — change it now.")}</span>}>
         <form className="acct-form" onSubmit={(e) => { e.preventDefault(); void inline.submit(); }}>
           {inline.fields}
           <div>{inline.button}</div>
@@ -279,7 +279,7 @@ function EmailRow({ user }: { user: Whoami }) {
       {rs?.pending_email && (
         <Callout variant="info">
           <p style={{ margin: 0 }}>{t.t("Waiting for confirmation at {{email}}.", { email: rs.pending_email })}</p>
-          <p className="acct-muted" style={{ margin: "4px 0 8px" }}>
+          <p className="cs-note" style={{ margin: "4px 0 8px" }}>
             {t.t("Open the link we sent there before {{when}}. Until then you keep signing in with your current address.", { when: fmtDateTime(rs.pending_expires_at, t.current()) })}
           </p>
           <Button size="sm" onClick={() => void cancelPending()}>{t.t("Cancel change")}</Button>
@@ -288,7 +288,7 @@ function EmailRow({ user }: { user: Whoami }) {
       {rs?.available && rs.previous_email && (
         <Callout variant="warning">
           <p style={{ margin: 0 }}>{t.t("Recent change from {{prev}} → {{cur}}.", { prev: rs.previous_email, cur: user.email || "—" })}</p>
-          <p className="acct-muted" style={{ margin: "4px 0 8px" }}>
+          <p className="cs-note" style={{ margin: "4px 0 8px" }}>
             {t.t("You can revert until {{when}} if you typed the new address wrong.", { when: fmtDateTime(rs.expires_at, t.current()) })}
           </p>
           <Button size="sm" onClick={() => void doRevert(rs.previous_email!)}>{t.t("Revert email change")}</Button>
@@ -525,7 +525,7 @@ function TotpSetupDialog({ setup, onClose, onDone }: { setup: TotpSetup; onClose
       onSubmit={() => void submit()}
       footer={<><Button onClick={onClose}>{t.t("Cancel")}</Button><Button type="submit" variant="primary" loading={busy}>{t.t("Confirm and enable")}</Button></>}
     >
-      <p className="acct-muted">{t.t("Scan this QR code in your authenticator app, or enter the secret manually.")}</p>
+      <p className="cs-note">{t.t("Scan this QR code in your authenticator app, or enter the secret manually.")}</p>
       {setup.qr_data_url && <img className="acct-qr" src={setup.qr_data_url} alt={t.t("TOTP QR code")} />}
       <Field label={t.t("Secret")}>
         <div className="acct-copy">

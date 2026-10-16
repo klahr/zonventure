@@ -175,11 +175,11 @@ export function TeamsCard(props: {
                       ) : (
                         <>
                           <div className="ev-num">{progress.main}</div>
-                          {progress.step && <div className="ev-muted ev-small">{progress.step}</div>}
+                          {progress.step && <div className="cs-sub">{progress.step}</div>}
                         </>
                       )}
                     </td>
-                    <td className="cs-wide ev-muted ev-small" title={tm.last_activity_at ? fmtDateTime(tm.last_activity_at, locale) : undefined}>
+                    <td className="cs-wide cs-sub" title={tm.last_activity_at ? fmtDateTime(tm.last_activity_at, locale) : undefined}>
                       {joined === 0 && !tm.completed_at ? t.t("Not joined yet") : tm.last_activity_at ? fmtAgo(tm.last_activity_at, t.t, locale) : "—"}
                     </td>
                     <td className="cs-end">

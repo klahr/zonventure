@@ -94,7 +94,7 @@ export function NewKindDialog({ onDesigner, onTutorial, onClose }: { onDesigner:
               <option value="en">English</option>
             </select>
           </Field>
-          <p className="evs-muted">{t.t("Start from an example and make it yours.")}</p>
+          <p className="cs-muted cs-flush">{t.t("Start from an example and make it yours.")}</p>
           {templates.error ? (
             <ErrorBox message={templates.error} retry={templates.reload} retryLabel={t.t("Retry")} />
           ) : !templates.data ? (

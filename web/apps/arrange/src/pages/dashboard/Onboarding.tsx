@@ -140,7 +140,7 @@ export function OnboardingDialog({ user, onClose }: { user: Whoami; onClose: () 
         </>
       }
     >
-      <p className="db-muted">{intro}</p>
+      <p className="cs-muted cs-flush">{intro}</p>
       <ol className="db-welcome">
         {steps.map((s) => (
           <li key={s.title}>
@@ -148,7 +148,7 @@ export function OnboardingDialog({ user, onClose }: { user: Whoami; onClose: () 
           </li>
         ))}
       </ol>
-      <p className="db-muted db-small">{footnote}</p>
+      <p className="cs-note">{footnote}</p>
     </Dialog>
   );
 }

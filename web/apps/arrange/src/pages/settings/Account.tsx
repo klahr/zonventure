@@ -65,8 +65,8 @@ export function AccountTab() {
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="acct-section" aria-label={title}>
-      <h2 className="acct-section__title">{title}</h2>
+    <section className="cs-section" aria-label={title}>
+      <h2 className="cs-section__title">{title}</h2>
       <div className="acct-grid">{children}</div>
     </section>
   );

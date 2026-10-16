@@ -1,12 +1,9 @@
 /* The event page: what the kit lacks. Under .dz, in the --dz-* tokens. */
 
-.dz .ev-muted { color: var(--dz-muted); }
-.dz .ev-small { font-size: var(--dz-text-sm); }
 .dz .ev-grow { flex: 1 1 10rem; min-width: 0; }
-.dz .ev-stack { display: flex; flex-direction: column; gap: var(--dz-space-1); }
-.dz .ev-row-sm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); }
+.dz .ev-stack, .dz .ev-photo { display: flex; flex-direction: column; gap: var(--dz-space-1); }
+.dz .ev-row-sm, .dz .ev-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); }
 .dz .ev-end { justify-content: flex-end; flex-wrap: nowrap; }
-.dz .ev-eyebrow { font-size: var(--dz-text-xs); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--dz-muted); }
 .dz .ev-h3 { margin: var(--dz-space-2) 0 0; font-size: var(--dz-text-md); font-weight: 700; color: var(--dz-ink); }
 .dz .ev-w8 { width: 8rem; }
 .dz .ev-w5 { width: 5rem; }
@@ -32,9 +29,9 @@
 .dz .ev-copybox { display: block; width: 100%; margin-top: var(--dz-space-2); font-family: var(--dz-font-mono); font-size: var(--dz-text-sm); background: var(--dz-surface-2); }
 .dz .ev-link--sm input { font-size: var(--dz-text-xs); }
 
-.dz .ev-live-dlg { display: flex; flex-direction: column; gap: var(--dz-space-3); }
+.dz .ev-live-dlg, .dz .ev-mail__form, .dz .vc { display: flex; flex-direction: column; gap: var(--dz-space-3); }
 .dz .ev-live-dlg > p { margin: 0; }
-.dz .ev-sub { display: inline-flex; flex-wrap: wrap; gap: 0 6px; }
+.dz .ev-sub { display: inline-flex; flex-wrap: wrap; gap: 0 var(--dz-space-1h); }
 .dz .ev-sub a { color: inherit; font-weight: 600; text-decoration: none; }
 .dz .ev-sub a:hover { color: var(--dz-accent); text-decoration: underline; }
 .dz .ev-num { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -45,18 +42,16 @@
 .dz .ev-check { display: inline-flex; align-items: center; gap: var(--dz-space-2); font-size: var(--dz-text-md); cursor: pointer; }
 .dz .ev-check input { width: auto; }
 
-
 .dz .ev-results { display: flex; flex-direction: column; gap: var(--dz-space-2); margin: 0; padding: 0; list-style: none; }
 .dz .ev-results li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--dz-space-2); }
 .dz .ev-results li.is-dnf { color: var(--dz-muted); }
 .dz .ev-results__rank { min-width: 2.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.dz .ev-results li .ev-muted { font-size: var(--dz-text-sm); }
-.dz .ev-recap { display: inline-flex; align-items: center; gap: 4px; font-size: var(--dz-text-sm); }
+.dz .ev-results li .cs-muted { font-size: var(--dz-text-sm); }
+.dz .ev-recap { display: inline-flex; align-items: center; gap: var(--dz-space-1); font-size: var(--dz-text-sm); }
 
-.dz .ev-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); }
 .dz .ev-free { margin-bottom: var(--dz-space-3); }
 .dz .ev-free__given { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); margin: var(--dz-space-2) 0 0; font-size: var(--dz-text-sm); color: var(--dz-ink-soft); }
-.dz .ev-free__code { font-family: var(--dz-font-mono); font-size: var(--dz-text-md, 1rem); letter-spacing: 0.15em; color: var(--dz-ink); }
+.dz .ev-free__code { font-family: var(--dz-font-mono); font-size: var(--dz-text-md); letter-spacing: 0.15em; color: var(--dz-ink); }
 .dz .ev-chips { display: flex; flex-wrap: wrap; gap: var(--dz-space-1); }
 .dz .ev-teams tr.is-stuck td { background: color-mix(in srgb, var(--dz-warning) 8%, transparent); }
 .dz .ev-team { display: flex; align-items: flex-start; gap: var(--dz-space-2); }
@@ -95,7 +90,6 @@
 .dz .ev-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--dz-space-3); }
 /* On a phone one photo card fills a nested scroll box and hides its buttons: let the page scroll instead. */
 @media (max-width: 720px) { .dz .ev-photos.ev-scroll { max-height: none; overflow-y: visible; } }
-.dz .ev-photo { display: flex; flex-direction: column; gap: var(--dz-space-1); }
 .dz .ev-photo__img { display: block; padding: 0; border: 0; background: none; box-shadow: none; min-height: 0; cursor: zoom-in; }
 .dz .ev-photo__img img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--dz-r-2); }
 .dz .ev-photo__big { display: block; max-width: 100%; max-height: 65vh; margin: 0 auto; border-radius: var(--dz-r-2); }
@@ -109,18 +103,13 @@
 .dz .ev-slot__seen { flex-basis: 100%; }
 .dz .ev-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--dz-space-3); }
 
-
-/* Team and message dialogs (simplify pass, control area). */
-.dz .ev-hint { margin: 0; }
-
 /* Emails to teams (Emails.tsx): the event's look, what was sent, the composer. */
-.dz .ev-mailtheme { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--dz-space-3); }
+.dz .ev-mailtheme { display: flex; flex-direction: column; gap: var(--dz-space-1); margin-bottom: var(--dz-space-3); }
 .dz .ev-mailtheme select { max-width: 22rem; }
-.dz .ev-mails { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.dz .ev-mails { display: flex; flex-direction: column; gap: var(--dz-space-2); margin: 0; padding: 0; list-style: none; }
 .dz .ev-mails li { padding: 8px 10px; border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); }
 .dz .ev-mails__subject { font-weight: 700; }
 .dz .ev-mail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: var(--dz-space-4); align-items: start; }
-.dz .ev-mail__form { display: flex; flex-direction: column; gap: var(--dz-space-3); }
 .dz .ev-mail__count { margin-right: auto; }
 .dz .ev-check.is-off { opacity: 0.55; cursor: not-allowed; }
 @media (max-width: 900px) { .dz .ev-mail { grid-template-columns: 1fr; } }
@@ -129,25 +118,19 @@
 /* Statistics: a few plain facts under the numbers, a solve-rate bar per puzzle. */
 .dz .ev-statfacts { display: flex; flex-wrap: wrap; gap: var(--dz-space-1) var(--dz-space-4); margin: var(--dz-space-3) 0; padding: 0; list-style: none; color: var(--dz-muted); font-size: var(--dz-text-sm); }
 .dz .ev-statbar { display: inline-flex; align-items: center; gap: var(--dz-space-2); min-width: 7rem; }
-.dz .ev-statbar__track { flex: 1; height: 0.4rem; border-radius: 999px; background: var(--dz-border); overflow: hidden; }
+.dz .ev-statbar__track { flex: 1; height: 0.4rem; border-radius: var(--dz-r-pill); background: var(--dz-border); overflow: hidden; }
 .dz .ev-statbar__fill { display: block; height: 100%; background: var(--dz-accent); }
 .dz .ev-statbar__n { min-width: 2.5rem; text-align: right; font-variant-numeric: tabular-nums; }
 .dz .ev-guesses { display: flex; flex-wrap: wrap; gap: var(--dz-space-1) var(--dz-space-2); }
 .dz .ev-guess { white-space: nowrap; }
 
-/* A hash from the event's results record, to compare by eye. */
-.ev-hash { font-family: ui-monospace, monospace; font-size: .8rem; word-break: break-all; }
-
 .dz .ev-prints { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--dz-space-2); }
 .dz .ev-prints li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--dz-space-3); }
-.dz .ev-prints li .ev-muted { flex-basis: 100%; font-size: var(--dz-text-sm); }
+.dz .ev-prints li .cs-muted { flex-basis: 100%; font-size: var(--dz-text-sm); }
 
 /* Voucher codes (Vouchers.tsx). */
 .dz .vc-title { display: inline-flex; align-items: center; gap: var(--dz-space-2); }
-.dz .vc { display: flex; flex-direction: column; gap: var(--dz-space-3); }
 .dz .vc-price { margin: 0; font-weight: 600; color: var(--dz-ink); }
-.dz .vc-muted { margin: 0; color: var(--dz-muted); font-size: var(--dz-text-sm); }
-.dz .vc-err { margin: 0; color: var(--dz-danger); font-size: var(--dz-text-sm); }
 .dz .vc-form { display: flex; flex-direction: column; gap: var(--dz-space-2); padding: var(--dz-space-3); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); background: var(--dz-surface-2); }
 .dz .vc-batches { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--dz-space-2); }
 .dz .vc-batches li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(10rem, 14rem) auto; gap: var(--dz-space-3); align-items: center; padding: var(--dz-space-2) var(--dz-space-3); border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); }
@@ -155,11 +138,11 @@
 .dz .vc-batch__head { display: flex; flex-direction: column; min-width: 0; }
 .dz .vc-batch__head strong { overflow-wrap: anywhere; }
 .dz .vc-batch__meta { font-size: var(--dz-text-xs); color: var(--dz-muted); }
-.dz .vc-batch__use { display: flex; flex-direction: column; gap: 4px; font-size: var(--dz-text-xs); color: var(--dz-muted); }
-.dz .vc-bar { height: 6px; border-radius: 999px; background: var(--dz-surface-3); overflow: hidden; }
+.dz .vc-batch__use { display: flex; flex-direction: column; gap: var(--dz-space-1); font-size: var(--dz-text-xs); color: var(--dz-muted); }
+.dz .vc-bar { height: 6px; border-radius: var(--dz-r-pill); background: var(--dz-surface-3); overflow: hidden; }
 .dz .vc-bar > span { display: block; height: 100%; background: var(--dz-accent); border-radius: inherit; }
 .dz .vc-batch__actions { display: flex; align-items: center; gap: var(--dz-space-2); flex-wrap: wrap; justify-content: flex-end; }
-.dz .vc-link { display: inline-flex; align-items: center; gap: 4px; font-size: var(--dz-text-sm); color: var(--dz-accent); text-decoration: none; white-space: nowrap; }
+.dz .vc-link { display: inline-flex; align-items: center; gap: var(--dz-space-1); font-size: var(--dz-text-sm); color: var(--dz-accent); text-decoration: none; white-space: nowrap; }
 .dz .vc-link:hover { text-decoration: underline; }
 @media (max-width: 48rem) {
   .dz .vc-batches li { grid-template-columns: minmax(0, 1fr); }

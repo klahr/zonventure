@@ -368,7 +368,7 @@ function Lobby({ state, t, locale, usesLocation }: { state: play.PlayState; t: T
   const cover = coverOf(state.event.theme, state.event.cover ? `/media/${state.event.cover}` : undefined);
   return (
     <div className={"app-lobby" + (cover ? " app-lobby--cover" : "")}>
-      {cover && <div className="app-lobby__cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
+      {cover && <div className="pv-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
       <h1>{t("Your team: {{team}}", { team: state.team.name })}</h1>
       <p>
         {at && !Number.isNaN(at.getTime())
@@ -419,7 +419,7 @@ function EventOver({ state, t }: { state: play.PlayState; t: Translate }) {
   const cover = coverOf(state.event.theme, state.event.cover ? `/media/${state.event.cover}` : undefined);
   return (
     <div className={"app-lobby" + (cover ? " app-lobby--cover" : "")}>
-      {cover && <div className="app-lobby__cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
+      {cover && <div className="pv-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
       {state.event.adventure_title && <p className="app-muted">{state.event.adventure_title}</p>}
       <h1>{cancelled ? t("This event has been cancelled.") : t("This event has ended. Thanks for playing!")}</h1>
       <p>{t("Your team: {{team}}", { team: state.team.name })}</p>
@@ -450,7 +450,7 @@ function PartyEnd({ reason, t }: { reason: play.PartyEnd["reason"]; t: Translate
     <div className="app" style={brandVars(end?.brand)}>
       <main className="app-main app-main--center">
         <div className={"app-lobby" + (cover ? " app-lobby--cover" : "")}>
-          {cover && <div className="app-lobby__cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
+          {cover && <div className="pv-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
           {end?.adventure_title && <p className="app-muted">{end.adventure_title}</p>}
           {why ? <h1>{headings[why]}</h1> : <p className="app-muted">{t("Loading…")}</p>}
           {end && <p>{t("Your team: {{team}}", { team: end.team_name })}</p>}
@@ -492,7 +492,7 @@ function Intro({ state, t, usesLocation, onDone, onRenamed }: { state: play.Play
   const cover = coverOf(state.event.theme, state.event.cover ? `/media/${state.event.cover}` : undefined);
   return (
     <div className={"app-lobby" + (cover ? " app-lobby--cover" : "")}>
-      {cover && <div className="app-lobby__cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
+      {cover && <div className="pv-cover" style={{ backgroundImage: `url(${cover.wide})` }} aria-hidden="true" />}
       <h1>{state.event.adventure_title || siteName()}</h1>
       <p>
         {name

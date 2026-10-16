@@ -1,6 +1,5 @@
 /* The consent card: who is asking, for what, and two answers. */
 .dz .az { display: flex; flex-direction: column; align-items: flex-start; gap: var(--dz-space-3); max-width: 34rem; }
-.dz .az__icon { color: var(--dz-accent, currentColor); }
+.dz .az__icon { color: var(--dz-accent); }
 .dz .az__lead { margin: 0; font-size: var(--dz-text-md); }
-.dz .az__muted { margin: 0; color: var(--muted); font-size: var(--dz-text-sm); }
 .dz .az__warn { margin: 0; padding: var(--dz-space-2) var(--dz-space-3); border-left: 3px solid var(--dz-warning); font-weight: 600; }

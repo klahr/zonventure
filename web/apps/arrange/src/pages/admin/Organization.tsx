@@ -364,15 +364,15 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           rows={org.members}
           rowKey={(m) => m.id}
           caption={t.t("Users")}
-          empty={<p className="adm-muted">{t.t("No users yet — add one to get started.")}</p>}
+          empty={<p className="cs-note cs-note--md">{t.t("No users yet — add one to get started.")}</p>}
           columns={[
             { key: "name", header: t.t("Username"), cell: (m) => <strong>{m.username}</strong> },
             { key: "role", header: t.t("Role"), cell: (m) => (m.role === "org_admin" ? t.t("Admin") : m.role === "org_writer" ? t.t("Writer") : t.t("Event host")) },
             {
               key: "email", header: t.t("Email"), cell: (m) => !m.email
-                ? <span className="adm-sub">{t.t("No email")}</span>
+                ? <span className="cs-sub">{t.t("No email")}</span>
                 : m.email_verified
-                ? <span className="adm-inline">{m.email}<span className="adm-sub">{t.t("Verified")}</span></span>
+                ? <span className="adm-inline">{m.email}<span className="cs-sub">{t.t("Verified")}</span></span>
                 : (
                   <span className="adm-inline">
                     {m.email}
@@ -399,7 +399,7 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           rows={events}
           rowKey={(e) => e.id}
           caption={t.t("Events")}
-          empty={<p className="adm-muted">{t.t("No events yet.")}</p>}
+          empty={<p className="cs-note cs-note--md">{t.t("No events yet.")}</p>}
           columns={eventColumns(t, (e) => setOpen({ kind: "teams", event: e }), full ? {
             cancel: cancelEvent,
             pass: (e) => passOf.get(e.assignment_id),
@@ -423,16 +423,16 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
             rows={adventures}
             rowKey={(a) => a.slug}
             caption={t.t("Catalog")}
-            empty={<p className="adm-muted">{t.t("No adventures yet — this organization’s authors create them.")}</p>}
+            empty={<p className="cs-note cs-note--md">{t.t("No adventures yet — this organization’s authors create them.")}</p>}
             columns={[
               {
                 key: "title", header: t.t("Adventure"), cell: (a) => (
                   <>
                     <div className="adm-inline">{a.title}{a.published && <Pill tone="good">{t.t("Listed")}</Pill>}</div>
-                    <div className="adm-sub adm-mono">{a.slug}</div>
+                    <div className="cs-sub adm-mono">{a.slug}</div>
                     {(a.shares ?? []).length > 0 && (
                       <div className="adm-chips adm-shares">
-                        <span className="adm-sub">{t.t("Commissioned for")}</span>
+                        <span className="cs-sub">{t.t("Commissioned for")}</span>
                         {(a.shares ?? []).map((s) => (
                           <Chip key={s.org_id} onRemove={full ? () => revoke(a, s.org_id, s.org_name) : undefined} removeLabel={t.t("Revoke share")}>{s.org_name}</Chip>
                         ))}
@@ -460,7 +460,7 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           actions={full && candidates.length > 0 && <Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={() => setOpen({ kind: "commission", candidates })}>{t.t("Commission adventure")}</Button>}
         >
           {commissioned.length === 0 ? (
-            <p className="adm-muted">{t.t("None — commission a catalog adventure to list it among their own.")}</p>
+            <p className="cs-note cs-note--md">{t.t("None — commission a catalog adventure to list it among their own.")}</p>
           ) : (
             <div className="adm-chips">
               {commissioned.map((a) => (
@@ -478,13 +478,13 @@ function OrgView({ data, reload }: { data: Data; reload: () => void }) {
           rows={purchases}
           rowKey={(p) => p.id}
           caption={t.t("Purchases")}
-          empty={<p className="adm-muted">{t.t("No purchases.")}</p>}
+          empty={<p className="cs-note cs-note--md">{t.t("No purchases.")}</p>}
           columns={[
             { key: "adv", header: t.t("Adventure"), cell: (p) => p.adventure_title || p.adventure_slug },
             { key: "players", header: t.t("Players"), cell: (p) => <span className="adm-mono">{p.max_players}</span>, wide: true },
             { key: "total", header: t.t("Total"), cell: (p) => <span className="adm-mono">{fmtMoney(p.amount_cents, p.currency, t.current())}</span> },
             { key: "state", header: t.t("State"), cell: (p) => <PurchaseState p={p} /> },
-            { key: "date", header: t.t("Date"), wide: true, cell: (p) => <span className="adm-sub" title={fmtDateTime(p.created_at, t.current())}>{relTime(p.created_at, t.current())}</span> },
+            { key: "date", header: t.t("Date"), wide: true, cell: (p) => <span className="cs-sub" title={fmtDateTime(p.created_at, t.current())}>{relTime(p.created_at, t.current())}</span> },
             { key: "x", header: <span className="cs-sr">{t.t("Actions")}</span>, align: "end", cell: (p) => <PurchaseActions p={p} reload={reload} readOnly={!full} /> },
           ]}
         />
@@ -549,7 +549,7 @@ function eventColumns(t: T, teams: (e: OrgEvent) => void, on: EventActions | nul
           <>
             <strong>{e.name || `Event #${e.id}`}</strong>
             {e.public_for_sale && <> <Pill>{t.t("Self-guided")}</Pill></>}
-            <div className="adm-sub">{e.adventure_title || e.adventure_slug}{when && <> · {when}</>}</div>
+            <div className="cs-sub">{e.adventure_title || e.adventure_slug}{when && <> · {when}</>}</div>
           </>
         );
       },
@@ -604,9 +604,9 @@ function TeamsDialog({ org, event, onClose }: { org: Organization; event: OrgEve
           rows={teams.data}
           rowKey={(x) => x.id}
           caption={t.t("Teams")}
-          empty={<p className="adm-muted">{t.t("No teams yet.")}</p>}
+          empty={<p className="cs-note cs-note--md">{t.t("No teams yet.")}</p>}
           columns={[
-            { key: "name", header: t.t("Team"), cell: (x) => <><strong>{x.name}</strong><div className="adm-sub">{x.email || t.t("No contact email")}</div></> },
+            { key: "name", header: t.t("Team"), cell: (x) => <><strong>{x.name}</strong><div className="cs-sub">{x.email || t.t("No contact email")}</div></> },
             { key: "players", header: t.t("Players"), cell: (x) => <span className="adm-mono">{x.players}</span> },
             {
               key: "x", header: <span className="cs-sr">{t.t("Actions")}</span>, align: "end", cell: (x) => (
@@ -700,7 +700,7 @@ function Toggle({ checked, onChange, label, hint, disabled }: { checked: boolean
       />
       <span className="adm-setting__text">
         <strong>{label}</strong>
-        <span className="adm-sub">{hint}</span>
+        <span className="cs-sub">{hint}</span>
       </span>
     </label>
   );
@@ -754,13 +754,13 @@ function ConnectRow({ org, status, reload, readOnly }: { org: Organization; stat
           {status.account_id && <code className="adm-mono">{status.account_id}</code>}
         </span>
         {status.charges_enabled && (
-          <span className="adm-sub">
+          <span className="cs-sub">
             {status.payouts_enabled
               ? t.t("Payouts enabled — money flows to your bank on Stripe's standard schedule.")
               : t.t("Charges accepted but payouts are paused — usually means a missing bank account. Visit your Stripe dashboard to fix.")}
           </span>
         )}
-        {status.synced_at && <span className="adm-sub">{t.t("Last verified {{when}}", { when: fmtDateTime(status.synced_at, t.current()) })}</span>}
+        {status.synced_at && <span className="cs-sub">{t.t("Last verified {{when}}", { when: fmtDateTime(status.synced_at, t.current()) })}</span>}
       </div>
       {status.account_id && !readOnly && (
         <span className="adm-actions">
@@ -791,7 +791,7 @@ function PassesCard({ org, hidden, readOnly, onGrant, onEdit }: { org: Organizat
       actions={!readOnly && <Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={onGrant}>{t.t("Grant event pass")}</Button>}
     >
       {empty ? (
-        <p className="adm-muted">{inUseText ?? t.t("None — grant an event pass to let them schedule an event.")}</p>
+        <p className="cs-note cs-note--md">{inUseText ?? t.t("None — grant an event pass to let them schedule an event.")}</p>
       ) : (
         <div className="adm-chips">
           {unused.map((x) => (

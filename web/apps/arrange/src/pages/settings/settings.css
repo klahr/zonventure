@@ -12,12 +12,11 @@
 .dz .st-num { max-width: 8rem; }
 .dz .st-date { max-width: 11rem; }
 .dz .st-intro { margin: 0 0 var(--dz-space-4); }
-.dz .st-flush { margin: 0; }
 .dz .st-example { margin: var(--dz-space-2) 0 0; }
 
 .dz .ship-countries { display: grid; gap: var(--dz-space-3); }
 .dz .ship-countries ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--dz-space-2); }
-.dz .ship-countries li { display: inline-flex; align-items: center; gap: var(--dz-space-1); padding: var(--dz-space-1) var(--dz-space-2); border: 1px solid var(--dz-border); border-radius: 999px; }
+.dz .ship-countries li { display: inline-flex; align-items: center; gap: var(--dz-space-1); padding: var(--dz-space-1) var(--dz-space-2); border: 1px solid var(--dz-border); border-radius: var(--dz-r-pill); }
 .dz .ship-countries li button { display: inline-flex; border: 0; background: none; padding: 0; color: var(--dz-muted); cursor: pointer; }
 .dz .ship-countries select { max-width: 18rem; }
 .dz .st-topups { display: flex; flex-direction: column; gap: var(--dz-space-2); }
@@ -26,7 +25,7 @@
 .dz .st-billing__mode { display: flex; flex-direction: column; gap: var(--dz-space-2); margin: 0; padding: var(--dz-space-3) 0 0; border: 0; border-top: 1px solid var(--dz-border); }
 .dz .st-billing__mode legend { padding: 0 0 var(--dz-space-1); font-weight: 700; }
 .dz .st-topup-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--dz-space-2); margin-bottom: var(--dz-space-3); }
-.dz .st-topup-pick__item { display: flex; flex-direction: column; gap: 2px; padding: var(--dz-space-3); border: 2px solid var(--dz-border); border-radius: var(--dz-r-3); cursor: pointer; }
+.dz .st-topup-pick__item { display: flex; flex-direction: column; gap: var(--dz-space-0); padding: var(--dz-space-3); border: 2px solid var(--dz-border); border-radius: var(--dz-r-3); cursor: pointer; }
 .dz .st-topup-pick__item.is-on { border-color: var(--dz-accent); background: color-mix(in srgb, var(--dz-accent) 6%, var(--dz-surface)); }
 .dz .st-topup-pick__item input { position: absolute; opacity: 0; pointer-events: none; }
 .dz .st-topup-pick__item strong { font-size: var(--dz-text-lg); }

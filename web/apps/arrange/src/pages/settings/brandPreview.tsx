@@ -107,7 +107,7 @@ export function Previews(props: { host: string; name: string; brand: Brand; live
       {tab === "store" && (
         <>
           <StorePreview {...props} />
-          <p className="dm-muted dm-aside__note">
+          <p className="cs-note dm-aside__note">
             {props.live ? t.t("This is your store's front page, as players see it.") : t.t("A preview of your store on its own address.")}
           </p>
         </>
@@ -116,7 +116,7 @@ export function Previews(props: { host: string; name: string; brand: Brand; live
       {tab === "player" && (
         <>
           <PlayerPreview {...props} />
-          <p className="dm-muted dm-aside__note">{t.t("A step of an adventure on a player's phone: your colours, your title typeface, your address.")}</p>
+          <p className="cs-note dm-aside__note">{t.t("A step of an adventure on a player's phone: your colours, your title typeface, your address.")}</p>
         </>
       )}
     </div>
@@ -131,7 +131,7 @@ function TicketEmailPreview({ name, live, version }: { name: string; live: boole
   return (
     <div className="dm-mail">
       <EmailPreview preview={load.data ?? null} loading={!load.data} from={name} />
-      <p className="dm-muted dm-aside__note">
+      <p className="cs-note dm-aside__note">
         {live ? t.t("The email a buyer gets with their ticket, sent under your name.") : t.t("Once your domain is live, the line about us under the email goes and its links use your address.")}
       </p>
     </div>

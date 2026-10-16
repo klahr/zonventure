@@ -7,6 +7,7 @@ import { conceptColor } from "./dz/concepts.tsx";
 import { Button, ICON } from "./dz/ui.tsx";
 import { isTouch } from "./device.ts";
 import { locate } from "./zones.ts";
+import "./pointmap.css";
 
 /**
  * Edit a zone on a real map: drag the centre and set the radius of a

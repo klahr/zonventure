@@ -38,7 +38,7 @@
 }
 .pv-cipher__morse dt { flex: none; width: 1.1em; font-weight: 700; }
 /* Dots and dashes read best wide apart and a little heavy. */
-.pv-cipher__morse dd { margin: 0; font: 700 var(--text-base) / 1 var(--font-mono, monospace); letter-spacing: 0.12em; }
+.pv-cipher__morse dd { margin: 0; font: 700 var(--text-base) / 1 var(--font-mono); letter-spacing: 0.12em; }
 
 .pv-cipher__cell {
   display: flex;
@@ -76,7 +76,7 @@
   grid-template-columns: auto repeat(13, minmax(0, 1fr));
   row-gap: 2px;
   text-align: center;
-  font: 700 var(--text-base) / 1.6 var(--font-mono, monospace);
+  font: 700 var(--text-base) / 1.6 var(--font-mono);
 }
 .pv-cipher__row-label {
   padding-right: var(--sp-2);

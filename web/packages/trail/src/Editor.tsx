@@ -170,7 +170,7 @@ export function Editor(props: EditorProps) {
             </div>
             {/* Beside the card when there is room; behind a link when not. */}
             <aside className={"trail-stage__phone" + (peek ? " is-open" : "")} aria-label={t("On the teams' phones")}>
-              <button type="button" className="trail-link trail-stage__peek" aria-expanded={peek} onClick={() => setPeek((v) => !v)}>
+              <button type="button" className="zv-link trail-link trail-stage__peek" aria-expanded={peek} onClick={() => setPeek((v) => !v)}>
                 <Icon name="phone" size={16} />
                 {peek ? t("Hide the phone") : t("See it on a phone")}
               </button>
@@ -383,7 +383,7 @@ export function CardEditor(props: {
               </div>
             ))}
             {!readOnly && (card.answers?.length ?? 0) < MAX_ANSWERS && (
-              <button type="button" className="trail-link" onClick={() => onChange({ ...card, answers: [...(card.answers ?? []), ""] })}>
+              <button type="button" className="zv-link trail-link" onClick={() => onChange({ ...card, answers: [...(card.answers ?? []), ""] })}>
                 {t("+ Another accepted spelling")}
               </button>
             )}

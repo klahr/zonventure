@@ -197,8 +197,8 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
       )}
 
       {live.length > 0 && (
-        <section className="db-section" aria-labelledby="db-live-h">
-          <h2 id="db-live-h" className="db-section__title">{t.t("Live now")}</h2>
+        <section className="cs-section" aria-labelledby="db-live-h">
+          <h2 id="db-live-h" className="cs-section__title">{t.t("Live now")}</h2>
           <div className="db-live-grid">
             {live.map((r) => <LiveCard key={r.id} event={r} />)}
           </div>
@@ -206,10 +206,10 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
       )}
 
       {scheduled.length > 0 && (
-        <section className="db-section" aria-labelledby="db-soon-h">
-          <div className="db-section__head">
-            <h2 id="db-soon-h" className="db-section__title">{t.t("Starts soon")}</h2>
-            {scheduled.length > 5 && <a className="db-section__more" href={href({ name: "events" })}>{t.t("All {{n}} scheduled", { n: scheduled.length })}<ArrowRight size={14} aria-hidden /></a>}
+        <section className="cs-section" aria-labelledby="db-soon-h">
+          <div className="cs-section__head">
+            <h2 id="db-soon-h" className="cs-section__title">{t.t("Starts soon")}</h2>
+            {scheduled.length > 5 && <a className="cs-section__more" href={href({ name: "events" })}>{t.t("All {{n}} scheduled", { n: scheduled.length })}<ArrowRight size={14} aria-hidden /></a>}
           </div>
           <Agenda events={scheduled.slice(0, 5)} onStarted={data.reload} />
         </section>
@@ -421,18 +421,18 @@ function AdminDashboard({ full }: { full: boolean }) {
     { key: "name", header: t.t("Organization"), cell: (o) => (
       <span className="db-org">
         <Avatar name={o.name} src={o.has_logo ? `/org-logo/${o.id}` : undefined} size={24} />
-        <span className="db-ellipsis">{o.name}</span>
+        <span className="cs-ellipsis">{o.name}</span>
       </span>
     ) },
     { key: "users", header: t.t("Users"), wide: true, align: "end", cell: (o) => members(o) },
     { key: "players", header: t.t("Players"), wide: true, align: "end", cell: (o) => o.players_total || 0 },
     { key: "events", header: t.t("Events"), align: "end", cell: (o) => o.events_total || 0 },
-    { key: "active", header: t.t("Active"), cell: (o) => (o.events_running > 0 ? <Pill tone="good">{t.t("{{n}} running", { n: o.events_running })}</Pill> : <span className="db-muted">—</span>) },
+    { key: "active", header: t.t("Active"), cell: (o) => (o.events_running > 0 ? <Pill tone="good">{t.t("{{n}} running", { n: o.events_running })}</Pill> : <span className="cs-muted">—</span>) },
   ];
 
   const invoiceColumns: Column<PurchaseRow>[] = [
-    { key: "org", header: t.t("Organization"), cell: (p) => <span className="db-ellipsis">{p.org_name || "—"}</span> },
-    { key: "adventure", header: t.t("Adventure"), wide: true, cell: (p) => <span className="db-ellipsis">{p.adventure_title || p.adventure_slug}</span> },
+    { key: "org", header: t.t("Organization"), cell: (p) => <span className="cs-ellipsis">{p.org_name || "—"}</span> },
+    { key: "adventure", header: t.t("Adventure"), wide: true, cell: (p) => <span className="cs-ellipsis">{p.adventure_title || p.adventure_slug}</span> },
     { key: "players", header: t.t("Players"), wide: true, align: "end", cell: (p) => p.max_players },
     { key: "total", header: t.t("Total"), align: "end", cell: (p) => fmtMoney(p.amount_cents, p.currency, t.current()) },
     { key: "when", header: t.t("Bought"), cell: (p) => relTime(p.paid_at || p.created_at, t.current()) },
@@ -468,10 +468,10 @@ function AdminDashboard({ full }: { full: boolean }) {
       </div>
       {setup && <SetupCard lead={setup.length === 4 ? t.t("Four steps to a working deployment.") : t.t("Three steps to a working deployment.")} steps={setup} />}
       {toInvoice.length > 0 && (
-        <section className="db-section" aria-labelledby="db-invoice-h">
-          <div className="db-section__head">
-            <h2 id="db-invoice-h" className="db-section__title">{t.t("To invoice")}</h2>
-            {full && <a className="db-section__more" href={href({ name: "settings", tab: "purchases" })}>{t.t("Open purchases")}<ArrowRight size={14} aria-hidden /></a>}
+        <section className="cs-section" aria-labelledby="db-invoice-h">
+          <div className="cs-section__head">
+            <h2 id="db-invoice-h" className="cs-section__title">{t.t("To invoice")}</h2>
+            {full && <a className="cs-section__more" href={href({ name: "settings", tab: "purchases" })}>{t.t("Open purchases")}<ArrowRight size={14} aria-hidden /></a>}
           </div>
           <Card flush>
             <Table columns={invoiceColumns} rows={toInvoice} rowKey={(p) => p.id} rowHref={(p) => href({ name: "organization", id: p.org_id })} caption={t.t("To invoice")} />
@@ -479,10 +479,10 @@ function AdminDashboard({ full }: { full: boolean }) {
         </section>
       )}
       {orgs.length > 0 && (
-        <section className="db-section" aria-labelledby="db-orgs-h">
-          <div className="db-section__head">
-            <h2 id="db-orgs-h" className="db-section__title">{t.t("Organizations")}</h2>
-            <a className="db-section__more" href={href({ name: "organizations" })}>{t.t("Manage organizations")}<ArrowRight size={14} aria-hidden /></a>
+        <section className="cs-section" aria-labelledby="db-orgs-h">
+          <div className="cs-section__head">
+            <h2 id="db-orgs-h" className="cs-section__title">{t.t("Organizations")}</h2>
+            <a className="cs-section__more" href={href({ name: "organizations" })}>{t.t("Manage organizations")}<ArrowRight size={14} aria-hidden /></a>
           </div>
           <Card flush>
             <Table columns={columns} rows={orgs} rowKey={(o) => o.id} rowHref={(o) => href({ name: "organization", id: o.id })} caption={t.t("Organizations")} />

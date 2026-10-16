@@ -83,9 +83,8 @@
 <style>
   /* Design tokens, .btn, .skip-link, focus outlines, prefers-reduced-motion
      all live in /assets/page-tokens.css. Page-specific overrides below. */
-  html { overflow-x: hidden; }
-  body { overflow-x: hidden; }
-  .wrap { max-width: 64rem; margin: 0 auto; padding: 0 1.25rem; }
+  html, body { overflow-x: hidden; }
+  .wrap { max-width: 64rem; }
 
   /* Hero-band-friendly button variant — only landing has a dark hero,
      so this stays page-local. */
@@ -132,9 +131,7 @@
     color: rgba(255,255,255,.92);
     margin: 0 0 2rem;
   }
-  .hero .ctas {
-    display: flex; gap: .75rem; flex-wrap: wrap;
-  }
+  .ctas { display: flex; gap: .75rem; flex-wrap: wrap; }
 
   .benefits {
     background: var(--surface);
@@ -158,10 +155,7 @@
     font-size: 1.4rem;
     margin-bottom: .75rem;
   }
-  .benefit h3 {
-    font-size: 1rem; margin: 0 0 .25rem;
-    font-weight: 700;
-  }
+  .benefit h3 { font-size: 1rem; margin: 0 0 .25rem; }
   .benefit p {
     color: var(--muted); font-size: .92rem; margin: 0;
   }
@@ -176,16 +170,13 @@
     font-family: var(--font-brand);
     font-size: clamp(1.6rem, 3vw, 2.2rem);
     margin: 0 0 .75rem;
-    color: #fff;
   }
   .closing p {
     color: rgba(255,255,255,.92);
     max-width: 34rem; margin: 0 auto 1.75rem;
     font-size: 1.02rem;
   }
-  .closing .ctas {
-    display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap;
-  }
+  .closing .ctas { justify-content: center; }
 
   footer { border-top: 0; background: var(--bg); }
 </style>

@@ -97,7 +97,7 @@ export function HostItDialog({
         )
       ) : (
         <>
-          <p className="evs-muted">
+          <p className="cs-muted cs-flush">
             {t.t(
               "Run {{title}} yourself, with no organiser: print the cards, share the player link, and play as many games as you like for 14 days from the first. Start the first game within 60 days.",
               { title },
@@ -111,7 +111,7 @@ export function HostItDialog({
               onChange={(e) => setName(e.target.value)}
             />
           </Field>
-          <p className="evs-muted evs-small">
+          <p className="cs-note">
             {p.team_cents > 0
               ? `${t.t("Each team costs {{price}} as it joins a game, from your organisation's balance.", {
                   price: fmtMoney(p.team_cents, p.currency, loc),

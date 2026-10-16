@@ -16,7 +16,7 @@ export function StatisticsCard({ stats, error, retry }: { stats: EventStats | nu
   const body = () => {
     if (error) return <ErrorBox message={error} retry={retry} retryLabel={t.t("Retry")} />;
     if (!stats) return <Loading label={t.t("Loading…")} />;
-    if (stats.teams === 0) return <p className="ev-muted">{t.t("No team has played yet.")}</p>;
+    if (stats.teams === 0) return <p className="cs-muted">{t.t("No team has played yet.")}</p>;
     const reached = stats.puzzles.filter((p) => p.reached > 0);
     // The trickiest takes the most wrong guesses per team that got there;
     // the quickest is solved fastest in the middle.
@@ -44,13 +44,13 @@ export function StatisticsCard({ stats, error, retry }: { stats: EventStats | nu
         header: t.t("Commonest wrong guesses"),
         cell: (p) =>
           p.wrong_answers.length === 0 ? (
-            <span className="ev-muted">—</span>
+            <span className="cs-muted">—</span>
           ) : (
             <span className="ev-guesses">
               {p.wrong_answers.map((a) => (
                 <span key={a.answer} className="ev-guess" title={a.teams === 1 ? t.t("{{n}}× by one team", { n: a.count }) : t.t("{{n}}× by {{teams}} teams", { n: a.count, teams: a.teams })}>
                   {a.answer}
-                  {a.count > 1 && <span className="ev-muted"> ×{a.count}</span>}
+                  {a.count > 1 && <span className="cs-muted"> ×{a.count}</span>}
                 </span>
               ))}
             </span>

@@ -315,7 +315,7 @@ function ReviewCard({ review: r, reviewed, onDone, onChanged, readOnly }: { revi
           {!isProposal(r.kind) && <ListingFacts kind={r.kind} draft={d} live={reviewed.draft} />}
         </>
       )}
-      {!readOnly && <p className="adm-sub">{r.kind === "org"
+      {!readOnly && <p className="cs-sub">{r.kind === "org"
         ? t.t("Approve only once you have looked at all of it: open “Review in full” for every text and picture of the page.")
         : t.t("Approve only once you have looked at all of it: open “Review in full” for every text and picture of the adventure.")}</p>}
       {rejecting && (
@@ -357,7 +357,7 @@ function PageChangeCard({ change: c, onDone, readOnly }: { change: OrgPageChange
   const [busy, setBusy] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
   const picture = c.field === "logo" || c.field === "cover";
-  const none = <span className="adm-sub">{t.t("(none)")}</span>;
+  const none = <span className="cs-sub">{t.t("(none)")}</span>;
   const pictureClass = c.field === "cover" ? "adm-listing__cover" : "adm-logo adm-page-change__logo";
   const decide = async (roll: string | null) => {
     setBusy(true);
@@ -403,7 +403,7 @@ function PageChangeCard({ change: c, onDone, readOnly }: { change: OrgPageChange
         </span>
       }
     >
-      <p className="adm-sub">{t.t("{{field}} changed. It is public already: keep it, or roll it back to what was there before.", { field: pageFieldLabel(t, c.field) })}</p>
+      <p className="cs-sub">{t.t("{{field}} changed. It is public already: keep it, or roll it back to what was there before.", { field: pageFieldLabel(t, c.field) })}</p>
       <dl className="adm-listing__facts">
         <div className="adm-listing__fact">
           <dt>{t.t("Before")}</dt>
@@ -456,7 +456,7 @@ function RollBackDialog({ onClose, onRollBack }: { onClose: () => void; onRollBa
       <Field label={t.t("Why? The organisation's admins get this by email.")}>
         <textarea autoFocus rows={4} maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>
-      <p className="adm-sub">{t.t("What was there before is put back on their page at once.")}</p>
+      <p className="cs-sub">{t.t("What was there before is put back on their page at once.")}</p>
     </Dialog>
   );
 }
@@ -475,9 +475,9 @@ export function ListingFacts({ kind, draft: d, live }: { kind: ListingKind; draf
       ) : null}
       <dl className="adm-listing__facts">
         {kind === "event" && (
-          <Fact label={t.t("Name")} changed={changed("name")} was={live?.name}>{d.name || <span className="adm-sub">{t.t("(none)")}</span>}</Fact>
+          <Fact label={t.t("Name")} changed={changed("name")} was={live?.name}>{d.name || <span className="cs-sub">{t.t("(none)")}</span>}</Fact>
         )}
-        <Fact label={t.t("Blurb")} changed={changed("blurb")} was={live?.blurb}>{d.blurb || <span className="adm-sub">{t.t("(none)")}</span>}</Fact>
+        <Fact label={t.t("Blurb")} changed={changed("blurb")} was={live?.blurb}>{d.blurb || <span className="cs-sub">{t.t("(none)")}</span>}</Fact>
         <Fact label={kind === "event" ? t.t("Price per ticket") : t.t("Base price")} changed={changed("price_cents")} was={live ? money(live.price_cents) : undefined}>{money(d.price_cents)}</Fact>
         {kind === "party" && (
           <Fact label={t.t("Price per child")} changed={changed("per_kid_cents")} was={live ? money(live.per_kid_cents ?? 0) : undefined}>{money(d.per_kid_cents ?? 0)}</Fact>
@@ -503,7 +503,7 @@ function Fact({ label, changed, was, children }: { label: string; changed: boole
       </dt>
       <dd>
         {children}
-        {changed && was !== undefined && was !== "" && <span className="adm-sub adm-listing__was">{t.t("Was: {{v}}", { v: String(was) })}</span>}
+        {changed && was !== undefined && was !== "" && <span className="cs-sub adm-listing__was">{t.t("Was: {{v}}", { v: String(was) })}</span>}
       </dd>
     </div>
   );
@@ -529,7 +529,7 @@ export function RejectDialog({ proposal = false, onClose, onReject }: { proposal
       <Field label={t.t("Why? The organisation's admins get this by email.")}>
         <textarea autoFocus rows={4} maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>
-      <p className="adm-sub">{t.t("Say what to change and where. Whatever of theirs is public now stays up.")}</p>
+      <p className="cs-sub">{t.t("Say what to change and where. Whatever of theirs is public now stays up.")}</p>
     </Dialog>
   );
 }
@@ -570,16 +570,16 @@ function Log() {
   const columns: Column<ListingLogEntry>[] = [
     { key: "when", header: t.t("When"), cell: (e) => <span title={fmtDateTime(e.created_at, loc)}>{relTime(e.created_at, loc)}</span> },
     { key: "what", header: t.t("Listing"), cell: (e) => (
-      <span className="adm-stack">
+      <span className="cs-stack">
         <strong>{e.title || kindLabel(t, e.kind)}</strong>
-        <span className="adm-sub">{e.org_name}</span>
+        <span className="cs-sub">{e.org_name}</span>
       </span>
     ) },
     { key: "action", header: t.t("Action"), cell: (e) => action(e.action) },
     { key: "via", header: t.t("By"), cell: (e) => (
-      <span className="adm-inline"><ViaPill via={e.via} />{e.signed && <Pill tone="good">{t.t("Signed")}</Pill>}{e.by && <span className="adm-sub">{e.by}</span>}</span>
+      <span className="adm-inline"><ViaPill via={e.via} />{e.signed && <Pill tone="good">{t.t("Signed")}</Pill>}{e.by && <span className="cs-sub">{e.by}</span>}</span>
     ) },
-    { key: "reason", header: t.t("Reason"), wide: true, cell: (e) => e.reason ? <span className="adm-sub">{e.reason}</span> : null },
+    { key: "reason", header: t.t("Reason"), wide: true, cell: (e) => e.reason ? <span className="cs-sub">{e.reason}</span> : null },
   ];
   return (
     <Card
@@ -600,7 +600,7 @@ function Log() {
     >
       {checkError && <ErrorBox message={checkError} />}
       {check && (
-        <div className="adm-pad" role="status">
+        <div className="cs-card__note" role="status">
           {check.problems.length === 0 ? (
             <p><Pill tone="good">{t.t("Intact")}</Pill> {t.t("Every hash of the {{n}} entries adds up. The latest:", { n: check.entries })}</p>
           ) : (
@@ -610,13 +610,13 @@ function Log() {
               <p>{t.t("The latest hash now:")}</p>
             </>
           )}
-          <p><code className="adm-hash">{check.head_hash || "—"}</code></p>
+          <p><code className="cs-hash">{check.head_hash || "—"}</code></p>
           <p>{check.signed === 1
             ? t.t("1 decision signed with a reviewer's passkey, checked again; {{unsigned}} unsigned (a reviewer without a passkey, an AI assistant or an automatic approval).", { unsigned: check.unsigned ?? 0 })
             : t.t("{{signed}} decisions signed with a reviewer's passkey, each checked again; {{unsigned}} unsigned (a reviewer without a passkey, an AI assistant or an automatic approval).", { signed: check.signed ?? 0, unsigned: check.unsigned ?? 0 })}</p>
-          <p className="adm-sub">{t.t("Compare it with the fingerprint mailed to platform admins each day: if one mailed earlier can't be found in the log, it was rewritten.")}</p>
+          <p className="cs-sub">{t.t("Compare it with the fingerprint mailed to platform admins each day: if one mailed earlier can't be found in the log, it was rewritten.")}</p>
           {noEmail && (
-            <p className="adm-sub">
+            <p className="cs-sub">
               {t.t("Your account has no email address, so the daily fingerprint doesn't reach you.")}{" "}
               <a href={href({ name: "settings", tab: "account" })}>{t.t("Add email")}</a>
             </p>
@@ -629,7 +629,7 @@ function Log() {
       ) : !log.data ? (
         <Loading label={t.t("Loading…")} />
       ) : log.data.length === 0 ? (
-        <p className="adm-sub adm-pad">{t.t("Nothing yet.")}</p>
+        <p className="cs-sub cs-card__note">{t.t("Nothing yet.")}</p>
       ) : (
         <Table
           columns={columns}
@@ -670,12 +670,12 @@ function Reviewers() {
   };
   const columns: Column<ListingReviewer>[] = [
     { key: "name", header: t.t("Reviewer"), cell: (r) => (
-      <span className="adm-stack">
+      <span className="cs-stack">
         <strong className="adm-inline">{r.username}{r.is_admin && <Pill tone="accent">{t.t("Platform admin")}</Pill>}</strong>
-        {r.email && <span className="adm-sub">{r.email}</span>}
+        {r.email && <span className="cs-sub">{r.email}</span>}
       </span>
     ) },
-    { key: "orgs", header: t.t("Never reviews"), wide: true, cell: (r) => r.orgs.length ? <span className="adm-sub">{r.orgs.join(", ")}</span> : <span className="adm-sub">{t.t("(no organisation)")}</span> },
+    { key: "orgs", header: t.t("Never reviews"), wide: true, cell: (r) => r.orgs.length ? <span className="cs-sub">{r.orgs.join(", ")}</span> : <span className="cs-sub">{t.t("(no organisation)")}</span> },
     { key: "remove", header: <span className="cs-sr">{t.t("Remove")}</span>, align: "end", width: "1%", cell: (r) => (
       <Button size="icon" variant="ghost" disabled={busy} onClick={() => void set(r.username, false)} aria-label={t.t("Remove {{name}} as reviewer", { name: r.username })} title={t.t("Remove as reviewer")}>
         <Trash2 size={ICON.sm} aria-hidden />
@@ -688,7 +688,7 @@ function Reviewers() {
       subtitle={t.t("Who may review listings. A reviewer never sees their own organisations' listings. Give an AI assistant an account of its own, make it a reviewer, and its API token can review and nothing else.")}
       flush={(list.data?.length ?? 0) > 0}
     >
-      <form className="adm-row adm-pad" onSubmit={(e) => { e.preventDefault(); if (username.trim()) void set(username.trim(), true); }}>
+      <form className="adm-row cs-card__note" onSubmit={(e) => { e.preventDefault(); if (username.trim()) void set(username.trim(), true); }}>
         <Field label={t.t("Username")}>
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" />
         </Field>
@@ -699,7 +699,7 @@ function Reviewers() {
       ) : !list.data ? (
         <Loading label={t.t("Loading…")} />
       ) : list.data.length === 0 ? (
-        <p className="adm-sub adm-pad">{t.t("No one reviews listings yet.")}</p>
+        <p className="cs-sub cs-card__note">{t.t("No one reviews listings yet.")}</p>
       ) : (
         <Table columns={columns} rows={list.data} rowKey={(r) => String(r.id)} caption={t.t("Reviewers")} />
       )}
@@ -763,16 +763,16 @@ function Passkeys() {
       ) : !keys.data ? (
         <Loading label={t.t("Loading…")} />
       ) : keys.data.length === 0 ? (
-        <p className="adm-sub">{t.t("You have no passkey: your decisions go in unsigned. Add one to sign them.")}</p>
+        <p className="cs-sub">{t.t("You have no passkey: your decisions go in unsigned. Add one to sign them.")}</p>
       ) : (
         <ul className="adm-passkeys">
           {keys.data.map((k) => (
             <li key={k.id} className="adm-inline">
               <KeyRound size={ICON.sm} aria-hidden />
               <strong>{k.name}</strong>
-              <span className="adm-sub" title={fmtDateTime(k.created_at, loc)}>{t.t("added {{when}}", { when: relTime(k.created_at, loc) })}</span>
+              <span className="cs-sub" title={fmtDateTime(k.created_at, loc)}>{t.t("added {{when}}", { when: relTime(k.created_at, loc) })}</span>
               {k.last_used_at && (
-                <span className="adm-sub" title={fmtDateTime(k.last_used_at, loc)}>{t.t("last signed {{when}}", { when: relTime(k.last_used_at, loc) })}</span>
+                <span className="cs-sub" title={fmtDateTime(k.last_used_at, loc)}>{t.t("last signed {{when}}", { when: relTime(k.last_used_at, loc) })}</span>
               )}
               <Button size="sm" variant="danger" icon={<Trash2 size={ICON.sm} aria-hidden />} onClick={() => void revoke(k)}>{t.t("Remove")}</Button>
             </li>
@@ -807,7 +807,7 @@ function ServedResult({ served }: { served: ServedReport }) {
   const unrecorded = served.findings.filter((f) => f.severity === "unrecorded");
   const row = (f: ServedFinding) => (
     <li key={`${f.kind}-${f.id}`}>
-      <a href={href({ name: "listing-review", kind: f.kind, id: f.id })}>{f.title}</a> <span className="adm-sub">({f.org_name})</span>
+      <a href={href({ name: "listing-review", kind: f.kind, id: f.id })}>{f.title}</a> <span className="cs-sub">({f.org_name})</span>
       {f.parts && f.parts.length > 0 && <>: {f.parts.map(part).join(", ")}</>}
     </li>
   );
@@ -829,7 +829,7 @@ function ServedResult({ served }: { served: ServedReport }) {
         </>
       )}
       {unrecorded.length > 0 && (
-        <p className="adm-sub">{t.t("{{n}} listings were for sale before review was logged, so there is no approval to compare them with.", { n: unrecorded.length })}</p>
+        <p className="cs-sub">{t.t("{{n}} listings were for sale before review was logged, so there is no approval to compare them with.", { n: unrecorded.length })}</p>
       )}
     </>
   );

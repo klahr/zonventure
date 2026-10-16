@@ -86,7 +86,7 @@ export function CatalogItemPage({ slug }: { slug: string }) {
             <h1 className="cs-title">{a.title}</h1>
             <p className="adv-hero__meta">
               {a.author && <span>{a.author}</span>}
-              <span className="adv-mono">{a.slug}</span>
+              <span className="cs-mono cs-small">{a.slug}</span>
             </p>
             {(shared || passes.length > 0) && (
               <div className="adv-hero__pills">

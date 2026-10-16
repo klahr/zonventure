@@ -143,9 +143,9 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
               <label key={a.slug} className={"evs-choice" + (a.slug === picked ? " is-on" : "") + (a.playable ? "" : " is-off")}>
                 <input type="radio" name="evs-quest-adventure" checked={a.slug === picked} disabled={!a.playable} onChange={() => setPicked(a.slug)} />
                 <AdventureCover title={a.title} src={iconOrCover(a)} />
-                <span className="evs-stack">
-                  <strong className="evs-ellipsis">{a.title}</strong>
-                  <span className="evs-muted evs-small">
+                <span className="cs-stack">
+                  <strong className="cs-ellipsis">{a.title}</strong>
+                  <span className="cs-sub">
                     {a.mine_to_edit ? t.t("yours") : CATALOG_ENABLED ? t.t("catalog") : t.t("shared")}
                     {!a.playable && ` · ${t.t("not published")}`}
                   </span>
@@ -189,7 +189,7 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
           <a href="/terms" target="_blank" rel="noopener">{t.t("Read the terms")}</a>
         </span>
       </label>
-      <p className="evs-muted evs-small">{t.t("Creating it submits the listing for review; it is in your store once approved.")}</p>
+      <p className="cs-note">{t.t("Creating it submits the listing for review; it is in your store once approved.")}</p>
       {error && <ErrorBox message={error} />}
     </Dialog>
   );

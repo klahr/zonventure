@@ -85,11 +85,11 @@ function Offer({ d, brand }: { d: DomainInfo; brand: Brand }) {
                 <Mail size={ICON.md} aria-hidden /> {price ? t.t("Get your own domain") : t.t("Contact us")}
               </a>
             ) : (
-              <span className="dm-muted">{t.t("Ask the platform's operator to turn it on for your organization.")}</span>
+              <span className="cs-sub">{t.t("Ask the platform's operator to turn it on for your organization.")}</span>
             )}
           </div>
           {d.until && !d.entitled && (
-            <p className="dm-muted">{t.t("Your own domain ended on {{date}}. Renew it to switch it back on.", { date: d.until })}</p>
+            <p className="cs-note">{t.t("Your own domain ended on {{date}}. Renew it to switch it back on.", { date: d.until })}</p>
           )}
         </div>
         <StorePreview host={example} name={brand.name || d.org_name} brand={brand} ghost />
@@ -174,7 +174,7 @@ function Setup(props: {
       key: "record",
       title: t.t("Add one DNS record"),
       done: !!dom && (dom.status === "certificate" || live),
-      body: !dom ? <p className="dm-muted">{t.t("Choose the address first.")}</p>
+      body: !dom ? <p className="cs-note">{t.t("Choose the address first.")}</p>
         : live && !dom.down_since ? (
           <details className="dm-done">
             <summary>{t.t("CNAME {{name}} → {{value}}", { name: dom.name, value: dom.value })}</summary>
@@ -186,7 +186,7 @@ function Setup(props: {
       key: "check",
       title: live ? t.t("It works") : t.t("We check it"),
       done: live,
-      body: dom ? <CheckStep dom={dom} checking={checking} onCheck={() => void runCheck(false)} /> : <p className="dm-muted">{t.t("We check it as soon as there's an address.")}</p>,
+      body: dom ? <CheckStep dom={dom} checking={checking} onCheck={() => void runCheck(false)} /> : <p className="cs-note">{t.t("We check it as soon as there's an address.")}</p>,
     },
     {
       key: "brand",
@@ -246,7 +246,7 @@ function Setup(props: {
         <aside className="dm-aside">
           <Previews host={(editing && typed) || dom?.host || `${d.suggestion}.${t.t("yourbrand.com")}`} name={brand.name || d.org_name} brand={brand} live={live} ghost={!dom} />
           {d.until && (
-            <p className="dm-muted dm-aside__note">{d.forever ? t.t("Included, with no end date.") : t.t("Included until {{date}}.", { date: d.until })}</p>
+            <p className="cs-note dm-aside__note">{d.forever ? t.t("Included, with no end date.") : t.t("Included until {{date}}.", { date: d.until })}</p>
           )}
           {dom && canEdit && (
             <Button variant="ghost" size="sm" icon={<Trash2 size={ICON.sm} />} onClick={() => void remove()}>
@@ -323,7 +323,7 @@ function AddressStep({ d, set, canEdit, editing, setEditing, onTyped }: {
 
   return (
     <form className="dm-address" onSubmit={(e) => { e.preventDefault(); void save(); }}>
-      <p className="dm-muted">{t.t("Pick a name in front of your own domain. Your main website stays exactly as it is.")}</p>
+      <p className="cs-note">{t.t("Pick a name in front of your own domain. Your main website stays exactly as it is.")}</p>
       <div className="dm-host-input" aria-invalid={!!err}>
         <label className="dm-host-input__sub">
           <span className="cs-sr">{t.t("Name in front")}</span>
@@ -340,14 +340,14 @@ function AddressStep({ d, set, canEdit, editing, setEditing, onTyped }: {
           <button type="button" key={s} className={"dm-chip" + (s === sub ? " is-on" : "")} disabled={!canEdit} onClick={() => setSub(s)}>{s}</button>
         ))}
       </div>
-      {err && <p className="dm-err" role="alert">{err}</p>}
+      {err && <p className="cs-err" role="alert">{err}</p>}
       {canEdit ? (
         <div className="dm-row">
           <Button type="submit" variant="primary" loading={busy} disabled={!sub.trim()}>{cleanApex ? t.t("Use {{host}}", { host }) : t.t("Use this address")}</Button>
           {d.domain && <Button variant="ghost" onClick={() => setEditing(false)}>{t.t("Cancel")}</Button>}
         </div>
       ) : (
-        <p className="dm-muted">{t.t("An admin of your organization sets this up.")}</p>
+        <p className="cs-note">{t.t("An admin of your organization sets this up.")}</p>
       )}
     </form>
   );
@@ -433,7 +433,7 @@ function RecordStep({ d, dom, canEdit }: { d: DomainInfo; dom: DomainState; canE
   };
   return (
     <div className="dm-record">
-      <p className="dm-muted">{t.t("Sign in where you manage {{apex}} and add this record. It's the only change needed.", { apex: dom.apex })}</p>
+      <p className="cs-note">{t.t("Sign in where you manage {{apex}} and add this record. It's the only change needed.", { apex: dom.apex })}</p>
       <div className="dm-table" role="table" aria-label={t.t("DNS record")}>
         <div className="dm-table__row" role="row">
           <span className="dm-table__k" role="rowheader">{t.t("Type")}</span>
@@ -462,7 +462,7 @@ function RecordStep({ d, dom, canEdit }: { d: DomainInfo; dom: DomainState; canE
             </button>
           ))}
         </div>
-        {provider && (guide.data ? <Steps md={guide.data} /> : guide.error ? <p className="dm-err">{guide.error}</p> : <Loading label={t.t("Loading…")} />)}
+        {provider && (guide.data ? <Steps md={guide.data} /> : guide.error ? <p className="cs-err">{guide.error}</p> : <Loading label={t.t("Loading…")} />)}
       </div>
 
       {canEdit && (
@@ -524,7 +524,7 @@ function CheckStep({ dom, checking, onCheck }: { dom: DomainState; checking: boo
           <Button size="sm" icon={<RefreshCw size={ICON.sm} className={checking ? "dm-spin" : ""} />} onClick={onCheck} disabled={checking}>
             {checking ? t.t("Checking…") : t.t("Check now")}
           </Button>
-          <span className="dm-muted">
+          <span className="cs-sub">
             {dom.checked_at ? t.t("Checked {{ago}}. We keep checking while this page is open, and every 10 minutes after.", { ago: ago(t, dom.checked_at) }) : t.t("We keep checking while this page is open, and every 10 minutes after.")}
           </span>
         </div>
@@ -610,7 +610,7 @@ function BrandStep({ profile, details, setDetails, brand, canEdit }: {
         ))}
       </ul>
       {details && <BrandDetails details={details} setDetails={setDetails} brand={brand} canEdit={canEdit} />}
-      <p className="dm-muted">
+      <p className="cs-note">
         {t.t("On your own domain players see only your name: no mention of us in pages, titles or emails. Emails go out under your name, and replies reach your contact address.")}{" "}
         {canEdit && <Button variant="link" size="sm" onClick={toBranding}>{t.t("All branding settings")}</Button>}
       </p>
@@ -680,7 +680,7 @@ function BrandDetails({ details, setDetails, brand, canEdit }: {
           <input type="url" value={edit.privacy_url} disabled={!canEdit} maxLength={500} placeholder="https://" onChange={set("privacy_url")} />
         </Field>
       </div>
-      {err && <p className="dm-err" role="alert">{err}</p>}
+      {err && <p className="cs-err" role="alert">{err}</p>}
       {canEdit && <div className="dm-row"><Button type="submit" variant="primary" loading={busy} disabled={!changed}>{t.t("Save")}</Button></div>}
     </form>
   );

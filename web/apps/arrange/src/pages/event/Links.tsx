@@ -145,7 +145,7 @@ export function LiveViewDialog({ event, onChanged, onClose }: { event: EventInfo
       }
     >
       <div className="ev-live-dlg">
-        <p className="ev-muted">{t.t("A leaderboard for the venue's big screen. Open the link on any screen — no login needed.")}</p>
+        <p className="cs-muted">{t.t("A leaderboard for the venue's big screen. Open the link on any screen — no login needed.")}</p>
         <div className="ev-row-sm"><LinkField url={url} label={t.t("Copy link")} /></div>
         <label className="ev-check">
           <input type="checkbox" checked={showMap} disabled={busy} onChange={(e) => void toggle(e.target.checked)} />

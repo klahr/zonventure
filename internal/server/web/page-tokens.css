@@ -1,8 +1,9 @@
 /* Shared design tokens, button styles, and link/focus rules for the
  * public pages (landing, pricing, manual, store, store-event, redeem,
  * privacy, terms). Pulled out of each page's inline <style> block so
- * the brand palette, typefaces, radii and the .btn / .skip-link rules
- * live in one place. 404.html stays self-contained on purpose.
+ * the brand palette, typefaces, radii, the .btn / .skip-link rules and
+ * the form parts several pages share live in one place. 404.html stays
+ * self-contained on purpose.
  *
  * @font-face declarations live in /assets/fontface.css so pages
  * that don't want the design-token block (play.html, arrange.html,
@@ -73,11 +74,13 @@
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
-  font: 16px/1.55 var(--font-body);
+  font: 16px/1.6 var(--font-body);
   color: var(--ink); background: var(--bg);
 }
 a { color: var(--accent-text); text-decoration: none; }
 a:hover { text-decoration: underline; }
+.wrap { margin: 0 auto; padding: 0 1.25rem; }
+[hidden] { display: none !important; }
 
 /* Hidden by its own height, not a fixed offset, which a taller link
    peeked out from under. */
@@ -124,9 +127,35 @@ a:focus-visible, button:focus-visible, .btn:focus-visible {
   box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .btn.primary:hover { opacity: .94; }
+.btn.primary[disabled] { opacity: .55; cursor: not-allowed; transform: none; }
 .btn.ghost {
   color: var(--ink);
   border-color: var(--border-soft);
   background: var(--surface);
 }
 .btn.ghost:hover { border-color: var(--accent); color: var(--accent-text); }
+
+/* Checkout notices (store, store-event) and the letter-language
+   picker and error line of the buy and redeem forms. */
+.toast {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-xs);
+  padding: 1rem 1.25rem;
+  margin: 0 0 1.5rem;
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+.toast.cancelled { border-left-color: var(--muted); color: var(--ink-soft); }
+.err { color: var(--danger); font-size: .9rem; min-height: 1.2em; }
+.letter-lang { border: 0; margin: 0; padding: 0; display: grid; gap: .5rem; min-width: 0; }
+.letter-lang legend { padding: 0; margin-bottom: .35rem; font-size: .85rem; color: var(--ink-soft); font-weight: 600; }
+.seg { display: flex; flex-wrap: wrap; gap: .5rem; }
+.seg label {
+  display: flex; align-items: center; gap: .45rem; padding: .6rem 1rem;
+  border: 1px solid var(--border-soft); border-radius: var(--radius-sm);
+  background: var(--bg); color: var(--ink); font-size: 1rem; font-weight: 600; cursor: pointer;
+}
+.seg label:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.seg input { margin: 0; accent-color: var(--accent); }

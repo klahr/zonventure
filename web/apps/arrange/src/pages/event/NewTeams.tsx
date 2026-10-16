@@ -221,7 +221,7 @@ export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, onClose, onDon
             <Field label={t.t("Team name prefix")}><input value={teamPrefix} onChange={(e) => setTeamPrefix(e.target.value)} /></Field>
             <Field label={t.t("Player name prefix")}><input value={playerPrefix} onChange={(e) => setPlayerPrefix(e.target.value)} /></Field>
           </div>
-          <p className="ev-muted">{t.t("Creates {{teams}} × {{players}} = {{links}}.", {
+          <p className="cs-muted">{t.t("Creates {{teams}} × {{players}} = {{links}}.", {
             teams: t.plural(T, { one: t.t("{{n}} team"), other: t.t("{{n}} teams") }),
             players: t.plural(P, { one: t.t("{{n}} player"), other: t.t("{{n}} players") }),
             links: t.plural(T * P, { one: t.t("{{n}} magic link"), other: t.t("{{n}} magic links") }),
@@ -283,14 +283,14 @@ function ImportPreview({ imported, roleLabel, rows }: { imported: { teams: Roste
               {imported.columns.map((c, i) => (
                 <tr key={i}>
                   <td>{c.label || t.t("Column {{n}}", { n: i + 1 })}</td>
-                  <td className={c.role === "ignored" ? "ev-muted" : undefined}>{roleLabel[c.role]}</td>
+                  <td className={c.role === "ignored" ? "cs-muted" : undefined}>{roleLabel[c.role]}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      {ignored && <p className="ev-muted">{t.t("Columns marked Not imported are left out. A parent's email address is never imported.")}</p>}
+      {ignored && <p className="cs-muted">{t.t("Columns marked Not imported are left out. A parent's email address is never imported.")}</p>}
       <div className="cs-table-wrap">
         <table className="cs-table">
           <caption className="cs-sr">{t.t("Teams to create")}</caption>
@@ -312,7 +312,7 @@ function ImportPreview({ imported, roleLabel, rows }: { imported: { teams: Roste
           </tbody>
         </table>
       </div>
-      {rest > 0 && <p className="ev-muted">{t.plural(rest, { one: t.t("+{{n}} more team"), other: t.t("+{{n}} more teams") })}</p>}
+      {rest > 0 && <p className="cs-muted">{t.plural(rest, { one: t.t("+{{n}} more team"), other: t.t("+{{n}} more teams") })}</p>}
     </>
   );
 }

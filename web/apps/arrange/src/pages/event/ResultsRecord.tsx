@@ -52,7 +52,7 @@ export function ResultsRecordCard({ eventId }: { eventId: number }) {
             </>
           )}
           <p>{report.sealed ? t.t("Reference code for these results, to quote if a result is ever questioned:") : t.t("Reference code so far (it is final once the event ends):")}</p>
-          <p><code className="ev-hash">{report.fingerprint || "—"}</code></p>
+          <p><code className="cs-hash">{report.fingerprint || "—"}</code></p>
         </div>
       )}
     </Card>

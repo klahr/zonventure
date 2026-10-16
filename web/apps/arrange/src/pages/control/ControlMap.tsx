@@ -169,13 +169,13 @@ export function ControlMap({ eventId, zones, teams, tracks }: { eventId: number;
   return (
     <div className="cc-map">
       {failed ? (
-        <p className="cc-muted">{t.t("Map library failed to load — check your connection.")}</p>
+        <p className="cs-muted cs-flush">{t.t("Map library failed to load — check your connection.")}</p>
       ) : (
         <div className="cc-map__frame">
           <div ref={box} className="cc-map__gl" role="region" aria-label={t.t("Map of team positions")} />
         </div>
       )}
-      {!failed && !anyPosition && <p className="cc-muted cc-map__note">{t.t("No team positions yet.")}</p>}
+      {!failed && !anyPosition && <p className="cs-muted cs-flush cc-map__note">{t.t("No team positions yet.")}</p>}
     </div>
   );
 }

@@ -108,9 +108,9 @@ export function EmailLookCard({ orgName, canEdit, brand }: { orgName: string; ca
               </button>
             ))}
           </div>
-          {!canEdit && <p className="og-blurb">{t.t("Only organization admins can change the email theme.")}</p>}
-          <p className="og-blurb">{t.t("Emails use the logo and colors from Branding above. Each event can choose its own theme.")}</p>
-          {err && <p className="og-err" role="alert">{err}</p>}
+          {!canEdit && <p className="cs-note">{t.t("Only organization admins can change the email theme.")}</p>}
+          <p className="cs-note">{t.t("Emails use the logo and colors from Branding above. Each event can choose its own theme.")}</p>
+          {err && <p className="cs-err" role="alert">{err}</p>}
         </section>
         <section className="og-section">
           <h3>{t.t("Language")}</h3>
@@ -147,7 +147,7 @@ export function EmailLookCard({ orgName, canEdit, brand }: { orgName: string; ca
           </select>
         </Field>
         </div>
-        {preview.error ? <p className="og-err" role="alert">{preview.error}</p> : <EmailPreview preview={preview.data} loading={preview.loading} from={orgName} onSendTest={() => emails.sendMeTest({ sample: kind, lang: shownLang, ...(viewed ? { theme: viewed } : {}) })} />}
+        {preview.error ? <p className="cs-err" role="alert">{preview.error}</p> : <EmailPreview preview={preview.data} loading={preview.loading} from={orgName} onSendTest={() => emails.sendMeTest({ sample: kind, lang: shownLang, ...(viewed ? { theme: viewed } : {}) })} />}
       </div>
     </div>
   );

@@ -1,18 +1,12 @@
 /* The dashboard: only what the kit lacks. */
 
-.dz .db-muted { color: var(--dz-muted); }
-.dz .db-small { font-size: var(--dz-text-sm); }
-.dz p.db-muted { margin: 0; }
-.dz .db-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.dz .db-stat { display: grid; }
-
 .dz .db-setup { display: flex; flex-direction: column; gap: var(--dz-space-2); padding: var(--dz-space-4); border: 1px dashed var(--dz-accent); border-radius: var(--dz-r-3); background: color-mix(in srgb, var(--dz-accent) 5%, var(--dz-surface)); }
 .dz .db-setup__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--dz-space-3); flex-wrap: wrap; }
 .dz .db-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--dz-space-3); }
 .dz .db-step { display: flex; align-items: flex-start; gap: var(--dz-space-3); }
 .dz .db-step__dot { display: inline-grid; place-items: center; flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--dz-surface-2); color: var(--dz-muted); font-weight: 700; font-size: var(--dz-text-sm); }
-.dz .db-step.is-done .db-step__dot { background: var(--dz-accent); color: #fff; }
-.dz .db-step__text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.dz .db-step.is-done .db-step__dot { background: var(--dz-accent); color: var(--dz-accent-ink); }
+.dz .db-step__text, .dz .db-agenda__text { display: flex; flex-direction: column; gap: var(--dz-space-0); flex: 1; min-width: 0; }
 .dz .db-step__title { font-weight: 600; color: var(--dz-ink); }
 .dz .db-step.is-done .db-step__title { color: var(--dz-muted); text-decoration: line-through; }
 .dz .db-step__cta { flex: none; }
@@ -31,7 +25,7 @@
 .dz .db-tile__value { font-size: 1.75rem; font-weight: 700; line-height: 1.1; color: var(--dz-ink); font-variant-numeric: tabular-nums; }
 .dz .db-tile--live .db-tile__value { color: var(--dz-success); }
 .dz .db-tile__label { font-weight: 600; color: var(--dz-ink-soft); }
-.dz .db-tile__hint { margin-top: 2px; font-size: var(--dz-text-sm); color: var(--dz-muted); }
+.dz .db-tile__hint { margin-top: var(--dz-space-0); font-size: var(--dz-text-sm); color: var(--dz-muted); }
 /* Phones: three compact numbers in a row rather than a stack of cards. */
 @media (max-width: 40rem) {
   .dz .db-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--dz-space-2); }
@@ -40,13 +34,6 @@
   .dz .db-tile__value { font-size: 1.5rem; }
   .dz .db-tile__label { font-size: var(--dz-text-xs); line-height: 1.3; }
 }
-
-/* Sections sit straight on the page; the cards inside carry the chrome. */
-.dz .db-section { display: flex; flex-direction: column; gap: var(--dz-space-3); }
-.dz .db-section__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--dz-space-3); }
-.dz .db-section__title { margin: 0; font-size: var(--dz-text-lg); font-weight: 700; color: var(--dz-ink); }
-.dz .db-section__more { display: inline-flex; align-items: center; gap: var(--dz-space-1); font-size: var(--dz-text-sm); font-weight: 600; color: var(--dz-accent); text-decoration: none; }
-.dz .db-section__more:hover { text-decoration: underline; }
 
 /* A card whose title link covers it; controls inside sit above that. */
 .dz .db-stretch::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
@@ -58,7 +45,7 @@
 .dz .db-live.is-paused { border-top-color: var(--dz-warning); }
 .dz .db-live:hover { transform: translateY(-1px); box-shadow: var(--dz-shadow-lg); }
 .dz .db-live__top { display: flex; align-items: center; justify-content: space-between; gap: var(--dz-space-2); margin-bottom: var(--dz-space-1); }
-.dz .db-live__state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--dz-text-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dz-success); }
+.dz .db-live__state { display: inline-flex; align-items: center; gap: var(--dz-space-1h); font-size: var(--dz-text-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dz-success); }
 .dz .db-live.is-paused .db-live__state { color: var(--dz-warning); }
 .dz .db-live__dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .dz .db-live__dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: currentColor; animation: db-pulse 1.8s ease-out infinite; }
@@ -70,7 +57,7 @@
 .dz .db-live__adv img { width: 20px; height: 20px; border-radius: var(--dz-r-1); object-fit: cover; }
 .dz .db-live__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--dz-space-2); flex-wrap: wrap; margin-top: auto; padding-top: var(--dz-space-3); }
 .dz .db-live__ctl { position: relative; z-index: 1; }
-.dz .db-meta { display: inline-flex; align-items: center; gap: 6px; font-size: var(--dz-text-sm); color: var(--dz-ink-soft); }
+.dz .db-meta { display: inline-flex; align-items: center; gap: var(--dz-space-1h); font-size: var(--dz-text-sm); color: var(--dz-ink-soft); }
 
 /* The agenda: a date tile per event, like a calendar's day view. */
 .dz .db-agenda { list-style: none; margin: 0; padding: 0; background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); box-shadow: var(--dz-shadow); }
@@ -83,10 +70,9 @@
 .dz .db-date { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: none; width: 3.25rem; height: 3.25rem; border-radius: var(--dz-r-2); background: color-mix(in srgb, var(--dz-accent) 9%, var(--dz-surface)); color: var(--dz-accent); line-height: 1; }
 .dz .db-date.is-none { color: var(--dz-muted); background: var(--dz-surface-2); }
 .dz .db-date__mon { font-size: var(--dz-text-2xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-.dz .db-date__day { font-size: 1.375rem; font-weight: 700; margin-top: 2px; }
-.dz .db-agenda__text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.dz .db-date__day { font-size: 1.375rem; font-weight: 700; margin-top: var(--dz-space-0); }
 .dz .db-agenda__name { font-weight: 700; color: var(--dz-ink); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dz .db-agenda__sub { display: flex; flex-wrap: wrap; gap: 0 6px; font-size: var(--dz-text-sm); color: var(--dz-muted); }
+.dz .db-agenda__sub { display: flex; flex-wrap: wrap; gap: 0 var(--dz-space-1h); font-size: var(--dz-text-sm); color: var(--dz-muted); }
 .dz .db-agenda__rel { font-weight: 600; color: var(--dz-ink-soft); }
 .dz .db-agenda__go { position: relative; z-index: 1; flex: none; }
 @media (max-width: 520px) {
@@ -99,8 +85,7 @@
 .dz .db-welcome { margin: 0; padding-left: 1.25rem; line-height: 1.7; }
 
 /* The lobby: its picture beside the words on a wide screen, above them on a phone. */
-.dz .db-lobby { display: flex; flex-direction: column; gap: var(--dz-space-4); }
-.dz .db-lobby__text { display: flex; flex-direction: column; gap: var(--dz-space-4); }
+.dz .db-lobby, .dz .db-lobby__text { display: flex; flex-direction: column; gap: var(--dz-space-4); }
 .dz .db-lobby__text p { margin: 0; }
 .dz .db-lobby__art { display: block; width: min(28rem, 100%); height: auto; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--dz-r-3); }
 @media (min-width: 56rem) {
