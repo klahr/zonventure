@@ -78,7 +78,7 @@ export function Book({ org, offer: offerID }: { org: string; offer: string }) {
       <h1>{offer.title}</h1>
       {offer.blurb && <p className="party-lead">{offer.blurb}</p>}
       <ul className="party-points">
-        <li>{t("Played at home, in the garden or in a park: you print the cards and hide them.")}</li>
+        <li>{t("Played at home, in the garden or in a park: you print the cards and put them out along a trail.")}</li>
         <li>{t("Each team plays on a phone. No app and no accounts.")}</li>
         <li>{t("Start whenever you like within 60 days of booking. From the first game, play as many games as you like for 14 days.")}</li>
       </ul>

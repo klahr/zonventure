@@ -416,8 +416,8 @@ function useCheckout(
             {t("Print the cards")}
           </li>
           <li>
-            <Icon name="hide" size={20} />
-            {t("Hide them")}
+            <Icon name="compass" size={20} />
+            {t("Put them out along a trail")}
           </li>
           <li>
             <Icon name="phone" size={20} />

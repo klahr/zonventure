@@ -228,7 +228,7 @@ export function TrailStart({ org }: { org: string }) {
       {!embedded && (
         <section className="party-card">
           <h1>{t("Make your own party adventure")}</h1>
-          <p className="party-lead">{t("A little adventure for your party: write the questions, hide the printed cards around the house, the garden or the park, and let the teams set off with their phones. Who wins?")}</p>
+          <p className="party-lead">{t("A little adventure for your party: write the questions, put the printed cards out along a trail in the garden or the park, and let the teams set off with their phones. Who wins?")}</p>
         </section>
       )}
       <section className="party-card">

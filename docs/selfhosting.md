@@ -7,10 +7,13 @@ admin so you can log in immediately.
 
 ```sh
 git clone https://github.com/klahr/zonventure && cd zonventure
+cp .env.example .env
 docker compose up -d
 ```
 
-That's it. The app is now serving on <http://127.0.0.1:8080>. Log in
+`.env.example` runs the release image CI publishes to ghcr.io, so
+nothing is built on your host (see [Prebuilt images](#prebuilt-images-no-build-on-the-host)
+to build from source instead). That's it. The app is now serving on <http://127.0.0.1:8080>. Log in
 at `/arrange` with **`admin` / `admin`** and change the password
 immediately. The admin is the operator: it manages organisations,
 curates the catalog and watches the system, but authors nothing and
@@ -41,8 +44,10 @@ and the bundled database is `postgres:16-alpine`.
 
 1. Pulls `postgres:16-alpine` and starts it on a private network with
    a persistent volume (`zv_pg_data`).
-2. Builds the app image from the local `Dockerfile`
-   (~30 s on first run; cached afterwards).
+2. Pulls the app image, `ghcr.io/klahr/zonventure`. Without the
+   `COMPOSE_FILE` line from `.env.example` it builds the image from
+   the local `Dockerfile` instead (a few minutes on first run; cached
+   afterwards).
 3. Starts the app once Postgres reports healthy.
 4. Runs every embedded migration on startup (idempotent).
 5. If `ZV_SEED_ADMIN` is set (default: `admin:admin`) **and** no
@@ -297,8 +302,15 @@ cp compose.override.example.yaml compose.override.yaml
 docker compose up -d
 ```
 
-Compose auto-merges `compose.override.yaml` on top of `compose.yaml`,
-adding `ZV_WEB_OVERRIDE_DIR` to the `app` env and mounting `../zonventure-web/dist` read-only at
+The `COMPOSE_FILE` line in `.env` turns off Compose's automatic merge
+of `compose.override.yaml`, so add the file to it:
+
+```sh
+COMPOSE_FILE=compose.yaml:compose.override.yaml:compose.prod.yaml
+```
+
+Without that line, Compose auto-merges `compose.override.yaml` on top
+of `compose.yaml`. Either way the override ends up adding `ZV_WEB_OVERRIDE_DIR` to the `app` env and mounting `../zonventure-web/dist` read-only at
 `/var/zv/web-override`. Edit
 `compose.override.yaml` (not the example) if your override dir lives
 elsewhere — `git pull` leaves the example in place but won't
@@ -316,13 +328,15 @@ Take a backup first (see the backup recipe in the pre-flight checklist);
 make upgrade
 ```
 
-That fetches release tags, checks out the newest one, and rebuilds the
-`app` image at that commit so `/api/version` stamps a clean version
-string. The data volume is untouched and embedded migrations run on
-next start.
+That fetches release tags, checks out the newest one, and pulls the
+image CI published for it (see [Prebuilt images](#prebuilt-images-no-build-on-the-host)).
+When you build from source, it rebuilds the `app` image at that commit
+instead, so `/api/version` stamps a clean version string. The data
+volume is untouched and embedded migrations run on next start.
 
-Equivalent without `make` (add your own `-p` / `-f` flags here if you
-start the stack with them; `make upgrade` runs plain `docker compose`):
+Equivalent without `make` when you build from source (add your own
+`-p` / `-f` flags here if you start the stack with them; `make upgrade`
+runs plain `docker compose`):
 
 ```sh
 git fetch --tags
@@ -333,15 +347,17 @@ docker compose up -d --build
 ### Prebuilt images (no build on the host)
 
 CI publishes `ghcr.io/klahr/zonventure:X.Y.Z` and `:latest` for every
-release tag. To run those instead of building, enable `compose.prod.yaml`
-in `.env`:
+release tag. `.env.example` runs those by enabling `compose.prod.yaml`:
 
 ```sh
-echo "COMPOSE_FILE=compose.yaml:compose.override.yaml:compose.prod.yaml" >> .env
+COMPOSE_FILE=compose.yaml:compose.prod.yaml
 ```
 
-Leave `compose.override.yaml` out of that list if you don't use one.
-`make upgrade` then pulls the tag's image instead of building it, so a
+An `.env` made before that line was added builds on the host; add the
+line to it. List `compose.override.yaml` in the middle if you use one.
+To build from source instead, delete the line.
+
+With it, `make upgrade` pulls the tag's image instead of building it, so a
 1 vCPU / 2 GB host is enough. It also writes `VERSION=X.Y.Z` to `.env`:
 every later `docker compose up -d` runs that release. Without the line
 Compose runs `:latest` as this host last pulled it, which can be months

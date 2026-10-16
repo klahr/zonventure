@@ -21,7 +21,7 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 )
 
-// A quiz trail on paper: the cards to hide — two to an A4 sheet, each a
+// A quiz trail on paper: the cards to put out — two to an A4 sheet, each a
 // big number, the question and its options — and the host's answer key.
 // They wear the trail's look as the creator draws it — each card's header
 // in the look's gradient, black or white text and a white number badge — and
@@ -151,18 +151,18 @@ func trailPDFWords(lang string) trailWords {
 		return trailWords{
 			card: "Fråga %d", info: "Information", writeIt: "Skriv svaret i mobilen.",
 			scan: "Skanna för att vara med", howTo: "Varje lag skannar koden med en mobil, ger sig ett namn och letar upp korten i ordning. Svaren skrivs i mobilen.",
-			hide: "Göm korten i ordning, 1 till %d, där lagen kan hitta dem.", answers: "Facit", right: "Rätt svar",
-			hideAll: "Göm alla %d korten i den ordning de är utskrivna, informationskorten också, där lagen kan hitta dem.",
-			keep:    "Till värden: göm inte det här bladet.", cardsFile: "kort", answersFile: "facit",
+			hide: "Sätt ut korten i ordning, 1 till %d, längs rundan som lagen ska gå.", answers: "Facit", right: "Rätt svar",
+			hideAll: "Sätt ut alla %d korten i den ordning de är utskrivna, informationskorten också, längs rundan som lagen ska gå.",
+			keep:    "Till värden: behåll det här bladet.", cardsFile: "kort", answersFile: "facit",
 			marks: graph.QuizChoices,
 		}
 	}
 	return trailWords{
 		card: "Question %d", info: "Information", writeIt: "Write the answer on your phone.",
 		scan: "Scan to join", howTo: "Each team scans the code with one phone, gives itself a name and finds the cards in order. Answers go on the phone.",
-		hide: "Hide the cards in order, 1 to %d, where the teams can find them.", answers: "Answer key", right: "Right answer",
-		hideAll: "Hide all %d cards in the order they are printed, the information cards too, where the teams can find them.",
-		keep:    "For the host: don't hide this sheet.", cardsFile: "cards", answersFile: "answers",
+		hide: "Put the cards out in order, 1 to %d, along the trail the teams will walk.", answers: "Answer key", right: "Right answer",
+		hideAll: "Put out all %d cards in the order they are printed, the information cards too, along the trail the teams will walk.",
+		keep:    "For the host: keep this sheet.", cardsFile: "cards", answersFile: "answers",
 		marks: []string{"A", "B", "C"},
 	}
 }

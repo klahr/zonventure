@@ -179,13 +179,13 @@ export function Host({ token }: { token: string }) {
           <section className="party-card">
             {heading(t("Cards"))}
             {party.stations.length === 0 ? (
-              <p className="zv-muted">{t("This adventure has no cards to hide.")}</p>
+              <p className="zv-muted">{t("This adventure has no cards to put out.")}</p>
             ) : (
               <>
                 <p className="zv-muted">
                   {party.stations.length === 1
-                    ? t("Print the card and hide it where the players can find it: under a cushion, behind a tree, in the letterbox.")
-                    : t("Print the {{n}} cards and hide them where the players can find them: under a cushion, behind a tree, in the letterbox. The game tells each team which card to look for next.", {
+                    ? t("Print the card and put it up where the players will pass: on a tree, a fence or the letterbox.")
+                    : t("Print the {{n}} cards and put them out in order along a trail: on a tree, a fence, the letterbox. The game tells each team which card to look for next.", {
                         n: party.stations.length,
                       })}
                 </p>

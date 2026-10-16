@@ -11,6 +11,15 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- `.env.example` runs the release image from ghcr.io (`COMPOSE_FILE`
+  with `compose.prod.yaml`), so `cp .env.example .env` and
+  `docker compose up -d` pull instead of building. Delete the line to
+  build from source; add `compose.override.yaml` to it if you use one.
+- The party creator, its host page and the cards PDF say to put the
+  cards out along a trail, not to hide them.
+
 ## [0.32.10] - 2026-10-16
 
 ### Changed

@@ -42,11 +42,12 @@ same code.
 ```sh
 git clone https://github.com/klahr/zonventure && cd zonventure
 git checkout "$(git tag --sort=-v:refname | head -1)"
+cp .env.example .env
 docker compose up -d
 ```
 
-This starts PostgreSQL and the app, runs the database migrations and
-creates a first admin. Open <http://localhost:8080/arrange> and sign in
+This pulls the release image from ghcr.io, starts PostgreSQL and the
+app, runs the database migrations and creates a first admin. Open <http://localhost:8080/arrange> and sign in
 as `admin` / `admin`; you will be asked to choose a new password.
 
 The admin runs the instance: organisations, users and the catalogue.
@@ -82,7 +83,8 @@ docker compose exec -T db pg_dump -U zv -d zv --clean --if-exists --no-owner --n
 make upgrade
 ```
 
-This checks out the newest release and rebuilds the app. Migrations run
+This checks out the newest release and pulls its image (or rebuilds
+the app, if you build from source). Migrations run
 on start and the data volume is kept. It runs plain `docker compose` in
 this directory, so if you start the stack with `-p` or `-f`, follow the
 manual steps in [docs/selfhosting.md](docs/selfhosting.md#upgrades)
