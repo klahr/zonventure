@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.1] - 2026-10-17
+
 ### Added
 
 - Gift-box partners take a contact person, a contact email and a link
