@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-10-17
+
 ### Added
 
 - `ZV_OIDC_OPEN=1` turns single sign-on into "Sign in with Google" for
