@@ -118,7 +118,8 @@ export interface SignupConfig {
   enabled: boolean;
   /** /terms and /privacy are published, so signup asks for consent. */
   legal_pages?: boolean;
-  sso?: { enabled: boolean; button_label?: string; hosted_domain?: string; login_url?: string; provider_name?: string };
+  /** open: anyone may sign in with it, so sign-up offers it too. */
+  sso?: { enabled: boolean; button_label?: string; hosted_domain?: string; login_url?: string; provider_name?: string; open?: boolean };
 }
 
 export interface VersionResponse {

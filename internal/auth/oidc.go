@@ -19,6 +19,7 @@ import (
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/metrics"
 	"github.com/klahr/zonventure/internal/orgslug"
+	"github.com/klahr/zonventure/internal/settings"
 	"github.com/klahr/zonventure/internal/tokenx"
 )
 
@@ -47,6 +48,11 @@ func isASCIIPrintable(s string) bool {
 // at that domain. Leave it empty only with a tenant-scoped issuer,
 // which already restricts who can sign in; boot logs a warning.
 //
+// Open turns the client into a plain "Sign in with Google" for
+// everyone: no domain check, no shared org, passwords keep working. A
+// Google identity signs into the account with the same verified email,
+// or, while signup is on, gets a new account in no org (findOrCreateOpenUser).
+//
 // OrgName names the organisation that JIT-provisioned users join. If
 // empty, the hosted domain (or else the issuer's host) is used. The first SSO user becomes the
 // org_admin; subsequent users join as org_member.
@@ -58,6 +64,7 @@ type OIDCConfig struct {
 	HostedDomain string
 	RedirectURL  string
 	OrgName      string
+	Open         bool
 	// ButtonLabel overrides the default "Sign in with Google" copy on
 	// the login page. Optional.
 	ButtonLabel string
@@ -89,6 +96,9 @@ func (c OIDCConfig) Validate() error {
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("oidc: ZV_OIDC_ENABLED=1 but missing %s", strings.Join(missing, ", "))
+	}
+	if c.Open && strings.TrimSpace(c.HostedDomain) != "" {
+		return errors.New("oidc: ZV_OIDC_OPEN=1 lets every domain in; unset ZV_OIDC_HOSTED_DOMAIN")
 	}
 	for _, f := range []struct{ name, value string }{
 		{"ZV_OIDC_ISSUER", c.Issuer},
@@ -208,6 +218,9 @@ func (o *OIDC) ButtonLabel() string {
 	return o.cfg.ButtonLabel
 }
 
+// Open reports whether SSO is the open, everyone-may-use mode.
+func (o *OIDC) Open() bool { return o != nil && o.cfg.Open }
+
 // HostedDomain is the Google Workspace `hd` value used both as the
 // auth-URL hint and as the post-callback enforcement check.
 func (o *OIDC) HostedDomain() string {
@@ -237,7 +250,7 @@ func (o *OIDC) ProviderName() string {
 // the password-login path to redirect SSO-bound users away from
 // password fallback.
 func (o *OIDC) MatchesHostedDomain(email string) bool {
-	if !o.Enabled() || o.cfg.HostedDomain == "" {
+	if !o.Enabled() || o.cfg.Open || o.cfg.HostedDomain == "" {
 		return false
 	}
 	at := strings.LastIndex(email, "@")
@@ -264,6 +277,10 @@ const (
 // the operator can see the audit trail without leaking which email
 // was matched.
 var ErrOIDCLinkRefused = errors.New("oidc: refusing to link existing local-password account")
+
+// ErrOIDCNoAccount: open mode found no account for the identity and
+// signup is off, so none may be made.
+var ErrOIDCNoAccount = errors.New("oidc: no account and signup is disabled")
 
 // OIDCLogin handles GET /auth/oidc/login. Generates a fresh state and
 // nonce, stores both in a short-lived HttpOnly cookie, and redirects
@@ -460,7 +477,20 @@ func (h *Handlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// JIT provision / link by email / load existing.
-	u, err := findOrCreateOIDCUser(r.Context(), h.DB, h.OIDC.cfg, claims)
+	var u User
+	if h.OIDC.cfg.Open {
+		u, err = findOrCreateOpenUser(r.Context(), h.DB, h.OIDC.cfg, claims, settings.SignupEnabled(r.Context(), h.DB))
+	} else {
+		u, err = findOrCreateOIDCUser(r.Context(), h.DB, h.OIDC.cfg, claims)
+	}
+	if errors.Is(err, ErrOIDCNoAccount) {
+		Record(r.Context(), h.DB, AuditEvent{
+			Event: EventLogin, OK: false, Username: claims.Email, IP: ip, UserAgent: ua,
+			Reason: "oidc_no_account",
+		})
+		oidcRedirectErr(w, r, "no_account")
+		return
+	}
 	if err != nil {
 		// Refused-link is its own audit class so the operator can
 		// distinguish "IdP fine, we wouldn't bind" from "IdP/DB
@@ -472,6 +502,11 @@ func (h *Handlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 				Event: EventLogin, OK: false, Username: claims.Email, IP: ip, UserAgent: ua,
 				Reason: "oidc_link_refused",
 			})
+			// Open mode's refusals point at the password, not an admin.
+			if h.OIDC.cfg.Open {
+				oidcRedirectErr(w, r, "account_exists")
+				return
+			}
 			oidcRedirectErr(w, r, "link_refused")
 			return
 		}
@@ -484,7 +519,31 @@ func (h *Handlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// SSO bypasses the local TOTP step. The IdP already enforces
+	// A personal Google account promises no second factor, so open mode
+	// asks for the user's own code as a password login would. The
+	// challenge rides in the fragment, which never reaches a server.
+	if h.OIDC.cfg.Open {
+		var totpOn bool
+		if err := h.DB.QueryRowContext(r.Context(), `SELECT totp_enabled FROM users WHERE id = $1`, u.ID).Scan(&totpOn); err != nil {
+			oidcRedirectErr(w, r, "session_failed")
+			return
+		}
+		if totpOn {
+			tok, err := IssueTOTPChallenge(r.Context(), h.DB, u.ID, ChallengeOIDC, ip, ua)
+			if err != nil {
+				oidcRedirectErr(w, r, "session_failed")
+				return
+			}
+			Record(r.Context(), h.DB, AuditEvent{
+				Event: EventLogin, OK: false, UserID: &u.ID, Username: u.Username, IP: ip, UserAgent: ua,
+				Reason: ReasonTOTPRequired,
+			})
+			http.Redirect(w, r, "/arrange#sso-totp="+url.QueryEscape(tok), http.StatusFound)
+			return
+		}
+	}
+
+	// Workspace SSO bypasses the local TOTP step. The IdP already enforces
 	// 2FA at the workspace level for the vast majority of corporate
 	// deployments, so re-prompting locally is friction without a
 	// security gain. FactorIdPPrimary on the session row records
@@ -662,6 +721,75 @@ func ensureSSOOrg(ctx context.Context, tx *sql.Tx, name string) (int64, bool, er
 		return 0, false, err
 	}
 	return orgID, true, nil
+}
+
+// findOrCreateOpenUser is open mode's account lookup: by (provider,
+// sub); else the account with the same email, when both Google and
+// the account have it verified — whoever holds the mailbox could take
+// the account through "forgot password" anyway; else, while signup is
+// on, a new account in no org, as a signup without an org name makes.
+// An invited account has no password and no verified email yet, and is
+// linked too: the invitation went to that address.
+func findOrCreateOpenUser(ctx context.Context, db *sql.DB, cfg OIDCConfig, c oidcClaims, signupOn bool) (User, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, err
+	}
+	defer tx.Rollback() //nolint:errcheck — Commit takes over on success
+
+	var userID int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT id FROM users WHERE oidc_provider = $1 AND oidc_subject = $2
+	`, cfg.ProviderName, c.Sub).Scan(&userID)
+	if err == nil {
+		return loadUserAfterOIDC(ctx, tx, userID)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return User{}, fmt.Errorf("oidc: lookup by sub: %w", err)
+	}
+
+	var (
+		hasPassword, verified bool
+		subject               sql.NullString
+	)
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, COALESCE(password_hash, '') <> '', email_verified <> 0, oidc_subject
+		FROM users WHERE LOWER(email) = LOWER($1)
+	`, c.Email).Scan(&userID, &hasPassword, &verified, &subject)
+	if err == nil {
+		// Bound to another identity already, or a password account
+		// whose owner never proved the address: not ours to take.
+		if (subject.Valid && subject.String != "") || (hasPassword && !verified) {
+			return User{}, ErrOIDCLinkRefused
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE users SET oidc_provider = $1, oidc_subject = $2, email_verified = 1 WHERE id = $3
+		`, cfg.ProviderName, c.Sub, userID); err != nil {
+			return User{}, fmt.Errorf("oidc: link existing: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return User{}, err
+		}
+		return loadUserPostCommit(ctx, db, userID)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return User{}, fmt.Errorf("oidc: lookup by email: %w", err)
+	}
+
+	if !signupOn {
+		return User{}, ErrOIDCNoAccount
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO users(username, email, email_verified, oidc_provider, oidc_subject)
+		VALUES ($1, $2, 1, $3, $4)
+		RETURNING id
+	`, c.Email, c.Email, cfg.ProviderName, c.Sub).Scan(&userID); err != nil {
+		return User{}, fmt.Errorf("oidc: insert user: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, err
+	}
+	return loadUserPostCommit(ctx, db, userID)
 }
 
 // loadUserAfterOIDC hydrates a User row inside an open tx (used after

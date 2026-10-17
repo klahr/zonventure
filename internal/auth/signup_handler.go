@@ -168,6 +168,8 @@ func (h *Handlers) SignupConfig(w http.ResponseWriter, r *http.Request) {
 			// future Microsoft Entra integration would surface as a
 			// different value here.
 			"provider_name": h.OIDC.ProviderName(),
+			// open: anyone may use it, so signup offers it too.
+			"open": h.OIDC.Open(),
 		}
 	}
 	httpx.JSON(w, http.StatusOK, resp)

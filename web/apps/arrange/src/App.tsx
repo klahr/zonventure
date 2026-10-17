@@ -27,7 +27,7 @@ export function App() {
  * repeat it. The old console's hashes (#reset?token=…) and this app's
  * (#/reset?token=…) both count.
  */
-function oneShot(): { reset?: string; changeEmail?: string; revertEmail?: string; verified?: boolean; ssoError?: string; cancelled?: boolean; deletionAt?: string } {
+function oneShot(): { reset?: string; changeEmail?: string; revertEmail?: string; verified?: boolean; ssoError?: string; ssoTOTP?: string; cancelled?: boolean; deletionAt?: string } {
   const h = location.hash.replace(/^#\/?/, "");
   // The classic console's in-app manual is the standalone page now.
   if (h === "manual") location.replace("/manual");
@@ -44,12 +44,14 @@ function oneShot(): { reset?: string; changeEmail?: string; revertEmail?: string
   if (del) return { deletionAt: decodeURIComponent(del[1]!) };
   const sso = h.match(/^sso-error=([a-z_]+)$/);
   if (sso) return { ssoError: sso[1]! };
+  const ssoTOTP = h.match(/^sso-totp=([^&]+)$/);
+  if (ssoTOTP) return { ssoTOTP: decodeURIComponent(ssoTOTP[1]!) };
   return {};
 }
 
 rememberAuthorize();
 const once = oneShot();
-if (once.changeEmail || once.revertEmail || once.verified !== undefined || once.ssoError || once.cancelled || once.deletionAt) history.replaceState(null, "", "#/");
+if (once.changeEmail || once.revertEmail || once.verified !== undefined || once.ssoError || once.ssoTOTP || once.cancelled || once.deletionAt) history.replaceState(null, "", "#/");
 
 /**
  * Route on session state alone.
@@ -64,6 +66,7 @@ function Gate() {
   const toast = useToast();
   const { state, refresh } = useSession();
   const [reset, setReset] = useState(once.reset);
+  const [ssoTOTP, setSsoTOTP] = useState(once.ssoTOTP);
 
   // The one-shot notices, once the session is known.
   const [announced, setAnnounced] = useState(false);
@@ -105,6 +108,7 @@ function Gate() {
 
   const signedIn = (note?: string) => {
     setReset(undefined);
+    setSsoTOTP(undefined);
     void refresh();
     if (note) toast.ok(note);
   };
@@ -123,7 +127,7 @@ function Gate() {
       );
 
     case "anonymous":
-      return <Login onSuccess={signedIn} />;
+      return <Login onSuccess={signedIn} {...(ssoTOTP ? { totpChallenge: ssoTOTP } : {})} />;
 
     case "authenticated":
       resumeAuthorize();
@@ -155,6 +159,8 @@ function ssoMessage(t: ReturnType<typeof useT>, code: string): string {
     email_unverified: t.t("Your identity provider didn’t mark your email as verified."),
     idp_error: t.t("The sign-in provider declined the request. Try again, or contact your admin."),
     session_expired: t.t("Sign-in took too long and the session expired. Try again."),
+    no_account: t.t("There is no account for that Google address, and sign-up is closed. Ask your organization to invite you."),
+    account_exists: t.t("An account with that email already exists. Log in with your password instead."),
     link_refused: t.t("An account already exists with that email and a local password. Sign in with your password, or ask an admin to remove your local password before signing in with SSO."),
   };
   return known[code] ?? t.t("Single sign-on failed ({{code}}). Try again, or contact your admin.", { code });

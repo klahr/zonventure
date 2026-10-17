@@ -12,7 +12,9 @@ import { errorText as messageOf } from "./ui/load.ts";
  *
  * `reset` is the token from a #/reset?token= link; the screen opens on
  * the new-password form, whether or not anyone is signed in — whoever
- * holds the link is the one who needs it.
+ * holds the link is the one who needs it. `totpChallenge` comes back
+ * from a Google sign-in for an account with two-factor on, and opens
+ * on the code form.
  */
 type Mode =
   | { kind: "login" }
@@ -24,8 +26,8 @@ type Mode =
 /** The shareable sign-up address, /app/arrange/signup, opens on the sign-up form. */
 const SIGNUP_PATH = import.meta.env.BASE_URL + "signup";
 
-export function Login({ onSuccess, resetToken }: { onSuccess: (note?: string) => void; resetToken?: string }) {
-  const [mode, setModeState] = useState<Mode>(resetToken ? { kind: "reset", token: resetToken } : location.pathname.replace(/\/$/, "") === SIGNUP_PATH ? { kind: "signup" } : { kind: "login" });
+export function Login({ onSuccess, resetToken, totpChallenge }: { onSuccess: (note?: string) => void; resetToken?: string; totpChallenge?: string }) {
+  const [mode, setModeState] = useState<Mode>(resetToken ? { kind: "reset", token: resetToken } : totpChallenge ? { kind: "totp", challenge: totpChallenge, afterReset: false } : location.pathname.replace(/\/$/, "") === SIGNUP_PATH ? { kind: "signup" } : { kind: "login" });
   const toast = useToast();
   // A notice from the link that opened the page (a failed /verify) is
   // about that page; it must not follow the user to another form.
@@ -55,7 +57,7 @@ export function Login({ onSuccess, resetToken }: { onSuccess: (note?: string) =>
       return config && !config.enabled ? (
         <LoginForm config={config} onSuccess={onSuccess} onTOTP={(challenge) => setMode({ kind: "totp", challenge, afterReset: false })} onForgot={() => setMode({ kind: "forgot" })} onSignup={() => {}} />
       ) : (
-        <SignupForm consent={config?.legal_pages !== false} onSuccess={onSuccess} onBack={toLogin} />
+        <SignupForm consent={config?.legal_pages !== false} sso={config?.sso?.enabled && config.sso.open ? config.sso : null} onSuccess={onSuccess} onBack={toLogin} />
       );
   }
 }
@@ -152,10 +154,7 @@ function LoginForm(props: { config: SignupConfig | null; onSuccess: () => void; 
       {location.hash.startsWith("#/authorize") && <p className="login__hint">{t.t("An assistant is asking for access to your account. Sign in to see what it asks for and decide.")}</p>}
       {sso && (
         <div className="login__sso">
-          <a className="btn btn--sso" href={sso.login_url || "/auth/oidc/login"}>
-            {(sso.provider_name ?? "google") === "google" && <GoogleMark />}
-            {sso.button_label || t.t("Sign in with Google")}
-          </a>
+          <SSOButton sso={sso} />
           {sso.hosted_domain && <p className="login__hint">{t.t("For @{{domain}} accounts.", { domain: sso.hosted_domain })}</p>}
           <div className="login__divider"><span>{t.t("or sign in with password")}</span></div>
         </div>
@@ -339,7 +338,18 @@ function ResetForm({ token, onSuccess, onTOTP, onForgot }: { token: string; onSu
   );
 }
 
-function SignupForm({ consent, onSuccess, onBack }: { consent: boolean; onSuccess: (note?: string) => void; onBack: () => void }) {
+/** The server's label is English ("Sign in with Google" unless the operator set one); the catalog translates it. */
+function SSOButton({ sso, label }: { sso: NonNullable<SignupConfig["sso"]>; label?: string }) {
+  const t = useT();
+  return (
+    <a className="btn btn--sso" href={sso.login_url || "/auth/oidc/login"}>
+      {(sso.provider_name ?? "google") === "google" && <GoogleMark />}
+      {label ?? t.t(sso.button_label || "Sign in with Google")}
+    </a>
+  );
+}
+
+function SignupForm({ consent, sso, onSuccess, onBack }: { consent: boolean; sso: SignupConfig["sso"] | null; onSuccess: (note?: string) => void; onBack: () => void }) {
   const t = useT();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -369,6 +379,20 @@ function SignupForm({ consent, onSuccess, onBack }: { consent: boolean; onSucces
 
   return (
     <Card sub={t.t("create account")} onSubmit={submit}>
+      {sso && (
+        <div className="login__sso">
+          <SSOButton sso={sso} {...((sso.provider_name ?? "google") === "google" ? { label: t.t("Sign up with Google") } : {})} />
+          {consent && (
+            <p className="login__hint">
+              {t.t("By continuing with Google you agree to the ")}
+              <a href="/terms" target="_blank" rel="noopener">{t.t("Terms of Service")}</a>
+              {t.t(" and ")}
+              <a href="/privacy" target="_blank" rel="noopener">{t.t("Privacy Policy")}</a>.
+            </p>
+          )}
+          <div className="login__divider"><span>{t.t("or sign up with email")}</span></div>
+        </div>
+      )}
       <label className="field">
         <span className="field__label">{t.t("Email")}</span>
         <input className="field__input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoFocus required />

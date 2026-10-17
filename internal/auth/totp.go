@@ -297,9 +297,14 @@ func RegenerateRecoveryCodes(ctx context.Context, db *sql.DB, userID int64) ([]s
 	return codes, nil
 }
 
+// ChallengeOIDC is the origin of a challenge after an open-mode
+// Google sign-in, so the session records that factor, not a password.
+const ChallengeOIDC = "oidc"
+
 // IssueTOTPChallenge stores a fresh challenge token bridging a
-// successful first-factor step (password or password-reset) to the
-// follow-up TOTP step. origin is "login" or "reset"; ConsumeChallenge
+// successful first-factor step (password, password-reset or Google)
+// to the follow-up TOTP step. origin is "login", "reset" or
+// ChallengeOIDC; ConsumeChallenge
 // returns it so the verify handler can branch on what to do after
 // a successful TOTP code.
 func IssueTOTPChallenge(ctx context.Context, db *sql.DB, userID int64, origin, ip, ua string) (string, error) {

@@ -100,6 +100,7 @@ short tour:
 | `ZV_OIDC_ISSUER` / `ZV_OIDC_CLIENT_ID` / `ZV_OIDC_CLIENT_SECRET` / `ZV_OIDC_REDIRECT_URL` | OIDC client config; required when SSO is enabled | unset |
 | `ZV_OIDC_HOSTED_DOMAIN` | Only users of this domain may sign in via SSO (Google `hd` claim, or the email domain for IdPs without `hd`). Optional; leave empty only with a tenant-scoped issuer | unset |
 | `ZV_OIDC_ORG_NAME` | Organisation that JIT-provisioned SSO users join. Defaults to `ZV_OIDC_HOSTED_DOMAIN`, else the issuer's host | unset |
+| `ZV_OIDC_OPEN` | `1` makes SSO a "Sign in with Google" for everyone instead of one workspace (see [Sign in with Google for everyone](#sign-in-with-google-for-everyone)); `ZV_OIDC_HOSTED_DOMAIN` must be empty | unset |
 | `ZV_DB_MAX_OPEN_CONNS` / `ZV_DB_MAX_IDLE_CONNS` | Postgres pool sizing; bump for managed clusters with high `max_connections` | `25` / `5` |
 | `ZV_WEB_OVERRIDE_DIR` | Path to a directory of HTML / JSON files that shadow the embedded pages; its `landing.html` and `pricing.html` turn on the public `/` and `/pricing` — see [Custom landing page](#custom-landing-page) | unset (use embedded) |
 | `ZV_CHANGELOG_URL` | Changelog that Settings → Software update fetches once a day (an outbound request) to spot new releases. Set it empty to turn the check off, or point it at a fork's `CHANGELOG.md` | unset (upstream `CHANGELOG.md` on raw.githubusercontent.com) |
@@ -651,6 +652,31 @@ a warning, since every user that issuer signs in gets an account.
    *outside* the Workspace — Google's account picker should refuse
    it; if you bypass that, the Zonventure callback rejects on the
    `hd` claim mismatch and lands on `/arrange#sso-error=domain_not_allowed`.
+
+### Sign in with Google for everyone
+
+A shared instance, where each organisation brings its own people, can
+offer Google as an alternative to passwords instead of tying sign-in to
+one workspace. Set `ZV_OIDC_OPEN=1` and leave `ZV_OIDC_HOSTED_DOMAIN` and
+`ZV_OIDC_ORG_NAME` empty. In Google Cloud Console the consent screen is
+**External**; Google asks for a privacy policy URL, the app's domain and
+a logo, and shows the app as unverified until it has reviewed them.
+
+- Login and sign-up show "Sign in with Google"; passwords keep working
+  for everyone.
+- A Google sign-in opens the account with the same email when Google
+  and the account both have the address verified — or when the account
+  is an invitation that has no password yet. An account with a password
+  and an unverified email, or one already bound to another Google
+  identity, is refused (`#sso-error=account_exists`).
+- No account for the address: while signup is on (Settings → Signup),
+  one is made in no organisation, as a sign-up without an organisation
+  name makes; while it is off, the sign-in is refused
+  (`#sso-error=no_account`). Organisations add people as before.
+- A user with two-factor on enters their code after Google: a personal
+  Google account promises no second factor of its own.
+- The redirect URI is registered with Google in advance, so the button
+  only works on the host `ZV_OIDC_REDIRECT_URL` names.
 
 ### Troubleshooting
 

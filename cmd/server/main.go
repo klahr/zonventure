@@ -310,6 +310,7 @@ func main() {
 		HostedDomain: os.Getenv("ZV_OIDC_HOSTED_DOMAIN"),
 		RedirectURL:  os.Getenv("ZV_OIDC_REDIRECT_URL"),
 		OrgName:      os.Getenv("ZV_OIDC_ORG_NAME"),
+		Open:         envTruthy("ZV_OIDC_OPEN"),
 		ButtonLabel:  os.Getenv("ZV_OIDC_BUTTON_LABEL"),
 		ProviderName: os.Getenv("ZV_OIDC_PROVIDER_NAME"),
 	}
@@ -322,7 +323,7 @@ func main() {
 	if oidcClient.Enabled() {
 		logx.Info("auth.oidc.ready", "issuer", oidcCfg.Issuer, "hosted_domain", oidcCfg.HostedDomain)
 	}
-	if oidcClient.Configured() && strings.TrimSpace(oidcCfg.HostedDomain) == "" {
+	if oidcClient.Configured() && !oidcCfg.Open && strings.TrimSpace(oidcCfg.HostedDomain) == "" {
 		logx.Warn("auth.oidc.no_hosted_domain", "msg", "ZV_OIDC_HOSTED_DOMAIN is empty: anyone the issuer signs in gets an account; use a tenant-scoped issuer or set it")
 	}
 	if oidcClient.Configured() && oidcRedirectMismatch(oidcCfg.RedirectURL, *publicURL) {

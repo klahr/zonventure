@@ -208,7 +208,28 @@
 .login__check input { margin-top: 0.2rem; }
 .login__choice { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 .login__otp { letter-spacing: 0.3em; font-variant-numeric: tabular-nums; font-size: var(--text-lg); text-align: center; }
-.btn--sso { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); text-decoration: none; background: var(--surface); border: 1px solid var(--border-soft); color: var(--ink); font-weight: 600; }
+/* Google's branding guidelines fix these colours, the type and the
+ * spacing (developers.google.com/identity/branding-guidelines): light
+ * button, dark one in the dark theme. Literals on purpose — they are
+ * Google's, not ours to theme. */
+.btn--sso:not(.dz .btn) {
+  height: 40px; padding: 0 12px; gap: 10px;
+  background: #fff; border: 1px solid #747775; color: #1f1f1f;
+  font: 500 14px / 20px "Google Sans", Roboto, Arial, sans-serif; letter-spacing: 0.25px;
+  text-decoration: none;
+}
+.btn--sso:not(.dz .btn):hover:not(:disabled) { transform: none; background: #f8f9fa; box-shadow: 0 1px 2px rgb(60 64 67 / 30%), 0 1px 3px 1px rgb(60 64 67 / 15%); }
+.btn--sso:focus-visible { outline: 2px solid #0b57d0; outline-offset: 2px; }
+.btn--sso svg { flex: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .btn--sso:not(.dz .btn) { background: #131314; border-color: #8e918f; color: #e3e3e3; }
+  :root:not([data-theme]) .btn--sso:not(.dz .btn):hover:not(:disabled) { background: #1f1f20; }
+  :root:not([data-theme]) .btn--sso svg { padding: 3px; border-radius: 50%; background: #fff; }
+}
+[data-theme="dark"] .btn--sso:not(.dz .btn) { background: #131314; border-color: #8e918f; color: #e3e3e3; }
+[data-theme="dark"] .btn--sso:not(.dz .btn):hover:not(:disabled) { background: #1f1f20; }
+/* The G stays on white, as Google's own dark button has it. */
+[data-theme="dark"] .btn--sso svg { padding: 3px; border-radius: 50%; background: #fff; }
 .login__divider { display: flex; align-items: center; gap: var(--sp-2); color: var(--muted); font-size: var(--text-xs); }
 .login__divider::before, .login__divider::after { content: ""; flex: 1; height: 1px; background: var(--border-soft); }
 .login__sso, .login__orgs { display: flex; flex-direction: column; gap: var(--sp-2); }

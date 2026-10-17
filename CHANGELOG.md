@@ -11,6 +11,16 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- `ZV_OIDC_OPEN=1` turns single sign-on into "Sign in with Google" for
+  everyone, on login and sign-up: a Google sign-in opens the account
+  with the same verified email, or makes one in no organisation while
+  signup is on. Passwords keep working, and two-factor codes are still
+  asked for.
+- Console: a session that ran out while a page was open brings up the
+  login form instead of "Login required" errors.
+
 ## [0.32.11] - 2026-10-16
 
 ### Changed

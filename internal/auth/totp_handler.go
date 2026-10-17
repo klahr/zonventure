@@ -140,7 +140,11 @@ func (h *Handlers) LoginTOTP(w http.ResponseWriter, r *http.Request) {
 	if res.User.OrgID != nil {
 		active = sql.NullInt64{Int64: *res.User.OrgID, Valid: true}
 	}
-	factors := []Factor{FactorPassword, res.Factor}
+	first := FactorPassword
+	if res.Origin == ChallengeOIDC {
+		first = FactorIdPPrimary
+	}
+	factors := []Factor{first, res.Factor}
 	token, err := CompleteLogin(r.Context(), h.DB, res.User, factors, ua, ip, active)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "session create failed")
