@@ -236,12 +236,15 @@ export function PartnerDialog({ existing, onClose, onDone }: { existing: Partner
   const [name, setName] = useState(existing?.name ?? "");
   const [fields, setFields] = useState<PartnerField[]>(existing?.fields?.length ? existing.fields : [blankField()]);
   const [hint, setHint] = useState<Record<string, string>>(existing?.hint ?? {});
+  const [contactName, setContactName] = useState(existing?.contact_name ?? "");
+  const [contactEmail, setContactEmail] = useState(existing?.contact_email ?? "");
+  const [portalURL, setPortalURL] = useState(existing?.portal_url ?? "");
   const [busy, setBusy] = useState(false);
   const setField = (i: number, patch: Partial<PartnerField>) => setFields((fs) => fs.map((f, j) => (j === i ? { ...f, ...patch } : f)));
   const langLabel = (l: string) => langName(l, t.current());
 
   const submit = async () => {
-    const body: PartnerSetup = { name: name.trim(), fields, hint };
+    const body: PartnerSetup = { name: name.trim(), fields, hint, contact_name: contactName.trim(), contact_email: contactEmail.trim(), portal_url: portalURL.trim() };
     setBusy(true);
     try {
       if (existing) await updatePartner(existing.id, body);
@@ -307,6 +310,21 @@ export function PartnerDialog({ existing, onClose, onDone }: { existing: Partner
           </Field>
         ))}
       </div>
+      <fieldset className="rd-fieldset">
+        <legend>{t.t("At the partner (optional)")}</legend>
+        <p className="cs-note">{t.t("Only your organization sees these, never buyers.")}</p>
+        <Field label={t.t("Partner portal")} hint={t.t("Where you check their codes. Each code to review links to it.")}>
+          <input type="url" maxLength={500} placeholder="https://" value={portalURL} onChange={(e) => setPortalURL(e.target.value)} />
+        </Field>
+        <div className="rd-grid">
+          <Field label={t.t("Contact person")}>
+            <input type="text" maxLength={200} autoComplete="off" value={contactName} onChange={(e) => setContactName(e.target.value)} />
+          </Field>
+          <Field label={t.t("Contact email")}>
+            <input type="email" maxLength={200} autoComplete="off" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+          </Field>
+        </div>
+      </fieldset>
     </Dialog>
   );
 }

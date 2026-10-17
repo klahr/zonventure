@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
+import { Copy, ExternalLink, Mail, Pencil, Plus, Trash2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
 import { Button, Card, Field, HelpPopover, ICON, Pill, useDialogs, useLoad, useToast } from "../../ui/index.ts";
@@ -120,6 +120,13 @@ export function PartnersCard({ partners, isOrgAdmin, reload }: { partners: Partn
                 </span>
               )}
             </div>
+            {(p.portal_url || p.contact_name || p.contact_email) && (
+              <p className="rd-partner__contact cs-sub">
+                {p.portal_url && <a href={p.portal_url} target="_blank" rel="noopener noreferrer"><ExternalLink size={ICON.xs} aria-hidden />{t.t("Partner portal")}</a>}
+                {p.contact_name && <span>{p.contact_name}</span>}
+                {p.contact_email && <a href={`mailto:${p.contact_email}`}><Mail size={ICON.xs} aria-hidden />{p.contact_email}</a>}
+              </p>
+            )}
             {products.length === 0 ? (
               <p className="cs-note cs-note--md">{t.t("No products yet: customers can't redeem this partner's codes until one points at a self-guided adventure.")}</p>
             ) : (

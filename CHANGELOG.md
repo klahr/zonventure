@@ -11,6 +11,22 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Gift-box partners take a contact person, a contact email and a link
+  to the partner's portal, for the organisation's eyes only. Each code
+  waiting for review links to the portal it is checked in.
+
+### Changed
+
+- Orders: ticket sales and the partner setup have their own tabs instead
+  of following the list on every tab.
+
+### Fixed
+
+- Editing a gift-box partner's name, codes or hint failed with "invalid
+  JSON".
+
 ## [0.33.0] - 2026-10-17
 
 ### Added

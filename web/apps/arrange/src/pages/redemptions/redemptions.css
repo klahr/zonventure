@@ -7,6 +7,8 @@
 .dz .rd-code { display: inline-flex; align-items: center; gap: var(--dz-space-1h); padding: 1px 6px; border: 1px solid var(--dz-border); border-radius: var(--dz-r-1); background: var(--dz-surface-2); color: var(--dz-ink); font-family: var(--dz-font-mono); font-size: var(--dz-text-sm); cursor: pointer; white-space: nowrap; }
 .dz .rd-code:hover { border-color: var(--dz-accent); }
 .dz .rd-code svg { color: var(--dz-muted); }
+.dz .rd-portal, .dz .rd-partner__contact a { display: inline-flex; align-items: center; gap: var(--dz-space-1h); }
+.dz .rd-partner__contact { display: flex; flex-wrap: wrap; gap: var(--dz-space-1) var(--dz-space-3); margin: 0 0 var(--dz-space-2); }
 .dz .rd-address, .dz .rd-note { white-space: pre-line; }
 .dz .rd-note { max-width: 18rem; }
 

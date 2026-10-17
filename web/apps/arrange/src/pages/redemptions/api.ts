@@ -29,6 +29,10 @@ export interface PartnerSetup {
   name: string;
   fields: PartnerField[];
   hint: Record<string, string>;
+  /** For the organisation only, never on /redeem; "" when unset. */
+  contact_name: string;
+  contact_email: string;
+  portal_url: string;
 }
 
 /** internal/admin/redemptions.go partnerDTO */
@@ -37,6 +41,9 @@ export interface Partner {
   name: string;
   fields: PartnerField[] | null;
   hint: Record<string, string> | null;
+  contact_name: string;
+  contact_email: string;
+  portal_url: string;
   enabled: boolean;
   products: PartnerProduct[] | null;
 }
@@ -50,6 +57,8 @@ export interface Redemption {
   partner_name: string;
   /** What box_number and security_code are called; null on a purchase. */
   partner_fields: PartnerField[] | null;
+  /** Where the code is checked; "" when unset or on a purchase. */
+  partner_portal_url: string;
   product_id: number;
   product_name: string;
   event_id: number;

@@ -3,6 +3,8 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
+	"net/mail"
+	"net/url"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -27,6 +29,8 @@ const (
 	maxPartnerHint   = 300
 	maxPartnerCode   = 64
 	maxPartnerFields = 2
+	maxPartnerText   = 200
+	maxPartnerURL    = 500
 )
 
 // partnerLangs are the languages a partner's labels and hint may be in:
@@ -38,6 +42,11 @@ type partnerSetup struct {
 	Name   string            `json:"name"`
 	Fields []partnerField    `json:"fields"`
 	Hint   map[string]string `json:"hint"`
+	// Who to ask at the partner, and where its codes are checked; for
+	// the organisation only, never on /redeem. All optional.
+	ContactName  string `json:"contact_name"`
+	ContactEmail string `json:"contact_email"`
+	PortalURL    string `json:"portal_url"`
 }
 
 // clean trims the setup and checks it, returning why it is unusable.
@@ -64,6 +73,23 @@ func (s *partnerSetup) clean() error {
 		}
 		if f.Min < 1 || f.Max < f.Min || f.Max > maxPartnerCode {
 			return fmt.Errorf("a code's length is between 1 and %d characters, the least no more than the most", maxPartnerCode)
+		}
+	}
+	s.ContactName = strings.TrimSpace(s.ContactName)
+	if utf8.RuneCountInString(s.ContactName) > maxPartnerText {
+		return fmt.Errorf("a contact's name is at most %d characters", maxPartnerText)
+	}
+	s.ContactEmail = strings.TrimSpace(s.ContactEmail)
+	if s.ContactEmail != "" {
+		if a, err := mail.ParseAddress(s.ContactEmail); err != nil || a.Address != s.ContactEmail || len(s.ContactEmail) > maxPartnerText {
+			return fmt.Errorf("the contact email is not a valid address")
+		}
+	}
+	s.PortalURL = strings.TrimSpace(s.PortalURL)
+	if s.PortalURL != "" {
+		u, err := url.Parse(s.PortalURL)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || len(s.PortalURL) > maxPartnerURL {
+			return fmt.Errorf("the portal link must be a web address starting with https://")
 		}
 	}
 	var err error

@@ -310,6 +310,92 @@ func TestRedemption_TrueStoryLifecycle(t *testing.T) {
 
 // Partner setup is the org admin's, the queue belongs to the org, and a
 // Live it code needs its box number.
+func TestRedemption_PartnerContact(t *testing.T) {
+	boss, _, _, _, eventID, cleanup := redemptionStack(t)
+	defer cleanup()
+
+	withContact := map[string]any{}
+	for k, v := range trueStoryPartner {
+		withContact[k] = v
+	}
+	withContact["contact_name"] = "Ann Partner"
+	withContact["contact_email"] = "ann@truestory.test"
+	withContact["portal_url"] = "https://partner.truestory.test/codes"
+	bad := map[string]any{}
+	for k, v := range withContact {
+		bad[k] = v
+	}
+	bad["portal_url"] = "javascript:alert(1)"
+	if s, e := doErr(boss, "POST", "/api/admin/partners", bad); s != 400 || e.Reason != "invalid_partner" {
+		t.Fatalf("script portal link = %d %+v, want 400 invalid_partner", s, e)
+	}
+
+	type partnerView struct {
+		ID           int64  `json:"id"`
+		ContactName  string `json:"contact_name"`
+		ContactEmail string `json:"contact_email"`
+		PortalURL    string `json:"portal_url"`
+	}
+	var partner partnerView
+	if s := boss.do("POST", "/api/admin/partners", withContact, &partner); s != 201 {
+		t.Fatalf("create partner = %d", s)
+	}
+	if partner.ContactName != "Ann Partner" || partner.ContactEmail != "ann@truestory.test" || partner.PortalURL != "https://partner.truestory.test/codes" {
+		t.Fatalf("created partner = %+v", partner)
+	}
+	var product struct {
+		ID int64 `json:"id"`
+	}
+	if s := boss.do("POST", "/api/admin/partners/"+itoa(partner.ID)+"/products",
+		map[string]any{"name": "Mystery walk", "event_id": eventID}, &product); s != 201 {
+		t.Fatalf("create product = %d", s)
+	}
+
+	// The public redeem page shows none of it.
+	buyer := newClient(t, boss.ts)
+	s, _, body := buyer.get("/api/o/testorg/redeem/options")
+	if s != 200 {
+		t.Fatalf("options = %d", s)
+	}
+	for _, private := range []string{"Ann Partner", "ann@truestory.test", "partner.truestory.test"} {
+		if strings.Contains(string(body), private) {
+			t.Errorf("redeem options leak %q: %s", private, body)
+		}
+	}
+
+	// A redemption carries the portal its code is checked in.
+	if s := buyer.do("POST", "/api/redeem", map[string]any{
+		"product_id": product.ID, "security_code": "ABCDEF123", "name": "Ada Buyer", "email": "ada@buyer.test",
+		"street_address": "Storgatan 1", "postal_code": "111 22", "city": "Stockholm", "accepted_terms": true,
+	}, nil); s != 201 {
+		t.Fatalf("redeem = %d", s)
+	}
+	var list struct {
+		Redemptions []struct {
+			PartnerPortalURL string `json:"partner_portal_url"`
+		} `json:"redemptions"`
+	}
+	if s := boss.do("GET", "/api/admin/redemptions", nil, &list); s != 200 || len(list.Redemptions) != 1 {
+		t.Fatalf("list = %d %+v", s, list)
+	}
+	if got := list.Redemptions[0].PartnerPortalURL; got != "https://partner.truestory.test/codes" {
+		t.Errorf("partner_portal_url = %q", got)
+	}
+
+	// Setting the partner up anew sets the contact too.
+	cleared := map[string]any{}
+	for k, v := range withContact {
+		cleared[k] = v
+	}
+	cleared["contact_name"], cleared["contact_email"], cleared["portal_url"] = "", "", ""
+	if s := boss.do("PATCH", "/api/admin/partners/"+itoa(partner.ID), cleared, &partner); s != 200 {
+		t.Fatalf("update partner = %d", s)
+	}
+	if partner.ContactName != "" || partner.ContactEmail != "" || partner.PortalURL != "" {
+		t.Errorf("after clearing = %+v", partner)
+	}
+}
+
 func TestRedemption_ScopingAndLiveit(t *testing.T) {
 	boss, db, httpc, orgID, eventID, cleanup := redemptionStack(t)
 	defer cleanup()

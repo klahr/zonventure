@@ -48,6 +48,11 @@ func TestPartnerSetupClean(t *testing.T) {
 	if err := s.clean(); err != nil || s.Name != "Smartbox" || len(s.Fields[0].Label) != 1 {
 		t.Fatalf("clean: %v, %+v", err, s)
 	}
+	s = ok()
+	s.ContactName, s.ContactEmail, s.PortalURL = " Ann Partner ", " ann@smartbox.test ", " https://partner.smartbox.test/codes "
+	if err := s.clean(); err != nil || s.ContactName != "Ann Partner" || s.ContactEmail != "ann@smartbox.test" || s.PortalURL != "https://partner.smartbox.test/codes" {
+		t.Fatalf("clean with contact: %v, %+v", err, s)
+	}
 	for name, bad := range map[string]func(*partnerSetup){
 		"no name":      func(s *partnerSetup) { s.Name = " " },
 		"no fields":    func(s *partnerSetup) { s.Fields = nil },
@@ -56,6 +61,10 @@ func TestPartnerSetupClean(t *testing.T) {
 		"min over max": func(s *partnerSetup) { s.Fields[0].Min = 13 },
 		"too long":     func(s *partnerSetup) { s.Fields[0].Max = maxPartnerCode + 1 },
 		"unknown lang": func(s *partnerSetup) { s.Hint = map[string]string{"xx": "?"} },
+		"bad email":    func(s *partnerSetup) { s.ContactEmail = "not an address" },
+		"named email":  func(s *partnerSetup) { s.ContactEmail = "Ann <ann@liveit.test>" },
+		"not a link":   func(s *partnerSetup) { s.PortalURL = "liveit.se/portal" },
+		"script link":  func(s *partnerSetup) { s.PortalURL = "javascript:alert(1)" },
 	} {
 		s := ok()
 		bad(&s)

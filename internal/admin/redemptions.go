@@ -53,12 +53,15 @@ type partnerProductDTO struct {
 }
 
 type partnerDTO struct {
-	ID       int64               `json:"id"`
-	Name     string              `json:"name"`
-	Fields   []partnerField      `json:"fields"`
-	Hint     map[string]string   `json:"hint"`
-	Enabled  bool                `json:"enabled"`
-	Products []partnerProductDTO `json:"products"`
+	ID           int64               `json:"id"`
+	Name         string              `json:"name"`
+	Fields       []partnerField      `json:"fields"`
+	Hint         map[string]string   `json:"hint"`
+	ContactName  string              `json:"contact_name"`
+	ContactEmail string              `json:"contact_email"`
+	PortalURL    string              `json:"portal_url"`
+	Enabled      bool                `json:"enabled"`
+	Products     []partnerProductDTO `json:"products"`
 }
 
 type redemptionDTO struct {
@@ -92,6 +95,8 @@ type redemptionDTO struct {
 	DecidedBy     string         `json:"decided_by"`
 	TeamID        int64          `json:"team_id,omitempty"`
 	TeamName      string         `json:"team_name"`
+	// PartnerPortalURL is where the code is checked; "" when unset.
+	PartnerPortalURL string `json:"partner_portal_url"`
 	// LetterLanguages are those the letter_lang may be changed to.
 	LetterLanguages []string `json:"letter_languages"`
 	// Print is what the organiser prints for it, in its letter's language.
@@ -564,7 +569,7 @@ func redemptionOrg(w http.ResponseWriter, r *http.Request, adminOnly bool) (auth
 
 func (h *Handlers) loadPartners(ctx context.Context, orgID int64, partnerID int64) ([]partnerDTO, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT p.id, p.name, p.fields, p.hint, p.enabled,
+		SELECT p.id, p.name, p.fields, p.hint, p.contact_name, p.contact_email, p.portal_url, p.enabled,
 		       COALESCE(pp.id, 0), COALESCE(pp.name, ''), COALESCE(pp.event_id, 0),
 		       COALESCE(e.name, ''), COALESCE(a.title, e.adventure_slug, ''),
 		       COALESCE(pp.team_size, 0), COALESCE(pp.enabled, FALSE)
@@ -584,7 +589,7 @@ func (h *Handlers) loadPartners(ctx context.Context, orgID int64, partnerID int6
 		var p partnerDTO
 		var pr partnerProductDTO
 		var fields, hint []byte
-		if err := rows.Scan(&p.ID, &p.Name, &fields, &hint, &p.Enabled, &pr.ID, &pr.Name, &pr.EventID,
+		if err := rows.Scan(&p.ID, &p.Name, &fields, &hint, &p.ContactName, &p.ContactEmail, &p.PortalURL, &p.Enabled, &pr.ID, &pr.Name, &pr.EventID,
 			&pr.EventName, &pr.AdventureTitle, &pr.TeamSize, &pr.Enabled); err != nil {
 			return nil, err
 		}
@@ -661,7 +666,8 @@ func (h *Handlers) CreatePartner(w http.ResponseWriter, r *http.Request) {
 	hint, _ := json.Marshal(req.Hint)
 	var id int64
 	err := h.DB.QueryRowContext(r.Context(),
-		`INSERT INTO partners(org_id, name, fields, hint) VALUES ($1, $2, $3, $4) RETURNING id`, orgID, req.Name, fields, hint).Scan(&id)
+		`INSERT INTO partners(org_id, name, fields, hint, contact_name, contact_email, portal_url) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		orgID, req.Name, fields, hint, req.ContactName, req.ContactEmail, req.PortalURL).Scan(&id)
 	if isUniqueViolation(err) {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "a partner by that name exists", "reason": "exists"})
 		return
@@ -694,7 +700,7 @@ func (h *Handlers) partnerFrom(w http.ResponseWriter, r *http.Request, orgID int
 }
 
 // UpdatePartner enables or disables a partner, or sets it up anew: a
-// name, fields and hint together. Codes already redeemed stay as typed.
+// name, fields, hint and contact together. Codes already redeemed stay as typed.
 func (h *Handlers) UpdatePartner(w http.ResponseWriter, r *http.Request) {
 	_, orgID, ok := redemptionOrg(w, r, true)
 	if !ok {
@@ -704,22 +710,32 @@ func (h *Handlers) UpdatePartner(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var req struct {
-		Enabled *bool `json:"enabled"`
-		*partnerSetup
-	}
-	if !httpx.DecodeJSON(w, r, &req) {
+	// A body with a name sets the partner up anew. Decoded twice, as
+	// encoding/json can't fill an embedded pointer to the unexported
+	// partnerSetup.
+	var raw json.RawMessage
+	if !httpx.DecodeJSON(w, r, &raw) {
 		return
 	}
-	if req.partnerSetup != nil {
-		if err := req.clean(); err != nil {
+	var req struct {
+		Enabled *bool   `json:"enabled"`
+		Name    *string `json:"name"`
+	}
+	var setup partnerSetup
+	if json.Unmarshal(raw, &req) != nil || json.Unmarshal(raw, &setup) != nil {
+		httpx.Error(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.Name != nil {
+		if err := setup.clean(); err != nil {
 			httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": err.Error(), "reason": "invalid_partner"})
 			return
 		}
-		fields, _ := json.Marshal(req.Fields)
-		hint, _ := json.Marshal(req.Hint)
+		fields, _ := json.Marshal(setup.Fields)
+		hint, _ := json.Marshal(setup.Hint)
 		_, err := h.DB.ExecContext(r.Context(),
-			`UPDATE partners SET name = $1, fields = $2, hint = $3 WHERE id = $4`, req.Name, fields, hint, id)
+			`UPDATE partners SET name = $1, fields = $2, hint = $3, contact_name = $4, contact_email = $5, portal_url = $6 WHERE id = $7`,
+			setup.Name, fields, hint, setup.ContactName, setup.ContactEmail, setup.PortalURL, id)
 		if isUniqueViolation(err) {
 			httpx.JSON(w, http.StatusConflict, map[string]string{"error": "a partner by that name exists", "reason": "exists"})
 			return
@@ -951,7 +967,7 @@ func (h *Handlers) DeletePartnerProduct(w http.ResponseWriter, r *http.Request) 
 /* ---------------- Organiser: redemptions ---------------- */
 
 const redemptionSelect = `
-	SELECT r.id, r.state, p.name, p.fields, COALESCE(r.product_id, 0), COALESCE(pp.name, r.product_name),
+	SELECT r.id, r.state, p.name, p.fields, p.portal_url, COALESCE(r.product_id, 0), COALESCE(pp.name, r.product_name),
 	       COALESCE(pp.event_id, 0), COALESCE(e.name, ''),
 	       r.box_number, r.security_code, r.name, r.email, r.street_address, r.address_2,
 	       r.postal_code, r.city, r.country, r.letter_lang, r.post_at, COALESCE(r.posted_at, ''), r.note, r.created_at,
@@ -968,7 +984,7 @@ const redemptionSelect = `
 func scanRedemption(sc interface{ Scan(...any) error }) (redemptionDTO, error) {
 	var d redemptionDTO
 	var fields []byte
-	err := sc.Scan(&d.ID, &d.State, &d.PartnerName, &fields, &d.ProductID, &d.ProductName, &d.EventID, &d.EventName,
+	err := sc.Scan(&d.ID, &d.State, &d.PartnerName, &fields, &d.PartnerPortalURL, &d.ProductID, &d.ProductName, &d.EventID, &d.EventName,
 		&d.BoxNumber, &d.SecurityCode, &d.Name, &d.Email, &d.StreetAddress, &d.Address2,
 		&d.PostalCode, &d.City, &d.Country, &d.LetterLang, &d.PostAt, &d.PostedAt, &d.Note, &d.CreatedAt,
 		&d.DecidedAt, &d.DecidedBy, &d.TeamID, &d.TeamName, &d.graphID, &d.printDelivery)

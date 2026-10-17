@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, Mail, MailCheck, Pencil, Plus, Printer } from "lucide-react";
+import { Copy, ExternalLink, Mail, MailCheck, Pencil, Plus, Printer } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { href, navigate } from "../../router.ts";
@@ -20,6 +20,9 @@ import "./redemptions.css";
 const STATES = ["pending", "to_post", "approved", "rejected", "cancelled", "all"] as const;
 const LABEL: Record<(typeof STATES)[number], string> = { pending: "Pending", to_post: "To post", approved: "Approved", rejected: "Rejected", cancelled: "Cancelled", all: "All" };
 const TONE: Record<string, Tone> = { pending: "warn", approved: "good", rejected: "bad", cancelled: "neutral", paid: "good" };
+// Beside the queue: what buyers paid (the org admin's), and the setup.
+const SECTIONS = ["sales", "partners"] as const;
+type Section = (typeof SECTIONS)[number];
 const stateLabel = (s: string) => (s === "paid" ? "Paid" : LABEL[s as (typeof STATES)[number]] ?? s);
 
 
@@ -27,14 +30,17 @@ const stateLabel = (s: string) => (s === "paid" ? "Paid" : LABEL[s as (typeof ST
 /**
  * Gift box codes redeemed on the organisation's public page. Someone
  * checks each code in the partner's own portal, then approves it (the
- * server makes a team and emails its link) or rejects it. Below, the
- * setup: which partners' codes are taken and what their products unlock.
+ * server makes a team and emails its link) or rejects it. Tabs beside
+ * the queue hold the ticket sales and the setup: which partners' codes
+ * are taken and what their products unlock.
  */
 export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
   const t = useT();
   const { state } = useSession();
-  const st = (STATES as readonly string[]).includes(tab ?? "") ? (tab as (typeof STATES)[number]) : "pending";
   const isOrgAdmin = state.status === "authenticated" && state.user.role === "org_admin";
+  const section = (SECTIONS as readonly string[]).includes(tab ?? "") && (tab !== "sales" || isOrgAdmin) ? (tab as Section) : null;
+  const st = (STATES as readonly string[]).includes(tab ?? "") ? (tab as (typeof STATES)[number]) : "pending";
+  // A section still loads the queue, for the tabs' counts.
   const list = useLoad((s) => listRedemptions(st, s), [st]);
   const partners = useLoad((s) => listPartners(s), []);
   const [adding, setAdding] = useState(false);
@@ -66,46 +72,57 @@ export function RedemptionsPage({ tab }: { tab?: string | undefined }) {
           : t.t("Gift boxes redeemed on your redeem page, and store purchases with a letter to post.")}
         actions={canAdd && <Button variant="primary" icon={<Plus size={ICON.md} aria-hidden />} onClick={() => setAdding(true)}>{t.t("Add redemption")}</Button>}
       />
-      {(total > 0 || st !== "pending") && <Tabs
+      <Tabs
         label={t.t("Orders")}
-        current={st}
-        tabs={STATES.map((s) => {
-          const n = s === "all" ? 0 : counts[s] ?? 0;
-          return { id: s, href: href({ name: "redemptions", tab: s }), label: <>{t.t(LABEL[s])}{n > 0 && <span className="cs-count">{n}</span>}</> };
-        })}
-      />}
-      {(langs.length > 1 || rows.some(printable)) && (
-        <div className="rd-toolbar">
-          {langs.length > 1 && (
-            <label className="rd-filter">
-              <span>{t.t("Envelope language")}</span>
-              <select value={langs.includes(lang) ? lang : ""} onChange={(e) => setLang(e.target.value)}>
-                <option value="">{t.t("All languages")}</option>
-                {langs.map((l) => <option key={l} value={l}>{langName(l, t.current())}</option>)}
-              </select>
-            </label>
-          )}
-          <PrintQueueButton orders={rows} reload={list.reload} />
-        </div>
-      )}
-      {list.error && !list.data ? (
-        <ErrorBox message={list.error} retry={list.reload} retryLabel={t.t("Retry")} />
-      ) : !list.data ? (
-        <Loading label={t.t("Loading…")} />
-      ) : rows.length === 0 ? (
-        <Empty title={total === 0 ? t.t("No redemptions yet.") : st === "pending" ? t.t("No redemptions waiting for review.") : st === "to_post" ? t.t("Nothing left to post.") : t.t("No redemptions here.")} {...(total === 0 ? { illustration: SPOTS.noRedemptions } : {})} />
+        current={section ?? st}
+        tabs={[
+          ...STATES.map((s) => {
+            const n = s === "all" ? 0 : counts[s] ?? 0;
+            return { id: s, href: href({ name: "redemptions", tab: s }), label: <>{t.t(LABEL[s])}{n > 0 && <span className="cs-count">{n}</span>}</> };
+          }),
+          ...(isOrgAdmin ? [{ id: "sales", href: href({ name: "redemptions", tab: "sales" }), label: t.t("Ticket sales") }] : []),
+          { id: "partners", href: href({ name: "redemptions", tab: "partners" }), label: t.t("Partners") },
+        ]}
+      />
+      {section === "sales" ? (
+        <TicketSalesCard />
+      ) : section === "partners" ? (
+        partners.error && !partners.data ? (
+          <ErrorBox message={partners.error} retry={partners.reload} retryLabel={t.t("Retry")} />
+        ) : partners.data ? (
+          <PartnersCard partners={partners.data} isOrgAdmin={isOrgAdmin} reload={partners.reload} />
+        ) : (
+          <Loading label={t.t("Loading…")} />
+        )
       ) : (
-        <ul className="cs-records">
-          {rows.map((rd) => <RedemptionItem key={`${rd.kind}-${rd.id}`} rd={rd} showState={st === "all"} reload={list.reload} />)}
-        </ul>
+        <>
+          {(langs.length > 1 || rows.some(printable)) && (
+            <div className="rd-toolbar">
+              {langs.length > 1 && (
+                <label className="rd-filter">
+                  <span>{t.t("Envelope language")}</span>
+                  <select value={langs.includes(lang) ? lang : ""} onChange={(e) => setLang(e.target.value)}>
+                    <option value="">{t.t("All languages")}</option>
+                    {langs.map((l) => <option key={l} value={l}>{langName(l, t.current())}</option>)}
+                  </select>
+                </label>
+              )}
+              <PrintQueueButton orders={rows} reload={list.reload} />
+            </div>
+          )}
+          {list.error && !list.data ? (
+            <ErrorBox message={list.error} retry={list.reload} retryLabel={t.t("Retry")} />
+          ) : !list.data ? (
+            <Loading label={t.t("Loading…")} />
+          ) : rows.length === 0 ? (
+            <Empty title={total === 0 ? t.t("No redemptions yet.") : st === "pending" ? t.t("No redemptions waiting for review.") : st === "to_post" ? t.t("Nothing left to post.") : t.t("No redemptions here.")} {...(total === 0 ? { illustration: SPOTS.noRedemptions } : {})} />
+          ) : (
+            <ul className="cs-records">
+              {rows.map((rd) => <RedemptionItem key={`${rd.kind}-${rd.id}`} rd={rd} showState={st === "all"} reload={list.reload} />)}
+            </ul>
+          )}
+        </>
       )}
-      {/* What buyers paid: billing is the org admin's. */}
-      {isOrgAdmin && <TicketSalesCard />}
-      {partners.error && !partners.data ? (
-        <ErrorBox message={partners.error} retry={partners.reload} retryLabel={t.t("Retry")} />
-      ) : partners.data ? (
-        <PartnersCard partners={partners.data} isOrgAdmin={isOrgAdmin} reload={partners.reload} />
-      ) : null}
       {adding && partners.data && (
         <AddRedemptionDialog
           partners={partners.data}
@@ -226,6 +243,11 @@ function RedemptionItem({ rd, showState, reload }: { rd: Redemption; showState: 
               {rd.security_code}<Copy size={ICON.xs} aria-hidden />
             </button>
           </span>
+          {rd.state === "pending" && rd.partner_portal_url && (
+            <a className="rd-portal cs-sub" href={rd.partner_portal_url} target="_blank" rel="noopener noreferrer">
+              <ExternalLink size={ICON.xs} aria-hidden />{t.t("Check the code in {{partner}}'s portal", { partner: rd.partner_name })}
+            </a>
+          )}
           <span className="cs-sub" title={fmtDateTime(rd.created_at, locale)}>{t.t("Received {{when}}", { when: relTime(rd.created_at, locale) })}</span>
         </div>
         )}
