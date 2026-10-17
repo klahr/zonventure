@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { ApiError } from "@zonventure/api";
 import { AlertCircle, CheckCircle2, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
+import { useSession } from "../session.tsx";
 import { errorText } from "./load.ts";
 
 interface Toast {
@@ -34,13 +35,22 @@ const LEAVE_MS = 180;
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const i18n = useT();
+  const { refresh } = useSession();
   const [list, setList] = useState<Toast[]>([]);
   const drop = useCallback((id: number) => setList((l) => l.filter((t) => t.id !== id)), []);
   const push = useCallback((tone: Toast["tone"], text: string) => {
     const id = Date.now() + Math.random();
     setList((l) => [...l.slice(-2), { id, tone, text }]);
   }, []);
-  const api: ToastApi = { ok: (t) => push("ok", t), err: (e) => push("err", typeof e === "string" ? e : e instanceof ApiError ? i18n.tError(e.code, e.message) : errorText(e)), clear: () => setList([]) };
+  const api: ToastApi = {
+    ok: (t) => push("ok", t),
+    err: (e) => {
+      // The session ran out mid-action: re-checking it brings up the login form.
+      if (e instanceof ApiError && e.isUnauthorized) void refresh();
+      push("err", typeof e === "string" ? e : e instanceof ApiError ? i18n.tError(e.code, e.message) : errorText(e));
+    },
+    clear: () => setList([]),
+  };
   return (
     <Ctx.Provider value={api}>
       {children}

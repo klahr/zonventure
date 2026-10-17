@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { NetworkError } from "@zonventure/api";
+import { ApiError, NetworkError } from "@zonventure/api";
 import { translate } from "../i18n.tsx";
+import { useSession } from "../session.tsx";
 
 export interface Load<T> {
   data: T | null;
@@ -16,7 +17,8 @@ export interface Load<T> {
  * Fetch for a page or a card. Aborts on unmount and when deps change, so
  * a slow answer for the previous id never lands on the next page.
  * A reload keeps the old data on screen — no flash of "Loading…" after
- * every save.
+ * every save. A 401 means the session ran out while the page was open:
+ * re-checking it puts the login form up instead of an error box.
  */
 export function useLoad<T>(fetcher: (signal: AbortSignal) => Promise<T>, deps: unknown[]): Load<T> {
   const [data, setData] = useState<T | null>(null);
@@ -25,6 +27,7 @@ export function useLoad<T>(fetcher: (signal: AbortSignal) => Promise<T>, deps: u
   const [tick, setTick] = useState(0);
   const ref = useRef(fetcher);
   ref.current = fetcher;
+  const { refresh } = useSession();
 
   useEffect(() => {
     const ac = new AbortController();
@@ -38,6 +41,7 @@ export function useLoad<T>(fetcher: (signal: AbortSignal) => Promise<T>, deps: u
       },
       (e: unknown) => {
         if (ac.signal.aborted) return;
+        if (e instanceof ApiError && e.isUnauthorized) void refresh();
         setError(errorText(e));
         setLoading(false);
       },
