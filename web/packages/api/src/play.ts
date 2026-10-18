@@ -93,6 +93,8 @@ export type PlayBlock = PlayBlockBody & {
   id: string;
   locked?: boolean;
   place?: PlayZone;
+  /** A compass's: the server places this phone inside its zone, as an answer would be judged. */
+  here?: boolean;
   /** How the block moves as it appears, or to catch the eye. */
   animation?: BlockAnimation;
 };

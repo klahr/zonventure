@@ -759,6 +759,18 @@ func TestBlockPlaces(t *testing.T) {
 	if g.Zones[0].Name != "Parken" {
 		t.Error("translating a view changed the graph")
 	}
+	// The compass says the phone has arrived by the server's positions,
+	// the ones an answer is judged on: a phone it has none for is not there.
+	if h := v.Blocks[1].Here; h == nil || *h {
+		t.Errorf("a phone nowhere is not at the park: %v", h)
+	}
+	if v.Blocks[0].Here != nil {
+		t.Error("only a compass says whether the phone is there")
+	}
+	tm.Viewer = &Viewer{Slot: 1, Position: &Position{Lat: 59.3, Lng: 18.0}}
+	if h := tm.View().Blocks[1].Here; h == nil || !*h {
+		t.Errorf("a phone inside the zone is at the park: %v", h)
+	}
 }
 
 // A block with a show condition is withheld, file and all, until the

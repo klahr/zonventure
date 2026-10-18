@@ -24,8 +24,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 - `{{team}}` is filled in with the team's name in the adventure's closing
   text (on the phone and the recap page), its intro in the lobby, the
-  time-up message, a crossroads' text, hints and journal entries, not
-  shown as is.
+  time-up message, a crossroads' text, hints, journal entries, role
+  cards and the organisers' messages, not shown as is.
+- The compass says "You are at …" only once the server places the
+  phone there too, so an answer given then is not refused as not
+  there; while a compass waits, the phone reports where it is every
+  few seconds.
 
 ## [0.33.1] - 2026-10-17
 

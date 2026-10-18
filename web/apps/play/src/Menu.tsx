@@ -145,7 +145,7 @@ export function Menu(props: {
                 hint={t("Everyone on the team sees the change.")}
               />
               <TeamPicture team={state.team} t={t} onSaved={props.onRenamed} />
-              {(state.view?.roles?.length ?? 0) > 0 && <Roles roles={state.view?.roles ?? []} choosing={(state.view?.blocks ?? []).some((b) => b.kind === "roles" && b.choose && !b.locked)} t={t} onChanged={props.onRenamed} />}
+              {(state.view?.roles?.length ?? 0) > 0 && <Roles roles={state.view?.roles ?? []} choosing={(state.view?.blocks ?? []).some((b) => b.kind === "roles" && b.choose && !b.locked)} t={t} teamName={state.team.name} onChanged={props.onRenamed} />}
 
               <Files files={state.event.files ?? []} t={t} locale={i18n.current()} />
 
@@ -230,7 +230,7 @@ export function Menu(props: {
  * chosen role is theirs until they give it back, which the team sorts
  * out aloud.
  */
-function Roles(props: { roles: play.RoleView[]; choosing: boolean; t: Translate; onChanged: () => void }) {
+function Roles(props: { roles: play.RoleView[]; choosing: boolean; t: Translate; teamName: string; onChanged: () => void }) {
   const { roles, t } = props;
   const final = roles.some((r) => r.final);
   return (
@@ -240,6 +240,7 @@ function Roles(props: { roles: play.RoleView[]; choosing: boolean; t: Translate;
       <RoleCards
         roles={roles}
         t={t}
+        teamName={props.teamName}
         // On a step where the players choose, a role nobody chose is Free, as the step shows it.
         dealt={!props.choosing}
         onChoose={async (role, claim) => {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { play } from "@zonventure/api";
-import { Markdown, MarkdownInline, Sheet, type Translate } from "@zonventure/play-ui";
+import { Markdown, MarkdownInline, Sheet, fillTeam, type Translate } from "@zonventure/play-ui";
 
 /** How long a new message's banner shows in full before it folds to one line. */
 const FOLD_MS = 8000;
@@ -12,7 +12,7 @@ const FOLD_MS = 8000;
  *
  * Read is remembered per team on this phone, as the newest id seen.
  */
-export function Inbox({ messages, teamID, t, locale }: { messages: play.EventMessage[]; teamID: number; t: Translate; locale: string }) {
+export function Inbox({ messages, teamID, teamName, t, locale }: { messages: play.EventMessage[]; teamID: number; teamName: string; t: Translate; locale: string }) {
   const key = `zv-inbox-seen-${teamID}`;
   const [seen, setSeen] = useState(() => {
     try {
@@ -101,7 +101,7 @@ export function Inbox({ messages, teamID, t, locale }: { messages: play.EventMes
         <div className={"app-inbox__banner" + (compact ? " app-inbox__banner--folded" : "")} role="status">
           <button type="button" className="app-inbox__open" onClick={compact ? () => setUnfolded(banner.id) : show} {...(compact ? { "aria-expanded": false } : {})}>
             <span className="app-inbox__from">{t("Message from the organisers")}</span>
-            <MarkdownInline className="app-inbox__preview" text={banner.text} />
+            <MarkdownInline className="app-inbox__preview" text={fillTeam(banner.text, { teamName })} />
           </button>
           <button type="button" className="app-inbox__close" onClick={() => setDismissed(newest)} aria-label={t("Hide")}>
             ×
@@ -118,7 +118,7 @@ export function Inbox({ messages, teamID, t, locale }: { messages: play.EventMes
                 messages.map((m) => (
                   <article key={m.id} className="app-inbox__msg">
                     <time dateTime={m.created_at}>{when(m.created_at)}</time>
-                    <Markdown text={m.text} />
+                    <Markdown text={fillTeam(m.text, { teamName })} />
                   </article>
                 ))
               )}

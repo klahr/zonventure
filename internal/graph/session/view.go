@@ -244,7 +244,10 @@ type StartOption struct {
 // a zone). Show itself is never sent: the condition is the author's.
 type BlockView struct {
 	graph.Block
-	Place         *graph.Zone   `json:"place,omitempty"`
+	Place *graph.Zone `json:"place,omitempty"`
+	// Here is a compass's: whether the phone asking is inside its zone,
+	// by the same positions an answer is judged on, not the phone's own.
+	Here          *bool         `json:"here,omitempty"`
 	Locked        bool          `json:"locked,omitempty"`
 	EndsAt        *time.Time    `json:"ends_at,omitempty"`
 	CounterValues []CounterView `json:"counter_values,omitempty"`
@@ -457,6 +460,10 @@ func (t *Team) setBlocks(v *View, n graph.Node) {
 		switch b.Kind {
 		case graph.BlockCompass, graph.BlockMap, graph.BlockRadar:
 			bv.Place = t.zoneBySlug(b.Zone)
+			if b.Kind == graph.BlockCompass && bv.Place != nil {
+				here := t.Here(b.Zone)
+				bv.Here = &here
+			}
 		case graph.BlockCountdown:
 			from := t.nodeClock()
 			if b.From == "start" {

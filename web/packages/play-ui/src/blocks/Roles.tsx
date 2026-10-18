@@ -21,6 +21,8 @@ export function RoleCards(props: {
   dealt?: boolean;
   disabled?: boolean;
   onChoose?: ((role: string, claim: boolean) => Promise<void>) | undefined;
+  /** The team's name, for {{team}} in a role's text. */
+  teamName?: string | undefined;
 }) {
   const { roles, t, dealt } = props;
   const [busy, setBusy] = useState<string | null>(null);
@@ -102,7 +104,7 @@ export function RoleCards(props: {
           {told.map((r) => (
             <div key={r.slug}>
               <strong>{r.name || r.slug}</strong>
-              <Markdown className="pv-roles__text" text={r.text ?? ""} />
+              <Markdown className="pv-roles__text" text={fillTeam(r.text, { teamName: props.teamName })} />
             </div>
           ))}
         </div>
@@ -127,14 +129,14 @@ export const RolesBlock: Renderer<"roles"> = ({ block, ctx }) => {
   if (!roles.length) {
     body = <p className="pv-vote__note">{t("Each player sees their roles here on their own phone in a live event.")}</p>;
   } else if (choosing) {
-    body = <RoleCards roles={roles} t={t} disabled={!!ctx.busy} onChoose={ctx.claimRole} />;
+    body = <RoleCards roles={roles} t={t} disabled={!!ctx.busy} onChoose={ctx.claimRole} teamName={ctx.teamName} />;
   } else if (block.team) {
     // Every player's. A secret role stays off this list, even on its own
     // player's phone: someone may be looking.
-    body = <RoleCards roles={roles.filter((r) => !r.secret && (r.holder || r.default))} t={t} dealt />;
+    body = <RoleCards roles={roles.filter((r) => !r.secret && (r.holder || r.default))} t={t} dealt teamName={ctx.teamName} />;
   } else {
     const mine = roles.filter((r) => r.mine);
-    body = mine.length ? <RoleCards roles={mine} t={t} dealt /> : <p className="pv-vote__note">{t("You have no role.")}</p>;
+    body = mine.length ? <RoleCards roles={mine} t={t} dealt teamName={ctx.teamName} /> : <p className="pv-vote__note">{t("You have no role.")}</p>;
   }
 
   return (

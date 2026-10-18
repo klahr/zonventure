@@ -64,7 +64,9 @@ export function CompassBlock({ block, ctx }: { block: Of<"compass">; ctx: BlockC
   if (!place) return null;
 
   const target = position ? bearing(position.lat, position.lng, place.lat, place.lng) : null;
-  const there = !!position && (place.polygon?.length ?? 0) < 3 && metresBetween(position.lat, position.lng, place.lat, place.lng) <= place.radius_m;
+  // Arrived only once the server agrees: its positions, not this fix,
+  // decide an answer, and they lag the phone by a ping or two.
+  const there = !!position && (place.polygon?.length ?? 0) < 3 && metresBetween(position.lat, position.lng, place.lat, place.lng) <= place.radius_m && block.here !== false;
   if (target != null) turn.current = nearestTurn(turn.current, target - (heading ?? 0));
 
   return (

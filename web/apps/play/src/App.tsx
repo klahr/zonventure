@@ -158,7 +158,7 @@ export function App() {
   };
   const geo = useGeo(
     game.status === "ready" && running && !view?.finished && !showIntro && usesLocation && shareLocation,
-    (!!view?.zone && !view.here) || !!view?.starts?.some((o) => o.zone && !o.here) || view?.input?.kind === "search" || !!view?.watch_position,
+    (!!view?.zone && !view.here) || !!view?.starts?.some((o) => o.zone && !o.here) || view?.input?.kind === "search" || !!view?.watch_position || !!view?.blocks?.some((b) => b.kind === "compass" && b.here === false),
     game.refresh,
   );
   useRecheck(view, game.refresh);
@@ -283,7 +283,7 @@ export function App() {
               {[!game.online ? t("Offline") : null, game.queued > 0 ? t("{{n}} waiting to send", { n: game.queued }) : null].filter(Boolean).join(" · ")}
             </span>
           )}
-          <Inbox messages={s.messages ?? []} teamID={s.team.id} t={t} locale={i18n.current()} />
+          <Inbox messages={s.messages ?? []} teamID={s.team.id} teamName={s.team.name} t={t} locale={i18n.current()} />
         </header>
       </div>
       <main className="app-main" ref={mainRef} tabIndex={-1}>
