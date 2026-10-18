@@ -10,7 +10,7 @@ import { JournalNotes, useUnreadNotes } from "./Journal.tsx";
 import { MediaList } from "./Media.tsx";
 import { Blocks } from "./blocks/index.tsx";
 import { QuizResult } from "./blocks/Quiz.tsx";
-import type { BlockContext, Motion } from "./blocks/context.ts";
+import { fillTeam, type BlockContext, type Motion } from "./blocks/context.ts";
 import type { MapPoint } from "./StaticMap.tsx";
 import { QrButton, canScan } from "./Qr.tsx";
 import { brandVars, isHex, loadFont, withTheme } from "./brand.ts";
@@ -283,12 +283,12 @@ export function PlayView(props: PlayViewProps) {
             /* private mode: shown again after a reload */
           }
         }}>
-          <Markdown className="pv-text" text={view.time_up_text || t("The time for this adventure has run out.")} />
+          <Markdown className="pv-text" text={fillTeam(view.time_up_text, { teamName: props.teamName }) || t("The time for this adventure has run out.")} />
         </Sheet>
       )}
       {journalOpen && (
         <Sheet title={t("Journal")} t={t} onClose={() => setJournalOpen(false)}>
-          <JournalNotes journal={view.journal ?? []} storageKey={storageKey} t={t} />
+          <JournalNotes journal={view.journal ?? []} storageKey={storageKey} t={t} teamName={props.teamName} />
         </Sheet>
       )}
       {burst && <BurstOverlay burst={burst} style={brand?.style} />}
@@ -958,7 +958,7 @@ function HintSheet(props: StepProps & { onClose: () => void }) {
           {view.hints?.map((h, i) => (
             <div key={i} className="pv-hint">
               <div className="pv-hint__n">{t("Hint {{n}}", { n: i + 1 })}</div>
-              <Markdown text={h.text} />
+              <Markdown text={fillTeam(h.text, { teamName: props.teamName })} />
               <MediaList media={h.media} />
             </div>
           ))}
@@ -1052,13 +1052,13 @@ function ContinueButton({ view, t, disabled, label, onClick }: { view: play.View
   );
 }
 
-function HubStep({ view, t, busy, onAction, feedback }: StepProps) {
+function HubStep({ view, t, busy, onAction, feedback, teamName }: StepProps) {
   const node = view.node ?? "";
   const offer = view.offer ?? [];
   return (
     <>
       <Title view={view} />
-      {view.text ? <Markdown className="pv-text" text={view.text} /> : <p className="pv-text">{t("Choose where to go next.")}</p>}
+      {view.text ? <Markdown className="pv-text" text={fillTeam(view.text, { teamName })} /> : <p className="pv-text">{t("Choose where to go next.")}</p>}
       <ul className="pv-offer">
         {offer.map((o, i) => (
           <li key={o.port}>
@@ -1235,7 +1235,7 @@ function EndStep(props: StepProps) {
       <Blocks blocks={view.blocks} {...blockContext(props)} />
       {view.quiz && <QuizResult quiz={view.quiz} t={t} />}
       {view.reveal?.some((r) => r.dealt) && <Reveal reveal={view.reveal} t={t} />}
-      {outro && <Markdown className="pv-text" text={outro} />}
+      {outro && <Markdown className="pv-text" text={fillTeam(outro, { teamName: props.teamName })} />}
       {held && (
         <p className="pv-summary__held">
           {finish?.provisional === false ? t("The game is finished. See how you did!") : t("Your points and place are revealed when the game is finished.")}

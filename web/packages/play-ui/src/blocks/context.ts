@@ -64,7 +64,7 @@ export type Of<K extends play.PlayBlock["kind"]> = play.PlayBlock & { kind: K };
 export type Renderer<K extends play.PlayBlock["kind"]> = (p: { block: Of<K>; ctx: BlockContext }) => ReactNode;
 
 /** A text with {{team}} filled in; the server fills the rest. */
-export function fillTeam(s: string | undefined, ctx: BlockContext): string {
+export function fillTeam(s: string | undefined, ctx: Pick<BlockContext, "teamName">): string {
   // An empty field is left out of what the server sends.
   const text = s ?? "";
   return ctx.teamName ? text.replace(/\{\{\s*team\s*\}\}/g, ctx.teamName) : text;

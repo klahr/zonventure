@@ -11,6 +11,13 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed
+
+- `{{team}}` is filled in with the team's name in the adventure's closing
+  text (on the phone and the recap page), its intro in the lobby, the
+  time-up message, a crossroads' text, hints and journal entries, not
+  shown as is.
+
 ## [0.33.1] - 2026-10-17
 
 ### Added

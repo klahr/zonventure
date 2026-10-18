@@ -3,6 +3,7 @@ import type { play } from "@zonventure/api";
 import type { Translate } from "./feedback.ts";
 import { Markdown } from "./Markdown.tsx";
 import { MediaList } from "./Media.tsx";
+import { fillTeam } from "./blocks/context.ts";
 
 /**
  * Which notes a team has already opened the journal on, kept on the phone
@@ -43,7 +44,7 @@ export function useUnreadNotes(journal: play.JournalView[] | undefined, storageK
  * Notes new since the journal was last opened are marked; opening it
  * marks everything read.
  */
-export function JournalNotes({ journal, storageKey, t }: { journal: play.JournalView[]; storageKey: string; t: Translate }) {
+export function JournalNotes({ journal, storageKey, t, teamName }: { journal: play.JournalView[]; storageKey: string; t: Translate; teamName?: string | undefined }) {
   // Taken once, when the sheet opens, so "new" does not vanish mid-read.
   const [fresh] = useState(() => {
     const seen = readSeen(storageKey);
@@ -76,7 +77,7 @@ export function JournalNotes({ journal, storageKey, t }: { journal: play.Journal
                 </h4>
               )}
               <MediaList media={j.media} />
-              {j.body && <Markdown text={j.body} />}
+              {j.body && <Markdown text={fillTeam(j.body, { teamName })} />}
             </article>
           ))}
         </section>

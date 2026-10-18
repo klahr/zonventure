@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -131,6 +132,9 @@ type recapTrack struct {
 	TS  string  `json:"ts"`
 }
 
+// teamToken is {{team}} in the outro, the team's name on the phone too.
+var teamToken = regexp.MustCompile(`\{\{\s*team\s*\}\}`)
+
 // Recap serves the JSON for /api/public/recap/{token}. The HTML
 // page at /recap/{token} fetches this on load and renders it
 // client-side; both endpoints share the same visibility gate.
@@ -194,7 +198,7 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 		// innerHTML and the author's markdown actually renders. Same
 		// goldmark pipeline puzzle prompts and the player intro/outro
 		// already use.
-		OutroText: mdx.Render(adv.Meta.OutroText),
+		OutroText: mdx.Render(teamToken.ReplaceAllLiteralString(adv.Meta.OutroText, teamName)),
 		StartedAt: startedAt.String,
 		State:     state,
 	}

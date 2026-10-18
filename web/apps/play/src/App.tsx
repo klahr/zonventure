@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { FitMap, Markdown, PlayView, Sheet, StartCeremony, coverOf, brandVars, formatSeconds, loadFont, metresBetween, useEngineClock, withTheme, type Translate } from "@zonventure/play-ui";
+import { FitMap, Markdown, fillTeam, PlayView, Sheet, StartCeremony, coverOf, brandVars, formatSeconds, loadFont, metresBetween, useEngineClock, withTheme, type Translate } from "@zonventure/play-ui";
 import { play, siteName } from "@zonventure/api";
 import { SPOTS } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
@@ -381,7 +381,7 @@ function Lobby({ state, t, locale, usesLocation }: { state: play.PlayState; t: T
           <span className="pv-countdown__time">{startsIn <= 0 ? t("Any moment now.") : formatSeconds(startsIn)}</span>
         </div>
       )}
-      {state.event.intro_text && <Markdown className="app-lobby__intro" text={state.event.intro_text} />}
+      {state.event.intro_text && <Markdown className="app-lobby__intro" text={fillTeam(state.event.intro_text, { teamName: state.team.name })} />}
       {state.event.start && (
         <p className="app-lobby__start">
           <strong>{t("Meet at")}</strong>{" "}
@@ -499,7 +499,7 @@ function Intro({ state, t, usesLocation, onDone, onRenamed }: { state: play.Play
           ? t("You're playing as {{name}} on team {{team}}.", { name, team: state.team.name })
           : t("Your team: {{team}}", { team: state.team.name })}
       </p>
-      {state.event.intro_text && <Markdown className="app-lobby__intro" text={state.event.intro_text} />}
+      {state.event.intro_text && <Markdown className="app-lobby__intro" text={fillTeam(state.event.intro_text, { teamName: state.team.name })} />}
       {/* Until it begins, the team can swap a given name such as "Team 2" for its own. */}
       {own && !state.team.locked && (
         <div className="app-lobby__name">
