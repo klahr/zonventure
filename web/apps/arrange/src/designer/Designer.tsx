@@ -1164,7 +1164,7 @@ export function Designer({ slug }: { slug: string }) {
     // Saved first: renaming the adventure moves its draft along with it.
     { label: t.t("Edit details"), icon: <Pencil size={ICON.sm} />, onClick: () => void (async () => { if (unsaved && !(await saveNow())) return; setDetailsOpen(true); })() },
     { label: t.t("Adventure settings"), icon: <Settings size={ICON.sm} />, onClick: () => openSettings() },
-    { label: t.t("Themes"), icon: <Palette size={ICON.sm} />, onClick: () => openThemes() },
+    { label: t.t("Theme"), icon: <Palette size={ICON.sm} />, onClick: () => openSettings("look") },
     { label: t.t("Translations"), icon: <Languages size={ICON.sm} />, onClick: () => setTranslating(editLang) },
     { label: t.t("Print materials"), icon: <Printer size={ICON.sm} />, onClick: () => openSettings("print") },
     { label: t.t("Play the draft on my phone"), icon: <Smartphone size={ICON.sm} />, onClick: () => setDevOpen(true) },

@@ -942,6 +942,9 @@ func checkResources(r *reporter, g *graph.Graph) {
 		if strings.TrimSpace(th.Name) == "" {
 			r.err("theme.name.missing", "", "", "saved theme %q has no name", th.Slug)
 		}
+		if th.Starter != "" && !starterID.MatchString(th.Starter) {
+			r.err("theme.starter.invalid", "", "", "saved theme %q: starter %q is not a starter theme's id", th.Slug, th.Starter)
+		}
 		if err := th.Look.Validate(); err != nil {
 			r.err("theme.look.invalid", "", "", "saved theme %q: %s", th.Slug, err.Error())
 		}
@@ -1734,6 +1737,10 @@ func unMorse(s string) string {
 }
 
 var hostSlug = regexp.MustCompile(`^[\w-]+$`)
+
+// starterID bounds a theme's starter: the ids are play-ui's, as a party
+// adventure's trail_theme.
+var starterID = regexp.MustCompile(`^[a-z0-9-]{1,40}$`)
 
 // checkHostEdits covers what a party's host may change: host values
 // need a slug a text can name, once each, and a question to ask; a

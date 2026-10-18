@@ -422,7 +422,7 @@ func (h *Handlers) PublishAdventureGraphVersion(w http.ResponseWriter, r *http.R
 
 // adoptMainTheme makes the main theme of g, just published, the
 // adventure's look: the one the store, emails and the pages before play
-// show. A new cover waits for review as when set by hand. A graph
+// show, with its starter's cover picture. A new cover waits for review as when set by hand. A graph
 // without a main theme leaves the look as it is.
 func (h *Handlers) adoptMainTheme(ctx context.Context, advID int64, g *graph.Graph) {
 	th := g.Theme(g.MainTheme)
@@ -433,6 +433,9 @@ func (h *Handlers) adoptMainTheme(ctx context.Context, advID int64, g *graph.Gra
 	err := h.DB.QueryRowContext(ctx, `SELECT slug FROM adventures WHERE id = $1`, advID).Scan(&slug)
 	if err == nil {
 		_, err = applyAdventureMetaUpdate(ctx, h.DB, slug, lookUpdate(th.Look))
+	}
+	if err == nil {
+		_, err = h.DB.ExecContext(ctx, `UPDATE adventures SET trail_theme = $2 WHERE id = $1`, advID, th.Starter)
 	}
 	if err != nil {
 		logx.Warn("admin.graph.main_theme", "adventure_id", advID, "err", err.Error())

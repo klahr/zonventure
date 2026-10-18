@@ -1125,6 +1125,10 @@ type Theme struct {
 	Slug string    `json:"slug"`
 	Name string    `json:"name"`
 	Look look.Look `json:"look"`
+	// Starter is the starter theme (play-ui STARTER_THEMES) the look was
+	// picked from, for its cover picture: the main theme's becomes the
+	// adventure's trail_theme on publish.
+	Starter string `json:"starter,omitempty"`
 }
 
 // Theme is the saved theme with this slug, or nil.

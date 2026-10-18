@@ -11,6 +11,17 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed
+
+- Designer: changing an adventure's theme switches to it. Adventure
+  settings → Theme (also More → Theme) shows the theme players see:
+  Change theme… puts another in its place — the default, the
+  organisation's or a starter — and Customize… edits it. Before, a
+  picked theme was only added beside it, so the old look (falling
+  stars and all) stayed. Themes that steps switch to are listed below.
+- A starter theme's cover picture now comes with it for a designer
+  adventure too, once published, as the gallery shows.
+
 ## [0.33.5] - 2026-10-18
 
 ### Changed

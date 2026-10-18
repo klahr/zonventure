@@ -88,6 +88,8 @@ export interface Theme {
   slug: string;
   name: string;
   look: ThemeLook;
+  /** The starter theme the look was picked from, for its cover picture. */
+  starter?: string;
 }
 
 /** The built-in themes a theme effect may name: graph.Themes. */

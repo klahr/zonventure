@@ -9,7 +9,7 @@ import { href } from "../../router.ts";
 import { Button, Dialog, Field, HelpPopover, useToast } from "../../ui/index.ts";
 import { PointMap } from "../../designer/PointMap.tsx";
 import { PhoneFrame, usePhoneT } from "../../designer/SamplePreview.tsx";
-import { StarterGallery } from "../../designer/StarterGallery.tsx";
+import { StarterGallery, starterOf } from "../../designer/StarterGallery.tsx";
 import { saveTutorial } from "../../designer/tutorial.ts";
 import { createAdventure, orgName, updateAdventure } from "./api.ts";
 import { slugFrom, useGuardedClose } from "./dialogs.tsx";
@@ -304,7 +304,12 @@ function firstGraph(title: string, welcome: string, language: string, theme: { i
       { from: "welcome", from_port: "out", to: "end" },
     ],
     language,
-    themes: [{ slug: "main", name: theme.id === "default" || !theme.name ? (language.startsWith("sv") ? "Huvudtema" : "Main theme") : theme.name, look: theme.id === "default" ? {} : theme.look }],
+    themes: [{
+      slug: "main",
+      name: theme.id === "default" || !theme.name ? (language.startsWith("sv") ? "Huvudtema" : "Main theme") : theme.name,
+      look: theme.id === "default" ? {} : theme.look,
+      ...(starterOf(theme.id, theme.look) ? { starter: starterOf(theme.id, theme.look) } : {}),
+    }],
     main_theme: "main",
   } as Graph;
 }

@@ -1294,16 +1294,18 @@
   "Not saved": "Inte sparat",
   "Live now: version {{n}}, “{{label}}”.": "Spelas nu: version {{n}}, ”{{label}}”.",
   "Live now: version {{n}}, without a name.": "Spelas nu: version {{n}}, utan namn.",
-  "Add theme…": "Lägg till tema …",
-  "In Adventure settings, under Theme, press Add theme… to pick another look, and Make main to show it to players. Press Edit beside a theme to change its colours, background or cover picture. Players see the changes when you publish.": "I Äventyrsinställningar, under Tema, trycker du på Lägg till tema … för att välja ett annat utseende och Gör till huvudtema för att visa det för spelarna. Tryck på Redigera vid ett tema för att ändra dess färger, bakgrund eller omslagsbild. Spelarna ser ändringarna när du publicerar.",
   "Make main": "Gör till huvudtema",
   "Not used yet": "Används inte än",
   "Players see the main theme wherever no step changes the theme": "Spelarna ser huvudtemat överallt där inget steg byter tema",
-  "Players see the main theme wherever no step changes the theme. Changes to themes reach players when you publish.": "Spelarna ser huvudtemat överallt där inget steg byter tema. Ändringar i teman når spelarna när du publicerar.",
   "The main theme: players see it wherever no step changes the theme, once you publish.": "Huvudtemat: spelarna ser det överallt där inget steg byter tema, när du har publicerat.",
   "This is the main theme. Make another one main first.": "Det här är huvudtemat. Gör ett annat tema till huvudtema först.",
-  "Under Theme, add a theme and make it the main one.": "Under Tema lägger du till ett tema och gör det till huvudtema.",
   "Used by {{n}} step": "Används av {{n}} steg",
   "Used by {{n}} steps": "Används av {{n}} steg",
-  "{{name}} (main)": "{{name}} (huvudtema)"
+  "{{name}} (main)": "{{name}} (huvudtema)",
+  "Change theme…": "Byt tema …",
+  "Customize…": "Anpassa …",
+  "In Adventure settings, under Theme, press Change theme… to pick another look, or Customize… to change its colours, background or cover picture. Players see the changes when you publish.": "I Äventyrsinställningar, under Tema, trycker du på Byt tema … för att välja ett annat utseende, eller Anpassa … för att ändra färger, bakgrund eller omslagsbild. Spelarna ser ändringarna när du publicerar.",
+  "Players see this theme wherever no step changes it. Changes reach players when you publish.": "Spelarna ser det här temat överallt där inget steg byter tema. Ändringar når spelarna när du publicerar.",
+  "Themes steps switch to": "Teman som steg byter till",
+  "Under Theme, press Change theme… and pick one.": "Under Tema trycker du på Byt tema … och väljer ett."
 }

@@ -89,7 +89,7 @@ function texts(t: I18n): Record<TutorialStep, StepText> {
     },
     look: {
       title: t.t("Make it look the part"),
-      body: t.t("In Adventure settings, under Theme, press Add theme… to pick another look, and Make main to show it to players. Press Edit beside a theme to change its colours, background or cover picture. Players see the changes when you publish."),
+      body: t.t("In Adventure settings, under Theme, press Change theme… to pick another look, or Customize… to change its colours, background or cover picture. Players see the changes when you publish."),
       action: t.t("Open Adventure settings"),
     },
     test: {

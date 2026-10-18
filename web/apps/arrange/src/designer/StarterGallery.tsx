@@ -15,13 +15,18 @@ export function canon(v: unknown): string {
 }
 
 /**
- * A look's cover picture, as the players see it: its own, else that of
- * the starter theme it is (a theme copied from a starter and unchanged).
+ * The starter theme a look is: the gallery's id when it is one, else the
+ * starter it was copied from unchanged. Its cover picture comes with it.
  */
+export function starterOf(id: string, look: ThemeLook): string | undefined {
+  return THEME_COVERS[id] ? id : STARTER_THEMES.find((s) => canon(s.look) === canon(look))?.id;
+}
+
+/** A look's cover picture, as the players see it: its own, else its starter's. */
 function coverFor(id: string, look: ThemeLook): string | undefined {
   const own = (look.style as play.LookStyle | undefined)?.cover;
   if (own) return `/media/${own}`;
-  const starter = THEME_COVERS[id] ? id : STARTER_THEMES.find((s) => canon(s.look) === canon(look))?.id;
+  const starter = starterOf(id, look);
   return starter ? THEME_COVERS[starter]?.small : undefined;
 }
 

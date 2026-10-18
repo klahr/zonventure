@@ -2,13 +2,12 @@ import { useState, type CSSProperties } from "react";
 import type { play } from "@zonventure/api";
 import type { Graph, Theme, ThemeLook } from "@zonventure/graph";
 import { DEFAULT_LOOK, brandVars, loadFont } from "@zonventure/play-ui";
-import { Plus, Star } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
-import { Button, ICON } from "./dz/ui.tsx";
+import { Button } from "./dz/ui.tsx";
 import { PanelModal } from "./dz/dialogs.tsx";
 import { SamplePreview } from "./SamplePreview.tsx";
-import { StarterGallery, canon } from "./StarterGallery.tsx";
+import { StarterGallery, canon, starterOf } from "./StarterGallery.tsx";
 import { freshSlug, themeUses } from "./ThemesModal.tsx";
 
 interface Props {
@@ -22,9 +21,10 @@ interface Props {
 }
 
 /**
- * The adventure's themes, one of them the main theme: what players see
- * wherever no step changes the theme. Themes live in the draft, so a
- * change reaches players when the adventure is published. An adventure
+ * The adventure's theme: what players see wherever no step changes it.
+ * Changing it picks another look in its place; customizing edits it.
+ * Themes live in the draft, so either reaches players when the adventure
+ * is published. Below, the themes steps switch to, if any. An adventure
  * without a main theme shows its own look as one, made a theme of the
  * draft on the first change.
  */
@@ -32,35 +32,30 @@ export function ThemePanel({ graph, brand, onChange, onEdit }: Props) {
   const t = useT();
   const [browsing, setBrowsing] = useState(false);
   const themes = graph.themes ?? [];
-  const main = themes.find((th) => th.slug === graph.main_theme);
-  const stand: Theme | null = main ? null : { slug: themes.some((x) => x.slug === "main") ? freshSlug(themes) : "main", name: t.t("Main theme"), look: structuredClone(brand) as ThemeLook };
-  const rows = stand ? [stand, ...themes] : themes;
-  const mainSlug = main?.slug ?? stand!.slug;
-  const mainLook = (main?.look ?? brand) as play.Brand;
-  const empty = (look: ThemeLook) => canon(look) === canon({});
-
-  const edit = (slug: string) => {
-    if (stand && slug === stand.slug) onChange?.({ ...graph, themes: [...themes, stand], main_theme: stand.slug });
-    onEdit(slug);
+  const main: Theme = themes.find((th) => th.slug === graph.main_theme) ?? {
+    slug: themes.some((x) => x.slug === "main") ? freshSlug(themes) : "main",
+    name: t.t("Main theme"),
+    look: structuredClone(brand) as ThemeLook,
   };
-  const add = (name: string, look: ThemeLook) => {
+  const others = themes.filter((th) => th.slug !== main.slug);
+  const shown = (look: ThemeLook) => (canon(look) === canon({}) ? DEFAULT_LOOK : look) as play.Brand;
+
+  // The main theme replaced (or made, for an adventure without one).
+  const put = (th: Theme) => onChange?.({ ...graph, themes: [...others, th], main_theme: th.slug });
+  const change = (name: string, look: ThemeLook, id: string) => {
     setBrowsing(false);
-    if (!onChange) return;
-    // A first pick replaces a main theme nobody has made anything of yet.
-    const blank = main ? themes.length === 1 && empty(main.look) && themeUses(graph, main.slug) === 0 : themes.length === 0 && empty(stand!.look);
-    if (blank) {
-      const th: Theme = { slug: mainSlug, name, look: structuredClone(look) };
-      onChange({ ...graph, themes: [th], main_theme: th.slug });
-      return;
-    }
-    const base = stand ? [...themes, stand] : themes;
-    const th: Theme = { slug: freshSlug(base), name, look: structuredClone(look) };
-    onChange({ ...graph, themes: [...base, th], main_theme: mainSlug });
-    onEdit(th.slug);
+    const starter = starterOf(id, look);
+    // The default theme is no look of its own: the organisation's shows.
+    const own = id === "default" ? {} : structuredClone(look);
+    put({ slug: main.slug, name: name || t.t("Default theme"), look: own, ...(starter ? { starter } : {}) });
   };
-  const makeMain = (slug: string) => onChange?.({ ...graph, main_theme: slug });
+  const customize = () => {
+    if (!themes.some((th) => th.slug === main.slug)) put(main);
+    onEdit(main.slug);
+  };
 
-  loadFont(mainLook.heading_font ?? mainLook.font);
+  const look = shown(main.look);
+  loadFont(look.heading_font ?? look.font);
   return (
     <section className="look insp__section">
       <h3>
@@ -69,52 +64,53 @@ export function ThemePanel({ graph, brand, onChange, onEdit }: Props) {
       </h3>
       <div className="look__body">
         <div className="look__controls">
-          <ul className="look__themes">
-            {rows.map((th) => {
-              const isMain = th.slug === mainSlug;
-              const uses = themeUses(graph, th.slug);
-              const look = (empty(th.look) ? DEFAULT_LOOK : th.look) as play.Brand;
-              return (
-                <li key={th.slug} className={isMain ? "look__theme look__main" : "look__theme"}>
-                  <span className="look__main-thumb look__thumb" style={brandVars(look) as CSSProperties} aria-hidden>
-                    <span className="theme-strip__aa">Aa</span>
-                    <span className="theme-strip__dot" />
-                  </span>
-                  <span className="look__main-name">
-                    {th.name || t.t("Untitled theme")}
-                    <span className="field__hint">
-                      {isMain ? t.t("Main theme") : uses > 0 ? t.plural(uses, { one: t.t("Used by {{n}} step"), other: t.t("Used by {{n}} steps") }) : t.t("Not used yet")}
-                    </span>
-                  </span>
-                  {isMain ? (
-                    <Star size={ICON.sm} className="look__star" aria-label={t.t("Main theme")} />
-                  ) : (
-                    onChange && <Button size="sm" onClick={() => makeMain(th.slug)}>{t.t("Make main")}</Button>
-                  )}
-                  {onChange && <Button size="sm" onClick={() => edit(th.slug)}>{t.t("Edit")}</Button>}
-                </li>
-              );
-            })}
-          </ul>
+          <div className="look__theme look__main">
+            <span className="look__main-thumb look__thumb" style={brandVars(look) as CSSProperties} aria-hidden>
+              <span className="theme-strip__aa">Aa</span>
+              <span className="theme-strip__dot" />
+            </span>
+            <span className="look__main-name">{main.name || t.t("Untitled theme")}</span>
+          </div>
           {onChange && (
             <div className="look__actions">
-              <Button size="sm" className="look__add" onClick={() => setBrowsing(true)}>
-                <Plus size={ICON.sm} aria-hidden />
-                {t.t("Add theme…")}
-              </Button>
+              <Button size="sm" className="look__change" onClick={() => setBrowsing(true)}>{t.t("Change theme…")}</Button>
+              <Button size="sm" onClick={customize}>{t.t("Customize…")}</Button>
             </div>
           )}
-          <p className="field__hint">
-            {t.t("Players see the main theme wherever no step changes the theme. Changes to themes reach players when you publish.")}
-          </p>
+          <p className="field__hint">{t.t("Players see this theme wherever no step changes it. Changes reach players when you publish.")}</p>
+          {others.length > 0 && (
+            <div className="field">
+              <span className="field__label">{t.t("Themes steps switch to")}</span>
+              <ul className="look__themes">
+                {others.map((th) => {
+                  const uses = themeUses(graph, th.slug);
+                  return (
+                    <li key={th.slug} className="look__theme">
+                      <span className="look__main-thumb look__thumb" style={brandVars(shown(th.look)) as CSSProperties} aria-hidden>
+                        <span className="theme-strip__aa">Aa</span>
+                        <span className="theme-strip__dot" />
+                      </span>
+                      <span className="look__main-name">
+                        {th.name || t.t("Untitled theme")}
+                        <span className="field__hint">
+                          {uses > 0 ? t.plural(uses, { one: t.t("Used by {{n}} step"), other: t.t("Used by {{n}} steps") }) : t.t("Not used yet")}
+                        </span>
+                      </span>
+                      {onChange && <Button size="sm" onClick={() => onEdit(th.slug)}>{t.t("Edit")}</Button>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
         </div>
         <div className="look__preview">
-          <SamplePreview brand={(empty(mainLook as ThemeLook) ? DEFAULT_LOOK : mainLook) as play.Brand} />
+          <SamplePreview brand={look} />
         </div>
       </div>
       {browsing && (
         <PanelModal title={t.t("Choose a theme")} wide onClose={() => setBrowsing(false)}>
-          <StarterGallery heading="" onPick={(name, look) => add(name || t.t("Theme {{n}}", { n: rows.length + 1 }), look)} />
+          <StarterGallery heading="" selected={main.starter ?? (canon(main.look) === canon({}) ? "default" : undefined)} onPick={change} />
         </PanelModal>
       )}
     </section>
