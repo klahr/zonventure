@@ -172,37 +172,126 @@ export function nodeTexts(n: Node): Translatable[] {
 }
 
 /**
- * The step as it reads in a translation, for showing it: its title, text
- * and route names in that language where they are translated, the
- * original elsewhere. Only for display — the graph keeps the main texts.
+ * The step with its texts replaced where text gives one: f is asked for
+ * every text nodeTexts lists, by the same key, and leaves the rest alone.
+ * Accepted answers are not texts here: a translation only adds to them.
  */
-export function translatedNode(n: Node, tr: Record<string, string>): Node {
-  const k = (field: string) => tr[nodeKey(n.slug, field)]?.trim() || undefined;
-  const blocks = (list: Block[] | undefined) =>
-    list?.map((b) => ((b.kind === "text" || b.kind === "note") && k(`block:${b.id}`) ? { ...b, text: k(`block:${b.id}`)! } : b));
-  const out: Node = { ...n, ...(k("title") ? { title: k("title")! } : {}) };
-  if (n.puzzle)
+export function withTexts(n: Node, f: (key: string) => string | undefined): Node {
+  const k = (field: string) => f(nodeKey(n.slug, field));
+  const or = (field: string, was: string) => k(field) ?? was;
+  const opt = (field: string, was: string | undefined) => (was === undefined ? undefined : or(field, was));
+  const block = (b: Block): Block => {
+    const own = `block:${b.id}`;
+    switch (b.kind) {
+      case "text":
+      case "note":
+      case "countdown":
+      case "level":
+      case "noise":
+      case "bearing":
+      case "shake":
+      case "photo":
+      case "flasher":
+      case "letters":
+      case "roles":
+      case "sabotage":
+      case "accuse":
+      case "tiebreak":
+        return b.text === undefined || k(own) === undefined ? b : { ...b, text: k(own)! };
+      case "split":
+        return { ...b, parts: b.parts.map((p, i) => or(`${own}:part:${i}`, p)) };
+      case "call":
+        return b.who === undefined || k(`${own}:who`) === undefined ? b : { ...b, who: k(`${own}:who`)! };
+      case "suspects":
+        return { ...b, cards: b.cards.map((c, i) => ({ ...c, name: or(`${own}:card:${i}:name`, c.name), ...(c.text !== undefined ? { text: or(`${own}:card:${i}:text`, c.text) } : {}) })) };
+      case "vote":
+      case "draw":
+        return { ...b, ...(b.text !== undefined ? { text: or(own, b.text) } : {}), options: b.options.map((o, i) => or(`${own}:option:${i}`, o)) };
+      case "quiz": {
+        const [a, x, c] = b.options.map((o, i) => or(`${own}:option:${i}`, o));
+        return { ...b, ...(b.text !== undefined ? { text: or(own, b.text) } : {}), options: [a!, x!, c!] };
+      }
+      case "spotdiff":
+      case "hotspots":
+        return b.spots ? { ...b, spots: b.spots.map((sp, i) => (sp.text === undefined ? sp : { ...sp, text: or(`${own}:spot:${i}`, sp.text) })) } : b;
+      case "chat":
+        return { ...b, lines: b.lines.map((l, i) => ({ ...l, ...(l.who !== undefined ? { who: or(`${own}:who:${i}`, l.who) } : {}), text: or(`${own}:line:${i}`, l.text) })) };
+      case "map":
+        return b.markers ? { ...b, markers: b.markers.map((m, i) => (m.label === undefined ? m : { ...m, label: or(`${own}:marker:${i}`, m.label) })) } : b;
+      default:
+        return b;
+    }
+  };
+  const blocks = (list: Block[] | undefined) => list?.map(block);
+  const title = opt("title", n.title);
+  const out: Node = { ...n, ...(title !== undefined ? { title } : {}) };
+  const p = n.puzzle;
+  if (p) {
+    const bar = p.bar && { ...p.bar, ...(p.bar.placeholder !== undefined ? { placeholder: or("bar:placeholder", p.bar.placeholder) } : {}), ...(p.bar.button !== undefined ? { button: or("bar:button", p.bar.button) } : {}) };
+    let answer = p.answer;
+    if (answer?.kind === "choice")
+      answer = { ...answer, fields: answer.fields.map((fl, i) => ({ ...fl, ...(fl.label !== undefined ? { label: or(`field:${i}:label`, fl.label) } : {}), options: fl.options.map((o) => (k(`field:${i}:opt:${o.value}`) === undefined ? o : { ...o, label: k(`field:${i}:opt:${o.value}`)! })) })) };
+    else if (answer?.kind === "lock")
+      answer = { ...answer, symbols: answer.symbols.map((sy) => (k(`sym:${sy.value}`) === undefined ? sy : { ...sy, label: k(`sym:${sy.value}`)! })) };
+    else if (answer?.kind === "items")
+      answer = { ...answer, slots: answer.slots.map((sl, i) => (sl.label === undefined ? sl : { ...sl, label: or(`slot:${i}`, sl.label) })) };
     out.puzzle = {
-      ...n.puzzle,
-      ...(n.puzzle.blocks ? { blocks: blocks(n.puzzle.blocks)! } : {}),
-      ...(n.puzzle.outputs ? { outputs: n.puzzle.outputs.map((o) => (k(`out:${o.port}:label`) ? { ...o, label: k(`out:${o.port}:label`)! } : o)) } : {}),
+      ...p,
+      ...(p.blocks ? { blocks: blocks(p.blocks)! } : {}),
+      ...(p.outputs ? { outputs: p.outputs.map((o) => (o.label === undefined ? o : { ...o, label: or(`out:${o.port}:label`, o.label) })) } : {}),
+      ...(bar ? { bar } : {}),
+      ...(p.responses ? { responses: p.responses.map((r, i) => ({ ...r, text: or(`reply:${i}`, r.text) })) } : {}),
+      ...(p.hints ? { hints: p.hints.map((h, i) => ({ ...h, text: or(`hint:${i}`, h.text) })) } : {}),
+      ...(answer ? { answer } : {}),
     };
+  }
   if (n.story?.blocks) out.story = { ...n.story, blocks: blocks(n.story.blocks)! };
   if (n.end?.blocks) out.end = { ...n.end, blocks: blocks(n.end.blocks)! };
   if (n.hub)
     out.hub = {
       ...n.hub,
-      ...(k("hub-text") ? { text: k("hub-text")! } : {}),
+      ...(n.hub.text !== undefined ? { text: or("hub-text", n.hub.text) } : {}),
       ...(n.hub.branches
         ? {
             branches: n.hub.branches.map((b) => ({
               ...b,
-              ...(k(`branch:${b.port}:label`) ? { label: k(`branch:${b.port}:label`)! } : {}),
-              ...(k(`branch:${b.port}:note`) ? { note: k(`branch:${b.port}:note`)! } : {}),
+              ...(b.label !== undefined ? { label: or(`branch:${b.port}:label`, b.label) } : {}),
+              ...(b.note !== undefined ? { note: or(`branch:${b.port}:note`, b.note) } : {}),
             })),
           }
         : {}),
     };
+  return out;
+}
+
+/**
+ * The step as it reads in a translation, for showing it: every text in
+ * that language where it is translated, the original elsewhere. Only for
+ * display — the graph keeps the main texts.
+ */
+export function translatedNode(n: Node, tr: Record<string, string>): Node {
+  return withTexts(n, (key) => tr[key]?.trim() || undefined);
+}
+
+/**
+ * An edit made to a step shown in a translation (translatedNode): the
+ * texts changed become that language's translations, and anything else
+ * changes the step itself, whose own texts stay as they were. Null when
+ * the edit adds or removes texts — a block, a chat line, a hint — which
+ * is the main language's to do: keys counted by position would land on
+ * the wrong text.
+ */
+export function translateEdit(g: Graph, lang: string, main: Node, shown: Node, edited: Node): Graph | null {
+  const texts = (n: Node) => new Map(nodeTexts(n).filter((t) => !t.answers).map((t) => [t.key, t.main]));
+  const before = texts(shown);
+  const after = texts(edited);
+  const own = texts(main);
+  if (before.size !== after.size || [...before.keys()].some((key) => !after.has(key))) return null;
+  const step = withTexts(edited, (key) => (after.get(key) !== own.get(key) ? own.get(key) : undefined));
+  let out: Graph = { ...g, nodes: g.nodes.map((n) => (n.slug === main.slug ? step : n)) };
+  for (const [key, text] of after) {
+    if (text !== before.get(key)) out = setTranslation(out, lang, key, text, own.get(key));
+  }
   return out;
 }
 

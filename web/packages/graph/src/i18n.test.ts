@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adventureTexts, allTexts, coverage, blockKey, isOutdated, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey, sourceFingerprint, trackTranslations, translatedNode, translationOriginal } from "./i18n.ts";
+import { adventureTexts, allTexts, coverage, blockKey, isOutdated, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey, sourceFingerprint, trackTranslations, translatedNode, translateEdit, translationOriginal, withTexts } from "./i18n.ts";
 import type { Graph } from "./types.ts";
 
 const g: Graph = {
@@ -135,4 +135,36 @@ test("a step shown in a translation reads its translated texts, the original whe
   assert.equal(shown.puzzle!.outputs![0]!.label, "Right");
   assert.deepEqual(shown.puzzle!.blocks, q.puzzle!.blocks, "an empty translation shows the original");
   assert.equal(q.title, "Frågan", "the step itself is left as it was");
+});
+
+test("a step shown in a translation reads every text nodeTexts lists in it", () => {
+  const c = { slug: "c", type: "puzzle" as const, title: "Blommor", puzzle: {
+    blocks: [{ id: "b1", kind: "chat" as const, lines: [{ who: "Erik", text: "Hej!" }] }],
+    responses: [{ text: "Fel." }],
+    hints: [{ text: "Titta upp.", delay_seconds: 60 }],
+    outputs: [],
+  } };
+  const tr = Object.fromEntries(nodeTexts(c).map((t) => [t.key, `EN ${t.main}`]));
+  const shown = translatedNode(c, tr);
+  assert.deepEqual(nodeTexts(shown).map((t) => t.main), nodeTexts(c).map((t) => `EN ${t.main}`));
+  assert.equal(shown.puzzle!.hints![0]!.delay_seconds, 60, "what is not text is kept");
+  assert.deepEqual(withTexts(c, () => undefined), c, "no text given leaves the step as it was");
+});
+
+test("an edit to a step shown in a translation translates its texts and keeps the main ones", () => {
+  const q = g.nodes[1]!;
+  const tr = { [nodeKey("q", "title")]: "The question" };
+  const graph = setTranslation(g, "en", nodeKey("q", "title"), "The question", "Frågan");
+  const shown = translatedNode(q, tr);
+  const edited = { ...shown, title: "The puzzle", puzzle: { ...shown.puzzle!, responses: [{ text: "Wrong." }], outputs: shown.puzzle!.outputs!.map((o) => ({ ...o, points: 5 })) } };
+  const out = translateEdit(graph, "en", q, shown, edited)!;
+  const step = out.nodes[1]!;
+  assert.equal(step.title, "Frågan", "the main title stays");
+  assert.equal(step.puzzle!.responses![0]!.text, "Fel.", "the main reply stays");
+  assert.equal(step.puzzle!.outputs![0]!.points, 5, "what is not text changes the step");
+  assert.equal(out.translations!.en![nodeKey("q", "title")], "The puzzle");
+  assert.equal(out.translations!.en![nodeKey("q", "reply:0")], "Wrong.", "an untranslated text edited becomes its translation");
+  assert.equal(translationOriginal(out, "en", nodeKey("q", "reply:0")), "Fel.");
+  const fewer = { ...shown, puzzle: { ...shown.puzzle!, responses: [] } };
+  assert.equal(translateEdit(graph, "en", q, shown, fewer), null, "removing a text is the main language's to do");
 });

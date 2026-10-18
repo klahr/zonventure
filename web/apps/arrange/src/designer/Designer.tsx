@@ -68,6 +68,8 @@ import {
   type HistoryState,
   type Issue,
   type Report,
+  translateEdit,
+  translatedNode,
 } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { href } from "../router.ts";
@@ -106,6 +108,7 @@ import { DiffDialog, HelpModal, PublishCelebration, PublishLabelModal, TextChang
 import { Button, ICON, IssueRow, IssuesButton, Modal, Notice, PromptModal, RailLayout } from "./dz/ui.tsx";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { isNarrow as narrowScreen, isTouch } from "./device.ts";
+import { useToast } from "../ui/toast.tsx";
 import "./dz.css";
 import "./designer.css";
 
@@ -225,6 +228,7 @@ const envelope = (g: Graph): Envelope => ({ format: FORMAT_V2, graph: cleanGraph
  */
 export function Designer({ slug }: { slug: string }) {
   const t = useT();
+  const toast = useToast();
   const [loaded, setLoaded] = useState<Loaded>({ state: "loading" });
   const [history, setHistory] = useState<HistoryState>(emptyHistory);
   // The graph as last autosaved, to know when to save again.
@@ -352,7 +356,8 @@ export function Designer({ slug }: { slug: string }) {
   const mainLang = graph?.language || adventureLang;
   const [editLangPick, setEditLang] = useState("");
   const editLang = graph && translationLanguages(graph, mainLang).includes(editLangPick) ? editLangPick : mainLang;
-  // The toolbar's switch shows the steps in a translation; they are still edited in the main language.
+  // The toolbar's switch shows the steps in a translation; the inspector
+  // then edits that translation, and the main language whatever is not text.
   const shownIn = graph && editLang !== mainLang ? (graph.translations?.[editLang] ?? {}) : undefined;
 
   // --- load -------------------------------------------------------------------
@@ -1895,8 +1900,8 @@ export function Designer({ slug }: { slug: string }) {
                   )
                 )}
                 <Inspector
-                  key={node.slug + (proposing ? ":suggesting" : "")}
-                  node={proposing ? proposing.draft : node}
+                  key={node.slug + (proposing ? ":suggesting" : shownIn ? `:${editLang}` : "")}
+                  node={proposing ? proposing.draft : shownIn ? translatedNode(node, shownIn) : node}
                   graph={graph}
                   readOnly={readOnly || (!!holder && !proposing)}
                   {...(preview
@@ -1916,7 +1921,13 @@ export function Designer({ slug }: { slug: string }) {
                         ),
                       })}
                   issues={shownIssues.filter((i) => i.node === node.slug)}
-                  onChange={(n) => (proposing ? setSuggesting((x) => x && { ...x, draft: n }) : change(updateNode(graph, node.slug, () => n)))}
+                  onChange={(n) => {
+                    if (proposing) return setSuggesting((x) => x && { ...x, draft: n });
+                    if (!shownIn) return change(updateNode(graph, node.slug, () => n));
+                    const next = translateEdit(graph, editLang, node, translatedNode(node, shownIn), n);
+                    if (next) change(next);
+                    else toast.err(t.t("Adding or removing parts of a step is done in {{lang}}. Switch the language at the top first.", { lang: languageName(mainLang) }));
+                  }}
                   onGraphChange={(g) => {
                     if (!proposing) return change(g);
                     // A proposal is the step alone: what it changes elsewhere is not part of it.

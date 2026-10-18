@@ -19,6 +19,10 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   follow along with the app's words on their phone, while teammates
   keep theirs. The team's language stays the default, and what is sent
   to the team (emails, the recap) stays in it.
+- Designer: with the top bar's language set to a translation, the
+  inspector shows the step in that language and edits its translation;
+  what is not text (points, zones, timing) still changes the step.
+  Adding or removing parts of a step is done in the main language.
 
 ### Fixed
 
@@ -26,6 +30,9 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   text (on the phone and the recap page), its intro in the lobby, the
   time-up message, a crossroads' text, hints, journal entries, role
   cards and the organisers' messages, not shown as is.
+- Designer: switching language shows every translated text of a step
+  — chat lines, hints, wrong-answer replies, quiz options and the rest
+  — not only its title, text blocks and routes.
 - The compass says "You are at …" only once the server places the
   phone there too, so an answer given then is not refused as not
   there; while a compass waits, the phone reports where it is every
