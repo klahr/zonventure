@@ -264,6 +264,14 @@ func (e *Engine) locate(ctx context.Context, q Querier, s *teamState) error {
 		// A locator that does not tell phones apart places every one at
 		// the team's position.
 		s.Viewer = &session.Viewer{Slot: me, Position: s.Position}
+		if s.G != nil && s.G.Languages() != nil {
+			if err := q.QueryRowContext(ctx, `SELECT lang FROM player_slots WHERE id = $1 AND team_id = $2`, me, s.teamID).Scan(&s.Viewer.Lang); err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("reading the player's language: %w", err)
+			}
+			if s.Viewer.Lang != "" && !s.Speaks(s.Viewer.Lang) {
+				s.Viewer.Lang = ""
+			}
+		}
 		// The players a step done together waits for.
 		var err error
 		if players, err = Players(ctx, q, s.teamID, me); err != nil {

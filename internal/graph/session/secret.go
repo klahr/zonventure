@@ -124,12 +124,12 @@ func (t *Team) reveal() []RevealView {
 		if !ro.Secret {
 			continue
 		}
-		rv := RevealView{Role: ro.Slug, Name: t.G.Tr(t.Lang, graph.RoleKey(ro.Slug, "name"), t.G.RoleName(ro.Slug)), Slot: t.Secrets[ro.Slug]}
+		rv := RevealView{Role: ro.Slug, Name: t.G.Tr(t.lang(), graph.RoleKey(ro.Slug, "name"), t.G.RoleName(ro.Slug)), Slot: t.Secrets[ro.Slug]}
 		rv.Dealt = rv.Slot != 0
 		if rv.Dealt {
 			for i, g := range ro.Goals {
 				rv.Goals = append(rv.Goals, GoalView{
-					Text: t.G.Tr(t.Lang, graph.RoleKey(ro.Slug, goalField(i)), g.Text),
+					Text: t.G.Tr(t.lang(), graph.RoleKey(ro.Slug, goalField(i)), g.Text),
 					Met:  cond.Eval(g.When, t),
 				})
 			}

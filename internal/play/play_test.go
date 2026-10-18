@@ -1290,6 +1290,67 @@ func TestLanguageLive(t *testing.T) {
 	}
 }
 
+// A player who switches language reads the adventure in it on their own
+// phone; teammates, and the team as a whole, keep the team's language.
+func TestPlayerLanguage(t *testing.T) {
+	t.Parallel()
+	g := &graph.Graph{
+		Language: "sv",
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "q", Type: graph.Puzzle, Title: "Frågan", PuzzleCfg: &graph.PuzzleConfig{
+				Blocks:    graph.LegacyBlocks("Hur många?", nil),
+				Outputs:   []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "sex"}}}},
+				Responses: []graph.Response{{Text: "Fel."}},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{edge("start", "out", "q"), edge("q", "solved", "end")},
+		Translations: map[string]map[string]string{"en": {
+			graph.NodeKey("q", "text"):    "How many?",
+			graph.NodeKey("q", "reply:0"): "Wrong.",
+		}},
+	}
+	f := setup(t, g, 1)
+	team := f.teams[0]
+	var ann, bo int64
+	mustScan(t, f.db.QueryRow(`SELECT id FROM player_slots WHERE team_id = $1`, team), &ann)
+	mustScan(t, f.db.QueryRow(`INSERT INTO player_slots(team_id, name, token) VALUES ($1, 'bo', $2) RETURNING id`, team, fmt.Sprintf("slot-%d-bo", team)), &bo)
+	annCtx, boCtx := ForPhone(context.Background(), ann), ForPhone(context.Background(), bo)
+
+	if _, err := f.eng.SetLanguage(annCtx, team, "fi"); err == nil {
+		t.Error("an untranslated language is refused")
+	}
+	r, err := f.eng.SetLanguage(annCtx, team, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.View.Lang != "en" || r.View.Text != "How many?" {
+		t.Fatalf("the switch answers in English: %+v", r.View)
+	}
+	if v, err := f.eng.Snapshot(annCtx, team); err != nil || v.Text != "How many?" {
+		t.Errorf("Ann's phone stays in English: %q %v", v.Text, err)
+	}
+	if v, err := f.eng.Snapshot(boCtx, team); err != nil || v.Lang != "sv" || v.Text != "Hur många?" {
+		t.Errorf("Bo's phone keeps Swedish: %q %q %v", v.Lang, v.Text, err)
+	}
+	if v := f.view(team); v.Text != "Hur många?" {
+		t.Errorf("the team's own view keeps Swedish: %q", v.Text)
+	}
+	if r, _ := f.eng.Answer(annCtx, team, "q", "fem"); r.Response != "Wrong." {
+		t.Errorf("Ann's reply is in English: %q", r.Response)
+	}
+	if r, _ := f.eng.Answer(boCtx, team, "q", "fem"); r.Response != "Fel." {
+		t.Errorf("Bo's reply is in Swedish: %q", r.Response)
+	}
+	if _, err := f.eng.SetLanguage(annCtx, team, "sv"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := f.eng.Snapshot(annCtx, team); v.Text != "Hur många?" {
+		t.Errorf("Ann switches back to Swedish: %q", v.Text)
+	}
+}
+
 // A team placed with a starting language plays in it when the adventure
 // is translated into it, and in the main language otherwise.
 func TestStartingLanguage(t *testing.T) {

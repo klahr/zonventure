@@ -1834,18 +1834,6 @@
   font-weight: 400;
 }
 
-.pv-lang {
-  min-height: var(--pv-tap);
-  padding: 0 var(--sp-2);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  color: var(--ink-soft);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 700;
-}
-
 /* StaticMap: tiles under an SVG of the zone. Used outside .pv too, by the
  * designer's cards. */
 .static-map { position: relative; overflow: hidden; border-radius: var(--radius-sm); background: #e8e4dc; flex: none; }

@@ -673,24 +673,25 @@ func (t *Team) View() View {
 	return v
 }
 
-// translate puts a view into the team's language. The walk and the view
+// translate puts a view into the language of the player it is for. The walk and the view
 // are built in the adventure's main language; this is the only place the
 // translations are read, and anything without one stays as it was.
 func (t *Team) translate(v *View) {
 	// Only a translated adventure has languages to choose between; any
 	// other still names its own, so the phone speaks the adventure's.
 	if v.Languages = t.G.Languages(); v.Languages != nil {
-		v.Lang = t.Lang
+		v.Lang = t.lang()
 		if v.Lang == "" {
 			v.Lang = v.Languages[0]
 		}
 	} else {
 		v.Lang = t.G.Language
 	}
-	if t.Lang == "" || t.Lang == t.G.Language {
+	l := t.lang()
+	if l == "" || l == t.G.Language {
 		return
 	}
-	g, l := t.G, t.Lang
+	g := t.G
 	tr := func(key, main string) string { return g.Tr(l, key, main) }
 	for _, f := range []string{"title", "intro", "outro"} {
 		if s := tr(graph.MetaKey(f), ""); s != "" {
@@ -897,7 +898,7 @@ func (t *Team) view() View {
 				}
 			}
 			if role, ok := t.G.ItemRole(slug); ok {
-				iv.Role = t.G.Tr(t.Lang, graph.RoleKey(role, "name"), t.G.RoleName(role))
+				iv.Role = t.G.Tr(t.lang(), graph.RoleKey(role, "name"), t.G.RoleName(role))
 			}
 			iv.HolderSlot = t.Holders[slug]
 			iv.NotMine = !t.CanUse(slug)
@@ -986,7 +987,7 @@ func (t *Team) view() View {
 		}
 		v.Input = t.answerInput(n)
 		if cfg.By != "" && v.Input != nil {
-			v.Input.By = t.G.Tr(t.Lang, graph.RoleKey(cfg.By, "name"), t.G.RoleName(cfg.By))
+			v.Input.By = t.G.Tr(t.lang(), graph.RoleKey(cfg.By, "name"), t.G.RoleName(cfg.By))
 			v.Input.NotYours = !t.HasRole(cfg.By)
 		}
 		if v.Together = t.together(n); v.Together != nil && v.Together.Until != nil &&

@@ -209,22 +209,6 @@ export function PlayView(props: PlayViewProps) {
             <span aria-hidden>🎒</span> {view.items.length}
           </button>
         ) : null}
-        {/* A translated adventure: the team switches language here. Each
-            language names itself, so a team finds its own. */}
-        {(view.languages?.length ?? 0) > 1 && (
-          <select
-            className="pv-lang"
-            value={view.lang ?? view.languages![0]}
-            aria-label={t("Language")}
-            onChange={(e) => props.onAction({ kind: "language", lang: e.target.value })}
-          >
-            {view.languages!.map((l) => (
-              <option key={l} value={l}>
-                {LANGUAGE_SELF[l] ?? l.toUpperCase()}
-              </option>
-            ))}
-          </select>
-        )}
         {/* The journal is the case file: always one tap away, the end
             screen included, so a team can check its notes before an
             accusation and read them back afterwards. */}
@@ -295,9 +279,6 @@ export function PlayView(props: PlayViewProps) {
     </div>
   );
 }
-
-/** Each language in its own words, for the language switch. */
-const LANGUAGE_SELF: Record<string, string> = { sv: "Svenska", en: "English", de: "Deutsch", fi: "Suomi", no: "Norsk", da: "Dansk", fr: "Français", es: "Español" };
 
 interface StepProps extends PlayViewProps {
   t: Translate;

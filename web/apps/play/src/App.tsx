@@ -23,7 +23,7 @@ export function App() {
   const choosing = !view?.roles?.some((r) => r.final) && (view?.blocks ?? []).some((b) => b.kind === "roles" && b.choose && !b.locked);
   const myRoles = (view?.roles?.length ?? 0) > 1 ? (view?.roles ?? []).filter((r) => r.mine && !r.secret && (r.claimed || !choosing)).map((r) => r.name || r.slug) : [];
   const running = s?.event.state === "running";
-  // The team switching a translated adventure's language also switches
+  // The player switching a translated adventure's language also switches
   // the app's own words, where the app has them. Only a switch: on load
   // the language this phone chose, or its own, holds.
   const languages = view?.languages;
@@ -35,12 +35,11 @@ export function App() {
     if (prev && teamLang && prev !== teamLang && i18n.available().includes(teamLang)) i18n.setLocale(teamLang);
   }, [teamLang, i18n]);
   // A translated adventure starts in the phone's language: once per team
-  // on this phone, while the team is still in the main language and has
-  // not begun, so a team that has chosen or is under way keeps its own.
+  // on this phone, while its player is still in the main language, so a
+  // player who has chosen keeps their own.
   const actRef = useRef(game.act);
   actRef.current = game.act;
   const teamID = s?.team.id;
-  const begun = !!s?.team.locked;
   const langKey = languages?.join(",") ?? "";
   // A store ticket plays in the language its buyer chose at checkout,
   // and the app's words follow it there rather than the phone's: once
@@ -56,13 +55,13 @@ export function App() {
   }, [teamID, chosen, playing, i18n]);
   useEffect(() => {
     const langs = langKey ? langKey.split(",") : [];
-    if (!teamID || chosen || langs.length < 2 || !running || begun) return;
+    if (!teamID || chosen || langs.length < 2 || !running) return;
     const key = `zv-play-lang-${teamID}`;
     if (readFlag(key)) return;
     writeFlag(key);
     const want = phoneLanguage(langs);
     if (want && want !== langs[0] && teamLang === langs[0]) actRef.current({ kind: "language", lang: want });
-  }, [teamID, langKey, running, begun, teamLang, chosen]);
+  }, [teamID, langKey, running, teamLang, chosen]);
 
   // The welcome a player reads before the first step — once per player,
   // so a reload mid-game goes straight back to it.
@@ -262,6 +261,7 @@ export function App() {
             shareLocation={shareLocation}
             onShareLocation={setShareLocation}
             onRenamed={game.refresh}
+            onLanguage={(lang) => game.act({ kind: "language", lang })}
             leave={game.leave}
           />
           {/* The adventure's own picture, else the organisation's logo. */}

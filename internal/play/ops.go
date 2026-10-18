@@ -180,9 +180,32 @@ func (e *Engine) Continue(ctx context.Context, teamID int64, node string) (Resul
 	return e.act(ctx, teamID, action{"continue", node, ""}, func(t *session.Team) (Result, *walk.Step, error) { return t.Continue(node) })
 }
 
-// SetLanguage switches the language the team plays in.
+// SetLanguage switches the language the team plays in, or, asked by a
+// phone, the language its own player reads: teammates keep theirs.
 func (e *Engine) SetLanguage(ctx context.Context, teamID int64, lang string) (Result, error) {
-	return e.act(ctx, teamID, action{"language", "", lang}, func(t *session.Team) (Result, *walk.Step, error) { return Result{}, nil, t.SetLanguage(lang) })
+	me, forPhone := phoneOf(ctx)
+	if !forPhone {
+		return e.act(ctx, teamID, action{"language", "", lang}, func(t *session.Team) (Result, *walk.Step, error) { return Result{}, nil, t.SetLanguage(lang) })
+	}
+	var graphID int64
+	if err := e.DB.QueryRowContext(ctx, `SELECT graph_id FROM team_graph_state WHERE team_id = $1`, teamID).Scan(&graphID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Result{}, ErrNoGraph
+		}
+		return Result{}, err
+	}
+	g, err := e.graph(ctx, e.DB, graphID)
+	if err != nil {
+		return Result{}, err
+	}
+	if lang != g.Language && !slices.Contains(g.Languages(), lang) {
+		return Result{}, ErrNotAllowed
+	}
+	if _, err := e.DB.ExecContext(ctx, `UPDATE player_slots SET lang = $1 WHERE id = $2 AND team_id = $3`, lang, me, teamID); err != nil {
+		return Result{}, err
+	}
+	v, err := e.Snapshot(ctx, teamID)
+	return Result{View: v}, err
 }
 
 // TimeUp applies the adventure's time limit once it has passed. The

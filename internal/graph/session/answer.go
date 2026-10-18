@@ -47,10 +47,10 @@ func (t *Team) answerInput(n graph.Node) *Input {
 				if name == "" {
 					name = slug
 				}
-				in.Posts = append(in.Posts, t.G.Tr(t.Lang, graph.ZoneKey(slug), name))
+				in.Posts = append(in.Posts, t.G.Tr(t.lang(), graph.ZoneKey(slug), name))
 				role := a.PostRole(i)
 				if role != "" {
-					role = t.G.Tr(t.Lang, graph.RoleKey(role, "name"), t.G.RoleName(role))
+					role = t.G.Tr(t.lang(), graph.RoleKey(role, "name"), t.G.RoleName(role))
 				}
 				in.PostRoles = append(in.PostRoles, role)
 				in.MyPosts = append(in.MyPosts, t.Viewer == nil || t.mayTurnAt(a, i, t.Viewer.Slot))
@@ -85,7 +85,7 @@ func (t *Team) answerInput(n graph.Node) *Input {
 		if o, ok := outputFor(n, graph.OnMissing); ok {
 			label := o.Label
 			if label != "" {
-				label = t.G.Tr(t.Lang, graph.NodeKey(n.Slug, "out:"+o.Port+":label"), label)
+				label = t.G.Tr(t.lang(), graph.NodeKey(n.Slug, "out:"+o.Port+":label"), label)
 			}
 			in.Leave, in.LeaveLabel = true, label
 		}
@@ -200,7 +200,7 @@ func (t *Team) searchAt(cfg *graph.PuzzleConfig) string {
 			if name == "" {
 				name = z.Slug
 			}
-			return t.G.Tr(t.Lang, graph.ZoneKey(z.Slug), name)
+			return t.G.Tr(t.lang(), graph.ZoneKey(z.Slug), name)
 		}
 	}
 	return ""

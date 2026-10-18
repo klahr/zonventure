@@ -4,7 +4,8 @@ import { RoleCards, type Translate } from "@zonventure/play-ui";
 import type { I18n } from "@zonventure/i18n";
 import { Files } from "./Files.tsx";
 
-const LANG_NAMES: Record<string, string> = { en: "English", sv: "Svenska" };
+/** Each language in its own words, so a player finds their own. */
+const LANG_NAMES: Record<string, string> = { sv: "Svenska", en: "English", de: "Deutsch", fi: "Suomi", no: "Norsk", da: "Dansk", fr: "Français", es: "Español" };
 
 /**
  * The player's menu: who they are on the team, the team's name, their
@@ -24,6 +25,7 @@ export function Menu(props: {
   shareLocation: boolean;
   onShareLocation: (on: boolean) => void;
   onRenamed: () => void;
+  onLanguage: (lang: string) => void;
   leave: (erase: boolean) => Promise<void>;
 }) {
   const { state, t, i18n } = props;
@@ -37,7 +39,13 @@ export function Menu(props: {
   const panel = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
-  const langs = i18n.available();
+  // A translated adventure: this player reads it in one of its languages,
+  // and the app's words follow where the app has them. Otherwise only the
+  // app's words change.
+  const advLangs = state.view?.languages ?? [];
+  const translated = advLangs.length > 1;
+  const langs = translated ? advLangs : i18n.available();
+  const lang = translated ? (state.view?.lang ?? advLangs[0]!) : i18n.current();
 
   const leave = async (erase: boolean) => {
     setLeaving(true);
@@ -144,9 +152,9 @@ export function Menu(props: {
               {langs.length > 1 && (
                 <label className="app-menu__field">
                   <span className="app-menu__label">{t("Language")}</span>
-                  <select className="pv-input" value={i18n.current()} onChange={(e) => i18n.setLocale(e.target.value)}>
+                  <select className="pv-input" value={lang} onChange={(e) => (translated ? props.onLanguage(e.target.value) : i18n.setLocale(e.target.value))}>
                     {langs.map((l) => (
-                      <option key={l} value={l}>{LANG_NAMES[l] ?? l}</option>
+                      <option key={l} value={l}>{LANG_NAMES[l] ?? l.toUpperCase()}</option>
                     ))}
                   </select>
                 </label>

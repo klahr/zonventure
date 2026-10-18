@@ -11,6 +11,15 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- The player's menu holds the only language switch; the one in the
+  step's top bar is gone. In a translated adventure each player now
+  picks their own language: the adventure's title, intro and steps
+  follow along with the app's words on their phone, while teammates
+  keep theirs. The team's language stays the default, and what is sent
+  to the team (emails, the recap) stays in it.
+
 ### Fixed
 
 - `{{team}}` is filled in with the team's name in the adventure's closing

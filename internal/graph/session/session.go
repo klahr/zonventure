@@ -500,6 +500,22 @@ type Viewer struct {
 	Position *Position
 	// Roles are the roles its player holds: claimed, or dealt to them.
 	Roles []string
+	// Lang is the language its player chose; empty follows the team's.
+	Lang string
+}
+
+// lang is the language texts are put in: the asking player's own where
+// they chose one, else the team's.
+func (t *Team) lang() string {
+	if t.Viewer != nil && t.Viewer.Lang != "" {
+		return t.Viewer.Lang
+	}
+	return t.Lang
+}
+
+// Speaks reports whether the adventure can be played in lang.
+func (t *Team) Speaks(lang string) bool {
+	return lang == t.G.Language || slices.Contains(t.G.Languages(), lang)
 }
 
 // Here reports whether the player the view is for is inside the zone.
@@ -846,7 +862,7 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 		}
 	}
 	if reply >= 0 {
-		res.Response = t.G.Tr(t.Lang, graph.NodeKey(n.Slug, fmt.Sprintf("reply:%d", reply)), cfg.Responses[reply].Text)
+		res.Response = t.G.Tr(t.lang(), graph.NodeKey(n.Slug, fmt.Sprintf("reply:%d", reply)), cfg.Responses[reply].Text)
 	}
 	return res, nil, nil
 }
@@ -1310,13 +1326,13 @@ func (t *Team) RevealHint(node string, index int) (Result, *walk.Step, error) {
 	}
 	r.HintsRevealed++
 	t.PenaltyScore += float64(h.Cost)
-	return Result{Hint: t.G.Tr(t.Lang, graph.NodeKey(n.Slug, fmt.Sprintf("hint:%d", index)), h.Text)}, nil, nil
+	return Result{Hint: t.G.Tr(t.lang(), graph.NodeKey(n.Slug, fmt.Sprintf("hint:%d", index)), h.Text)}, nil, nil
 }
 
 // SetLanguage switches the language the team plays in: one the adventure
 // is written or translated in, or "" for its main language.
 func (t *Team) SetLanguage(lang string) error {
-	if lang != "" && lang != t.G.Language && !slices.Contains(t.G.Languages(), lang) {
+	if lang != "" && !t.Speaks(lang) {
 		return ErrNotAllowed
 	}
 	if lang == t.G.Language {

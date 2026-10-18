@@ -275,7 +275,7 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		out.View = &view
-		// The adventure's own words, in the team's language where translated.
+		// The adventure's own words, in the player's language where translated.
 		if s := view.Meta["title"]; s != "" {
 			out.Event.AdventureTitle = s
 		}
