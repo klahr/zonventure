@@ -1234,7 +1234,7 @@
   margin: 0 var(--dz-space-1h);
   background: var(--dz-border);
 }
-.dz .editor-toolbar button, .dz .editor-toolbar .editor-saved, .dz .editor-toolbar .editor-saving {
+.dz .editor-toolbar button, .dz .editor-toolbar .editor-saved, .dz .editor-toolbar .editor-saving, .dz .editor-toolbar .editor-unsaved {
   display: inline-flex;
   align-items: center;
   gap: var(--dz-space-1h);
@@ -1251,7 +1251,7 @@
     flex: 0 0 60px;
     height: 60px;
   }
-.dz .editor-toolbar button, .dz .editor-toolbar .editor-saved, .dz .editor-toolbar .editor-saving {
+.dz .editor-toolbar button, .dz .editor-toolbar .editor-saved, .dz .editor-toolbar .editor-saving, .dz .editor-toolbar .editor-unsaved {
     height: 44px;
     padding: 0 var(--dz-space-3);
   }
@@ -1259,7 +1259,7 @@
     min-width: 44px;
   }
 }
-.dz .editor-toolbar button svg, .dz .editor-toolbar .editor-saved svg, .dz .editor-toolbar .editor-saving svg {
+.dz .editor-toolbar button svg, .dz .editor-toolbar .editor-saved svg, .dz .editor-toolbar .editor-saving svg, .dz .editor-toolbar .editor-unsaved svg {
   flex: 0 0 auto;
 }
 .dz .editor-toolbar button.primary {
@@ -1280,6 +1280,21 @@
 .dz .editor-saved svg {
   color: var(--dz-success);
 }
+.dz .editor-unsaved {
+  color: var(--dz-danger);
+  user-select: none;
+}
+/* The inspector's own word on an edit it made: beside close, small. */
+.dz .inspector-save > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--dz-space-1);
+  font-size: var(--dz-text-xs);
+  white-space: nowrap;
+}
+.dz .inspector-save .spin {
+  animation: dz-spin 1s linear infinite;
+}
 /* The scrolling strip goes to icons first: beside the console sidebar a
    laptop-width canvas cannot fit every label, and a strip scrolled to
    "✓ S" reads as broken. Publish and test play keep their words longer. */
@@ -1289,7 +1304,8 @@
   }
 .dz .editor-toolbar .toolbar-scroll button:not(.toolbar-main),
 .dz .editor-toolbar .toolbar-scroll .editor-saved,
-.dz .editor-toolbar .toolbar-scroll .editor-saving {
+.dz .editor-toolbar .toolbar-scroll .editor-saving,
+.dz .editor-toolbar .toolbar-scroll .editor-unsaved {
     width: 36px;
     padding: 0;
     gap: 0;

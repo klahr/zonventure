@@ -39,7 +39,7 @@ import { AdventureSlug, MediaEditor } from "./MediaEditor.tsx";
 import { OpenThemes } from "./ThemesModal.tsx";
 import { BlocksEditor } from "./BlocksEditor.tsx";
 import { Field, ZoneSelect, focusAdded, type ZoneHere } from "./fields.tsx";
-import { AlertTriangle, ChevronLeft, ChevronRight, Eye, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Eye, Loader2, Plus, Trash2, X } from "lucide-react";
 import { Button, HelpPopover, ICON } from "./dz/ui.tsx";
 import { STEP, VISIBLE } from "./dz/types.tsx";
 import { ConceptIcon, PART, TRIGGER } from "./dz/concepts.tsx";
@@ -65,6 +65,8 @@ interface Props {
   readOnly?: boolean;
   /** Under the settings, never read-only: the step's work and discussion. */
   after?: ReactNode;
+  /** Where the draft's autosave stands, said here after an edit made here. */
+  save?: "saving" | "saved" | "failed";
 }
 
 /**
@@ -79,8 +81,24 @@ interface Props {
  * in the card; everything else shows a read-only digest with Edit, which
  * opens the part alone on a page of its own.
  */
-export function Inspector({ node, graph, issues, onChange, onGraphChange, onDelete, onClose, onPreview, readOnly, after }: Props) {
+export function Inspector({ node, graph, issues, onChange: change, onGraphChange: changeGraph, onDelete, onClose, onPreview, readOnly, after, save }: Props) {
   const t = useT();
+  // An edit made here is said to be saved here, beside it: the toolbar's
+  // mark is far off, and only an icon on a laptop. "Saved" stays a moment.
+  const [edited, setEdited] = useState(false);
+  const onChange = (n: Node) => {
+    setEdited(true);
+    change(n);
+  };
+  const onGraphChange = (g: Graph) => {
+    setEdited(true);
+    changeGraph(g);
+  };
+  useEffect(() => {
+    if (!edited || save !== "saved") return;
+    const id = setTimeout(() => setEdited(false), 2000);
+    return () => clearTimeout(id);
+  }, [edited, save]);
   const kind = STEP[node.type];
   const Icon = kind.icon;
   const [open, setOpen] = useState<string | null>(null);
@@ -117,6 +135,26 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
           <HelpPopover label={t.t("What this step does")} body={t.t(kind.about)} />
         </span>
         <span className="inspector-head-right">
+          <span className="inspector-save" role="status">
+            {edited && save === "saving" && (
+              <span className="editor-saving">
+                <Loader2 size={ICON.sm} className="spin" />
+                {t.t("Saving…")}
+              </span>
+            )}
+            {edited && save === "saved" && (
+              <span className="editor-saved">
+                <Check size={ICON.sm} />
+                {t.t("Saved")}
+              </span>
+            )}
+            {save === "failed" && (
+              <span className="editor-unsaved">
+                <AlertTriangle size={ICON.sm} />
+                {t.t("Not saved")}
+              </span>
+            )}
+          </span>
           {VISIBLE.has(node.type) && (
             <Button variant="ghost" size="icon" onClick={onPreview} aria-label={t.t("Preview this step")} title={t.t("Preview this step")}>
               <Eye size={ICON.md} />

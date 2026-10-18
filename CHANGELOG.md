@@ -11,6 +11,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- Designer: an edit in the inspector says so beside it — "Saving…",
+  then "Saved" for a moment, or "Not saved" when the save failed. The
+  toolbar says "Not saved" too, rather than saving on forever.
+
 ## [0.33.2] - 2026-10-18
 
 ### Changed

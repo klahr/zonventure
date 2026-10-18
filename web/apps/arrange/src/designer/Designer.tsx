@@ -3,6 +3,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import {
   ArrowLeft,
   Bot,
+  AlertTriangle,
   Check,
   GitCompare,
   GraduationCap,
@@ -1385,7 +1386,12 @@ export function Designer({ slug }: { slug: string }) {
               </div>
               <span className="toolbar-divider" aria-hidden="true" />
               <div className="toolbar-group">
-                {saving || unsaved ? (
+                {saveError && !saving ? (
+                  <span className="editor-unsaved" title={saveError}>
+                    <AlertTriangle size={ICON.sm} />
+                    <span className="toolbar-label">{t.t("Not saved")}</span>
+                  </span>
+                ) : saving || unsaved ? (
                   <span className="editor-saving" title={t.t("Saving…")}>
                     <Loader2 size={ICON.sm} className="spin" />
                     <span className="toolbar-label">{t.t("Saving…")}</span>
@@ -1921,6 +1927,7 @@ export function Designer({ slug }: { slug: string }) {
                         ),
                       })}
                   issues={shownIssues.filter((i) => i.node === node.slug)}
+                  save={saveError && !saving ? "failed" : saving || unsaved ? "saving" : "saved"}
                   onChange={(n) => {
                     if (proposing) return setSuggesting((x) => x && { ...x, draft: n });
                     if (!shownIn) return change(updateNode(graph, node.slug, () => n));
