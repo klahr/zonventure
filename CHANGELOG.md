@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.2] - 2026-10-18
+
 ### Changed
 
 - The player's menu holds the only language switch; the one in the
