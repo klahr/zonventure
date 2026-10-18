@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.5] - 2026-10-18
+
 ### Changed
 
 - Designer: an adventure's look is its main theme, one of its own
