@@ -2003,6 +2003,7 @@ export function Designer({ slug }: { slug: string }) {
             : notReady && publishAsk.kind !== "rollback"
               ? { warning: t.plural(notReady, { one: t.t("{{n}} step is not marked ready yet."), other: t.t("{{n}} steps are not marked ready yet.") }) }
               : {})}
+          live={published}
           onPublish={(label) => void doPublish(publishAsk, label)}
           onCancel={() => setPublishAsk(null)}
         />

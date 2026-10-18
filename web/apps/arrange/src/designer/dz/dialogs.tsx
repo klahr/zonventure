@@ -19,6 +19,7 @@ export function PublishLabelModal({
   confirmLabel,
   warning,
   blocked = false,
+  live,
   onPublish,
   onCancel,
 }: {
@@ -27,13 +28,21 @@ export function PublishLabelModal({
   confirmLabel: string;
   warning?: ReactNode;
   blocked?: boolean;
+  /** The version players get now, so the next one can be named after it. */
+  live?: { version: number; label?: string } | null;
   onPublish: (label: string) => void;
   onCancel: () => void;
 }) {
   const t = useT();
-  const [value, setValue] = useState("");
+  // A name ending in a number suggests the next, selected so typing
+  // replaces it: "v2" → "v3".
+  const counted = live?.label?.match(/^(.*?)(\d+)$/);
+  const [value, setValue] = useState(counted ? `${counted[1]}${Number(counted[2]) + 1}` : "");
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => input.current?.focus(), []);
+  useEffect(() => {
+    input.current?.focus();
+    input.current?.select();
+  }, []);
   return (
     <Modal
       title={title}
@@ -56,6 +65,13 @@ export function PublishLabelModal({
         <span>{t.t("Name this release (optional)")}</span>
         <input ref={input} type="text" value={value} placeholder={t.t("e.g. Summer edition")} onChange={(e) => setValue(e.target.value)} />
       </label>
+      {live && (
+        <p className="publish-label-live">
+          {live.label
+            ? t.t("Live now: version {{n}}, “{{label}}”.", { n: live.version, label: live.label })
+            : t.t("Live now: version {{n}}, without a name.", { n: live.version })}
+        </p>
+      )}
       <p className="confirm-message">{message}</p>
     </Modal>
   );

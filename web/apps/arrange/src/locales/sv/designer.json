@@ -1301,5 +1301,7 @@
   "Gameplay": "Spelet",
   "Presentation": "Presentation",
   "Adding or removing parts of a step is done in {{lang}}. Switch the language at the top first.": "Delar av ett steg läggs till och tas bort på {{lang}}. Byt språk högst upp först.",
-  "Not saved": "Inte sparat"
+  "Not saved": "Inte sparat",
+  "Live now: version {{n}}, “{{label}}”.": "Spelas nu: version {{n}}, ”{{label}}”.",
+  "Live now: version {{n}}, without a name.": "Spelas nu: version {{n}}, utan namn."
 }

@@ -11,6 +11,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- Designer: publishing says which version players get now and what it
+  is called. A name ending in a number suggests the next one ("v2"
+  offers "v3"), selected so typing replaces it.
+
 ## [0.33.3] - 2026-10-18
 
 ### Changed

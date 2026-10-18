@@ -465,6 +465,11 @@
   font-weight: 600;
   color: var(--dz-muted);
 }
+.dz .publish-label-live {
+  margin: calc(-1 * var(--dz-space-2)) 0 var(--dz-space-3);
+  font-size: var(--dz-text-xs);
+  color: var(--dz-muted);
+}
 .dz .publish-label-field input {
   width: 100%;
   padding: var(--dz-space-2) var(--dz-space-3);
