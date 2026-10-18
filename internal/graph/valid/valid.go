@@ -932,6 +932,9 @@ func checkResources(r *reporter, g *graph.Graph) {
 	checkUnique(r, "counter", len(g.Counters), func(i int) string { return g.Counters[i].Slug })
 	checkUnique(r, "journal entry", len(g.Journal), func(i int) string { return g.Journal[i].Slug })
 	checkUnique(r, "theme", len(g.Themes), func(i int) string { return g.Themes[i].Slug })
+	if g.MainTheme != "" && g.Theme(g.MainTheme) == nil {
+		r.err("theme.main.unknown", "", "", "main theme %q is not one of the adventure's saved themes", g.MainTheme)
+	}
 	for _, th := range g.Themes {
 		if slices.Contains(graph.Themes, th.Slug) {
 			r.err("theme.slug.builtin", "", "", "saved theme %q has the name of a built-in theme; give it another slug", th.Slug)

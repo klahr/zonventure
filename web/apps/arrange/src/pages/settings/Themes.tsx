@@ -123,7 +123,7 @@ export function ThemesTab() {
         {choosing || !theme ? (
           <StarterGallery
             onPick={(name, look) => void create(name || t.t("Theme {{n}}", { n: themes.length + 1 }), look)}
-            ownLookHint={false}
+           
             {...(theme ? { onCancel: () => setChoosing(false) } : {})}
           />
         ) : (

@@ -1675,19 +1675,14 @@ function EffectForm({ cfg, graph, onChange, onNewItem, onGraphChange }: { cfg: E
         <Field label={t.t("Theme")} hint={t.t("Stays until another step changes it.")}>
           <select className="field__input" value={cfg.theme ?? ""} onChange={(e) => onChange(withOptional({ ...cfg }, "theme", e.target.value || undefined))}>
             <option value="" disabled>{t.t("— pick one —")}</option>
-            <option value="default">{t.t("The adventure's own theme")}</option>
-            {saved.length > 0 && (
-              <optgroup label={t.t("Your themes")}>
-                {saved.map((th) => (
-                  <option key={th.slug} value={th.slug}>{th.name || th.slug}</option>
-                ))}
-              </optgroup>
+            <option value="default">{t.t("Main theme")}</option>
+            {saved.filter((th) => th.slug !== graph.main_theme || th.slug === cfg.theme).map((th) => (
+              <option key={th.slug} value={th.slug}>{th.name || th.slug}</option>
+            ))}
+            {/* A built-in theme, from before every theme was the adventure's own. */}
+            {cfg.theme && THEMES[cfg.theme] && (
+              <option value={cfg.theme}>{({ dark: t.t("Dark"), night: t.t("Night"), alarm: t.t("Alarm"), parchment: t.t("Parchment") } as Record<string, string>)[cfg.theme] ?? cfg.theme}</option>
             )}
-            <optgroup label={t.t("Built in")}>
-              {Object.keys(THEMES).map((k) => (
-                <option key={k} value={k}>{({ dark: t.t("Dark"), night: t.t("Night"), alarm: t.t("Alarm"), parchment: t.t("Parchment") } as Record<string, string>)[k] ?? k}</option>
-              ))}
-            </optgroup>
             {cfg.theme && cfg.theme !== "default" && !THEMES[cfg.theme] && !saved.some((th) => th.slug === cfg.theme) && <option value={cfg.theme}>{cfg.theme}</option>}
           </select>
         </Field>

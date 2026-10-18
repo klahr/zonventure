@@ -1,7 +1,7 @@
 import { createContext, useState } from "react";
 import { adventures, canAuthor, type play } from "@zonventure/api";
 import type { Graph, Theme, ThemeLook } from "@zonventure/graph";
-import { Building2, Copy, Palette, Plus, Trash2 } from "lucide-react";
+import { Building2, Copy, Palette, Plus, Star, Trash2 } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { useSession } from "../session.tsx";
 import { href } from "../router.ts";
@@ -34,19 +34,17 @@ interface Props {
   initial?: string | null;
   onChange: (g: Graph) => void;
   onClose: () => void;
-  /** The adventure's own look, and making a theme it: offered on closing after a theme was made or edited. */
-  look?: ThemeLook;
-  onUse?: (look: ThemeLook) => void;
 }
 
 /**
  * The adventure's saved themes, edited beside a phone showing a sample
  * puzzle. Themes live in the graph: every change is a draft edit —
  * autosaved, undoable, published with the rest — so a running event keeps
- * the themes its steps switch to. The organisation's library, which new
+ * the themes its steps switch to. Editing the main theme edits what
+ * players see, once published. The organisation's library, which new
  * themes may start from, is edited under Settings → Themes.
  */
-export function ThemesModal({ graph, initial, onChange, onClose, look, onUse }: Props) {
+export function ThemesModal({ graph, initial, onChange, onClose }: Props) {
   const t = useT();
   const themes = graph.themes ?? [];
   const [current, setCurrent] = useState<string | null>(initial ?? themes[0]?.slug ?? null);
@@ -56,14 +54,8 @@ export function ThemesModal({ graph, initial, onChange, onClose, look, onUse }: 
   const { state } = useSession();
   const orgAdmin = state.status === "authenticated" && canAuthor(state.user);
   const theme = themes.find((th) => th.slug === current) ?? null;
-  // The theme last made or edited here, and the question on closing.
-  const [touched, setTouched] = useState<string | null>(null);
-  const [asking, setAsking] = useState<Theme | null>(null);
-  const close = () => {
-    const th = themes.find((x) => x.slug === touched);
-    if (onUse && th && JSON.stringify(th.look) !== JSON.stringify(look ?? {})) return setAsking(th);
-    onClose();
-  };
+  const mainLook = themes.find((th) => th.slug === graph.main_theme)?.look ?? {};
+  const isMain = !!theme && theme.slug === graph.main_theme;
 
   const save = (next: Theme[]) => {
     const g = { ...graph };
@@ -75,12 +67,10 @@ export function ThemesModal({ graph, initial, onChange, onClose, look, onUse }: 
     const th: Theme = { slug: freshSlug(themes), name, look: structuredClone(look) };
     save([...themes, th]);
     setCurrent(th.slug);
-    setTouched(th.slug);
   };
   const update = (patch: Partial<Theme>) => {
     if (!theme) return;
     save(themes.map((th) => (th.slug === theme.slug ? { ...th, ...patch } : th)));
-    setTouched(theme.slug);
   };
   const remove = (s: string) => {
     const next = themes.filter((th) => th.slug !== s);
@@ -114,16 +104,20 @@ export function ThemesModal({ graph, initial, onChange, onClose, look, onUse }: 
   };
 
   return (
-    <Modal title={t.t("Themes")} icon={<Palette size={ICON.md} />} size="xl" flush className="themes-modal" onClose={close}>
+    <Modal title={t.t("Themes")} icon={<Palette size={ICON.md} />} size="xl" flush className="themes-modal" onClose={onClose}>
       <RailLayout
         label={t.t("Themes")}
         current={theme ? theme.slug : NEW}
-        onPick={(id) => (id === NEW ? add(t.t("Theme {{n}}", { n: themes.length + 1 }), look ?? {}) : setCurrent(id))}
+        onPick={(id) => (id === NEW ? add(t.t("Theme {{n}}", { n: themes.length + 1 }), mainLook) : setCurrent(id))}
         groups={[
           {
             label: t.t("Themes"),
             entries: [
-              ...themes.map((th) => ({ id: th.slug, label: th.name || t.t("Untitled theme"), icon: <ThemeSwatch look={th.look as play.Brand} /> })),
+              ...themes.map((th) => ({
+                id: th.slug,
+                label: th.slug === graph.main_theme ? t.t("{{name}} (main)", { name: th.name || t.t("Untitled theme") }) : th.name || t.t("Untitled theme"),
+                icon: <ThemeSwatch look={th.look as play.Brand} />,
+              })),
               { id: NEW, label: t.t("New theme"), icon: <span className="theme-swatch theme-swatch--add" aria-hidden><Plus size={ICON.sm} /></span> },
             ],
           },
@@ -143,6 +137,12 @@ export function ThemesModal({ graph, initial, onChange, onClose, look, onUse }: 
               media
               actions={
                 <>
+                  {!isMain && (
+                    <Button size="sm" title={t.t("Players see the main theme wherever no step changes the theme")} onClick={() => onChange({ ...graph, main_theme: theme.slug })}>
+                      <Star size={ICON.sm} aria-hidden />
+                      {t.t("Make main")}
+                    </Button>
+                  )}
                   <Button size="sm" onClick={() => add(t.t("{{name}} (copy)", { name: theme.name }), theme.look)}>
                     <Copy size={ICON.sm} aria-hidden />
                     {t.t("Duplicate")}
@@ -156,8 +156,8 @@ export function ThemesModal({ graph, initial, onChange, onClose, look, onUse }: 
                   <Button
                     type="button"
                     size="sm"
-                    disabled={uses> 0}
-                    title={uses> 0 ? t.t("Steps still switch to this theme. Change them first.") : undefined}
+                    disabled={uses > 0 || isMain}
+                    title={isMain ? t.t("This is the main theme. Make another one main first.") : uses > 0 ? t.t("Steps still switch to this theme. Change them first.") : undefined}
                     onClick={() => setDeleting(theme)}
                  >
                     <Trash2 size={ICON.sm} aria-hidden />
@@ -169,7 +169,9 @@ export function ThemesModal({ graph, initial, onChange, onClose, look, onUse }: 
                 <p className="field__hint theme-ed__note" role="status">
                   {shared?.slug === theme.slug
                     ? shared.text
-                    : uses > 0 && t.plural(uses, { one: t.t("{{n}} step switches to this theme."), other: t.t("{{n}} steps switch to this theme.") })}{" "}
+                    : isMain
+                      ? t.t("The main theme: players see it wherever no step changes the theme, once you publish.")
+                      : uses > 0 && t.plural(uses, { one: t.t("{{n}} step switches to this theme."), other: t.t("{{n}} steps switch to this theme.") })}{" "}
                   {orgAdmin && <a href={href({ name: "settings", tab: "themes" })}>{t.t("Organisation themes")}</a>}
                 </p>
               }
@@ -189,18 +191,6 @@ export function ThemesModal({ graph, initial, onChange, onClose, look, onUse }: 
             setDeleting(null);
           }}
           onCancel={() => setDeleting(null)}
-        />
-      )}
-      {asking && (
-        <ConfirmModal
-          title={t.t("Use “{{name}}” for this adventure?", { name: asking.name || t.t("Untitled theme") })}
-          message={t.t("It becomes the adventure's main theme: what players see wherever no step changes the theme.")}
-          confirmLabel={t.t("Use this theme")}
-          onConfirm={() => {
-            onUse?.(asking.look);
-            onClose();
-          }}
-          onCancel={onClose}
         />
       )}
       {sharing && (

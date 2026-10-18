@@ -35,11 +35,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/valid"
 	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/ws"
 )
 
@@ -340,6 +342,7 @@ func (h *Handlers) PublishAdventureGraph(w http.ResponseWriter, r *http.Request)
 	}
 	_, report, err := graphstore.Publish(r.Context(), h.DB, advID, h.userID(r), draft.Graph, strings.TrimSpace(req.Label))
 	if !h.publishRefused(w, report, err) {
+		h.adoptMainTheme(r.Context(), advID, draft.Graph)
 		h.publishGraphSaved(r, advID, draft.UpdatedAt, draft.Graph, draft.Graph, nil)
 		h.writeGraphState(w, r, advID)
 	}
@@ -401,7 +404,7 @@ func (h *Handlers) PublishAdventureGraphVersion(w http.ResponseWriter, r *http.R
 			return
 		}
 	}
-	_, err := graphstore.PublishVersion(r.Context(), h.DB, advID, version)
+	s, err := graphstore.PublishVersion(r.Context(), h.DB, advID, version)
 	if errors.Is(err, graphstore.ErrNotFound) {
 		httpx.JSON(w, http.StatusNotFound, graphRefusal{Error: "no such version", Code: "version_not_found"})
 		return
@@ -412,7 +415,43 @@ func (h *Handlers) PublishAdventureGraphVersion(w http.ResponseWriter, r *http.R
 		report = invalid.Report
 	}
 	if !h.publishRefused(w, report, err) {
+		h.adoptMainTheme(r.Context(), advID, s.Graph)
 		h.writeGraphState(w, r, advID)
+	}
+}
+
+// adoptMainTheme makes the main theme of g, just published, the
+// adventure's look: the one the store, emails and the pages before play
+// show. A new cover waits for review as when set by hand. A graph
+// without a main theme leaves the look as it is.
+func (h *Handlers) adoptMainTheme(ctx context.Context, advID int64, g *graph.Graph) {
+	th := g.Theme(g.MainTheme)
+	if th == nil {
+		return
+	}
+	var slug string
+	err := h.DB.QueryRowContext(ctx, `SELECT slug FROM adventures WHERE id = $1`, advID).Scan(&slug)
+	if err == nil {
+		_, err = applyAdventureMetaUpdate(ctx, h.DB, slug, lookUpdate(th.Look))
+	}
+	if err != nil {
+		logx.Warn("admin.graph.main_theme", "adventure_id", advID, "err", err.Error())
+	}
+}
+
+// lookUpdate sets every field of the adventure's look to l's.
+func lookUpdate(l adventure.Colors) updateAdventureRequest {
+	backdrop, style := l.Backdrop, l.Style
+	if backdrop == nil {
+		backdrop = &adventure.Backdrop{}
+	}
+	if style == nil {
+		style = &adventure.Style{}
+	}
+	return updateAdventureRequest{
+		AccentColor: &l.Accent, AccentSecondaryColor: &l.AccentSecondary, BackgroundColor: &l.Background,
+		TextColor: &l.Text, SubmitBgColor: &l.SubmitBackground, Font: &l.Font, HeadingFont: &l.HeadingFont,
+		Corners: &l.Corners, Cards: &l.Cards, CardOutline: &l.CardOutline, Backdrop: backdrop, Style: style,
 	}
 }
 

@@ -92,11 +92,11 @@ import { Resources, type ResourceSection } from "./Resources.tsx";
 import { Simulator, type SimMode } from "./Simulator.tsx";
 import { EventSim } from "./EventSim.tsx";
 import { FloatingWindow } from "./FloatingWindow.tsx";
-import { OpenThemes, ThemesModal, freshSlug } from "./ThemesModal.tsx";
+import { OpenThemes, ThemesModal } from "./ThemesModal.tsx";
 import { DevTicketModal } from "./DevTicket.tsx";
 import { useInspectorWidth } from "./InspectorResize.tsx";
 import { TopBarPortal, useTopBarTitle } from "../topbar.tsx";
-import { Look } from "./Look.tsx";
+import { ThemePanel } from "./ThemePanel.tsx";
 import { StepSearch } from "./StepSearch.tsx";
 import { Tutorial } from "./Tutorial.tsx";
 import { Coach, TutorialList, TutorialPill } from "./Coach.tsx";
@@ -337,9 +337,9 @@ export function Designer({ slug }: { slug: string }) {
   const [revealRequest, setRevealRequest] = useState(0);
 
   // The adventure's main look, picked in Adventure settings.
+  // The adventure's look as published; the draft's main theme, when it
+  // has one, is what the designer shows.
   const [brand, setBrand] = useState<play.Brand>({});
-  const [brandSaving, setBrandSaving] = useState(false);
-  const [brandError, setBrandError] = useState<string | null>(null);
   const [adventureTitle, setAdventureTitle] = useState(slug);
   // The adventure's own language and texts, which its translations cover
   // too; they live on the adventure, not in the graph.
@@ -350,6 +350,7 @@ export function Designer({ slug }: { slug: string }) {
   // What the canvas shows: an older version while previewing, else the draft.
   const graph = preview?.graph ?? draft;
   const readOnly = !!preview;
+  const mainLook = (graph?.themes?.find((th) => th.slug === graph.main_theme)?.look as play.Brand | undefined) ?? brand;
   // The language the author is editing the text in; the main one edits
   // everything, another only its translations.
   // The server writes the adventure's language into every graph it
@@ -813,30 +814,6 @@ export function Designer({ slug }: { slug: string }) {
   }, [selected, fresh]);
   const shownIssues = fresh ? issues.filter((i) => i.node !== fresh) : issues;
 
-  // The adventure's own look, saved at once (not with the draft).
-  const applyBrand = async (b: play.Brand) => {
-    tutorialDid("look");
-    const before = brand;
-    setBrand(b);
-    setBrandSaving(true);
-    setBrandError(null);
-    try {
-      const r = await adventures.saveBrand(slug, b);
-      if (r?.held_for_review?.includes("look_cover")) {
-        // Live stays the approved cover until the new one is approved.
-        const style = { ...(b.style ?? {}) } as NonNullable<typeof b.style>;
-        if (before.style?.cover) style.cover = before.style.cover;
-        else delete style.cover;
-        setBrand({ ...b, style });
-        setBrandError(t.t("The new cover picture waits for review before players see it: submit it under Edit details."));
-      }
-    } catch (e) {
-      setBrand(before);
-      setBrandError(e instanceof ApiError ? e.message : t.t("Could not reach the server. Check your connection."));
-    } finally {
-      setBrandSaving(false);
-    }
-  };
 
   // --- working together -------------------------------------------------------------
 
@@ -1968,7 +1945,7 @@ export function Designer({ slug }: { slug: string }) {
             onMode={setSimMode}
             restart={simRestart}
             onPosition={setPlaying}
-            brand={brand}
+            brand={mainLook}
             title={adventureTitle}
             lang={editLang}
           />
@@ -2096,27 +2073,17 @@ export function Designer({ slug }: { slug: string }) {
                   <PrintMaterials graph={graph} main={mainLang} onChange={change} />
                 </AdventureSlug.Provider>
               ) : settingsOpen === "look" ? (
-                <Look
+                <ThemePanel
+                  graph={graph}
                   brand={brand}
-                  saving={brandSaving}
-                  error={brandError}
-                  savedThemes={graph.themes ?? []}
-                  onApply={applyBrand}
+                  onEdit={openThemes}
                   {...(readOnly
                     ? {}
                     : {
-                        onAddTheme: (name, look) => {
-                          const themes = graph.themes ?? [];
-                          change({ ...graph, themes: [...themes, { slug: freshSlug(themes), name, look: structuredClone(look) }] });
+                        onChange: (g: Graph) => {
+                          tutorialDid("look");
+                          change(g);
                         },
-                        onSaveAsTheme: () => {
-                          const themes = graph.themes ?? [];
-                          let n = 1;
-                          while (themes.some((th) => th.slug === `theme-${n}`)) n++;
-                          change({ ...graph, themes: [...themes, { slug: `theme-${n}`, name: t.t("Theme {{n}}", { n: themes.length + 1 }), look: structuredClone(brand) }] });
-                          openThemes(`theme-${n}`);
-                        },
-                        onEditThemes: () => openThemes(),
                       })}
                 />
               ) : (
@@ -2135,12 +2102,10 @@ export function Designer({ slug }: { slug: string }) {
             graph={graph}
             initial={themesOpen.theme ?? null}
             onChange={(g) => {
-              if (g.themes !== graph.themes) tutorialDid("look");
+              if (g.themes !== graph.themes || g.main_theme !== graph.main_theme) tutorialDid("look");
               change(g);
             }}
             onClose={() => setThemesOpen(null)}
-            look={brand}
-            onUse={(look) => void applyBrand(look as play.Brand)}
           />
         </AdventureSlug.Provider>
       )}

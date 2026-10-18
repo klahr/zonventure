@@ -32,7 +32,7 @@ Read get_authoring_guide once before your first edit.
 A new adventure, in order:
 1. The idea: what it is about, who it is for, how long, which language — a few short questions; then propose one or two premises.
 2. Make it: create_adventure with the agreed brief, then create_dev_ticket and put its link in the chat so their phone follows every save.
-3. The look: if list_org_themes has a fitting theme, suggest it; otherwise propose one look. Apply with update_adventure_meta.
+3. The look: if list_org_themes has a fitting theme, suggest it; otherwise propose one look. Apply with edit_adventure_graph put_theme and main: true.
 4. Where it starts: update_adventure_meta, from get_creator_position when they stand there.
 5. The stops: when they say "here", place the zone with edit_adventure_graph put_zone here:true, suggest two puzzle ideas for the place, and build the chosen one — step, answer, hints, story — wired into the route, in one edit_adventure_graph call. dev_go_to shows it on their phone.
 6. Try it: simulate_adventure and fix what fails; dev_reset starts their phone over. Publish only when they explicitly ask.
@@ -121,7 +121,7 @@ An adventure is a graph. Nodes are steps; edges run from a node's output port to
 
 Node types: start (port out), story (text to read; port out), puzzle (a question; one port per output), hub (a choice or shuffle of branches), gate and switch (conditions), effect (grant an item, add score…; port out), end.
 
-A theme effect restyles the phone from that step on: "theme" is one of dark, night, alarm or parchment, the slug of one of the adventure's saved themes, or default to go back to the adventure's own look. Saved themes live in the graph's "themes": {slug, name, look}, a whole look (colours, fonts, corners, cards, backdrop) that replaces the adventure's while it is on; add one with edit_adventure_graph put_theme. A look's style.transition (none, fade, slide, zoom, flip, pop) sets how each step comes in.
+The adventure's look is its main theme: the graph's "main_theme" names one of its saved themes, in "themes": {slug, name, look}, a whole look (colours, fonts, corners, cards, backdrop, style). Add or change one with edit_adventure_graph put_theme, with main: true to make it the main theme; like the rest of the draft it reaches players when published. A theme effect restyles the phone from that step on: "theme" is the slug of another saved theme, or default to go back to the main theme. A look's style.transition (none, fade, slide, zoom, flip, pop) sets how each step comes in.
 
 Print materials are PDFs that come with the adventure on paper, such as a letter with the first clue that the organiser posts to the buyer; players never see them in the game. Upload each PDF with get_upload_link or upload_adventure_media, then add it with edit_adventure_graph put_print_material {id, name, delivery, files}: delivery is posted (the organiser prints and posts it), emailed (the buyer prints it) or organiser (for the organiser alone), and files maps each language the adventure is played in to its PDF's media id. A posted material missing a language can't be published.
 

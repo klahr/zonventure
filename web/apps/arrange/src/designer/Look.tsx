@@ -1,6 +1,5 @@
 import type { play } from "@zonventure/api";
-import type { Theme } from "@zonventure/graph";
-import { DEFAULT_LOOK, FONTS, STARTER_THEMES, brandVars, isHex, loadFont, lookContrast, type ContrastIssue } from "@zonventure/play-ui";
+import { FONTS, isHex, lookContrast, type ContrastIssue } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
 import { X } from "lucide-react";
 import { BackdropPicker, Check, ColourList, Slider } from "./BackdropPicker.tsx";
@@ -8,12 +7,8 @@ import { CoverPicker } from "./CoverPicker.tsx";
 import { demoAnswer } from "./blocks/Animation.tsx";
 import { AdventureSlug } from "./MediaEditor.tsx";
 import { adventures, play as playApi } from "@zonventure/api";
-import { useContext, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
+import { useContext, useRef, useState, type ReactNode } from "react";
 import { Button, ICON } from "./dz/ui.tsx";
-import { PanelModal } from "./dz/dialogs.tsx";
-import { StarterGallery, canon } from "./StarterGallery.tsx";
-import { SamplePreview } from "./SamplePreview.tsx";
 
 /** What each typeface is for, in the author's words. */
 const FONT_LABELS: Record<string, string> = {
@@ -62,104 +57,6 @@ const CARDS: { value: NonNullable<play.Brand["cards"]>; label: string }[] = [
   { value: "raised", label: "Raised" },
   { value: "flat", label: "Flat" },
 ];
-
-interface Props {
-  brand: play.Brand;
-  saving: boolean;
-  error: string | null;
-  savedThemes: Theme[];
-  /** Make this the adventure's main look, saved at once; {} is the standard look. */
-  onApply: (b: play.Brand) => void;
-  /** Keep a starter or organisation theme picked as the main look among the adventure's themes. */
-  onAddTheme?: (name: string, look: play.Brand) => void;
-  /** Save the main look as a new theme, to edit it in the theme editor. */
-  onSaveAsTheme?: () => void;
-  /** Open the theme editor. */
-  onEditThemes?: () => void;
-}
-
-/**
- * The adventure's main look: one of its saved themes, the organisation's,
- * or a starter, browsed in a gallery and saved at once. One not yet among the adventure's themes is
- * added to them as a copy, to change in the theme editor. A main look that
- * matches no theme (one set before themes, or through the API) shows as
- * custom, and can be saved as a theme to edit.
- */
-export function Look({ brand, saving, error, savedThemes, onApply, onAddTheme, onSaveAsTheme, onEditThemes }: Props) {
-  const t = useT();
-  const [browsing, setBrowsing] = useState(false);
-  const standard = Object.keys(brand).length === 0;
-  const matched = savedThemes.find((th) => canon(th.look) === canon(brand));
-  const value = standard ? "standard" : matched ? `saved:${matched.slug}` : "custom";
-  // An organisation theme comes as the gallery loaded it, so one shared
-  // again since this panel opened applies as it is now.
-  const choose = (v: string, org?: { name: string; look: play.Brand }) => {
-    if (v === "standard") return onApply({});
-    const [kind, id] = [v.slice(0, v.indexOf(":")), v.slice(v.indexOf(":") + 1)];
-    const saved = kind === "saved" ? savedThemes.find((x) => x.slug === id) : undefined;
-    if (saved) return onApply(structuredClone(saved.look));
-    const own = kind === "org" ? org : undefined;
-    const starter = kind === "starter" ? STARTER_THEMES.find((x) => x.id === id) : undefined;
-    const picked = own ? { name: own.name, look: own.look } : starter ? { name: t.t(starter.label), look: starter.look as play.Brand } : null;
-    if (!picked) return;
-    onApply(structuredClone(picked.look));
-    if (!savedThemes.some((th) => canon(th.look) === canon(picked.look))) onAddTheme?.(picked.name, picked.look);
-  };
-  loadFont(brand.heading_font ?? brand.font);
-  return (
-    <section className="look insp__section">
-      <h3>
-        <ConceptIcon {...RESOURCE.look} />
-        {t.t("Theme")}
-      </h3>
-      <div className="look__body">
-        <div className="look__controls">
-          <div className="field">
-            <span className="field__label">{t.t("Main theme")}</span>
-            <div className="look__main">
-              <span className="look__main-thumb look__thumb" style={brandVars(standard ? (DEFAULT_LOOK as play.Brand) : brand) as CSSProperties} aria-hidden>
-                <span className="theme-strip__aa">Aa</span>
-                <span className="theme-strip__dot" />
-              </span>
-              <span className="look__main-name">
-                {standard ? t.t("Standard theme") : matched ? matched.name || t.t("Untitled theme") : t.t("Custom theme (not saved)")}
-              </span>
-              <Button size="sm" disabled={saving} onClick={() => setBrowsing(true)}>{t.t("Browse themes…")}</Button>
-            </div>
-          </div>
-          {error && <div className="alert alert--danger">{error}</div>}
-          <div className="look__actions">
-            {onEditThemes && <Button size="sm" onClick={onEditThemes}>{t.t("Edit themes…")}</Button>}
-            {value === "custom" && onSaveAsTheme && <Button size="sm" onClick={onSaveAsTheme}>{t.t("Save as a theme")}</Button>}
-          </div>
-          <p className="field__hint">
-            {t.t("Choosing a theme applies it at once, also to running events. Editing a theme later does not change the main theme: choose it again to apply the changes.")}
-          </p>
-        </div>
-        <div className="look__preview">
-          <SamplePreview brand={standard ? (DEFAULT_LOOK as play.Brand) : brand} />
-        </div>
-      </div>
-      {browsing && (
-        <PanelModal title={t.t("Choose a theme")} wide onClose={() => setBrowsing(false)}>
-          <StarterGallery
-            heading=""
-            ownLookHint={false}
-            saved={savedThemes}
-            selected={standard ? "default" : matched ? `saved-${matched.slug}` : undefined}
-            onPick={(name, look, id) => {
-              choose(
-                id === "default" ? "standard" : id.startsWith("saved-") ? `saved:${id.slice(6)}` : id.startsWith("org-") ? `org:${id.slice(4)}` : `starter:${id}`,
-                id.startsWith("org-") ? { name, look: look as play.Brand } : undefined,
-              );
-              setBrowsing(false);
-            }}
-          />
-        </PanelModal>
-      )}
-    </section>
-  );
-}
 
 /**
  * The look's controls for any look — the adventure's own, a saved theme,

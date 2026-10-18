@@ -290,7 +290,7 @@ export default function NewAdventure({ onClose, tutorial = false }: { onClose: (
 /**
  * The new adventure's first graph: a start, a welcome to read with the
  * title and the line about it, and an end — a route to build on, playable
- * at once. A chosen theme comes along as the first saved theme.
+ * at once. The chosen theme is its main theme.
  */
 function firstGraph(title: string, welcome: string, language: string, theme: { id: string; name: string; look: ThemeLook }): Graph {
   return {
@@ -304,7 +304,8 @@ function firstGraph(title: string, welcome: string, language: string, theme: { i
       { from: "welcome", from_port: "out", to: "end" },
     ],
     language,
-    ...(theme.id === "default" ? {} : { themes: [{ slug: "theme-1", name: theme.name || "Theme 1", look: theme.look }] }),
+    themes: [{ slug: "main", name: theme.id === "default" || !theme.name ? (language.startsWith("sv") ? "Huvudtema" : "Main theme") : theme.name, look: theme.id === "default" ? {} : theme.look }],
+    main_theme: "main",
   } as Graph;
 }
 

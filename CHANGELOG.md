@@ -11,6 +11,27 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- Designer: an adventure's look is its main theme, one of its own
+  themes. Adventure settings → Theme lists them, with a star on the
+  main one: Edit changes a theme, Make main switches, and Add theme…
+  copies one from the organisation's or the starters. Editing the main
+  theme changes what players see, once published; there is no theme to
+  pick again any more. A step's "Change the theme" offers the main
+  theme and the adventure's others. Existing adventures keep their look
+  as a theme named Main (or the theme it already matched), and steps
+  that switched to a built-in Dark, Night, Alarm or Parchment switch to
+  a copy of it among their themes.
+- Assistant: `edit_adventure_graph` `put_theme` takes `main: true`;
+  `update_adventure_meta` refuses look fields for an adventure with a
+  main theme.
+
+### Fixed
+
+- Own domain: the branding step no longer asks for a title typeface of
+  your own; the site's typeface counts as chosen.
+
 ## [0.33.4] - 2026-10-18
 
 ### Changed

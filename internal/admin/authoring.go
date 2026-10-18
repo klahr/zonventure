@@ -425,7 +425,11 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	}
 	var advID int64
 	_ = h.DB.QueryRowContext(r.Context(), `SELECT id FROM adventures WHERE slug = $1`, slug).Scan(&advID)
-	held, err := applyAdventureMetaUpdate(r.Context(), h.DB, slug, req)
+	var held []string
+	err := refuseLookOverMainTheme(r.Context(), h.DB, slug, req)
+	if err == nil {
+		held, err = applyAdventureMetaUpdate(r.Context(), h.DB, slug, req)
+	}
 	if err != nil {
 		var ie *importError
 		if errors.As(err, &ie) {
@@ -754,7 +758,33 @@ func UpdateAdventureMetaJSON(ctx context.Context, db *sql.DB, slug string, patch
 	if err := json.Unmarshal(patchJSON, &req); err != nil {
 		return nil, badRequestf("patch parse: %s", err.Error())
 	}
+	if err := refuseLookOverMainTheme(ctx, db, slug, req); err != nil {
+		return nil, err
+	}
 	return applyAdventureMetaUpdate(ctx, db, slug, req)
+}
+
+// refuseLookOverMainTheme refuses a change to the look of an adventure
+// whose draft has a main theme: publishing would put the theme's back.
+// The look is changed in the theme instead.
+func refuseLookOverMainTheme(ctx context.Context, db *sql.DB, slug string, req updateAdventureRequest) error {
+	if req.AccentColor == nil && req.AccentSecondaryColor == nil && req.BackgroundColor == nil && req.TextColor == nil &&
+		req.SubmitBgColor == nil && req.Font == nil && req.HeadingFont == nil && req.Corners == nil && req.Cards == nil &&
+		req.CardOutline == nil && req.Backdrop == nil && req.Style == nil {
+		return nil
+	}
+	var main sql.NullString
+	err := db.QueryRowContext(ctx, `
+		SELECT d.graph ->> 'main_theme' FROM adventure_graph_drafts d JOIN adventures a ON a.id = d.adventure_id
+		WHERE a.slug = $1
+	`, slug).Scan(&main)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if main.String != "" {
+		return &importError{status: http.StatusConflict, msg: fmt.Sprintf("the look comes from the main theme %q: change that theme in the graph, and publish", main.String)}
+	}
+	return nil
 }
 
 // DeleteAdventure removes an adventure (and all its pages + images).

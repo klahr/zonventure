@@ -521,6 +521,11 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .look__main { display: flex; align-items: center; gap: var(--sp-2); }
 .look__main .look__main-thumb { flex: none; display: flex; align-items: flex-end; justify-content: space-between; width: 4.5rem; padding: 0.3rem 0.4rem; border: 1px solid var(--border-soft); }
 .look__main-name { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.look__themes { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.look__theme { display: flex; align-items: center; gap: var(--sp-2); }
+.look__theme .look__main-thumb { flex: none; display: flex; align-items: flex-end; justify-content: space-between; width: 4.5rem; padding: 0.3rem 0.4rem; border: 1px solid var(--border-soft); }
+.look__main-name .field__hint { display: block; margin: 0; font-weight: 400; }
+.look__star { flex: none; color: var(--accent); fill: currentColor; }
 /* A preset picker: the options side by side, the chosen one filled. */
 .look__check { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--text-sm); cursor: pointer; }
 .look__contrast { margin: 0; }

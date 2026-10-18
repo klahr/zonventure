@@ -109,6 +109,12 @@ type Graph struct {
 	// adventure's main look. They live in the graph, so a running event
 	// keeps the themes its effects name.
 	Themes []Theme `json:"themes,omitempty"`
+	// MainTheme is the slug of the saved theme players see wherever no
+	// step changes the theme. Publishing makes it the adventure's look
+	// (the store, emails and pages before play show that one). Empty
+	// leaves the adventure's look as it was set outside the graph: a
+	// party adventure's, say.
+	MainTheme string `json:"main_theme,omitempty"`
 
 	// Language is the BCP 47 tag the graph's own text is written in.
 	Language string `json:"language,omitempty"`

@@ -138,8 +138,9 @@ type View struct {
 	// player shows its button from the start, empty until notes arrive.
 	HasJournal bool   `json:"has_journal,omitempty"`
 	Theme      string `json:"theme,omitempty"`
-	// ThemeLook is the look of a saved theme Theme names, which replaces
-	// the adventure's own; empty for a built-in theme the phone knows.
+	// ThemeLook is the look of a saved theme Theme names, or of the main
+	// theme while none is on, which replaces the adventure's own; empty
+	// for a built-in theme the phone knows.
 	ThemeLook *look.Look `json:"theme_look,omitempty"`
 
 	// Now is the engine's clock when the view was built. Every deadline
@@ -894,6 +895,11 @@ func (t *Team) view() View {
 		Now:            t.Now,
 	}
 	if th := t.G.Theme(t.Theme); th != nil {
+		v.ThemeLook = &th.Look
+	} else if th := t.G.Theme(t.G.MainTheme); th != nil && (t.Theme == "" || t.Theme == "default") && !th.Look.Empty() {
+		// The main theme of the version the team plays, not the
+		// adventure's look of the latest. An empty one leaves the
+		// organisation's look to show.
 		v.ThemeLook = &th.Look
 	}
 	for _, slug := range sortedKeys(t.Items) {

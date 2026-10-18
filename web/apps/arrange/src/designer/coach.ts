@@ -341,9 +341,9 @@ export function coachTutorials(t: T): Tutorial[] {
         {
           id: "look-pick",
           title: t.t("Pick a theme"),
-          body: t.t("Under Theme, pick another main theme: the adventure changes at once."),
+          body: t.t("Under Theme, add a theme and make it the main one."),
           // The gallery opens in a dialog of its own, over the settings.
-          target: () => [{ sel: `.modal[aria-label=${attr(t.t("Choose a theme"))}]` }, { sel: `${SETTINGS} .look .look__main .btn` }, { sel: `${SETTINGS} .look` }],
+          target: () => [{ sel: `.modal[aria-label=${attr(t.t("Choose a theme"))}]` }, { sel: `${SETTINGS} .look .look__add` }, { sel: `${SETTINGS} .look` }],
           done: (c) => c.flags.includes("look"),
         },
         { id: "look-close", title: t.t("Close the settings"), body: t.t("Close the settings."), target: () => [close], done: (c) => !c.settings },

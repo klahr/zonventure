@@ -221,6 +221,7 @@ describe("persistence", () => {
       journal: [{ slug: "j" }],
       roles: [{ slug: "r" }],
       themes: [{ slug: "t", name: "T", look: { accent: "#123456" } }],
+      main_theme: "t",
       host_values: [{ slug: "name", label: "Name" }],
       journal_by_unlock: true,
       hide_score: true,

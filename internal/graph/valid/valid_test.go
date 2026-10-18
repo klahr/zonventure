@@ -560,6 +560,13 @@ func TestEffectRules(t *testing.T) {
 	assertCode(t, saved(jungle, jungle), "resource.slug.duplicate")
 	assertCode(t, saved(jungle, graph.Theme{Slug: "night", Name: "My night"}), "theme.slug.builtin")
 	assertCode(t, saved(jungle, graph.Theme{Slug: "x", Name: " "}), "theme.name.missing")
+	main := func(slug string) Report {
+		g := valid3()
+		g.Themes, g.MainTheme = []graph.Theme{jungle}, slug
+		return Check(g)
+	}
+	assertNoCode(t, main("jungle"), "theme.main.unknown")
+	assertCode(t, main("night"), "theme.main.unknown")
 	assertCode(t, saved(graph.Theme{Slug: "jungle", Name: "Jungle", Look: look.Look{Accent: "green"}}), "theme.look.invalid")
 	assertCode(t, saved(graph.Theme{Slug: "jungle", Name: "Jungle", Look: look.Look{Font: "comic-sans"}}), "theme.look.invalid")
 	assertCode(t, withEffect(&graph.EffectConfig{Kind: graph.AdjustScore}), "effect.score.zero")

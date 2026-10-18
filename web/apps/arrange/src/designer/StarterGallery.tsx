@@ -28,21 +28,17 @@ function coverFor(id: string, look: ThemeLook): string | undefined {
 /**
  * Looks to choose from, large enough to choose by eye: each look on a
  * small page with a title, a text card and an answer button, in its own
- * colours, fonts, background and cards. The adventure's own themes come
- * first when given, then the organisation's, after the default; chips
+ * colours, fonts, background and cards. The organisation's come first,
+ * after the default; chips
  * narrow the gallery to one group.
  */
-export function StarterGallery({ onPick, onCancel, selected, sample, ownLookHint = true, saved = [], heading }: {
+export function StarterGallery({ onPick, onCancel, selected, sample, heading }: {
   onPick: (name: string, look: ThemeLook, id: string) => void;
   onCancel?: () => void;
   /** The starter picked so far, marked. */
   selected?: string | undefined;
   /** The title and text on each sample page; the adventure's own when known. */
   sample?: { title: string; text: string };
-  /** Point to starting from the adventure's own look; off outside an adventure. */
-  ownLookHint?: boolean;
-  /** The adventure's own themes, offered first as saved-{slug}. */
-  saved?: { slug: string; name: string; look: ThemeLook }[];
   /** Above the gallery; "Start from" when not given, none when empty. */
   heading?: string;
 }) {
@@ -51,9 +47,8 @@ export function StarterGallery({ onPick, onCancel, selected, sample, ownLookHint
   const [only, setOnly] = useState<string | null>(null);
   const starters = [{ id: "default", label: "Default theme", group: "", look: DEFAULT_LOOK as ThemeLook }, ...STARTER_THEMES];
   const own = library.map((th) => ({ id: `org-${th.id}`, label: th.name, raw: true, look: th.look as ThemeLook }));
-  const mine = saved.map((th) => ({ id: `saved-${th.slug}`, label: th.name || t.t("Untitled theme"), raw: true, look: th.look }));
   useEffect(() => {
-    for (const s of [...starters, ...saved]) {
+    for (const s of starters) {
       loadFont(s.look.font);
       loadFont(s.look.heading_font);
     }
@@ -71,7 +66,6 @@ export function StarterGallery({ onPick, onCancel, selected, sample, ownLookHint
   }, []);
   const groups: { id: string; label: string; chip?: string; items: { id: string; label: string; look: ThemeLook; raw?: boolean }[] }[] = [
     { id: "", label: "", items: [starters[0]!] },
-    ...(mine.length ? [{ id: "saved", label: t.t("This adventure"), items: mine }] : []),
     ...(own.length ? [{ id: "org", label: t.t("Your organisation"), items: own }] : []),
     ...STARTER_GROUPS.map((g) => ({ id: g.id, label: g.label && t.t(g.label), chip: g.label ? t.t(g.label) : t.t("More themes"), items: STARTER_THEMES.filter((s) => s.group === g.id) })),
   ];
@@ -115,7 +109,6 @@ export function StarterGallery({ onPick, onCancel, selected, sample, ownLookHint
           </div>
         </div>
       ))}
-      {ownLookHint && <p className="field__hint">{t.t("To start from the adventure's own theme, use Save as a theme under Adventure settings.")}</p>}
     </section>
   );
 }

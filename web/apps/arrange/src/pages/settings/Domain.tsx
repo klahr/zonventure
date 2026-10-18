@@ -162,7 +162,7 @@ function Setup(props: {
     }
   };
 
-  const brandDone = !!props.profile?.has_logo && !!props.profile?.accent_color && !!brand.fontKey;
+  const brandDone = !!props.profile?.has_logo && !!props.profile?.accent_color;
   const steps: { key: string; title: string; done: boolean; body: ReactNode }[] = [
     {
       key: "address",
@@ -590,9 +590,10 @@ function BrandStep({ profile, details, setDetails, brand, canEdit }: {
       hint: tagline ? `“${tagline}”` : t.t("One line under your name that says what you offer."),
     },
     {
-      done: !!brand.fontKey,
+      // The site's own typeface is a choice too: nothing to add.
+      done: true,
       label: t.t("Your title typeface"),
-      hint: brand.font ? brand.font : t.t("Your store's titles are in the site's own typeface until you pick one."),
+      hint: brand.fontKey && brand.font ? brand.font : t.t("The site's own typeface. Pick another under Branding if you like."),
     },
   ];
   return (

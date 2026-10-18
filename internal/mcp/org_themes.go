@@ -17,7 +17,7 @@ func (s *Server) registerOrgThemeTools() {
 		Audience: audienceAuthor,
 		Scope:    scopeRead,
 		Description: "The caller's organisation's own themes: looks its authors keep for all its adventures (without pictures or sounds). " +
-			"Offer them first when choosing an adventure's look. Each look takes the put_theme look fields; to make one the main look, pass it to update_adventure_meta with _color added to accent, accent_secondary, background, text and submit_bg.",
+			"Offer them first when choosing an adventure's look. To use one, copy it into the adventure with edit_adventure_graph put_theme {theme: {slug, name, look}, main: true}.",
 		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
 	}, listOrgThemes)
 }

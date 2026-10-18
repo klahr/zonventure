@@ -34,7 +34,7 @@ func (s *Server) registerGraphEditTools() {
 			"delete_node {slug} also removes its edges; put_zone {zone} adds or replaces a zone — with here: true it is centred where the author's phone last reported standing " +
 			"(lat/lng are taken from there, radius_m defaults from the fix's accuracy; refused if the fix is older than two minutes); delete_zone {slug}; " +
 			"connect {from, from_port, to} points an output port at a node, replacing where it pointed before; disconnect {from, from_port}; " +
-			"put_theme {theme} adds or replaces a saved theme {slug, name, look} (look has the update_adventure_meta look fields without the _color suffix: accent, accent_secondary, background, text, submit_bg, font, heading_font, corners, cards, card_outline, backdrop); delete_theme {slug}, refused while a theme effect names it. " +
+			"put_theme {theme, main?} adds or replaces a saved theme {slug, name, look} (look: accent, accent_secondary, background, text, submit_bg as #rrggbb, font, heading_font, corners, cards, card_outline, backdrop, style); main: true makes it the main theme, the look players see wherever no step changes it, which reaches players and the store on publish; delete_theme {slug}, refused while a theme effect names it or it is the main theme. " +
 			"set_text {slug?, find, replace, all?} changes a text of one step by quoting it exactly — the fastest way to change words; it fails, listing the step's texts, if find is not there, and asks for more of the text if it appears more than once (or all: true to change every one); " +
 			"patch_node {slug?, patch} merges a JSON merge patch into one step (null removes a field; lists of items with ids — blocks, matchers — merge by id, and outputs by port: a known one is patched, a new one added, {id or port, _delete: true} removed; other lists, like hints, are replaced whole) — e.g. add an accepted answer with {\"puzzle\":{\"outputs\":[{\"port\":\"right\",\"matchers\":[{\"id\":\"seven\",\"kind\":\"exact\",\"value\":\"seven\"}]}]}}, without resending the step. " +
 			"Without slug, set_text and patch_node edit the step the author's dev phone shows; the phone shows the change within a second. " +
@@ -66,6 +66,7 @@ func (s *Server) registerGraphEditTools() {
 							"from_port":      map[string]any{"type": "string"},
 							"to":             map[string]any{"type": "string"},
 							"here":           map[string]any{"type": "boolean", "description": "put_zone: centre the zone on the author's current position."},
+							"main":           map[string]any{"type": "boolean", "description": "put_theme: make it the main theme."},
 						},
 					},
 				},
@@ -133,6 +134,7 @@ type graphOp struct {
 	Find     string          `json:"find,omitempty"`
 	Replace  string          `json:"replace,omitempty"`
 	All      bool            `json:"all,omitempty"`
+	Main     bool            `json:"main,omitempty"`
 }
 
 type editArgs struct {
@@ -412,6 +414,9 @@ func applyGraphOp(g *graph.Graph, op graphOp, here *position) error {
 		if th.Slug == "" {
 			return fmt.Errorf("theme needs a slug")
 		}
+		if op.Main {
+			g.MainTheme = th.Slug
+		}
 		for i := range g.Themes {
 			if g.Themes[i].Slug == th.Slug {
 				g.Themes[i] = th
@@ -420,6 +425,9 @@ func applyGraphOp(g *graph.Graph, op graphOp, here *position) error {
 		}
 		g.Themes = append(g.Themes, th)
 	case "delete_theme":
+		if op.Slug == g.MainTheme {
+			return fmt.Errorf("theme %q is the main theme; make another one main first", op.Slug)
+		}
 		for _, n := range g.Nodes {
 			if n.EffectCfg != nil && n.EffectCfg.Kind == graph.SetTheme && n.EffectCfg.Theme == op.Slug {
 				return fmt.Errorf("theme %q is still switched to by %q", op.Slug, n.Slug)

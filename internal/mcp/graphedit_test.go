@@ -70,6 +70,18 @@ func TestApplyGraphOp(t *testing.T) {
 		t.Errorf("deleted print material is still there: %+v", g.PrintMaterials)
 	}
 
+	// main: true makes the theme put the main one, which can't be deleted
+	// while it is.
+	mustApply(t, g, graphOp{Op: "put_theme", Theme: json.RawMessage(`{"slug":"jungle","name":"Jungle","look":{"accent":"#2e7d32"}}`), Main: true})
+	mustApply(t, g, graphOp{Op: "put_theme", Theme: json.RawMessage(`{"slug":"night-out","name":"Night out","look":{}}`)})
+	if g.MainTheme != "jungle" || len(g.Themes) != 2 {
+		t.Errorf("main theme %q, themes %+v", g.MainTheme, g.Themes)
+	}
+	if err := applyGraphOp(g, graphOp{Op: "delete_theme", Slug: "jungle"}, nil); err == nil {
+		t.Error("deleting the main theme: expected an error")
+	}
+	mustApply(t, g, graphOp{Op: "delete_theme", Slug: "night-out"})
+
 	for name, op := range map[string]graphOp{
 		"unknown field":        {Op: "put_node", Node: json.RawMessage(`{"slug":"x","type":"story","sparkle":1}`)},
 		"no slug":              {Op: "put_node", Node: json.RawMessage(`{"type":"story"}`)},

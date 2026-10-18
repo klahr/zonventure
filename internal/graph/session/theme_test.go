@@ -51,3 +51,55 @@ func TestSavedThemeReachesTheView(t *testing.T) {
 		t.Fatalf("at night: theme %q look %+v, want the built-in by name only", v.Theme, v.ThemeLook)
 	}
 }
+
+// Until a step changes the theme, and after one goes back to default,
+// the phone wears the main theme of the version it plays. An empty main
+// theme hands nothing, so the organisation's look can show.
+func TestMainThemeReachesTheView(t *testing.T) {
+	jungle := look.Look{Background: "#fff5d6", Font: "baloo-2"}
+	story := func(slug string) graph.Node {
+		return graph.Node{Slug: slug, Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: []graph.Block{{ID: "b1", Kind: graph.BlockText, Text: "Hi"}}}}
+	}
+	build := func(main look.Look) *graph.Graph {
+		return &graph.Graph{
+			Themes:    []graph.Theme{{Slug: "main", Name: "Main", Look: main}},
+			MainTheme: "main",
+			Nodes: []graph.Node{
+				{Slug: "start", Type: graph.Start}, story("first"),
+				{Slug: "to-default", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.SetTheme, Theme: "default"}},
+				story("second"),
+				{Slug: "end", Type: graph.End, EndCfg: &graph.EndConfig{Outcome: graph.Complete}},
+			},
+			Edges: []graph.Edge{
+				{From: "start", FromPort: "out", To: "first"},
+				{From: "first", FromPort: "out", To: "to-default"},
+				{From: "to-default", FromPort: "out", To: "second"},
+				{From: "second", FromPort: "out", To: "end"},
+			},
+		}
+	}
+	g := build(jungle)
+	if r := valid.Check(g); r.HasErrors() {
+		t.Fatalf("valid: %v", r.Errors())
+	}
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := tm.View(); v.Node != "first" || v.ThemeLook == nil || v.ThemeLook.Font != "baloo-2" {
+		t.Fatalf("first: node %q look %+v, want the main theme", v.Node, v.ThemeLook)
+	}
+	if _, _, err := tm.Continue("first"); err != nil {
+		t.Fatal(err)
+	}
+	if v := tm.View(); v.Theme != "default" || v.ThemeLook == nil || v.ThemeLook.Font != "baloo-2" {
+		t.Fatalf("back to default: theme %q look %+v, want the main theme", v.Theme, v.ThemeLook)
+	}
+	tm, _, err = Start(build(look.Look{}), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := tm.View(); v.ThemeLook != nil {
+		t.Fatalf("empty main theme: look %+v, want none", v.ThemeLook)
+	}
+}

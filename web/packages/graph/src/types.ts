@@ -39,6 +39,8 @@ export interface Graph {
   frames?: Frame[];
   /** Looks of the adventure's own: a theme effect switches to one by slug. */
   themes?: Theme[];
+  /** The saved theme players see wherever no step changes the theme; publishing makes it the adventure's look. */
+  main_theme?: string;
   /** Words a party's host fills in, written into texts as {{host:<slug>}}. */
   host_values?: HostValue[];
   /** The BCP 47 tag the graph's own text is in. */
