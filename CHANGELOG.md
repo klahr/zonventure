@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.3] - 2026-10-18
+
 ### Changed
 
 - Designer: an edit in the inspector says so beside it — "Saving…",
