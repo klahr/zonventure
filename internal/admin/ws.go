@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/domains"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/ws"
 )
@@ -496,6 +497,9 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 	}
 	if d.PublicForSale && d.Listed {
 		d.StoreBlocked = h.storeBlocked(connect)
+	}
+	if d.PublicForSale {
+		d.EmbedBase = domains.BaseForEvent(ctx, h.DB, d.ID, h.PublicURL)
 	}
 	// Only an adventure with a saboteur has the setting to show.
 	if g, err := h.eventGraph(ctx, d.AdventureSlug, graphID); err == nil && len(g.SecretRoles()) > 0 {

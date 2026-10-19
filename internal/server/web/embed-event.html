@@ -1,0 +1,76 @@
+<!doctype html>
+<!-- An event's ticket, framed by another site: /embed/event/{id}?size=button|card.
+     Light always — it sits on someone else's page — in the organisation's
+     colours. Links open the store in a new tab. -->
+<html lang="{{LANG_CODE}}" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="/assets/fontface.css">
+<link rel="stylesheet" href="/assets/page-tokens.css">
+{{ORG_BRAND_OVERRIDES}}
+<style>
+  html, body { margin: 0; background: transparent; }
+  body { font-family: var(--font-body); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  * { box-sizing: border-box; }
+  a { color: inherit; }
+  .t {
+    display: flex; overflow: hidden; height: 100vh;
+    background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius); box-shadow: var(--shadow);
+  }
+  .kind { display: inline-flex; align-items: center; padding: .2rem .6rem; border-radius: 999px; background: var(--accent); color: #fff; font-size: .72rem; font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
+  .kind[data-tour="true"] { background: #2f5d50; }
+  h2 { margin: 0; font-family: var(--font-brand); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; }
+  .sub { margin: .15rem 0 0; color: var(--muted); font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub:empty { display: none; }
+  .price { font-family: var(--font-brand); font-size: 1.15rem; white-space: nowrap; }
+  .price small { display: block; font: 600 .72rem/1.2 var(--font-body); color: var(--muted); }
+  .buy { flex: none; display: inline-flex; align-items: center; padding: .65rem 1.1rem; border-radius: 999px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; font-weight: 700; font-size: .9rem; text-decoration: none; white-space: nowrap; }
+  .buy:hover { filter: brightness(1.08); }
+  .off { color: var(--muted); font-size: .85rem; }
+  .off a { color: var(--accent-text); font-weight: 600; }
+  [data-on-sale="true"] .off, [data-on-sale="false"] .sale { display: none; }
+
+  /* Button: one row — what it is, its price, the button. */
+  [data-size="button"] .t { align-items: center; padding: .6rem .7rem .6rem 1rem; }
+  [data-size="button"] .what { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: .9rem; align-items: center; }
+  [data-size="button"] .cover, [data-size="button"] .blurb, [data-size="button"] .org { display: none; }
+  [data-size="button"] .foot { display: contents; }
+  [data-size="button"] h2 { grid-area: 1 / 1; font-size: 1rem; white-space: nowrap; }
+  [data-size="button"] .sub { grid-area: 2 / 1; }
+  [data-size="button"] .price { grid-area: 1 / 2 / 3 / 3; text-align: right; }
+  [data-size="button"] .buy { grid-area: 1 / 3 / 3 / 4; }
+  [data-size="button"] .off { grid-area: 1 / 2 / 3 / 4; margin: 0; }
+
+  /* Card: the cover, what it is, its price and the button. */
+  [data-size="card"] .t { flex-direction: column; }
+  [data-size="card"] .cover { position: relative; flex: none; aspect-ratio: 16 / 9; background: linear-gradient(135deg, var(--accent), var(--accent-2)) center / cover; }
+  [data-size="card"] .cover[data-has="true"] { background-image: url('{{COVER_URL}}'); }
+  [data-size="card"] .cover .kind { position: absolute; top: .7rem; right: .7rem; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+  [data-size="card"] .what > .kind { display: none; }
+  [data-size="card"] .body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 1rem 1.1rem 1.1rem; }
+  [data-size="card"] .org { font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-text); }
+  [data-size="card"] h2 { font-size: 1.2rem; margin-top: .2rem; }
+  [data-size="card"] .blurb { flex: 1; margin: .5rem 0 0; color: var(--muted); font-size: .88rem; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  [data-size="card"] .foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .8rem; padding-top: .8rem; border-top: 1px solid var(--border-soft); }
+</style>
+</head>
+<body data-size="{{SIZE}}" data-on-sale="{{ON_SALE}}">
+  <div class="t">
+    <div class="cover" data-has="{{HAS_COVER}}"><span class="kind" data-tour="{{IS_TOUR}}">{{KIND_LABEL}}</span></div>
+    <div class="body what">
+      <span class="org">{{ORG_NAME}}</span>
+      <h2>{{TITLE}}</h2>
+      <p class="sub">{{SUBTITLE}}</p>
+      <p class="blurb">{{BLURB}}</p>
+      <div class="foot">
+        <div class="price sale">{{PRICE_DISPLAY}}<small>{{PER_LABEL}} · {{TEAM_LABEL}}</small></div>
+        <a class="buy sale" href="{{BUY_URL}}" target="_blank" rel="noopener">{{BUY_LABEL}}</a>
+        <p class="off">{{OFF_SALE}} · <a href="{{ORG_URL}}" target="_blank" rel="noopener">{{SEE_MORE}}</a></p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

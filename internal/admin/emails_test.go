@@ -281,7 +281,7 @@ func TestEmails_InTheirLanguage(t *testing.T) {
 	if s := do(t, r, "POST", "/api/admin/events/"+strconv.FormatInt(eventID, 10)+"/emails", map[string]string{"subject": "Hej {{team}}", "body": "Vi ses vid fyren."}, nil); s != 200 {
 		t.Fatalf("send = %d", s)
 	}
-	if m := mail.msgs[0]; !strings.Contains(m.Text, "Du får det här eftersom ditt lag spelar Hamnnatten med Äventyr AB.") || !strings.Contains(m.HTML, `lang="sv"`) {
+	if m := mail.msgs[0]; !strings.Contains(m.Text, "Du får det här eftersom ditt lag är med i Hamnnatten från Äventyr AB.") || !strings.Contains(m.HTML, `lang="sv"`) {
 		t.Errorf("team email not in Swedish: %q", m.Text)
 	}
 	// Anna uses the console in Swedish: her notification is too.

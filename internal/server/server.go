@@ -49,7 +49,7 @@ import (
 	"github.com/klahr/zonventure/internal/ws"
 )
 
-//go:embed web/play-sw.js web/play.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/og-image.png web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/redeem.html web/topbar.css web/topbar.js web/page-tokens.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/maplibre/*.mjs web/assets/maplibre/*.css web/assets/zv-maplibre.js web/assets/illustrations/not-found.webp web/assets/email/*.jpg web/assets/email/covers/*.jpg
+//go:embed web/play-sw.js web/play.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/og-image.png web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/embed-event.html web/redeem.html web/topbar.css web/topbar.js web/page-tokens.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/maplibre/*.mjs web/assets/maplibre/*.css web/assets/zv-maplibre.js web/assets/illustrations/not-found.webp web/assets/email/*.jpg web/assets/email/covers/*.jpg
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -627,10 +627,15 @@ const embeddablePrefix = "/app/party/trail/"
 
 func securityHeaders(csp string) func(http.Handler) http.Handler {
 	framed := strings.Replace(csp, "frame-ancestors 'none'", "frame-ancestors 'self'", 1)
+	anyFrame := strings.Replace(csp, "frame-ancestors 'none'", "frame-ancestors *", 1)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := w.Header()
-			if strings.HasPrefix(r.URL.Path, embeddablePrefix) {
+			if strings.HasPrefix(r.URL.Path, embedPrefix) {
+				// Any site may frame an event's embed; it has no forms
+				// and no session, and buying opens in a new tab.
+				h.Set("Content-Security-Policy", anyFrame)
+			} else if strings.HasPrefix(r.URL.Path, embeddablePrefix) {
 				h.Set("Content-Security-Policy", framed)
 				h.Set("X-Frame-Options", "SAMEORIGIN")
 			} else {

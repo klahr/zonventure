@@ -11,6 +11,31 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- An adventure can be a walk, not a game (Adventure settings → Score,
+  or MCP `set_option` `tour`): the phone speaks of the walk and of
+  you rather than of a game and its players, in English and Swedish,
+  and the end screen says you have walked the whole way, without the
+  gold star. The designer's simulator speaks the same way.
+- Store: every listing says whether it is a game or a walk — a badge
+  on its card and on its ticket page, whose format reads "Phone-guided
+  walk" for one — and a store selling both can show just games or
+  just walks. The store API's items carry `tour`.
+
+### Changed
+
+- Swedish: the player's phone, team page, printed answer cards and
+  player emails speak of "rundan" rather than "spelet", and address
+  the player as "du", never "ni".
+
+### Fixed
+
+- Store: a ticket page is headed by the listing's name, as its card
+  is, with the adventure's name under it when that differs.
+- Deleting an adventure takes its authors' dev-ticket test runs with
+  it; only a real event still stops the delete.
+
 ## [0.33.8] - 2026-10-19
 
 ### Changed

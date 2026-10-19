@@ -5,14 +5,16 @@ import {
   type ReactNode,
 } from "react";
 import { I18n } from "@zonventure/i18n";
+import en from "./locales/en.json";
 import sv from "./locales/sv.json";
 
 /**
- * Catalogs. English is empty because the key is the English source
- * string. Swedish is the primary market, so every player-facing string —
- * this app's and @zonventure/play-ui's — has a translation here.
+ * Catalogs. English holds only a walk's words ("tour|" keys), because
+ * the key is the English source string. Swedish is the primary market,
+ * so every player-facing string — this app's and @zonventure/play-ui's
+ * — has a translation here.
  */
-const catalogs = { en: {}, sv };
+const catalogs = { en, sv };
 
 const instance = new I18n(catalogs);
 const I18nContext = createContext(instance);
@@ -35,8 +37,8 @@ export function useT(): I18n {
   const i18n = useContext(I18nContext);
   useSyncExternalStore(
     (cb) => i18n.subscribe(cb),
-    () => i18n.current(),
-    () => i18n.current(),
+    () => `${i18n.current()}|${i18n.variant() ?? ""}`,
+    () => `${i18n.current()}|${i18n.variant() ?? ""}`,
   );
   return i18n;
 }

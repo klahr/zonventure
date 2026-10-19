@@ -398,6 +398,14 @@ export function Resources({ graph, onChange, section }: { graph: Graph; onChange
           <p className="field__hint">
             {t.t("Points still count: the end screen, the standings and the recap show them. Useful for a story walk or a quiz walk where the score would give answers away.")}
           </p>
+          <label className="check">
+            <input type="checkbox" checked={!!graph.tour}
+              onChange={(e) => onChange(e.target.checked ? { ...graph, tour: true } : withoutKey(graph, "tour"))} />
+            {t.t("A walk, not a game")}
+          </label>
+          <p className="field__hint">
+            {t.t("For a guided or documentary walk: the phone speaks of the walk and of you, not of a game and its players, and the end has no trophy.")}
+          </p>
         </section>
       )}
 

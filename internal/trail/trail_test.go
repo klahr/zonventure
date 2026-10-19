@@ -35,7 +35,7 @@ func TestCompileValid(t *testing.T) {
 		t.Error("a trail has no places")
 	}
 	q := g.Nodes[2]
-	if q.Type != graph.Story || q.StoryCfg.Blocks[0].Kind != graph.BlockQuiz || q.Title != "Fråga 1" || q.StoryCfg.Blocks[0].Text != "Ert svar på fråga 1:" {
+	if q.Type != graph.Story || q.StoryCfg.Blocks[0].Kind != graph.BlockQuiz || q.Title != "Fråga 1" || q.StoryCfg.Blocks[0].Text != "Ditt svar på fråga 1:" {
 		t.Errorf("quiz card: %+v", q)
 	}
 	if strings.Contains(q.StoryCfg.Blocks[0].Text, "How old") {

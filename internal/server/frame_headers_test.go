@@ -28,4 +28,14 @@ func TestSecurityHeaders_Framing(t *testing.T) {
 			t.Errorf("%s: CSP %q", path, csp)
 		}
 	}
+
+	// An event's embed may be framed by any site.
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/embed/event/7?size=card", nil))
+	if got := w.Header().Get("X-Frame-Options"); got != "" {
+		t.Errorf("embed: X-Frame-Options %q, want none", got)
+	}
+	if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors *") {
+		t.Errorf("embed: CSP %q", csp)
+	}
 }

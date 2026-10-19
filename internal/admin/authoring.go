@@ -811,7 +811,8 @@ func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
 
 // DeleteAdventureBySlug is the non-HTTP core of DeleteAdventure. It
 // blocks the delete if the adventure still backs runs or
-// assignments (those need to be cleaned up first), then sweeps the
+// assignments (those need to be cleaned up first). Its authors' dev
+// events are test runs, not runs: they go with it. It then sweeps the
 // shares table (no FK on slug — kept loose so slug renames don't
 // break) and drops the adventure row. CASCADE handles the rest.
 //
@@ -827,7 +828,7 @@ func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
 func DeleteAdventureBySlug(ctx context.Context, db *sql.DB, slug string) error {
 	var count int
 	if err := db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM events WHERE adventure_slug = $1`, slug).Scan(&count); err != nil {
+		`SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND NOT dev`, slug).Scan(&count); err != nil {
 		return fmt.Errorf("runs lookup: %w", err)
 	}
 	if count > 0 {
@@ -839,6 +840,10 @@ func DeleteAdventureBySlug(ctx context.Context, db *sql.DB, slug string) error {
 	}
 	if count > 0 {
 		return conflictf("adventure still has event passes; revoke them first")
+	}
+	if _, err := db.ExecContext(ctx,
+		`DELETE FROM events WHERE adventure_slug = $1 AND dev`, slug); err != nil {
+		return fmt.Errorf("dev events cleanup: %w", err)
 	}
 	if _, err := db.ExecContext(ctx,
 		`DELETE FROM adventure_shares WHERE adventure_slug = $1`, slug); err != nil {

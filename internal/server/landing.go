@@ -233,6 +233,18 @@ type landingStrings struct {
 	StoreCardCTA        string
 	StorePerTicket      string
 	StorePerTeam        string
+	// A listing is a game or a walk (graph.Tour): each card says which,
+	// and a store with both lets the buyer show just one kind.
+	StoreKindGame    string
+	StoreKindWalk    string
+	StoreFilterAll   string
+	StoreFilterGames string
+	StoreFilterWalks string
+
+	// An event's embed (embed-event.html), on another site.
+	EmbedBuyCTA  string
+	EmbedOffSale string
+	EmbedSeeMore string
 
 	// Detail page (store-event.html).
 	StoreEventCrumbs           string
@@ -241,6 +253,7 @@ type landingStrings struct {
 	StoreEventMetaTeamSize     string
 	StoreEventMetaFormat       string
 	StoreEventMetaFormatValue  string
+	StoreEventMetaFormatWalk   string // the format of a walk
 	StoreEventMetaWhen         string
 	StoreEventMetaWhenValue    string
 	StoreEventMetaMeetingPoint string
@@ -454,6 +467,11 @@ func storeI18nJSON(s landingStrings) string {
 		"cardCTA":              s.StoreCardCTA,
 		"perTicket":            s.StorePerTicket,
 		"perTeam":              s.StorePerTeam,
+		"kindGame":             s.StoreKindGame,
+		"kindWalk":             s.StoreKindWalk,
+		"filterAll":            s.StoreFilterAll,
+		"filterGames":          s.StoreFilterGames,
+		"filterWalks":          s.StoreFilterWalks,
 		"emptyHeading":         s.StoreEmptyHeading,
 		"emptyBody":            s.StoreEmptyBody,
 		"errorHeading":         s.StoreErrorHeading,

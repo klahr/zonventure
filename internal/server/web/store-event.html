@@ -88,6 +88,9 @@
   /* Verified creator (listing review): shown when the org is one. */
   .verified-badge { display: inline-flex; align-items: center; gap: .3rem; margin-left: .5rem; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 700; letter-spacing: 0; text-transform: none; color: #1b6b43; background: color-mix(in srgb, #1b6b43 12%, transparent); vertical-align: middle; }
   .verified-badge[data-verified="false"] { display: none; }
+  /* A game or a walk, above the title. */
+  .kind { display: inline-flex; align-self: flex-start; align-items: center; margin: 0 0 .6rem; padding: .3rem .8rem; border-radius: 999px; background: var(--accent); color: #fff; font-size: .8rem; font-weight: 700; letter-spacing: .02em; }
+  .kind[data-tour="true"] { background: #2f5d50; }
   h1 {
     font-family: var(--font-brand);
     font-size: clamp(2.4rem, 6vw, 4.2rem);
@@ -203,6 +206,7 @@
       <p class="crumbs"><a href="{{ORG_PATH}}">{{STORE_EVENT_CRUMBS}}</a></p>
       <img class="adv-icon" src="{{ICON_URL}}" alt="" width="72" height="72" data-has="{{HAS_ICON}}">
       <p class="org store-org">{{ORG_NAME}}<span class="verified-badge" data-verified="{{ORG_VERIFIED}}" title="{{VERIFIED_CREATOR_HINT}}">✓ {{VERIFIED_CREATOR}}</span></p>
+      <span class="kind" data-tour="{{IS_TOUR}}">{{KIND_LABEL}}</span>
       <h1>{{TITLE}}</h1>
       <p class="subtitle">{{SUBTITLE}}</p>
       <div class="price-row">

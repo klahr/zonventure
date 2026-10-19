@@ -80,6 +80,11 @@ type Graph struct {
 	// still count: the end, the standings and the recap show them.
 	HideScore bool `json:"hide_score,omitempty"`
 
+	// Tour is a walk, not a game — a guided city walk, say: the phone
+	// speaks of the walk and of you rather than of a game and its
+	// players, and the end has no trophy.
+	Tour bool `json:"tour,omitempty"`
+
 	// QuizPuzzles lists every puzzle a team answers by typing on the end
 	// screen's quiz walk, after its 1-X-2 questions in graph order: a
 	// party trail's answer cards. The points stay the puzzle's own.

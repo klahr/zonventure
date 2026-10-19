@@ -83,9 +83,9 @@ func TestApplyGraphOp(t *testing.T) {
 	mustApply(t, g, graphOp{Op: "delete_theme", Slug: "night-out"})
 
 	// set_option changes only the settings it names.
-	mustApply(t, g, graphOp{Op: "set_option", Options: json.RawMessage(`{"hide_score":true,"quiz_puzzles":true}`)})
+	mustApply(t, g, graphOp{Op: "set_option", Options: json.RawMessage(`{"hide_score":true,"quiz_puzzles":true,"tour":true}`)})
 	mustApply(t, g, graphOp{Op: "set_option", Options: json.RawMessage(`{"quiz_puzzles":false}`)})
-	if !g.HideScore || g.QuizPuzzles || g.JournalByUnlock {
+	if !g.HideScore || g.QuizPuzzles || g.JournalByUnlock || !g.Tour {
 		t.Errorf("options: hide_score %v, quiz_puzzles %v, journal_by_unlock %v", g.HideScore, g.QuizPuzzles, g.JournalByUnlock)
 	}
 

@@ -330,6 +330,8 @@ export interface View {
   penalty_score: number;
   /** The adventure keeps the running score off the phone. */
   hide_score?: boolean;
+  /** A walk, not a game: the phone words itself for one. */
+  tour?: boolean;
   /** The game keeps its results until the host finishes it: no score, quiz walk or standings. */
   results_held?: boolean;
   penalty_seconds: number;

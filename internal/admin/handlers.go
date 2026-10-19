@@ -391,6 +391,9 @@ type eventDTO struct {
 	// StoreBlocked says why an approved listing can't be bought and so
 	// isn't in the store; see storeBlocked.
 	StoreBlocked string `json:"store_blocked,omitempty"`
+	// EmbedBase is where a self-guided event's embed and store page are:
+	// the organisation's own domain once it has one. Set on its detail.
+	EmbedBase string `json:"embed_base,omitempty"`
 	// SalesStopped is a self-guided event its organiser stopped selling:
 	// out of the store, while teams with a ticket play on.
 	SalesStopped bool `json:"sales_stopped,omitempty"`

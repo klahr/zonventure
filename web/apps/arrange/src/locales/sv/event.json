@@ -228,5 +228,20 @@
   "meeting_place is too long (max 200 chars)": "mötesplatsen är för lång (högst 200 tecken)",
   "The price must be more than the platform's {{fee}} for the team.": "Priset måste vara högre än plattformens {{fee}} för laget.",
   "You receive {{amount}} per ticket after the platform's {{fee}} for the team, less Stripe's card fee.": "Du får {{amount}} per biljett efter plattformens {{fee}} för laget, minus Stripes kortavgift.",
-  "The event pass is full.": "Eventpasset är fullt."
+  "The event pass is full.": "Eventpasset är fullt.",
+  "Share & embed": "Dela och bädda in",
+  "Put a buy button for this adventure on any web page.": "Lägg en köpknapp för äventyret på valfri webbsida.",
+  "Size": "Storlek",
+  "Card — picture, description and button": "Kort – bild, beskrivning och knapp",
+  "Button — one row, for a sidebar or under an article": "Knapp – en rad, för en sidospalt eller under en artikel",
+  "Language": "Språk",
+  "Preview": "Förhandsvisning",
+  "Code to paste into the page": "Kod att klistra in på sidan",
+  "It shows the price and whether it is on sale as it is now, in your organisation's colours. Buying opens your store in a new tab.": "Den visar priset och om det går att köpa just nu, i organisationens färger. Köpet öppnas i din butik i en ny flik.",
+  "Copy code": "Kopiera koden",
+  "Code copied": "Koden kopierad",
+  "Couldn't copy: select the code and copy it by hand.": "Kunde inte kopiera: markera koden och kopiera den själv.",
+  "Plain link": "Vanlig länk",
+  "For newsletters, mail and sites that don't allow embedded frames.": "För nyhetsbrev, e-post och sajter som inte tillåter inbäddade ramar.",
+  "Copy link": "Kopiera länken"
 }

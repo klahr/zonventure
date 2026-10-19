@@ -169,5 +169,14 @@
 "VerifiedCreator": "Verified creator",
 "VerifiedCreatorHint": "{{SITE_NAME}} has checked who is behind this organiser.",
 "SkipToContent": "Skip to content",
-"StoreEventPaymentByStripe": "Payment by Stripe."
+"StoreEventPaymentByStripe": "Payment by Stripe.",
+"StoreKindGame": "Game",
+"StoreKindWalk": "Walk",
+"StoreFilterAll": "All",
+"StoreFilterGames": "Games",
+"StoreFilterWalks": "Walks",
+"StoreEventMetaFormatWalk": "Phone-guided walk",
+"EmbedBuyCTA": "Buy ticket",
+"EmbedOffSale": "Not on sale right now",
+"EmbedSeeMore": "See more adventures"
 }

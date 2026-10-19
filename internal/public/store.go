@@ -25,7 +25,10 @@ type StoreItemDTO struct {
 	AdventureTitle string `json:"adventure_title"`
 	OrgName        string `json:"org_name"`
 	// OrgVerified is a verified creator: the store shows a badge.
-	OrgVerified    bool    `json:"org_verified"`
+	OrgVerified bool `json:"org_verified"`
+	// Tour is a walk, not a game (graph.Tour of the version the event
+	// plays): the store labels it so a buyer can tell them apart.
+	Tour           bool    `json:"tour"`
 	Blurb          string  `json:"blurb,omitempty"`
 	PriceCents     int     `json:"price_cents"`
 	Currency       string  `json:"currency"`
@@ -240,11 +243,13 @@ const storeItemSelect = `
 	       l.team_size,
 	       a.start_label, a.start_lat, a.start_lng, COALESCE(a.area, ''),
 	       (l.cover_mime_type IS NOT NULL) AS has_cover,
-	       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,` + pageLookColumns + `
+	       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,
+	       COALESCE((g.graph->>'tour')::boolean, FALSE) AS tour,` + pageLookColumns + `
 	FROM events e
 	JOIN event_listings l ON l.event_id = e.id
 	JOIN organizations o ON o.id = e.org_id
 	LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
+	LEFT JOIN adventure_graphs g ON g.id = e.graph_id
 `
 
 // storeItemRowFilterBase is the always-on portion of the listing
@@ -357,7 +362,7 @@ func (h *Handlers) scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 	if err := s.Scan(
 		&item.EventID, &eventName, &item.AdventureSlug, &item.AdventureTitle,
 		&item.OrgName, &item.OrgVerified, &blurb, &priceCents, &item.Currency, &item.TeamSize,
-		&startLabel, &startLat, &startLng, &item.Area, &hasCover, &hasIcon,
+		&startLabel, &startLat, &startLng, &item.Area, &hasCover, &hasIcon, &item.Tour,
 		&lookFont, &lookTheme, &ownCover,
 	); err != nil {
 		return StoreItemDTO{}, err

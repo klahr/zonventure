@@ -148,3 +148,6 @@
   .dz .vc-batches li { grid-template-columns: minmax(0, 1fr); }
   .dz .vc-batch__actions { justify-content: flex-start; }
 }
+/* An embed's preview, on a checkerboard-free neutral ground like a web page. */
+.dz .ev-embed-preview { padding: var(--dz-space-3); border-radius: var(--dz-r-2); background: var(--dz-surface-2, #f3f4f7); overflow-x: auto; }
+.dz .ev-embed-preview iframe { display: block; border: 0; max-width: 100%; }

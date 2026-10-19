@@ -116,6 +116,33 @@ describe("setLocale", () => {
   });
 });
 
+describe("setVariant", () => {
+  const withTour = {
+    en: { "tour|The game is over": "The walk is over" },
+    sv: { "The game is over": "Spelet är slut", "tour|The game is over": "Rundan är slut", "Log in": "Logga in" },
+  };
+
+  test("a variant's entry wins, in every locale, and notifies subscribers", () => {
+    const i18n = new I18n(withTour, "en");
+    let calls = 0;
+    i18n.subscribe(() => calls++);
+    i18n.setVariant("tour");
+    assert.equal(i18n.variant(), "tour");
+    assert.equal(i18n.t("The game is over"), "The walk is over");
+    i18n.setLocale("sv");
+    assert.equal(i18n.t("The game is over"), "Rundan är slut");
+    assert.equal(calls, 2);
+  });
+
+  test("a key the variant does not change reads as usual", () => {
+    const i18n = new I18n(withTour, "sv");
+    i18n.setVariant("tour");
+    assert.equal(i18n.t("Log in"), "Logga in");
+    i18n.setVariant(null);
+    assert.equal(i18n.t("The game is over"), "Spelet är slut");
+  });
+});
+
 describe("flagFor", () => {
   test("resolves an exact tag", () => {
     assert.equal(flagFor("sv"), "🇸🇪");

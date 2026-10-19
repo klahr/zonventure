@@ -23,6 +23,9 @@ export function App() {
   const choosing = !view?.roles?.some((r) => r.final) && (view?.blocks ?? []).some((b) => b.kind === "roles" && b.choose && !b.locked);
   const myRoles = (view?.roles?.length ?? 0) > 1 ? (view?.roles ?? []).filter((r) => r.mine && !r.secret && (r.claimed || !choosing)).map((r) => r.name || r.slug) : [];
   const running = s?.event.state === "running";
+  // A walk, not a game: the app's own words speak of the walk.
+  const tour = !!view?.tour;
+  useEffect(() => i18n.setVariant(tour ? "tour" : null), [tour, i18n]);
   // The player switching a translated adventure's language also switches
   // the app's own words, where the app has them. Only a switch: on load
   // the language this phone chose, or its own, holds.

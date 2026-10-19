@@ -4,6 +4,7 @@ import { metresBetween, nodeBySlug, portLabel, zoneContains, type Envelope, type
 import { PlayView, StartCeremony, feedbackForRefusal, feedbackForResult, formatSeconds, type Feedback, type Motion } from "@zonventure/play-ui";
 import "@zonventure/play-ui/play-ui.css";
 import { I18n } from "@zonventure/i18n";
+import playEn from "../../../play/src/locales/en.json";
 import playSv from "../../../play/src/locales/sv.json";
 import { useT } from "../i18n.tsx";
 import { SpoofMap, type Point } from "./SpoofMap.tsx";
@@ -121,7 +122,7 @@ function useWindowHeight(): number {
 }
 
 /** The player app's own catalogs, so the phone reads as a team's would. */
-const PHONE_CATALOGS = { en: {}, sv: playSv as Record<string, string> };
+const PHONE_CATALOGS = { en: playEn as Record<string, string>, sv: playSv as Record<string, string> };
 
 export function Simulator({ slug, graph, envelope, selected, mode, onMode, restart, onPosition, brand, title, bare, lang }: Props) {
   const t = useT();
@@ -131,7 +132,12 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   // The phone speaks the adventure's language, as the player app does,
   // not the author's: falling back to theirs where the app has no words.
   const phoneLang = [view?.lang, graph.language, t.current()].find((l) => !!l && l in PHONE_CATALOGS) ?? "en";
-  const tr = useMemo(() => new I18n(PHONE_CATALOGS, phoneLang).t, [phoneLang]);
+  const tr = useMemo(() => {
+    const i18n = new I18n(PHONE_CATALOGS, phoneLang);
+    // A walk's words, as its phones will say them.
+    if (graph.tour) i18n.setVariant("tour");
+    return i18n.t;
+  }, [phoneLang, graph.tour]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [busy, setBusy] = useState(false);
   // The simulated phone, flat and facing north until the author turns it.

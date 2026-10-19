@@ -126,6 +126,8 @@ type View struct {
 	PenaltyScore float64 `json:"penalty_score"`
 	// HideScore is graph.HideScore: the phone leaves the score out of its header.
 	HideScore bool `json:"hide_score,omitempty"`
+	// Tour is graph.Tour: the phone words itself for a walk.
+	Tour bool `json:"tour,omitempty"`
 	// ResultsHeld says the game keeps its results until the host finishes
 	// it: the play engine leaves out the score, quiz walk and standings.
 	ResultsHeld    bool          `json:"results_held,omitempty"`
@@ -888,6 +890,7 @@ func (t *Team) view() View {
 		Score:          t.Points,
 		PenaltyScore:   t.PenaltyScore,
 		HideScore:      t.G.HideScore,
+		Tour:           t.G.Tour,
 		PenaltySeconds: t.PenaltySeconds,
 		Finished:       t.Completed,
 		Outcome:        t.Ending,

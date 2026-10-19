@@ -1211,9 +1211,12 @@ function EndStep(props: StepProps) {
   const held = !!view.results_held;
   return (
     <div className={"pv-summary" + (failed ? " is-fail" : "")}>
-      <div className="pv-summary__badge" aria-hidden>
-        {failed ? "⚑" : "★"}
-      </div>
+      {/* A walk ends without a trophy. */}
+      {!view.tour && (
+        <div className="pv-summary__badge" aria-hidden>
+          {failed ? "⚑" : "★"}
+        </div>
+      )}
       <h2 className="pv-summary__head">{failed ? t("The adventure is over.") : t("You made it!")}</h2>
       <Blocks blocks={view.blocks} {...blockContext(props)} />
       {view.quiz && <QuizResult quiz={view.quiz} t={t} />}

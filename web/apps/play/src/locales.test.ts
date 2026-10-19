@@ -30,3 +30,14 @@ test("every player string has a Swedish translation", () => {
   }
   assert.deepEqual([...missing].sort(), []);
 });
+
+test("a walk's words change existing strings, in English and Swedish alike", () => {
+  const sv = JSON.parse(readFileSync(new URL("./locales/sv.json", import.meta.url), "utf8")) as Record<string, string>;
+  const en = JSON.parse(readFileSync(new URL("./locales/en.json", import.meta.url), "utf8")) as Record<string, string>;
+  assert.deepEqual(Object.keys(en).filter((k) => !k.startsWith("tour|")), [], "English holds only a walk's words");
+  for (const k of [...Object.keys(en), ...Object.keys(sv)].filter((k) => k.startsWith("tour|"))) {
+    const base = k.slice("tour|".length);
+    assert.ok(base in sv, `${k} changes a string the app does not have`);
+    assert.ok(k in en, `${k} has no English`);
+  }
+});

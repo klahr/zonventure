@@ -69,6 +69,8 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		hasIcon    bool
 		// orgVerified is a verified creator: the page shows a badge.
 		orgVerified bool
+		// tour is a walk, not a game: the page says which.
+		tour bool
 	)
 	var (
 		brandAccent          sql.NullString
@@ -89,18 +91,20 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		       a.start_label,
 		       (l.cover_mime_type IS NOT NULL) AS has_cover,
 		       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,
+		       COALESCE((g.graph->>'tour')::boolean, FALSE) AS tour,
 		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color, o.brand_font
 		FROM events e
 		JOIN event_listings l ON l.event_id = e.id
 		JOIN organizations o ON o.id = e.org_id
 		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
+		LEFT JOIN adventure_graphs g ON g.id = e.graph_id
 		WHERE e.id = $1
 		  AND e.public_for_sale
 		  AND e.ticket_price_cents IS NOT NULL
 		  AND e.state = 'running'
 		  AND NOT e.sales_stopped
 	`, id).Scan(&eventName, &advSlug, &advTitle, &orgName, &orgSlug, &orgVerified, &blurb, &priceCents,
-		&currency, &teamSize, &startLabel, &hasCover, &hasIcon,
+		&currency, &teamSize, &startLabel, &hasCover, &hasIcon, &tour,
 		&brandAccent, &brandAccentSecondary, &brandBackground, &brandText, &brandFont)
 	if errors.Is(err, sql.ErrNoRows) {
 		renderStoreEventGone(w, r, db, id, slugFromURL)
@@ -121,17 +125,21 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		return
 	}
 
-	// Fall through to slug for the title when the adventure row
-	// has no human name; the slug is at worst kebab-case which is
-	// readable enough for the rare case the row was renamed away.
-	title := strings.TrimSpace(advSlug)
+	// The listing's name heads the page, as it heads the store's card;
+	// the adventure's name goes under it when it says something else.
+	// Fall through to slug when the adventure row has no human name;
+	// the slug is at worst kebab-case which is readable enough for the
+	// rare case the row was renamed away.
+	advName := strings.TrimSpace(advSlug)
 	if advTitle.Valid && strings.TrimSpace(advTitle.String) != "" {
-		title = strings.TrimSpace(advTitle.String)
+		advName = strings.TrimSpace(advTitle.String)
 	}
-	subtitle := ""
-	if eventName.Valid && strings.TrimSpace(eventName.String) != "" &&
-		!strings.EqualFold(strings.TrimSpace(eventName.String), title) {
-		subtitle = strings.TrimSpace(eventName.String)
+	title, subtitle := advName, ""
+	if eventName.Valid && strings.TrimSpace(eventName.String) != "" {
+		title = strings.TrimSpace(eventName.String)
+		if !strings.EqualFold(title, advName) {
+			subtitle = advName
+		}
 	}
 
 	priceMajor := ""
@@ -188,6 +196,11 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	if !simulated {
 		s.StoreEventTermsHTML = s.StoreEventPaymentByStripe + " " + s.StoreEventTermsHTML
 	}
+	kind := s.StoreKindGame
+	if tour {
+		kind = s.StoreKindWalk
+		s.StoreEventMetaFormatValue = s.StoreEventMetaFormatWalk
+	}
 	subs := topbarSubs(s, lang)
 	subs = append(subs, storeSubs(s)...)
 
@@ -227,6 +240,10 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{COVER_URL}}", html.EscapeString(cssURLQuote(coverURL))},
 		[2]string{"{{HAS_COVER}}", boolAttr(hasCover)},
 		[2]string{"{{ORG_VERIFIED}}", boolAttr(orgVerified)},
+		// A walk or a game: a badge on the page, and IS_TOUR for an
+		// override template that styles the two apart.
+		[2]string{"{{KIND_LABEL}}", html.EscapeString(kind)},
+		[2]string{"{{IS_TOUR}}", boolAttr(tour)},
 		[2]string{"{{LOOK_FONT}}", lookFont},
 		// The adventure's icon, beside the title; also what a link
 		// preview shows when the event has no cover of its own.

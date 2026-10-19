@@ -31,6 +31,8 @@ export interface Graph {
   journal_by_unlock?: boolean;
   /** Keep the team's running score off its phone; points still count. */
   hide_score?: boolean;
+  /** A walk, not a game: the phone speaks of the walk and of you, and the end has no trophy. */
+  tour?: boolean;
   /** A quiz walk (made as a party adventure): the end screen lists its typed answers with its quiz picks, and new puzzles just move on. */
   quiz_puzzles?: boolean;
   /** After `seconds` from its start, the team is moved to `to` and shown `text`. */

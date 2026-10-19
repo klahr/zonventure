@@ -106,7 +106,7 @@ and `patch_node` (a merge patch; blocks and matchers merge by id,
 outputs by port), `put_zone` (`here: true` centres it on the author) /
 `delete_zone`, `connect` / `disconnect`, `put_theme` / `delete_theme`,
 and `set_option` (adventure-wide switches: `hide_score`,
-`journal_by_unlock`, `quiz_puzzles`).
+`journal_by_unlock`, `quiz_puzzles`, `tour`).
 Without a step, `set_text` and `patch_node` edit the one the author's
 dev phone shows.
 

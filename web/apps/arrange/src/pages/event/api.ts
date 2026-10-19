@@ -46,6 +46,8 @@ export interface EventInfo {
   listed_currency?: string;
   /** Why an approved listing isn't in the store. */
   store_blocked?: "no_payments" | "connect_required";
+  /** Where a self-guided event's embed and store page are: the organisation's own domain once it has one. Detail only. */
+  embed_base?: string;
   /** A self-guided event its organiser stopped selling: out of the store, while teams with a ticket play on. */
   sales_stopped?: boolean;
   /** A hosted event: run from its host page, whose views the event page shows too. */

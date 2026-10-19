@@ -228,7 +228,7 @@ type wording struct{ card, info, ask, done string }
 
 func words(lang string) wording {
 	if lang == "sv" {
-		return wording{card: "Fråga %d", info: "Information", ask: "Ert svar på fråga %d:", done: "Det var sista kortet. Bra jobbat!"}
+		return wording{card: "Fråga %d", info: "Information", ask: "Ditt svar på fråga %d:", done: "Det var sista kortet. Bra jobbat!"}
 	}
 	return wording{card: "Question %d", info: "Information", ask: "Your answer to question %d:", done: "That was the last card. Well done!"}
 }

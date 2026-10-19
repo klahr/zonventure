@@ -68,6 +68,7 @@ export const DEFAULT_LOCALE = "sv";
 export class I18n {
   private catalogs: Record<Locale, Catalog>;
   private locale: Locale;
+  private register: string | null = null;
   private listeners = new Set<() => void>();
 
   constructor(catalogs: Record<Locale, Catalog>, locale?: Locale) {
@@ -90,7 +91,8 @@ export class I18n {
    * rather than as a broken-looking identifier.
    */
   t = (key: string, vars?: Vars): string => {
-    const translated = this.catalogs[this.locale]?.[key] ?? key;
+    const catalog = this.catalogs[this.locale];
+    const translated = (this.register ? catalog?.[`${this.register}|${key}`] : undefined) ?? catalog?.[key] ?? key;
     return vars ? interpolate(translated, vars) : translated;
   };
 
@@ -105,6 +107,22 @@ export class I18n {
     const translated = this.catalogs[this.locale]?.[key];
     return translated ?? fallback;
   };
+
+  /**
+   * A way of speaking, such as "tour" for a walk rather than a game: a
+   * catalog's "tour|<key>" entry then wins over the key's own. A key
+   * with no such entry reads as usual, so a register only lists what
+   * it changes — in every catalog, English included.
+   */
+  variant(): string | null {
+    return this.register;
+  }
+
+  setVariant(register: string | null): void {
+    if (register === this.register) return;
+    this.register = register;
+    for (const fn of this.listeners) fn();
+  }
 
   setLocale(locale: Locale): void {
     if (!this.catalogs[locale] || locale === this.locale) return;

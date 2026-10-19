@@ -142,6 +142,10 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 			}
 			renderStoreEventPage(w, req, cfg.DB, cfg.PublicURL, env.simulatedProv != nil)
 		})
+		// An event's buy button or card, for other sites to frame.
+		r.Get("/embed/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
+			renderEmbedEvent(w, req, cfg.DB, cfg.PublicURL, func(id int64) bool { return publicH.ForSale(req.Context(), id) })
+		})
 		r.Get("/api/o/{slug}/store/items", publicH.StoreListByOrg)
 		r.Get("/api/o/{slug}/store/items/{event_id}", publicH.StoreEventByOrg)
 		r.Post("/api/o/{slug}/store/buy", adminH.BuyTicketByOrg)

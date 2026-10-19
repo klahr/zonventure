@@ -23,6 +23,7 @@ import { HostedCards } from "./Hosted.tsx";
 import { StatisticsCard } from "./Statistics.tsx";
 import { ResultsRecordCard } from "./ResultsRecord.tsx";
 import { VoucherCodesCard } from "./Vouchers.tsx";
+import { EmbedCard } from "./Embed.tsx";
 import { isQuest, isTerminal, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
 import "./event.css";
 
@@ -167,6 +168,7 @@ export function EventPage({ id }: { id: number }) {
       {event.party && <HostedCards eventId={event.id} refresh={activityKey} />}
       {quest && <ConnectBanner event={event} status={connect.data ?? null} user={user} />}
       {quest && <StoreCard key={event.id} event={event} onSaved={detail.reload} />}
+      {quest && !isTerminal(event) && <EmbedCard key={`embed-${event.id}`} event={event} />}
       {quest && !isTerminal(event) && <VoucherCodesCard key={`vc-${event.id}`} event={event} />}
       {prints.data && <PrintDeliveryCard eventId={id} materials={prints.data} reload={prints.reload} invited={!event.public_for_sale && !event.party} />}
       {!quest && !event.party && !isTerminal(event) && <MeetingPlaceCard key={`meet-${event.id}`} event={event} onSaved={detail.reload} />}

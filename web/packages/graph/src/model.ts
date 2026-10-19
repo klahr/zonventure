@@ -545,6 +545,7 @@ export function cleanGraph(g: Graph): Graph {
   if (g.host_values?.length) out.host_values = g.host_values;
   if (g.journal_by_unlock) out.journal_by_unlock = true;
   if (g.hide_score) out.hide_score = true;
+  if (g.tour) out.tour = true;
   if (g.quiz_puzzles) out.quiz_puzzles = true;
   if (g.time_limit) out.time_limit = g.time_limit;
   if (g.language) out.language = g.language;
