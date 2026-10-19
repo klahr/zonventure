@@ -25,7 +25,9 @@ export function Fullscreen({ t }: { t: Translate }) {
       document.removeEventListener("webkitfullscreenchange", sync);
     };
   }, []);
-  if (!supported || matchMedia("(display-mode: fullscreen), (display-mode: standalone)").matches) return null;
+  // The page's own full screen also matches display-mode: fullscreen, so
+  // only an installed app's counts, or the way back out would vanish.
+  if (!supported || (!on && matchMedia("(display-mode: fullscreen), (display-mode: standalone)").matches)) return null;
 
   const toggle = () => {
     const el = document.documentElement as WebkitElement;

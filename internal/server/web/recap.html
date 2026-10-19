@@ -87,12 +87,14 @@ body {
 .head .who {
   color: var(--muted); font-size: .95rem; margin-bottom: 1rem;
 }
-.receipt { margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; }
-.receipt h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
-.receipt code { display: block; font-family: ui-monospace, monospace; font-size: .8rem; word-break: break-all; margin: .3rem 0; }
+.receipt { margin: 1.5rem 0; padding: .6rem 1rem; border: 1px solid var(--border); border-radius: 12px; font-size: .9rem; }
+.receipt summary { cursor: pointer; }
+.receipt[open] summary { margin-bottom: .4rem; }
+.receipt p { margin: .4rem 0; }
+.receipt code { display: block; font-family: ui-monospace, monospace; font-size: .75rem; word-break: break-all; margin: .2rem 0 .5rem; }
 .receipt .ok { color: #1b6b43; font-weight: 600; }
 .receipt .bad { color: #b3261e; font-weight: 600; }
-.receipt .fp { color: var(--muted); font-size: .85rem; margin-bottom: 0; }
+.receipt .fp { color: var(--muted); font-size: .8rem; margin-bottom: 0; }
 .outro {
   background: var(--surface);
   border: 1px solid var(--border-soft);
@@ -374,17 +376,19 @@ function statBox(value, label) {
 
 // The team's receipt from the event's results record: the hash of its
 // finish, which no one can change the results under without it showing.
+// One line says whether it holds; the codes wait behind it for the few
+// who want to check.
 function renderReceipt(d) {
   if (!d.receipt) return;
   const r = d.receipt;
-  const box = el('div', { class: 'receipt' },
-    el('h2', {}, t('Results receipt')),
-    el('p', {}, t('Keep this: it is the fingerprint of your results when you finished. If anyone changes them afterwards, it won\'t match any more.')),
-    el('code', {}, r.receipt),
-    el('p', { class: r.matches ? 'ok' : 'bad' },
-      r.matches ? t("Matches the event's results record.") : t("Doesn't match the event's results record: the results were changed after you finished.")));
+  const box = el('details', { class: 'receipt' + (r.matches ? '' : ' is-bad'), open: r.matches ? null : '' },
+    el('summary', { class: r.matches ? 'ok' : 'bad' },
+      r.matches ? t('✓ Your results are unchanged since you finished') : t('Your results were changed after you finished')),
+    el('p', {}, t('Proof that no one has changed your points or place afterwards. Save the code to check it later.')),
+    el('p', { class: 'fp' }, t('Your code')),
+    el('code', {}, r.receipt));
   if (d.results_fingerprint) {
-    box.append(el('p', { class: 'fp' }, t('Event results fingerprint') + ': '), el('code', {}, d.results_fingerprint));
+    box.append(el('p', { class: 'fp' }, t("The event's code")), el('code', {}, d.results_fingerprint));
   }
   root.append(box);
 }
@@ -461,15 +465,17 @@ function renderGraphStats(d) {
     ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(d.points)
     : '—';
   const rank = d.rank ? t('{{rank}} of {{n}}', { rank: d.rank, n: d.team_count }) : '—';
-  const boxes = [
+  // Time, points and place are for a game, not a walk, a party or one
+  // played at home.
+  const boxes = d.race ? [
     statBox(formatDuration(d.duration_seconds), t('Time')),
     statBox(points,                             t('Points')),
     statBox(rank,                               t('Rank')),
-  ];
+  ] : [];
   // No walk to measure (no track, or a game played at home): no Distance.
   if (d.distance_m > 0) boxes.splice(1, 0, statBox(formatDistance(d.distance_m), t('Distance')));
   if (d.quiz) boxes.push(statBox(d.quiz.right + '/' + d.quiz.total, t('Quiz')));
-  root.append(el('div', { class: 'stats' }, ...boxes));
+  if (boxes.length) root.append(el('div', { class: 'stats' }, ...boxes));
   if (d.outcome === 'fail') {
     root.querySelector('.head .who').append(' · ' + t('Did not finish'));
   }

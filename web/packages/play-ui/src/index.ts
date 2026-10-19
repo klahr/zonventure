@@ -11,7 +11,7 @@ export { Blocks, type BlocksProps } from "./blocks/index.tsx";
 export { fillTeam } from "./blocks/context.ts";
 export { RoleCards } from "./blocks/Roles.tsx";
 export { FitMap } from "./blocks/Map.tsx";
-export { CompassFace } from "./blocks/Compass.tsx";
+export { CompassFace, useAwake } from "./blocks/Compass.tsx";
 export type { BlockContext, Motion } from "./blocks/context.ts";
 export { StaticMap, project, unproject, TILE_URL, type MapPin, type MapPoint, type MapZone } from "./StaticMap.tsx";
 export { setVectorMapLoader, type VectorMapLib } from "./vectorMap.ts";

@@ -315,23 +315,34 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, out)
 }
 
-// finishOf reads a finished team's place, time and recap link.
+// finishOf reads a finished team's place, time and recap link. A walk,
+// an adventure played at home (as the store calls them) or a party is no
+// race: it gets only the recap link.
 func (h *Handlers) finishOf(ctx context.Context, eventID, teamID int64) (*PlayFinish, error) {
 	var (
 		f         PlayFinish
 		recap     string
 		started   time.Time
 		completed sql.NullTime
+		noRace    bool
 	)
 	err := h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE(t.recap_token, ''), s.started_at, s.completed_at
+		SELECT COALESCE(t.recap_token, ''), s.started_at, s.completed_at,
+		       e.party OR COALESCE((g.graph->>'tour')::boolean, FALSE)
+		       OR (a.start_lat IS NULL AND NOT COALESCE(jsonb_typeof(g.graph->'zones') = 'array' AND jsonb_array_length(g.graph->'zones') > 0, FALSE))
 		FROM teams t JOIN team_graph_state s ON s.team_id = t.id
-		WHERE t.id = $1`, teamID).Scan(&recap, &started, &completed)
+		JOIN events e ON e.id = t.event_id
+		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
+		LEFT JOIN adventure_graphs g ON g.id = e.graph_id
+		WHERE t.id = $1`, teamID).Scan(&recap, &started, &completed, &noRace)
 	if err != nil {
 		return nil, err
 	}
 	if recap != "" {
 		f.RecapURL = "/recap/" + recap
+	}
+	if noRace {
+		return &f, nil
 	}
 	if completed.Valid && completed.Time.After(started) {
 		f.Seconds = int(completed.Time.Sub(started).Seconds())

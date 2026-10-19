@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, play } from "@zonventure/api";
+import { useAwake } from "@zonventure/play-ui";
 
 /**
  * Refetch whenever the server says something changed.
@@ -90,6 +91,8 @@ export function useGeo(enabled: boolean, waitingForZone: boolean, refresh: () =>
   waitingRef.current = waitingForZone;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  // iOS can leave a watch silent after the page was hidden: start a new one.
+  const awake = useAwake();
 
   useEffect(() => {
     if (!enabled || !("geolocation" in navigator)) return;
@@ -158,7 +161,7 @@ export function useGeo(enabled: boolean, waitingForZone: boolean, refresh: () =>
       clearInterval(heartbeat);
       clearTimeout(trailing);
     };
-  }, [enabled]);
+  }, [enabled, awake]);
 
   return geo;
 }

@@ -59,6 +59,10 @@ type recapResponse struct {
 	State           string       `json:"state"`
 	Track           []recapTrack `json:"track"`
 
+	// Race is a game, which is what time, points and place are for: not
+	// a walk, an adventure played at home (as the store calls them) or a
+	// party.
+	Race      bool        `json:"race,omitempty"`
 	Points    *float64    `json:"points,omitempty"`
 	Rank      int         `json:"rank,omitempty"`
 	TeamCount int         `json:"team_count,omitempty"`
@@ -320,7 +324,14 @@ const recapTimeLayout = "2006-01-02 15:04:05"
 // with no graph state never started, and keeps the event-level fields.
 func (h *Handlers) recapGraph(ctx context.Context, eventID, teamID int64, resp *recapResponse) error {
 	var graphID sql.NullInt64
-	if err := h.DB.QueryRowContext(ctx, `SELECT graph_id FROM events WHERE id = $1`, eventID).Scan(&graphID); err != nil {
+	if err := h.DB.QueryRowContext(ctx, `
+		SELECT e.graph_id,
+		       NOT (e.party OR COALESCE((g.graph->>'tour')::boolean, FALSE)
+		            OR (a.start_lat IS NULL AND NOT COALESCE(jsonb_typeof(g.graph->'zones') = 'array' AND jsonb_array_length(g.graph->'zones') > 0, FALSE)))
+		FROM events e
+		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
+		LEFT JOIN adventure_graphs g ON g.id = e.graph_id
+		WHERE e.id = $1`, eventID).Scan(&graphID, &resp.Race); err != nil {
 		return err
 	}
 	g := &graph.Graph{}

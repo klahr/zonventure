@@ -20,6 +20,7 @@ export function useHeading(enabled = true): { heading: number | null; ask: (() =
   const [granted, setGranted] = useState(false);
   const Orientation = typeof DeviceOrientationEvent === "undefined" ? undefined : (DeviceOrientationEvent as IOSOrientation);
   const needsAsk = typeof Orientation?.requestPermission === "function";
+  const awake = useAwake();
 
   useEffect(() => {
     if (!enabled || !Orientation || (needsAsk && !granted)) return;
@@ -37,7 +38,7 @@ export function useHeading(enabled = true): { heading: number | null; ask: (() =
     const kind = "ondeviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation";
     window.addEventListener(kind, onReading);
     return () => window.removeEventListener(kind, onReading);
-  }, [enabled, Orientation, needsAsk, granted]);
+  }, [enabled, Orientation, needsAsk, granted, awake]);
 
   const ask =
     enabled && needsAsk && !granted
@@ -48,6 +49,23 @@ export function useHeading(enabled = true): { heading: number | null; ask: (() =
         }
       : null;
   return { heading, ask };
+}
+
+/**
+ * Counts the times the page has come back into view. A phone stops a
+ * hidden page's sensors and does not always start them again for the
+ * listener it had: one added afresh gets readings.
+ */
+export function useAwake(): number {
+  const [awake, setAwake] = useState(0);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") setAwake((n) => n + 1);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+  return awake;
 }
 
 /**
