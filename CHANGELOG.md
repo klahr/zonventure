@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.8] - 2026-10-19
+
 ### Changed
 
 - Player: on a find-the-place puzzle with a compass, the compass
