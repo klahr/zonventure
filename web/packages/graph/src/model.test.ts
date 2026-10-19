@@ -225,6 +225,7 @@ describe("persistence", () => {
       host_values: [{ slug: "name", label: "Name" }],
       journal_by_unlock: true,
       hide_score: true,
+      tour: true,
       quiz_puzzles: true,
       time_limit: { seconds: 60, to: "end" },
       frames: [{ id: "f", x: 0, y: 0, width: 10, height: 10 }],
