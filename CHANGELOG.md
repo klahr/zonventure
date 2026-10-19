@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.11] - 2026-10-19
+
 ### Added
 
 - Store: a third kind beside games and walks, "At home" ("Hemma"),
