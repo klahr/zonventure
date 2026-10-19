@@ -11,6 +11,26 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.15] - 2026-10-19
+
+### Changed
+
+- Player: a walk, an adventure played at home or a party no longer
+  shows place and time on its end screen. A game still does.
+- Recap: time, points and rank show only for a game, not for a walk,
+  an adventure played at home or a party.
+- Recap: the results receipt is now one line saying whether the
+  results are unchanged since the team finished. The codes are folded
+  away under it, open only when the results were changed.
+
+### Fixed
+
+- Player: the compass and the team's position start again when the
+  phone comes back to the play page. Before, they could stay stuck
+  until the page was reloaded.
+- Player: the full-screen button no longer disappears in full screen.
+  It turns into the button for leaving it.
+
 ## [0.33.14] - 2026-10-19
 
 ### Added
