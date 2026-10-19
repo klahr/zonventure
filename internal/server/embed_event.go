@@ -45,7 +45,7 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 	var (
 		name, blurb, currency, advTitle, orgName, orgSlug string
 		priceCents, teamSize                              int
-		hasCover, tour                                    bool
+		hasCover, tour, home                              bool
 		accent, accent2, bg, ink                          sql.NullString
 		brandFont                                         string
 	)
@@ -55,6 +55,7 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		       COALESCE(l.price_cents, 0), COALESCE(l.team_size, 0),
 		       COALESCE(l.cover_mime_type IS NOT NULL, FALSE),
 		       COALESCE((g.graph->>'tour')::boolean, FALSE),
+		       (a.start_lat IS NULL AND NOT COALESCE(jsonb_typeof(g.graph->'zones') = 'array' AND jsonb_array_length(g.graph->'zones') > 0, FALSE)),
 		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color, o.brand_font
 		FROM events e
 		JOIN organizations o ON o.id = e.org_id
@@ -63,7 +64,7 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		LEFT JOIN adventure_graphs g ON g.id = e.graph_id
 		WHERE e.id = $1 AND e.public_for_sale
 	`, id).Scan(&name, &blurb, &currency, &advTitle, &orgName, &orgSlug, &priceCents, &teamSize,
-		&hasCover, &tour, &accent, &accent2, &bg, &ink, &brandFont)
+		&hasCover, &tour, &home, &accent, &accent2, &bg, &ink, &brandFont)
 	found := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "lookup failed", http.StatusInternalServerError)
@@ -78,9 +79,12 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 	if !strings.EqualFold(name, advTitle) {
 		subtitle = advTitle
 	}
-	kind := s.StoreKindGame
-	if tour {
-		kind = s.StoreKindWalk
+	kindKey, kind := "game", s.StoreKindGame
+	switch {
+	case tour:
+		kindKey, kind = "walk", s.StoreKindWalk
+	case home:
+		kindKey, kind = "home", s.StoreKindHome
 	}
 	per := s.StorePerTicket
 	if teamSize > 1 {
@@ -114,6 +118,7 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		{"{{PER_LABEL}}", html.EscapeString(per)},
 		{"{{TEAM_LABEL}}", html.EscapeString(teamLabel)},
 		{"{{KIND_LABEL}}", html.EscapeString(kind)},
+		{"{{KIND}}", kindKey},
 		{"{{IS_TOUR}}", boolAttr(tour)},
 		{"{{COVER_URL}}", html.EscapeString(cssURLQuote(coverURL))},
 		{"{{HAS_COVER}}", boolAttr(hasCover)},

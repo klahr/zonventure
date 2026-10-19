@@ -11,6 +11,32 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Store: a third kind beside games and walks, "At home" ("Hemma"),
+  for an adventure played where the buyer is: the version its event
+  plays has no places and the adventure no starting point, so nothing
+  is set by hand. Its chip has an amber dot, its ticket page reads
+  "Played at home, on your phones", and the filter offers it when the
+  store sells more than one kind. The store API's items carry `home`.
+- Store: a ticket page shows where the adventure starts — a map with
+  its starting point pinned in the organisation's colour, the meeting
+  point, and a link to open it on OpenStreetMap. One played at home
+  has none.
+
+### Changed
+
+- Store: a listing's "Game" or "Walk" is the store's count chip — a
+  glass pill with a coloured dot, green for a walk — on its card, its
+  ticket page and its embed, and the Games/Walks filter carries the
+  same dots.
+
+### Fixed
+
+- Share & embed: the preview shows for an organisation on its own
+  domain too. The console only frames its own address, so the preview
+  loads from there; the code to paste still points at the domain.
+
 ## [0.33.10] - 2026-10-19
 
 ### Added

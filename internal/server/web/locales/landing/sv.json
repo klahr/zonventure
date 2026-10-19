@@ -178,5 +178,10 @@
 "StoreEventMetaFormatWalk": "Mobilguidad vandring",
 "EmbedBuyCTA": "Köp biljett",
 "EmbedOffSale": "Inte till salu just nu",
-"EmbedSeeMore": "Se fler äventyr"
+"EmbedSeeMore": "Se fler äventyr",
+"StoreKindHome": "Hemma",
+"StoreFilterHome": "Hemma",
+"StoreEventMetaFormatHome": "Spelas hemma, i mobilen",
+"StoreEventStartMap": "Här börjar det",
+"StoreEventOpenMap": "Öppna i karta ↗"
 }

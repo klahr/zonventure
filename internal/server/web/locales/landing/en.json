@@ -178,5 +178,10 @@
 "StoreEventMetaFormatWalk": "Phone-guided walk",
 "EmbedBuyCTA": "Buy ticket",
 "EmbedOffSale": "Not on sale right now",
-"EmbedSeeMore": "See more adventures"
+"EmbedSeeMore": "See more adventures",
+"StoreKindHome": "At home",
+"StoreFilterHome": "At home",
+"StoreEventMetaFormatHome": "Played at home, on your phones",
+"StoreEventStartMap": "Where it starts",
+"StoreEventOpenMap": "Open in map ↗"
 }

@@ -28,7 +28,11 @@ type StoreItemDTO struct {
 	OrgVerified bool `json:"org_verified"`
 	// Tour is a walk, not a game (graph.Tour of the version the event
 	// plays): the store labels it so a buyer can tell them apart.
-	Tour           bool    `json:"tour"`
+	Tour bool `json:"tour"`
+	// Home is played where the buyer is — at home, at school: the
+	// version the event plays has no places and the adventure no
+	// starting point. The store labels it so, beside games and walks.
+	Home           bool    `json:"home"`
 	Blurb          string  `json:"blurb,omitempty"`
 	PriceCents     int     `json:"price_cents"`
 	Currency       string  `json:"currency"`
@@ -244,7 +248,8 @@ const storeItemSelect = `
 	       a.start_label, a.start_lat, a.start_lng, COALESCE(a.area, ''),
 	       (l.cover_mime_type IS NOT NULL) AS has_cover,
 	       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,
-	       COALESCE((g.graph->>'tour')::boolean, FALSE) AS tour,` + pageLookColumns + `
+	       COALESCE((g.graph->>'tour')::boolean, FALSE) AS tour,
+	       (a.start_lat IS NULL AND NOT COALESCE(jsonb_typeof(g.graph->'zones') = 'array' AND jsonb_array_length(g.graph->'zones') > 0, FALSE)) AS home,` + pageLookColumns + `
 	FROM events e
 	JOIN event_listings l ON l.event_id = e.id
 	JOIN organizations o ON o.id = e.org_id
@@ -362,7 +367,7 @@ func (h *Handlers) scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 	if err := s.Scan(
 		&item.EventID, &eventName, &item.AdventureSlug, &item.AdventureTitle,
 		&item.OrgName, &item.OrgVerified, &blurb, &priceCents, &item.Currency, &item.TeamSize,
-		&startLabel, &startLat, &startLng, &item.Area, &hasCover, &hasIcon, &item.Tour,
+		&startLabel, &startLat, &startLng, &item.Area, &hasCover, &hasIcon, &item.Tour, &item.Home,
 		&lookFont, &lookTheme, &ownCover,
 	); err != nil {
 		return StoreItemDTO{}, err

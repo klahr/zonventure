@@ -23,7 +23,8 @@ export function EmbedCard({ event }: { event: EventInfo }) {
   const [size, setSize] = useState<Size>("card");
   const [lang, setLang] = useState(t.current() === "sv" ? "sv" : "en");
   const base = event.embed_base || location.origin;
-  const src = `${base}/embed/event/${event.id}?size=${size}&lang=${lang}`;
+  const path = `/embed/event/${event.id}?size=${size}&lang=${lang}`;
+  const src = base + path;
   const { width, height } = SIZES[size];
   const title = event.name || event.adventure_title || "";
   const iframe = `<iframe src="${src}" width="${width}" height="${height}" style="border:0;max-width:100%" loading="lazy" title="${escapeAttr(title)}"></iframe>`;
@@ -49,7 +50,9 @@ export function EmbedCard({ event }: { event: EventInfo }) {
         </Field>
       </Row>
       <div className="ev-embed-preview">
-        <iframe key={src} src={src} width={width} height={height} title={t.t("Preview")} />
+        {/* From the console's own address: its policy frames nothing else, and
+            the embed is the same on the organisation's domain, links and all. */}
+        <iframe key={path} src={location.origin + path} width={width} height={height} title={t.t("Preview")} />
       </div>
       <Field label={t.t("Code to paste into the page")} hint={t.t("It shows the price and whether it is on sale as it is now, in your organisation's colours. Buying opens your store in a new tab.")}>
         <textarea readOnly rows={3} value={iframe} onFocus={(e) => e.currentTarget.select()} />

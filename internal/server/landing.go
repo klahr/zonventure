@@ -237,9 +237,11 @@ type landingStrings struct {
 	// and a store with both lets the buyer show just one kind.
 	StoreKindGame    string
 	StoreKindWalk    string
+	StoreKindHome    string
 	StoreFilterAll   string
 	StoreFilterGames string
 	StoreFilterWalks string
+	StoreFilterHome  string
 
 	// An event's embed (embed-event.html), on another site.
 	EmbedBuyCTA  string
@@ -254,6 +256,9 @@ type landingStrings struct {
 	StoreEventMetaFormat       string
 	StoreEventMetaFormatValue  string
 	StoreEventMetaFormatWalk   string // the format of a walk
+	StoreEventMetaFormatHome   string // and of one played at home
+	StoreEventStartMap         string // the starting point's map, its label
+	StoreEventOpenMap          string // its link to a full map
 	StoreEventMetaWhen         string
 	StoreEventMetaWhenValue    string
 	StoreEventMetaMeetingPoint string
@@ -469,9 +474,11 @@ func storeI18nJSON(s landingStrings) string {
 		"perTeam":              s.StorePerTeam,
 		"kindGame":             s.StoreKindGame,
 		"kindWalk":             s.StoreKindWalk,
+		"kindHome":             s.StoreKindHome,
 		"filterAll":            s.StoreFilterAll,
 		"filterGames":          s.StoreFilterGames,
 		"filterWalks":          s.StoreFilterWalks,
+		"filterHome":           s.StoreFilterHome,
 		"emptyHeading":         s.StoreEmptyHeading,
 		"emptyBody":            s.StoreEmptyBody,
 		"errorHeading":         s.StoreErrorHeading,

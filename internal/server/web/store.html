@@ -99,13 +99,17 @@
   .card .chip { display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .65rem; border-radius: 999px; background: color-mix(in srgb, var(--ink) 6%, var(--surface)); color: var(--ink-soft); font-size: .78rem; font-weight: 600; }
   .card .chip svg { width: .95rem; height: .95rem; }
   /* A game or a walk, on the cover's corner: the first thing a buyer reads. */
-  .card .kind { position: absolute; top: .8rem; left: .8rem; z-index: 1; display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .7rem; border-radius: 999px; background: var(--accent); color: #fff; font-size: .78rem; font-weight: 700; letter-spacing: .02em; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
-  .card .kind.walk { background: #2f5d50; }
-  .card .kind svg { width: .95rem; height: .95rem; }
+  /* The hero's count chip, in darker glass so it reads on any cover. */
+  .card .kind { position: absolute; top: .8rem; left: .8rem; z-index: 1; display: inline-flex; align-items: center; gap: .45rem; padding: .3rem .75rem .3rem .45rem; border-radius: 999px; background: rgba(15,17,22,.42); border: 1px solid rgba(255,255,255,.28); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); color: #fff; font-size: .78rem; font-weight: 600; white-space: nowrap; }
+  .kind .dot { width: .55rem; height: .55rem; margin-left: .3rem; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-2) 30%, transparent); }
+  .kind.walk .dot { background: #5fc49a; box-shadow: 0 0 0 3px rgba(95,196,154,.3); }
+  .kind.home .dot { background: #f0b34a; box-shadow: 0 0 0 3px rgba(240,179,74,.3); }
   .kinds { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0 0 1.4rem; }
   .kinds[hidden] { display: none; }
   .kinds button { display: inline-flex; align-items: center; gap: .4rem; padding: .5rem 1rem; border-radius: 999px; border: 1px solid var(--border-soft); background: var(--surface); color: var(--ink); font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; }
-  .kinds button svg { width: 1rem; height: 1rem; }
+  .kinds .dot { width: .55rem; height: .55rem; border-radius: 50%; background: var(--accent-2); }
+  .kinds .dot.walk { background: #2f9e6e; }
+  .kinds .dot.home { background: #d9921c; }
   .kinds button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
   .card .foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border-soft); }
   .card .price { font: 1.5rem/1 var(--font-brand); }
@@ -448,22 +452,26 @@
   var ICON_PEOPLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
   var ICON_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
 
-  var ICON_GAME = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z"/></svg>';
-  var ICON_WALK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/></svg>';
+  // A game, a walk or one played at home: what kind a listing is.
+  function kindOf(item) { return item.tour ? 'walk' : item.home ? 'home' : 'game'; }
+  var KIND_LABEL = { game: 'kindGame', walk: 'kindWalk', home: 'kindHome' };
 
-  // A game or a walk: the badge on a card's cover.
+  // The chip on a card's cover.
   function kindBadge(item) {
-    return item.tour
-      ? '<span class="kind walk">' + ICON_WALK + escapeHTML(t('kindWalk')) + '</span>'
-      : '<span class="kind">' + ICON_GAME + escapeHTML(t('kindGame')) + '</span>';
+    var k = kindOf(item);
+    return '<span class="kind ' + k + '"><span class="dot" aria-hidden="true"></span>' + escapeHTML(t(KIND_LABEL[k])) + '</span>';
   }
 
-  // With games and walks both on sale, the buyer can show one kind.
+  // With more than one kind on sale, the buyer can show one.
   function kindFilter(items, cards) {
     var bar = document.getElementById('kinds');
-    var walks = items.filter(function (it) { return it.tour; }).length;
-    if (!bar || walks === 0 || walks === items.length) return;
-    var options = [['all', '', t('filterAll')], ['game', ICON_GAME, t('filterGames')], ['walk', ICON_WALK, t('filterWalks')]];
+    var kinds = {};
+    items.forEach(function (it) { kinds[kindOf(it)] = true; });
+    if (!bar || Object.keys(kinds).length < 2) return;
+    var options = [['all', '', t('filterAll')]].concat(
+      [['game', 'filterGames'], ['walk', 'filterWalks'], ['home', 'filterHome']]
+        .filter(function (o) { return kinds[o[0]]; })
+        .map(function (o) { return [o[0], '<span class="dot ' + o[0] + '" aria-hidden="true"></span>', t(o[1])]; }));
     var buttons = options.map(function (o) {
       var b = document.createElement('button');
       b.type = 'button';
@@ -471,7 +479,7 @@
       b.setAttribute('aria-pressed', o[0] === 'all' ? 'true' : 'false');
       b.addEventListener('click', function () {
         buttons.forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
-        items.forEach(function (it, i) { cards[i].hidden = o[0] !== 'all' && (o[0] === 'walk') !== !!it.tour; });
+        items.forEach(function (it, i) { cards[i].hidden = o[0] !== 'all' && kindOf(it) !== o[0]; });
       });
       return b;
     });

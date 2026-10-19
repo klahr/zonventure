@@ -89,8 +89,11 @@
   .verified-badge { display: inline-flex; align-items: center; gap: .3rem; margin-left: .5rem; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 700; letter-spacing: 0; text-transform: none; color: #1b6b43; background: color-mix(in srgb, #1b6b43 12%, transparent); vertical-align: middle; }
   .verified-badge[data-verified="false"] { display: none; }
   /* A game or a walk, above the title. */
-  .kind { display: inline-flex; align-self: flex-start; align-items: center; margin: 0 0 .6rem; padding: .3rem .8rem; border-radius: 999px; background: var(--accent); color: #fff; font-size: .8rem; font-weight: 700; letter-spacing: .02em; }
-  .kind[data-tour="true"] { background: #2f5d50; }
+  /* The store's count chip, on the dark hero. */
+  .kind { align-self: flex-start; margin: 0 0 .7rem; display: inline-flex; align-items: center; gap: .5rem; padding: .35rem .9rem .35rem .45rem; border-radius: 999px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); backdrop-filter: blur(6px); color: #fff; font-size: .85rem; font-weight: 600; }
+  .kind .dot { width: .6rem; height: .6rem; margin-left: .35rem; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-2) 30%, transparent); }
+  .kind[data-kind="walk"] .dot { background: #5fc49a; box-shadow: 0 0 0 4px rgba(95,196,154,.3); }
+  .kind[data-kind="home"] .dot { background: #f0b34a; box-shadow: 0 0 0 4px rgba(240,179,74,.3); }
   h1 {
     font-family: var(--font-brand);
     font-size: clamp(2.4rem, 6vw, 4.2rem);
@@ -160,6 +163,14 @@
 
   .letter-lang { margin-top: .75rem; }
   .letter-lang .hint { color: var(--muted); font-size: .85rem; margin: 0; }
+  /* Where it starts: a map under the ticket's details. */
+  .start-map { margin: 1.5rem 0 0; }
+  .start-map[data-has="false"] { display: none; }
+  .start-map figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .8rem; margin-bottom: .6rem; font-size: .92rem; }
+  .start-map figcaption span { color: var(--muted); }
+  .start-map figcaption a { margin-left: auto; font-weight: 600; }
+  .start-map__map { height: 260px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border-soft); }
+  @media (min-width: 900px) { .start-map__map { height: 320px; } }
 </style>
 </head>
 <body class="has-hero">
@@ -206,7 +217,7 @@
       <p class="crumbs"><a href="{{ORG_PATH}}">{{STORE_EVENT_CRUMBS}}</a></p>
       <img class="adv-icon" src="{{ICON_URL}}" alt="" width="72" height="72" data-has="{{HAS_ICON}}">
       <p class="org store-org">{{ORG_NAME}}<span class="verified-badge" data-verified="{{ORG_VERIFIED}}" title="{{VERIFIED_CREATOR_HINT}}">✓ {{VERIFIED_CREATOR}}</span></p>
-      <span class="kind" data-tour="{{IS_TOUR}}">{{KIND_LABEL}}</span>
+      <span class="kind" data-kind="{{KIND}}" data-tour="{{IS_TOUR}}"><span class="dot" aria-hidden="true"></span>{{KIND_LABEL}}</span>
       <h1>{{TITLE}}</h1>
       <p class="subtitle">{{SUBTITLE}}</p>
       <div class="price-row">
@@ -239,6 +250,11 @@
           <div class="v">{{START_LABEL}}</div>
         </div>
       </div>
+      <figure class="start-map" data-has="{{HAS_START}}">
+        <figcaption><strong>{{STORE_EVENT_START_MAP}}</strong><span>{{START_LABEL}}</span><a href="{{START_MAP_URL}}" target="_blank" rel="noopener">{{STORE_EVENT_OPEN_MAP}}</a></figcaption>
+        <div id="start-map" class="start-map__map" role="region" aria-label="{{STORE_EVENT_START_MAP}}"
+             data-lat="{{START_LAT}}" data-lng="{{START_LNG}}" data-zoom-hint="{{STORE_MAP_ZOOM_HINT}}" data-pan-hint="{{STORE_MAP_PAN_HINT}}"></div>
+      </figure>
     </div>
 
     <div class="detail-side">
@@ -389,4 +405,23 @@
 })();
 </script>
 
+<!-- Where it starts: one pin on the operator's map (/assets/map-config.js
+     picks the provider), loaded only for an adventure that has a place. -->
+<script src="/assets/map-config.js"></script>
+<script type="module">
+  const el = document.getElementById('start-map');
+  if (el && el.closest('.start-map').dataset.has === 'true') {
+    import('/assets/zv-maplibre.js').then((zvm) => zvm.loadMapLibre().then((ml) => {
+      const at = [Number(el.dataset.lng), Number(el.dataset.lat)];
+      const map = new ml.Map({
+        container: el, style: zvm.mapStyle(), center: at, zoom: 15,
+        cooperativeGestures: true, locale: zvm.gestureLocale(el.dataset.zoomHint, el.dataset.panHint),
+        attributionControl: { compact: true },
+      });
+      map.addControl(new ml.NavigationControl({ showCompass: false }), 'top-left');
+      const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+      new ml.Marker({ color: accent || '#ad1357' }).setLngLat(at).addTo(map);
+    })).catch((e) => { console.warn('start map unavailable', e); el.closest('.start-map').dataset.has = 'false'; });
+  }
+</script>
 </body></html>

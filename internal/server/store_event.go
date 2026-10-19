@@ -65,12 +65,15 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		currency   string
 		teamSize   int
 		startLabel sql.NullString
-		hasCover   bool
-		hasIcon    bool
+		// startLat and startLng put the starting point on the page's map.
+		startLat, startLng sql.NullFloat64
+		hasCover           bool
+		hasIcon            bool
 		// orgVerified is a verified creator: the page shows a badge.
 		orgVerified bool
-		// tour is a walk, not a game: the page says which.
-		tour bool
+		// tour is a walk, not a game, and home one played where the
+		// buyer is (see public.StoreItemDTO): the page says which.
+		tour, home bool
 	)
 	var (
 		brandAccent          sql.NullString
@@ -88,10 +91,11 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		       l.price_cents,
 		       l.currency,
 		       l.team_size,
-		       a.start_label,
+		       a.start_label, a.start_lat, a.start_lng,
 		       (l.cover_mime_type IS NOT NULL) AS has_cover,
 		       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,
 		       COALESCE((g.graph->>'tour')::boolean, FALSE) AS tour,
+		       (a.start_lat IS NULL AND NOT COALESCE(jsonb_typeof(g.graph->'zones') = 'array' AND jsonb_array_length(g.graph->'zones') > 0, FALSE)) AS home,
 		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color, o.brand_font
 		FROM events e
 		JOIN event_listings l ON l.event_id = e.id
@@ -104,7 +108,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		  AND e.state = 'running'
 		  AND NOT e.sales_stopped
 	`, id).Scan(&eventName, &advSlug, &advTitle, &orgName, &orgSlug, &orgVerified, &blurb, &priceCents,
-		&currency, &teamSize, &startLabel, &hasCover, &hasIcon, &tour,
+		&currency, &teamSize, &startLabel, &startLat, &startLng, &hasCover, &hasIcon, &tour, &home,
 		&brandAccent, &brandAccentSecondary, &brandBackground, &brandText, &brandFont)
 	if errors.Is(err, sql.ErrNoRows) {
 		renderStoreEventGone(w, r, db, id, slugFromURL)
@@ -196,10 +200,14 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	if !simulated {
 		s.StoreEventTermsHTML = s.StoreEventPaymentByStripe + " " + s.StoreEventTermsHTML
 	}
-	kind := s.StoreKindGame
-	if tour {
-		kind = s.StoreKindWalk
+	kindKey, kind := "game", s.StoreKindGame
+	switch {
+	case tour:
+		kindKey, kind = "walk", s.StoreKindWalk
 		s.StoreEventMetaFormatValue = s.StoreEventMetaFormatWalk
+	case home:
+		kindKey, kind = "home", s.StoreKindHome
+		s.StoreEventMetaFormatValue = s.StoreEventMetaFormatHome
 	}
 	subs := topbarSubs(s, lang)
 	subs = append(subs, storeSubs(s)...)
@@ -231,6 +239,16 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{TEAM_LABEL}}", html.EscapeString(teamLabel)},
 		[2]string{"{{START_LABEL}}", html.EscapeString(strings.TrimSpace(startLabel.String))},
 		[2]string{"{{START_LABEL_HIDDEN}}", hiddenIf(strings.TrimSpace(startLabel.String) == "")},
+		// Where it starts, on a map under the ticket's details; hidden
+		// for one played wherever the buyer is.
+		[2]string{"{{HAS_START}}", boolAttr(startLat.Valid && startLng.Valid)},
+		[2]string{"{{START_LAT}}", coord(startLat)},
+		[2]string{"{{START_LNG}}", coord(startLng)},
+		[2]string{"{{START_MAP_URL}}", html.EscapeString(osmURL(startLat, startLng))},
+		[2]string{"{{STORE_EVENT_START_MAP}}", html.EscapeString(s.StoreEventStartMap)},
+		[2]string{"{{STORE_EVENT_OPEN_MAP}}", html.EscapeString(s.StoreEventOpenMap)},
+		[2]string{"{{STORE_MAP_ZOOM_HINT}}", html.EscapeString(s.StoreMapZoomHint)},
+		[2]string{"{{STORE_MAP_PAN_HINT}}", html.EscapeString(s.StoreMapPanHint)},
 		// COVER_URL lands inside both an HTML attribute AND a CSS
 		// url('…') context; html.EscapeString covers the HTML side
 		// but a `'` would still break out of the CSS quotes once
@@ -243,6 +261,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		// A walk or a game: a badge on the page, and IS_TOUR for an
 		// override template that styles the two apart.
 		[2]string{"{{KIND_LABEL}}", html.EscapeString(kind)},
+		[2]string{"{{KIND}}", kindKey},
 		[2]string{"{{IS_TOUR}}", boolAttr(tour)},
 		[2]string{"{{LOOK_FONT}}", lookFont},
 		// The adventure's icon, beside the title; also what a link
@@ -282,6 +301,24 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	// becoming a customer-visible problem.
 	w.Header().Set("Cache-Control", "public, max-age=60")
 	_, _ = w.Write([]byte(out))
+}
+
+// coord is a coordinate for the page's map, or "" when there is none.
+func coord(v sql.NullFloat64) string {
+	if !v.Valid {
+		return ""
+	}
+	return strconv.FormatFloat(v.Float64, 'f', 6, 64)
+}
+
+// osmURL opens a starting point on OpenStreetMap, as the player app's
+// map links do.
+func osmURL(lat, lng sql.NullFloat64) string {
+	if !lat.Valid || !lng.Valid {
+		return ""
+	}
+	la, lo := coord(lat), coord(lng)
+	return "https://www.openstreetmap.org/?mlat=" + la + "&mlon=" + lo + "#map=17/" + la + "/" + lo
 }
 
 // formatStorePrice mirrors the JS helper on the listing page —
