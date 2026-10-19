@@ -14,6 +14,8 @@ export interface BlockContext {
   teamName: string | undefined;
   /** The engine's clock, in epoch ms, ticking. */
   now: number;
+  /** The step's own box says when the team has arrived — a search puzzle's — so a compass only guides. */
+  arrival?: boolean;
   /** What the team carries, for a status block. */
   items: play.ItemView[] | undefined;
   /** The step the blocks are on, and how a block acts there: a quiz pick. */

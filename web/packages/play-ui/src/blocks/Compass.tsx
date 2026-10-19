@@ -75,6 +75,7 @@ export function CompassBlock({ block, ctx }: { block: Of<"compass">; ctx: BlockC
       angle={target != null ? turn.current : null}
       northUp={heading == null}
       there={there}
+      quiet={!!ctx.arrival}
       t={t}
       distance={!block.hide_distance && placeNote ? placeNote(place) : null}
       note={target != null && heading == null && !ask ? t("No compass on this device: north is up.") : null}
@@ -84,12 +85,14 @@ export function CompassBlock({ block, ctx }: { block: Of<"compass">; ctx: BlockC
 }
 
 /** The compass as drawn, for the live block and the designer's preview. */
-export function CompassFace({ name, angle, northUp, there = false, t, distance, note, ask }: {
+export function CompassFace({ name, angle, northUp, there = false, quiet = false, t, distance, note, ask }: {
   name: string;
   /** Where the needle points, in degrees clockwise from the dial's top; null hides it. */
   angle: number | null;
   northUp: boolean;
   there?: boolean;
+  /** Leaves saying the team is there to the step's own box: the star alone shows it. */
+  quiet?: boolean;
   t: Translate;
   distance?: React.ReactNode;
   note?: React.ReactNode;
@@ -103,7 +106,7 @@ export function CompassFace({ name, angle, northUp, there = false, t, distance, 
         {there && <span className="pv-compass__here">★</span>}
       </div>
       <figcaption>
-        <span className="pv-compass__to">{there ? t("You are at {{place}}.", { place: name }) : t("Towards {{place}}", { place: name })}</span>
+        <span className="pv-compass__to">{there ? (quiet ? name : t("You are at {{place}}.", { place: name })) : t("Towards {{place}}", { place: name })}</span>
         {!there && distance && <span className="pv-compass__note">{distance}</span>}
         {note && <span className="pv-compass__note">{note}</span>}
         {ask && (

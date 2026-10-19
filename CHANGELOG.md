@@ -11,6 +11,18 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- Player: on a find-the-place puzzle with a compass, the compass
+  guides (direction and distance) and the box under it confirms
+  arrival, instead of both saying the distance and "You are at…".
+
+### Fixed
+
+- Player: an adventure that hides the score no longer leaves an empty
+  row above the step, and its hint, bag and journal buttons stay on
+  the right.
+
 ## [0.33.7] - 2026-10-19
 
 ### Added

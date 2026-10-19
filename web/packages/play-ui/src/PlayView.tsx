@@ -563,6 +563,7 @@ function blockContext(p: StepProps): BlockContext {
     teamName: p.teamName,
     now: p.now,
     items: p.view.items,
+    arrival: p.view.input?.kind === "search",
     node: p.view.node,
     act: p.onAction,
     busy: !!p.busy,
@@ -692,7 +693,8 @@ function PuzzleStep(props: StepProps) {
           </span>
           <div className="pv-zone__body">
             <strong role="status">{input.at ? t("You are at {{place}}.", { place: input.at }) : t("You're not there yet.")}</strong>
-            {!input.at && props.zoneNote && <span className="pv-zone__note">{props.zoneNote}</span>}
+            {/* A compass on the step already says how far. */}
+            {!input.at && props.zoneNote && !view.blocks?.some((b) => b.kind === "compass") && <span className="pv-zone__note">{props.zoneNote}</span>}
           </div>
         </div>
       )}

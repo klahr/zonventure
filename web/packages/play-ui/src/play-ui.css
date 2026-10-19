@@ -147,9 +147,12 @@
 .pv-head {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--sp-2);
   min-height: var(--pv-tap);
 }
+/* A hidden score with nothing else to show leaves no empty row. */
+.pv-head:empty { display: none; }
 .pv-score {
   display: inline-flex;
   align-items: baseline;
