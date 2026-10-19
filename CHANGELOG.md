@@ -11,6 +11,27 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- MCP: `edit_adventure_graph` has a `set_option` op that turns
+  adventure-wide settings on or off — `hide_score`,
+  `journal_by_unlock`, `quiz_puzzles` — without sending the whole
+  graph.
+
+### Changed
+
+- Designer: wires end in an arrowhead and a step's out port is an
+  arrow tab, so the canvas reads as a flow.
+
+### Fixed
+
+- Player: a right answer's "Correct!" (and any other result of an
+  answer that moves the team on) no longer shows in the button area
+  of the next step. The celebration still plays.
+- Dev phone: moving to a step shows the theme that step is reached
+  with — from the nearest theme effect before it — instead of keeping
+  the look of the step it left.
+
 ## [0.33.6] - 2026-10-19
 
 ### Fixed

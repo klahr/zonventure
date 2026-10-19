@@ -82,6 +82,13 @@ func TestApplyGraphOp(t *testing.T) {
 	}
 	mustApply(t, g, graphOp{Op: "delete_theme", Slug: "night-out"})
 
+	// set_option changes only the settings it names.
+	mustApply(t, g, graphOp{Op: "set_option", Options: json.RawMessage(`{"hide_score":true,"quiz_puzzles":true}`)})
+	mustApply(t, g, graphOp{Op: "set_option", Options: json.RawMessage(`{"quiz_puzzles":false}`)})
+	if !g.HideScore || g.QuizPuzzles || g.JournalByUnlock {
+		t.Errorf("options: hide_score %v, quiz_puzzles %v, journal_by_unlock %v", g.HideScore, g.QuizPuzzles, g.JournalByUnlock)
+	}
+
 	for name, op := range map[string]graphOp{
 		"unknown field":        {Op: "put_node", Node: json.RawMessage(`{"slug":"x","type":"story","sparkle":1}`)},
 		"no slug":              {Op: "put_node", Node: json.RawMessage(`{"type":"story"}`)},
@@ -91,6 +98,8 @@ func TestApplyGraphOp(t *testing.T) {
 		"print without id":     {Op: "put_print_material", Print: json.RawMessage(`{"name":"Letter"}`)},
 		"delete missing print": {Op: "delete_print_material", Slug: "ghost"},
 		"unknown op":           {Op: "rename"},
+		"no options":           {Op: "set_option", Options: json.RawMessage(`{}`)},
+		"unknown option":       {Op: "set_option", Options: json.RawMessage(`{"hide_points":true}`)},
 		"zone with bad fields": {Op: "put_zone", Zone: json.RawMessage(`{"slug":"z","radius":3}`)},
 	} {
 		if err := applyGraphOp(g, op, nil); err == nil {

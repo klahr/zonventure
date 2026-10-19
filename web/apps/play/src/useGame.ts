@@ -261,7 +261,7 @@ export function useGame(t: Translate): Game {
         try {
           const r = await play.sendAction(action, id);
           showView(r.view);
-          setFeedback(feedbackForResult(action.kind, r, tRef.current));
+          setFeedback(feedbackForResult(action.kind, r, tRef.current, "node" in action ? action.node : undefined));
         } catch (e) {
           if (e instanceof NetworkError) {
             setOnline(false);
@@ -323,7 +323,7 @@ export function useGame(t: Translate): Game {
       try {
         const r = await play.sendAction(action, id);
         showView(r.view);
-        setFeedback(feedbackForResult(action.kind, r, tRef.current));
+        setFeedback(feedbackForResult(action.kind, r, tRef.current, "node" in action ? action.node : undefined));
         setOnline(true);
         // The adventure's title and intro come with the state, not the view.
         if (action.kind === "language") void refresh();

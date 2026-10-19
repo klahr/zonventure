@@ -108,7 +108,8 @@
 
 .card .react-flow__handle { width: 16px; height: 16px; border: 2px solid var(--surface); }
 .card__in { background: var(--ink-soft); }
-.card__out { background: var(--type); right: -7px; }
+/* The out port is an arrow tab, so a step reads as leading on to the next. */
+.card__out { background: var(--type); right: -9px; width: 14px !important; height: 18px !important; border: 0 !important; border-radius: 0; clip-path: polygon(0 0, 100% 50%, 0 100%); }
 .card__port.is-bad .card__out { background: var(--danger); }
 .card__port[class*="concept--"]:not(.is-bad) .card__port-label { color: color-mix(in srgb, var(--concept) var(--concept-ink), var(--ink)); font-weight: 600; }
 .card__port[class*="concept--"]:not(.is-bad) .card__out { background: var(--concept); }

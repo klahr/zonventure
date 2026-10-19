@@ -12,6 +12,13 @@ test("a right answer says so, with the points", () => {
   });
 });
 
+test("a right answer that moved the team on says nothing on the next step", () => {
+  const fb = feedbackForResult("answer", { accepted: true, port: "solved", view: { ...view, node: "next" } }, english, "here");
+  assert.equal(fb?.text, "");
+  assert.equal(fb?.burst?.kind, "celebrate", "the moment still plays");
+  assert.equal(feedbackForResult("answer", { accepted: false, view: { ...view, node: "here" } }, english, "here")?.text, "That's not it. Try again.");
+});
+
 test("a wrong answer shows the author's ladder text first", () => {
   assert.equal(feedbackForResult("answer", { accepted: false, response: "Colder.", view }, english)?.text, "Colder.");
   assert.equal(feedbackForResult("answer", { accepted: false, view }, english)?.tone, "bad");

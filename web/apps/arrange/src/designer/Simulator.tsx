@@ -289,7 +289,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
       return;
     }
     // A pass celebrates like the right answer it stands in for.
-    setFeedback(feedbackForResult(a.kind === "force" ? "answer" : a.kind, r.result, tr));
+    setFeedback(feedbackForResult(a.kind === "force" ? "answer" : a.kind, r.result, tr, before));
     const after = r.result.view.node;
     const left = before ? nodeBySlug(graph, before) : undefined;
     const port = r.result.port && left ? portLabel(left, r.result.port) : r.result.port;

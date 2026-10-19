@@ -26,7 +26,15 @@ export interface Feedback {
 }
 
 /** Feedback for an action the engine accepted (HTTP 200). */
-export function feedbackForResult(kind: play.PlayAction["kind"], r: play.Result, t: Translate): Feedback | null {
+export function feedbackForResult(kind: play.PlayAction["kind"], r: play.Result, t: Translate, from?: string): Feedback | null {
+  const fb = resultFeedback(kind, r, t);
+  // An action that moved the team to another step says nothing there: the
+  // line belongs to the step it was given on. The burst still plays.
+  if (fb && from !== undefined && r.view?.node !== from && !(r.not_yet && kind !== "answer")) return { ...fb, text: "" };
+  return fb;
+}
+
+function resultFeedback(kind: play.PlayAction["kind"], r: play.Result, t: Translate): Feedback | null {
   // A gate sent the team back to the hub: the screen alone would not change.
   if (r.not_yet && kind !== "answer") return { tone: "info", text: t("Not yet — come back when you've done what it takes.") };
   switch (kind) {

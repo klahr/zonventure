@@ -35,7 +35,8 @@ func devEvent(ctx context.Context, q Querier, teamID int64) (int64, error) {
 
 // DevMoveTo puts a dev team on a step — back to one it has played, or on
 // to one it has not reached — with that step's own progress forgotten,
-// so it plays afresh: its attempts, hints and outcome.
+// so it plays afresh: its attempts, hints and outcome. It takes the look
+// the step is reached with (themeBefore), not the one it left.
 func (e *Engine) DevMoveTo(ctx context.Context, teamID int64, node string) error {
 	tx, err := e.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -63,12 +64,36 @@ func (e *Engine) DevMoveTo(ctx context.Context, teamID int64, node string) error
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE team_graph_state
-		SET current_node = $2, node_entered_at = $3, completed_at = NULL, outcome = NULL, updated_at = $3
+		SET current_node = $2, node_entered_at = $3, completed_at = NULL, outcome = NULL, theme = $4, updated_at = $3
 		WHERE team_id = $1
-	`, teamID, node, now); err != nil {
+	`, teamID, node, now, themeBefore(s.G, node)); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// themeBefore is the theme a team reaches a step with: that of the theme
+// effect nearest before it, walking the wires back, or the main theme
+// when none is. A step reached by several routes takes the nearest.
+func themeBefore(g *graph.Graph, slug string) string {
+	seen := map[string]bool{slug: true}
+	for next := []string{slug}; len(next) > 0; {
+		var prev []string
+		for _, to := range next {
+			for _, e := range g.Edges {
+				if e.To != to || seen[e.From] {
+					continue
+				}
+				seen[e.From] = true
+				if n, ok := g.Node(e.From); ok && n.Type == graph.Effect && n.EffectCfg != nil && n.EffectCfg.Kind == graph.SetTheme {
+					return n.EffectCfg.Theme
+				}
+				prev = append(prev, e.From)
+			}
+		}
+		next = prev
+	}
+	return ""
 }
 
 // devProgress lists the tables that hold a team's progress, which a
