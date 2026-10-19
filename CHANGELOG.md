@@ -11,6 +11,21 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Share & embed: a self-guided event's page in the console gives the
+  code for a buy button for other web pages, as a card (picture,
+  description and button) or a one-row button, in the organisation's
+  colours and in Swedish or English, with a preview, plus a plain link
+  for newsletters and mail. The embed shows the price and whether the
+  event is on sale as it is now; buying opens the store in a new tab.
+  Only `/embed/` may be framed by other sites. (Shipped in 0.33.9.)
+
+### Fixed
+
+- The graph package's typecheck, which failed CI on 0.33.9: its test
+  of every graph-wide field now includes `tour`.
+
 ## [0.33.9] - 2026-10-19
 
 ### Added
