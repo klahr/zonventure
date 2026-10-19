@@ -13,9 +13,10 @@ const LANG_NAMES: Record<string, string> = { sv: "Svenska", en: "English", de: "
  * shared phone, or erase it all. Beside the game; nothing here moves
  * the team on.
  *
- * A drawer that folds in from the left edge. The ☰ at the bar's left
- * end turns into the ✕ that closes it and stays above the drawer, so
- * open and close are the same place under the thumb.
+ * A drawer that folds in from the left edge. The adventure's picture at
+ * the bar's left end opens it (a ☰ when there is no picture) and turns
+ * into the ✕ that closes it, staying above the drawer, so open and close
+ * are the same place under the thumb.
  */
 export function Menu(props: {
   state: play.PlayState;
@@ -27,6 +28,8 @@ export function Menu(props: {
   onRenamed: () => void;
   onLanguage: (lang: string) => void;
   leave: (erase: boolean) => Promise<void>;
+  /** The adventure's own picture, else the organisation's logo. */
+  icon?: string | undefined;
 }) {
   const { state, t, i18n } = props;
   const [open, setOpen] = useState(false);
@@ -100,12 +103,13 @@ export function Menu(props: {
       <button
         ref={button}
         type="button"
-        className={"app-burger" + (open ? " is-open" : "")}
+        className={"app-burger" + (props.icon ? " app-burger--icon" : "") + (open ? " is-open" : "")}
         onClick={toggle}
         aria-label={open ? t("Close menu") : t("Menu")}
         aria-expanded={open}
         aria-controls="app-menu"
       >
+        {props.icon && <img className="app-burger__icon" src={props.icon} alt="" />}
         <span className="app-burger__lines" aria-hidden="true">
           <span />
           <span />

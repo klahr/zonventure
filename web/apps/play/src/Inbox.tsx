@@ -6,8 +6,8 @@ import { Markdown, MarkdownInline, Sheet, fillTeam, type Translate } from "@zonv
 const FOLD_MS = 8000;
 
 /**
- * The organisers' messages: a bell in the app bar with how many are
- * unread, a banner while one is unread, and a sheet listing them all.
+ * The organisers' messages: a bell in the app bar, once there is one,
+ * with how many are unread, a banner while one is unread, and a sheet listing them all.
  * Information beside the game — none of it moves the team.
  *
  * Read is remembered per team on this phone, as the newest id seen.
@@ -91,12 +91,14 @@ export function Inbox({ messages, teamID, teamName, t, locale }: { messages: pla
 
   return (
     <>
-      <button type="button" className="app-inbox" onClick={show} aria-label={unread ? t("Messages, {{n}} unread", { n: unread }) : t("Messages")}>
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-          <path d="M12 3a6 6 0 0 0-6 6v3.6L4.3 16a1 1 0 0 0 .9 1.5h13.6a1 1 0 0 0 .9-1.5L18 12.6V9a6 6 0 0 0-6-6Zm-2.2 16a2.3 2.3 0 0 0 4.4 0Z" fill="currentColor" />
-        </svg>
-        {unread > 0 && <span className="app-inbox__count">{unread}</span>}
-      </button>
+      {messages.length > 0 && (
+        <button type="button" className="app-inbox" onClick={show} aria-label={unread ? t("Messages, {{n}} unread", { n: unread }) : t("Messages")}>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path d="M12 3a6 6 0 0 0-6 6v3.6L4.3 16a1 1 0 0 0 .9 1.5h13.6a1 1 0 0 0 .9-1.5L18 12.6V9a6 6 0 0 0-6-6Zm-2.2 16a2.3 2.3 0 0 0 4.4 0Z" fill="currentColor" />
+          </svg>
+          {unread > 0 && <span className="app-inbox__count">{unread}</span>}
+        </button>
+      )}
       {banner && (
         <div className={"app-inbox__banner" + (compact ? " app-inbox__banner--folded" : "")} role="status">
           <button type="button" className="app-inbox__open" onClick={compact ? () => setUnfolded(banner.id) : show} {...(compact ? { "aria-expanded": false } : {})}>

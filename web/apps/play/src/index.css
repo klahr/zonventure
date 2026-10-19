@@ -34,11 +34,6 @@ html {
   background: var(--surface);
   border-bottom: 1px solid var(--border-soft);
 }
-.app-bar__logo {
-  max-height: 28px;
-  max-width: 96px;
-  object-fit: contain;
-}
 .app-bar__who {
   min-width: 0;
   margin-right: auto;
@@ -76,6 +71,7 @@ html {
 /* The organisers' messages: a bell with an unread count, and a banner
  * under the bar when one arrives. */
 .app-inbox,
+.app-fullscreen,
 .app-burger {
   position: relative;
   display: inline-grid;
@@ -90,7 +86,10 @@ html {
   cursor: pointer;
 }
 .app-inbox:hover,
+.app-fullscreen:hover,
 .app-burger:hover { background: var(--surface-2); }
+/* The bell and the full-screen toggle side by side at the right end. */
+.app-inbox + .app-fullscreen { margin-left: calc(-1 * var(--sp-2)); }
 .app-inbox__count {
   position: absolute;
   top: 2px;
@@ -357,6 +356,36 @@ html {
 .app-burger.is-open .app-burger__lines span:nth-child(2) { opacity: 0; }
 .app-burger.is-open .app-burger__lines span:nth-child(3) { top: 7px; transform: rotate(-45deg); }
 
+/* With the adventure's picture as the button, there is no ☰: the
+ * picture spins down into its centre as the ✕'s two bars spin out of
+ * it, so one turns into the other; closing runs it backwards. */
+.app-burger--icon {
+  width: auto;
+  min-width: 2.75rem;
+  max-width: 96px;
+  margin-left: 0;
+  border-radius: var(--radius-sm);
+}
+.app-burger--icon:hover { background: transparent; }
+.app-burger--icon > * { grid-area: 1 / 1; }
+.app-burger__icon {
+  max-height: 28px;
+  max-width: 96px;
+  object-fit: contain;
+  transition: transform 0.3s cubic-bezier(0.5, 0, 0.75, 0) 0.1s, opacity 0.2s ease 0.15s;
+}
+.app-burger--icon.is-open .app-burger__icon {
+  transform: rotate(90deg) scale(0.2);
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.5, 0, 0.75, 0), opacity 0.2s ease 0.1s;
+}
+.app-burger--icon .app-burger__lines span { top: 7px; transform: rotate(-135deg) scaleX(0); transition: transform 0.3s cubic-bezier(0.5, 0, 0.75, 0); }
+.app-burger--icon .app-burger__lines span:nth-child(2) { display: none; }
+.app-burger--icon.is-open .app-burger__lines span { transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1.2) 0.15s; }
+.app-burger--icon.is-open .app-burger__lines span:nth-child(1) { transform: rotate(45deg) scaleX(1); }
+.app-burger--icon.is-open .app-burger__lines span:nth-child(3) { transform: rotate(135deg) scaleX(1); }
+.app-burger--icon:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
 .app-drawer-back {
   position: fixed;
   inset: 0;
@@ -406,5 +435,5 @@ html {
 .app-drawer .app-menu { display: flex; flex-direction: column; padding-right: 0; }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-drawer, .app-drawer.is-open, .app-drawer-back, .app-burger__lines span, .app-burger.is-open .app-burger__lines span { transition: none; }
+  .app-drawer, .app-drawer.is-open, .app-drawer-back, .app-burger__lines span, .app-burger.is-open .app-burger__lines span, .app-burger__icon, .app-burger--icon.is-open .app-burger__icon, .app-burger--icon .app-burger__lines span, .app-burger--icon.is-open .app-burger__lines span { transition: none; }
 }

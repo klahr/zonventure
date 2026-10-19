@@ -497,5 +497,7 @@
   "tour|The game hasn't started for your team yet.": "Rundan har inte börjat för dig än.",
   "tour|You're playing alone, so you hold every part.": "Du är ensam, så du har alla delar.",
   "tour|Skip this puzzle": "Gå vidare ändå",
-  "tour|Skip this puzzle? You won't get its points.": "Gå vidare till nästa stopp utan det här?"
+  "tour|Skip this puzzle? You won't get its points.": "Gå vidare till nästa stopp utan det här?",
+  "Full screen": "Helskärm",
+  "Exit full screen": "Lämna helskärm"
 }

@@ -4,6 +4,7 @@ import { play, siteName } from "@zonventure/api";
 import { SPOTS } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import { useGame } from "./useGame.ts";
+import { Fullscreen } from "./Fullscreen.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { DevBar } from "./DevBar.tsx";
 import { Menu, NameField } from "./Menu.tsx";
@@ -266,13 +267,8 @@ export function App() {
             onRenamed={game.refresh}
             onLanguage={(lang) => game.act({ kind: "language", lang })}
             leave={game.leave}
+            icon={s.event.adventure_icon_url || s.event.org_logo_url || undefined}
           />
-          {/* The adventure's own picture, else the organisation's logo. */}
-          {s.event.adventure_icon_url ? (
-            <img className="app-bar__logo" src={s.event.adventure_icon_url} alt={s.event.adventure_title ?? ""} />
-          ) : (
-            s.event.org_logo_url && <img className="app-bar__logo" src={s.event.org_logo_url} alt={s.event.org_name ?? ""} />
-          )}
           <div className="app-bar__who">
             <div className="app-bar__title" onClick={tapTitle}>{s.event.adventure_title || siteName()}</div>
             <div className="app-bar__team">
@@ -287,6 +283,7 @@ export function App() {
             </span>
           )}
           <Inbox messages={s.messages ?? []} teamID={s.team.id} teamName={s.team.name} t={t} locale={i18n.current()} />
+          <Fullscreen t={t} />
         </header>
       </div>
       <main className="app-main" ref={mainRef} tabIndex={-1}>
