@@ -1,5 +1,5 @@
 {
-  "Commissioned for you": "Beställt åt dig",
+  "Commissioned for you": "Tilldelat dig",
   "Continue to payment": "Fortsätt till betalning",
   "Event pass for {{n}} players": "Eventpass för {{n}} spelare",
   "Filter adventures": "Filtrera äventyr",
@@ -39,8 +39,8 @@
   "Add to invoice?": "Lägga på faktura?",
   "{{amount}} for {{n}} players goes on your organisation's next invoice.": "{{amount}} för {{n}} spelare läggs på organisationens nästa faktura.",
   "Add it to your invoice, or pay on Stripe and come back here to finish the event.": "Lägg till det på er faktura, eller betala via Stripe och kom tillbaka hit för att slutföra eventet.",
-  "Creating it submits the listing for review; it is in your store once approved.": "När du skapar det skickas erbjudandet till granskning; det finns i er butik när det är godkänt.",
-  "Self-guided adventure created, but its listing was not submitted: {{reason}}": "Det självguidade äventyret skapades, men erbjudandet skickades inte till granskning: {{reason}}",
+  "Creating it submits the listing for review; it is in your store once approved.": "När du skapar det skickas annonsen till granskning; den finns i er butik när den är godkänd.",
+  "Self-guided adventure created, but its listing was not submitted: {{reason}}": "Det självguidade äventyret skapades, men annonsen skickades inte till granskning: {{reason}}",
   "Fewer players, such as a test with 4? Leave it at {{n}}: the first {{free}} are free, so it costs nothing.": "Färre spelare, till exempel ett test med 4? Låt det stå {{n}}: de första {{free}} är gratis, så det kostar inget.",
   "Each team costs {{price}} as it joins a game, from your organisation's balance.": "Varje lag kostar {{price}} när det går med i en omgång, från organisationens saldo.",
   "Free on this server.": "Gratis på den här servern.",

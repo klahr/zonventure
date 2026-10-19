@@ -19,6 +19,6 @@
   "The platform admin doesn't author adventures or run events. Sign in as a user of an organization for that.": "Plattformsadministratören skapar inga äventyr och kör inga event. Logga in som användare i en organisation för det.",
   "That page isn't open to your account, so you're on the dashboard.": "Den sidan är inte öppen för ditt konto, så du är på översikten.",
   "Maintenance mode is on: saving is paused until a platform admin turns it off.": "Underhållsläget är på: sparandet är pausat tills en plattformsadministratör stänger av det.",
-  "This console is open at {{here}}, but ZV_PUBLIC_URL is {{url}}. Links in emails point there, so check that it is the server's public address.": "Konsolen är öppen på {{here}}, men ZV_PUBLIC_URL är {{url}}. Länkar i e-post pekar dit, så kontrollera att det är serverns publika adress.",
-  "Email verified — you can now schedule events.": "E-post verifierad — nu kan du schemalägga event."
+  "This console is open at {{here}}, but ZV_PUBLIC_URL is {{url}}. Links in emails point there, so check that it is the server's public address.": "Konsolen är öppen på {{here}}, men ZV_PUBLIC_URL är {{url}}. Länkar i mejl pekar dit, så kontrollera att det är serverns publika adress.",
+  "Email verified — you can now schedule events.": "E-postadressen är verifierad — nu kan du schemalägga event."
 }

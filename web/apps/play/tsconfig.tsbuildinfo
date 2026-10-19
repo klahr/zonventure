@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/Cheat.tsx","./src/DevBar.tsx","./src/Files.tsx","./src/Fullscreen.tsx","./src/Inbox.tsx","./src/Menu.tsx","./src/downscale.ts","./src/i18n.tsx","./src/live.ts","./src/locales.test.ts","./src/main.tsx","./src/maplibre.ts","./src/useGame.ts","./vite.config.ts"],"version":"5.9.3"}

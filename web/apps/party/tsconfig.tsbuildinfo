@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/Book.tsx","./src/Guide.tsx","./src/Host.tsx","./src/Join.tsx","./src/Request.tsx","./src/TrailEdit.tsx","./src/TrailPages.tsx","./src/api.ts","./src/embed.ts","./src/i18n.tsx","./src/locales.test.ts","./src/look.ts","./src/main.tsx","./src/pictures.tsx","./src/teamName.ts","./src/trail.ts","./vite.config.ts"],"version":"5.9.3"}
