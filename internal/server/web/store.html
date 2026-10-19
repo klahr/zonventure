@@ -131,10 +131,11 @@
   .code-card .eyebrow { color: rgba(255,255,255,.8); }
   .code-card h2 { font-family: var(--font-brand); font-size: clamp(1.6rem, 3.4vw, 2.3rem); line-height: 1.12; margin: 0 0 .6rem; }
   .code-card p { margin: 0; color: rgba(255,255,255,.88); }
-  .code-form { display: flex; gap: .6rem; background: rgba(255,255,255,.14); padding: .5rem; border-radius: 16px; border: 1px solid rgba(255,255,255,.25); }
-  .code-form input { flex: 1; min-width: 0; border: 0; border-radius: 11px; padding: .85rem 1rem; font: 700 1.3rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .25em; text-transform: uppercase; background: #fff; color: #111827; }
-  .code-form input:focus { outline: 3px solid rgba(255,255,255,.6); outline-offset: 1px; }
-  .code-form button { border: 0; border-radius: 11px; padding: 0 1.4rem; font: inherit; font-weight: 800; cursor: pointer; background: #111827; color: #fff; }
+  .code-form { display: flex; flex-wrap: wrap; gap: .6rem; background: rgba(255,255,255,.14); padding: .5rem; border-radius: 16px; border: 1px solid rgba(255,255,255,.25); }
+  .code-cells { display: flex; flex: 1 1 15rem; gap: .4rem; }
+  .code-cell { flex: 1; width: 0; min-width: 0; height: 3.3rem; padding: 0; border: 0; border-radius: 10px; text-align: center; font: 700 1.45rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; background: #fff; color: #111827; }
+  .code-cell:focus { outline: 3px solid rgba(255,255,255,.6); outline-offset: 1px; }
+  .code-form button { flex: 1 0 auto; min-height: 3.3rem; border: 0; border-radius: 11px; padding: 0 1.4rem; font: inherit; font-weight: 800; cursor: pointer; background: #111827; color: #fff; }
   .code-form button[disabled] { opacity: .6; cursor: progress; }
   .code-msg { min-height: 1.4rem; margin: .7rem .2rem 0; font-size: .92rem; font-weight: 600; }
 
@@ -254,8 +255,14 @@
         </div>
         <form id="code-form" novalidate>
           <div class="code-form">
-            <label for="code-input" class="sr-only">{{STORE_CODE_LABEL}}</label>
-            <input id="code-input" name="code" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="12" placeholder="XXXXXX" aria-describedby="code-msg">
+            <div class="code-cells" role="group" aria-label="{{STORE_CODE_LABEL}}">
+              <input class="code-cell" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-describedby="code-msg">
+              <input class="code-cell" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-describedby="code-msg">
+              <input class="code-cell" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-describedby="code-msg">
+              <input class="code-cell" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-describedby="code-msg">
+              <input class="code-cell" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-describedby="code-msg">
+              <input class="code-cell" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-describedby="code-msg">
+            </div>
             <button type="submit" id="code-go">{{STORE_CODE_SUBMIT}}</button>
           </div>
           <p class="code-msg" id="code-msg" role="status" aria-live="polite"></p>
@@ -567,13 +574,34 @@
   (function () {
     var form = document.getElementById('code-form');
     if (!form) return;
-    var input = document.getElementById('code-input');
     var go = document.getElementById('code-go');
     var msg = document.getElementById('code-msg');
+    // Six cells, one character each: typing moves on, Backspace on an empty
+    // cell steps back, and a whole code pasted or autofilled into any cell
+    // spreads over the rest. The sixth character submits.
+    var cells = [].slice.call(form.querySelectorAll('.code-cell'));
+    function typed() { return cells.map(function (c) { return c.value; }).join(''); }
+    function firstEmpty() { return cells.filter(function (c) { return !c.value; })[0] || cells[cells.length - 1]; }
+    cells.forEach(function (cell, i) {
+      cell.addEventListener('focus', function () { cell.select(); });
+      cell.addEventListener('input', function () {
+        var s = cell.value.replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+        cell.value = '';
+        for (var j = 0; j < s.length && i + j < cells.length; j++) cells[i + j].value = s[j];
+        if (!s) return;
+        cells[Math.min(i + s.length, cells.length - 1)].focus();
+        if (typed().length === cells.length) go.click();
+      });
+      cell.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Backspace' && !cell.value && i > 0) { ev.preventDefault(); cells[i - 1].value = ''; cells[i - 1].focus(); }
+        else if (ev.key === 'ArrowLeft' && i > 0) { ev.preventDefault(); cells[i - 1].focus(); }
+        else if (ev.key === 'ArrowRight' && i < cells.length - 1) { ev.preventDefault(); cells[i + 1].focus(); }
+      });
+    });
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
-      var code = input.value.replace(/[^0-9A-Za-z]/g, '');
-      if (code.length < 6) { msg.textContent = t('codeInvalid'); input.focus(); return; }
+      var code = typed();
+      if (code.length < 6) { msg.textContent = t('codeInvalid'); firstEmpty().focus(); return; }
       go.disabled = true;
       msg.textContent = '…';
       // Only this organisation's codes: another's would open its team
