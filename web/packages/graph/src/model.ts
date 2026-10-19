@@ -21,6 +21,7 @@ import {
   type NodeType,
   type Answer,
   type AnswerKind,
+  type AnswerOf,
   type ChoiceOption,
   type Output,
   type PuzzleConfig,
@@ -44,6 +45,7 @@ export function usesMatchers(p: PuzzleConfig): boolean {
     case "questions":
     case "items":
     case "keys":
+    case "order":
       return false;
     case "choice":
       return !isGraded(p.answer);
@@ -52,8 +54,37 @@ export function usesMatchers(p: PuzzleConfig): boolean {
   }
 }
 
+/** A new order puzzle: three cards to name, dealt out of order. */
+export function defaultOrder(): AnswerOf<"order"> {
+  return {
+    kind: "order",
+    cards: [
+      { text: "First", color: "#2f6f8f" },
+      { text: "Second", color: "#8a5a2b" },
+      { text: "Third", color: "#4f7a3a" },
+    ],
+    start: [2, 0, 1],
+  };
+}
+
+/**
+ * A deal for n cards that is not already in order: a random one, or
+ * with a single card the only one there is.
+ */
+export function shuffledDeal(n: number, random: () => number = Math.random): number[] {
+  const deal = Array.from({ length: n }, (_, i) => i);
+  if (n < 2) return deal;
+  do {
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [deal[i], deal[j]] = [deal[j]!, deal[i]!];
+    }
+  } while (deal.every((c, i) => c === i));
+  return deal;
+}
+
 /** How a puzzle can take its answer: typing it (undefined), or an AnswerKind. */
-export const ANSWER_KINDS: (AnswerKind | undefined)[] = [undefined, "scan", "choice", "lock", "items", "tiles", "search", "questions", "keys"];
+export const ANSWER_KINDS: (AnswerKind | undefined)[] = [undefined, "scan", "choice", "lock", "items", "tiles", "order", "search", "questions", "keys"];
 
 /**
  * The puzzle answered another way. The routes keep their ports, so the
@@ -103,6 +134,9 @@ export function withAnswerKind(p: PuzzleConfig, kind: AnswerKind | undefined): P
       break;
     case "tiles":
       next.answer = { kind: "tiles", rows: 3, cols: 3 };
+      break;
+    case "order":
+      next.answer = defaultOrder();
       break;
     case "items":
       // One slot, its item still to choose.

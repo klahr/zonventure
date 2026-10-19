@@ -44,6 +44,16 @@ test("a lock's values are not answers to translate", () => {
   assert.deepEqual(keys, [nodeKey("l", "sym:owl"), nodeKey("l", "sym:fox")]);
 });
 
+test("an order puzzle's cards are texts by index, and translate in place", () => {
+  const order = { slug: "o", type: "puzzle" as const, puzzle: {
+    answer: { kind: "order" as const, cards: [{ text: "Vasa", color: "#2f6f8f" }, { image: { id: 1, kind: "image" as const } }, { text: "Karl XII" }] },
+    outputs: [{ port: "solved", trigger: "answer" as const }],
+  } };
+  assert.deepEqual(nodeTexts(order).map((t) => t.key), [nodeKey("o", "card:0"), nodeKey("o", "card:2")]);
+  const sv = withTexts(order, (k) => (k === nodeKey("o", "card:2") ? "Charles XII" : undefined));
+  assert.deepEqual(sv.puzzle!.answer, { ...order.puzzle.answer, cards: [order.puzzle.answer.cards[0], order.puzzle.answer.cards[1], { text: "Charles XII" }] });
+});
+
 test("adventure texts: meta, sections by name", () => {
   const keys = adventureTexts(g, { title: "Mysteriet", intro: "" }).map((t) => t.key);
   assert.ok(keys.includes(metaKey("title")) && !keys.includes(metaKey("intro")));

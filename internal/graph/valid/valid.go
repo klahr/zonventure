@@ -1014,6 +1014,8 @@ func checkAnswer(r *reporter, g *graph.Graph, n graph.Node, owners map[string]st
 		checkChoices(r, n.Slug, a)
 	case graph.AnswerLock:
 		checkLock(r, n.Slug, a)
+	case graph.AnswerOrder:
+		checkOrder(r, n.Slug, a)
 	case graph.AnswerItems:
 		checkSlots(r, g, n.Slug, a)
 		if !slices.Contains(graph.Missings, a.Missing) {
@@ -1107,6 +1109,42 @@ func checkLock(r *reporter, node string, l *graph.Answer) {
 			r.err("lock.start", node, "", "a wheel starts at symbol %d, which the lock does not have", i+1)
 		}
 	}
+}
+
+// cardColor is a card's background colour: #rrggbb.
+var cardColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// checkOrder catches an order puzzle with too few or too many cards, a
+// card with nothing on it, or cards dealt in an order that is not one.
+func checkOrder(r *reporter, node string, a *graph.Answer) {
+	if len(a.Cards) < graph.MinCards || len(a.Cards) > graph.MaxCards {
+		r.err("order.cards", node, "", "an order puzzle has %d to %d cards", graph.MinCards, graph.MaxCards)
+	}
+	for i, c := range a.Cards {
+		if strings.TrimSpace(c.Text) == "" && c.Image == nil {
+			r.err("order.card.empty", node, "", "card %d has neither text nor a picture", i+1)
+		}
+		if c.Image != nil && c.Image.Kind != graph.MediaImage {
+			r.err("order.card.image", node, "", "card %d's background is not a picture", i+1)
+		}
+		if c.Color != "" && !cardColor.MatchString(c.Color) {
+			r.err("order.card.color", node, "", "card %d's colour %q is not a colour like #1f6feb", i+1, c.Color)
+		}
+	}
+	if len(a.Start) > 0 && !slices.Equal(a.Deal(), a.Start) {
+		r.err("order.start", node, "", "the cards are dealt in an order that does not hold each card once")
+	}
+	if len(a.Cards) >= graph.MinCards && slices.Equal(a.Deal(), identity(len(a.Cards))) {
+		r.warn("order.start.solved", node, "", "the cards are dealt in the right order, so there is nothing to do: shuffle them")
+	}
+}
+
+func identity(n int) []int {
+	out := make([]int, n)
+	for i := range out {
+		out[i] = i
+	}
+	return out
 }
 
 func missingOutput(n graph.Node) (graph.Output, bool) {

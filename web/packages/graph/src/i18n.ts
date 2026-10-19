@@ -158,6 +158,9 @@ export function nodeTexts(n: Node): Translatable[] {
     if (p.answer?.kind === "items") {
       p.answer.slots.forEach((s, i) => add(`slot:${i}`, "Slot {{n}}", s.label, { vars: { n: i + 1 } }));
     }
+    if (p.answer?.kind === "order") {
+      p.answer.cards.forEach((c, i) => add(`card:${i}`, "Card {{n}}", c.text, { vars: { n: i + 1 } }));
+    }
   }
   if (n.story) blocks(n.story.blocks, "Text");
   if (n.end) blocks(n.end.blocks, "Closing text");
@@ -235,6 +238,8 @@ export function withTexts(n: Node, f: (key: string) => string | undefined): Node
       answer = { ...answer, symbols: answer.symbols.map((sy) => (k(`sym:${sy.value}`) === undefined ? sy : { ...sy, label: k(`sym:${sy.value}`)! })) };
     else if (answer?.kind === "items")
       answer = { ...answer, slots: answer.slots.map((sl, i) => (sl.label === undefined ? sl : { ...sl, label: or(`slot:${i}`, sl.label) })) };
+    else if (answer?.kind === "order")
+      answer = { ...answer, cards: answer.cards.map((c, i) => (c.text === undefined ? c : { ...c, text: or(`card:${i}`, c.text) })) };
     out.puzzle = {
       ...p,
       ...(p.blocks ? { blocks: blocks(p.blocks)! } : {}),

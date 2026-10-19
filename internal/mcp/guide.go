@@ -177,6 +177,7 @@ Leave answer out for a typed answer. Otherwise:
 - lock: a combination lock, wheels × symbols [{value, label}]; outputs' matchers check the values joined by "|".
 - scan: the answer is a QR code (value in an exact matcher).
 - tiles: a picture (answer.image, a media ref) cut into rows × cols to reorder.
+- order: cards [{text, color "#rrggbb", image (a media ref)}], 2 to 8, listed in their right order; start is the order they are dealt in, as card indices ([2,0,1]), reversed if left out. The team drags them into order.
 - questions: answered by quiz blocks in the step.
 
 ## Writing the text

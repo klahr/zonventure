@@ -721,6 +721,64 @@ func TestTilePuzzle(t *testing.T) {
 	}
 }
 
+// An order puzzle deals its cards out of order, in the team's language,
+// and takes the answer output only for the dealt positions that put them
+// right.
+func TestOrderPuzzle(t *testing.T) {
+	g := &graph.Graph{
+		Language: "sv",
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "kings", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Answer: &graph.Answer{Kind: graph.AnswerOrder, Start: []int{2, 0, 1}, Cards: []graph.OrderCard{
+					{Text: "Gustav Vasa", Color: "#1f6feb"},
+					{Text: "Karl XII", Image: &graph.Media{ID: 9, Kind: graph.MediaImage}},
+					{Text: "Gustav III"},
+				}},
+				Outputs: []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Points: 10}},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "kings"},
+			{From: "kings", FromPort: "solved", To: "end"},
+		},
+		Translations: map[string]map[string]string{"en": {graph.NodeKey("kings", "card:2"): "Gustav the Third"}},
+	}
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := tm.View()
+	if v.Input == nil || v.Input.Kind != "order" || len(v.Input.Cards) != 3 {
+		t.Fatalf("the view should deal the cards: %+v", v.Input)
+	}
+	if got := []string{v.Input.Cards[0].Text, v.Input.Cards[1].Text, v.Input.Cards[2].Text}; !slices.Equal(got, []string{"Gustav III", "Gustav Vasa", "Karl XII"}) {
+		t.Errorf("the cards should be dealt in start order, got %v", got)
+	}
+	if v.Input.Cards[1].Color != "#1f6feb" || v.Input.Cards[2].Image == nil {
+		t.Errorf("a card's background should come with it: %+v", v.Input.Cards)
+	}
+	if ids := tm.VisibleMedia(true); len(ids) != 1 || ids[0] != 9 {
+		t.Errorf("a card's picture should be fetchable once the team is there, got %v", ids)
+	}
+	tm.Lang = "en"
+	if got := tm.View().Input.Cards[0].Text; got != "Gustav the Third" {
+		t.Errorf("a card's text should be translated by its own index, got %q", got)
+	}
+
+	for _, wrong := range []string{"0,1,2", "1,2", "1,1,1", "1,2,0,3", "a,b,c", ""} {
+		res, step, err := tm.Answer("kings", wrong)
+		if err != nil || step != nil || res.Accepted {
+			t.Fatalf("%q should be a wrong guess: %+v %v", wrong, res, err)
+		}
+	}
+	res, step, err := tm.Answer("kings", "1, 2, 0")
+	if err != nil || !res.Accepted || res.Points != 10 || step == nil {
+		t.Fatalf("the right order should take the output: %+v %v", res, err)
+	}
+}
+
 // A compass or map arrives with the zone it shows, in the team's language.
 func TestBlockPlaces(t *testing.T) {
 	g := &graph.Graph{

@@ -725,6 +725,31 @@ func TestTilePuzzleValidation(t *testing.T) {
 	assertCode(t, r, "tiles.image")
 }
 
+func TestOrderPuzzleValidation(t *testing.T) {
+	g := valid3()
+	g.Nodes[1].PuzzleCfg = &graph.PuzzleConfig{
+		Answer: &graph.Answer{Kind: graph.AnswerOrder, Cards: []graph.OrderCard{
+			{Text: "First", Color: "#ffcc00"},
+			{Image: &graph.Media{ID: 3, Kind: graph.MediaImage}},
+		}},
+		Outputs: []graph.Output{{Port: "solved", Trigger: graph.OnAnswer}},
+	}
+	r := Check(g)
+	assertNoCode(t, r, "output.matchers.none")
+	for _, code := range []string{"order.cards", "order.card.empty", "order.card.color", "order.start", "order.start.solved"} {
+		assertNoCode(t, r, code)
+	}
+
+	g.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerOrder, Start: []int{0, 0}, Cards: []graph.OrderCard{{Color: "red"}}}
+	r = Check(g)
+	for _, code := range []string{"order.cards", "order.card.empty", "order.card.color", "order.start"} {
+		assertCode(t, r, code)
+	}
+
+	g.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerOrder, Start: []int{0, 1}, Cards: []graph.OrderCard{{Text: "a"}, {Text: "b"}}}
+	assertCode(t, Check(g), "order.start.solved")
+}
+
 func TestChoiceValidation(t *testing.T) {
 	g := valid3()
 	g.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerChoice, Fields: []graph.ChoiceField{

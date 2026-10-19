@@ -197,7 +197,7 @@ func (g *Graph) PrintMediaIDs() []int64 {
 //	out:<port>:answers  out:<port>:contains (more accepted answers, one per line)
 //	reply:<i>  hint:<i>
 //	branch:<port>:label  branch:<port>:note
-//	field:<i>:label  field:<i>:opt:<value>  sym:<value>  slot:<i>
+//	field:<i>:label  field:<i>:opt:<value>  sym:<value>  slot:<i>  card:<i>
 func NodeKey(slug, field string) string    { return "n:" + slug + ":" + field }
 func ZoneKey(slug string) string           { return "z:" + slug }
 func RoleKey(slug, field string) string    { return "r:" + slug + ":" + field }
@@ -680,6 +680,14 @@ const (
 	// output is taken. A team with fewer players than it asks for needs
 	// only as many as it has, so a player alone opens it alone.
 	AnswerKeys AnswerKind = "keys"
+
+	// AnswerOrder is a stack of Cards the team drags into the right order:
+	// the order the author lists them in. The phone is dealt them in Start
+	// order, so it never learns the answer, and sends back the dealt
+	// positions in the order the team set them, comma-separated: "2,0,1".
+	// The server decides, and the first answer output is taken; any other
+	// order is a wrong guess, and the cards stay as the team left them.
+	AnswerOrder AnswerKind = "order"
 )
 
 // Answer is a puzzle's way of answering, one of the AnswerKinds. Only the
@@ -703,9 +711,15 @@ type Answer struct {
 	// Lock: the wheels, the symbols each turns through, and where each
 	// begins, as a symbol index — so the lock does not open at the right
 	// combination. Missing wheels start at 0.
+	//
+	// Order: Start is the order the cards are dealt in, as card indices;
+	// see Deal.
 	Wheels  int          `json:"wheels,omitempty"`
 	Symbols []LockSymbol `json:"symbols,omitempty"`
 	Start   []int        `json:"start,omitempty"`
+
+	// Order: the cards, in their right order.
+	Cards []OrderCard `json:"cards,omitempty"`
 
 	// Items: the slots, whether the team keeps what it placed, and what
 	// the phone says while the team lacks something: one of Missings.
@@ -820,7 +834,7 @@ func (g *Graph) QuizAnswer(n Node) (string, bool) {
 // of those has matchers to write.
 func (p *PuzzleConfig) UsesMatchers() bool {
 	switch p.Kind() {
-	case AnswerTiles, AnswerSearch, AnswerQuestions, AnswerItems, AnswerKeys:
+	case AnswerTiles, AnswerSearch, AnswerQuestions, AnswerItems, AnswerKeys, AnswerOrder:
 		return false
 	case AnswerChoice:
 		return !p.Answer.Graded()
@@ -883,8 +897,73 @@ func (a *Answer) Media() []Media {
 				out = append(out, *s.Image)
 			}
 		}
+	case AnswerOrder:
+		for _, c := range a.Cards {
+			if c.Image != nil {
+				out = append(out, *c.Image)
+			}
+		}
 	}
 	return out
+}
+
+// OrderCard is one card of an order puzzle: Text, translated under
+// NodeKey(…, "card:<i>"), on a background of Color (a #rrggbb colour)
+// or Image, or both — the colour shows while the picture loads.
+type OrderCard struct {
+	Text  string `json:"text,omitempty"`
+	Color string `json:"color,omitempty"`
+	Image *Media `json:"image,omitempty"`
+}
+
+// MinCards and MaxCards bound an order puzzle: one card is not an order,
+// and past eight the stack no longer fits a phone's screen to drag in.
+const (
+	MinCards = 2
+	MaxCards = 8
+)
+
+// Deal is the order an order puzzle's cards are dealt to the phone in,
+// as card indices: Start, when it is an order of every card, or else
+// the cards reversed — never the right order, for two cards or more.
+func (a *Answer) Deal() []int {
+	n := len(a.Cards)
+	if len(a.Start) == n {
+		seen := make([]bool, n)
+		ok := true
+		for _, i := range a.Start {
+			if i < 0 || i >= n || seen[i] {
+				ok = false
+				break
+			}
+			seen[i] = true
+		}
+		if ok {
+			return slices.Clone(a.Start)
+		}
+	}
+	out := make([]int, n)
+	for i := range out {
+		out[i] = n - 1 - i
+	}
+	return out
+}
+
+// InOrder reports whether an order guess — the dealt positions, in the
+// order the team set the cards — puts every card in its place.
+func (a *Answer) InOrder(guess string) bool {
+	parts := strings.Split(strings.ReplaceAll(guess, " ", ""), ",")
+	deal := a.Deal()
+	if len(deal) == 0 || len(parts) != len(deal) {
+		return false
+	}
+	for want, p := range parts {
+		at, err := strconv.Atoi(p)
+		if err != nil || at < 0 || at >= len(deal) || deal[at] != want {
+			return false
+		}
+	}
+	return true
 }
 
 // LockSymbol is one face of a lock's wheel.

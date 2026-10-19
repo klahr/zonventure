@@ -5,6 +5,7 @@ import { Markdown } from "./Markdown.tsx";
 import { TileBoard } from "./Tiles.tsx";
 import { ChoiceForm } from "./Choices.tsx";
 import { LockBoard } from "./Lock.tsx";
+import { OrderBoard } from "./Order.tsx";
 import { ItemSlotsBoard } from "./ItemSlots.tsx";
 import { JournalNotes, useUnreadNotes } from "./Journal.tsx";
 import { MediaList } from "./Media.tsx";
@@ -614,6 +615,7 @@ function PuzzleStep(props: StepProps) {
   const choices = mine && input.kind === "choice" && input.fields?.length ? input.fields : null;
   const lock = mine && input.kind === "lock" && input.wheels && input.symbols?.length ? input : null;
   const slots = mine && input.kind === "items" && input.slots?.length ? input : null;
+  const order = mine && input.kind === "order" && input.cards?.length ? input.cards : null;
   const questions = mine && input.kind === "questions";
   const keys = mine && input.kind === "keys";
   const scan = mine && input.kind === "scan" && !typing && canScan();
@@ -658,6 +660,17 @@ function PuzzleStep(props: StepProps) {
           wheels={lock.wheels!}
           symbols={lock.symbols!}
           start={lock.start}
+          disabled={locked}
+          t={t}
+          onTry={answer}
+        />
+      )}
+
+      {order && !timeUp && (
+        <OrderBoard
+          key={node}
+          cards={order}
+          storageKey={node}
           disabled={locked}
           t={t}
           onTry={answer}
@@ -767,7 +780,7 @@ function PuzzleStep(props: StepProps) {
           </>
         ) : questions && !timeUp ? (
           <ContinueButton view={view} t={t} disabled={locked} label={blockedFor > 0 ? formatSeconds(blockedFor) : needsPlace ? t("Continue when you are there") : undefined} onClick={() => answer("")} />
-        ) : tiles || choices || lock || slots ? null : timeUp ? (
+        ) : tiles || choices || lock || slots || order ? null : timeUp ? (
           view.has_timeout && !live ? (
             <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={busy} onClick={() => onAction({ kind: "timeout", node })}>
               {t("Continue")}

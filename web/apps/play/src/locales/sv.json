@@ -499,5 +499,10 @@
   "tour|Skip this puzzle": "Gå vidare ändå",
   "tour|Skip this puzzle? You won't get its points.": "Gå vidare till nästa stopp utan det här?",
   "Full screen": "Helskärm",
-  "Exit full screen": "Lämna helskärm"
+  "Exit full screen": "Lämna helskärm",
+  "Card {{n}}": "Kort {{n}}",
+  "Cards to put in order": "Kort att sätta i ordning",
+  "Drag a card by ⠿ to move it — or tap one, then where it goes.": "Dra ett kort i ⠿ för att flytta det – eller tryck på ett och sedan där det ska.",
+  "Now tap where it goes.": "Tryck nu där det ska.",
+  "{{card}}, place {{n}} of {{of}}": "{{card}}, plats {{n}} av {{of}}"
 }

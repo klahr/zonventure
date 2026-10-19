@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   gridZones,
   withAnswerKind,
+  shuffledDeal,
   zoneContains,
   answerOptions,
   appendStep,
@@ -448,10 +449,28 @@ describe("withAnswerKind", () => {
   });
 
   test("the ports stay, so the canvas stays connected", () => {
-    for (const k of ["scan", "choice", "lock", "tiles", "search", "questions", undefined] as const) {
+    for (const k of ["scan", "choice", "lock", "tiles", "order", "search", "questions", undefined] as const) {
       assert.deepEqual(withAnswerKind(typed, k).outputs!.map((o) => o.port), ["ada", "alan", "late"], String(k));
     }
     assert.deepEqual(withAnswerKind(typed, "lock").outputs![0]!.matchers, [{ kind: "exact", value: "1|1|1" }]);
+  });
+
+  test("an order puzzle drops the matchers and deals its cards out of order", () => {
+    const order = withAnswerKind(typed, "order");
+    assert.equal(order.answer?.kind, "order");
+    assert.ok(order.outputs!.every((o) => o.matchers === undefined));
+    assert.ok(order.answer?.kind === "order" && order.answer.start!.some((c, i) => c !== i));
+  });
+
+  test("a shuffled deal holds every card once and is never in order", () => {
+    let seed = 0;
+    const steady = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    for (let n = 2; n <= 8; n++) {
+      const deal = shuffledDeal(n, steady);
+      assert.deepEqual([...deal].sort((a, b) => a - b), Array.from({ length: n }, (_, i) => i));
+      assert.ok(deal.some((c, i) => c !== i), `deal of ${n}`);
+    }
+    assert.deepEqual(shuffledDeal(1), [0]);
   });
 
   test("a scan keeps the typed answers and the bar; other kinds show no bar", () => {

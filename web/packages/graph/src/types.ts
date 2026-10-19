@@ -439,6 +439,9 @@ export interface AnswerBar {
  *   absent) take the first answer output — with posts, one at each;
  *   post_roles, beside posts, is the role whose player turns each ("" for
  *   anyone's).
+ * - order: cards the team drags into the order they are listed in. They
+ *   are dealt in start order (card indices; reversed when absent), and
+ *   the phone sends the dealt positions in the team's order: "2,0,1".
  */
 export type Answer =
   | { kind: "tiles"; image?: Media; rows: number; cols: number }
@@ -448,7 +451,19 @@ export type Answer =
   | { kind: "questions" }
   | { kind: "scan" }
   | { kind: "items"; slots: ItemSlot[]; keep?: boolean; missing?: MissingHint }
-  | { kind: "keys"; keys?: number; window?: number; posts?: string[]; post_roles?: string[] };
+  | { kind: "keys"; keys?: number; window?: number; posts?: string[]; post_roles?: string[] }
+  | { kind: "order"; cards: OrderCard[]; start?: number[] };
+
+/** graph.OrderCard: text on a background colour (#rrggbb), a picture, or both. */
+export interface OrderCard {
+  text?: string;
+  color?: string;
+  image?: Media;
+}
+
+/** graph.MinCards and graph.MaxCards. */
+export const MIN_CARDS = 2;
+export const MAX_CARDS = 8;
 
 /**
  * graph.Missings: what an item puzzle tells a team short of an item —

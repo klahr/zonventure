@@ -20,6 +20,7 @@ import type {
   AnswerOf,
   ChoiceField,
   LockSymbol,
+  OrderCard,
   Item,
   ItemSlot,
   MissingHint,
@@ -27,7 +28,7 @@ import type {
   WebhookMethod,
   Zone,
 } from "@zonventure/graph";
-import { ANSWER_KINDS, MAX_SLOTS, usesMatchers, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
+import { ANSWER_KINDS, MAX_CARDS, MAX_SLOTS, MIN_CARDS, shuffledDeal, usesMatchers, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
 import { THEMES } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
 import { emails, siteName } from "@zonventure/api";
@@ -39,7 +40,7 @@ import { AdventureSlug, MediaEditor } from "./MediaEditor.tsx";
 import { OpenThemes } from "./ThemesModal.tsx";
 import { BlocksEditor } from "./BlocksEditor.tsx";
 import { Field, ZoneSelect, focusAdded, type ZoneHere } from "./fields.tsx";
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, Eye, Loader2, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, Eye, Loader2, Plus, Trash2, X } from "lucide-react";
 import { Button, HelpPopover, ICON } from "./dz/ui.tsx";
 import { STEP, VISIBLE } from "./dz/types.tsx";
 import { ConceptIcon, PART, TRIGGER } from "./dz/concepts.tsx";
@@ -500,6 +501,7 @@ const ANSWER_KIND_LABEL: Record<AnswerKind | "", string> = {
   lock: "Combination lock",
   items: "Items from the backpack",
   tiles: "Tile picture",
+  order: "Cards to put in order",
   search: "Search by place",
   questions: "Quiz questions on the step",
   keys: "Two-key launch: every player turns a key",
@@ -634,6 +636,19 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
           </>
         ),
         form: <TilesForm tiles={answer} onChange={(tiles) => onChange({ ...cfg, answer: tiles })} />,
+      };
+      break;
+    case "order":
+      how = {
+        title: t.t("Put in order"),
+        hint: t.t("The team drags the cards into the order they are listed in here, then tries it. A wrong order gets the wrong-answer replies."),
+        count: answer.cards.length,
+        summary: (
+          <SumRow label={t.t("Right order")}>
+            {answer.cards.map((c, i) => c.text || (c.image ? t.t("picture") : t.t("Card {{n}}", { n: i + 1 }))).join(" · ")}
+          </SumRow>
+        ),
+        form: <OrderForm order={answer} onChange={(a) => onChange({ ...cfg, answer: a })} />,
       };
       break;
     case "search":
@@ -813,7 +828,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
               ? o.trigger === "attempts"
                 ? t.t("after {{n}} wrong guesses", { n: o.after_attempts ?? 0 })
                 : triggerLabel(o)
-              : answer?.kind === "tiles" || answer?.kind === "lock" || isGraded(answer) || answer?.kind === "search" || answer?.kind === "questions" || answer?.kind === "items" || answer?.kind === "keys"
+              : answer?.kind === "tiles" || answer?.kind === "order" || answer?.kind === "lock" || isGraded(answer) || answer?.kind === "search" || answer?.kind === "questions" || answer?.kind === "items" || answer?.kind === "keys"
                 ? triggerLabel(o)
                 : answer?.kind === "choice" && choiceParts(answer, o.matchers)?.some(Boolean)
                   ? choiceParts(answer, o.matchers)!.map((v, k) => answer.fields[k]!.options.find((x) => x.value === v)?.label || v || "–").join(" · ")
@@ -871,6 +886,8 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
               <>
                 {answer?.kind === "tiles" ? (
                   <p className="field__hint">{t.t("Taken when the picture is whole.")}</p>
+                ) : answer?.kind === "order" ? (
+                  <p className="field__hint">{t.t("Taken when the cards are in order. Only the first such route is ever taken.")}</p>
                 ) : answer?.kind === "lock" ? (
                   <p className="field__hint">{t.t("Taken for the combination set above: {{combo}}", { combo: (o.matchers?.[0]?.value ?? "").split("|").join(" · ") })}</p>
                 ) : isGraded(answer) ? (
@@ -914,7 +931,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
           </div>
         ))}
         <div className="add-row">
-          {answer?.kind !== "tiles" && answer?.kind !== "questions" && (
+          {answer?.kind !== "tiles" && answer?.kind !== "order" && answer?.kind !== "questions" && (
             <button type="button" className={`add-btn concept--${TRIGGER.answer}`} onClick={() => addOutput("answer")}>
               <Plus size={ICON.sm} aria-hidden="true" />
               {answer?.kind === "search" ? t.t("Another place") : t.t("Another answer")}
@@ -2030,6 +2047,77 @@ function SearchForm({ cfg, search, graph, onChange }: { cfg: PuzzleConfig; searc
         <input type="checkbox" checked={!!cfg.repeatable} onChange={(e) => onChange(withOptional({ ...cfg }, "repeatable", e.target.checked || undefined))} />
         {t.t("Can be searched again on a later visit")}
       </label>
+    </>
+  );
+}
+
+/** The colours a new card takes in turn. */
+const CARD_COLOURS = ["#2f6f8f", "#8a5a2b", "#4f7a3a", "#7a3f74", "#b0413e", "#3d5a99", "#6b6b2f", "#2f7a6b"];
+
+/**
+ * An order puzzle's cards, in their right order: each a text on a colour,
+ * a picture, or both. Adding, removing or moving a card deals them anew,
+ * so the team never starts at the answer.
+ */
+function OrderForm({ order, onChange }: { order: AnswerOf<"order">; onChange: (a: AnswerOf<"order">) => void }) {
+  const t = useT();
+  const cards = order.cards;
+  const setCard = (i: number, c: OrderCard) => onChange({ ...order, cards: cards.map((x, j) => (j === i ? c : x)) });
+  const setCards = (next: OrderCard[]) => onChange({ ...order, cards: next, start: shuffledDeal(next.length) });
+  const swap = (i: number, j: number) => setCards(cards.map((c, k) => (k === i ? cards[j]! : k === j ? cards[i]! : c)));
+  const name = (c: OrderCard, i: number) => c.text || t.t("Card {{n}}", { n: i + 1 });
+  return (
+    <>
+      <Field label={t.t("Cards, in the right order")} hint={t.t("Text on a colour, a picture behind it, or both. The team gets them shuffled.")}>
+        {cards.map((c, i) => (
+          <div key={i} className="box">
+            <div className="box__row">
+              <input
+                type="color"
+                className="look__swatch"
+                aria-label={t.t("Colour")}
+                value={c.color ?? "#ffffff"}
+                onChange={(e) => setCard(i, { ...c, color: e.target.value.toLowerCase() })}
+              />
+              <input
+                className="field__input"
+                value={c.text ?? ""}
+                placeholder={t.t("Card {{n}}", { n: i + 1 })}
+                aria-label={t.t("Text on the card")}
+                onChange={(e) => setCard(i, withOptional({ ...c }, "text", e.target.value || undefined))}
+              />
+              <Button variant="ghost" size="icon" disabled={i === 0} onClick={() => swap(i, i - 1)} aria-label={t.t("Move up")}>
+                <ArrowUp size={ICON.sm} />
+              </Button>
+              <Button variant="ghost" size="icon" disabled={i === cards.length - 1} onClick={() => swap(i, i + 1)} aria-label={t.t("Move down")}>
+                <ArrowDown size={ICON.sm} />
+              </Button>
+              <Button variant="ghost" size="icon" className="danger" disabled={cards.length <= MIN_CARDS} onClick={() => setCards(cards.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
+                <X size={ICON.sm} />
+              </Button>
+            </div>
+            <MediaEditor single media={c.image ? [c.image] : undefined} onChange={(m) => setCard(i, m?.[0] ? { ...c, image: m[0] } : withOptional({ ...c }, "image", undefined))} />
+          </div>
+        ))}
+        {cards.length < MAX_CARDS && (
+          <button
+            type="button"
+            className="add-btn"
+            onClick={() => setCards([...cards, { text: "", color: CARD_COLOURS[cards.length % CARD_COLOURS.length]! }])}
+          >
+            <Plus size={ICON.sm} aria-hidden="true" />
+            {t.t("Add card")}
+          </button>
+        )}
+      </Field>
+      <Field label={t.t("Dealt to the team as")}>
+        <div className="box__row box__row--wrap">
+          <span className="field__hint">{(order.start ?? cards.map((_, i) => cards.length - 1 - i)).map((k) => (cards[k] ? name(cards[k], k) : "?")).join(" · ")}</span>
+          <Button variant="ghost" size="sm" onClick={() => onChange({ ...order, start: shuffledDeal(cards.length) })}>
+            {t.t("Shuffle again")}
+          </Button>
+        </div>
+      </Field>
     </>
   );
 }

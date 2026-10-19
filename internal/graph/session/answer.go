@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -36,6 +37,17 @@ func (t *Team) answerInput(n graph.Node) *Input {
 		return in
 	case graph.AnswerLock:
 		return &Input{Kind: "lock", Wheels: a.Wheels, Symbols: a.Symbols, Start: a.Start}
+	case graph.AnswerOrder:
+		// Dealt out of order, so the phone never holds the answer.
+		in := &Input{Kind: "order"}
+		for _, i := range a.Deal() {
+			c := a.Cards[i]
+			if c.Text != "" {
+				c.Text = t.G.Tr(t.lang(), graph.NodeKey(n.Slug, fmt.Sprintf("card:%d", i)), c.Text)
+			}
+			in.Cards = append(in.Cards, c)
+		}
+		return in
 	case graph.AnswerQuestions:
 		// The questions are blocks; the phone counts their picks.
 		return &Input{Kind: "questions"}
@@ -130,6 +142,8 @@ func (t *Team) judge(n graph.Node, o graph.Output, guess string) match.Result {
 		// One right answer, the solved order. Spaces are ignored;
 		// anything else — a short list, a repeat — is wrong.
 		return match.Result{OK: strings.ReplaceAll(guess, " ", "") == a.Solution(), Multiplier: 1}
+	case graph.AnswerOrder:
+		return match.Result{OK: a.InOrder(guess), Multiplier: 1}
 	case graph.AnswerSearch, graph.AnswerQuestions, graph.AnswerKeys:
 		// Answer has already refused a team with questions left.
 		return match.Result{OK: true, Multiplier: 1}

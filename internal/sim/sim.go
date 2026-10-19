@@ -30,6 +30,7 @@ import (
 	"math/rand/v2"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1237,7 +1238,7 @@ func (b *bot) countWrong(node string) {
 // think is how long until the next go.
 func (b *bot) think(cfg *graph.PuzzleConfig) float64 {
 	base := 40 + 160*(1-b.skill)
-	if cfg.Kind() == graph.AnswerTiles || cfg.Kind() == graph.AnswerLock {
+	if cfg.Kind() == graph.AnswerTiles || cfg.Kind() == graph.AnswerLock || cfg.Kind() == graph.AnswerOrder {
 		base *= 1.5
 	}
 	return base * (0.5 + b.rng().Float64())
@@ -1353,6 +1354,8 @@ func (b *bot) answerFor(n graph.Node, o graph.Output) (string, bool) {
 	switch cfg.Kind() {
 	case graph.AnswerTiles:
 		return a.Solution(), true
+	case graph.AnswerOrder:
+		return orderSolution(a), true
 	case graph.AnswerQuestions:
 		return "", true
 	case graph.AnswerItems:
@@ -1461,6 +1464,17 @@ func contentGuesses(g *graph.Graph, n graph.Node) []string {
 	return out
 }
 
+// orderSolution is the guess that puts an order puzzle's dealt cards
+// right: for each card in turn, where it was dealt.
+func orderSolution(a *graph.Answer) string {
+	deal := a.Deal()
+	parts := make([]string, len(deal))
+	for at, card := range deal {
+		parts[card] = strconv.Itoa(at)
+	}
+	return strings.Join(parts, ",")
+}
+
 // wrongAnswer is a plausible wrong guess for the puzzle's kind.
 func (b *bot) wrongAnswer(n graph.Node) string {
 	cfg := n.PuzzleCfg
@@ -1471,6 +1485,13 @@ func (b *bot) wrongAnswer(n graph.Node) string {
 		s := strings.Split(a.Solution(), ",")
 		b.rng().Shuffle(len(s), func(i, j int) { s[i], s[j] = s[j], s[i] })
 		g = strings.Join(s, ",")
+	case graph.AnswerOrder:
+		// The cards as dealt, untouched.
+		parts := make([]string, len(a.Cards))
+		for i := range parts {
+			parts[i] = strconv.Itoa(i)
+		}
+		g = strings.Join(parts, ",")
 	case graph.AnswerLock:
 		parts := make([]string, a.Wheels)
 		for i := range parts {

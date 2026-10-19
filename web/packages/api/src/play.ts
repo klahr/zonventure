@@ -34,7 +34,7 @@ export interface StartOption {
 /** session.Input — the shape of a puzzle's answer box. */
 export interface PlayInput {
   /** "questions": answered by the step's quiz blocks; the dock continues once each is picked. */
-  kind: "text" | "number" | "tiles" | "search" | "choice" | "lock" | "questions" | "scan" | "items" | "keys";
+  kind: "text" | "number" | "tiles" | "search" | "choice" | "lock" | "questions" | "scan" | "items" | "keys" | "order";
   /** "keys": a two-key launch's posts, by name — where keys are turned. Empty: anywhere. */
   posts?: string[];
   /** "keys": beside posts, the role turning each key, by name ("" for anyone's), and which posts are this player's. */
@@ -68,6 +68,8 @@ export interface PlayInput {
   /** Set when the answer is a list: how many items to give. */
   parts?: number;
   ordered?: boolean;
+  /** An order puzzle (kind "order"): the cards as dealt. The answer is their positions here, in the team's order. */
+  cards?: { text?: string; color?: string; image?: PlayMedia }[];
   /** A tile puzzle (kind "tiles"): the picture and the grid to cut it into. */
   rows?: number;
   cols?: number;

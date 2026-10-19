@@ -1001,6 +1001,16 @@ func (ps *playSession) input(b *strings.Builder, v session.View) {
 	case "tiles":
 		n := in.Rows * in.Cols
 		fmt.Fprintf(b, "→ A picture cut into %d×%d tiles to put in order. Once you have it, answer \"0,1,…,%d\".\n", in.Rows, in.Cols, n-1)
+	case "order":
+		b.WriteString("→ Cards to drag into the right order. As dealt:\n")
+		for i, c := range in.Cards {
+			text := c.Text
+			if text == "" {
+				text = "(a picture)"
+			}
+			fmt.Fprintf(b, "  %d: %s\n", i, text)
+		}
+		b.WriteString("Answer with their numbers in the order you put them, joined by commas.\n")
 	case "search":
 		b.WriteString("→ Say \"We're here\" where you stand (answer with an empty guess). Walk to the place first.")
 		if in.At != "" {

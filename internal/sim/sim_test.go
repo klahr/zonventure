@@ -450,3 +450,15 @@ func TestHubGateLoopStallsTheTeam(t *testing.T) {
 		}
 	}
 }
+
+// A bot answers an order puzzle with where each card was dealt, which
+// the server takes; untouched, the cards as dealt are wrong.
+func TestOrderSolution(t *testing.T) {
+	a := &graph.Answer{Kind: graph.AnswerOrder, Start: []int{3, 1, 0, 2}, Cards: make([]graph.OrderCard, 4)}
+	if got := orderSolution(a); got != "2,1,3,0" || !a.InOrder(got) {
+		t.Errorf("orderSolution = %q, which InOrder says is %v", got, a.InOrder(got))
+	}
+	if a.InOrder("0,1,2,3") {
+		t.Error("the cards as dealt should not be in order")
+	}
+}

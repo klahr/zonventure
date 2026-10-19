@@ -169,6 +169,10 @@ type Input struct {
 	Symbols []graph.LockSymbol `json:"symbols,omitempty"`
 	Start   []int              `json:"start,omitempty"`
 
+	// Cards are an order puzzle's cards (Kind "order"), as dealt: the
+	// phone answers with their positions here, in the team's order.
+	Cards []graph.OrderCard `json:"cards,omitempty"`
+
 	// Slots are an item puzzle's slots (Kind "items"), by label; the
 	// items they want stay on the server.
 	Slots []string `json:"slots,omitempty"`

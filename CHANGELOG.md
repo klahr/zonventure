@@ -11,6 +11,20 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Designer: a new way to answer a puzzle, "Put in order" ("Sätt i
+  ordning"). The team drags a stack of 2 to 8 cards into the right
+  order, then tries it. Each card has text on a colour, a picture
+  behind it, or both. The author lists the cards in the right order
+  and the team gets them shuffled. The phone never learns the answer:
+  the server checks the order, and a wrong one gets the wrong-answer
+  replies. A finger drags a card by its grip, a mouse drags it from
+  anywhere, a tap on one card and then another moves it, and a
+  focused card moves with the arrow keys. Card texts are translatable,
+  the race simulator and the MCP endpoint can play it, and it is in
+  the step picker under puzzles.
+
 ## [0.33.15] - 2026-10-19
 
 ### Changed

@@ -11,7 +11,7 @@
 // is created at the drop point already wired in.
 
 import { blocksOf, withBlocks, withFixed } from "./blocks.ts";
-import { freshSlug, portsOf, quietInQuizWalk } from "./model.ts";
+import { defaultOrder, freshSlug, portsOf, quietInQuizWalk } from "./model.ts";
 import type { Graph, Node, NodeType } from "./types.ts";
 
 export type PresetCategory = "puzzle" | "story" | "flow" | "effect" | "end";
@@ -175,6 +175,24 @@ export const PRESETS: Preset[] = [
         blocks: [{ id: "b1", kind: "text", text: "" }],
         answer: { kind: "tiles", rows: 3, cols: 3 },
         outputs: [{ port: "solved", label: "Solved", trigger: "answer" }],
+      },
+    }),
+  },
+  {
+    id: "puzzle-order",
+    type: "puzzle",
+    category: "puzzle",
+    label: "Put in order",
+    hint: "Drag cards into the right order",
+    keywords: "order sort sequence timeline rank arrange stack cards drag",
+    build: () => ({
+      type: "puzzle",
+      title: "Put in order",
+      puzzle: {
+        blocks: [{ id: "b1", kind: "text", text: "" }],
+        answer: defaultOrder(),
+        outputs: [{ port: "solved", label: "Solved", trigger: "answer" }],
+        responses: [{ text: "Not in that order." }],
       },
     }),
   },

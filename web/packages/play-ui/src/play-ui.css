@@ -1727,6 +1727,129 @@
   object-fit: cover;
 }
 
+/* --- Order puzzle ------------------------------------------------------------- */
+
+.pv-order-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.pv-order {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  user-select: none;
+}
+.pv-order__card {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  min-height: 3.75rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  overflow: hidden;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.pv-order__card.has-image {
+  min-height: 5.5rem;
+  color: #fff;
+}
+.pv-order__bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+/* A scrim from the left, under the text, so it reads on any picture. */
+.pv-order__card.has-image::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgb(0 0 0 / 0.6), rgb(0 0 0 / 0.15) 75%);
+  pointer-events: none;
+}
+.pv-order__body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+.pv-order__body:disabled {
+  cursor: default;
+}
+.pv-order__body:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+  border-radius: var(--radius);
+}
+.pv-order__place {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.18);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.pv-order__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pv-order__card.has-image .pv-order__text {
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.6);
+}
+.pv-order__grip {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--pv-tap);
+  font-size: 1.25rem;
+  opacity: 0.7;
+  cursor: grab;
+  touch-action: none;
+}
+.pv-order__card.is-selected {
+  box-shadow: 0 0 0 3px var(--accent);
+}
+.pv-order__card.is-dragging {
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.35);
+  transition: none;
+  cursor: grabbing;
+}
+.pv-order.is-dragging .pv-order__body {
+  cursor: grabbing;
+}
+.pv-order__help {
+  margin: 0;
+  text-align: center;
+  font-size: var(--text-sm);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pv-order__card {
+    transition: none;
+  }
+}
+
 /* Item slots: the places to fill, then the backpack to fill them from. */
 .pv-slots {
   display: grid;
