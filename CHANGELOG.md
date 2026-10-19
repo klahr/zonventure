@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.10] - 2026-10-19
+
 ### Added
 
 - Share & embed: a self-guided event's page in the console gives the
