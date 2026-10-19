@@ -11,6 +11,17 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.13] - 2026-10-19
+
+### Changed
+
+- Player and store: the code boxes on /play and on an organisation's
+  store take a code as six single-character cells, like a sign-in
+  code. Typing moves on, Backspace on an empty cell steps back, a
+  whole code pasted into any cell spreads over the rest, and the
+  sixth character submits. The store's box takes at most six
+  characters, as /play's already did.
+
 ## [0.33.12] - 2026-10-19
 
 ### Changed
