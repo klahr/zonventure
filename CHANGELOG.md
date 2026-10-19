@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.12] - 2026-10-19
+
 ### Changed
 
 - Player: in a walk, skipping a step is "Go on anyway" ("Gå vidare
