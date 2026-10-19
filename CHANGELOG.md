@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.7] - 2026-10-19
+
 ### Added
 
 - MCP: `edit_adventure_graph` has a `set_option` op that turns
