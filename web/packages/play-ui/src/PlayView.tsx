@@ -904,8 +904,10 @@ function SkipLink({ view, t, busy, onAction }: StepProps) {
   const [confirm, setConfirm] = useState(false);
   const node = view.node ?? "";
   if (!confirm) {
+    // A walk's "go on anyway" is a way on, in the look's own buttons; a
+    // game's skip stays a quiet link, as giving up should.
     return (
-      <button type="button" className="pv-link" disabled={busy} onClick={() => setConfirm(true)}>
+      <button type="button" className={view.tour ? "pv-btn pv-skip" : "pv-link"} disabled={busy} onClick={() => setConfirm(true)}>
         {t("Skip this puzzle")}
       </button>
     );

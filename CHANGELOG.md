@@ -11,6 +11,19 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- Player: in a walk, skipping a step is "Go on anyway" ("Gå vidare
+  ändå"), a button in the walk's own look, and asks "Go on to the next
+  stop without this one?" — no puzzle and no points. A game's skip
+  link is as it was.
+
+### Fixed
+
+- Store: the ticket page's starting-point map draws on an
+  organisation's own domain too. The page's own security policy
+  blocked the map's style, tiles and worker there.
+
 ## [0.33.11] - 2026-10-19
 
 ### Added

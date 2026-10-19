@@ -952,6 +952,9 @@
   text-decoration: underline;
   cursor: pointer;
 }
+.pv-skip {
+  align-self: center;
+}
 .pv-confirm {
   display: flex;
   flex-wrap: wrap;

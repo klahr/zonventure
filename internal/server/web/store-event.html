@@ -24,7 +24,10 @@
 <html lang="{{LANG_CODE}}"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
+<!-- connect-src https: and worker-src blob: let the starting point's map reach
+     its style and tile hosts and decode tiles; the server's
+     Content-Security-Policy header narrows them to the configured map hosts. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws: https:; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <title>{{TITLE}} · {{SITE_NAME}}</title>
 <meta name="description" content="{{BLURB}}">
 <link rel="canonical" href="{{CANONICAL_URL}}">

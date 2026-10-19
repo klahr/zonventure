@@ -34,5 +34,7 @@
   "tour|You've been taken out of the game": "You've been taken out of the walk",
   "tour|The game is over": "The walk is over",
   "tour|Your play data from this event is erased, and your link no longer works.": "Your data from this event is erased, and your link no longer works.",
-  "tour|This game can't start just now. Ask the organiser, then open your link again.": "This walk can't start just now. Ask the organiser, then open your link again."
+  "tour|This game can't start just now. Ask the organiser, then open your link again.": "This walk can't start just now. Ask the organiser, then open your link again.",
+  "tour|Skip this puzzle": "Go on anyway",
+  "tour|Skip this puzzle? You won't get its points.": "Go on to the next stop without this one?"
 }

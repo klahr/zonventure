@@ -495,5 +495,7 @@
   "tour|This wipes your location history and your answers from this event. Other team members keep playing. You'll be signed out and the link won't work again. Continue?": "Detta raderar din platshistorik och dina svar från det här eventet. Övriga i sällskapet fortsätter. Du loggas ut och länken fungerar inte igen. Fortsätt?",
   "tour|If that address belongs to a team in a game that hasn't ended, your links are on their way. Check your inbox.": "Om adressen hör till en runda som inte är slut är länkarna på väg. Kolla din inkorg.",
   "tour|The game hasn't started for your team yet.": "Rundan har inte börjat för dig än.",
-  "tour|You're playing alone, so you hold every part.": "Du är ensam, så du har alla delar."
+  "tour|You're playing alone, so you hold every part.": "Du är ensam, så du har alla delar.",
+  "tour|Skip this puzzle": "Gå vidare ändå",
+  "tour|Skip this puzzle? You won't get its points.": "Gå vidare till nästa stopp utan det här?"
 }
