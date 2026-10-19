@@ -11,6 +11,23 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.14] - 2026-10-19
+
+### Added
+
+- Player: a full-screen button ("Helskärm") at the app bar's right
+  end hides the browser's own bars, so more of the step and map are
+  in sight outdoors. It isn't shown where the browser can't go full
+  screen (iPhone Safari) or when the app is installed and already
+  runs full screen.
+
+### Changed
+
+- Player: the adventure's picture, or else the organisation's logo,
+  is now the menu button at the app bar's left end. The ☰ shows only
+  when there is no picture. The messages bell shows only once the
+  organisers have sent a message.
+
 ## [0.33.13] - 2026-10-19
 
 ### Changed
