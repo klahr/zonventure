@@ -72,7 +72,7 @@ const MaxRejectReasonLen = 1000
 const eventListingRevision = `md5(row(e.name, e.public_blurb, e.ticket_price_cents, e.ticket_currency, e.ticket_team_size,
 	e.cover_image_mime_type, md5(e.cover_image_content), COALESCE(e.next_graph_id, e.graph_id),
 	(SELECT string_agg(f.id::text || ':' || md5(f.content), ',' ORDER BY f.id) FROM event_files f WHERE f.event_id = e.id))::text
-	|| CASE WHEN e.listing_translations = '{}'::jsonb THEN '' ELSE e.listing_translations::text END)`
+	|| CASE WHEN e.translations = '{}'::jsonb THEN '' ELSE e.translations::text END)`
 
 // The offer's name is appended outside row(), so a draft without one
 // keeps the revision it had before offers had names.
@@ -81,7 +81,7 @@ const partyListingRevision = `md5(row(o.blurb, o.base_cents, o.per_kid_cents, o.
 
 // eventUnchanged and partyUnchanged say a draft is what is approved.
 const eventUnchanged = `COALESCE(l.event_id IS NOT NULL
-	AND l.name = e.name AND l.blurb = e.public_blurb AND l.translations = e.listing_translations
+	AND l.name = e.name AND l.blurb = e.public_blurb AND l.translations = e.translations
 	AND l.price_cents = e.ticket_price_cents AND l.currency = e.ticket_currency
 	AND l.team_size = e.ticket_team_size
 	AND l.cover_mime_type IS NOT DISTINCT FROM e.cover_image_mime_type
@@ -358,7 +358,7 @@ func (h *Handlers) approveEventListing(ctx context.Context, q execer, eventID, r
 	by := sql.NullInt64{Int64: reviewer, Valid: reviewer > 0}
 	if _, err := q.ExecContext(ctx, `
 		INSERT INTO event_listings (event_id, name, blurb, translations, price_cents, currency, team_size, cover_mime_type, cover_content, graph_id, approved_at, approved_by)
-		SELECT id, name, public_blurb, listing_translations, ticket_price_cents, ticket_currency, ticket_team_size,
+		SELECT id, name, public_blurb, translations, ticket_price_cents, ticket_currency, ticket_team_size,
 		       cover_image_mime_type, cover_image_content, COALESCE(next_graph_id, graph_id), now(), $2
 		FROM events WHERE id = $1 AND ticket_price_cents IS NOT NULL
 		ON CONFLICT (event_id) DO UPDATE SET
@@ -423,7 +423,8 @@ type listingFieldsDTO struct {
 	CoverURL    string `json:"cover_url,omitempty"`
 	// GraphID is the adventure version it plays.
 	GraphID int64 `json:"graph_id,omitempty"`
-	// Translations are its name and blurb in other languages.
+	// Translations are its name, blurb and meeting place in other
+	// languages.
 	Translations listing.Translations `json:"translations,omitempty"`
 }
 

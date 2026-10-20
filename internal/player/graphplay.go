@@ -229,10 +229,12 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	} else if !ob.Empty() {
 		out.OrgBrand = &ob
 	}
-	if out.Messages, err = eventmsg.ForTeam(ctx, h.DB, tc.EventID, tc.TeamID); err != nil {
+	msgs, err := eventmsg.ForTeam(ctx, h.DB, tc.EventID, tc.TeamID)
+	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading messages failed", err)
 		return
 	}
+	out.Messages = eventmsg.In(msgs, "")
 	if out.Event.Files, err = eventfile.ListForPlayers(ctx, h.DB, tc.EventID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading files failed", err)
 		return
@@ -284,6 +286,18 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 		}
 		if s := view.Meta["outro"]; s != "" {
 			out.Event.OutroText = s
+		}
+		if s := view.Meta["start_label"]; s != "" && out.Event.Start != nil && out.Event.Start.Label != "" {
+			start := *out.Event.Start
+			start.Label = s
+			out.Event.Start = &start
+		}
+		// The organisers' messages and files in the language the phone
+		// shows, where they gave them in it.
+		out.Messages = eventmsg.In(msgs, view.Lang)
+		if out.Event.Files, err = eventfile.ListForPlayersIn(ctx, h.DB, tc.EventID, view.Lang); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "loading files failed", err)
+			return
 		}
 		if out.Prefetch, err = h.engine().Media(ctx, tc.TeamID); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "loading media failed", err)

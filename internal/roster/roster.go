@@ -28,6 +28,8 @@ type TeamInput struct {
 	Name        string
 	MemberNames []string
 	Email       string
+	// Lang is the language the team plays in, "" for the adventure's own.
+	Lang string
 }
 
 // Importer parses a roster source into a flat list of TeamInputs.

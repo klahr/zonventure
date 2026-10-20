@@ -41,8 +41,11 @@ func (h *Handlers) SendEventMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Text    string  `json:"text"`
-		TeamIDs []int64 `json:"team_ids"`
+		Text string `json:"text"`
+		// Translations are the text in the adventure's other languages:
+		// a team reads it in the one it plays in.
+		Translations map[string]string `json:"translations"`
+		TeamIDs      []int64           `json:"team_ids"`
 	}
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -51,9 +54,9 @@ func (h *Handlers) SendEventMessage(w http.ResponseWriter, r *http.Request) {
 	if me, ok := auth.FromContext(r.Context()); ok {
 		userID = me.ID
 	}
-	m, err := eventmsg.Send(r.Context(), h.DB, eventID, userID, req.Text, req.TeamIDs)
+	m, err := eventmsg.Send(r.Context(), h.DB, eventID, userID, req.Text, req.Translations, req.TeamIDs)
 	switch {
-	case errors.Is(err, eventmsg.ErrEmpty), errors.Is(err, eventmsg.ErrTooLong), errors.Is(err, eventmsg.ErrTeam):
+	case errors.Is(err, eventmsg.ErrEmpty), errors.Is(err, eventmsg.ErrTooLong), errors.Is(err, eventmsg.ErrTeam), errors.Is(err, eventmsg.ErrLang):
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	case err != nil:

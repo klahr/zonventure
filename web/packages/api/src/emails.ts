@@ -78,7 +78,7 @@ export interface EventEmails {
 export const eventEmails = (eventId: number, signal?: AbortSignal) => get<EventEmails>(`/api/admin/events/${eventId}/emails`, signal ? { signal } : {});
 
 /** Write to an event's teams — all, or those chosen. {{team}} and {{event}} are filled in. */
-export const emailTeams = (eventId: number, msg: { subject: string; body: string; team_ids?: number[] }) =>
+export const emailTeams = (eventId: number, msg: { subject: string; body: string; team_ids?: number[]; translations?: Record<string, { subject: string; body: string }> }) =>
   post<{ id: number; sent: number; skipped: number }>(`/api/admin/events/${eventId}/emails`, msg);
 
 export type NotificationKind = "mention" | "step_assigned" | "suggestion" | "review_requested";

@@ -14,7 +14,7 @@ import { MessagesCard, PhotosCard } from "./Messages.tsx";
 import { FilesCard } from "./Files.tsx";
 import { PrintDeliveryCard } from "./PrintDelivery.tsx";
 import { NewTeamsDialog } from "./NewTeams.tsx";
-import { AdventureVersion, CheatCard, ConnectBanner, MeetingPlaceCard, QuickStats, ResultsCard, SecretRolesCard, StoreCard } from "./Overview.tsx";
+import { AdventureVersion, CheatCard, ConnectBanner, LanguagesCard, MeetingPlaceCard, QuickStats, ResultsCard, SecretRolesCard, StoreCard } from "./Overview.tsx";
 import { TeamDetailDialog } from "./TeamDetail.tsx";
 import { TeamEditDialog } from "./TeamEdit.tsx";
 import { TeamsCard } from "./Teams.tsx";
@@ -172,6 +172,7 @@ export function EventPage({ id }: { id: number }) {
       {quest && !isTerminal(event) && <VoucherCodesCard key={`vc-${event.id}`} event={event} />}
       {prints.data && <PrintDeliveryCard eventId={id} materials={prints.data} reload={prints.reload} invited={!event.public_for_sale && !event.party} />}
       {!quest && !event.party && !isTerminal(event) && <MeetingPlaceCard key={`meet-${event.id}`} event={event} onSaved={detail.reload} />}
+      {(event.languages?.length ?? 0) > 1 && !event.party && !isTerminal(event) && <LanguagesCard key={`lang-${event.id}`} event={event} onSaved={detail.reload} />}
       {event.has_secret_roles && <SecretRolesCard key={`secret-${event.id}`} event={event} onSaved={detail.reload} />}
       {event.cheat_password && !isTerminal(event) && <CheatCard password={event.cheat_password} />}
       <ResultsCard event={event} teams={teams} />
@@ -205,7 +206,7 @@ export function EventPage({ id }: { id: number }) {
       </div>
 
       {open?.kind === "rename" && <RenameDialog event={event} onClose={() => setOpen(null)} onDone={reload} />}
-      {open?.kind === "new-team" && <NewTeamsDialog eventId={event.id} teams={teams} seatsLeft={event.max_players > 0 ? Math.max(0, event.max_players - (event.player_slots_count || 0)) : null} lang={adv?.language} onClose={() => setOpen(null)} onDone={reload} />}
+      {open?.kind === "new-team" && <NewTeamsDialog eventId={event.id} teams={teams} seatsLeft={event.max_players > 0 ? Math.max(0, event.max_players - (event.player_slots_count || 0)) : null} lang={adv?.language} languages={event.languages} onClose={() => setOpen(null)} onDone={reload} />}
       {open?.kind === "team" && openTeam && (
         <TeamDetailDialog
           event={event}

@@ -528,6 +528,16 @@ type teamEmailRequest struct {
 	Subject string  `json:"subject"`
 	Body    string  `json:"body"`
 	TeamIDs []int64 `json:"team_ids"`
+	// Translations are the email in the adventure's other languages, by
+	// language tag: a team playing in one gets it in that language,
+	// every other one as written.
+	Translations map[string]teamEmailText `json:"translations,omitempty"`
+}
+
+// teamEmailText is an arranger's email to teams in one language.
+type teamEmailText struct {
+	Subject string `json:"subject"`
+	Body    string `json:"body"`
 }
 
 // maxTeamEmail bounds what an arranger writes to teams.
@@ -559,18 +569,34 @@ func (h *Handlers) EmailTeams(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "the message is too long", "code": "email_too_long"})
 		return
 	}
+	for lang, t := range req.Translations {
+		t.Subject, t.Body = strings.TrimSpace(t.Subject), strings.TrimSpace(t.Body)
+		switch {
+		case !validLanguageTag(lang):
+			httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "a translation needs a language tag", "code": "email_lang"})
+			return
+		case len(t.Subject) > 200 || len(t.Body) > maxTeamEmail:
+			httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "the message is too long", "code": "email_too_long"})
+			return
+		case t.Subject == "" || t.Body == "":
+			// Half a translation is none: the team gets it as written.
+			delete(req.Translations, lang)
+		default:
+			req.Translations[lang] = t
+		}
+	}
 	if h.MailOutbox == nil && h.Mailer == nil {
 		httpx.Error(w, http.StatusServiceUnavailable, "no mailer configured")
 		return
 	}
-	rows, err := h.DB.QueryContext(r.Context(), `SELECT id, name, COALESCE(TRIM(email), '') FROM teams WHERE event_id = $1 ORDER BY id`, eventID)
+	rows, err := h.DB.QueryContext(r.Context(), `SELECT id, name, COALESCE(TRIM(email), ''), lang FROM teams WHERE event_id = $1 ORDER BY id`, eventID)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading teams failed", err)
 		return
 	}
 	type team struct {
-		id          int64
-		name, email string
+		id                int64
+		name, email, lang string
 	}
 	var teams []team
 	chosen := map[int64]bool{}
@@ -579,7 +605,7 @@ func (h *Handlers) EmailTeams(w http.ResponseWriter, r *http.Request) {
 	}
 	for rows.Next() {
 		var t team
-		if err := rows.Scan(&t.id, &t.name, &t.email); err != nil {
+		if err := rows.Scan(&t.id, &t.name, &t.email, &t.lang); err != nil {
 			rows.Close()
 			httpx.ServerErr(w, http.StatusInternalServerError, "loading teams failed", err)
 			return
@@ -595,14 +621,21 @@ func (h *Handlers) EmailTeams(w http.ResponseWriter, r *http.Request) {
 	}
 
 	l := h.eventLook(r.Context(), eventID)
+	words := h.eventWords(r.Context(), eventID)
 	sent, skipped := 0, 0
 	for _, t := range teams {
 		if t.email == "" {
 			skipped++
 			continue
 		}
-		subject, c := emailtpl.TeamMessage(l.Lang, fill(req.Subject, t.name, l.Event), fill(req.Body, t.name, l.Event), l.Event, l.Brand.Name)
-		if err := h.send(r.Context(), "team_message", l.message([]string{t.email}, subject, c)); err != nil {
+		// In the team's language where the arranger wrote it in that,
+		// the email around it too; as written otherwise.
+		lt, text := l, teamEmailText{Subject: req.Subject, Body: req.Body}
+		if tr, ok := req.Translations[t.lang]; ok && words.speaks(t.lang) {
+			lt, text = words.lookIn(l, t.lang), tr
+		}
+		subject, c := emailtpl.TeamMessage(lt.Lang, fill(text.Subject, t.name, lt.Event), fill(text.Body, t.name, lt.Event), lt.Event, lt.Brand.Name)
+		if err := h.send(r.Context(), "team_message", lt.message([]string{t.email}, subject, c)); err != nil {
 			logx.Warn("admin.emails.team", "event", eventID, "team", t.id, "err", err.Error())
 			skipped++
 			continue
@@ -628,38 +661,48 @@ func (h *Handlers) emailTeamsCancelled(ctx context.Context, eventID int64) int {
 	if h.MailOutbox == nil && h.Mailer == nil {
 		return 0
 	}
-	rows, err := h.DB.QueryContext(ctx, `SELECT id, name, TRIM(email) FROM teams WHERE event_id = $1 AND TRIM(COALESCE(email, '')) <> '' ORDER BY id`, eventID)
+	rows, err := h.DB.QueryContext(ctx, `SELECT id, name, TRIM(email), lang FROM teams WHERE event_id = $1 AND TRIM(COALESCE(email, '')) <> '' ORDER BY id`, eventID)
 	if err != nil {
 		logx.Warn("admin.emails.cancelled", "event", eventID, "err", err.Error())
 		return 0
 	}
 	type team struct {
-		id          int64
-		name, email string
+		id                int64
+		name, email, lang string
 	}
 	var teams []team
 	for rows.Next() {
 		var t team
-		if err := rows.Scan(&t.id, &t.name, &t.email); err != nil {
+		if err := rows.Scan(&t.id, &t.name, &t.email, &t.lang); err != nil {
 			break
 		}
 		teams = append(teams, t)
 	}
 	rows.Close()
 	l := h.eventLook(ctx, eventID)
-	// The calendar entry the invitations put in calendars, cancelled. The
-	// outbox holds no attachments, so with one the mail goes straight out.
-	var cancel []mailerpkg.Attachment
-	if evt, err := icscal.BuildForEvent(ctx, h.DB, h.Lib, eventID, h.eventBase(ctx, eventID)); err == nil && h.Mailer != nil {
-		evt.Method, evt.Status = "CANCEL", "CANCELLED"
-		if b, err := icscal.Bytes(evt); err == nil {
-			cancel = []mailerpkg.Attachment{{Filename: icscal.Filename(eventID), ContentType: "text/calendar; method=CANCEL; charset=UTF-8", Bytes: b}}
+	words := h.eventWords(ctx, eventID)
+	// The calendar entry the invitations put in calendars, cancelled, in
+	// each team's language. The outbox holds no attachments, so with one
+	// the mail goes straight out.
+	evt, evtErr := icscal.BuildForEvent(ctx, h.DB, h.Lib, eventID, h.eventBase(ctx, eventID))
+	cancelFor := func(lang string) []mailerpkg.Attachment {
+		if evtErr != nil || h.Mailer == nil {
+			return nil
 		}
+		e := words.calendarIn(evt, lang)
+		e.Method, e.Status = "CANCEL", "CANCELLED"
+		b, err := icscal.Bytes(e)
+		if err != nil {
+			return nil
+		}
+		return []mailerpkg.Attachment{{Filename: icscal.Filename(eventID), ContentType: "text/calendar; method=CANCEL; charset=UTF-8", Bytes: b}}
 	}
 	sent := 0
 	for _, t := range teams {
-		subject, c := emailtpl.EventCancelled(l.Lang, t.name, l.Event, l.Brand.Name, l.Contact)
-		msg := l.message([]string{t.email}, subject, c)
+		lt := words.lookIn(l, t.lang)
+		subject, c := emailtpl.EventCancelled(lt.Lang, t.name, lt.Event, lt.Brand.Name, lt.Contact)
+		msg := lt.message([]string{t.email}, subject, c)
+		cancel := cancelFor(t.lang)
 		var err error
 		if cancel != nil {
 			msg.Attachments = cancel

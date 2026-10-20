@@ -4,8 +4,9 @@ import { emails } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { Button, Card, Dialog, EmailPreview, Field, fmtDateTime, fmtWhen, ICON, MarkdownArea, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 import type { EventInfo, Team } from "./api.ts";
+import { languageName } from "../../languages.ts";
 
-type Info = Pick<EventInfo, "id" | "state" | "name">;
+type Info = Pick<EventInfo, "id" | "state" | "name" | "languages">;
 type Named = Pick<Team, "id" | "name" | "email">;
 
 /**
@@ -140,6 +141,12 @@ function EmailComposer({
   const dialogs = useDialogs();
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  // The email in the adventure's other languages: a team playing in one
+  // gets it in that, the email around it too; every other as written.
+  const others = (event.languages ?? []).slice(1);
+  const [translations, setTranslations] = useState<Record<string, { subject: string; body: string }>>({});
+  const translate = (lang: string, field: "subject" | "body", value: string) =>
+    setTranslations((m) => ({ ...m, [lang]: { subject: "", body: "", ...m[lang], [field]: value } }));
   const [everyone, setEveryone] = useState(true);
   const [chosen, setChosen] = useState<Set<number>>(() => new Set());
   const [err, setErr] = useState<string | null>(null);
@@ -176,7 +183,7 @@ function EmailComposer({
     if (!ok) return;
     setBusy(true);
     try {
-      const r = await emails.emailTeams(event.id, { subject, body, ...(everyone ? {} : { team_ids: [...chosen] }) });
+      const r = await emails.emailTeams(event.id, { subject, body, translations, ...(everyone ? {} : { team_ids: [...chosen] }) });
       onSent(r.sent, r.skipped);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -209,6 +216,17 @@ function EmailComposer({
           <Field label={t.t("Message")} hint={t.t("{{team}} and {{event}} become each team's name and the event's. **Bold**, *italics* and links work; line breaks stay.", { team: "{{team}}", event: "{{event}}" })}>
             <MarkdownArea rows={9} maxLength={20000} value={body} placeholder={t.t("Hi {{team}}! …", { team: "{{team}}" })} onChange={(e) => setBody(e.target.value)} />
           </Field>
+          {others.map((l) => (
+            <fieldset key={l} className="ev-fieldset">
+              <legend>{t.t("In {{lang}} (optional)", { lang: languageName(l) })}</legend>
+              <Field label={t.t("Subject")}>
+                <input type="text" maxLength={200} value={translations[l]?.subject ?? ""} onChange={(e) => translate(l, "subject", e.target.value)} />
+              </Field>
+              <Field label={t.t("Message")} hint={t.t("Teams playing in it get this instead, with the email around it in their language.")}>
+                <MarkdownArea rows={5} maxLength={20000} value={translations[l]?.body ?? ""} onChange={(e) => translate(l, "body", e.target.value)} />
+              </Field>
+            </fieldset>
+          ))}
           {teams.length > 1 && (
             <fieldset className="ev-fieldset">
               <legend className="cs-sr">{t.t("Send to")}</legend>

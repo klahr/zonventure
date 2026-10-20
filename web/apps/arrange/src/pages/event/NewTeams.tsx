@@ -4,6 +4,7 @@ import { contentT, useT } from "../../i18n.tsx";
 import { Button, Dialog, errorText, Field, useDialogs, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
 import type { BulkResult, ImportColumn, RosterTeam, Team } from "./api.ts";
+import { languageName } from "../../languages.ts";
 
 type Mode = "single" | "bulk" | "roster" | "import";
 
@@ -32,7 +33,7 @@ export function parseRoster(text: string): RosterTeam[] {
  * before anything is created. Rosters and files land through the same
  * /teams/bulk writer.
  */
-export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, onClose, onDone }: { eventId: number; teams: Team[]; seatsLeft: number | null; lang?: string | undefined; onClose: () => void; onDone: () => void }) {
+export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, languages = [], onClose, onDone }: { eventId: number; teams: Team[]; seatsLeft: number | null; lang?: string | undefined; languages?: string[] | undefined; onClose: () => void; onDone: () => void }) {
   const t = useT();
   const ct = contentT(lang);
   const toast = useToast();
@@ -40,6 +41,10 @@ export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, onClose, onDon
   const existing = new Set(teams.map((tm) => tm.name));
   const [mode, setMode] = useState<Mode>("single");
   const [busy, setBusy] = useState(false);
+  // The language the new teams play in and get their emails in, of those
+  // the adventure is played in: "" for its own.
+  const [teamLang, setTeamLang] = useState("");
+  const inLang = (tm: RosterTeam): RosterTeam => (teamLang ? { ...tm, lang: teamLang } : tm);
   // single
   const [name, setName] = useState("");
   const [names, setNames] = useState("");
@@ -108,7 +113,7 @@ export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, onClose, onDon
   };
 
   const runBulk = async (list: RosterTeam[], ok: (n: number) => string, partKey: string, note = "") =>
-    reportBulk(await api.bulkTeams(eventId, list), ok, partKey, note);
+    reportBulk(await api.bulkTeams(eventId, list.map(inLang)), ok, partKey, note);
 
   const submit = async () => {
     setBusy(true);
@@ -124,7 +129,7 @@ export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, onClose, onDon
         setTouched({ name: true, names: true });
         const n = name.trim(), list = splitNames(names);
         if (!n || existing.has(n) || list.length === 0) return;
-        await api.createTeam(eventId, { name: n, member_names: list, email: email.trim() });
+        await api.createTeam(eventId, inLang({ name: n, member_names: list, email: email.trim() }));
         toast.ok(t.t("Team created"));
       } else {
         const T = Math.max(1, Number.parseInt(count, 10) || 0);
@@ -137,7 +142,7 @@ export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, onClose, onDon
           do n = `${tp} ${idx++}`; while (existing.has(n) && idx < 10_000);
           if (idx >= 10_000) break;
           try {
-            await api.createTeam(eventId, { name: n, member_names: Array.from({ length: P }, (_, j) => `${pp} ${j + 1}`) });
+            await api.createTeam(eventId, inLang({ name: n, member_names: Array.from({ length: P }, (_, j) => `${pp} ${j + 1}`) }));
             created++;
             existing.add(n);
           } catch (e) {
@@ -198,6 +203,15 @@ export function NewTeamsDialog({ eventId, teams, seatsLeft, lang, onClose, onDon
           </label>
         ))}
       </fieldset>
+      {languages.length > 1 && (
+        <Field label={t.t("Language")} hint={t.t("The teams play in it and get their invitations and emails in it.")}>
+          <select value={teamLang} onChange={(e) => setTeamLang(e.target.value)}>
+            {languages.map((l, i) => (
+              <option key={l} value={i === 0 ? "" : l}>{languageName(l)}</option>
+            ))}
+          </select>
+        </Field>
+      )}
 
       {mode === "single" && (
         <>

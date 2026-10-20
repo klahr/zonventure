@@ -174,7 +174,7 @@ func (h *Handlers) contentOf(ctx context.Context, kind string, id int64, served 
 		e.cover_image_mime_type IS NOT NULL,
 		l.event_id IS NOT NULL, COALESCE(l.name, ''), COALESCE(l.blurb, ''), COALESCE(l.price_cents, 0), 0,
 		COALESCE(l.currency, ''), COALESCE(l.team_size, 0), 0, l.cover_mime_type IS NOT NULL, l.graph_id,
-		e.listing_translations, COALESCE(l.translations, '{}')`
+		e.translations, COALESCE(l.translations, '{}')`
 	joins := `JOIN adventures a ON a.slug = e.adventure_slug LEFT JOIN event_listings l ON l.event_id = e.id`
 	if kind == listingParty {
 		draftCols = `o.name, o.blurb, o.base_cents, o.per_kid_cents, o.currency, 0, o.max_kids, FALSE,
@@ -255,6 +255,7 @@ func (h *Handlers) contentOf(ctx context.Context, kind string, id int64, served 
 	for _, lang := range langs {
 		text("Listing ("+lang+"): name", c.Draft.Translations[lang].Name)
 		text("Listing ("+lang+"): blurb", c.Draft.Translations[lang].Blurb)
+		text("Listing ("+lang+"): meeting place", c.Draft.Translations[lang].MeetingPlace)
 	}
 	if draftCover {
 		c.Draft.CoverURL = reviewMediaURL(kind, id, "event-cover")

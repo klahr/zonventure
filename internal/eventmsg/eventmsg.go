@@ -1,7 +1,9 @@
 // Package eventmsg stores what an event's organisers tell its teams:
 // information beside the game — "lunch is at the square at 12" — not a
 // part of it. Messages go to every team or to chosen ones, and are never
-// in the adventure or the engine's view.
+// in the adventure or the engine's view. A message may say itself in
+// other languages too: a team then reads it in the language it plays in
+// (In).
 package eventmsg
 
 import (
@@ -20,16 +22,19 @@ const MaxLen = 2000
 
 // Message is one message. TeamIDs empty means every team.
 type Message struct {
-	ID        int64     `json:"id"`
-	Text      string    `json:"text"`
-	TeamIDs   []int64   `json:"team_ids,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ID   int64  `json:"id"`
+	Text string `json:"text"`
+	// Translations are the text in other languages, by language tag.
+	Translations map[string]string `json:"translations,omitempty"`
+	TeamIDs      []int64           `json:"team_ids,omitempty"`
+	CreatedAt    time.Time         `json:"created_at"`
 }
 
 var (
 	ErrEmpty    = errors.New("a message needs text")
 	ErrTooLong  = fmt.Errorf("a message is at most %d bytes", MaxLen)
 	ErrTeam     = errors.New("a team is not in this event")
+	ErrLang     = errors.New("a translation needs a language tag")
 	ErrNotFound = errors.New("no such message in this event")
 )
 
@@ -40,14 +45,32 @@ type Querier interface {
 }
 
 // Send stores a message for the event's teams, or with teamIDs only
-// those, which must belong to the event.
-func Send(ctx context.Context, q Querier, eventID, userID int64, text string, teamIDs []int64) (Message, error) {
+// those, which must belong to the event; with translations, the text in
+// other languages too (an empty one is left out).
+func Send(ctx context.Context, q Querier, eventID, userID int64, text string, translations map[string]string, teamIDs []int64) (Message, error) {
 	text = strings.TrimSpace(text)
 	switch {
 	case text == "":
 		return Message{}, ErrEmpty
 	case len(text) > MaxLen:
 		return Message{}, ErrTooLong
+	}
+	tr := map[string]string{}
+	for lang, s := range translations {
+		lang, s = strings.TrimSpace(lang), strings.TrimSpace(s)
+		switch {
+		case s == "":
+			continue
+		case lang == "" || len(lang) > 32 || strings.ContainsAny(lang, " \t\n"):
+			return Message{}, ErrLang
+		case len(s) > MaxLen:
+			return Message{}, ErrTooLong
+		}
+		tr[lang] = s
+	}
+	doc, err := json.Marshal(tr)
+	if err != nil {
+		return Message{}, err
 	}
 	var targets any
 	if len(teamIDs) > 0 {
@@ -65,10 +88,28 @@ func Send(ctx context.Context, q Querier, eventID, userID int64, text string, te
 		by = userID
 	}
 	m := Message{Text: text, TeamIDs: unique(teamIDs)}
-	err := q.QueryRowContext(ctx, `
-		INSERT INTO event_messages (event_id, team_ids, text, created_by) VALUES ($1, $2::bigint[], $3, $4)
-		RETURNING id, created_at`, eventID, targets, text, by).Scan(&m.ID, &m.CreatedAt)
+	if len(tr) > 0 {
+		m.Translations = tr
+	}
+	err = q.QueryRowContext(ctx, `
+		INSERT INTO event_messages (event_id, team_ids, text, created_by, translations) VALUES ($1, $2::bigint[], $3, $4, $5)
+		RETURNING id, created_at`, eventID, targets, text, by, doc).Scan(&m.ID, &m.CreatedAt)
 	return m, err
+}
+
+// In is msgs as a team playing in lang reads them: each in lang where
+// it says itself in it, as written elsewhere, and without the other
+// languages.
+func In(msgs []Message, lang string) []Message {
+	out := make([]Message, len(msgs))
+	for i, m := range msgs {
+		if s := m.Translations[lang]; s != "" {
+			m.Text = s
+		}
+		m.Translations = nil
+		out[i] = m
+	}
+	return out
 }
 
 // Delete removes one of the event's messages.
@@ -96,7 +137,7 @@ func ForTeam(ctx context.Context, q Querier, eventID, teamID int64) ([]Message, 
 
 func list(ctx context.Context, q Querier, where string, args ...any) ([]Message, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT id, text, COALESCE(array_to_json(team_ids)::text, '[]'), created_at
+		SELECT id, text, COALESCE(array_to_json(team_ids)::text, '[]'), created_at, translations
 		FROM event_messages `+where+` ORDER BY created_at DESC, id DESC LIMIT 200`, args...)
 	if err != nil {
 		return nil, err
@@ -106,11 +147,18 @@ func list(ctx context.Context, q Querier, where string, args ...any) ([]Message,
 	for rows.Next() {
 		var m Message
 		var teams string
-		if err := rows.Scan(&m.ID, &m.Text, &teams, &m.CreatedAt); err != nil {
+		var tr []byte
+		if err := rows.Scan(&m.ID, &m.Text, &teams, &m.CreatedAt, &tr); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(teams), &m.TeamIDs); err != nil {
 			return nil, err
+		}
+		if err := json.Unmarshal(tr, &m.Translations); err != nil {
+			return nil, err
+		}
+		if len(m.Translations) == 0 {
+			m.Translations = nil
 		}
 		out = append(out, m)
 	}

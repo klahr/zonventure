@@ -309,7 +309,7 @@ func TestSendTeamInvitation_HappyPath(t *testing.T) {
 
 	// A file the organisers left for the players: the email links it
 	// by the team's token.
-	file, err := eventfile.Add(context.Background(), db, eventID, userID, "Regler.pdf", []byte("%PDF-1.4\n"))
+	file, err := eventfile.Add(context.Background(), db, eventID, userID, "Regler.pdf", "", []byte("%PDF-1.4\n"))
 	if err != nil {
 		t.Fatal(err)
 	}

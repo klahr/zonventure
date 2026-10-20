@@ -224,8 +224,9 @@ func AltKey(owner string) string { return owner + ":alt" }
 func SectionKey(section string) string { return "js:" + section }
 
 // TimeUpKey and MetaKey address the time limit's message and the
-// adventure's own title, intro, outro, start_label (where teams meet)
-// and area (where it is played): the last two are the store's
+// adventure's own title, intro, outro, start_label (where teams meet),
+// area (where it is played) and buyer_note (its word to buyers, in their
+// ticket email): the last three are the store's and the emails'
 // (internal/listing), and the start label the start screen's too.
 const TimeUpKey = "time-up"
 

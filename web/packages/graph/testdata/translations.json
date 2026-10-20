@@ -10,7 +10,8 @@
     "intro": "MAIN meta:intro",
     "outro": "MAIN meta:outro",
     "start_label": "MAIN meta:start_label",
-    "area": "MAIN meta:area"
+    "area": "MAIN meta:area",
+    "buyer_note": "MAIN meta:buyer_note"
   },
   "graph": {
     "language": "sv",
@@ -735,6 +736,7 @@
     "j:note:title",
     "js:MAIN section",
     "meta:area",
+    "meta:buyer_note",
     "meta:intro",
     "meta:outro",
     "meta:start_label",
@@ -839,6 +841,7 @@
   ],
   "not_shown": {
     "n:typed:out:right:label": "an answer's route is named for the author: only a route out for a team without the items shows its label",
-    "meta:area": "where it is played is the store's (internal/listing), not the game's"
+    "meta:area": "where it is played is the store's (internal/listing), not the game's",
+    "meta:buyer_note": "the note to buyers is emailed with the ticket (internal/listing), not shown in the game"
   }
 }

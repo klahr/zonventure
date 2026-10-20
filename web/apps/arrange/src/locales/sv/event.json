@@ -250,5 +250,15 @@
   "Download the results as JSON, with each team's receipt and the event's fingerprint": "Ladda ner resultaten som JSON, med varje lags kvitto och eventets fingeravtryck",
   "Name in {{lang}}": "Namn på {{lang}}",
   "Public description in {{lang}}": "Offentlig beskrivning på {{lang}}",
-  "Left empty, it shows as above. The adventure's title and meeting point are translated in the designer.": "Lämnas det tomt visas det som ovan. Äventyrets titel och mötesplats översätts i designern."
+  "Meeting place in {{lang}}": "Mötesplats på {{lang}}",
+  "Every team": "Alla lag",
+  "In {{lang}} (optional)": "På {{lang}} (valfritt)",
+  "Teams playing in it get this instead, with the email around it in their language.": "Lag som spelar på det får det här i stället, och resten av mejlet på sitt språk.",
+  "Teams playing in it read this instead.": "Lag som spelar på det läser det här i stället.",
+  "Teams playing in {{lang}}": "Lag som spelar på {{lang}}",
+  "The team plays in it and gets its invitation and emails in it.": "Laget spelar på det och får sin inbjudan och sina mejl på det.",
+  "The teams play in it and get their invitations and emails in it.": "Lagen spelar på det och får sina inbjudningar och mejl på det.",
+  "Who gets {{name}}": "Vem som får {{name}}",
+  "In other languages": "På andra språk",
+  "A team gets its invitation and emails in the language it plays in. Left empty, a text shows as written. The adventure's own title and meeting point are translated in the designer.": "Ett lag får sin inbjudan och sina mejl på det språk det spelar på. Lämnas en text tom visas den som den är skriven. Äventyrets egen titel och mötesplats översätts i designern."
 }

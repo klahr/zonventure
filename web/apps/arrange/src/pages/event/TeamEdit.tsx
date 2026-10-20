@@ -8,6 +8,7 @@ import { Ago } from "./Activity.tsx";
 import { ExpiryHint, LinkField, useCopyOrShow } from "./Links.tsx";
 import { TeamAvatar } from "./teamActions.tsx";
 import { canDo, downscaleImage, isLive, memberURL, members, teamURL } from "./util.ts";
+import { languageName } from "../../languages.ts";
 
 /**
  * Edit a team: rename it, set the captain's email, change its photo,
@@ -26,16 +27,21 @@ export function TeamEditDialog({ event, team, color, reload, onClose }: { event:
   const canAvatar = canDo(event, "set_team_avatar");
   const [name, setName] = useState(team.name);
   const [email, setEmail] = useState(team.email || "");
+  // The language the team plays in and gets its emails in, of those the
+  // adventure is played in: "" for its own.
+  const languages = event.languages ?? [];
+  const [lang, setLang] = useState(team.lang || "");
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
   const [bust, setBust] = useState(0);
   const shown = { ...team, ...(team.avatar_url && bust ? { avatar_url: `${team.avatar_url}${team.avatar_url.includes("?") ? "&" : "?"}v=${bust}` } : {}) };
 
   const save = async () => {
-    const body: { name?: string; email?: string } = {};
+    const body: { name?: string; email?: string; lang?: string } = {};
     const n = name.trim(), m = email.trim();
     if (n && n !== team.name) body.name = n;
     if (m !== (team.email || "")) body.email = m;
+    if (lang !== (team.lang || "")) body.lang = lang;
     if (Object.keys(body).length === 0) return onClose();
     setBusy(true);
     try {
@@ -109,6 +115,15 @@ export function TeamEditDialog({ event, team, color, reload, onClose }: { event:
       <Field label={t.t("Captain email (optional)")} hint={t.t("Used by the arranger only — never shown on the team's share page.")}>
         <input type="email" value={email} placeholder="captain@example.org" autoComplete="off" disabled={!canEmail} onChange={(e) => setEmail(e.target.value)} />
       </Field>
+      {languages.length > 1 && (
+        <Field label={t.t("Language")} hint={t.t("The team plays in it and gets its invitation and emails in it.")}>
+          <select value={lang} disabled={!canEmail} onChange={(e) => setLang(e.target.value)}>
+            {languages.map((l, i) => (
+              <option key={l} value={i === 0 ? "" : l}>{languageName(l)}</option>
+            ))}
+          </select>
+        </Field>
+      )}
       <div className="ev-td__head">
         {!canAvatar && <TeamAvatar team={shown} color={color} size={56} />}
         <div className="ev-stack">

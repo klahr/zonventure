@@ -31,6 +31,8 @@ func (s *Server) registerMessageTools() {
 				"event_id": map[string]any{"type": "integer", "description": "Event whose teams to message."},
 				"text":     map[string]any{"type": "string", "description": "Markdown, at most 2000 bytes."},
 				"team_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Only these teams; omit for all."},
+				"translations": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"},
+					"description": "The text in the adventure's other languages (get_event's languages), by language tag: {\"en\": \"…\"}. A team reads the one for the language it plays in, else text."},
 			},
 		},
 	}, sendEventMessage)
@@ -71,9 +73,10 @@ func listEventMessages(ctx context.Context, s *Server, raw json.RawMessage) (Too
 
 func sendEventMessage(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
 	var a struct {
-		EventID int64   `json:"event_id"`
-		Text    string  `json:"text"`
-		TeamIDs []int64 `json:"team_ids"`
+		EventID      int64             `json:"event_id"`
+		Text         string            `json:"text"`
+		TeamIDs      []int64           `json:"team_ids"`
+		Translations map[string]string `json:"translations"`
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return errorResult("bad args: " + err.Error()), nil
@@ -86,7 +89,7 @@ func sendEventMessage(ctx context.Context, s *Server, raw json.RawMessage) (Tool
 	}
 	id := strconv.FormatInt(a.EventID, 10)
 	status, body, err := callAdmin(ctx, s.Admin.SendEventMessage, "POST", "/api/admin/events/"+id+"/messages", map[string]string{"eventID": id}, nil,
-		map[string]any{"text": a.Text, "team_ids": a.TeamIDs})
+		map[string]any{"text": a.Text, "team_ids": a.TeamIDs, "translations": a.Translations})
 	if err != nil {
 		return errorResult("call: " + err.Error()), nil
 	}

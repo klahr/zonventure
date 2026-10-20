@@ -322,6 +322,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Post("/events/{eventID}/files", adminH.AddEventFile)
 			r.Post("/events/{eventID}/files/announce", adminH.AnnounceEventFiles)
 			r.Get("/events/{eventID}/files/{fileID}", adminH.GetEventFile)
+			r.Patch("/events/{eventID}/files/{fileID}", adminH.SetEventFileLang)
 			r.Delete("/events/{eventID}/files/{fileID}", adminH.DeleteEventFile)
 			// Which adventure version a self-guided event plays, and moving
 			// it to the latest (through listing review when it is for sale).

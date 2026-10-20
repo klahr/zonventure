@@ -118,16 +118,21 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 		schedAt sql.NullString
 		startAt sql.NullString
 		forSale bool
+		// teamLang is the language the team plays in, "" for the
+		// adventure's own.
+		teamLang string
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT t.id, t.event_id, t.name, a.title, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       ar.state, ar.scheduled_at, ar.started_at, ar.public_for_sale
+		SELECT t.id, t.event_id, t.name, COALESCE(NULLIF(g.graph->'translations'->t.lang->>'meta:title', ''), a.title),
+		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
+		       ar.state, ar.scheduled_at, ar.started_at, ar.public_for_sale, t.lang
 		FROM teams t
 		JOIN events ar ON ar.id = t.event_id
 		LEFT JOIN adventures a ON a.slug = ar.adventure_slug
+		LEFT JOIN adventure_graphs g ON g.id = ar.graph_id
 		WHERE t.token = $1
 	`, token).Scan(&teamID, &eventID, &view.TeamName, &title, &hasAvatar,
-		&view.State, &schedAt, &startAt, &forSale)
+		&view.State, &schedAt, &startAt, &forSale, &teamLang)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "team not found — ask your arranger for a fresh link", http.StatusNotFound)
 		return
@@ -138,7 +143,7 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 	}
 	view.AdventureTitle = title.String
 	// The page speaks the visitor's language; the adventure's own words
-	// (its title) stay as written.
+	// (its title) are in the language the team plays in.
 	view.Lang = emailtpl.LangFromRequest(r)
 	view.Token = token
 	view.ScheduledAt = schedAt.String
@@ -181,7 +186,7 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 
 	view.Solo = len(view.Members) == 1
 
-	files, err := eventfile.ListForPlayers(r.Context(), h.DB, eventID)
+	files, err := eventfile.ListForPlayersIn(r.Context(), h.DB, eventID, teamLang)
 	if err != nil {
 		http.Error(w, "lookup failed", http.StatusInternalServerError)
 		return

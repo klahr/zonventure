@@ -30,8 +30,8 @@ export interface EventInfo {
   ticket_currency?: string;
   ticket_team_size?: number;
   public_blurb?: string;
-  /** The listing's name and blurb in the adventure's other languages. */
-  listing_translations?: Record<string, { name?: string; blurb?: string }>;
+  /** The event's name, store blurb and meeting place in the adventure's other languages. */
+  translations?: Record<string, { name?: string; blurb?: string; meeting_place?: string }>;
   /** The languages the adventure is played in, its own first; absent for one language. */
   languages?: string[];
   /** Where teams meet: said in invitations and the calendar entry. */
@@ -74,6 +74,8 @@ export interface Team {
   id: number;
   name: string;
   email?: string;
+  /** The language the team plays in and gets its emails in, when not the adventure's own. */
+  lang?: string;
   completed_at?: string;
   withdrawn_at?: string;
   /** Used the adventure's cheat password: no rank. */
@@ -134,6 +136,8 @@ export interface EventFile {
   /** In bytes. */
   size: number;
   created_at: string;
+  /** The language it is in, for the teams playing in it; absent for every team. */
+  lang?: string;
 }
 
 export interface Message {
@@ -169,6 +173,8 @@ export interface RosterTeam {
   name: string;
   member_names: string[];
   email?: string;
+  /** The language the team plays in, when not the adventure's own. */
+  lang?: string;
 }
 
 /** internal/admin/handlers.go: BulkCreateTeams response. */
@@ -262,8 +268,8 @@ export const deleteCover = (id: number) => request<void>(E(id) + "/cover", { met
 /** Where a self-guided event's store listing is submitted for review (SubmitListingDialog). */
 export const submitListingURL = (id: number) => E(id) + "/listing/submit";
 
-export const sendMessage = (id: number, text: string, teamIds?: number[]) =>
-  post<void>(E(id) + "/messages", { text, ...(teamIds ? { team_ids: teamIds } : {}) });
+export const sendMessage = (id: number, text: string, teamIds?: number[], translations?: Record<string, string>) =>
+  post<void>(E(id) + "/messages", { text, ...(teamIds ? { team_ids: teamIds } : {}), ...(translations ? { translations } : {}) });
 export const getFiles = (id: number, signal?: AbortSignal) =>
   get<{ files: EventFile[] | null; max_files: number; max_size: number }>(E(id) + "/files", signal ? { signal } : {});
 /** Unannounced: announceFiles then tells the teams about a whole batch in one message. */
@@ -275,6 +281,8 @@ export const uploadFile = (id: number, file: File) => {
 export const announceFiles = (id: number, fileIds: number[]) => post<void>(E(id) + "/files/announce", { file_ids: fileIds });
 export const fileURL = (id: number, fileId: number) => `${E(id)}/files/${fileId}`;
 export const deleteFile = (id: number, fileId: number) => request<void>(`${E(id)}/files/${fileId}`, { method: "DELETE" });
+/** Make a file for the teams playing in lang, or for every team with "". */
+export const setFileLang = (id: number, fileId: number, lang: string) => patch<void>(`${E(id)}/files/${fileId}`, { lang });
 /** internal/admin/print_delivery.go eventPrintMaterial */
 export interface EventPrintMaterial {
   id: string;
@@ -310,7 +318,7 @@ export const importTeams = (eventId: number, file: File) => {
   form.append("file", file);
   return request<{ format: string; teams: RosterTeam[] | null; skipped_rows?: number[]; columns?: ImportColumn[] }>(E(eventId) + "/teams/import", { method: "POST", form });
 };
-export const patchTeam = (id: number, body: { name?: string; email?: string }) => patch<void>(T(id), body);
+export const patchTeam = (id: number, body: { name?: string; email?: string; lang?: string }) => patch<void>(T(id), body);
 export const deleteTeam = (id: number, password: string) => request<void>(T(id), { method: "DELETE", ...pw(password) });
 /** Let a team begin away from the adventure's required starting point. */
 export const letTeamStartAnywhere = (id: number) => post<{ start_anywhere: boolean }>(T(id) + "/start-anywhere");

@@ -53,14 +53,14 @@ func TestListingReview_Translations(t *testing.T) {
 		{"e n": map[string]string{"name": "x"}},
 		{"en": map[string]string{"title": "Only the adventure translates its title"}},
 	} {
-		w := call(t, f.console, "PATCH", fmt.Sprintf("/api/admin/events/%d", f.eventID), map[string]any{"listing_translations": bad})
+		w := call(t, f.console, "PATCH", fmt.Sprintf("/api/admin/events/%d", f.eventID), map[string]any{"translations": bad})
 		if w.Code != http.StatusBadRequest {
-			t.Errorf("listing_translations %v: %d %s, want 400", bad, w.Code, w.Body)
+			t.Errorf("translations %v: %d %s, want 400", bad, w.Code, w.Body)
 		}
 	}
 
 	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "public_blurb": "Hitta den",
-		"listing_translations": map[string]any{"en": map[string]string{"name": " Treasure hunt ", "blurb": "Find it"}, "de": map[string]string{}}})
+		"translations": map[string]any{"en": map[string]string{"name": " Treasure hunt ", "blurb": "Find it"}, "de": map[string]string{}}})
 	f.submitEvent(t)
 	c := f.content(t)
 	if !slices.ContainsFunc(c.Texts, func(x admin.ReviewText) bool { return x.Where == "Listing (en): blurb" && x.Text == "Find it" }) {
@@ -92,7 +92,7 @@ func TestListingReview_Translations(t *testing.T) {
 	}
 
 	// A changed translation waits for review; the approved one stays up.
-	f.patchEvent(t, map[string]any{"listing_translations": map[string]any{"en": map[string]string{"blurb": "Find it now"}}})
+	f.patchEvent(t, map[string]any{"translations": map[string]any{"en": map[string]string{"blurb": "Find it now"}}})
 	if got := f.eventState(t); got != "draft" {
 		t.Fatalf("state after editing a translation = %q, want draft", got)
 	}

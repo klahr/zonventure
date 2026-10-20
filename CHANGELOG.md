@@ -22,8 +22,26 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   store, an event's page and its embeddable card show the page's
   language where there is a translation, and say which languages a
   listing is played in. The start screen names the meeting point in
-  the team's language too. `update_event` takes
-  `listing_translations`; `get_event` lists them and the languages.
+  the team's language too. `update_event` takes `translations`;
+  `get_event` lists them and the languages.
+- Events in more than one language. A team has a language: set it
+  when adding teams, in a team's details, or with `create_team`,
+  `bulk_create_teams` and `update_team` (`lang`); a ticket bought in
+  the store or a redeemed gift box sets it from the letter's language.
+  Its invitation, calendar entry, cancellation notice and ticket
+  email are then in that language, with the event's name and meeting
+  place, the adventure's title and its note to buyers said in it: an
+  event's own words are translated in a new "In other languages" card
+  on its page, the adventure's in the designer's Translations panel
+  (the note to buyers is new there). A message to teams, and an email
+  to them, take a version per language that teams playing in it get
+  instead, with the email around it in their language too
+  (`send_event_message` takes `translations`). A file for the players
+  can be for the teams playing in one language: a team gets the files
+  for everyone and those in its language, or, when there are none in
+  it, those in the adventure's own. The team's page names the
+  adventure and lists the files in the team's language. A team in a
+  language the adventure is not played in gets everything as written.
 
 ## [0.33.18] - 2026-10-20
 

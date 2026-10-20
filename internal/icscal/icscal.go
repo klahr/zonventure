@@ -152,6 +152,19 @@ func (e Event) WithJoinURL(u string) Event {
 	return e
 }
 
+// Named is the entry called title and placed at location: one team's,
+// in the language it plays in. An empty one leaves either as it was.
+func (e Event) Named(title, location string) Event {
+	if title = strings.TrimSpace(title); title != "" && title != e.Title {
+		e.Description = strings.Replace(e.Description, e.Title, title, 1)
+		e.Title = title
+	}
+	if location = strings.TrimSpace(location); location != "" {
+		e.LocationLabel = location
+	}
+	return e
+}
+
 // Filename returns a stable filename for the .ics attachment.
 // Stable across re-sends so a recipient's calendar app updates the
 // existing entry on import rather than creating a duplicate.

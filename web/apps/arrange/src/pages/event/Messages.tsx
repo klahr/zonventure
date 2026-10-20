@@ -6,8 +6,9 @@ import { Markdown } from "@zonventure/play-ui";
 import * as api from "./api.ts";
 import type { EventGraph, EventInfo, Message, Photo, Team } from "./api.ts";
 import { stepTitle } from "./util.ts";
+import { languageName } from "../../languages.ts";
 
-type Info = Pick<EventInfo, "id" | "state">;
+type Info = Pick<EventInfo, "id" | "state" | "languages">;
 type Named = Pick<Team, "id" | "name">;
 
 /**
@@ -70,6 +71,10 @@ export function MessagesCard({ event, teams, messages, reload }: { event: Info; 
 function Composer({ event, teams, onClose, onSent }: { event: Info; teams: Named[]; onClose: () => void; onSent: () => void }) {
   const t = useT();
   const [text, setText] = useState("");
+  // The message in the adventure's other languages: a team reads the one
+  // it plays in, else the message as written.
+  const others = (event.languages ?? []).slice(1);
+  const [translations, setTranslations] = useState<Record<string, string>>({});
   const [everyone, setEveryone] = useState(true);
   const [chosen, setChosen] = useState<Set<number>>(() => new Set());
   const [err, setErr] = useState<string | null>(null);
@@ -80,7 +85,7 @@ function Composer({ event, teams, onClose, onSent }: { event: Info; teams: Named
     if (!everyone && chosen.size === 0) return setErr(t.t("Tick at least one team."));
     setBusy(true);
     try {
-      await api.sendMessage(event.id, text, everyone ? undefined : [...chosen]);
+      await api.sendMessage(event.id, text, everyone ? undefined : [...chosen], translations);
       onSent();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -103,6 +108,11 @@ function Composer({ event, teams, onClose, onSent }: { event: Info; teams: Named
       <Field label={t.t("Message")} hint={t.t("Information beside the game, such as practical news or a change of plan. It is not part of the adventure.")}>
         <MarkdownArea rows={5} maxLength={2000} autoFocus placeholder={t.t("Lunch is served at the square at 12.")} value={text} onChange={(e) => setText(e.target.value)} />
       </Field>
+      {others.map((l) => (
+        <Field key={l} label={t.t("In {{lang}} (optional)", { lang: languageName(l) })} hint={t.t("Teams playing in it read this instead.")}>
+          <MarkdownArea rows={3} maxLength={2000} value={translations[l] ?? ""} onChange={(e) => setTranslations((m) => ({ ...m, [l]: e.target.value }))} />
+        </Field>
+      ))}
       {teams.length > 1 && (
         <fieldset className="ev-fieldset">
           <legend className="cs-sr">{t.t("Send to")}</legend>

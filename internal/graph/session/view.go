@@ -85,9 +85,10 @@ type View struct {
 	// this view is in — for the phone's language switch.
 	Languages []string `json:"languages,omitempty"`
 	Lang      string   `json:"lang,omitempty"`
-	// Meta is the adventure's own title, intro and outro in the team's
-	// language, where they are translated — they live on the adventure,
-	// not in the graph, so the caller swaps them in.
+	// Meta is the adventure's own title, intro, outro and meeting point
+	// (start_label) in the team's language, where they are translated —
+	// they live on the adventure, not in the graph, so the caller swaps
+	// them in.
 	Meta map[string]string `json:"meta,omitempty"`
 
 	// Roles are the adventure's roles, in the team's language. Who holds
@@ -707,7 +708,7 @@ func (t *Team) translate(v *View) {
 	}
 	g := t.G
 	tr := func(key, main string) string { return g.Tr(l, key, main) }
-	for _, f := range []string{"title", "intro", "outro"} {
+	for _, f := range []string{"title", "intro", "outro", "start_label"} {
 		if s := tr(graph.MetaKey(f), ""); s != "" {
 			if v.Meta == nil {
 				v.Meta = map[string]string{}

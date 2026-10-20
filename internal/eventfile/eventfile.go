@@ -2,7 +2,8 @@
 // players ahead of the start: a PDF with the rules, a map to print, a
 // packing list. Like the organisers' messages (eventmsg) they sit beside
 // the game, never in the adventure, and every team of the event sees
-// them all.
+// them — but a file in one language, which only the teams playing in
+// it get (ListForPlayersIn).
 package eventfile
 
 import (
@@ -34,6 +35,9 @@ type File struct {
 	Mime      string    `json:"mime"`
 	Size      int64     `json:"size"`
 	CreatedAt time.Time `json:"created_at"`
+	// Lang is the language the file is in, for the teams playing in it;
+	// empty for every team.
+	Lang string `json:"lang,omitempty"`
 }
 
 var (
@@ -108,9 +112,10 @@ func CleanName(name string) string {
 	return name
 }
 
-// Add stores a file for the event's players. The name is cleaned and the
-// type found from the bytes (TypeOf).
-func Add(ctx context.Context, q Querier, eventID, userID int64, name string, content []byte) (File, error) {
+// Add stores a file for the event's players: those playing in lang, or
+// every one for "". The name is cleaned and the type found from the
+// bytes (TypeOf).
+func Add(ctx context.Context, q Querier, eventID, userID int64, name, lang string, content []byte) (File, error) {
 	switch {
 	case len(content) == 0:
 		return File{}, ErrEmpty
@@ -128,16 +133,29 @@ func Add(ctx context.Context, q Querier, eventID, userID int64, name string, con
 	}
 	// The count and the insert in one statement, so two uploads at once
 	// can't both take the last place.
-	f := File{Name: name, Mime: mime, Size: int64(len(content))}
+	f := File{Name: name, Mime: mime, Size: int64(len(content)), Lang: strings.TrimSpace(lang)}
 	err = q.QueryRowContext(ctx, `
-		INSERT INTO event_files (event_id, name, mime_type, size_bytes, content, created_by)
-		SELECT $1, $2, $3, $4, $5, $6
+		INSERT INTO event_files (event_id, name, mime_type, size_bytes, content, created_by, lang)
+		SELECT $1, $2, $3, $4, $5, $6, $8
 		WHERE (SELECT count(*) FROM event_files WHERE event_id = $1) < $7
-		RETURNING id, created_at`, eventID, name, mime, f.Size, content, by, MaxFiles).Scan(&f.ID, &f.CreatedAt)
+		RETURNING id, created_at`, eventID, name, mime, f.Size, content, by, MaxFiles, f.Lang).Scan(&f.ID, &f.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return File{}, ErrTooMany
 	}
 	return f, err
+}
+
+// SetLang makes one of the event's files for the teams playing in lang,
+// or for every team with "".
+func SetLang(ctx context.Context, q Querier, eventID, id int64, lang string) error {
+	res, err := q.ExecContext(ctx, `UPDATE event_files SET lang = $3 WHERE event_id = $1 AND id = $2`, eventID, id, strings.TrimSpace(lang))
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // Delete removes one of the event's files.
@@ -158,10 +176,10 @@ func List(ctx context.Context, q Querier, eventID int64) ([]File, error) {
 	return list(ctx, q, eventID, "")
 }
 
-func list(ctx context.Context, q Querier, eventID int64, cond string) ([]File, error) {
+func list(ctx context.Context, q Querier, eventID int64, cond string, args ...any) ([]File, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT id, name, mime_type, size_bytes, created_at
-		FROM event_files WHERE event_id = $1`+cond+` ORDER BY created_at, id`, eventID)
+		SELECT id, name, mime_type, size_bytes, created_at, lang
+		FROM event_files WHERE event_id = $1`+cond+` ORDER BY created_at, id`, append([]any{eventID}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +187,7 @@ func list(ctx context.Context, q Querier, eventID int64, cond string) ([]File, e
 	out := []File{}
 	for rows.Next() {
 		var f File
-		if err := rows.Scan(&f.ID, &f.Name, &f.Mime, &f.Size, &f.CreatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.Name, &f.Mime, &f.Size, &f.CreatedAt, &f.Lang); err != nil {
 			return nil, err
 		}
 		out = append(out, f)
@@ -184,10 +202,29 @@ const playerVisible = `
 	AND (approved_at IS NOT NULL OR NOT (SELECT public_for_sale FROM events WHERE id = event_files.event_id))`
 
 // ListForPlayers is List for the event's players: the files they may
-// download.
+// download, in every language.
 func ListForPlayers(ctx context.Context, q Querier, eventID int64) ([]File, error) {
 	return list(ctx, q, eventID, playerVisible)
 }
+
+// ListForPlayersIn is ListForPlayers for a team playing in lang ("" for
+// the adventure's own language): the files for every team, and those in
+// its language — or, when the event has none in it, those in the
+// adventure's own.
+func ListForPlayersIn(ctx context.Context, q Querier, eventID int64, lang string) ([]File, error) {
+	return list(ctx, q, eventID, playerVisible+`
+	AND (lang = '' OR lang = COALESCE(NULLIF($2, ''), (`+mainLanguage+`))
+	     OR (lang = (`+mainLanguage+`) AND NOT EXISTS (
+	         SELECT 1 FROM event_files o WHERE o.event_id = event_files.event_id AND o.lang = NULLIF($2, ''))))`, strings.TrimSpace(lang))
+}
+
+// mainLanguage is the language of the adventure version a file's event
+// plays: the adventure's, for a version saved before graphs kept it.
+const mainLanguage = `SELECT COALESCE(NULLIF(g.graph->>'language', ''), a.language, '')
+	FROM events e
+	LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
+	LEFT JOIN adventure_graphs g ON g.id = e.graph_id
+	WHERE e.id = event_files.event_id`
 
 // GetForPlayers is Get for the event's players.
 func GetForPlayers(ctx context.Context, q Querier, eventID, id int64) (File, []byte, error) {

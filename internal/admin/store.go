@@ -730,6 +730,9 @@ func (h *Handlers) sendTicketTeamLink(ctx context.Context, eventID int64, buyerE
 	}
 	l := h.eventLook(ctx, eventID)
 	if lang != "" {
+		// The event named and the note to buyers said in it too, where
+		// the adventure is played in it.
+		l = h.eventWords(ctx, eventID).lookIn(l, lang)
 		l.Lang = lang
 	}
 	subject, c := emailtpl.TeamLink(l.Lang, publicURL+"/team/"+teamToken, publicURL+"/play", auth.FormatVoucherCode(voucher), l.Brand.Name)
@@ -737,7 +740,7 @@ func (h *Handlers) sendTicketTeamLink(ctx context.Context, eventID int64, buyerE
 		subject, c = emailtpl.AsGift(l.Lang, l.Brand.Name, l.Event, c)
 	}
 	c = l.withBuyerNote(c)
-	c = emailtpl.WithFiles(c, h.fileLinks(ctx, eventID, publicURL, teamToken))
+	c = emailtpl.WithFiles(c, h.fileLinks(ctx, eventID, publicURL, teamToken, lang))
 	c = emailtpl.WithPrints(c, h.printEmailLinks(ctx, eventID, publicURL, teamToken))
 	if len(address) > 0 {
 		c = emailtpl.WithEnvelope(c, address, l.Contact)

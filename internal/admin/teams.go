@@ -76,6 +76,9 @@ func (h *Handlers) authorizeTeam(w http.ResponseWriter, r *http.Request, teamID 
 type updateTeamRequest struct {
 	Name  *string `json:"name,omitempty"`
 	Email *string `json:"email,omitempty"`
+	// Lang is the language the team plays in and gets its emails in:
+	// one the adventure is translated into, or "" for its own.
+	Lang *string `json:"lang,omitempty"`
 }
 
 // UpdateTeam applies a partial edit (name, email). Permission
@@ -91,7 +94,7 @@ func (h *Handlers) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if req.Name == nil && req.Email == nil {
+	if req.Name == nil && req.Email == nil && req.Lang == nil {
 		httpx.Error(w, http.StatusBadRequest, "no fields to update")
 		return
 	}
@@ -134,6 +137,10 @@ func (h *Handlers) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 		newEmail = em
 		setEmail = true
 	}
+	if req.Lang != nil && !validTeamLang(*req.Lang) {
+		httpx.Error(w, http.StatusBadRequest, "lang is not a language tag")
+		return
+	}
 	// Capture the old row best-effort so the audit entry has both
 	// before and after — a miss leaves the from-fields blank rather
 	// than failing the update. Same posture as the previous
@@ -156,6 +163,10 @@ func (h *Handlers) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 	if setEmail {
 		sets = append(sets, "email = $"+strconv.Itoa(len(args)+1))
 		args = append(args, newEmail)
+	}
+	if req.Lang != nil {
+		sets = append(sets, "lang = $"+strconv.Itoa(len(args)+1))
+		args = append(args, strings.TrimSpace(*req.Lang))
 	}
 	args = append(args, teamID)
 	q := "UPDATE teams SET " + strings.Join(sets, ", ") +

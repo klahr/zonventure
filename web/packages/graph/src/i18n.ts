@@ -16,7 +16,7 @@ export const roleKey = (slug: string, field: "name" | "text") => `r:${slug}:${fi
 /** A journal section's heading: one per section, however many notes share it. */
 export const sectionKey = (section: string) => `js:${section}`;
 /** The adventure's own title, intro, outro, meeting point and area, which live outside the graph. */
-export const metaKey = (field: "title" | "intro" | "outro" | "start_label" | "area") => `meta:${field}`;
+export const metaKey = (field: "title" | "intro" | "outro" | "start_label" | "area" | "buyer_note") => `meta:${field}`;
 export const TIME_UP_KEY = "time-up";
 export const itemKey = (slug: string, field: "name") => `i:${slug}:${field}`;
 export const counterKey = (slug: string, field: "name") => `c:${slug}:${field}`;
@@ -33,6 +33,8 @@ export interface AdventureMeta {
   /** Where teams meet and where it is played: the store's, and the start screen's. */
   start_label?: string;
   area?: string;
+  /** The adventure's word to its buyers, in their ticket email. */
+  buyer_note?: string;
 }
 
 /** One piece of text an author can translate. */
@@ -371,6 +373,7 @@ export function adventureTexts(g: Graph, meta: AdventureMeta = {}): Translatable
   if (meta.outro?.trim()) out.push({ key: metaKey("outro"), label: "Closing words", main: meta.outro, multiline: true });
   if (meta.start_label?.trim()) out.push({ key: metaKey("start_label"), label: "Meeting point", main: meta.start_label });
   if (meta.area?.trim()) out.push({ key: metaKey("area"), label: "Where it is played", main: meta.area });
+  if (meta.buyer_note?.trim()) out.push({ key: metaKey("buyer_note"), label: "Note to buyers", main: meta.buyer_note, multiline: true });
   for (const j of g.journal ?? []) {
     if (j.title?.trim()) out.push({ key: journalKey(j.slug, "title"), label: "Journal: {{name}}", vars: { name: j.title }, main: j.title });
     if (j.body?.trim()) out.push({ key: journalKey(j.slug, "body"), label: "Journal: {{name}}", vars: { name: j.title || j.slug }, main: j.body, multiline: true });

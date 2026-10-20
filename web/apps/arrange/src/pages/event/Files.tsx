@@ -4,8 +4,9 @@ import { useT } from "../../i18n.tsx";
 import { Button, Card, fmtDateTime, fmtWhen, ICON, useDialogs, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
 import type { EventFile, EventInfo } from "./api.ts";
+import { languageName } from "../../languages.ts";
 
-type Info = Pick<EventInfo, "id" | "state"> & { public_for_sale?: boolean | undefined };
+type Info = Pick<EventInfo, "id" | "state" | "languages"> & { public_for_sale?: boolean | undefined };
 
 /** What the server takes; it checks the bytes, this only steers the picker. */
 const ACCEPT = ".pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.docx,.xlsx,.pptx,.odt,.ods,.odp";
@@ -62,6 +63,17 @@ export function FilesCard({ event, files, maxFiles, maxSize, reload }: { event: 
       reload();
     }
   };
+  // A file in one language goes to the teams playing in it; a team whose
+  // language has none gets those in the adventure's own.
+  const languages = event.languages ?? [];
+  const setLang = async (f: EventFile, lang: string) => {
+    try {
+      await api.setFileLang(event.id, f.id, lang);
+      reload();
+    } catch (e) {
+      toast.err(e);
+    }
+  };
   const remove = async (f: EventFile) => {
     const ok = await dialogs.confirm({
       title: t.t("Delete this file?"),
@@ -114,6 +126,15 @@ export function FilesCard({ event, files, maxFiles, maxSize, reload }: { event: 
               <Button variant="ghost" size="icon" aria-label={t.t("Delete file")} title={t.t("Delete file")} icon={<Trash2 size={ICON.sm} aria-hidden />} onClick={() => void remove(f)} />
               <div className="ev-msgs__meta cs-muted">
                 {fmtSize(f.size, t.current())} · <time dateTime={f.created_at} title={fmtDateTime(f.created_at, t.current())}>{fmtWhen(f.created_at, t.current())}</time>
+                {languages.length > 1 && (
+                  <>
+                    {" · "}
+                    <select aria-label={t.t("Who gets {{name}}", { name: f.name })} value={f.lang ?? ""} onChange={(e) => void setLang(f, e.target.value)}>
+                      <option value="">{t.t("Every team")}</option>
+                      {languages.map((l) => <option key={l} value={l}>{t.t("Teams playing in {{lang}}", { lang: languageName(l) })}</option>)}
+                    </select>
+                  </>
+                )}
               </div>
             </li>
           ))}

@@ -396,7 +396,10 @@ type eventDetailTeamDTO struct {
 	Name string `json:"name"`
 	// Email is the captain-contact address — arranger-side only,
 	// never echoed onto the public team-share page.
-	Email       string `json:"email,omitempty"`
+	Email string `json:"email,omitempty"`
+	// Lang is the language the team plays in and gets its emails in,
+	// when not the adventure's own.
+	Lang        string `json:"lang,omitempty"`
 	CompletedAt string `json:"completed_at,omitempty"`
 	WithdrawnAt string `json:"withdrawn_at,omitempty"`
 	Token       string `json:"token"`
@@ -483,7 +486,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		       COALESCE(o.stripe_connect_charges_enabled, FALSE),
 		       ar.sales_stopped,
 		       COALESCE(adv.cheat_password, ''), ar.meeting_place,
-		       ar.listing_translations, `+listing.VersionLanguages("gv", "adv")+`
+		       ar.translations, `+listing.VersionLanguages("gv", "adv")+`
 		FROM events ar
 		LEFT JOIN organizations o ON o.id = ar.org_id
 		LEFT JOIN event_listings l ON l.event_id = ar.id
@@ -502,7 +505,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		&listingTr, &mainLang, &translated); err != nil {
 		return eventDetailDTO{}, err
 	}
-	if err := json.Unmarshal(listingTr, &d.ListingTranslations); err != nil {
+	if err := json.Unmarshal(listingTr, &d.Translations); err != nil {
 		return eventDetailDTO{}, err
 	}
 	var langs []string
@@ -528,7 +531,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 
 	teams := []eventDetailTeamDTO{}
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT t.id, t.name, COALESCE(t.email, ''),
+		SELECT t.id, t.name, COALESCE(t.email, ''), t.lang,
 		       COALESCE(t.completed_at, ''),
 		       COALESCE(t.withdrawn_at, ''),
 		       t.token, COALESCE(t.recap_token, ''),
@@ -542,7 +545,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 	for rows.Next() {
 		t := eventDetailTeamDTO{Members: []eventDetailMemberDTO{}}
 		var hasAvatar int
-		if err := rows.Scan(&t.ID, &t.Name, &t.Email, &t.CompletedAt, &t.WithdrawnAt, &t.Token, &t.RecapToken, &hasAvatar); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Email, &t.Lang, &t.CompletedAt, &t.WithdrawnAt, &t.Token, &t.RecapToken, &hasAvatar); err != nil {
 			return eventDetailDTO{}, err
 		}
 		if hasAvatar != 0 {

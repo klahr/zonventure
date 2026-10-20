@@ -63,7 +63,7 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 	// teams without an email are surfaced so we can count them as
 	// `skipped_no_email` rather than silently dropping.
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT t.id, t.name, COALESCE(t.email, ''), t.token, COALESCE(t.invited_start, ''), ps.name, ps.token
+		SELECT t.id, t.name, COALESCE(t.email, ''), t.token, COALESCE(t.invited_start, ''), t.lang, ps.name, ps.token
 		FROM teams t
 		LEFT JOIN player_slots ps ON ps.team_id = t.id
 		WHERE t.event_id = $1
@@ -81,6 +81,7 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 		Email   string
 		Token   string
 		Invited string
+		Lang    string
 		Slots   []invitationSlot
 	}
 	var (
@@ -94,16 +95,17 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 			temail string
 			ttoken string
 			tinv   string
+			tlang  string
 			pname  *string
 			ptoken *string
 		)
-		if err := rows.Scan(&tid, &tname, &temail, &ttoken, &tinv, &pname, &ptoken); err != nil {
+		if err := rows.Scan(&tid, &tname, &temail, &ttoken, &tinv, &tlang, &pname, &ptoken); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "team scan failed")
 			return
 		}
 		t, ok := byID[tid]
 		if !ok {
-			t = &teamInfo{ID: tid, Name: tname, Email: strings.TrimSpace(temail), Token: ttoken, Invited: tinv}
+			t = &teamInfo{ID: tid, Name: tname, Email: strings.TrimSpace(temail), Token: ttoken, Invited: tinv, Lang: tlang}
 			byID[tid] = t
 			teams = append(teams, t)
 		}
@@ -119,6 +121,7 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 	)
 	publicURL := h.eventBase(r.Context(), eventID)
 	l := h.eventLook(r.Context(), eventID)
+	words := h.eventWords(r.Context(), eventID)
 	start, place := h.inviteWhen(r.Context(), eventID)
 	for _, t := range teams {
 		if t.Email == "" {
@@ -133,7 +136,8 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 			skippedNoEmail++
 			continue
 		}
-		if err := sendOneInvitation(r.Context(), h.Mailer, l, t.Name, t.Email, publicURL, t.Slots, h.fileLinks(r.Context(), eventID, publicURL, t.Token), teamICS(evt, icsErr, eventID, publicURL, t.Token), start, place, t.Invited); err != nil {
+		// In the language the team plays in.
+		if err := sendOneInvitation(r.Context(), h.Mailer, words.lookIn(l, t.Lang), t.Name, t.Email, publicURL, t.Slots, h.fileLinks(r.Context(), eventID, publicURL, t.Token, t.Lang), teamICS(words.calendarIn(evt, t.Lang), icsErr, eventID, publicURL, t.Token), start, words.placeIn(place, t.Lang), t.Invited); err != nil {
 			logx.Warn("admin.invitations.send", "event", eventID, "team", t.ID, "err", err.Error())
 			failed++
 			continue
@@ -187,10 +191,11 @@ func (h *Handlers) sendTeamInvitation(w http.ResponseWriter, r *http.Request, te
 		teamMail string
 		teamTok  string
 		invited  string
+		teamLang string
 	)
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT event_id, name, COALESCE(email, ''), token, COALESCE(invited_start, '') FROM teams WHERE id = $1`, teamID).
-		Scan(&eventID, &teamName, &teamMail, &teamTok, &invited); err != nil {
+		`SELECT event_id, name, COALESCE(email, ''), token, COALESCE(invited_start, ''), lang FROM teams WHERE id = $1`, teamID).
+		Scan(&eventID, &teamName, &teamMail, &teamTok, &invited, &teamLang); err != nil {
 		httpx.Error(w, http.StatusNotFound, "team not found")
 		return
 	}
@@ -243,8 +248,9 @@ func (h *Handlers) sendTeamInvitation(w http.ResponseWriter, r *http.Request, te
 
 	publicURL := h.eventBase(r.Context(), eventID)
 	l := h.eventLook(r.Context(), eventID)
+	words := h.eventWords(r.Context(), eventID)
 	start, place := h.inviteWhen(r.Context(), eventID)
-	if err := sendOneInvitation(r.Context(), h.Mailer, l, teamName, teamMail, publicURL, slots, h.fileLinks(r.Context(), eventID, publicURL, teamTok), teamICS(evt, icsErr, eventID, publicURL, teamTok), start, place, invited); err != nil {
+	if err := sendOneInvitation(r.Context(), h.Mailer, words.lookIn(l, teamLang), teamName, teamMail, publicURL, slots, h.fileLinks(r.Context(), eventID, publicURL, teamTok, teamLang), teamICS(words.calendarIn(evt, teamLang), icsErr, eventID, publicURL, teamTok), start, words.placeIn(place, teamLang), invited); err != nil {
 		logx.Warn("admin.invitations.team.send", "event", eventID, "team", teamID, "err", err.Error())
 		httpx.ServerErr(w, http.StatusBadGateway, "send failed", err)
 		return

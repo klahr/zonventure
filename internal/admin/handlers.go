@@ -368,12 +368,12 @@ type eventDTO struct {
 	TicketCurrency   string `json:"ticket_currency,omitempty"`
 	TicketTeamSize   int    `json:"ticket_team_size,omitempty"`
 	PublicBlurb      string `json:"public_blurb,omitempty"`
-	// ListingTranslations are the listing's name and blurb in the other
-	// languages the adventure is played in, and Languages those
+	// Translations are the event's name, store blurb and meeting place
+	// in the other languages the adventure is played in, and Languages those
 	// languages, the adventure's own first (the version the event plays
 	// or moves to). Detail payload only.
-	ListingTranslations listing.Translations `json:"listing_translations,omitempty"`
-	Languages           []string             `json:"languages,omitempty"`
+	Translations listing.Translations `json:"translations,omitempty"`
+	Languages    []string             `json:"languages,omitempty"`
 	// MeetingPlace is where teams meet, said in the invitation and the
 	// calendar entry. Detail payload only.
 	MeetingPlace string `json:"meeting_place,omitempty"`
@@ -1103,10 +1103,10 @@ type updateEventRequest struct {
 	TicketCurrency   *string `json:"ticket_currency,omitempty"`
 	TicketTeamSize   *int    `json:"ticket_team_size,omitempty"`
 	PublicBlurb      *string `json:"public_blurb,omitempty"`
-	// ListingTranslations replaces the listing's name and blurb in other
-	// languages, by language tag: {"en": {"name": "…", "blurb": "…"}}.
+	// Translations replaces the event's name, store blurb and meeting
+	// place in other languages, by language tag: {"en": {"name": "…"}}.
 	// An empty one takes them all away.
-	ListingTranslations *listing.Translations `json:"listing_translations,omitempty"`
+	Translations *listing.Translations `json:"translations,omitempty"`
 	// SecretRoles turns the adventure's saboteur on or off for this
 	// event. Teams already dealt keep what they were dealt.
 	SecretRoles *bool `json:"secret_roles,omitempty"`
@@ -1136,7 +1136,7 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ScheduledAt == nil && req.ShowMap == nil && req.Name == nil &&
 		req.PublicForSale == nil && req.TicketPriceCents == nil &&
-		req.TicketCurrency == nil && req.TicketTeamSize == nil && req.PublicBlurb == nil && req.ListingTranslations == nil && req.SecretRoles == nil && req.SalesStopped == nil && req.MeetingPlace == nil {
+		req.TicketCurrency == nil && req.TicketTeamSize == nil && req.PublicBlurb == nil && req.Translations == nil && req.SecretRoles == nil && req.SalesStopped == nil && req.MeetingPlace == nil {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
@@ -1303,21 +1303,21 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if req.ListingTranslations != nil {
-		tr, err := cleanListingTranslations(*req.ListingTranslations)
+	if req.Translations != nil {
+		tr, err := cleanEventTranslations(*req.Translations)
 		if err != nil {
-			httpx.Error(w, http.StatusBadRequest, "listing_translations: "+err.Error())
+			httpx.Error(w, http.StatusBadRequest, "translations: "+err.Error())
 			return
 		}
 		doc, _ := json.Marshal(tr)
 		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE events SET listing_translations = $1 WHERE id = $2`, doc, eventID); err != nil {
+			`UPDATE events SET translations = $1 WHERE id = $2`, doc, eventID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}
 	}
 	// What the store shows changed: a draft until it is submitted for review.
-	if req.Name != nil || req.TicketPriceCents != nil || req.TicketTeamSize != nil || req.PublicBlurb != nil || req.ListingTranslations != nil {
+	if req.Name != nil || req.TicketPriceCents != nil || req.TicketTeamSize != nil || req.PublicBlurb != nil || req.Translations != nil {
 		if err := h.settleEventListing(r.Context(), eventID); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
 			return
@@ -1356,6 +1356,9 @@ type createTeamRequest struct {
 	// event completes. Empty by default; the player-side share
 	// page never surfaces it.
 	Email string `json:"email,omitempty"`
+	// Lang is the language the team plays in and gets its emails in:
+	// one the adventure is translated into, or empty for its own.
+	Lang string `json:"lang,omitempty"`
 }
 
 // teamSlotDTO mirrors slotDTO at the team-create response level.
@@ -1407,6 +1410,10 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	email, err := normaliseTeamEmail(req.Email)
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !validTeamLang(req.Lang) {
+		httpx.Error(w, http.StatusBadRequest, "lang is not a language tag")
 		return
 	}
 	// De-duplicate and trim member names.
@@ -1487,9 +1494,9 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	var teamID int64
 	if err := tx.QueryRowContext(r.Context(),
-		`INSERT INTO teams(event_id, name, token, recap_token, email, voucher_code)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		eventID, req.Name, teamTok, recapTok, email, voucher).Scan(&teamID); err != nil {
+		`INSERT INTO teams(event_id, name, token, recap_token, email, voucher_code, lang)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		eventID, req.Name, teamTok, recapTok, email, voucher, strings.TrimSpace(req.Lang)).Scan(&teamID); err != nil {
 		httpx.Error(w, http.StatusConflict, "team name already used for this event")
 		return
 	}
@@ -1618,6 +1625,7 @@ func (h *Handlers) BulkCreateTeams(w http.ResponseWriter, r *http.Request) {
 			Name:        t.Name,
 			MemberNames: t.MemberNames,
 			Email:       t.Email,
+			Lang:        t.Lang,
 		})
 		if err != nil {
 			res.Error = err.Error()
@@ -1671,6 +1679,9 @@ func (h *Handlers) createOneTeam(ctx context.Context, eventID, orgID int64, req 
 	if err != nil {
 		return nil, err
 	}
+	if !validTeamLang(req.Lang) {
+		return nil, errors.New("lang is not a language tag")
+	}
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, errors.New("tx failed")
@@ -1708,8 +1719,8 @@ func (h *Handlers) createOneTeam(ctx context.Context, eventID, orgID int64, req 
 	}
 	var teamID int64
 	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO teams(event_id, name, token, recap_token, email, voucher_code) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		eventID, req.Name, teamTok, recapTok, email, voucher).Scan(&teamID); err != nil {
+		`INSERT INTO teams(event_id, name, token, recap_token, email, voucher_code, lang) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		eventID, req.Name, teamTok, recapTok, email, voucher, strings.TrimSpace(req.Lang)).Scan(&teamID); err != nil {
 		return nil, errors.New("team name already used for this event")
 	}
 	members := make([]teamSlotDTO, 0, len(names))

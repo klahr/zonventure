@@ -39,6 +39,7 @@ func (s *Server) registerTeamTools() {
 				"name":         map[string]any{"type": "string", "description": "Team display name. Must be unique within the event."},
 				"member_names": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Player names; one slot is minted per name with a fresh magic-link token."},
 				"email":        map[string]any{"type": "string", "description": "Optional contact address used for invitations and the recap email. Hidden from the player share page."},
+				"lang":         map[string]any{"type": "string", "description": "The language the team plays in and gets its emails in, when the adventure is translated into it (get_event's languages); empty for the adventure's own."},
 			},
 		},
 	}, createTeam)
@@ -61,6 +62,7 @@ func (s *Server) registerTeamTools() {
 						"properties": map[string]any{
 							"name":         map[string]any{"type": "string"},
 							"member_names": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+							"lang":         map[string]any{"type": "string"},
 						},
 					},
 				},
@@ -71,7 +73,7 @@ func (s *Server) registerTeamTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "update_team",
 		Scope:       scopeWrite,
-		Description: "Patch a team's name and/or email. Only present fields are applied. Renaming is gated on the event's state — once the event is completed/cancelled, only email-only edits are allowed (so the recap email can still be sent to a freshly-discovered address).",
+		Description: "Patch a team's name, email and/or lang (the language it plays in and gets its emails in). Only present fields are applied. Renaming is gated on the event's state — once the event is completed/cancelled, only email-only edits are allowed (so the recap email can still be sent to a freshly-discovered address).",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"team_id"},
@@ -79,6 +81,7 @@ func (s *Server) registerTeamTools() {
 				"team_id": map[string]any{"type": "integer", "description": "Team to update."},
 				"name":    map[string]any{"type": "string", "description": "New team name."},
 				"email":   map[string]any{"type": "string", "description": "New contact email; empty string clears it."},
+				"lang":    map[string]any{"type": "string", "description": "The language the team plays in and gets its emails in, when the adventure is translated into it (get_event's languages); empty for the adventure's own."},
 			},
 		},
 	}, updateTeam)
@@ -208,6 +211,7 @@ type createTeamArgs struct {
 	Name        string   `json:"name"`
 	MemberNames []string `json:"member_names"`
 	Email       string   `json:"email"`
+	Lang        string   `json:"lang"`
 }
 
 func createTeam(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
@@ -228,6 +232,7 @@ func createTeam(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallRe
 		"name":         a.Name,
 		"member_names": a.MemberNames,
 		"email":        a.Email,
+		"lang":         a.Lang,
 	}
 	id := strconv.FormatInt(a.EventID, 10)
 	status, respBody, err := callAdmin(ctx, s.Admin.CreateTeam,
@@ -242,6 +247,7 @@ func createTeam(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallRe
 type bulkTeam struct {
 	Name        string   `json:"name"`
 	MemberNames []string `json:"member_names"`
+	Lang        string   `json:"lang,omitempty"`
 }
 
 type bulkCreateTeamsArgs struct {
@@ -279,6 +285,7 @@ type updateTeamArgs struct {
 	TeamID int64   `json:"team_id"`
 	Name   *string `json:"name,omitempty"`
 	Email  *string `json:"email,omitempty"`
+	Lang   *string `json:"lang,omitempty"`
 }
 
 func updateTeam(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
@@ -289,8 +296,8 @@ func updateTeam(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallRe
 	if a.TeamID <= 0 {
 		return errorResult("team_id required and must be positive"), nil
 	}
-	if a.Name == nil && a.Email == nil {
-		return errorResult("nothing to update — pass at least one of name, email"), nil
+	if a.Name == nil && a.Email == nil && a.Lang == nil {
+		return errorResult("nothing to update — pass at least one of name, email, lang"), nil
 	}
 	if r := adminConfigured(s); r != nil {
 		return *r, nil
@@ -301,6 +308,9 @@ func updateTeam(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallRe
 	}
 	if a.Email != nil {
 		patch["email"] = *a.Email
+	}
+	if a.Lang != nil {
+		patch["lang"] = *a.Lang
 	}
 	id := strconv.FormatInt(a.TeamID, 10)
 	status, respBody, err := callAdmin(ctx, s.Admin.UpdateTeam,

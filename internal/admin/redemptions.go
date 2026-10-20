@@ -1598,6 +1598,7 @@ func (h *Handlers) sendRedemptionApproved(ctx context.Context, eventID int64, em
 	}
 	l := h.eventLook(ctx, eventID)
 	if lang != "" {
+		l = h.eventWords(ctx, eventID).lookIn(l, lang)
 		l.Lang = lang
 	}
 	subject, c := emailtpl.BoxConfirmed(l.Lang, partner, publicURL+"/team/"+teamToken, publicURL+"/play", auth.FormatVoucherCode(voucher), l.Brand.Name)

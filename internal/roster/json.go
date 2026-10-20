@@ -7,7 +7,7 @@ import (
 
 // JSONImporter consumes the canonical wire shape:
 //
-//	{"teams":[{"name":"…","member_names":["…",…]}, …]}
+//	{"teams":[{"name":"…","member_names":["…",…],"email":"…","lang":"…"}, …]}
 //
 // It's the format the in-app paste-roster textarea posts after
 // client-side parsing. Strict about unknown fields so a typo in the
@@ -22,6 +22,7 @@ type jsonTeam struct {
 	Name        string   `json:"name"`
 	MemberNames []string `json:"member_names"`
 	Email       string   `json:"email,omitempty"`
+	Lang        string   `json:"lang,omitempty"`
 }
 
 // Parse decodes one jsonRoster envelope. The body-size cap is the
@@ -36,7 +37,7 @@ func (JSONImporter) Parse(r io.Reader) ([]TeamInput, error) {
 	}
 	out := make([]TeamInput, 0, len(body.Teams))
 	for _, t := range body.Teams {
-		out = append(out, TeamInput{Name: t.Name, MemberNames: t.MemberNames, Email: t.Email})
+		out = append(out, TeamInput{Name: t.Name, MemberNames: t.MemberNames, Email: t.Email, Lang: t.Lang})
 	}
 	return out, nil
 }

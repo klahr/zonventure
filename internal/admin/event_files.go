@@ -38,7 +38,8 @@ func (h *Handlers) ListEventFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 // AddEventFile uploads a file for the event's players: multipart `file`,
-// at most eventfile.MaxSize. Teams' phones show it at once. With
+// at most eventfile.MaxSize, and `lang` for a file only the teams
+// playing in that language get. Teams' phones show it at once. With
 // ?announce=0 the teams get no message for it: the organiser's page
 // uploads several files that way and announces them together
 // (AnnounceEventFiles).
@@ -71,11 +72,16 @@ func (h *Handlers) AddEventFile(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "read failed")
 		return
 	}
+	lang := strings.TrimSpace(r.FormValue("lang"))
+	if !validTeamLang(lang) {
+		httpx.Error(w, http.StatusBadRequest, "lang is not a language tag")
+		return
+	}
 	var userID int64
 	if me, ok := auth.FromContext(r.Context()); ok {
 		userID = me.ID
 	}
-	file, err := eventfile.Add(r.Context(), h.DB, eventID, userID, hdr.Filename, data)
+	file, err := eventfile.Add(r.Context(), h.DB, eventID, userID, hdr.Filename, lang, data)
 	switch {
 	case errors.Is(err, eventfile.ErrTooLarge):
 		httpx.Error(w, http.StatusRequestEntityTooLarge, err.Error())
@@ -109,12 +115,21 @@ func (h *Handlers) announceFiles(ctx context.Context, eventID, userID int64, nam
 	if !live || len(names) == 0 {
 		return
 	}
-	lang := h.eventLook(ctx, eventID).Lang
-	text := emailtpl.T(lang, "New file: %s. Open the menu and look under “Files from the organisers”.", names[0])
-	if len(names) > 1 {
-		text = emailtpl.T(lang, "%d new files: %s. Open the menu and look under “Files from the organisers”.", len(names), strings.Join(names, ", "))
+	say := func(lang string) string {
+		if len(names) > 1 {
+			return emailtpl.T(lang, "%d new files: %s. Open the menu and look under “Files from the organisers”.", len(names), strings.Join(names, ", "))
+		}
+		return emailtpl.T(lang, "New file: %s. Open the menu and look under “Files from the organisers”.", names[0])
 	}
-	if _, err := eventmsg.Send(ctx, h.DB, eventID, userID, text, nil); err != nil {
+	// In each language the event is played in, as emails are written.
+	words := h.eventWords(ctx, eventID)
+	translations := map[string]string{}
+	for _, l := range words.texts.Languages() {
+		if words.speaks(l) {
+			translations[l] = say(emailtpl.Lang(l))
+		}
+	}
+	if _, err := eventmsg.Send(ctx, h.DB, eventID, userID, say(h.eventLook(ctx, eventID).Lang), translations, nil); err != nil {
 		logx.Warn("admin.event_files.announce", "event", eventID, "err", err.Error())
 	}
 }
@@ -179,6 +194,37 @@ func (h *Handlers) GetEventFile(w http.ResponseWriter, r *http.Request) {
 	eventfile.Serve(w, f, content)
 }
 
+// SetEventFileLang makes a file for the teams playing in one language:
+// {"lang": "en"}, or "" for every team.
+//
+// PATCH /api/admin/events/{eventID}/files/{fileID}
+func (h *Handlers) SetEventFileLang(w http.ResponseWriter, r *http.Request) {
+	eventID, id, ok := h.eventFileIDs(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Lang string `json:"lang"`
+	}
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if !validTeamLang(req.Lang) {
+		httpx.Error(w, http.StatusBadRequest, "lang is not a language tag")
+		return
+	}
+	switch err := eventfile.SetLang(r.Context(), h.DB, eventID, id, req.Lang); {
+	case errors.Is(err, eventfile.ErrNotFound):
+		httpx.Error(w, http.StatusNotFound, err.Error())
+		return
+	case err != nil:
+		httpx.ServerErr(w, http.StatusInternalServerError, "saving file failed", err)
+		return
+	}
+	h.publishMessages(eventID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // DeleteEventFile removes a file: players no longer see it.
 //
 // DELETE /api/admin/events/{eventID}/files/{fileID}
@@ -220,11 +266,11 @@ func (h *Handlers) eventFileIDs(w http.ResponseWriter, r *http.Request) (int64, 
 // team's share token, so they download without signing in to the game.
 // A failure to read them leaves them out rather than holding up the
 // email.
-func (h *Handlers) fileLinks(ctx context.Context, eventID int64, publicURL, teamToken string) []emailtpl.FileLink {
+func (h *Handlers) fileLinks(ctx context.Context, eventID int64, publicURL, teamToken, lang string) []emailtpl.FileLink {
 	if publicURL == "" || teamToken == "" {
 		return nil
 	}
-	files, err := eventfile.ListForPlayers(ctx, h.DB, eventID)
+	files, err := eventfile.ListForPlayersIn(ctx, h.DB, eventID, lang)
 	if err != nil {
 		logx.Warn("admin.event_files.links", "event", eventID, "err", err.Error())
 		return nil
