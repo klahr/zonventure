@@ -127,6 +127,13 @@
               "role": "spy"
             },
             {
+              "id": "task",
+              "kind": "task",
+              "text": "MAIN n:s:block:task",
+              "role": "spy",
+              "answer": "1742"
+            },
+            {
               "id": "mission",
               "kind": "mission",
               "text": "MAIN n:s:block:mission",
@@ -688,6 +695,7 @@
         "slug": "spy",
         "secret": true,
         "name": "MAIN r:spy:name",
+        "cover": "MAIN r:spy:cover",
         "text": "MAIN r:spy:text",
         "image": {
           "id": 19,
@@ -819,6 +827,7 @@
     "n:s:block:suspects:card:0:alt",
     "n:s:block:suspects:card:0:name",
     "n:s:block:suspects:card:0:text",
+    "n:s:block:task",
     "n:s:block:text",
     "n:s:block:torch:alt",
     "n:s:block:video:alt",
@@ -843,6 +852,7 @@
     "n:typed:out:right:label",
     "n:typed:reply:0",
     "n:typed:title",
+    "r:spy:cover",
     "r:spy:goal:0",
     "r:spy:image:alt",
     "r:spy:name",

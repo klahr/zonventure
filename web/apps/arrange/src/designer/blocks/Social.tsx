@@ -178,6 +178,39 @@ export const MissionEditor: Editor<"mission"> = ({ block, set, t, graph }) => {
   );
 };
 
+export const TaskEditor: Editor<"task"> = ({ block, set, t, graph }) => {
+  const roles = (graph.roles ?? []).filter((r) => !r.secret);
+  return (
+    <>
+      <select className="field__input" value={block.role} onChange={(e) => set({ ...block, role: e.target.value })} aria-label={t.t("Whose task")}>
+        <option value="">{roles.length ? t.t("— whose task is it —") : t.t("— no roles yet: add them under Resources —")}</option>
+        {roles.map((r) => (
+          <option key={r.slug} value={r.slug}>
+            {r.name || r.slug}
+          </option>
+        ))}
+      </select>
+      <MarkdownArea className="field__input" rows={2} value={block.text ?? ""} placeholder={t.t("The task, such as “Crack the terminal: what is the password?”")} aria-label={t.t("Task")} onChange={(e) => set(withField(block, "text", e.target.value))} />
+      <label className="field">
+        <span className="field__label">{t.t("Answer")}</span>
+        <input className="field__input" value={block.answer} onChange={(e) => set({ ...block, answer: e.target.value })} />
+      </label>
+      <label className="field">
+        <span className="field__label">{t.t("Done at")}</span>
+        <select className="field__input" value={block.zone ?? ""} onChange={(e) => set(withField(block, "zone", e.target.value || undefined))}>
+          <option value="">{t.t("Anywhere")}</option>
+          {(graph.zones ?? []).map((z) => (
+            <option key={z.slug} value={z.slug}>
+              {z.name || z.slug}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="field__hint">{t.t("Only this role's player sees the task and answers it, on their own phone; the others see whose it is and when it is done. The step moves on when every task is done. A task whose role nobody on the team holds is anyone's.")}</p>
+    </>
+  );
+};
+
 export const RolesEditor: Editor<"roles"> = ({ block, set, t, graph }) => (
   <>
     <MarkdownArea className="field__input" rows={2} value={block.text ?? ""} placeholder={t.t("Optional words above the roles, such as “Take your parts before you set off.”")} aria-label={t.t("Text")} onChange={(e) => set(withField(block, "text", e.target.value || undefined))} />

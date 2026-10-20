@@ -34,7 +34,7 @@ export interface StartOption {
 /** session.Input — the shape of a puzzle's answer box. */
 export interface PlayInput {
   /** "questions": answered by the step's quiz blocks; the dock continues once each is picked. */
-  kind: "text" | "number" | "tiles" | "search" | "choice" | "lock" | "questions" | "scan" | "items" | "keys" | "order";
+  kind: "text" | "number" | "tiles" | "search" | "choice" | "lock" | "questions" | "tasks" | "scan" | "items" | "keys" | "order";
   /** "keys": a two-key launch's posts, by name — where keys are turned. Empty: anywhere. */
   posts?: string[];
   /** "keys": beside posts, the role turning each key, by name ("" for anyone's), and which posts are this player's. */
@@ -166,6 +166,8 @@ export type PlayBlockBody =
   | { kind: "accuse"; text: string; worth?: number; suspects?: { slot: number; name: string }[]; tally?: number[]; voted?: string; voters?: number }
   /** seals of need players have picked at the post (place; here: this phone is inside it); sealed: this player has. Never what anyone picked. */
   | { kind: "mission"; text?: string; options?: string[]; zone: string; count?: number; seals?: number; need?: number; sealed?: boolean }
+  /** A role's part of a step done in parallel: mine when this phone may answer it, picked "1" once done. Never its answer. */
+  | { kind: "task"; role: string; zone?: string; text?: string; mine?: boolean; picked?: string }
   /** Drawn from the view's roles: the player's own, or with team everyone's. */
   | { kind: "roles"; text?: string; team?: boolean; choose?: boolean; lock?: boolean };
 
@@ -334,6 +336,9 @@ export interface View {
   penalty_score: number;
   /** The adventure keeps the running score off the phone. */
   hide_score?: boolean;
+  /** Set while the team waits for players: how many have joined, of the adventure's least. */
+  players_in?: number;
+  players_min?: number;
   /** A walk, not a game: the phone words itself for one. */
   tour?: boolean;
   /** The game keeps its results until the host finishes it: no score, quiz walk or standings. */
@@ -420,7 +425,9 @@ export type PlayAction =
   /** This player presses a sabotage block, once; only the saboteur's press does harm. Live events only. */
   | { kind: "sabotage"; node: string; block: string }
   /** This player's pick at a mission, from inside its post: "0" keeps faith, "1" betrays. Final. Live events only. */
-  | { kind: "seal"; node: string; block: string; choice: "0" | "1" };
+  | { kind: "seal"; node: string; block: string; choice: "0" | "1" }
+  /** This player's answer to their role's task on a step done in parallel. */
+  | { kind: "task"; node: string; block: string; guess: string };
 
 /**
  * Refusal codes (session.Code, plus the player handler's own). A client
@@ -436,6 +443,7 @@ export type RefusalCode =
   | "wrong_node"
   | "unanswered"
   | "unsealed"
+  | "too_few"
   | "paused"
   | "not_running"
   | "no_game"

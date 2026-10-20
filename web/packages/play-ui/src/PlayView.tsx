@@ -243,6 +243,12 @@ export function PlayView(props: PlayViewProps) {
         </button>
       )}
 
+      {view.players_min ? (
+        <p className="pv-waiting" role="status">
+          {t("Waiting for your team: {{n}} of {{m}} players have joined. You can start once everyone is in.", { n: view.players_in ?? 0, m: view.players_min })}
+        </p>
+      ) : null}
+
       {/* Keyed on the node, so each step plays its entrance — held back
           while a celebration covers the screen, then released. */}
       <div
@@ -620,6 +626,7 @@ function PuzzleStep(props: StepProps) {
   const slots = mine && input.kind === "items" && input.slots?.length ? input : null;
   const order = mine && input.kind === "order" && input.cards?.length ? input.cards : null;
   const questions = mine && input.kind === "questions";
+  const tasks = mine && input.kind === "tasks" ? (view.blocks ?? []).filter((b) => b.kind === "task" && !b.locked) : null;
   const keys = mine && input.kind === "keys";
   const scan = mine && input.kind === "scan" && !typing && canScan();
   const placeholder =
@@ -785,6 +792,8 @@ function PuzzleStep(props: StepProps) {
               {t("Type the code instead")}
             </button>
           </>
+        ) : tasks && !timeUp ? (
+          <p className="pv-muted">{t("{{n}} of {{m}} tasks done. Each of you does your own, on your own phone.", { n: tasks.filter((b) => b.kind === "task" && b.picked).length, m: tasks.length })}</p>
         ) : questions && !timeUp ? (
           <ContinueButton view={view} t={t} disabled={locked} label={blockedFor > 0 ? formatSeconds(blockedFor) : needsPlace ? t("Continue when you are there") : undefined} onClick={() => answer("")} />
         ) : tiles || choices || lock || slots || order ? null : timeUp ? (

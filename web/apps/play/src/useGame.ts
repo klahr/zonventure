@@ -132,7 +132,7 @@ let currentTeam: number | null = null;
  * sending it again can't change that. Anything else — a server error, a
  * rate limit, a paused game — keeps the action queued for the next try.
  */
-const SETTLED = new Set(["stale", "finished", "wrong_node", "not_allowed", "unanswered", "unsealed", "time_up", "not_here", "no_fix", "no_game", "unknown_action", "too_long", "unknown_station"]);
+const SETTLED = new Set(["stale", "finished", "wrong_node", "not_allowed", "unanswered", "unsealed", "too_few", "time_up", "not_here", "no_fix", "no_game", "unknown_action", "too_long", "unknown_station"]);
 
 function settles(e: ApiError): boolean {
   if (e.code) return SETTLED.has(e.code);

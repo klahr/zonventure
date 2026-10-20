@@ -43,9 +43,9 @@ const START_PLACE = "_start";
  *
  * With more than one phone the team is a crew: each phone is a player
  * of its own, with its roles and its place, and acts as itself. The
- * chosen phone is the big one; the others show small underneath, so a
- * screen that differs — the saboteur's button, a role's clue, a mission
- * picked — is seen at a glance.
+ * chosen phone is the big one, and every phone shows small underneath,
+ * each in its own place, so a screen that differs — a role's clue, a
+ * part of a split secret, a mission picked — is seen at a glance.
  */
 
 export type SimMode = "step" | "run";
@@ -363,6 +363,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     if (a.kind === "answer") sayAs(t.t("Answered “{{guess}}”.", { guess: a.guess }));
     if (a.kind === "force") sayAs(t.t("Passed without answering."));
     if (a.kind === "seal") sayAs(t.t("Picked at the mission."));
+    if (a.kind === "task") sayAs(r.result.accepted ? t.t("Did their task.") : t.t("Tried their task: not right."));
     if (a.kind === "sabotage") sayAs(t.t("Pressed the sabotage."));
     if (r.result.port) {
       const via = (r.passed ?? []).filter((s) => s !== after).map(titleOf);
@@ -548,11 +549,14 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
             <label className="field">
               <span className="field__label">{t.t("Phones")}</span>
               <select className="field__input" value={phoneCount} disabled={busy} onChange={(e) => setPhoneCount(Number(e.target.value))}>
-                {Array.from({ length: MAX_PHONES }, (_, i) => i + 1).map((n) => (
-                  <option key={n} value={n}>
-                    {n === 1 ? t.t("1 · the whole team") : t.t("{{n}} players", { n })}
-                  </option>
-                ))}
+                {Array.from({ length: MAX_PHONES }, (_, i) => i + 1)
+                  // The whole team, or a crew the adventure takes.
+                  .filter((n) => n === 1 || n === phoneCount || ((!graph.min_players || n >= graph.min_players) && (!graph.max_players || n <= graph.max_players)))
+                  .map((n) => (
+                    <option key={n} value={n}>
+                      {n === 1 ? t.t("1 · the whole team") : t.t("{{n}} players", { n })}
+                    </option>
+                  ))}
               </select>
             </label>
             {phoneCount > 1 &&
@@ -672,7 +676,10 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
             <div className="phone__screen">
               {view ? (
                 <PlayView
-                  key={replay}
+                  // Each player's own phone: what one has half done — a
+                  // pick not yet confirmed, an answer being typed — is not
+                  // on the next player's screen.
+                  key={`${replay}:${crew ? asSlot : 0}`}
                   view={view}
                   onAction={(a) => void act(a)}
                   busy={busy}
@@ -702,16 +709,16 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
           </div>
         </div>
         {crew && phones.length > 1 && (
-          <div className="sim-crew" role="group" aria-label={t.t("The other phones")}>
+          <div className="sim-crew" role="group" aria-label={t.t("The phones")}>
             {phones
-              .filter((p) => p.slot !== asSlot)
               .map((p) => (
                 // Not a <button>: the small screen inside has buttons of its own.
                 <div
                   key={p.slot}
                   role="button"
                   tabIndex={0}
-                  className="sim-crew__phone"
+                  className={"sim-crew__phone" + (p.slot === asSlot ? " is-on" : "")}
+                  aria-pressed={p.slot === asSlot}
                   onClick={() => pick(p.slot)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {

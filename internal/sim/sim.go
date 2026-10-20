@@ -1081,7 +1081,10 @@ func (b *bot) branchZone(hub, port string) *graph.Zone {
 func (b *bot) puzzle(v session.View) {
 	n, _ := b.r.g.Node(v.Node)
 	cfg := n.PuzzleCfg
-	if !b.goTo(v.Zone) {
+	// A step done in parallel is met at its zone; once its tasks show,
+	// the team goes where they are instead.
+	tasksShown := cfg.Kind() == graph.AnswerTasks && slices.ContainsFunc(v.Blocks, func(bv session.BlockView) bool { return bv.Kind == graph.BlockTask })
+	if !tasksShown && !b.goTo(v.Zone) {
 		return
 	}
 	if !b.begin(v) {
@@ -1170,6 +1173,25 @@ func (b *bot) attempt(v session.View, n graph.Node, spent float64) {
 	p := clamp((0.15+0.6*b.skill)/hard+spent/1800+b.chance, 0.03, 0.97)
 	if cfg.Kind() == graph.AnswerQuestions {
 		p = 1 // the questions were the puzzle; this is the button
+	}
+	if cfg.Kind() == graph.AnswerTasks {
+		// The team does every role's task, each at its place; the last
+		// moves it on. One not yet got right waits for the next go.
+		if b.rng().Float64() >= p {
+			return
+		}
+		for _, blk := range n.Blocks() {
+			if blk.Kind != graph.BlockTask || b.t.Picks[session.PickKey(n.Slug, blk.ID)] != "" {
+				continue
+			}
+			if z, ok := b.r.zone(blk.Zone); ok && !b.goTo(&z) {
+				return
+			}
+			if _, ok := b.do("task", func() (session.Result, *walk.Step, error) { return b.t.Task(v.Node, blk.ID, blk.Answer) }); !ok {
+				return
+			}
+		}
+		return
 	}
 	if b.rng().Float64() < p {
 		o, guess, ok := b.rightAnswer(n)

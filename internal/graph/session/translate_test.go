@@ -73,6 +73,10 @@ func TestEveryTranslatableTextIsTranslated(t *testing.T) {
 			show(team(n.Slug))
 		}
 	}
+	// A player who is not the spy is told the spy's cover.
+	other := team("s")
+	other.Viewer = &Viewer{Slot: 2}
+	show(other)
 	timedOut := team("end")
 	timedOut.TimedOut = true
 	show(timedOut)

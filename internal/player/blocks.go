@@ -41,25 +41,6 @@ func teamPlayers(ctx context.Context, db *sql.DB, teamID, me int64) ([]int64, er
 	return play.Players(ctx, db, teamID, me)
 }
 
-// splitParts is what player i of n sees of a split secret: the parts
-// dealt round to them, or — with more players than parts — the part
-// their turn comes round to.
-func splitParts(parts []string, i, n int) []string {
-	if n <= 1 || len(parts) == 0 {
-		return parts
-	}
-	if n > len(parts) {
-		return []string{parts[i%len(parts)]}
-	}
-	var out []string
-	for j, p := range parts {
-		if j%n == i {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
 // decorateView finishes a view for the player asking: who holds each
 // role, their part of a split secret, a vote's tally and their own vote,
 // and the team's latest photo for a photo block.
@@ -99,7 +80,7 @@ func decorateView(ctx context.Context, db *sql.DB, teamID, slotID int64, v *play
 		switch b.Kind {
 		case graph.BlockSplit:
 			me := slices.Index(players, slotID)
-			b.Parts = splitParts(b.Parts, me, len(players))
+			b.Parts = session.SplitParts(b.Parts, me, len(players))
 			b.Player, b.Players = me+1, len(players)
 		case graph.BlockVote:
 			tally, mine, err := voteTally(ctx, db, teamID, v.Node, b.ID, slotID, len(b.Options))

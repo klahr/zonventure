@@ -80,6 +80,13 @@ type Graph struct {
 	// still count: the end, the standings and the recap show them.
 	HideScore bool `json:"hide_score,omitempty"`
 
+	// MinPlayers and MaxPlayers bound a team, for an adventure made for
+	// so many: five, one of them the police. A team waits at its first
+	// move until MinPlayers have joined, and a player beyond MaxPlayers
+	// cannot join. Zero is no bound.
+	MinPlayers int `json:"min_players,omitempty"`
+	MaxPlayers int `json:"max_players,omitempty"`
+
 	// Tour is a walk, not a game — a guided city walk, say: the phone
 	// speaks of the walk and of you rather than of a game and its
 	// players, and the end has no trophy.
@@ -695,6 +702,12 @@ const (
 	// It is a story's quiz with a puzzle's zone, time limit and hints.
 	AnswerQuestions AnswerKind = "questions"
 
+	// AnswerTasks is answered by the step's task blocks: each role does
+	// its own, on its own phone, and the first answer output is taken
+	// once every task shown is done. The team stays together on the step;
+	// its players work apart.
+	AnswerTasks AnswerKind = "tasks"
+
 	// AnswerScan is answered by scanning a QR code only: the bar is one
 	// scan button. The decoded text is a guess like a typed one, and the
 	// outputs' matchers decide — a code printed of an accepted answer,
@@ -871,7 +884,7 @@ func (g *Graph) QuizAnswer(n Node) (string, bool) {
 // of those has matchers to write.
 func (p *PuzzleConfig) UsesMatchers() bool {
 	switch p.Kind() {
-	case AnswerTiles, AnswerSearch, AnswerQuestions, AnswerItems, AnswerKeys, AnswerOrder:
+	case AnswerTiles, AnswerSearch, AnswerQuestions, AnswerTasks, AnswerItems, AnswerKeys, AnswerOrder:
 		return false
 	case AnswerChoice:
 		return !p.Answer.Graded()
@@ -1393,6 +1406,11 @@ type Role struct {
 	// role has no kit and answers no puzzle (By): both would show whose
 	// it is.
 	Secret bool `json:"secret,omitempty"`
+	// Cover is what every other player of a team dealt this secret role
+	// is told in its place — "Loyal" beside "Police" — so every player's
+	// roles read alike and none takes longer to read. Translated under
+	// RoleKey(…, "cover").
+	Cover string `json:"cover,omitempty"`
 	// Goals are what a secret role's player is out to do, each a
 	// condition on the team's state checked when it finishes: the team
 	// never opened the vault, finished under 50 points. The end screen

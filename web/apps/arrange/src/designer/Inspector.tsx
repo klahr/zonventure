@@ -504,6 +504,7 @@ const ANSWER_KIND_LABEL: Record<AnswerKind | "", string> = {
   order: "Cards to put in order",
   search: "Search by place",
   questions: "Quiz questions on the step",
+  tasks: "Tasks: each role does its own part",
   keys: "Two-key launch: every player turns a key",
 };
 
@@ -566,6 +567,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
   // How the team answers: the kind, chosen at the top of the part, and
   // that kind's own settings below it.
   const questions = (cfg.blocks ?? []).filter((b) => b.kind === "quiz" || b.kind === "tiebreak");
+  const tasks = (cfg.blocks ?? []).flatMap((b) => (b.kind === "task" ? [b] : []));
   // Accepted answers live on each route, so a typed or scanned answer
   // points there rather than letting designers hunt for them here.
   const toRoutes = (
@@ -747,6 +749,24 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
         form: <KeysForm graph={graph} keys={answer} onChange={(a) => onChange({ ...cfg, answer: a })} />,
       };
       break;
+    case "tasks":
+      how = {
+        title: t.t("Tasks"),
+        hint: t.t("Each role does its own task, from What the team sees, on its own phone and at its own place; the team moves on by the first route below when every task is done."),
+        count: tasks.length,
+        summary: tasks.length ? (
+          <>
+            {tasks.map((b) => (
+              <SumRow key={b.id} label={graph.roles?.find((r) => r.slug === b.role)?.name || b.role || t.t("no role yet")}>
+                {clip(b.text) || <SumNone>{t.t("empty")}</SumNone>}
+              </SumRow>
+            ))}
+          </>
+        ) : (
+          <SumNone>{t.t("None yet — add a task under What the team sees")}</SumNone>
+        ),
+      };
+      break;
     case "questions":
       how = {
         title: t.t("Quiz questions"),
@@ -828,7 +848,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
               ? o.trigger === "attempts"
                 ? t.t("after {{n}} wrong guesses", { n: o.after_attempts ?? 0 })
                 : triggerLabel(o)
-              : answer?.kind === "tiles" || answer?.kind === "order" || answer?.kind === "lock" || isGraded(answer) || answer?.kind === "search" || answer?.kind === "questions" || answer?.kind === "items" || answer?.kind === "keys"
+              : answer?.kind === "tiles" || answer?.kind === "order" || answer?.kind === "lock" || isGraded(answer) || answer?.kind === "search" || answer?.kind === "questions" || answer?.kind === "tasks" || answer?.kind === "items" || answer?.kind === "keys"
                 ? triggerLabel(o)
                 : answer?.kind === "choice" && choiceParts(answer, o.matchers)?.some(Boolean)
                   ? choiceParts(answer, o.matchers)!.map((v, k) => answer.fields[k]!.options.find((x) => x.value === v)?.label || v || "–").join(" · ")
@@ -896,6 +916,8 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
                   <p className="field__hint">{t.t("Taken when the team searches inside this route's zone. Without a zone, it is taken anywhere else.")}</p>
                 ) : answer?.kind === "questions" ? (
                   <p className="field__hint">{t.t("Taken when every question is answered and the team continues. Only the first such route is ever taken.")}</p>
+                ) : answer?.kind === "tasks" ? (
+                  <p className="field__hint">{t.t("Taken when the last task is done. Only the first such route is ever taken.")}</p>
                 ) : answer?.kind === "items" ? (
                   <p className="field__hint">{t.t("Taken when every slot holds its item. Only the first such route is ever taken.")}</p>
                 ) : answer?.kind === "choice" && choiceParts(answer, o.matchers) ? (

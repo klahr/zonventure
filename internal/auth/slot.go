@@ -115,6 +115,15 @@ func LoginSlotByToken(ctx context.Context, db *sql.DB, magic string) (Slot, stri
 		}
 	}
 
+	// A seat opened for the first time must fit the team's adventure.
+	if !claimed {
+		if full, err := teamFull(ctx, tx, s.TeamID, s.ID); err != nil {
+			return Slot{}, "", err
+		} else if full {
+			return Slot{}, "", ErrTeamFull
+		}
+	}
+
 	// Stamp last_login_at every exchange; stamp claimed_at only the
 	// first time so it preserves the original activation moment for
 	// audit. COALESCE keeps the existing value once set.
@@ -388,8 +397,30 @@ func ClearSlotCookie(w http.ResponseWriter, secure bool) {
 // scannable, long enough that brute-forcing one is hopeless.
 func NewSlotToken() (string, error) { return tokenx.New(18) }
 
+// teamFull reports whether a team already has as many players as its
+// adventure takes (the graph's max_players), slot aside.
+func teamFull(ctx context.Context, tx *sql.Tx, teamID, slotID int64) (bool, error) {
+	var (
+		most   sql.NullInt64
+		joined int64
+	)
+	err := tx.QueryRowContext(ctx, `
+		SELECT (g.graph->>'max_players')::int,
+		       (SELECT COUNT(*) FROM player_slots
+		         WHERE team_id = t.id AND claimed_at IS NOT NULL AND id <> $2 AND name <> '(forgotten)')
+		FROM teams t
+		JOIN events e ON e.id = t.event_id
+		LEFT JOIN adventure_graphs g ON g.id = e.graph_id
+		WHERE t.id = $1`, teamID, slotID).Scan(&most, &joined)
+	if err != nil {
+		return false, err
+	}
+	return most.Valid && most.Int64 > 0 && joined >= most.Int64, nil
+}
+
 // ErrTeamFull is returned by ClaimFreeSlot when every seat on the team
-// has already been claimed.
+// has already been claimed, and by either way in when the team already
+// has as many players as its adventure takes.
 var ErrTeamFull = errors.New("team full")
 
 // ClaimFreeSlot takes the next unclaimed seat on a team and signs the
@@ -421,6 +452,11 @@ func ClaimFreeSlot(ctx context.Context, db *sql.DB, teamID int64) (Slot, string,
 	}
 	if err != nil {
 		return Slot{}, "", err
+	}
+	if full, err := teamFull(ctx, tx, teamID, s.ID); err != nil {
+		return Slot{}, "", err
+	} else if full {
+		return Slot{}, "", ErrTeamFull
 	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE player_slots SET last_login_at = now_text(), claimed_at = now_text() WHERE id = $1`, s.ID); err != nil {

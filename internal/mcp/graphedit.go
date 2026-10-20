@@ -35,7 +35,7 @@ func (s *Server) registerGraphEditTools() {
 			"(lat/lng are taken from there, radius_m defaults from the fix's accuracy; refused if the fix is older than two minutes); delete_zone {slug}; " +
 			"connect {from, from_port, to} points an output port at a node, replacing where it pointed before; disconnect {from, from_port}; " +
 			"put_theme {theme, main?} adds or replaces a saved theme {slug, name, look} (look: accent, accent_secondary, background, text, submit_bg as #rrggbb, font, heading_font, corners, cards, card_outline, backdrop, style); main: true makes it the main theme, the look players see wherever no step changes it, which reaches players and the store on publish; delete_theme {slug}, refused while a theme effect names it or it is the main theme. " +
-			"set_option {options} turns adventure-wide settings on or off: hide_score keeps the running score off the team's phone (points still count at the end), journal_by_unlock lists the journal in the order the team found its notes, quiz_puzzles adds every typed-answer puzzle to the end screen's quiz walk, tour makes it a walk rather than a game (the phone speaks of the walk and of \"you\", not of a game and its players, and the end has no trophy); send only the ones to change. " +
+			"set_option {options} turns adventure-wide settings on or off: hide_score keeps the running score off the team's phone (points still count at the end), journal_by_unlock lists the journal in the order the team found its notes, quiz_puzzles adds every typed-answer puzzle to the end screen's quiz walk, tour makes it a walk rather than a game (the phone speaks of the walk and of \"you\", not of a game and its players, and the end has no trophy), min_players and max_players bound a team (it waits until the least have joined, no one beyond the most joins; 0 is no bound); send only the ones to change. " +
 			"set_text {slug?, find, replace, all?} changes a text of one step by quoting it exactly — the fastest way to change words; it fails, listing the step's texts, if find is not there, and asks for more of the text if it appears more than once (or all: true to change every one); " +
 			"patch_node {slug?, patch} merges a JSON merge patch into one step (null removes a field; lists of items with ids — blocks, matchers — merge by id, and outputs by port: a known one is patched, a new one added, {id or port, _delete: true} removed; other lists, like hints, are replaced whole) — e.g. add an accepted answer with {\"puzzle\":{\"outputs\":[{\"port\":\"right\",\"matchers\":[{\"id\":\"seven\",\"kind\":\"exact\",\"value\":\"seven\"}]}]}}, without resending the step. " +
 			"Without slug, set_text and patch_node edit the step the author's dev phone shows; the phone shows the change within a second. " +
@@ -72,6 +72,8 @@ func (s *Server) registerGraphEditTools() {
 									"journal_by_unlock": map[string]any{"type": "boolean"},
 									"quiz_puzzles":      map[string]any{"type": "boolean"},
 									"tour":              map[string]any{"type": "boolean"},
+									"min_players":       map[string]any{"type": "integer", "minimum": 0, "maximum": 50},
+									"max_players":       map[string]any{"type": "integer", "minimum": 0, "maximum": 50},
 								},
 							},
 							"from":      map[string]any{"type": "string"},
@@ -497,12 +499,20 @@ func applyGraphOp(g *graph.Graph, op graphOp, here *position) error {
 			JournalByUnlock *bool `json:"journal_by_unlock"`
 			QuizPuzzles     *bool `json:"quiz_puzzles"`
 			Tour            *bool `json:"tour"`
+			MinPlayers      *int  `json:"min_players"`
+			MaxPlayers      *int  `json:"max_players"`
 		}
 		if err := decodeStrict(op.Options, &o); err != nil {
 			return fmt.Errorf("options: %w", err)
 		}
-		if o.HideScore == nil && o.JournalByUnlock == nil && o.QuizPuzzles == nil && o.Tour == nil {
-			return fmt.Errorf("options needs hide_score, journal_by_unlock, quiz_puzzles or tour")
+		if o.HideScore == nil && o.JournalByUnlock == nil && o.QuizPuzzles == nil && o.Tour == nil && o.MinPlayers == nil && o.MaxPlayers == nil {
+			return fmt.Errorf("options needs hide_score, journal_by_unlock, quiz_puzzles, tour, min_players or max_players")
+		}
+		if o.MinPlayers != nil {
+			g.MinPlayers = *o.MinPlayers
+		}
+		if o.MaxPlayers != nil {
+			g.MaxPlayers = *o.MaxPlayers
 		}
 		if o.HideScore != nil {
 			g.HideScore = *o.HideScore

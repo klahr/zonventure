@@ -75,6 +75,9 @@ var (
 	// ErrUnsealed means a step's mission still waits for players to pick
 	// at its post, so the team cannot move on. Map to 403.
 	ErrUnsealed = errors.New("the mission on this step is not sealed yet")
+	// ErrTooFew means fewer players have joined than the adventure needs
+	// (graph.Graph.MinPlayers), so the team cannot move yet. Map to 403.
+	ErrTooFew = errors.New("the team is waiting for more players")
 )
 
 // NodeState is what a team has done at one node.
@@ -783,11 +786,8 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 		// Turned, not answered: see Turn.
 		return Result{}, nil, ErrWrongNode
 	}
-	if cfg.Kind() == graph.AnswerQuestions && t.unanswered(n) {
+	if cfg.Kind() == graph.AnswerQuestions && t.unanswered(n) || cfg.Kind() == graph.AnswerTasks && t.tasksLeft(n) {
 		return Result{}, nil, ErrUnanswered
-	}
-	if t.unsealed(n) {
-		return Result{}, nil, ErrUnsealed
 	}
 	if cfg.Kind() == graph.AnswerItems && t.usesOthersKit(guess) {
 		return Result{}, nil, ErrNotYours
@@ -880,14 +880,22 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 }
 
 // mayAnswer refuses an answer the puzzle is not taking now: locked out
-// after a wrong guess, the team not at its zone, its time run out.
+// after a wrong guess, the team not at its zone, its time run out, a
+// mission on it not yet sealed.
 func (t *Team) mayAnswer(n graph.Node) (Result, error) {
+	return t.mayAnswerAt(n, true)
+}
+
+// mayAnswerAt is mayAnswer, asking that the team be at the puzzle's zone
+// only with atZone: a task is done at its own place, wherever the rest
+// of the team is.
+func (t *Team) mayAnswerAt(n graph.Node, atZone bool) (Result, error) {
 	cfg := n.PuzzleCfg
 	r := t.Row(n.Slug)
 	if r.BlockedUntil != nil && t.Now.Before(*r.BlockedUntil) {
 		return Result{BlockedUntil: r.BlockedUntil}, ErrLocked
 	}
-	if cfg.Zone != "" && !t.InZone(cfg.Zone) {
+	if atZone && cfg.Zone != "" && !t.InZone(cfg.Zone) {
 		return Result{}, ErrNotHere
 	}
 	if cfg.TimeLimitSeconds > 0 && t.NodeElapsedSeconds() > float64(cfg.TimeLimitSeconds) {
@@ -895,6 +903,9 @@ func (t *Team) mayAnswer(n graph.Node) (Result, error) {
 	}
 	if cfg.By != "" && !t.HasRole(cfg.By) {
 		return Result{}, ErrNotYours
+	}
+	if t.unsealed(n) {
+		return Result{}, ErrUnsealed
 	}
 	return Result{}, nil
 }
@@ -1019,6 +1030,9 @@ func (t *Team) TimeUpDue() bool {
 // caller goes through here, so a phone that was asleep at the deadline
 // cannot slip past it, and a new action cannot forget to check.
 func (t *Team) Act(action func() (Result, *walk.Step, error)) (Result, *walk.Step, error) {
+	if t.tooFew() {
+		return Result{}, nil, ErrTooFew
+	}
 	if t.TimeUpDue() {
 		return t.fireTimeUp()
 	}
@@ -1027,6 +1041,13 @@ func (t *Team) Act(action func() (Result, *walk.Step, error)) (Result, *walk.Ste
 		res.NotYet = true
 	}
 	return res, step, err
+}
+
+// tooFew reports whether fewer players have joined than the adventure
+// needs. Only players count: the team as a whole — the organisers, a
+// simulated team — is never short.
+func (t *Team) tooFew() bool {
+	return t.Players != nil && t.G.MinPlayers > 0 && len(t.Players) < t.G.MinPlayers
 }
 
 // TimeUp moves the team as the time limit says, if it is due — the
@@ -1443,6 +1464,8 @@ func Code(err error) string {
 		return "unanswered"
 	case errors.Is(err, ErrUnsealed):
 		return "unsealed"
+	case errors.Is(err, ErrTooFew):
+		return "too_few"
 	}
 	return ""
 }

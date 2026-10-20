@@ -142,6 +142,9 @@ func (h *Handlers) MagicLinkLogin(w http.ResponseWriter, r *http.Request) bool {
 		if errors.Is(err, auth.ErrOrgCannotPay) {
 			link = "unpaid"
 		}
+		if errors.Is(err, auth.ErrTeamFull) {
+			link = "full"
+		}
 		if errors.Is(err, auth.ErrSlotTokenExpired) {
 			link = "expired"
 			recap, state := h.recapForExpiredLink(r.Context(), token)

@@ -121,6 +121,12 @@ const (
 	// until Count have picked, and a later condition asks how many
 	// betrayed it (cond.OpBetrayed).
 	BlockMission BlockKind = "mission"
+	// BlockTask is one role's part of a step done in parallel: Text is
+	// the task, and only the holder of Role answers it, with Answer, from
+	// inside Zone where it has one. Every phone sees whose it is and
+	// whether it is done; the step (graph.AnswerTasks) moves on when
+	// every task is. A task whose role no one holds is anyone's.
+	BlockTask BlockKind = "task"
 	// BlockRoles shows the player's own roles, or with Team every
 	// player's, under Text. With Choose its player can take a role or give
 	// one back there, as in the phone's menu. With Lock the roles are
@@ -138,7 +144,7 @@ var BlockKinds = []BlockKind{
 	BlockHotspots, BlockDivider, BlockRadar, BlockOverlay, BlockLevel, BlockNoise, BlockTorch, BlockCountdown,
 	BlockStatus, BlockStandings, BlockTitle, BlockPoints, BlockQuiz, BlockTiebreak, BlockSplit, BlockBearing,
 	BlockCall, BlockSuspects, BlockPhoto, BlockSpotDiff, BlockFlasher, BlockLetters, BlockShake, BlockVote,
-	BlockBulletin, BlockDraw, BlockSabotage, BlockAccuse, BlockRoles, BlockMission,
+	BlockBulletin, BlockDraw, BlockSabotage, BlockAccuse, BlockRoles, BlockMission, BlockTask,
 }
 
 // FixedKinds are the kinds a step is given by default, and the only
@@ -238,7 +244,7 @@ type Block struct {
 	Items    bool     `json:"items,omitempty"`
 
 	// Options are a quiz question's three answers, for 1, X and 2, and
-	// Answer the right one's QuizChoices name. Worth is its points: 0 is
+	// Answer the right one's QuizChoices name, or a task's answer. Worth is its points: 0 is
 	// one point, and a photo's when approved. Options are also a vote's
 	// choices, a mission's two and a draw's cards. Translated under
 	// BlockFieldKey(…, "option:<i>").

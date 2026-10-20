@@ -191,7 +191,11 @@ func simulateCrew(g *graph.Graph, place *graph.Zone, team *session.Team, crew *s
 	crew.deal(g)
 	resp.Crew = crew
 	resp.Phones = crew.phones(resp.Team)
-	resp.Result.View = crew.seat(resp.Team).View()
+	for _, ph := range resp.Phones {
+		if ph.Slot == crew.As {
+			resp.Result.View = ph.View
+		}
+	}
 	return resp, status, msg
 }
 
@@ -281,6 +285,8 @@ func simulateAs(g *graph.Graph, place *graph.Zone, team *session.Team, crew *sim
 		act(func() (session.Result, *walk.Step, error) { return team.Pick(a.Node, a.Block, a.Choice) })
 	case "seal":
 		act(func() (session.Result, *walk.Step, error) { return team.Seal(a.Node, a.Block, a.Choice) })
+	case "task":
+		act(func() (session.Result, *walk.Step, error) { return team.Task(a.Node, a.Block, a.Guess) })
 	case "sabotage":
 		act(func() (session.Result, *walk.Step, error) { return team.Sabotage(a.Node, a.Block) })
 	case "wait":
@@ -497,9 +503,30 @@ func (c *simCrew) viewer(t *session.Team, slot int64) *session.Viewer {
 func (c *simCrew) phones(t *session.Team) []simPhone {
 	c.seat(t)
 	out := make([]simPhone, 0, len(c.Players))
-	for _, p := range c.Players {
+	for i, p := range c.Players {
 		t.Viewer = c.viewer(t, p.Slot)
-		out = append(out, simPhone{Slot: p.Slot, Roles: slices.Clone(t.Viewer.Roles), View: t.View()})
+		v := t.View()
+		// Each phone its roles marked, and who holds the others, as the
+		// player endpoints tell them.
+		v.Roles = slices.Clone(v.Roles)
+		for j := range v.Roles {
+			if r := &v.Roles[j]; !r.Secret {
+				r.Mine = slices.Contains(t.Viewer.Roles, r.Slug)
+				if holder, ok := t.RoleHolders[r.Slug]; ok && !r.Default {
+					r.Holder = c.player(holder).Name
+				}
+			}
+		}
+		// Each phone its own part of a split secret, as the player
+		// endpoints deal them.
+		v.Blocks = slices.Clone(v.Blocks)
+		for j := range v.Blocks {
+			if b := &v.Blocks[j]; b.Kind == graph.BlockSplit && !b.Locked {
+				b.Parts = session.SplitParts(b.Parts, i, len(c.Players))
+				b.Player, b.Players = i+1, len(c.Players)
+			}
+		}
+		out = append(out, simPhone{Slot: p.Slot, Roles: slices.Clone(t.Viewer.Roles), View: v})
 	}
 	t.Viewer = c.viewer(t, c.As)
 	return out

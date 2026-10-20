@@ -943,7 +943,8 @@ func TestDisabledTiebreakIsSpare(t *testing.T) {
 
 // The web side's sample of every kind of block, on a puzzle, raises no
 // issue: what the editor makes, the server accepts. The puzzle is
-// answered by its questions, as the sample has some.
+// answered by its questions, as the sample has some — so its task, which
+// belongs on a step answered by tasks, is the one block told so.
 func TestSharedBlockVectors(t *testing.T) {
 	raw, err := os.ReadFile("../../../web/packages/graph/testdata/blocks.json")
 	if err != nil {
@@ -968,7 +969,7 @@ func TestSharedBlockVectors(t *testing.T) {
 		Journal:  []graph.JournalEntry{{Slug: "lie", Title: "A lie"}},
 	}
 	for _, i := range Check(&g).Issues {
-		if i.Node == "s" {
+		if i.Node == "s" && i.Code != "block.task.step" {
 			t.Errorf("%s: %s", i.Code, i.Message)
 		}
 	}

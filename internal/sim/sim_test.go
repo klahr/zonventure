@@ -462,3 +462,34 @@ func TestOrderSolution(t *testing.T) {
 		t.Error("the cards as dealt should not be in order")
 	}
 }
+
+// Bot teams do a step's tasks, each at its place, and move on.
+func TestBotsDoTasks(t *testing.T) {
+	g := &graph.Graph{
+		Roles: []graph.Role{{Slug: "hacker", Name: "Hacker"}, {Slug: "crew", Name: "Crew", Default: true}},
+		Zones: []graph.Zone{
+			{Slug: "square", Name: "Square", Lat: 59.3300, Lng: 18.0600, RadiusM: 25},
+			{Slug: "terminal", Name: "Terminal", Lat: 59.3320, Lng: 18.0620, RadiusM: 25},
+		},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "breakin", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Zone: "square",
+				Blocks: []graph.Block{
+					{ID: "hack", Kind: graph.BlockTask, Role: "hacker", Zone: "terminal", Text: "Crack it.", Answer: "swordfish"},
+					{ID: "watch", Kind: graph.BlockTask, Role: "crew", Text: "Count the guards.", Answer: "3"},
+				},
+				Answer:  &graph.Answer{Kind: graph.AnswerTasks},
+				Outputs: []graph.Output{{Port: "done", Trigger: graph.OnAnswer}},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "breakin"}, {From: "breakin", FromPort: "done", To: "end"}},
+	}
+	res := run(t, g, Config{Teams: 5, Members: 4, Start: t0, Seed: 3})
+	for _, tm := range res.Teams {
+		if tm.Finished == nil {
+			t.Errorf("%s did not finish its tasks", tm.Name)
+		}
+	}
+}

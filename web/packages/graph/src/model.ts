@@ -43,6 +43,7 @@ export function usesMatchers(p: PuzzleConfig): boolean {
     case "tiles":
     case "search":
     case "questions":
+    case "tasks":
     case "items":
     case "keys":
     case "order":
@@ -84,7 +85,7 @@ export function shuffledDeal(n: number, random: () => number = Math.random): num
 }
 
 /** How a puzzle can take its answer: typing it (undefined), or an AnswerKind. */
-export const ANSWER_KINDS: (AnswerKind | undefined)[] = [undefined, "scan", "choice", "lock", "items", "tiles", "order", "search", "questions", "keys"];
+export const ANSWER_KINDS: (AnswerKind | undefined)[] = [undefined, "scan", "choice", "lock", "items", "tiles", "order", "search", "questions", "tasks", "keys"];
 
 /**
  * The puzzle answered another way. The routes keep their ports, so the
@@ -152,6 +153,12 @@ export function withAnswerKind(p: PuzzleConfig, kind: AnswerKind | undefined): P
       next.answer = { kind: "questions" };
       const blocks = p.blocks ?? [];
       if (!blocks.some((b) => b.kind === "quiz" || b.kind === "tiebreak")) next.blocks = [...blocks, newBlock(blocks, "quiz")];
+      break;
+    }
+    case "tasks": {
+      next.answer = { kind: "tasks" };
+      const blocks = p.blocks ?? [];
+      if (!blocks.some((b) => b.kind === "task")) next.blocks = [...blocks, newBlock(blocks, "task")];
       break;
     }
   }
@@ -579,6 +586,8 @@ export function cleanGraph(g: Graph): Graph {
   if (g.host_values?.length) out.host_values = g.host_values;
   if (g.journal_by_unlock) out.journal_by_unlock = true;
   if (g.hide_score) out.hide_score = true;
+  if (g.min_players) out.min_players = g.min_players;
+  if (g.max_players) out.max_players = g.max_players;
   if (g.tour) out.tour = true;
   if (g.quiz_puzzles) out.quiz_puzzles = true;
   if (g.time_limit) out.time_limit = g.time_limit;

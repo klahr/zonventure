@@ -31,6 +31,9 @@ export interface Graph {
   journal_by_unlock?: boolean;
   /** Keep the team's running score off its phone; points still count. */
   hide_score?: boolean;
+  /** Bounds on a team's players: it waits until min have joined, and no more than max may join. Absent is no bound. */
+  min_players?: number;
+  max_players?: number;
   /** A walk, not a game: the phone speaks of the walk and of you, and the end has no trophy. */
   tour?: boolean;
   /** A quiz walk (made as a party adventure): the end screen lists its typed answers with its quiz picks, and new puzzles just move on. */
@@ -329,6 +332,8 @@ export type BlockBody =
   | { kind: "accuse"; role: string; text: string; worth?: number }
   /** A secret pick at the zone's post: each player there picks one of options (Deliver, Tamper when empty) once, until count have; only the secret role's second counts (op betrayed). */
   | { kind: "mission"; role: string; zone: string; count?: number; text?: string; options?: string[] }
+  /** One role's part of a step done in parallel (answer kind tasks): only that role's player answers it, at zone if set. */
+  | { kind: "task"; role: string; zone?: string; text?: string; answer: string }
   /** The roles: the player's own, or with team every player's; choose lets them take one here, lock makes them final once the team moves on. */
   | { kind: "roles"; text?: string; team?: boolean; choose?: boolean; lock?: boolean };
 
@@ -451,6 +456,8 @@ export type Answer =
   | { kind: "choice"; fields: ChoiceField[] }
   | { kind: "lock"; wheels: number; symbols: LockSymbol[]; start?: number[] }
   | { kind: "questions" }
+  /** Answered by the step's task blocks, each on its role's own phone. */
+  | { kind: "tasks" }
   | { kind: "scan" }
   | { kind: "items"; slots: ItemSlot[]; keep?: boolean; missing?: MissingHint }
   | { kind: "keys"; keys?: number; window?: number; posts?: string[]; post_roles?: string[] }
@@ -634,6 +641,8 @@ export interface Role {
   default?: boolean;
   /** A saboteur's: dealt at random to one player of a team of three or more, never claimed, revealed at the end. */
   secret?: boolean;
+  /** A secret role's cover: what every other player is told in its place, so every reveal reads alike. */
+  cover?: string;
   /** A secret role's aims, each checked against the team when it finishes. */
   goals?: RoleGoal[];
 }

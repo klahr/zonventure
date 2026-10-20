@@ -12,7 +12,7 @@ export const nodeKey = (slug: string, field: string) => `n:${slug}:${field}`;
 export const blockKey = (slug: string, id: string) => nodeKey(slug, `block:${id}`);
 export const zoneKey = (slug: string) => `z:${slug}`;
 export const journalKey = (slug: string, field: string) => `j:${slug}:${field}`;
-export const roleKey = (slug: string, field: "name" | "text") => `r:${slug}:${field}`;
+export const roleKey = (slug: string, field: "name" | "text" | "cover") => `r:${slug}:${field}`;
 /** A journal section's heading: one per section, however many notes share it. */
 export const sectionKey = (section: string) => `js:${section}`;
 /** The adventure's own title, intro, outro, meeting point and area, which live outside the graph. */
@@ -106,6 +106,9 @@ export function nodeTexts(n: Node): Translatable[] {
         case "sabotage":
         case "accuse":
           add(own, b.kind === "sabotage" ? "Sabotage" : "Accusation", b.text, { multiline: true });
+          break;
+        case "task":
+          add(own, "Task", b.text, { multiline: true });
           break;
         case "mission":
           add(own, "Mission", b.text, { multiline: true });
@@ -244,6 +247,8 @@ export function withTexts(n: Node, f: (key: string) => string | undefined): Node
         return { ...b, ...(b.text !== undefined ? { text: or(own, b.text) } : {}), options: b.options.map((o, i) => or(`${own}:option:${i}`, o)) };
       case "mission":
         return { ...b, ...(b.text !== undefined ? { text: or(own, b.text) } : {}), ...(b.options ? { options: b.options.map((o, i) => or(`${own}:option:${i}`, o)) } : {}) };
+      case "task":
+        return b.text === undefined || k(own) === undefined ? b : { ...b, text: k(own)! };
       case "quiz": {
         const [a, x, c] = b.options.map((o, i) => or(`${own}:option:${i}`, o));
         return { ...b, ...(b.text !== undefined ? { text: or(own, b.text) } : {}), options: [a!, x!, c!] };
@@ -393,6 +398,7 @@ export function adventureTexts(g: Graph, meta: AdventureMeta = {}): Translatable
   for (const z of g.zones ?? []) if (z.name?.trim() && !z.group) out.push({ key: zoneKey(z.slug), label: "Place name", main: z.name });
   for (const r of g.roles ?? []) {
     if (r.name?.trim()) out.push({ key: roleKey(r.slug, "name"), label: "Role", main: r.name });
+    if (r.cover?.trim()) out.push({ key: roleKey(r.slug, "cover"), label: "Cover for {{name}}", vars: { name: r.name || r.slug }, main: r.cover });
     if (r.text?.trim()) out.push({ key: roleKey(r.slug, "text"), label: "Role: {{name}}", vars: { name: r.name || r.slug }, main: r.text, multiline: true });
     if (r.image?.alt?.trim()) out.push({ key: altKey(`r:${r.slug}:image`), label: "Role: {{name}}: picture description", vars: { name: r.name || r.slug }, main: r.image.alt });
     (r.goals ?? []).forEach((g, i) => {

@@ -1586,6 +1586,15 @@
 
 /* --- Back to a home screen -------------------------------------------------- */
 
+.pv-waiting {
+  margin: var(--sp-2) var(--sp-4) 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
 .pv-back {
   align-self: flex-start;
   display: inline-flex;

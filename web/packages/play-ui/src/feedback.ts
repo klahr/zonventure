@@ -70,6 +70,10 @@ function resultFeedback(kind: play.PlayAction["kind"], r: play.Result, t: Transl
           burst: { kind: "rebuff", head: t("Not quite"), ...(r.response ? { sub: r.response } : {}) },
         };
       }
+    case "task":
+      if (r.port) return { tone: "good", text: t("Every task done!"), burst: { kind: "celebrate", head: t("Every task done!") } };
+      if (r.accepted) return { tone: "good", text: t("Task done!") };
+      return { tone: "bad", text: t("That's not it. Try again."), burst: { kind: "rebuff", head: t("Not quite") } };
     case "turn":
       if (r.accepted) {
         return { tone: "good", text: t("Every key turned!"), burst: { kind: "celebrate", head: t("Every key turned!") } };
@@ -114,6 +118,8 @@ export function feedbackForRefusal(code: string | undefined, t: Translate): Feed
       return { tone: "bad", text: t("Answer the questions on this page first.") };
     case "unsealed":
       return { tone: "bad", text: t("Wait until the mission is sealed.") };
+    case "too_few":
+      return { tone: "info", text: t("Wait until everyone in your team has joined.") };
     case "paused":
       return { tone: "info", text: t("The game is paused. Hold on.") };
     case "not_running":

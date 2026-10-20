@@ -11,6 +11,39 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Designer: a step done in parallel. Its answer is "Tasks": each task
+  block is one role's part, answered only by that role's player, on
+  their own phone and at their own place where it has one. Every phone
+  sees whose each task is and when it is done, and the team moves on
+  with the last. A task whose role nobody on the team holds is
+  anyone's, so a small team is never stuck.
+- Designer: players per team. An adventure can say how many players a
+  team needs and takes: a team waits at its first step, its phones
+  saying how many have joined, until the least are in, and no one
+  beyond the most can join. The preview offers only team sizes the
+  adventure takes.
+- Designer: a secret role's cover. Every other player of a team with
+  the secret role is told the cover in its place — "Loyal" beside
+  "Police" — so every player's roles read alike and no one takes
+  longer to read theirs.
+
+### Changed
+
+- Designer: the multi-phone preview shows every phone small underneath,
+  each always in its own place, the chosen one highlighted; and each
+  phone gets its own part of a split secret and sees its own roles
+  marked as its own, as on real phones.
+
+### Fixed
+
+- A step with a mission can no longer be opened by its keys before the
+  mission is sealed.
+- Designer: in the multi-phone preview, a mission pick not yet
+  confirmed, or a task answer being typed, no longer stays on screen
+  when another player's phone is shown.
+
 ## [0.34.0] - 2026-10-20
 
 ### Added

@@ -535,7 +535,7 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 	}
 	// A cheat checks a password, and a station a card's code, so they
 	// share the answers' budget: that is what stops guessing them.
-	if action == "answer" || action == "cheat" || action == "station" {
+	if action == "answer" || action == "task" || action == "cheat" || action == "station" {
 		if ok, retry := h.rateLimiter().AllowAnswer(slot.ID, slot.Dev); !ok {
 			writeRateLimited(w, retry)
 			return
@@ -592,6 +592,9 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 	case "sabotage":
 		// Anyone's button, the saboteur's alone doing harm. Never logged.
 		res, err = e.Sabotage(ctx, tc.TeamID, req.Node, req.Block)
+	case "task":
+		// One role's part of a step done in parallel.
+		res, err = e.Task(ctx, tc.TeamID, req.Node, req.Block, req.Guess)
 	case "seal":
 		// A player's pick at a mission. Like a sabotage, never logged.
 		res, err = e.Seal(ctx, tc.TeamID, req.Node, req.Block, req.Choice)
@@ -719,6 +722,7 @@ func (h *Handlers) refusePlay(w http.ResponseWriter, res play.Result, err error)
 		"wrong_node":     http.StatusBadRequest,
 		"unanswered":     http.StatusForbidden,
 		"unsealed":       http.StatusForbidden,
+		"too_few":        http.StatusForbidden,
 		"not_yours":      http.StatusForbidden,
 	}[code]
 	if status == 0 {

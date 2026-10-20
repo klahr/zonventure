@@ -127,6 +127,10 @@ type View struct {
 	PenaltyScore float64 `json:"penalty_score"`
 	// HideScore is graph.HideScore: the phone leaves the score out of its header.
 	HideScore bool `json:"hide_score,omitempty"`
+	// PlayersIn and PlayersMin are set while the team waits for players:
+	// how many have joined, of the adventure's least.
+	PlayersIn  int `json:"players_in,omitempty"`
+	PlayersMin int `json:"players_min,omitempty"`
 	// Tour is graph.Tour: the phone words itself for a walk.
 	Tour bool `json:"tour,omitempty"`
 	// ResultsHeld says the game keeps its results until the host finishes
@@ -280,6 +284,9 @@ type BlockView struct {
 	Seals  int  `json:"seals,omitempty"`
 	Need   int  `json:"need,omitempty"`
 	Sealed bool `json:"sealed,omitempty"`
+	// Mine is whether a task is the phone asking's to do; its Picked is
+	// "1" once it is done.
+	Mine bool `json:"mine,omitempty"`
 
 	// The rest is filled by the player endpoints, which know the player
 	// asking. Player is which of Players a split secret's phone is,
@@ -297,6 +304,25 @@ type BlockView struct {
 	Suspects []Suspect `json:"suspects,omitempty"`
 	// Photo is the team's latest picture for a photo block.
 	Photo *PhotoView `json:"photo,omitempty"`
+}
+
+// SplitParts is what player i of n sees of a split secret: the parts
+// dealt round to them, or — with more players than parts — the part
+// their turn comes round to.
+func SplitParts(parts []string, i, n int) []string {
+	if n <= 1 || len(parts) == 0 {
+		return parts
+	}
+	if n > len(parts) {
+		return []string{parts[i%len(parts)]}
+	}
+	var out []string
+	for j, p := range parts {
+		if j%n == i {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // Suspect is a teammate an accusation may name.
@@ -400,6 +426,10 @@ type RoleView struct {
 	Claimed bool         `json:"claimed,omitempty"`
 	// Final says the team's roles are locked: no one takes or gives one back.
 	Final bool `json:"final,omitempty"`
+
+	// cover is a secret role's cover, shown in its place to a player who
+	// does not hold it: its Name is the cover's.
+	cover bool
 }
 
 type JournalView struct {
@@ -508,6 +538,19 @@ func (t *Team) setBlocks(v *View, n graph.Node) {
 				_, bv.Sealed = t.Seals[PickKey(n.Slug, b.ID)][t.Viewer.Slot]
 			} else {
 				bv.Sealed = t.Picks[PickKey(n.Slug, b.ID)] != ""
+			}
+		case graph.BlockTask:
+			// Whose it is and whether it is done, never its answer.
+			bv.Answer = ""
+			bv.Picked = t.Picks[PickKey(n.Slug, b.ID)]
+			bv.Mine = t.mayTask(b)
+			if b.Zone != "" {
+				bv.Place = t.zoneBySlug(b.Zone)
+				here := t.Here(b.Zone)
+				bv.Here = &here
+				if bv.Mine && bv.Picked == "" && !t.G.Stations {
+					v.WatchPosition = true
+				}
 			}
 		case graph.BlockMission:
 			picks := t.Seals[PickKey(n.Slug, b.ID)]
@@ -701,6 +744,11 @@ func (t *Team) View() View {
 	v.Stations = t.G.Stations
 	for _, r := range t.G.Roles {
 		if r.Secret && !t.HasRole(r.Slug) {
+			// Its cover, where it has one: every other player's, so the
+			// roles read the same on every phone.
+			if r.Cover != "" && t.Viewer != nil && t.secretHeld(r.Slug) {
+				v.Roles = append(v.Roles, RoleView{Slug: r.Slug, Name: r.Cover, Secret: true, Mine: true, cover: true})
+			}
 			continue
 		}
 		rv := RoleView{Slug: r.Slug, Name: r.Name, Text: r.Text, Image: r.Image, Secret: r.Secret, Default: r.Default && !r.Secret}
@@ -711,6 +759,9 @@ func (t *Team) View() View {
 		v.Roles = append(v.Roles, rv)
 	}
 	v.Reveal = t.reveal()
+	if t.tooFew() {
+		v.PlayersIn, v.PlayersMin = len(t.Players), t.G.MinPlayers
+	}
 	t.translate(&v)
 	return v
 }
@@ -781,7 +832,11 @@ func (t *Team) translate(v *View) {
 	v.Roles = append([]RoleView(nil), v.Roles...)
 	for i := range v.Roles {
 		r := &v.Roles[i]
-		r.Name = tr(graph.RoleKey(r.Slug, "name"), r.Name)
+		name := "name"
+		if r.cover {
+			name = "cover"
+		}
+		r.Name = tr(graph.RoleKey(r.Slug, name), r.Name)
 		r.Text = tr(graph.RoleKey(r.Slug, "text"), r.Text)
 		r.Image = media(graph.RoleKey(r.Slug, "image"), r.Image)
 	}

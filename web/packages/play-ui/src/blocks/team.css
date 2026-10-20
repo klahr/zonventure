@@ -275,6 +275,10 @@
 .pv-sabotage { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px dashed var(--muted); border-radius: var(--radius); }
 .pv-sabotage__go { align-self: flex-start; }
 .pv-mission__done { margin: 0; font-weight: 700; color: var(--ink); }
+.pv-task__who { margin: 0; font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.pv-task.is-done .pv-task__who { color: var(--success); }
+.pv-task__form { display: flex; gap: var(--sp-2); }
+.pv-task__form .pv-input { flex: 1; min-width: 0; }
 
 /* --- Roles ---------------------------------------------------------- */
 /* Portraits, two or three to a row: never four, never one. */

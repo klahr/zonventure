@@ -154,7 +154,7 @@ func (s *Server) registerPlayTools() {
 			"choose {port} takes a branch at a choice (port \"done\" moves on when allowed); back returns to the hub above; " +
 			"hint opens the next hint once it is available; skip and timeout take those routes when offered; leave goes to find missing items; " +
 			"turn turns the team's keys in a two-key launch — you are all the players, so every key at once, each at its post if it has posts; " +
-			"pick {block, choice} answers a quiz question, tie-breaker, suspect board or draw; use {block} works a gadget (shake, tilt, torch, tap the picture) to see what it shows; " +
+			"pick {block, choice} answers a quiz question, tie-breaker, suspect board or draw; task {block, guess} does one role's task on a step done in parallel — you are all the players, so every role's, each at its place if it has one; use {block} works a gadget (shake, tilt, torch, tap the picture) to see what it shows; " +
 			"move {place} walks the team to a place by name or slug, taking walking time; wait {seconds} lets time pass, as for a hint to open; " +
 			"language {lang}; look shows the screen again with its pictures. " +
 			"Every action but move, wait and look first spends seconds (default 20) of thinking time. Play fairly: you are the players.",
@@ -163,7 +163,7 @@ func (s *Server) registerPlayTools() {
 			"required": []string{"session", "kind"},
 			"properties": map[string]any{
 				"session": map[string]any{"type": "string"},
-				"kind":    map[string]any{"type": "string", "enum": []string{"begin", "answer", "continue", "choose", "back", "hint", "skip", "timeout", "leave", "turn", "pick", "use", "move", "wait", "language", "look"}},
+				"kind":    map[string]any{"type": "string", "enum": []string{"begin", "answer", "continue", "choose", "back", "hint", "skip", "timeout", "leave", "turn", "pick", "task", "use", "move", "wait", "language", "look"}},
 				"start":   map[string]any{"type": "string"},
 				"guess":   map[string]any{"type": "string"},
 				"port":    map[string]any{"type": "string"},
@@ -338,6 +338,8 @@ func playAct(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResul
 		act["port"] = a.Port
 	case "pick":
 		act["block"], act["choice"] = a.Block, a.Choice
+	case "task":
+		act["block"], act["guess"] = a.Block, a.Guess
 	case "language":
 		act["lang"] = a.Lang
 	case "hint":
@@ -400,6 +402,8 @@ func playAct(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResul
 		note = "Skipped."
 	case a.Kind == "pick":
 		note = "Picked."
+	case a.Kind == "task":
+		note = "Tried the task."
 	}
 	note += out.outcome()
 	return ps.screen(ctx, s, note, false), nil
@@ -931,6 +935,12 @@ func (ps *playSession) block(b *strings.Builder, v session.View, bl session.Bloc
 		fmt.Fprintf(b, "A sabotage button every phone shows alike: %s (only the saboteur's press does harm; sabotage is not part of a playtest).\n", bl.Text)
 	case graph.BlockAccuse:
 		fmt.Fprintf(b, "An accusation among the players: %s (it needs a dealt saboteur and real phones; not part of a playtest).\n", bl.Text)
+	case graph.BlockTask:
+		state := "to do"
+		if bl.Picked != "" {
+			state = "done"
+		}
+		fmt.Fprintf(b, "The %s's task (block %q, %s): %s\n", bl.Role, bl.ID, state, bl.Text)
 	case graph.BlockMission:
 		fmt.Fprintf(b, "A secret pick at zone %q for %d players: %s (picks are made on real phones; a playtest is never held by it and is never betrayed).\n", bl.Zone, max(bl.Count, 1), bl.Text)
 	case graph.BlockRoles:

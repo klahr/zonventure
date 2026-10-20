@@ -513,5 +513,16 @@
   "Players pick at the post on their own phones in a live event.": "Spelarna väljer vid posten på sina egna telefoner under ett riktigt event.",
   "{{n}} of {{m}} have picked. Go to the post to pick.": "{{n}} av {{m}} har valt. Gå till posten för att välja.",
   "“{{choice}}”: you cannot change it.": "”{{choice}}”: du kan inte ändra det.",
-  "✓ Sealed. Head back to your team.": "✓ Förseglat. Gå tillbaka till ditt lag."
+  "✓ Sealed. Head back to your team.": "✓ Förseglat. Gå tillbaka till ditt lag.",
+  "Every task done!": "Alla uppgifter klara!",
+  "Go to {{place}} to do it.": "Gå till {{place}} för att göra den.",
+  "Task done!": "Uppgiften klar!",
+  "The {{role}} is working on it.": "{{role}} jobbar på den.",
+  "its place": "dess plats",
+  "{{n}} of {{m}} tasks done. Each of you does your own, on your own phone.": "{{n}} av {{m}} uppgifter klara. Var och en gör sin egen, i sin egen telefon.",
+  "{{role}}'s task": "{{role}}s uppgift",
+  "✓ {{role}}'s task: done": "✓ {{role}}s uppgift: klar",
+  "Wait until everyone in your team has joined.": "Vänta tills alla i ditt lag har anslutit.",
+  "Waiting for your team: {{n}} of {{m}} players have joined. You can start once everyone is in.": "Väntar på ditt lag: {{n}} av {{m}} spelare har anslutit. Ni kan börja när alla är med.",
+  "Your team already has as many players as this adventure takes. Ask the organiser.": "Ditt lag har redan så många spelare som äventyret tar. Fråga arrangören."
 }

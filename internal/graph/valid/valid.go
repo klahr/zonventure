@@ -120,6 +120,7 @@ func Check(g *graph.Graph) Report {
 	checkBlocks(r, g)
 	checkMedia(r, g)
 	checkTimeLimit(r, g)
+	checkPlayers(r, g)
 	checkTranslations(r, g)
 	checkHostEdits(r, g)
 	checkPrintMaterials(r, g)
@@ -536,6 +537,9 @@ func checkReferences(r *reporter, g *graph.Graph) {
 		if ro.Secret && len(ro.Kit) > 0 {
 			r.err("role.secret.kit", "", "", "secret role %q brings items, and everyone's backpack would say whose; give it none", ro.Slug)
 		}
+		if ro.Cover != "" && !ro.Secret {
+			r.err("role.cover.public", "", "", "role %q has a cover, which only a secret role has: it is what the others are told in its place", ro.Slug)
+		}
 		for i, goal := range ro.Goals {
 			if !ro.Secret {
 				r.err("role.goals.public", "", "", "role %q has goals, which only a secret role has", ro.Slug)
@@ -856,6 +860,25 @@ func checkProgressFreeCycles(r *reporter, g *graph.Graph) {
 // so if every grant of the item lies behind its other outputs, a team
 // that ran out of time can never get it, and goes round between the hub
 // and the gate for good.
+// MaxTeamPlayers is the most players a team may be bounded to.
+const MaxTeamPlayers = 50
+
+// checkPlayers checks the bounds on a team's players: in order, within
+// reason, and enough to deal a secret role among.
+func checkPlayers(r *reporter, g *graph.Graph) {
+	lo, hi := g.MinPlayers, g.MaxPlayers
+	if lo < 0 || hi < 0 || lo > MaxTeamPlayers || hi > MaxTeamPlayers {
+		r.err("players.range", "", "", "a team is bounded to %d to %d players; each must be 0 (no bound) to %d", lo, hi, MaxTeamPlayers)
+		return
+	}
+	if hi > 0 && lo > hi {
+		r.err("players.order", "", "", "a team needs at least %d players but takes at most %d", lo, hi)
+	}
+	if len(g.SecretRoles()) > 0 && hi > 0 && hi < graph.MinSecretPlayers {
+		r.warn("players.secret", "", "", "a secret role is dealt only to a team of %d or more, but a team here has at most %d", graph.MinSecretPlayers, hi)
+	}
+}
+
 func checkTimeoutKeys(r *reporter, g *graph.Graph) {
 	needed := map[string]bool{}
 	grants := map[string][]string{}
@@ -1065,6 +1088,10 @@ func checkAnswer(r *reporter, g *graph.Graph, n graph.Node, owners map[string]st
 						"a puzzle answered by its questions always takes its first answer route; this one is never taken")
 				}
 			}
+		}
+	case graph.AnswerTasks:
+		if !slices.ContainsFunc(n.Blocks(), func(b graph.Block) bool { return b.Kind == graph.BlockTask }) {
+			r.err("tasks.none", n.Slug, "", "the puzzle is answered by its tasks but has none; add a task block for each role's part")
 		}
 	default:
 		r.err("puzzle.answer.kind", n.Slug, "", "unknown kind of answer %q", a.Kind)
@@ -1542,6 +1569,19 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 					if b.Journal != "" && !slices.ContainsFunc(g.Journal, func(j graph.JournalEntry) bool { return j.Slug == b.Journal }) {
 						r.err("ref.journal.unknown", n.Slug, "", "sabotage %q plants journal entry %q, which is not declared", b.ID, b.Journal)
 					}
+				}
+			case graph.BlockTask:
+				if n.PuzzleCfg == nil || n.PuzzleCfg.Kind() != graph.AnswerTasks {
+					bad("block.task.step", "is a task on a step not answered by its tasks; set the puzzle's answer to “Tasks”")
+				}
+				if ro, ok := g.Role(b.Role); !ok || ro.Secret {
+					bad("block.task.role", "belongs to no role a player is given openly; pick one")
+				}
+				if strings.TrimSpace(b.Answer) == "" {
+					bad("block.task.answer", "has no answer to accept")
+				}
+				if b.Zone != "" && !zones[b.Zone] {
+					r.err("ref.zone.unknown", n.Slug, "", "the task on this step is done at zone %q, which is not declared", b.Zone)
 				}
 			case graph.BlockMission:
 				if ro, ok := g.Role(b.Role); !ok || !ro.Secret {

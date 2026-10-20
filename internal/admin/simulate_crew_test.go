@@ -131,3 +131,57 @@ func TestSimulateCrewDeals(t *testing.T) {
 		t.Errorf("two players on one slot: %d", status)
 	}
 }
+
+// A split secret is dealt round the crew's phones, each its own part, as
+// on real phones; the team as a whole sees every part.
+func TestSimulateCrewSplit(t *testing.T) {
+	t.Parallel()
+	g := crewGraph()
+	g.Nodes[1].PuzzleCfg.Blocks = append(g.Nodes[1].PuzzleCfg.Blocks, graph.Block{ID: "msg", Kind: graph.BlockSplit, Parts: []string{"one", "two", "three"}})
+	crew := &simCrew{Players: []simPlayer{{Slot: 1}, {Slot: 2}, {Slot: 3}}, As: 2}
+	r, status, msg := simulateCrew(g, nil, nil, crew, simulateAction{Kind: "start"}, simT0)
+	if status != http.StatusOK {
+		t.Fatalf("start: %d %s", status, msg)
+	}
+	parts := func(v session.View) []string {
+		for _, b := range v.Blocks {
+			if b.ID == "msg" {
+				return b.Parts
+			}
+		}
+		return nil
+	}
+	for i, p := range r.Phones {
+		if got := parts(p.View); len(got) != 1 || got[0] != []string{"one", "two", "three"}[i] {
+			t.Errorf("phone %d sees %v", p.Slot, got)
+		}
+	}
+	if got := parts(r.Result.View); !slices.Equal(got, []string{"two"}) {
+		t.Errorf("the acting phone's view shows %v, want its own part", got)
+	}
+	whole, _, _ := simulate(g, nil, nil, simulateAction{Kind: "start"}, simT0)
+	if got := parts(whole.Result.View); len(got) != 3 {
+		t.Errorf("the team as a whole sees %v, want every part", got)
+	}
+}
+
+// Each crew phone sees its own roles marked as its own, public and
+// secret, as a player's phone does.
+func TestSimulateCrewRoles(t *testing.T) {
+	t.Parallel()
+	crew := &simCrew{Players: []simPlayer{{Slot: 1, Name: "Ann"}, {Slot: 2, Name: "Bo"}, {Slot: 3, Name: "Cy"}}, Secrets: map[string]int64{"police": 2}}
+	r, _, _ := simulateCrew(crewGraph(), nil, nil, crew, simulateAction{Kind: "start"}, simT0)
+	mine := func(p simPhone) (out []string) {
+		for _, ro := range p.View.Roles {
+			if ro.Mine {
+				out = append(out, ro.Slug)
+			}
+		}
+		return out
+	}
+	for _, p := range r.Phones {
+		if !slices.Equal(mine(p), p.Roles) {
+			t.Errorf("phone %d marks %v as its own, holds %v", p.Slot, mine(p), p.Roles)
+		}
+	}
+}

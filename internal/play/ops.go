@@ -446,6 +446,12 @@ func (e *Engine) Seal(ctx context.Context, teamID int64, node, block, choice str
 	return e.act(ctx, teamID, action{"seal", node, block}, func(t *session.Team) (Result, *walk.Step, error) { return t.Seal(node, block, choice) })
 }
 
+// Task answers a task for the player asking (see session.Team.Task); the
+// request must be ForPhone.
+func (e *Engine) Task(ctx context.Context, teamID int64, node, block, guess string) (Result, error) {
+	return e.act(ctx, teamID, action{"task", node, guess}, func(t *session.Team) (Result, *walk.Step, error) { return t.Task(node, block, guess) })
+}
+
 // Turn turns the asking player's key in a two-key launch (see
 // session.Team.Turn); the request must be ForPhone.
 func (e *Engine) Turn(ctx context.Context, teamID int64, node string) (Result, error) {

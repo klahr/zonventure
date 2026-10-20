@@ -93,7 +93,7 @@ export function DiffDialog({
   onClose: () => void;
 }) {
   const t = useT();
-  const kinds: Record<string, string> = { zones: t.t("Zones"), items: t.t("Items"), counters: t.t("Shared counters"), journal: t.t("Journal"), time_limit: t.t("Time limit"), hide_score: t.t("Score on the phone"), tour: t.t("A walk, not a game") };
+  const kinds: Record<string, string> = { zones: t.t("Zones"), items: t.t("Items"), counters: t.t("Shared counters"), journal: t.t("Journal"), time_limit: t.t("Time limit"), hide_score: t.t("Score on the phone"), players: t.t("Players per team"), tour: t.t("A walk, not a game") };
   return (
     <Modal
       title={t.t("Draft changes since published")}

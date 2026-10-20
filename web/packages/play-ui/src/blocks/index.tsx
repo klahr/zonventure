@@ -35,6 +35,7 @@ import { VideoBlock } from "./Video.tsx";
 import { VoteBlock } from "./Vote.tsx";
 import { AccuseBlock, SabotageBlock } from "./Saboteur.tsx";
 import { MissionBlock } from "./Mission.tsx";
+import { TaskBlock } from "./Task.tsx";
 import { RolesBlock } from "./Roles.tsx";
 
 type Kind = play.PlayBlock["kind"];
@@ -80,6 +81,7 @@ const RENDER: { [K in Exclude<Kind, "image" | "audio">]: Renderer<K> } = {
   sabotage: SabotageBlock,
   accuse: AccuseBlock,
   mission: MissionBlock,
+  task: TaskBlock,
   roles: RolesBlock,
   bulletin: BulletinBlock,
   draw: DrawBlock,

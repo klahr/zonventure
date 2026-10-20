@@ -273,6 +273,26 @@ export function Resources({ graph, onChange, section }: { graph: Graph; onChange
           <p className="field__hint">
             {t.t("Parts the team's players take, so each knows something the others don't. A block shows only to a role's player with the condition “This player has a role”. Players pick roles on their phones; any nobody picks is dealt out, so a player alone has them all.")}
           </p>
+          <div className="box__row box__row--wrap">
+            {(["min_players", "max_players"] as const).map((key) => (
+              <label key={key} className="field field--num">
+                <span className="field__label">{key === "min_players" ? t.t("Players per team, at least") : t.t("At most")}</span>
+                <input
+                  className="field__input"
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={graph[key] ?? ""}
+                  placeholder={t.t("Any")}
+                  onChange={(e) => {
+                    const n = Math.round(Number(e.target.value));
+                    onChange(e.target.value === "" || !(n > 0) ? withoutKey(graph, key) : { ...graph, [key]: Math.min(n, 50) });
+                  }}
+                />
+              </label>
+            ))}
+          </div>
+          <p className="field__hint">{t.t("A team waits at its first step until the least have joined, and no one beyond the most can join. Set both to 5 for an adventure made for five.")}</p>
           {roles.map((r, i) => {
             const set = (next: Role) => setRoles(roles.map((x, j) => (j === i ? next : x)));
             return (
@@ -322,6 +342,11 @@ export function Resources({ graph, onChange, section }: { graph: Graph; onChange
                     <p className="field__hint">
                       {t.t("Dealt at random to one player when the team makes its first move, on teams of three or more, and never chosen. Only that player knows, until the end screen reveals them. Give it sabotage blocks, and an accusation for the team to unmask it.")}
                     </p>
+                    <label className="field">
+                      <span className="field__label">{t.t("Cover for the others")}</span>
+                      <input className="field__input" value={r.cover ?? ""} placeholder={t.t("Such as “Loyal”")} onChange={(e) => set(e.target.value ? { ...r, cover: e.target.value } : withoutKey(r, "cover"))} />
+                      <span className="field__hint">{t.t("Every other player is told this in the role's place, so everyone's roles read alike and no one takes longer to read theirs. Make it about as long as the role's name.")}</span>
+                    </label>
                     <div className="field">
                       <span className="field__label">{t.t("Goals, checked when the team finishes")}</span>
                       {(r.goals ?? []).map((g, gi) => {

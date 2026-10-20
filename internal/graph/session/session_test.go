@@ -1965,3 +1965,174 @@ func TestMissionTeamAsWhole(t *testing.T) {
 		t.Error("the team as a whole picked at a mission")
 	}
 }
+
+// A key turned at a step whose mission is not sealed waits for it, as an
+// answer does: the keys cannot carry the team past the picks.
+func TestMissionHoldsKeys(t *testing.T) {
+	g := missionGraph()
+	g.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerKeys}
+	g.Nodes[1].PuzzleCfg.Outputs[0].Matchers = nil
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	tm.Players = []int64{1, 2, 3}
+	tm.Viewer = &Viewer{Slot: 1, Position: &Position{Lat: 59.3, Lng: 18.0}}
+	if _, _, err := tm.Turn("pickup"); err != ErrUnsealed {
+		t.Errorf("turning before the mission is sealed: %v, want ErrUnsealed", err)
+	}
+}
+
+func tasksGraph() *graph.Graph {
+	return &graph.Graph{
+		Roles: []graph.Role{{Slug: "hacker", Name: "Hacker"}, {Slug: "planner", Name: "Planner"}, {Slug: "crew", Name: "Crew", Default: true}},
+		Zones: []graph.Zone{{Slug: "terminal", Lat: 59.3, Lng: 18.0, RadiusM: 30}},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "breakin", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Blocks: []graph.Block{
+					{ID: "hack", Kind: graph.BlockTask, Role: "hacker", Zone: "terminal", Text: "Crack it.", Answer: "Swordfish"},
+					{ID: "map", Kind: graph.BlockTask, Role: "planner", Text: "Read the map.", Answer: "north"},
+					{ID: "watch", Kind: graph.BlockTask, Role: "crew", Text: "Count the guards.", Answer: "3"},
+				},
+				Answer:  &graph.Answer{Kind: graph.AnswerTasks},
+				Outputs: []graph.Output{{Port: "done", Trigger: graph.OnAnswer}},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "breakin"}, {From: "breakin", FromPort: "done", To: "end"}},
+	}
+}
+
+// Each role does its own task on its own phone — at its place, with its
+// answer — and the step moves on with the last. A task is not another
+// role's to do, and the step cannot be answered around them.
+func TestTasks(t *testing.T) {
+	tm, step, err := Start(tasksGraph(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	tm.Players = []int64{1, 2, 3}
+	tm.RoleHolders = map[string]int64{"hacker": 1, "planner": 2}
+	at := &Position{Lat: 59.3, Lng: 18.0}
+	as := func(slot int64, roles ...string) { tm.Viewer = &Viewer{Slot: slot, Position: at, Roles: roles} }
+
+	as(3, "crew")
+	if _, _, err := tm.Task("breakin", "hack", "swordfish"); err != ErrNotYours {
+		t.Errorf("the crew doing the hacker's task: %v, want ErrNotYours", err)
+	}
+	if _, _, err := tm.Answer("breakin", ""); err != ErrUnanswered {
+		t.Errorf("answering around the tasks: %v, want ErrUnanswered", err)
+	}
+	if res, _, err := tm.Task("breakin", "watch", "4"); err != nil || res.Accepted {
+		t.Errorf("a wrong count: %+v, %v", res, err)
+	}
+	if res, _, err := tm.Task("breakin", "watch", "3"); err != nil || !res.Accepted {
+		t.Errorf("the right count: %+v, %v", res, err)
+	}
+	if _, _, err := tm.Task("breakin", "watch", "3"); err != ErrNotAllowed {
+		t.Errorf("a task done twice: %v, want ErrNotAllowed", err)
+	}
+
+	tm.Viewer = &Viewer{Slot: 1, Position: &Position{Lat: 59.31, Lng: 18.0}, Roles: []string{"hacker"}}
+	if _, _, err := tm.Task("breakin", "hack", "swordfish"); err != ErrNotHere {
+		t.Errorf("hacking away from the terminal: %v, want ErrNotHere", err)
+	}
+	as(1, "hacker")
+	for _, b := range tm.View().Blocks {
+		if b.Kind == graph.BlockTask && b.Answer != "" {
+			t.Errorf("task %s shows its answer", b.ID)
+		}
+		if b.ID == "hack" && !b.Mine || b.ID == "map" && b.Mine || b.ID == "watch" && b.Picked != "1" {
+			t.Errorf("task %s in the hacker's view: %+v", b.ID, b)
+		}
+	}
+	tm.Task("breakin", "hack", "swordfish")
+	as(2, "planner")
+	_, next, err := tm.Task("breakin", "map", "North")
+	if err != nil || next == nil {
+		t.Fatalf("the last task did not move the team on: %v", err)
+	}
+	tm.Apply(*next)
+	if tm.Current != "end" {
+		t.Errorf("after every task the team is at %q", tm.Current)
+	}
+}
+
+// A team where everyone holds a dealt role has no crew: the crew's task
+// is anyone's, so the team is not stuck.
+func TestTaskUnheldRole(t *testing.T) {
+	tm, step, err := Start(tasksGraph(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	tm.Players = []int64{1, 2}
+	tm.RoleHolders = map[string]int64{"hacker": 1, "planner": 2}
+	tm.Viewer = &Viewer{Slot: 2, Roles: []string{"planner"}}
+	if res, _, err := tm.Task("breakin", "watch", "3"); err != nil || !res.Accepted {
+		t.Errorf("the planner doing the crew's task with no crew: %+v, %v", res, err)
+	}
+}
+
+// A team short of the adventure's least players cannot move, and its
+// phones say how many have joined; the team as a whole is never short.
+func TestTooFewPlayers(t *testing.T) {
+	g := tasksGraph()
+	g.MinPlayers = 3
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	tm.Players = []int64{1, 2}
+	tm.Viewer = &Viewer{Slot: 1, Roles: []string{"crew"}}
+	if _, _, err := tm.Act(func() (Result, *walk.Step, error) { return tm.Task("breakin", "watch", "3") }); err != ErrTooFew {
+		t.Errorf("two of three: %v, want ErrTooFew", err)
+	}
+	if v := tm.View(); v.PlayersIn != 2 || v.PlayersMin != 3 {
+		t.Errorf("view: %d of %d", v.PlayersIn, v.PlayersMin)
+	}
+	tm.Players = []int64{1, 2, 3}
+	if _, _, err := tm.Act(func() (Result, *walk.Step, error) { return tm.Task("breakin", "watch", "3") }); err != nil {
+		t.Errorf("three of three: %v", err)
+	}
+	tm.Players, tm.Viewer = nil, nil
+	if _, _, err := tm.Act(func() (Result, *walk.Step, error) { return tm.Task("breakin", "map", "north") }); err != nil {
+		t.Errorf("the team as a whole: %v", err)
+	}
+}
+
+// A secret role's cover is every other player's in its place, once the
+// role is dealt, so each player's roles read alike; its holder sees the
+// role itself, and a team without it sees neither.
+func TestSecretRoleCover(t *testing.T) {
+	g := saboteurGraph()
+	g.Roles[1].Cover = "Loyal"
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	names := func(slot int64, roles ...string) (out []string) {
+		tm.Viewer = &Viewer{Slot: slot, Roles: roles}
+		for _, r := range tm.View().Roles {
+			if r.Mine {
+				out = append(out, r.Name)
+			}
+		}
+		return out
+	}
+	if got := names(1, "scout"); len(got) != 0 {
+		t.Errorf("no saboteur dealt: the scout is told %v", got)
+	}
+	tm.Secrets = map[string]int64{"saboteur": 2}
+	if got := names(1, "scout"); !slices.Equal(got, []string{"Loyal"}) {
+		t.Errorf("the scout is told %v, want the cover", got)
+	}
+	if got := names(2, "saboteur"); !slices.Equal(got, []string{"Saboteur"}) {
+		t.Errorf("the saboteur is told %v", got)
+	}
+}

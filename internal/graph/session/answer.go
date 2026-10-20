@@ -55,6 +55,9 @@ func (t *Team) answerInput(n graph.Node) *Input {
 	case graph.AnswerQuestions:
 		// The questions are blocks; the phone counts their picks.
 		return &Input{Kind: "questions"}
+	case graph.AnswerTasks:
+		// The tasks are blocks, each answered on its role's phone.
+		return &Input{Kind: "tasks"}
 	case graph.AnswerKeys:
 		in := &Input{Kind: "keys"}
 		for i, slug := range a.Posts {
@@ -148,7 +151,7 @@ func (t *Team) judge(n graph.Node, o graph.Output, guess string) match.Result {
 		return match.Result{OK: strings.ReplaceAll(guess, " ", "") == a.Solution(), Multiplier: 1}
 	case graph.AnswerOrder:
 		return match.Result{OK: a.InOrder(guess), Multiplier: 1}
-	case graph.AnswerSearch, graph.AnswerQuestions, graph.AnswerKeys:
+	case graph.AnswerSearch, graph.AnswerQuestions, graph.AnswerTasks, graph.AnswerKeys:
 		// Answer has already refused a team with questions left.
 		return match.Result{OK: true, Multiplier: 1}
 	case graph.AnswerItems:
