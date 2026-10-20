@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-10-20
+
 ### Added
 
 - Designer: the preview plays as several phones at once. Pick 2 to 6
