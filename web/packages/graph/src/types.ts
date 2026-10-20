@@ -342,7 +342,7 @@ export type TorchStyle = "scratch" | "uv" | "red";
 export type QuizChoice = "1" | "X" | "2";
 export const QUIZ_CHOICES: QuizChoice[] = ["1", "X", "2"];
 
-export type NoteStyle = "paper" | "telegram" | "sms" | "newspaper" | "sticky" | "mirror";
+export type NoteStyle = "paper" | "telegram" | "sms" | "newspaper" | "sticky" | "mirror" | "fact";
 export type DividerStyle = "line" | "space" | "ornament";
 export type Cipher = "pigpen" | "morse" | "semaphore" | "caesar" | "custom";
 

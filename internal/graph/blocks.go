@@ -21,7 +21,8 @@ const (
 	// BlockMap shows a zone on a map, with the team on it.
 	BlockMap BlockKind = "map"
 	// BlockNote is text in costume: a paper note, a telegram, a text
-	// message, a newspaper clipping, a sticky note.
+	// message, a newspaper clipping, a sticky note, or a fact box that
+	// sets real history apart from the story around it.
 	BlockNote BlockKind = "note"
 	// BlockChat is a scripted conversation, shown a message at a time.
 	BlockChat BlockKind = "chat"
@@ -352,7 +353,7 @@ type Show struct {
 // The styles a note and a divider may take, the ciphers a sheet may
 // show, and where a countdown may count from.
 var (
-	NoteStyles    = []string{"paper", "telegram", "sms", "newspaper", "sticky", "mirror"}
+	NoteStyles    = []string{"paper", "telegram", "sms", "newspaper", "sticky", "mirror", "fact"}
 	DividerStyles = []string{"line", "space", "ornament"}
 	// TorchStyles are how a torch's picture is found: by a torch in the
 	// dark, a scratch card rubbed off, a UV lens over hidden ink, or a

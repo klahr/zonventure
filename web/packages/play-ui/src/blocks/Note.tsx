@@ -1,11 +1,12 @@
 import { Markdown } from "../Markdown.tsx";
 import { fillTeam, type Renderer } from "./context.ts";
 
-/** Text in costume: the style names a look in play-ui.css. Mirror writing reads right only in a mirror. */
+/** Text in costume: the style names a look in play-ui.css. Mirror writing reads right only in a mirror; a fact box says it is real history. */
 export const NoteBlock: Renderer<"note"> = ({ block, ctx }) =>
   block.text ? (
     <div className={`pv-note pv-note--${block.style || "paper"}`}>
       {block.style === "mirror" && <span className="pv-note__caption">{ctx.t("Mirror writing")}</span>}
+      {block.style === "fact" && <span className="pv-note__caption">{ctx.t("The real history")}</span>}
       <Markdown className="pv-text" text={fillTeam(block.text, ctx)} />
     </div>
   ) : null;

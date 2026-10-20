@@ -752,6 +752,17 @@
   .pv-note--newspaper .pv-text { column-count: 2; column-gap: var(--sp-5); column-rule: 1px solid rgb(0 0 0 / 0.15); }
   .pv-note--newspaper .pv-text > :is(h3, h4, h5):first-child { column-span: all; }
 }
+/* A fact box: the real history beside a story, so it must not look like
+ * a prop. Upright, flat and cool against the warm costumes, in the
+ * adventure's own body font. */
+.pv-note--fact {
+  border-left: 4px solid #3f6f8f;
+  border-radius: 2px;
+  background: #e8eff4;
+  box-shadow: none;
+  color: #1c2a35;
+}
+.pv-note--fact .pv-note__caption { color: #3f6f8f; }
 .pv-note--sticky {
   background: #fff2a8;
   box-shadow: 0 6px 14px rgb(0 0 0 / 0.15);

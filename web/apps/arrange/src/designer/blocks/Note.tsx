@@ -9,6 +9,7 @@ const NOTE_STYLES: { value: NoteStyle; label: string }[] = [
   { value: "newspaper", label: "Newspaper clipping" },
   { value: "sticky", label: "Sticky note" },
   { value: "mirror", label: "Mirror writing" },
+  { value: "fact", label: "Fact box" },
 ];
 
 export const NoteEditor: Editor<"note"> = ({ block, set, t }) => (

@@ -11,6 +11,13 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Note blocks: a "Fact box" style, for real history told beside a
+  story. It is an upright, flat, cool-blue card with a coloured edge
+  and the caption "The real history" ("I verkligheten"), so a team can
+  tell the facts from the letters and props around them.
+
 ## [0.33.16] - 2026-10-20
 
 ### Added
