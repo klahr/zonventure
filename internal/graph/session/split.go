@@ -2,6 +2,7 @@ package session
 
 import (
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
@@ -22,11 +23,19 @@ import (
 //
 // Everything else stays the team's: items, notes, points, answers. What
 // one group finds, the other can use when they meet.
+//
+// Splits nest: a group that reaches a split on its path divides again,
+// among its own players, and its groups meet at that split's join to go
+// on as the group they were, to the outer join. Strands are the groups
+// as they are now — the leaves — each knowing the forks it came down.
 
 // Strand is one group's place on its path.
 type Strand struct {
-	// Port is the split's path the group took.
+	// Port is the path the group took at the team's split, and Sub the
+	// path it took at each split its group split at since, innermost
+	// last: a group of a group.
 	Port      string    `json:"port"`
+	Sub       []Fork    `json:"sub,omitempty"`
 	Current   string    `json:"current"`
 	EnteredAt time.Time `json:"entered_at"`
 	Paused    int       `json:"paused,omitempty"`
@@ -37,8 +46,26 @@ type Strand struct {
 	Members []int64 `json:"members,omitempty"`
 }
 
+// Fork is a split a group came to and the path it took there.
+type Fork struct {
+	Split string `json:"split"`
+	Port  string `json:"port"`
+}
+
+// Key names a group by the paths it came down: "church", or
+// "church>tower" for the tower party of the church party.
+func (st Strand) Key() string {
+	k := st.Port
+	for _, f := range st.Sub {
+		k += ">" + f.Port
+	}
+	return k
+}
+
 // GroupView is one group of a split team, as every phone sees it.
 type GroupView struct {
+	// Port is the group's Key, and Label its name: its path's, and those
+	// of the groups it is part of, "Church party › Tower".
 	Port  string `json:"port"`
 	Label string `json:"label"`
 	// Node and At are where the group is: the step and its title.
@@ -69,21 +96,118 @@ type focused struct {
 	viewerRoles []string
 }
 
-// Divided implements walk.State.
-func (t *Team) Divided() bool { return t.Split != "" }
+// shapes are the graph's splits as the team has needed them, worked
+// out once: a split's paths and its join. Kept for the graph they were
+// worked out on, so a team handed another graph works them out again.
+type shapes struct {
+	g     *graph.Graph
+	paths map[string]graph.Paths
+	joins map[string]string
+}
 
-// JoinWaits implements walk.State: a join holds a group while any other
-// group of the split is still on its way.
-func (t *Team) JoinWaits(join string) bool {
-	if t.Split == "" {
-		return false
+func (t *Team) shapes() *shapes {
+	if t.shape == nil || t.shape.g != t.G {
+		t.shape = &shapes{g: t.G, paths: map[string]graph.Paths{}, joins: map[string]string{}}
 	}
+	return t.shape
+}
+
+// splitPaths is t.G.SplitPaths, once per split.
+func (t *Team) splitPaths(split string) graph.Paths {
+	sh := t.shapes()
+	p, ok := sh.paths[split]
+	if !ok {
+		p = t.G.SplitPaths(split)
+		sh.paths[split] = p
+	}
+	return p
+}
+
+// joinOf is t.G.JoinOf, once per split: "" for none.
+func (t *Team) joinOf(split string) string {
+	sh := t.shapes()
+	j, ok := sh.joins[split]
+	if !ok {
+		j, _ = t.G.JoinOf(split)
+		sh.joins[split] = j
+	}
+	return j
+}
+
+// lineage is the forks group i came down, the team's split first.
+func (t *Team) lineage(i int) []Fork {
+	return append([]Fork{{Split: t.Split, Port: t.Strands[i].Port}}, t.Strands[i].Sub...)
+}
+
+// underFork reports whether lineage l continues the forks prefix.
+func underFork(l, prefix []Fork) bool {
+	return len(l) >= len(prefix) && slices.Equal(l[:len(prefix)], prefix)
+}
+
+// meeting is, for the walk the focused group is on, how many forks deep
+// it is now — less the joins it has been taken through on the way — and
+// whether join is where the groups of its innermost split meet.
+func (t *Team) meeting(join string) (depth int, ok bool) {
+	if t.Split == "" || t.focus == 0 {
+		return 0, false
+	}
+	lin := t.lineage(t.focus - 1)
+	d := len(lin) - t.popped
+	if d <= 0 {
+		return 0, false
+	}
+	return d, t.joinOf(lin[d-1].Split) == join
+}
+
+// JoinWaits implements walk.State: a join holds a group while another
+// group of the same split — its sibling — is still on its way.
+func (t *Team) JoinWaits(join string) bool {
+	return len(t.awaited(join)) > 0
+}
+
+// awaited are the paths of the focused group's siblings — the other
+// groups of the same split — still on their way to join, by port, in the
+// order of the groups: a sibling that has split again is one path,
+// however many groups it is now. The focused group's own groups, met at
+// joins the walk has passed, are with it.
+func (t *Team) awaited(join string) []string {
+	d, ok := t.meeting(join)
+	if !ok {
+		return nil
+	}
+	own := t.lineage(t.focus - 1)[:d]
+	var out []string
 	for i, st := range t.Strands {
-		if i != t.focus-1 && st.Current != join {
-			return true
+		l := t.lineage(i)
+		if underFork(l, own[:d-1]) && !underFork(l, own) && st.Current != join && !slices.Contains(out, l[d-1].Port) {
+			out = append(out, l[d-1].Port)
 		}
 	}
-	return false
+	return out
+}
+
+// rejoin is what the focused group, waiting at its join, goes on as once
+// its siblings arrive: the name of the group they split from, or "" for
+// the whole team.
+func (t *Team) rejoin() string {
+	if t.focus == 0 {
+		return ""
+	}
+	lin := t.lineage(t.focus - 1)
+	if len(lin) < 2 {
+		return ""
+	}
+	return GroupLabel(t.G, t.lang(), lin[:len(lin)-1])
+}
+
+// Joined implements walk.State: the walk has taken the focused group on
+// through its join, so from there it is the group the siblings make.
+func (t *Team) Joined(join string) bool {
+	if _, ok := t.meeting(join); !ok {
+		return false
+	}
+	t.popped++
+	return true
 }
 
 // Whole is the node the team as a whole is at: where it split, while it
@@ -96,12 +220,12 @@ func (t *Team) Whole() string {
 	return t.Current
 }
 
-// Group is the path of the strand a view or action is for, or "".
+// Group is the key of the group a view or action is for, or "".
 func (t *Team) Group() string {
 	if t.focus == 0 {
 		return ""
 	}
-	return t.Strands[t.focus-1].Port
+	return t.Strands[t.focus-1].Key()
 }
 
 // beginSplit divides the team at a split, every group still on it, and
@@ -128,19 +252,71 @@ func (t *Team) endSplit() {
 	t.Split, t.Strands, t.Current = "", nil, at
 }
 
-// Deal puts each of players not yet in a group into one: the group of
-// each path whose role they hold, or, holding none, the group with
-// fewest players, the first on a tie. holders is who holds each dealt
-// role; a player holding none holds the default role, as does a player
-// alone. Those already dealt stay where they are, so a player who joins
-// mid-split changes no one else's group. It reports whether anyone was
-// dealt, for the live engine to store.
-func (t *Team) Deal(players []int64, holders map[string]int64) bool {
-	if t.Split == "" || len(players) == 0 {
-		return false
+// subSplit divides group i at a split on its path: its groups take its
+// place, each on the split, and its players are dealt among them.
+func (t *Team) subSplit(i int, slug string) {
+	n, ok := t.G.Node(slug)
+	if !ok || n.SplitCfg == nil {
+		return
 	}
-	n, ok := t.G.Node(t.Split)
-	if !ok || n.SplitCfg == nil || len(n.SplitCfg.Paths) != len(t.Strands) {
+	parent := t.Strands[i]
+	depth := len(t.lineage(i))
+	kids := make([]Strand, len(n.SplitCfg.Paths))
+	for k, p := range n.SplitCfg.Paths {
+		kids[k] = Strand{Port: parent.Port, Sub: append(slices.Clone(parent.Sub), Fork{Split: slug, Port: p.Port}),
+			Current: slug, EnteredAt: t.Now, Paused: t.Paused}
+	}
+	t.Strands = slices.Replace(t.Strands, i, i+1, kids...)
+	ins := make([]int, len(kids))
+	for k := range ins {
+		ins[k] = i + k
+	}
+	t.dealAt(parent.Members, ins, depth, t.RoleHolders, parent.Members)
+}
+
+// merge brings group i together with its siblings, the groups of its
+// innermost split, all at their join: they become the group they split
+// from, with all their players, at group i's cursor. It returns where the
+// merged group is in Strands.
+func (t *Team) merge(i int) int {
+	lin := t.lineage(i)
+	prefix := lin[:len(lin)-1]
+	merged := t.Strands[i]
+	merged.Sub = slices.Clone(merged.Sub[:len(merged.Sub)-1])
+	merged.Members = nil
+	at := -1
+	var keep []Strand
+	for j, st := range t.Strands {
+		l := t.lineage(j)
+		if len(l) == len(lin) && underFork(l, prefix) && l[len(l)-1].Split == lin[len(lin)-1].Split {
+			for _, m := range st.Members {
+				if !slices.Contains(merged.Members, m) {
+					merged.Members = append(merged.Members, m)
+				}
+			}
+			if at < 0 {
+				at = len(keep)
+				keep = append(keep, Strand{})
+			}
+			continue
+		}
+		keep = append(keep, st)
+	}
+	keep[at] = merged
+	t.Strands = keep
+	return at
+}
+
+// Deal puts each of players not yet in a group into one: at each split,
+// the path whose role they hold, or, holding none, the path whose groups
+// have fewest players, the first on a tie — down to a group of groups'
+// own. holders is who holds each dealt role; a player holding none holds
+// the default role, as does a player alone. Those already dealt stay
+// where they are, so a player who joins mid-split changes no one else's
+// group. It reports whether anyone was dealt, for the live engine to
+// store.
+func (t *Team) Deal(players []int64, holders map[string]int64) bool {
+	if t.Split == "" || len(players) == 0 || len(t.Strands) == 0 {
 		return false
 	}
 	t.unfocus()
@@ -150,43 +326,94 @@ func (t *Team) Deal(players []int64, holders map[string]int64) bool {
 			dealt[m] = true
 		}
 	}
+	var fresh []int64
+	for _, p := range players {
+		if !dealt[p] {
+			fresh = append(fresh, p)
+		}
+	}
+	if len(fresh) == 0 {
+		return false
+	}
+	all := make([]int, len(t.Strands))
+	for i := range all {
+		all[i] = i
+	}
+	t.dealAt(fresh, all, 0, holders, players)
+	return true
+}
+
+// dealAt deals players among the groups at ins, which share their first
+// k forks: by the paths of the split they divide at next, then on down
+// each path's own groups. live are the players counted as in a group,
+// for which has fewest.
+func (t *Team) dealAt(players []int64, ins []int, k int, holders map[string]int64, live []int64) {
+	if len(players) == 0 || len(ins) == 0 {
+		return
+	}
+	if len(ins) == 1 && len(t.lineage(ins[0])) == k {
+		st := &t.Strands[ins[0]]
+		for _, p := range players {
+			if !slices.Contains(st.Members, p) {
+				st.Members = append(st.Members, p)
+			}
+		}
+		return
+	}
+	n, ok := t.G.Node(t.lineage(ins[0])[k].Split)
+	if !ok || n.SplitCfg == nil {
+		return
+	}
+	paths := n.SplitCfg.Paths
+	buckets := make([][]int, len(paths))
+	for _, i := range ins {
+		port := t.lineage(i)[k].Port
+		for x, p := range paths {
+			if p.Port == port {
+				buckets[x] = append(buckets[x], i)
+			}
+		}
+	}
 	holds := map[int64]bool{}
 	for _, slot := range holders {
 		holds[slot] = true
 	}
 	def := t.G.DefaultRole()
-	changed := false
+	assigned := make([][]int64, len(paths))
 	var spare []int64
 	for _, p := range players {
-		if dealt[p] {
-			continue
-		}
 		joined := false
-		for i, path := range n.SplitCfg.Paths {
-			mine := path.Role != "" && (path.Role == def && (!holds[p] || len(players) == 1) ||
+		for x, path := range paths {
+			mine := path.Role != "" && (path.Role == def && (!holds[p] || len(live) == 1) ||
 				path.Role != def && holders[path.Role] == p)
 			if mine {
-				t.Strands[i].Members = append(t.Strands[i].Members, p)
+				assigned[x] = append(assigned[x], p)
 				joined = true
 			}
 		}
-		if joined {
-			changed = true
-		} else {
+		if !joined {
 			spare = append(spare, p)
 		}
 	}
+	count := func(x int) int {
+		c := len(assigned[x])
+		for _, i := range buckets[x] {
+			c += t.liveCount(i, live)
+		}
+		return c
+	}
 	for _, p := range spare {
 		least := 0
-		for i := range t.Strands {
-			if t.liveCount(i, players) < t.liveCount(least, players) {
-				least = i
+		for x := range paths {
+			if len(buckets[x]) > 0 && (len(buckets[least]) == 0 || count(x) < count(least)) {
+				least = x
 			}
 		}
-		t.Strands[least].Members = append(t.Strands[least].Members, p)
-		changed = true
+		assigned[least] = append(assigned[least], p)
 	}
-	return changed
+	for x := range paths {
+		t.dealAt(assigned[x], buckets[x], k+1, holders, live)
+	}
 }
 
 // liveCount is how many of a group's members are among players.
@@ -289,9 +516,9 @@ func (t *Team) Focus() {
 
 // focusFor puts the team on the group an action on node is for: one of
 // the phone's at node. Another group's step is not the phone's to act
-// on; a step no group is at leaves the default focus, and the action is
-// stale.
+// on; any other step leaves the default focus, and the action is stale.
 func (t *Team) focusFor(node string) error {
+	t.popped = 0
 	if t.focus > 0 && t.Strands[t.focus-1].Current == node && slices.Contains(t.candidates(), t.focus-1) {
 		return nil
 	}
@@ -301,9 +528,14 @@ func (t *Team) focusFor(node string) error {
 			return nil
 		}
 	}
-	for _, st := range t.Strands {
-		if st.Current == node {
-			return ErrNotYours
+	// A step on another group's path is not the phone's. The split and the
+	// join are every group's: a phone pressing to set off after its group
+	// already has is only late, and the action is stale.
+	if n, ok := t.G.Node(node); ok && n.Type != graph.Split && n.Type != graph.Join {
+		for _, st := range t.Strands {
+			if st.Current == node {
+				return ErrNotYours
+			}
 		}
 	}
 	t.Focus()
@@ -339,9 +571,9 @@ func (t *Team) focusOn(i int) {
 	if t.Viewer != nil {
 		t.saved.viewerRoles = t.Viewer.Roles
 	}
-	t.focus = i + 1
+	t.focus, t.popped = i+1, 0
 	t.Current, t.NodeEnteredAt, t.NodePaused, t.WalkedMetres = st.Current, st.EnteredAt, st.Paused, st.Walked
-	if w, ok := t.Walks[st.Port]; ok {
+	if w, ok := t.Walks[st.Key()]; ok {
 		t.WalkedMetres = w
 	}
 	if t.PressesAt != nil {
@@ -407,46 +639,90 @@ func (t *Team) unfocus() {
 	if t.focus > 0 && t.Split != "" {
 		// How far the group has walked on its step, as the simulator adds it.
 		t.Strands[t.focus-1].Walked = t.WalkedMetres
+	}
+	if t.Split != "" {
+		// Also for a team decoded as it was sent, focused on a group: the
+		// focus does not travel, the team's own cursor does.
 		t.Current = t.Split
 	}
 	t.focus = 0
 }
 
 // applySplit follows a step into, along or out of a split: Apply's part.
+// One step may do several: the last group through a join takes its
+// siblings on as the group they split from, which may be the last
+// through the outer join too, and walk straight on into another split.
 func (t *Team) applySplit(step walk.Step) {
-	switch {
-	case t.Split != "" && (step.Finished || !step.Held && t.passedJoin(step)):
-		// Together again — or the adventure is over, for every group.
+	defer func() { t.popped = 0 }()
+	if t.Split != "" && step.Finished {
+		// The adventure is over, for every group.
 		t.endSplit()
-	case t.focus > 0:
-		st := &t.Strands[t.focus-1]
+		return
+	}
+	if t.focus > 0 {
+		i := t.focus - 1
+		st := &t.Strands[i]
 		st.Current, st.EnteredAt, st.Paused, st.Walked = t.Current, t.NodeEnteredAt, t.NodePaused, 0
-		if step.Held {
-			// The group waits; its phones go on to any other group of theirs.
-			t.unfocus()
+		// Through the joins it met its siblings at, innermost first.
+		for k, slug := range step.Passed {
+			if step.Held && k == len(step.Passed)-1 {
+				break
+			}
+			if n, ok := t.G.Node(slug); !ok || n.Type != graph.Join {
+				continue
+			}
+			lin := t.lineage(i)
+			if t.joinOf(lin[len(lin)-1].Split) != slug {
+				continue
+			}
+			if len(lin) == 1 {
+				t.endSplit()
+				break
+			}
+			i = t.merge(i)
+			t.focus = i + 1
 		}
-	case t.Split == "" && !step.Finished:
+		if t.Split != "" {
+			if step.Held {
+				// The group waits; its phones go on to any other group of theirs.
+				t.unfocus()
+				return
+			}
+			if n, ok := t.G.Node(step.To); ok && n.Type == graph.Split {
+				t.unfocus()
+				t.subSplit(i, step.To)
+			}
+			return
+		}
+	}
+	if t.Split == "" && !step.Finished {
 		if n, ok := t.G.Node(step.To); ok && n.Type == graph.Split {
 			t.beginSplit(step.To)
 		}
 	}
 }
 
-func (t *Team) passedJoin(step walk.Step) bool {
-	for _, slug := range step.Passed {
-		if n, ok := t.G.Node(slug); ok && n.Type == graph.Join {
-			return true
-		}
+// onPath reports whether node is a step of the path of the group the
+// team is focused on.
+func (t *Team) onPath(node string) bool {
+	if t.focus == 0 {
+		return false
 	}
-	return false
+	lin := t.lineage(t.focus - 1)
+	f := lin[len(lin)-1]
+	return slices.Contains(t.splitPaths(f.Split).Steps[f.Port], node)
 }
 
 // leaveSplit sets the focused group off down its path.
 func (t *Team) leaveSplit(n graph.Node) (Result, *walk.Step, error) {
-	if t.focus == 0 || t.Split != n.Slug {
+	if t.focus == 0 {
 		return Result{}, nil, ErrWrongNode
 	}
-	port := t.Strands[t.focus-1].Port
+	lin := t.lineage(t.focus - 1)
+	if lin[len(lin)-1].Split != n.Slug {
+		return Result{}, nil, ErrWrongNode
+	}
+	port := lin[len(lin)-1].Port
 	t.Row(n.Slug)
 	step, err := walk.Advance(t.G, t, n.Slug, port)
 	if err != nil {
@@ -457,17 +733,13 @@ func (t *Team) leaveSplit(n graph.Node) (Result, *walk.Step, error) {
 
 // groups is every group of a split team, for its view.
 func (t *Team) groups() []GroupView {
-	n, _ := t.G.Node(t.Split)
 	var mine []int
 	if t.Viewer != nil {
 		mine = t.strandsOf(t.Viewer.Slot)
 	}
 	out := make([]GroupView, len(t.Strands))
 	for i, st := range t.Strands {
-		g := GroupView{Port: st.Port, Node: st.Current, Arrived: t.arrived(i), Mine: slices.Contains(mine, i), Current: t.focus == i+1}
-		if p, ok := n.Path(st.Port); ok {
-			g.Label = t.pathLabel(p)
-		}
+		g := GroupView{Port: st.Key(), Label: t.groupLabel(i), Node: st.Current, Arrived: t.arrived(i), Mine: slices.Contains(mine, i), Current: t.focus == i+1}
 		if at, ok := t.G.Node(st.Current); ok {
 			g.At = t.G.Tr(t.lang(), graph.NodeKey(at.Slug, "title"), at.Title)
 		}
@@ -479,10 +751,32 @@ func (t *Team) groups() []GroupView {
 	return out
 }
 
-// pathLabel is a path's name in the view's language.
-func (t *Team) pathLabel(p graph.SplitPath) string {
-	if p.Label == "" && p.Role != "" {
-		return t.G.Tr(t.lang(), graph.RoleKey(p.Role, "name"), t.G.RoleName(p.Role))
+// groupLabel is group i's name in the view's language: its paths' names,
+// outermost first.
+func (t *Team) groupLabel(i int) string {
+	return GroupLabel(t.G, t.lang(), t.lineage(i))
+}
+
+// GroupLabel names the group that came down forks, in lang: each path's
+// name, outermost first — "Church party › Tower".
+func GroupLabel(g *graph.Graph, lang string, forks []Fork) string {
+	var parts []string
+	for _, f := range forks {
+		n, ok := g.Node(f.Split)
+		p, ok2 := n.Path(f.Port)
+		switch {
+		case !ok || !ok2:
+			parts = append(parts, f.Port)
+		case p.Label == "" && p.Role != "":
+			parts = append(parts, g.Tr(lang, graph.RoleKey(p.Role, "name"), g.RoleName(p.Role)))
+		default:
+			parts = append(parts, g.Tr(lang, graph.NodeKey(f.Split, "path:"+p.Port+":label"), g.PathLabel(p)))
+		}
 	}
-	return t.G.Tr(t.lang(), graph.NodeKey(t.Split, "path:"+p.Port+":label"), t.G.PathLabel(p))
+	return strings.Join(parts, " › ")
+}
+
+// Lineage is the forks a group of a team split at split came down.
+func (st Strand) Lineage(split string) []Fork {
+	return append([]Fork{{Split: split, Port: st.Port}}, st.Sub...)
 }

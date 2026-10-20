@@ -83,6 +83,11 @@ type View struct {
 	// phone goes with.
 	Groups []GroupView `json:"groups,omitempty"`
 	Group  string      `json:"group,omitempty"`
+	// Awaiting is, at a join, how many of the groups it waits for are
+	// still on their way, and Rejoin the group they go on as when they
+	// are here — "" for the whole team, together again.
+	Awaiting int    `json:"awaiting,omitempty"`
+	Rejoin   string `json:"rejoin,omitempty"`
 
 	// Together is how far the players are with a puzzle they do
 	// together: keys turned, players agreed.
@@ -1232,6 +1237,8 @@ func (t *Team) view() View {
 		if n.SplitCfg != nil {
 			v.Text = t.G.Tr(t.lang(), graph.NodeKey(n.Slug, "split-text"), n.SplitCfg.Text)
 		}
+	case graph.Join:
+		v.Awaiting, v.Rejoin = len(t.awaited(n.Slug)), t.rejoin()
 	case graph.Hub:
 		// Recompute the offer: it is a function of state, not stored.
 		if n.HubCfg != nil {

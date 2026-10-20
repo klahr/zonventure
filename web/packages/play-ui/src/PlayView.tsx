@@ -1097,14 +1097,25 @@ function SplitStep({ view, t, busy, onAction, feedback }: StepProps) {
   );
 }
 
-/** A group waiting where the groups meet, for the others to arrive. */
+/**
+ * A group waiting where its groups meet, for the others of its split to
+ * arrive: then the team goes on together — or, a split within a split,
+ * the group they split from.
+ */
 function JoinStep({ view, t }: StepProps) {
-  const left = (view.groups ?? []).filter((g) => !g.arrived).length;
+  const left = view.awaiting ?? (view.groups ?? []).filter((g) => !g.arrived).length;
+  const group = view.rejoin;
+  let text: string;
+  if (group) {
+    text = left === 1 ? t("Waiting for 1 more group. {{group}} goes on together once it is here.", { group }) : t("Waiting for {{n}} more groups. {{group}} goes on together once they are here.", { n: left, group });
+  } else {
+    text = left === 1 ? t("Waiting for 1 more group. The team goes on together once it is here.") : t("Waiting for {{n}} more groups. The team goes on together once they are here.", { n: left });
+  }
   return (
     <>
       <Title view={view} />
       <p className="pv-waiting" role="status">
-        {left === 1 ? t("Waiting for 1 more group. The team goes on together once it is here.") : t("Waiting for {{n}} more groups. The team goes on together once they are here.", { n: left })}
+        {text}
       </p>
       <Groups view={view} t={t} />
     </>

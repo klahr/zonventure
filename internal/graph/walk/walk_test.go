@@ -62,7 +62,7 @@ func (f *fakeState) LocalTime() time.Time         { return f.now }
 func (f *fakeState) Slot() int                    { return f.slot }
 func (f *fakeState) BranchDone(h, p string) bool  { return f.branches[h][p] }
 func (f *fakeState) Occupancy(h, p string) int    { return f.occupancy[h+"/"+p] }
-func (f *fakeState) Divided() bool                { return f.divided }
+func (f *fakeState) Joined(string) bool           { return f.divided }
 func (f *fakeState) JoinWaits(j string) bool      { return f.waits[j] }
 func (f *fakeState) CompletedBranches(h string) int {
 	n := 0

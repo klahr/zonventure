@@ -531,5 +531,7 @@
   "Waiting for {{n}} more groups. The team goes on together once they are here.": "Väntar på {{n}} grupper till. Laget går vidare tillsammans när de är här.",
   "Groups": "Grupper",
   "you": "du",
-  "Arrived": "Framme"
+  "Arrived": "Framme",
+  "Waiting for 1 more group. {{group}} goes on together once it is here.": "Väntar på 1 grupp till. {{group}} går vidare tillsammans när den är här.",
+  "Waiting for {{n}} more groups. {{group}} goes on together once they are here.": "Väntar på {{n}} grupper till. {{group}} går vidare tillsammans när de är här."
 }

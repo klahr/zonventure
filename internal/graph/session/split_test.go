@@ -239,7 +239,7 @@ func TestEachPhoneWalksItsGroup(t *testing.T) {
 		t.Fatalf("answering the door early: %v, want ErrStale", err)
 	}
 	moved(t, tm, "2 answers")(asPlayer(tm, 2, atWell).Answer("pb", "water"))
-	if v := asPlayer(tm, 4, atWell).View(); v.Type != graph.Join || v.Node != "join" || !v.Groups[1].Arrived || v.Groups[0].Arrived {
+	if v := asPlayer(tm, 4, atWell).View(); v.Type != graph.Join || v.Node != "join" || !v.Groups[1].Arrived || v.Groups[0].Arrived || v.Awaiting != 1 || v.Rejoin != "" {
 		t.Fatalf("player 4 waits at the join: %+v", v)
 	}
 	moved(t, tm, "1 sets off")(asPlayer(tm, 1, atChurch).Continue("split"))
@@ -526,4 +526,42 @@ func TestFocusKeepsTheSimulatorsMoves(t *testing.T) {
 		t.Errorf("the group's walk %v, want 120", tm.Strands[0].Walked)
 	}
 	moved(t, tm, "pa")(tm.Answer("pa", "bell"))
+}
+
+// A team sent through JSON while focused on a group comes back with its
+// own cursor once unfocused: the focus does not travel. Found by random
+// play.
+func TestFocusDoesNotTravelInJSON(t *testing.T) {
+	tm := startedSplit(t)
+	moved(t, tm, "a")(tm.Continue("split"))
+	tm.View() // focused on the church party, at pa
+	raw, _ := json.Marshal(tm)
+	var back Team
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
+	}
+	back.G = tm.G
+	back.Init()
+	if back.Unfocus(); back.Current != "split" {
+		t.Fatalf("unfocused, the decoded team is at %q", back.Current)
+	}
+}
+
+// A phone pressing to set off after its group already has is late, not
+// acting for another group still at the split: stale, which the phone
+// takes in its stride. Found by the live stress test, where ten players
+// of a group pressed at once and the rest were told it was not theirs.
+func TestLateSetOffIsStale(t *testing.T) {
+	tm := startedSplit(t)
+	players(tm, 4) // a: 1, 3; b: 2, 4
+	tm.Deal(tm.Players, tm.RoleHolders)
+	moved(t, tm, "1 sets off")(asPlayer(tm, 1, nil).Continue("split"))
+	if _, _, err := asPlayer(tm, 3, nil).Continue("split"); !errors.Is(err, ErrStale) {
+		t.Fatalf("3 pressing late: %v, want ErrStale", err)
+	}
+	// Another group's step on its path is still not theirs.
+	moved(t, tm, "2 sets off")(asPlayer(tm, 2, nil).Continue("split"))
+	if _, _, err := asPlayer(tm, 3, nil).Answer("pb", "water"); !errors.Is(err, ErrNotYours) {
+		t.Fatalf("3 at the well's step: %v, want ErrNotYours", err)
+	}
 }

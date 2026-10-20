@@ -1,7 +1,6 @@
 package walk
 
 import (
-	"errors"
 	"slices"
 	"testing"
 
@@ -113,11 +112,46 @@ func TestJoinWithEffectsBehindIt(t *testing.T) {
 	}
 }
 
-func TestAGroupCannotSplitAgain(t *testing.T) {
+func TestAGroupSplitsAgain(t *testing.T) {
 	g := splitGraph()
 	s := newState()
 	s.divided = true
-	if _, err := Jump(g, s, "pa", "split"); !errors.Is(err, ErrNested) {
-		t.Fatalf("err = %v, want ErrNested", err)
+	step, err := Jump(g, s, "pa", "split")
+	if err != nil || step.To != "split" || step.Held {
+		t.Fatalf("a group reaching a split parks there to split again: %+v %v", step, err)
+	}
+}
+
+// The last group through a join takes the team on, and the team may
+// split again at once.
+func TestThroughAJoinIntoAnotherSplit(t *testing.T) {
+	g := splitGraph()
+	sp2 := node("split2", graph.Split)
+	sp2.SplitCfg = &graph.SplitConfig{Paths: []graph.SplitPath{{Port: "c"}, {Port: "d"}}}
+	g.Nodes = append(g.Nodes, sp2)
+	for i, e := range g.Edges {
+		if e.From == "join" {
+			g.Edges[i].To = "split2"
+		}
+	}
+	s := newState()
+	s.divided = true
+	step, err := Advance(g, s, "pb", "solved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if step.To != "split2" || !step.Joined || step.Held {
+		t.Fatalf("step = %+v, want joined and parked at split2", step)
+	}
+}
+
+// A group held at its join has not joined.
+func TestHeldIsNotJoined(t *testing.T) {
+	s := newState()
+	s.divided = true
+	s.waits = map[string]bool{"join": true}
+	step, err := Advance(splitGraph(), s, "pa", "solved")
+	if err != nil || step.Joined {
+		t.Fatalf("step = %+v, err %v", step, err)
 	}
 }

@@ -356,8 +356,8 @@ func checkSplit(r *reporter, g *graph.Graph, n graph.Node) {
 // checkSplits checks where a split's paths go. Each group walks its own
 // steps until it reaches the join, where it waits for the others; so the
 // paths may not share a step (two groups on one step would answer it for
-// each other), a group cannot split again, and every path that leads
-// anywhere must lead to the same join. A path may end the adventure
+// each other), a group splits again only at a split nested whole on its
+// path, and every path that leads anywhere must lead to the same join. A path may end the adventure
 // instead, which ends it for every group. A join is only ever a split's.
 func checkSplits(r *reporter, g *graph.Graph) {
 	types := map[string]graph.Type{}
@@ -374,13 +374,15 @@ func checkSplits(r *reporter, g *graph.Graph) {
 		var joins []string
 		for _, p := range n.SplitCfg.Paths {
 			for _, slug := range paths.Steps[p.Port] {
+				// An ending may be every path's: whichever group reaches
+				// it ends the adventure, and no group stands on it after.
+				if types[slug] == graph.End {
+					continue
+				}
 				if other, ok := owner[slug]; ok && other != p.Port {
 					r.err("split.paths.cross", slug, "", "this step is on two paths of the split %q (%s and %s); each group needs steps of its own until they meet at a join", n.Slug, other, p.Port)
 				}
 				owner[slug] = p.Port
-				if types[slug] == graph.Split {
-					r.err("split.nested", slug, "", "a group of the split %q cannot split again before it reaches its join", n.Slug)
-				}
 				if types[slug] == graph.Start {
 					r.err("split.start", slug, "", "a path of the split %q leads back to a start", n.Slug)
 				}
@@ -394,13 +396,13 @@ func checkSplits(r *reporter, g *graph.Graph) {
 				r.warn("split.path.nojoin", n.Slug, p.Port, "this path never reaches a join, so the team only meets again if its group ends the adventure — which ends it for every group")
 			}
 		}
-		// A path returning to the split itself would split the group again.
-		for _, e := range g.Edges {
-			if e.To == n.Slug {
-				if port, ok := paths.PathOf(e.From); ok {
-					r.err("split.nested", e.From, e.FromPort, "this step on the path %q leads back to its split; a group cannot split again", port)
-				}
-			}
+		// A group may split again on its path — a split nested whole, its
+		// own join before this one's — but not into the split it came from.
+		for _, port := range paths.Loops {
+			r.err("split.loop", n.Slug, port, "this path leads back into its own split, or one it is inside; a group can split again only at a split of its own, met at a join of its own")
+		}
+		if d := g.SplitDepth(n.Slug); d > graph.MaxSplitDepth {
+			r.err("split.depth", n.Slug, "", "splits nest %d deep here; at most %d — a group of a group, and so on — keeps who is with whom clear", d, graph.MaxSplitDepth)
 		}
 		if len(joins) > 1 {
 			r.err("split.joins.many", n.Slug, "", "the paths of this split lead to different joins (%s); they must all meet at one", strings.Join(joins, ", "))

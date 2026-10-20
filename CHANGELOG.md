@@ -27,7 +27,11 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   walked by whoever finishes first, so a team of any size can play a
   split. The time limit, and an ending on any path, end it for every
   group. The preview, the simulator and the AI assistant play splits
-  too.
+  too, and the console shows where each group is and moves a stuck
+  group on by itself. Splits nest: a group that reaches a split on its
+  path divides again among its own players, and its groups meet at a
+  join of their own before going on — "North › Tower" — up to four
+  deep.
 - Designer: a step done in parallel. Its answer is "Tasks": each task
   block is one role's part, answered only by that role's player, on
   their own phone and at their own place where it has one. Every phone

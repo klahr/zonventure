@@ -257,6 +257,10 @@ type Team struct {
 	// focusing on it narrowed.
 	focus int
 	saved *focused
+	// popped is how many of the focused group's joins the walk under way
+	// has taken it through (walk.State.Joined), innermost first.
+	popped int
+	shape  *shapes
 }
 
 // New returns an empty team on g at time now, not yet placed anywhere.
@@ -1120,12 +1124,16 @@ func (t *Team) Back(node string) (Result, *walk.Step, error) {
 // None once the time limit has moved it: where the limit sends a team is
 // where it stays, or it would play on with no clock.
 func (t *Team) backTo() (string, bool) {
-	// A group cannot go back alone to a home screen the team left.
-	if t.Current == "" || t.TimedOut || t.Split != "" {
+	if t.Current == "" || t.TimedOut {
 		return "", false
 	}
 	hub, ok := t.G.OwnerHub(t.Current)
 	if !ok {
+		return "", false
+	}
+	// A group goes back only to a home screen on its own path, never
+	// alone to one the team left together.
+	if t.Split != "" && !t.onPath(hub) {
 		return "", false
 	}
 	h, _ := t.G.Node(hub)

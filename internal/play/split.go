@@ -11,15 +11,23 @@ import (
 )
 
 // splitFits reports whether a team's stored groups still fit its graph:
-// the split is there, with a path for each group.
+// every split each group came to is there, with the path it took.
 func splitFits(g *graph.Graph, split string, strands []session.Strand) bool {
-	n, ok := g.Node(split)
-	if !ok || n.Type != graph.Split || n.SplitCfg == nil || len(n.SplitCfg.Paths) != len(strands) {
+	if len(strands) == 0 {
 		return false
 	}
-	for i, st := range strands {
-		if _, ok := g.Node(st.Current); !ok || n.SplitCfg.Paths[i].Port != st.Port {
+	for _, st := range strands {
+		if _, ok := g.Node(st.Current); !ok {
 			return false
+		}
+		for _, f := range st.Lineage(split) {
+			n, ok := g.Node(f.Split)
+			if !ok || n.Type != graph.Split {
+				return false
+			}
+			if _, ok := n.Path(f.Port); !ok {
+				return false
+			}
 		}
 	}
 	return true
@@ -60,7 +68,7 @@ func (e *Engine) divide(ctx context.Context, q Querier, s *teamState) (bool, err
 			if err != nil {
 				return false, fmt.Errorf("reading walked distance: %w", err)
 			}
-			s.Walks[st.Port] = w
+			s.Walks[st.Key()] = w
 		}
 	}
 	return dealt, nil

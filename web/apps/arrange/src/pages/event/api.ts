@@ -89,6 +89,15 @@ export interface Team {
   rank?: number;
   node?: string;
   outcome?: string;
+  /** Where each group is while the team is split up; node is then the split. */
+  groups?: TeamGroup[];
+}
+
+/** internal/admin/ws.go: teamGroupDTO. */
+export interface TeamGroup {
+  port: string;
+  label: string;
+  node: string;
 }
 
 /** internal/admin/ws.go: eventGraphDTO (zones left out: this page has no map). */

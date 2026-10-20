@@ -83,6 +83,9 @@ type simCrew struct {
 	// a step done together, until the team leaves it.
 	Seals   map[string]map[int64]string `json:"seals,omitempty"`
 	Presses map[int64]session.Press     `json:"presses,omitempty"`
+	// PressesAt are the presses by step while the team is split up: each
+	// group has a step of its own, done together by its players.
+	PressesAt map[string]map[int64]session.Press `json:"presses_at,omitempty"`
 }
 
 // simPlayer is one phone: its slot, a name to show, and where it is.
@@ -340,16 +343,35 @@ func simulateAs(g *graph.Graph, place *graph.Zone, team *session.Team, crew *sim
 		out.Result.View = before.View()
 		return out, http.StatusOK, ""
 	}
+	// The step the action was on: a split team's group's.
+	acted, split := team.Current, team.Split != ""
 	var passed []string
 	if step != nil {
 		team.Apply(*step)
 		passed = step.Passed
 	}
 	if crew != nil {
-		crew.Seals, crew.Presses = team.Seals, team.Presses
-		// A step done together starts afresh at the next one.
-		if step != nil {
-			crew.Presses, team.Presses = nil, nil
+		crew.Seals = team.Seals
+		switch {
+		case split:
+			// Kept by step, so one group moving on leaves another's be.
+			if crew.PressesAt == nil {
+				crew.PressesAt = map[string]map[int64]session.Press{}
+			}
+			crew.PressesAt[acted] = team.Presses
+			if step != nil {
+				delete(crew.PressesAt, acted)
+			}
+			if team.Split == "" {
+				crew.PressesAt = nil
+			}
+			crew.Presses = nil
+		default:
+			crew.Presses = team.Presses
+			// A step done together starts afresh at the next one.
+			if step != nil {
+				crew.Presses, team.Presses = nil, nil
+			}
 		}
 	}
 	res.View = team.View()
@@ -471,6 +493,13 @@ func (c *simCrew) seat(t *session.Team) *session.Team {
 		}
 	}
 	t.Secrets, t.Seals, t.Presses = c.Secrets, c.Seals, c.Presses
+	t.PressesAt = nil
+	if t.Split != "" {
+		t.PressesAt = c.PressesAt
+		if t.PressesAt == nil {
+			t.PressesAt = map[string]map[int64]session.Press{}
+		}
+	}
 	t.RoleHolders = map[string]int64{}
 	for role, h := range play.DealAmong(slots, c.Roles, t.G.DealtRoles()) {
 		t.RoleHolders[role] = h.Slot

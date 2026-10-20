@@ -188,7 +188,8 @@ A split divides the team into groups that go their own ways and meet again at a 
 {"slug": "meet", "type": "join", "title": "Meet at the square"}
 
 - One port per path. A path with a role takes that role's player (a default role's: everyone holding no other role); everyone else is shared out evenly among the paths, so a big team with no roles splits into even groups. A path may not be a secret role's.
-- Wire each path's steps from the split's port to the join, and the join's out to what the team does together. The paths may not share a step, a group cannot split again before its join, and every path must lead to the same join (or end the adventure, which ends it for every group).
+- Wire each path's steps from the split's port to the join, and the join's out to what the team does together. The paths may not share a step, and every path must lead to the same join (or end the adventure, which ends it for every group).
+- Splits nest: a split on a path divides that group again, among its own players, and its groups meet at a join of their own before going on as one group to the outer join ("North › Tower" on the phones). Up to 4 deep; a path may not lead back into its own split or one it is inside.
 - Each phone sees its own group's steps; a step done together (keys, unanimous) waits for the group; a role no one in the group holds is everyone's in it. A player in several groups — a small team — walks them one after another; a group with no one in it is walked by whoever has finished theirs.
 - simulate_adventure plays the groups in turn: continue past the split for the first group, play its path to the join, then the next group's.
 

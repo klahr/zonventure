@@ -79,7 +79,8 @@ export function useTeamActions(reload: () => void) {
     }
   };
 
-  const unlock = async (team: Team, skipConfirm: boolean): Promise<boolean> => {
+  /** Moves the team on — or, while it is split up, the group at node. */
+  const unlock = async (team: Team, skipConfirm: boolean, node = team.node): Promise<boolean> => {
     if (!skipConfirm) {
       const ok = await dialogs.confirm({
         title: t.t("Move {{name}} on?", { name: team.name }),
@@ -90,7 +91,7 @@ export function useTeamActions(reload: () => void) {
     }
     try {
       // The node guards a race: the server refuses if the team has moved meanwhile.
-      const r = await api.unlockTeam(team.id, team.node);
+      const r = await api.unlockTeam(team.id, node);
       toast.ok(r?.completed ? t.t("{{name}} finished", { name: team.name }) : t.t("{{name}} advanced", { name: team.name }));
       reload();
       return true;

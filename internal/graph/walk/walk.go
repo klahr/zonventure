@@ -66,13 +66,15 @@ type State interface {
 	// MatchedAnswer is the ID of the accepted answer that took the team
 	// out of a puzzle, or "" — what a crossroads reference compares.
 	MatchedAnswer(node string) string
-	// Divided reports whether the team is split into groups, and the walk
-	// is one group's: a split cannot be split again.
-	Divided() bool
 	// JoinWaits reports whether a join holds the group the walk is moving:
-	// another group of the team's split has yet to arrive there. A team
+	// another group of the same split has yet to arrive there. A team
 	// not split up is never held, and passes straight through.
 	JoinWaits(join string) bool
+	// Joined tells the state the walk has taken the group on through a
+	// join it was not held at, and reports whether that brought groups
+	// together: from there the walk is the merged group's, which a later
+	// join — an outer split's — may hold in turn.
+	Joined(join string) bool
 }
 
 // Step is one movement through the graph.
@@ -106,8 +108,11 @@ type Step struct {
 	// possible, so the choice belongs to the player.
 	CanFinish bool
 	// Held is set when a join is holding the group the walk moved, to
-	// wait for the others: To is the join.
-	Held bool
+	// wait for the others: To is the join. Joined is set when the walk
+	// took groups on through their join, together again — the team, or
+	// the group they split from.
+	Held   bool
+	Joined bool
 	// GateFailed is set when the walk left a gate by PortFail.
 	GateFailed bool
 	// Finished is set when the team reached an End.
@@ -134,9 +139,6 @@ var (
 	// ErrLoop means the walk revisited a node within a single step,
 	// which a progress-free cycle would cause.
 	ErrLoop = errors.New("cycle with no progress")
-	// ErrNested means a group of a split team reached another split. The
-	// validator rejects the shape; a group cannot split again.
-	ErrNested = errors.New("split inside a split")
 )
 
 // maxHops bounds a single Advance. A well-formed graph resolves in a
@@ -273,11 +275,9 @@ func walkTo(g *graph.Graph, s State, step Step, next string) (Step, error) {
 			return step, nil
 
 		case graph.Split:
-			// The team parks here, together, and each group sets off
-			// down its own path from here: see session.
-			if s.Divided() {
-				return step, fmt.Errorf("%w: %s", ErrNested, node.Slug)
-			}
+			// The team — or a group of it, splitting again — parks here,
+			// and each of its groups sets off down its own path from here:
+			// see session.
 			step.To = next
 			return step, nil
 
@@ -287,6 +287,9 @@ func walkTo(g *graph.Graph, s State, step Step, next string) (Step, error) {
 				step.To = next
 				step.Held = true
 				return step, nil
+			}
+			if s.Joined(node.Slug) {
+				step.Joined = true
 			}
 			next, ok = g.Target(node.Slug, graph.PortOut)
 			if !ok {

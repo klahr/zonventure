@@ -78,6 +78,28 @@ export function TeamDetailDialog(props: {
         <Button icon={<Pencil size={ICON.md} aria-hidden />} onClick={props.onEdit}>{t.t("Edit members")}</Button>
         {more.length > 0 && <MoreMenu label={t.t("More")} items={more} />}
       </div>
+      {!finished && team.groups?.length ? (
+        <>
+          <h3 className="ev-h3">{t.t("Groups")}</h3>
+          <ul className="ev-td__members">
+            {team.groups.map((g) => (
+              <li key={g.port}>
+                <span>{g.label}</span>
+                <span className="cs-sub">{stepTitle(props.graph, g.node)}</span>
+                {props.graph?.rescuable?.includes(g.node) && canDo(event, "unlock_team") && (
+                  <Button
+                    icon={<FastForward size={ICON.sm} aria-hidden />}
+                    title={t.t("Alt-click to skip the confirmation")}
+                    onClick={(e) => void actions.unlock(team, e.altKey, g.node)}
+                  >
+                    {t.t("Move group on")}
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
       <h3 className="ev-h3">{t.t("Members")}</h3>
       {members(team).length === 0 ? (
         <p className="cs-muted">{t.t("No members yet.")}</p>

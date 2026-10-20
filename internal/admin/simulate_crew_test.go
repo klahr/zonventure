@@ -263,3 +263,59 @@ func TestSimulateCrewSplitPaths(t *testing.T) {
 		t.Fatalf("together again: %v, split %q", got, team.Split)
 	}
 }
+
+// A group's step done together keeps each player's part while the other
+// group moves: one group setting off must not wipe the other's agreeing.
+func TestSimulateCrewSplitPresses(t *testing.T) {
+	t.Parallel()
+	right := func(answer string) []graph.Output {
+		return []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: answer}}}}
+	}
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "split", Type: graph.Split, SplitCfg: &graph.SplitConfig{Paths: []graph.SplitPath{{Port: "a"}, {Port: "b"}}}},
+			{Slug: "pa", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Unanimous: true, Outputs: right("x")}},
+			{Slug: "pb", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Outputs: right("x")}},
+			{Slug: "join", Type: graph.Join},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "split"},
+			{From: "split", FromPort: "a", To: "pa"}, {From: "split", FromPort: "b", To: "pb"},
+			{From: "pa", FromPort: "solved", To: "join"}, {From: "pb", FromPort: "solved", To: "join"},
+			{From: "join", FromPort: "out", To: "end"},
+		},
+	}
+	var team *session.Team
+	crew := &simCrew{Players: []simPlayer{{Slot: 1, Name: "Ann"}, {Slot: 2, Name: "Bo"}, {Slot: 3, Name: "Cy"}, {Slot: 4, Name: "Di"}}}
+	do := func(as int64, a simulateAction) simulateResponse {
+		t.Helper()
+		var in *session.Team
+		if team != nil {
+			in = roundTrip(t, team)
+		}
+		c := crew.clone()
+		c.As = as
+		r, status, msg := simulateCrew(g, nil, in, c, a, simT0)
+		if status != http.StatusOK || r.Refuse != nil {
+			t.Fatalf("%s as %d: %d %s %+v", a.Kind, as, status, msg, r.Refuse)
+		}
+		team, crew = r.Team, r.Crew
+		return r
+	}
+	do(1, simulateAction{Kind: "start"})
+	do(1, simulateAction{Kind: "move"}) // a: Ann, Cy; b: Bo, Di
+	do(1, simulateAction{Kind: "continue", Node: "split"})
+	if r := do(1, simulateAction{Kind: "answer", Node: "pa", Guess: "x"}); r.Result.Waiting == nil || r.Result.Waiting.Done != 1 {
+		t.Fatalf("Ann agrees: %+v", r.Result.Waiting)
+	}
+	// The other group sets off and answers meanwhile.
+	do(2, simulateAction{Kind: "continue", Node: "split"})
+	do(2, simulateAction{Kind: "answer", Node: "pb", Guess: "x"})
+	// Cy agreeing makes two of two: Ann's agreement must still count.
+	r := do(3, simulateAction{Kind: "answer", Node: "pa", Guess: "x"})
+	if !r.Result.Accepted || team.Split != "" {
+		t.Fatalf("Cy agrees after the other group moved: %+v, waiting %+v, split %q", r.Result, r.Result.Waiting, team.Split)
+	}
+}

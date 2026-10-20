@@ -422,6 +422,16 @@ type eventDetailTeamDTO struct {
 	// Cheated says the team used the adventure's cheat password; it has
 	// no rank.
 	Cheated bool `json:"cheated,omitempty"`
+	// Groups are where each group is while the team is split up (a split
+	// step): Node is then the split. Each can be moved on by itself.
+	Groups []teamGroupDTO `json:"groups,omitempty"`
+}
+
+// teamGroupDTO is one group of a split team, for the console.
+type teamGroupDTO struct {
+	Port  string `json:"port"`
+	Label string `json:"label"`
+	Node  string `json:"node"`
 }
 
 type eventDetailMemberDTO struct {
@@ -430,6 +440,27 @@ type eventDetailMemberDTO struct {
 	Token       string `json:"token"`
 	LastLoginAt string `json:"last_login_at,omitempty"`
 	ExpiresAt   string `json:"expires_at,omitempty"`
+}
+
+// groupsOf is where each group of a team split at split is, from its
+// stored strands; none for a team that is not split.
+func groupsOf(g *graph.Graph, split string, raw []byte) []teamGroupDTO {
+	n, ok := g.Node(split)
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	var strands []session.Strand
+	if json.Unmarshal(raw, &strands) != nil {
+		return nil
+	}
+	if n.Type != graph.Split {
+		return nil
+	}
+	out := make([]teamGroupDTO, 0, len(strands))
+	for _, st := range strands {
+		out = append(out, teamGroupDTO{Port: st.Key(), Label: session.GroupLabel(g, "", st.Lineage(split)), Node: st.Current})
+	}
+	return out
 }
 
 // eventGraph is the graph an event plays: the one it was started on, or,
@@ -656,7 +687,7 @@ func (h *Handlers) addGraphDetail(ctx context.Context, d *eventDetailDTO) error 
 		byTeam[r.TeamID] = r
 	}
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT team_id, COALESCE(current_node, ''), COALESCE(outcome, ''), cheated
+		SELECT team_id, COALESCE(current_node, ''), COALESCE(outcome, ''), cheated, COALESCE(split, ''), strands
 		FROM team_graph_state WHERE event_id = $1`, d.Event.ID)
 	if err != nil {
 		return err
@@ -665,14 +696,18 @@ func (h *Handlers) addGraphDetail(ctx context.Context, d *eventDetailDTO) error 
 	type where struct {
 		node, outcome string
 		cheated       bool
+		groups        []teamGroupDTO
 	}
 	at := map[int64]where{}
 	for rows.Next() {
 		var id int64
 		var w where
-		if err := rows.Scan(&id, &w.node, &w.outcome, &w.cheated); err != nil {
+		var split string
+		var strands []byte
+		if err := rows.Scan(&id, &w.node, &w.outcome, &w.cheated, &split, &strands); err != nil {
 			return err
 		}
+		w.groups = groupsOf(st.Graph, split, strands)
 		at[id] = w
 	}
 	if err := rows.Err(); err != nil {
@@ -681,7 +716,7 @@ func (h *Handlers) addGraphDetail(ctx context.Context, d *eventDetailDTO) error 
 	for i := range d.Teams {
 		t := &d.Teams[i]
 		if w, ok := at[t.ID]; ok {
-			t.Node, t.Outcome, t.Cheated = w.node, w.outcome, w.cheated
+			t.Node, t.Outcome, t.Cheated, t.Groups = w.node, w.outcome, w.cheated, w.groups
 		}
 		r, ok := byTeam[t.ID]
 		if !ok {
