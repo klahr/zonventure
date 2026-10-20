@@ -88,11 +88,11 @@ body {
   color: var(--muted); font-size: .95rem; margin-bottom: 1rem;
 }
 .receipt { margin: 1.5rem 0; padding: .6rem 1rem; border: 1px solid var(--border); border-radius: 12px; font-size: .9rem; }
+.receipt summary:not(.bad) { color: var(--muted); }
 .receipt summary { cursor: pointer; }
 .receipt[open] summary { margin-bottom: .4rem; }
 .receipt p { margin: .4rem 0; }
 .receipt code { display: block; font-family: ui-monospace, monospace; font-size: .75rem; word-break: break-all; margin: .2rem 0 .5rem; }
-.receipt .ok { color: #1b6b43; font-weight: 600; }
 .receipt .bad { color: #b3261e; font-weight: 600; }
 .receipt .fp { color: var(--muted); font-size: .8rem; margin-bottom: 0; }
 .outro {
@@ -376,14 +376,15 @@ function statBox(value, label) {
 
 // The team's receipt from the event's results record: the hash of its
 // finish, which no one can change the results under without it showing.
-// One line says whether it holds; the codes wait behind it for the few
-// who want to check.
+// While it holds it stays a quiet, closed line at the foot of the recap —
+// a team that never doubted its points shouldn't be told they're intact.
+// Only a mismatch speaks up, opened and in red.
 function renderReceipt(d) {
   if (!d.receipt) return;
   const r = d.receipt;
   const box = el('details', { class: 'receipt' + (r.matches ? '' : ' is-bad'), open: r.matches ? null : '' },
-    el('summary', { class: r.matches ? 'ok' : 'bad' },
-      r.matches ? t('✓ Your results are unchanged since you finished') : t('Your results were changed after you finished')),
+    el('summary', { class: r.matches ? '' : 'bad' },
+      r.matches ? t('Receipt for your results') : t('Your results were changed after you finished')),
     el('p', {}, t('Proof that no one has changed your points or place afterwards. Save the code to check it later.')),
     el('p', { class: 'fp' }, t('Your code')),
     el('code', {}, r.receipt));
