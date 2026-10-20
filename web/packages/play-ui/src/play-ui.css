@@ -1847,6 +1847,9 @@
   transition: none;
   cursor: grabbing;
 }
+.pv-order.is-dropping .pv-order__card {
+  transition: none;
+}
 .pv-order.is-dragging .pv-order__body {
   cursor: grabbing;
 }

@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { play } from "@zonventure/api";
 import { isHex, readableOn } from "./brand.ts";
 import type { Translate } from "./feedback.ts";
@@ -49,6 +49,18 @@ export function OrderBoard({
   const [drag, setDrag] = useState<{ from: number; dy: number; to: number; step: number } | null>(null);
   const list = useRef<HTMLOListElement>(null);
   const press = useRef<{ place: number; y: number; mids: number[]; step: number; moved: boolean; el: HTMLElement; pointer: number } | null>(null);
+  // True for the frame a drop lands in: the cards take their new places
+  // and lose their drag offsets at once, and a transition then would
+  // slide them from the old offset at the new place, a slot too far.
+  // Two frames, so the new places are painted before transitions return.
+  const [dropping, setDropping] = useState(false);
+  useEffect(() => {
+    if (!dropping) return;
+    let id = requestAnimationFrame(() => {
+      id = requestAnimationFrame(() => setDropping(false));
+    });
+    return () => cancelAnimationFrame(id);
+  }, [dropping]);
   // Set when a press turned into a drag, so the click that follows it
   // does not also count as a tap.
   const dragged = useRef(false);
@@ -65,19 +77,21 @@ export function OrderBoard({
     }
   };
 
-  // Every card's middle and the distance from one card to the next, as
-  // the drag begins: the cards making way move by that much.
-  const measure = () => {
+  // Every card's middle, and how far the cards making way for the card
+  // at place move as the drag begins: its own height and the gap, since
+  // cards of wrapped text are not all one height.
+  const measure = (place: number) => {
     const items = Array.from(list.current?.children ?? []) as HTMLElement[];
     const rects = items.map((el) => el.getBoundingClientRect());
     const mids = rects.map((r) => r.top + r.height / 2);
-    const step = rects.length > 1 ? rects[1]!.top - rects[0]!.top : (rects[0]?.height ?? 0);
+    const gap = rects.length > 1 ? rects[1]!.top - rects[0]!.bottom : 0;
+    const step = (rects[place]?.height ?? 0) + gap;
     return { mids, step };
   };
 
   const startPress = (e: React.PointerEvent, place: number) => {
     if (disabled || e.button !== 0) return;
-    press.current = { place, y: e.clientY, ...measure(), moved: false, el: e.currentTarget as HTMLElement, pointer: e.pointerId };
+    press.current = { place, y: e.clientY, ...measure(place), moved: false, el: e.currentTarget as HTMLElement, pointer: e.pointerId };
   };
   const pressMove = (e: React.PointerEvent) => {
     const p = press.current;
@@ -101,7 +115,10 @@ export function OrderBoard({
   const pressEnd = () => {
     const p = press.current;
     press.current = null;
-    if (p?.moved && drag) move(drag.from, drag.to);
+    if (p?.moved && drag) {
+      setDropping(true);
+      move(drag.from, drag.to);
+    }
     dragged.current = !!p?.moved;
     setDrag(null);
   };
@@ -112,7 +129,7 @@ export function OrderBoard({
 
   return (
     <div className="pv-order-wrap">
-      <ol ref={list} className={"pv-order" + (drag ? " is-dragging" : "")} aria-label={t("Cards to put in order")}>
+      <ol ref={list} className={"pv-order" + (drag ? " is-dragging" : "") + (dropping ? " is-dropping" : "")} aria-label={t("Cards to put in order")}>
         {stack.map((card, place) => {
           const c = cards[card]!;
           const name = c.text || c.image?.alt || t("Card {{n}}", { n: place + 1 });

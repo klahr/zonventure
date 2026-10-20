@@ -17,6 +17,10 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   choice form, item slots) says "Not there yet" ("Inte framme än") on
   its button while the team is away from the puzzle's place, as a
   typed answer does, instead of only greying out.
+- Player: put-in-order cards no longer jump a place too far and slide
+  back when dropped, and the cards making way for a dragged card move
+  by its own height, so cards of different heights (a line that wraps)
+  no longer overlap or leave gaps while one is dragged.
 
 ## [0.33.17] - 2026-10-20
 
