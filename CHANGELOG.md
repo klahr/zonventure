@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.18] - 2026-10-20
+
 ### Added
 
 - Translations: the texts players saw in the main language whatever
