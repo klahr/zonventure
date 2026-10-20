@@ -78,7 +78,7 @@ The MCP surface has no streaming. To watch a live event, poll:
 | Event passes     | list_purchases · get_purchase (passes bought before teams were paid for as they start) |
 | Invitations      | send_event_invitations · send_team_invitation · get_event_invite_ics |
 | Printed letters  | set_print_delivery · list_orders · mark_order_posted · update_event_version |
-| Results          | export_event_results_csv · describe_event_lifecycle (this tool) |
+| Results          | export_event_results_csv · export_event_results_json · verify_event_results · describe_event_lifecycle (this tool) |
 | Listing review   | submit_listing_for_review · list_listing_reviews (admin) · get_listing_review (admin) · approve_listing (admin) · reject_listing (admin) |
 
 ## Security boundaries

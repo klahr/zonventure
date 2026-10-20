@@ -2,6 +2,8 @@ package play
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"strings"
 	"testing"
 
@@ -69,6 +71,16 @@ func TestResultsRecordPlay(t *testing.T) {
 	if err != nil || !receipt.Matches || receipt.Fingerprint != rep.Fingerprint {
 		t.Fatalf("receipt = %+v (%v)", receipt, err)
 	}
+	// A kept code looks up the team's finish; one no record holds doesn't.
+	if held, err := results.Check(ctx, f.db, receipt.Receipt); err != nil || !held.Matches || held.EventID != f.eventID {
+		t.Fatalf("check = %+v (%v)", held, err)
+	}
+	if _, err := results.Check(ctx, f.db, strings.Repeat("0", 64)); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("check of an unknown code: %v", err)
+	}
+	if fp := results.Sealed(ctx, f.db, f.eventID); fp != rep.Fingerprint {
+		t.Fatalf("sealed = %q, want %q", fp, rep.Fingerprint)
+	}
 
 	// The record refuses edits and deletes.
 	if _, err := f.db.Exec(`UPDATE event_result_log SET payload = '{}' WHERE event_id = $1`, f.eventID); err == nil {
@@ -84,6 +96,14 @@ func TestResultsRecordPlay(t *testing.T) {
 	}
 	if rep, _ := results.Verify(ctx, f.db, f.eventID); rep.OK || !hasProblem(rep, "result now differs") {
 		t.Fatalf("after a score edit: %+v", rep.Problems)
+	}
+	// The finished team's place hangs on the other team's score: its
+	// receipt no longer holds either.
+	if receipt, err := results.ReceiptOf(ctx, f.db, done); err != nil || receipt.Matches {
+		t.Fatalf("receipt after a score edit = %+v (%v)", receipt, err)
+	}
+	if held, err := results.Check(ctx, f.db, receipt.Receipt); err != nil || held.Matches {
+		t.Fatalf("check after a score edit = %+v (%v)", held, err)
 	}
 
 	// Someone with the database rewrites the wrong answer: the record,

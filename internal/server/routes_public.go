@@ -59,6 +59,8 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		r.Get("/recap/{token}", servePublicPage("web/recap.html", http.StatusOK))
 		r.Get("/api/public/recap/{token}", publicH.Recap)
 		r.Get("/api/public/recap/{token}/photos/{photoID}", publicH.RecapPhoto)
+		// A results receipt a team kept, checked against the record.
+		r.Get("/api/public/results/{code}", publicH.CheckReceipt)
 		// Team-token-authed avatar upload/delete so the team can change
 		// their own profile picture from the share page. The token IS the
 		// auth; no staff session required.

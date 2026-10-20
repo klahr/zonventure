@@ -24,6 +24,7 @@ import (
 	"github.com/klahr/zonventure/internal/httpx"
 	mailerpkg "github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/play"
+	"github.com/klahr/zonventure/internal/results"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/webhooks"
 	"github.com/klahr/zonventure/internal/ws"
@@ -342,6 +343,8 @@ func (h *Handlers) publishTeamCompleted(ctx context.Context, tc teamContext) {
 		"team_name":       tc.TeamName,
 		"adventure_slug":  tc.AdventureSlug,
 		"adventure_title": h.adventureTitle(tc.AdventureSlug),
+		// The event's results fingerprint, for the receiver to keep.
+		"results_fingerprint": results.Sealed(ctx, h.DB, tc.EventID),
 	})
 }
 

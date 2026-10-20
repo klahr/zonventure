@@ -519,6 +519,8 @@ func (h *Handlers) publishEventCompleted(ctx context.Context, eventID int64) {
 		"event_id":        eventID,
 		"adventure_slug":  advSlug,
 		"adventure_title": h.adventureTitle(advSlug),
+		// The event's results fingerprint, for the receiver to keep.
+		"results_fingerprint": results.Sealed(ctx, h.DB, eventID),
 	})
 }
 

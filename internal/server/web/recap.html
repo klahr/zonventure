@@ -95,6 +95,13 @@ body {
 .receipt code { display: block; font-family: ui-monospace, monospace; font-size: .75rem; word-break: break-all; margin: .2rem 0 .5rem; }
 .receipt .bad { color: #b3261e; font-weight: 600; }
 .receipt .fp { color: var(--muted); font-size: .8rem; margin-bottom: 0; }
+.receipt .btn.small { padding: .15rem .7rem; font-size: .75rem; margin-left: .3rem; }
+.receipt .check { margin-top: .8rem; padding-top: .6rem; border-top: 1px solid var(--border); }
+.receipt .check-row { display: flex; gap: .4rem; margin-top: .3rem; }
+.receipt .check-row input { flex: 1; min-width: 0; font: .8rem ui-monospace, monospace; padding: .4rem .6rem;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.receipt .check-out.ok { color: #1b6b43; }
+.receipt .check-out.bad, .receipt p.bad { color: #b3261e; }
 .outro {
   background: var(--surface);
   border: 1px solid var(--border-soft);
@@ -379,19 +386,86 @@ function statBox(value, label) {
 // While it holds it stays a quiet, closed line at the foot of the recap —
 // a team that never doubted its points shouldn't be told they're intact.
 // Only a mismatch speaks up, opened and in red.
+//
+// The server's own word that it holds can't catch a record rewritten
+// whole, hashes and all: it would hand out a new code and call it good.
+// So this device keeps the first code it was shown, and a different one
+// later is a mismatch; and a code saved anywhere else can be checked
+// here against the record, which no longer holds a rewritten one.
 function renderReceipt(d) {
   if (!d.receipt) return;
   const r = d.receipt;
-  const box = el('details', { class: 'receipt' + (r.matches ? '' : ' is-bad'), open: r.matches ? null : '' },
-    el('summary', { class: r.matches ? '' : 'bad' },
-      r.matches ? t('Receipt for your results') : t('Your results were changed after you finished')),
-    el('p', {}, t('Proof that no one has changed your points or place afterwards. Save the code to check it later.')),
-    el('p', { class: 'fp' }, t('Your code')),
+  const key = 'zv-receipt:' + recapToken();
+  let seen = null;
+  try { seen = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { /* no storage */ }
+  if (!seen?.code) {
+    seen = null;
+    try { localStorage.setItem(key, JSON.stringify({ code: r.receipt, at: new Date().toISOString() })); } catch (e) { /* no storage */ }
+  }
+  const moved = !!seen && seen.code !== r.receipt;
+  const ok = r.matches && !moved;
+  const box = el('details', { class: 'receipt' + (ok ? '' : ' is-bad'), open: ok ? null : '' },
+    el('summary', { class: ok ? '' : 'bad' },
+      ok ? t('Receipt for your results') : t('Your results were changed after you finished')),
+    el('p', {}, t('Proof that no one has changed your points or place afterwards. Save the code to check it later.')));
+  if (moved) {
+    box.append(el('p', { class: 'bad' },
+      t('This device was shown a different code on {{date}}:', { date: new Date(seen.at).toLocaleDateString() })),
+      el('code', {}, seen.code));
+  }
+  const copy = el('button', { class: 'btn small', type: 'button' }, t('Copy'));
+  copy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(r.receipt); copy.textContent = t('Copied!'); } catch (e) { /* select it by hand */ }
+  });
+  box.append(el('p', { class: 'fp' }, t('Your code'), ' ', navigator.clipboard?.writeText ? copy : null),
     el('code', {}, r.receipt));
   if (d.results_fingerprint) {
     box.append(el('p', { class: 'fp' }, t("The event's code")), el('code', {}, d.results_fingerprint));
   }
+  box.append(checkForm());
   root.append(box);
+}
+
+// checkForm looks up a code saved earlier: the record still holds it,
+// holds it no longer as it was, or doesn't hold it at all.
+function checkForm() {
+  const input = el('input', { type: 'text', spellcheck: 'false', autocomplete: 'off',
+    placeholder: t('Paste a saved code'), 'aria-label': t('Check a saved code') });
+  const out = el('p', { class: 'check-out', 'aria-live': 'polite' });
+  const form = el('form', { class: 'check' },
+    el('p', { class: 'fp' }, t('Check a saved code')),
+    el('div', { class: 'check-row' }, input, el('button', { class: 'btn small', type: 'submit' }, t('Check'))),
+    out);
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const code = input.value.trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(code)) {
+      out.className = 'check-out bad';
+      out.textContent = t('A code is 64 letters and digits, 0–9 and a–f.');
+      return;
+    }
+    out.className = 'check-out';
+    out.textContent = t('Checking…');
+    try {
+      const res = await fetch('/api/public/results/' + code, { credentials: 'omit' });
+      if (res.status === 404) {
+        out.className = 'check-out bad';
+        out.textContent = t('No results record holds this code. Either it was mistyped, the event was deleted, or the results were rewritten after it was given out.');
+        return;
+      }
+      if (!res.ok) throw new Error(res.status);
+      const h = await res.json();
+      const who = [h.team_name, h.adventure_title].filter(Boolean).join(' · ');
+      out.className = 'check-out ' + (h.matches ? 'ok' : 'bad');
+      out.textContent = h.matches
+        ? t('✓ This code holds: the results of {{who}} are as they were when the team finished.', { who })
+        : t('The record holds this code, but the results of {{who}} were changed after the team finished.', { who });
+    } catch (e) {
+      out.className = 'check-out bad';
+      out.textContent = t('Couldn\'t check the code right now. Try again in a minute.');
+    }
+  });
+  return form;
 }
 
 function render(d) {

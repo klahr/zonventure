@@ -1047,10 +1047,11 @@ func (h *Handlers) EndEvent(w http.ResponseWriter, r *http.Request) {
 	_ = h.DB.QueryRowContext(r.Context(),
 		`SELECT adventure_slug FROM events WHERE id = $1`, eventID).Scan(&advSlug)
 	webhooks.TryPublish(r.Context(), h.DB, orgID, webhooks.KindEventCompleted, map[string]any{
-		"event_id":        eventID,
-		"adventure_slug":  advSlug,
-		"adventure_title": h.adventureTitle(advSlug),
-		"manual":          true,
+		"event_id":            eventID,
+		"adventure_slug":      advSlug,
+		"adventure_title":     h.adventureTitle(advSlug),
+		"manual":              true,
+		"results_fingerprint": results.Sealed(r.Context(), h.DB, eventID),
 	})
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)

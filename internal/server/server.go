@@ -422,6 +422,9 @@ func New(cfg Config) http.Handler {
 	// The listing review log's head, mailed to platform admins daily
 	// when it moved: a copy outside the database.
 	periodic.Start(bgCtx, time.Hour, adminH.AnchorListingLog)
+	// Each event's results fingerprint, mailed to its organisation's
+	// admins once it is over: likewise.
+	periodic.Start(bgCtx, time.Hour, adminH.AnchorEventResults)
 	// The day-before reminder of a scheduled account deletion.
 	periodic.Start(bgCtx, time.Hour, adminH.SweepDeletionReminders)
 	// Organisations' own domains: DNS checks, going live, endings.

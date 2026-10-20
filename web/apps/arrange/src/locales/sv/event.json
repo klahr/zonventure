@@ -243,5 +243,9 @@
   "Couldn't copy: select the code and copy it by hand.": "Kunde inte kopiera: markera koden och kopiera den själv.",
   "Plain link": "Vanlig länk",
   "For newsletters, mail and sites that don't allow embedded frames.": "För nyhetsbrev, e-post och sajter som inte tillåter inbäddade ramar.",
-  "Copy link": "Kopiera länken"
+  "Copy link": "Kopiera länken",
+  "Print standings (PDF)": "Skriv ut resultatlista (PDF)",
+  "A results sheet in large type, to print and put up for the teams": "En resultatlista i stor stil att skriva ut och sätta upp för lagen",
+  "Download JSON": "Ladda ner JSON",
+  "Download the results as JSON, with each team's receipt and the event's fingerprint": "Ladda ner resultaten som JSON, med varje lags kvitto och eventets fingeravtryck"
 }

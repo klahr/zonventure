@@ -982,6 +982,25 @@ func ListingLogHead(lang, head string, entries int64, problems int, link string)
 	return subject, c
 }
 
+// EventResultsSealed gives an organisation's admins an event's results
+// fingerprint once the event is over, to keep: should the record be
+// rewritten, its fingerprint no longer matches the one they were sent.
+func EventResultsSealed(lang, event, ended, fingerprint string, entries int64, problems int, link string) (string, Content) {
+	subject := T(lang, "Results of “%s”: the fingerprint to keep", event)
+	status := T(lang, "“%s” ended %s. Its results record is sealed and adds up: %d entries, every answer, hint and score change.", mdEscape(event), ended, entries)
+	if problems > 0 {
+		subject = T(lang, "Results of “%s”: %d problems", event, problems)
+		status = T(lang, "“%s” ended %s. Checking its results record found %d problems: results were changed outside the game. Open the event and check them.", mdEscape(event), ended, problems)
+	}
+	c := Content{Lang: lang, Heading: subject,
+		Body: status + "\n\n" + T(lang, "The event's fingerprint is:") + "\n\n`" + fingerprint + "`\n\n" +
+			T(lang, "Keep this email. Check results on the event page recomputes the record; if its fingerprint no longer matches this one, the results were changed after the event.")}
+	if link != "" {
+		c.Buttons = []Button{{T(lang, "Check results"), link}}
+	}
+	return subject, c
+}
+
 // ListingApproved tells an organisation's admins their listing is public.
 func ListingApproved(lang, what, link string) (string, Content) {
 	subject := T(lang, "“%s” is approved", what)

@@ -358,6 +358,10 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Get("/events/{eventID}/activity", adminH.ListActivity)
 			r.Get("/events/{eventID}/tracks", adminH.ListTracks)
 			r.Get("/events/{eventID}/results.csv", adminH.ExportEventResults)
+			r.Get("/events/{eventID}/results.json", adminH.ExportEventResultsJSON)
+			// Standings poster — the ranking alone, large, to print and
+			// put up where the event ends.
+			r.Get("/events/{eventID}/standings.pdf", adminH.ExportEventStandingsPDF)
 			r.Get("/events/{eventID}/statistics", adminH.EventStatistics)
 			// Branded recap PDF — same data, different shape: a polished
 			// post-event artifact arrangers can hand to their stakeholders.

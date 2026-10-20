@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CalendarClock, Download, Flag, Mail, MonitorPlay, Moon, Play, Terminal, Trash2 } from "lucide-react";
+import { CalendarClock, Download, Flag, Mail, MonitorPlay, Moon, Play, Printer, Terminal, Trash2 } from "lucide-react";
 import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
@@ -155,24 +155,38 @@ export function LifecycleActions({ event, teams, reload }: { event: EventInfo; t
   }
   const cancellable = event.state === "scheduled" || live;
   if (teams.length > 0 && !quest) {
-    const pdf = {
+    const poster = {
+      label: t.t("Print standings (PDF)"),
+      icon: <Printer size={ICON.sm} aria-hidden />,
+      href: `/api/admin/events/${event.id}/standings.pdf`,
+      download: `event-${event.id}-standings.pdf`,
+      title: t.t("A results sheet in large type, to print and put up for the teams"),
+    };
+    // Once it is over, or every team is done, the standings to put up are what the arranger came for.
+    if (event.state === "completed" || event.state === "cancelled" || teams.every((tm) => tm.completed_at)) {
+      buttons.push(
+        <a key="poster" className="btn primary" href={poster.href} download={poster.download} title={poster.title}>
+          <Printer size={ICON.md} aria-hidden />
+          {poster.label}
+        </a>,
+      );
+    } else {
+      more.push(poster);
+    }
+    more.push({
       label: t.t("Download report (PDF)"),
       icon: <Download size={ICON.sm} aria-hidden />,
       href: `/api/admin/events/${event.id}/recap.pdf`,
       download: `event-${event.id}-recap.pdf`,
       title: t.t("Download a branded PDF report you can share with stakeholders"),
-    };
-    // Once it is over, or every team is done, the report is what the arranger came for.
-    if (event.state === "completed" || event.state === "cancelled" || teams.every((tm) => tm.completed_at)) {
-      buttons.push(
-        <a key="pdf" className="btn primary" href={pdf.href} download={pdf.download} title={pdf.title}>
-          <Download size={ICON.md} aria-hidden />
-          {pdf.label}
-        </a>,
-      );
-    } else {
-      more.push(pdf);
-    }
+    });
+    more.push({
+      label: t.t("Download JSON"),
+      icon: <Download size={ICON.sm} aria-hidden />,
+      href: `/api/admin/events/${event.id}/results.json`,
+      download: `event-${event.id}-results.json`,
+      title: t.t("Download the results as JSON, with each team's receipt and the event's fingerprint"),
+    });
     more.push({
       label: t.t("Download CSV"),
       icon: <Download size={ICON.sm} aria-hidden />,

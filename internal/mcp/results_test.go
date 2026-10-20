@@ -23,6 +23,23 @@ func TestExportResultsCSV_NilAdminGuard(t *testing.T) {
 	}
 }
 
+// The JSON export and the record check take the same guards.
+func TestResultsTools_Guards(t *testing.T) {
+	t.Parallel()
+	ctx := withScopes(context.Background(), []string{"read"})
+	for name, fn := range map[string]func(context.Context, *Server, json.RawMessage) (ToolCallResult, error){
+		"export_event_results_json": exportEventResultsJSON,
+		"verify_event_results":      verifyEventResults,
+	} {
+		for args, want := range map[string]string{`{}`: "event_id required", `{"event_id":1}`: "misconfigured"} {
+			res, err := fn(ctx, &Server{}, json.RawMessage(args))
+			if err != nil || !res.IsError || !strings.Contains(textOf(res), want) {
+				t.Errorf("%s(%s) = %q (%v), want an error with %q", name, args, textOf(res), err, want)
+			}
+		}
+	}
+}
+
 func TestExportResultsCSV_ArgValidation(t *testing.T) {
 	t.Parallel()
 	s := &Server{Admin: nil}
@@ -77,8 +94,10 @@ func TestSlice3Tools_AreRegisteredWithCorrectScope(t *testing.T) {
 	s.registerLifecycleTool()
 
 	want := map[string]string{
-		"export_event_results_csv": scopeRead,
-		"describe_event_lifecycle": scopeRead,
+		"export_event_results_csv":  scopeRead,
+		"export_event_results_json": scopeRead,
+		"verify_event_results":      scopeRead,
+		"describe_event_lifecycle":  scopeRead,
 	}
 	for name, w := range want {
 		got, ok := s.tools.scopes[name]

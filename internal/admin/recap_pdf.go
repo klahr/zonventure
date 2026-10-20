@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"errors"
 
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/storage"
@@ -96,6 +97,46 @@ type recapPDFData struct {
 	// Stats are the event page's statistics, for their own page; nil
 	// without a graph to read them from.
 	Stats *EventStats
+	// State is the event's: scheduled, running, paused, completed or
+	// cancelled.
+	State string
+	// Lang is the organisation's language, the words' and the dates';
+	// "" is English. Loc is its time zone; nil leaves times as they are.
+	Lang string
+	Loc  *time.Location
+}
+
+// t is s in the report's language (emailtpl's catalog), args put in.
+func (d recapPDFData) t(s string, args ...any) string { return emailtpl.T(d.Lang, s, args...) }
+
+// in is t in the report's time zone.
+func (d recapPDFData) in(t time.Time) time.Time {
+	if d.Loc == nil {
+		return t
+	}
+	return t.In(d.Loc)
+}
+
+// num is a number as the report's language writes it: a decimal comma
+// in Swedish.
+func (d recapPDFData) num(f float64) string {
+	s := strconv.FormatFloat(f, 'f', -1, 64)
+	if d.Lang == "sv" {
+		s = strings.Replace(s, ".", ",", 1)
+	}
+	return s
+}
+
+// hms is formatHMS in the report's language.
+func (d recapPDFData) hms(dur time.Duration) string {
+	s := formatHMS(dur)
+	if d.Lang == "sv" {
+		s = strings.NewReplacer("h ", " h ", "m ", " min ", "s", " s").Replace(s)
+		if strings.HasSuffix(s, "m") {
+			s = strings.TrimSuffix(s, "m") + " min"
+		}
+	}
+	return s
 }
 
 type recapPDFTeam struct {
@@ -110,7 +151,30 @@ type recapPDFTeam struct {
 }
 
 func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64) (recapPDFData, error) {
+	d, err := h.collectRecapBase(ctx, eventID, orgID)
+	if err != nil {
+		return d, err
+	}
+	g, err := h.engine().EventGraph(ctx, h.DB, eventID)
+	if err != nil && !errors.Is(err, play.ErrNoGraph) {
+		return d, fmt.Errorf("graph: %w", err)
+	}
+	if g != nil {
+		st := EventStats{Puzzles: []PuzzleStats{}}
+		if err := h.fillEventStats(ctx, eventID, g, &st); err != nil {
+			return d, fmt.Errorf("statistics: %w", err)
+		}
+		d.Stats = &st
+	}
+	return d, nil
+}
+
+// collectRecapBase is what the report and the standings poster share:
+// the organisation, the event, its adventure and its teams, ranked.
+func (h *Handlers) collectRecapBase(ctx context.Context, eventID, orgID int64) (recapPDFData, error) {
 	var d recapPDFData
+	l := h.orgLook(ctx, orgID)
+	d.Lang, d.Loc = l.Lang, emailtpl.Location(l.TimeZone)
 	d.EventID = eventID
 	d.GeneratedAt = time.Now().UTC()
 
@@ -131,9 +195,9 @@ func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64
 		completedRaw sql.NullString
 	)
 	if err := h.DB.QueryRowContext(ctx, `
-		SELECT adventure_slug, name, started_at, completed_at
+		SELECT adventure_slug, name, started_at, completed_at, state
 		FROM events WHERE id = $1
-	`, eventID).Scan(&slug, &d.EventName, &startedRaw, &completedRaw); err != nil {
+	`, eventID).Scan(&slug, &d.EventName, &startedRaw, &completedRaw, &d.State); err != nil {
 		return d, fmt.Errorf("event: %w", err)
 	}
 	d.AdventureSlug = slug
@@ -155,17 +219,6 @@ func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64
 	h.addRecapLogo(ctx, &d, orgID)
 	if err := h.collectGraphRecap(ctx, &d, eventID); err != nil {
 		return d, err
-	}
-	g, err := h.engine().EventGraph(ctx, h.DB, eventID)
-	if err != nil && !errors.Is(err, play.ErrNoGraph) {
-		return d, fmt.Errorf("graph: %w", err)
-	}
-	if g != nil {
-		st := EventStats{Puzzles: []PuzzleStats{}}
-		if err := h.fillEventStats(ctx, eventID, g, &st); err != nil {
-			return d, fmt.Errorf("statistics: %w", err)
-		}
-		d.Stats = &st
 	}
 	return d, nil
 }
@@ -292,8 +345,7 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 		pdf.SetY(-12)
 		pdf.SetFont("Helvetica", "", 8)
 		pdf.SetTextColor(150, 150, 150)
-		footer := fmt.Sprintf("Generated %s  ·  powered by Zonventure",
-			d.GeneratedAt.Format("2006-01-02 15:04 UTC"))
+		footer := d.t("Generated %s  ·  powered by Zonventure", d.in(d.GeneratedAt).Format("2006-01-02 15:04 MST"))
 		pdf.CellFormat(0, 5, text(footer), "", 0, "C", false, 0, "")
 	})
 	pdf.AddPage()
@@ -396,20 +448,20 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 		pdf.SetTextColor(120, 120, 120)
 		pdf.CellFormat(statW, 6, text(label), "", 0, "C", false, 0, "")
 	}
-	stat(0, "Teams", strconv.Itoa(teamsCount))
-	stat(1, "Completed", fmt.Sprintf("%d / %d", completedCount, teamsCount))
-	stat(2, "Puzzles", strconv.Itoa(d.PageCount))
+	stat(0, d.t("Teams"), strconv.Itoa(teamsCount))
+	stat(1, d.t("Completed"), fmt.Sprintf("%d / %d", completedCount, teamsCount))
+	stat(2, d.t("Puzzles"), strconv.Itoa(d.PageCount))
 	if longest > 0 {
-		stat(3, "Longest run", formatHMS(longest))
+		stat(3, d.t("Longest run"), d.hms(longest))
 	} else {
-		stat(3, "Longest run", "—")
+		stat(3, d.t("Longest run"), "—")
 	}
 	pdf.SetY(statY + statBoxH + 8)
 
 	// Team rankings.
 	pdf.SetFont("Helvetica", "B", 14)
 	pdf.SetTextColor(40, 40, 40)
-	pdf.CellFormat(usableW, 8, "Team standings", "", 1, "L", false, 0, "")
+	pdf.CellFormat(usableW, 8, text(d.t("Team standings")), "", 1, "L", false, 0, "")
 	pdf.Ln(1)
 
 	// Column widths sum to 180 (= usableW). Tweak together if you
@@ -420,19 +472,19 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 		align string
 	}{
 		{12, "#", "L"},
-		{60, "Team", "L"},
-		{58, "Members", "L"},
-		{20, "Solved", "L"},
-		{30, "Time", "L"},
+		{60, d.t("Team"), "L"},
+		{58, d.t("Members"), "L"},
+		{20, d.t("Solved"), "L"},
+		{30, d.t("Time"), "L"},
 	}
 	if d.Graph {
-		cols[3].hdr = "Points"
+		cols[3].hdr = d.t("Points")
 	}
 	pdf.SetFillColor(245, 245, 245)
 	pdf.SetTextColor(80, 80, 80)
 	pdf.SetFont("Helvetica", "B", 9)
 	for _, c := range cols {
-		pdf.CellFormat(c.w, 7, c.hdr, "B", 0, c.align, true, 0, "")
+		pdf.CellFormat(c.w, 7, text(c.hdr), "B", 0, c.align, true, 0, "")
 	}
 	pdf.Ln(7)
 	pdf.SetFont("Helvetica", "", 9)
@@ -440,7 +492,7 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 	if len(d.Teams) == 0 {
 		pdf.SetTextColor(160, 160, 160)
 		pdf.SetFont("Helvetica", "I", 9)
-		pdf.CellFormat(usableW, 8, "No teams played in this event.", "", 1, "L", false, 0, "")
+		pdf.CellFormat(usableW, 8, text(d.t("No teams played in this event.")), "", 1, "L", false, 0, "")
 	}
 	// Print a small "Withdrew" header the first time a withdrawn team
 	// appears so the reader sees the group break clearly. Same data
@@ -452,7 +504,7 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 			pdf.Ln(2)
 			pdf.SetFont("Helvetica", "I", 9)
 			pdf.SetTextColor(140, 140, 140)
-			pdf.CellFormat(usableW, 6, text("Withdrew"), "", 1, "L", false, 0, "")
+			pdf.CellFormat(usableW, 6, text(d.t("Withdrew")), "", 1, "L", false, 0, "")
 			pdf.SetFont("Helvetica", "", 9)
 			pdf.SetTextColor(40, 40, 40)
 		}
@@ -464,17 +516,17 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 		}
 		elapsed := "-"
 		if t.Elapsed > 0 {
-			elapsed = formatHMS(t.Elapsed)
+			elapsed = d.hms(t.Elapsed)
 		}
 		// Withdrawn row's "Time" column shows "withdrew" rather than
 		// the dash, so the column communicates intent rather than
 		// "we don't know."
 		if t.WithdrawnAt != "" {
-			elapsed = "withdrew"
+			elapsed = d.t("withdrew")
 		}
 		progress := fmt.Sprintf("%d / %d", t.Solved, d.PageCount)
 		if d.Graph {
-			progress = strconv.FormatFloat(t.Points, 'f', -1, 64)
+			progress = d.num(t.Points)
 		}
 		rank := strconv.Itoa(t.Rank)
 		if t.Rank == 0 {
@@ -502,14 +554,14 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 	}
 
 	if d.Stats != nil && d.Stats.Teams > 0 {
-		writeRecapStats(pdf, text, *d.Stats, accentR, accentG, accentB)
+		writeRecapStats(pdf, text, d, *d.Stats, accentR, accentG, accentB)
 	}
 	return pdf.Output(w)
 }
 
 // writeRecapStats adds the statistics page: the event page's numbers,
 // across every team and never naming one.
-func writeRecapStats(pdf *fpdf.Fpdf, text func(string) string, st EventStats, accentR, accentG, accentB int) {
+func writeRecapStats(pdf *fpdf.Fpdf, text func(string) string, d recapPDFData, st EventStats, accentR, accentG, accentB int) {
 	const (
 		marginX  = 15.0
 		usableW  = 180.0
@@ -526,26 +578,26 @@ func writeRecapStats(pdf *fpdf.Fpdf, text func(string) string, st EventStats, ac
 		if s == nil {
 			return "—"
 		}
-		return formatHMS(time.Duration(*s) * time.Second)
+		return d.hms(time.Duration(*s) * time.Second)
 	}
-	num := func(f *float64) string { return strconv.FormatFloat(*f, 'f', -1, 64) }
+	num := func(f *float64) string { return d.num(*f) }
 
 	pdf.AddPage()
 	pdf.SetFont("Helvetica", "B", 18)
 	pdf.SetTextColor(40, 40, 40)
-	pdf.CellFormat(usableW, 9, "Statistics", "", 1, "L", false, 0, "")
+	pdf.CellFormat(usableW, 9, text(d.t("Statistics")), "", 1, "L", false, 0, "")
 	pdf.SetFont("Helvetica", "", 10)
 	pdf.SetTextColor(120, 120, 120)
-	pdf.CellFormat(usableW, 6, text("Anonymous — across every team that played, without names."), "", 1, "L", false, 0, "")
+	pdf.CellFormat(usableW, 6, text(d.t("Anonymous — across every team that played, without names.")), "", 1, "L", false, 0, "")
 	pdf.Ln(4)
 
 	statW := (usableW - 3*statGap) / 4
 	statY := pdf.GetY()
 	for i, s := range [][2]string{
-		{strconv.Itoa(st.Guesses), "guesses"},
-		{pct(st.FirstTry, st.Solved), "solved on the first try"},
-		{strconv.Itoa(st.Hints), "hints used"},
-		{dur(st.MedianSeconds), "median finish time"},
+		{strconv.Itoa(st.Guesses), d.t("guesses")},
+		{pct(st.FirstTry, st.Solved), d.t("solved on the first try")},
+		{strconv.Itoa(st.Hints), d.t("hints used")},
+		{dur(st.MedianSeconds), d.t("median finish time")},
 	} {
 		x := marginX + float64(i)*(statW+statGap)
 		pdf.SetFillColor(248, 248, 248)
@@ -578,25 +630,25 @@ func writeRecapStats(pdf *fpdf.Fpdf, text func(string) string, st EventStats, ac
 			quickest = p
 		}
 	}
-	facts := []string{fmt.Sprintf("%d of %d teams finished", st.Finished, st.Teams)}
+	facts := []string{d.t("%d of %d teams finished", st.Finished, st.Teams)}
 	if st.Failed > 0 {
-		facts[0] += fmt.Sprintf(" · %d failed", st.Failed)
+		facts[0] += " · " + d.t("%d failed", st.Failed)
 	}
 	if st.FastestSeconds != nil {
-		facts = append(facts, fmt.Sprintf("Fastest %s, slowest %s", dur(st.FastestSeconds), dur(st.SlowestSeconds)))
+		facts = append(facts, d.t("Fastest %s, slowest %s", dur(st.FastestSeconds), dur(st.SlowestSeconds)))
 	}
 	if st.TopScore != nil {
-		facts = append(facts, fmt.Sprintf("Top score %s, median %s", num(st.TopScore), num(st.MedianScore)))
+		facts = append(facts, d.t("Top score %s, median %s", num(st.TopScore), num(st.MedianScore)))
 	}
 	if trickiest != nil {
-		guesses := "wrong guesses"
+		guesses := d.t("wrong guesses")
 		if trickiest.Wrong == 1 {
-			guesses = "wrong guess"
+			guesses = d.t("wrong guess")
 		}
-		facts = append(facts, fmt.Sprintf("Trickiest: %s — %d %s", trickiest.Title, trickiest.Wrong, guesses))
+		facts = append(facts, d.t("Trickiest: %s — %d %s", trickiest.Title, trickiest.Wrong, guesses))
 	}
 	if quickest != nil {
-		facts = append(facts, fmt.Sprintf("Quickest: %s — solved in %s", quickest.Title, dur(quickest.MedianSeconds)))
+		facts = append(facts, d.t("Quickest: %s — solved in %s", quickest.Title, dur(quickest.MedianSeconds)))
 	}
 	if st.AvgDistanceM != nil {
 		facts = append(facts, fmt.Sprintf("%.1f km walked per team", *st.AvgDistanceM/1000))
@@ -613,7 +665,7 @@ func writeRecapStats(pdf *fpdf.Fpdf, text func(string) string, st EventStats, ac
 
 	pdf.SetFont("Helvetica", "B", 14)
 	pdf.SetTextColor(40, 40, 40)
-	pdf.CellFormat(usableW, 8, "Puzzles", "", 1, "L", false, 0, "")
+	pdf.CellFormat(usableW, 8, text(d.t("Puzzles")), "", 1, "L", false, 0, "")
 	pdf.Ln(1)
 	// Column widths sum to 180 (= usableW).
 	cols := []struct {
@@ -621,19 +673,19 @@ func writeRecapStats(pdf *fpdf.Fpdf, text func(string) string, st EventStats, ac
 		hdr   string
 		align string
 	}{
-		{64, "Puzzle", "L"},
-		{20, "Reached", "R"},
-		{20, "Solved", "R"},
-		{20, "First try", "R"},
-		{18, "Wrong", "R"},
-		{16, "Hints", "R"},
-		{22, "Median time", "R"},
+		{64, d.t("Puzzle"), "L"},
+		{20, d.t("Reached"), "R"},
+		{20, d.t("Solved"), "R"},
+		{20, d.t("First try"), "R"},
+		{18, d.t("Wrong"), "R"},
+		{16, d.t("Hints"), "R"},
+		{22, d.t("Median time"), "R"},
 	}
 	pdf.SetFillColor(245, 245, 245)
 	pdf.SetTextColor(80, 80, 80)
 	pdf.SetFont("Helvetica", "B", 9)
 	for _, c := range cols {
-		pdf.CellFormat(c.w, 7, c.hdr, "B", 0, c.align, true, 0, "")
+		pdf.CellFormat(c.w, 7, text(c.hdr), "B", 0, c.align, true, 0, "")
 	}
 	pdf.Ln(7)
 	pdf.SetFont("Helvetica", "", 9)
@@ -676,24 +728,31 @@ func recapSubtitle(d recapPDFData) string {
 // recapDateLine formats the cover-page subtitle. Same date repeated
 // when start and end share a calendar day; "May 1 – May 3, 2026"
 // shape when the event spans multiple days; bare start when the
-// event hasn't recorded a finish yet.
+// event hasn't recorded a finish yet. Swedish writes "1 maj 2026".
 func recapDateLine(d recapPDFData) string {
 	if d.EventStartedAt.IsZero() {
 		return ""
 	}
-	start := d.EventStartedAt
-	if d.EventEndedAt.IsZero() {
-		return start.Format("January 2, 2006")
+	start := d.in(d.EventStartedAt)
+	day, dayYear := func(t time.Time) string { return t.Format("January 2") }, func(t time.Time) string { return t.Format("January 2, 2006") }
+	if d.Lang == "sv" {
+		day = func(t time.Time) string { return fmt.Sprintf("%d %s", t.Day(), svMonths[t.Month()-1]) }
+		dayYear = func(t time.Time) string { return fmt.Sprintf("%s %d", day(t), t.Year()) }
 	}
-	end := d.EventEndedAt
+	if d.EventEndedAt.IsZero() {
+		return dayYear(start)
+	}
+	end := d.in(d.EventEndedAt)
 	if start.Year() == end.Year() && start.Month() == end.Month() && start.Day() == end.Day() {
-		return start.Format("January 2, 2006")
+		return dayYear(start)
 	}
 	if start.Year() == end.Year() {
-		return start.Format("January 2") + " – " + end.Format("January 2, 2006")
+		return day(start) + " – " + dayYear(end)
 	}
-	return start.Format("January 2, 2006") + " – " + end.Format("January 2, 2006")
+	return dayYear(start) + " – " + dayYear(end)
 }
+
+var svMonths = []string{"januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"}
 
 // formatHMS renders a duration as "1h 23m" / "12m 04s" / "47s".
 // Compact + readable; never hits the four-digit-hours range any

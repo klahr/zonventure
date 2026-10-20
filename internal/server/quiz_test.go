@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"encoding/csv"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -182,5 +183,40 @@ func TestQuizWalkOverHTTP(t *testing.T) {
 	}
 	if at := recs[1][6]; !strings.HasSuffix(at, "+01:00") && !strings.HasSuffix(at, "+02:00") {
 		t.Errorf("finished_at = %q, want Stockholm time with its offset", at)
+	}
+
+	// The JSON export has the same rows, with each finished team's
+	// receipt; the fingerprint waits for the event to end.
+	var res struct {
+		Event struct {
+			ID                 int64  `json:"id"`
+			State              string `json:"state"`
+			ResultsFingerprint string `json:"results_fingerprint"`
+		} `json:"event"`
+		Teams []struct {
+			Rank          int      `json:"rank"`
+			Team          string   `json:"team"`
+			Points        *float64 `json:"points"`
+			TiebreakOffBy *float64 `json:"tiebreak_off_by"`
+			Status        string   `json:"status"`
+			Receipt       string   `json:"receipt"`
+		} `json:"teams"`
+	}
+	if s := arr.do("GET", "/api/admin/events/"+itoa(ev.ID)+"/results.json", nil, &res); s != 200 || len(res.Teams) != 3 || res.Event.ID != ev.ID {
+		t.Fatalf("json = %d %+v", s, res)
+	}
+	for i, w := range want[1:] {
+		got := res.Teams[i]
+		if strconv.Itoa(got.Rank) != w[0] || got.Team != w[1] || got.Points == nil || strconv.FormatFloat(*got.Points, 'f', -1, 64) != w[2] {
+			t.Errorf("json row %d = %+v, want %q", i, got, w)
+		}
+	}
+	if res.Teams[0].Status != "finished" || len(res.Teams[0].Receipt) != 64 || res.Teams[2].Receipt != "" || res.Event.ResultsFingerprint != "" {
+		t.Errorf("json statuses, receipts and fingerprint = %+v, %q", res.Teams, res.Event.ResultsFingerprint)
+	}
+	if resp, err := arr.c.Get(ts.URL + "/api/admin/events/" + itoa(ev.ID) + "/standings.pdf"); err != nil || resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "application/pdf" {
+		t.Errorf("standings.pdf = %v %v", resp, err)
+	} else {
+		resp.Body.Close()
 	}
 }

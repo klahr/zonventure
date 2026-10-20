@@ -24,6 +24,37 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   focused card moves with the arrow keys. Card texts are translatable,
   the race simulator and the MCP endpoint can play it, and it is in
   the step picker under puzzles.
+- Event page: "Print standings (PDF)", a results sheet to put up
+  where the event ends. It has the ranking alone in large type, the
+  top three in the adventure's colour, and once the event is over the
+  event's results code, so a photo of the sheet is every team's copy.
+  Printed while the event runs, it says so. It is the main button once
+  the event is over; the report, the CSV and a new JSON export are
+  under the menu.
+- Results export as JSON: the CSV's rows with the event around them,
+  each team's results receipt and the event's fingerprint.
+- MCP: `export_event_results_json`, the JSON export, and
+  `verify_event_results`, the event page's "Check results".
+- Recap: a saved results code can be checked against the record, and
+  the code has a copy button. The recap remembers the code it showed
+  on each device and warns when a later visit shows another.
+- Organisation admins get the event's results fingerprint by email
+  once an event is over, and the `event.completed` webhook carries it
+  as `results_fingerprint`. A copy outside the database shows even a
+  results record rewritten whole.
+
+### Changed
+
+- The results report (PDF) is in the organisation's language, with
+  its dates in the organisation's time zone. Swedish is added.
+- Recap: the results receipt is a quiet "Receipt for your results"
+  line while the results hold, instead of a green "unchanged".
+
+### Fixed
+
+- Recap: a team's receipt no longer says its results are unchanged
+  when a score was edited without going through the results record,
+  or when another team's result was changed. Both change its place.
 
 ## [0.33.15] - 2026-10-19
 

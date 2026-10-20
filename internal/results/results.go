@@ -367,18 +367,63 @@ func ReceiptOf(ctx context.Context, q interface {
 		return r, err
 	}
 	r.Entries, r.Fingerprint = seq, rep.Fingerprint
-	// The receipt holds when no entry up to it was touched and it is
-	// still the team's finish entry.
-	r.Matches = true
-	for _, p := range rep.Problems {
-		if p.Seq != 0 && p.Seq <= seq {
-			r.Matches = false
-		}
-	}
+	// The receipt holds when the whole record adds up and it is still
+	// the team's finish entry. Whole, not just up to the receipt: a
+	// team's place hangs on every other team's result too, and a score
+	// edited past the record shows only as a standing that differs.
+	r.Matches = rep.OK
 	for _, t := range rep.Teams {
 		if t.TeamID == teamID && t.Receipt != r.Receipt {
 			r.Matches = false
 		}
 	}
 	return r, nil
+}
+
+// Held is a receipt looked up by its code: whose finish it was, and
+// whether the record still bears it out.
+type Held struct {
+	TeamName   string `json:"team_name"`
+	EventID    int64  `json:"-"`
+	FinishedAt string `json:"finished_at"`
+	Matches    bool   `json:"matches"`
+}
+
+// Check looks up a receipt a team kept; sql.ErrNoRows when no record
+// holds it — mistyped, its event deleted, or the record rewritten
+// since. It holds when the team's receipt is still this one and still
+// matches.
+func Check(ctx context.Context, q interface {
+	Querier
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}, code string) (Held, error) {
+	var (
+		h      Held
+		teamID int64
+		at     time.Time
+	)
+	err := q.QueryRowContext(ctx, `
+		SELECT event_id, team_id, team_name, server_time FROM event_result_log
+		WHERE entry_hash = $1 AND kind = $2`, code, TeamFinished).Scan(&h.EventID, &teamID, &h.TeamName, &at)
+	if err != nil {
+		return h, err
+	}
+	h.FinishedAt = at.UTC().Format(time.RFC3339)
+	rc, err := ReceiptOf(ctx, q, teamID)
+	if err != nil {
+		return h, err
+	}
+	h.Matches = rc.Matches && rc.Receipt == code
+	return h, nil
+}
+
+// Sealed returns an event's fingerprint once it is over: the hash of
+// its closing entry. "" before then, or for an event that keeps no
+// record.
+func Sealed(ctx context.Context, q Querier, eventID int64) string {
+	var fp string
+	_ = q.QueryRowContext(ctx, `
+		SELECT entry_hash FROM event_result_log
+		WHERE event_id = $1 AND kind IN ($2, $3) ORDER BY seq DESC LIMIT 1`, eventID, EventCompleted, EventCancelled).Scan(&fp)
+	return fp
 }
