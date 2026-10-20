@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/listing"
 )
 
 // StoreItemDTO is a single row on the public /store listing — one
@@ -52,6 +53,20 @@ type StoreItemDTO struct {
 	// Look is the adventure's title typeface and cover picture. The
 	// cover also stands in for CoverImageURL when the event has none.
 	Look *PageLook `json:"look,omitempty"`
+	// Languages are the languages the adventure is played in, its main
+	// one first; empty for one played in a single language. The words
+	// above are in the language asked for (?lang=) where translated.
+	Languages []string `json:"languages,omitempty"`
+
+	texts listing.Listing
+}
+
+// In puts the item's words into lang where they are translated:
+// the listing's name and blurb, and the adventure's title, meeting
+// point and area.
+func (it *StoreItemDTO) In(lang string) {
+	t := it.texts.In(lang, listing.Texts{Name: it.EventName, Blurb: it.Blurb, Title: it.AdventureTitle, StartLabel: it.StartLabel, Area: it.Area})
+	it.EventName, it.Blurb, it.AdventureTitle, it.StartLabel, it.Area = t.Name, t.Blurb, t.Title, t.StartLabel, t.Area
 }
 
 // TicketTeamTokenDTO is the response shape for the post-purchase
@@ -155,6 +170,7 @@ func (h *Handlers) StoreEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "store event failed", err)
 		return
 	}
+	item.In(r.URL.Query().Get("lang"))
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, item)
 }
@@ -178,6 +194,9 @@ func (h *Handlers) StoreListByOrg(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "store list failed", err)
 		return
+	}
+	for i := range items {
+		items[i].In(r.URL.Query().Get("lang"))
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, struct {
@@ -214,6 +233,7 @@ func (h *Handlers) StoreEventByOrg(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "store event failed", err)
 		return
 	}
+	item.In(r.URL.Query().Get("lang"))
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, item)
 }
@@ -249,7 +269,8 @@ const storeItemSelect = `
 	       (l.cover_mime_type IS NOT NULL) AS has_cover,
 	       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,
 	       COALESCE((g.graph->>'tour')::boolean, FALSE) AS tour,
-	       (a.start_lat IS NULL AND NOT COALESCE(jsonb_typeof(g.graph->'zones') = 'array' AND jsonb_array_length(g.graph->'zones') > 0, FALSE)) AS home,` + pageLookColumns + `
+	       (a.start_lat IS NULL AND NOT COALESCE(jsonb_typeof(g.graph->'zones') = 'array' AND jsonb_array_length(g.graph->'zones') > 0, FALSE)) AS home,` + pageLookColumns + `,
+	       ` + listing.Columns + `
 	FROM events e
 	JOIN event_listings l ON l.event_id = e.id
 	JOIN organizations o ON o.id = e.org_id
@@ -363,15 +384,23 @@ func (h *Handlers) scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 		lookFont   string
 		lookTheme  string
 		ownCover   bool
+		mainLang   string
+		advTexts   []byte
+		ownTexts   []byte
 	)
 	if err := s.Scan(
 		&item.EventID, &eventName, &item.AdventureSlug, &item.AdventureTitle,
 		&item.OrgName, &item.OrgVerified, &blurb, &priceCents, &item.Currency, &item.TeamSize,
 		&startLabel, &startLat, &startLng, &item.Area, &hasCover, &hasIcon, &item.Tour, &item.Home,
-		&lookFont, &lookTheme, &ownCover,
+		&lookFont, &lookTheme, &ownCover, &mainLang, &advTexts, &ownTexts,
 	); err != nil {
 		return StoreItemDTO{}, err
 	}
+	texts, err := listing.Scan(mainLang, advTexts, ownTexts)
+	if err != nil {
+		return StoreItemDTO{}, err
+	}
+	item.texts, item.Languages = texts, texts.Languages()
 	item.Look = h.Looks.pageLook(item.AdventureSlug, lookFont, lookTheme, ownCover)
 	if hasCover {
 		item.CoverImageURL = "/store-cover/event/" + strconv.FormatInt(item.EventID, 10)

@@ -226,6 +226,7 @@ type landingStrings struct {
 	StoreTeamSizeSolo   string
 	StoreTeamSizePlural string
 	StoreMeetsAt        string
+	StorePlayedIn       string
 	StoreMapLabel       string
 	StorePlaysAnywhere  string
 	StoreMapZoomHint    string
@@ -465,6 +466,7 @@ func storeI18nJSON(s landingStrings) string {
 		"teamSizeSolo":         s.StoreTeamSizeSolo,
 		"teamSizePlural":       s.StoreTeamSizePlural,
 		"meetsAt":              s.StoreMeetsAt,
+		"playedIn":             s.StorePlayedIn,
 		"mapLabel":             s.StoreMapLabel,
 		"playsAnywhere":        s.StorePlaysAnywhere,
 		"mapZoomHint":          s.StoreMapZoomHint,
@@ -603,6 +605,7 @@ func storeSubs(s landingStrings) [][2]string {
 		{"{{STORE_TEAM_SIZE_SOLO}}", s.StoreTeamSizeSolo},
 		{"{{STORE_TEAM_SIZE_PLURAL}}", s.StoreTeamSizePlural},
 		{"{{STORE_MEETS_AT}}", s.StoreMeetsAt},
+		{"{{STORE_PLAYED_IN}}", s.StorePlayedIn},
 		{"{{STORE_CARD_CTA}}", s.StoreCardCTA},
 		{"{{STORE_PER_TICKET}}", s.StorePerTicket},
 		{"{{STORE_PER_TEAM}}", s.StorePerTeam},

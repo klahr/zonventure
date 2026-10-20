@@ -44,14 +44,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/klahr/zonventure/internal/settings"
 	"io"
 	"strings"
 	"time"
 
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/listing"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/orgslug"
+	"github.com/klahr/zonventure/internal/settings"
 )
 
 // orgExportFormat tags the org-bundle manifest. Bumped per
@@ -180,6 +181,10 @@ type orgExportEvent struct {
 	Teams              []orgExportTeam           `json:"teams,omitempty"`
 	TicketPurchases    []orgExportTicketPurchase `json:"ticket_purchases,omitempty"`
 	Activity           []orgExportActivity       `json:"activity,omitempty"`
+
+	// ListingTranslations are the listing's name and blurb in other
+	// languages.
+	ListingTranslations listing.Translations `json:"listing_translations,omitempty"`
 }
 
 // orgExportActivity is one event_activity row. Bundle keys actors by
@@ -465,7 +470,7 @@ func (h *Handlers) exportOrgEvents(ctx context.Context, orgID int64, env *orgExp
 		       COALESCE(e.ticket_price_cents, 0), COALESCE(e.ticket_currency, ''), COALESCE(e.ticket_team_size, 0),
 		       COALESCE(e.scheduled_at, ''), COALESCE(e.started_at, ''), COALESCE(e.completed_at, ''), COALESCE(e.cancelled_at, ''),
 		       COALESCE(e.attested_no_minors_at, ''),
-		       e.cover_image_mime_type, e.cover_image_content
+		       e.cover_image_mime_type, e.cover_image_content, e.listing_translations
 		FROM events e
 		LEFT JOIN users u ON u.id = e.created_by_user_id
 		WHERE e.org_id = $1
@@ -488,6 +493,7 @@ func (h *Handlers) exportOrgEvents(ctx context.Context, orgID int64, env *orgExp
 			assignmentID int64
 			coverMime    sql.NullString
 			coverBlob    []byte
+			listingTr    []byte
 		)
 		if err := rows.Scan(
 			&id, &ev.AdventureSlug, &ev.Name, &ev.State, &ev.LiveToken,
@@ -497,9 +503,12 @@ func (h *Handlers) exportOrgEvents(ctx context.Context, orgID int64, env *orgExp
 			&ev.TicketPriceCents, &ev.TicketCurrency, &ev.TicketTeamSize,
 			&ev.ScheduledAt, &ev.StartedAt, &ev.CompletedAt, &ev.CancelledAt,
 			&ev.AttestedNoMinorsAt,
-			&coverMime, &coverBlob,
+			&coverMime, &coverBlob, &listingTr,
 		); err != nil {
 			return fmt.Errorf("scan event: %w", err)
+		}
+		if err := json.Unmarshal(listingTr, &ev.ListingTranslations); err != nil {
+			return fmt.Errorf("event listing translations: %w", err)
 		}
 		ev.Idx = len(env.Events)
 		if assignmentID > 0 {
@@ -1022,13 +1031,13 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 				public_for_sale, public_blurb,
 				ticket_price_cents, ticket_currency, ticket_team_size,
 				started_at, completed_at, cancelled_at,
-				cover_image_mime_type, cover_image_content, cover_image_size_bytes)
+				cover_image_mime_type, cover_image_content, cover_image_size_bytes, listing_translations)
 			VALUES ($1, $2, $3, $4,
 				$5, $6, $7, $8, $9,
 				$10, $11,
 				$12, $13, $14,
 				$15, $16, $17,
-				$18, $19, $20)
+				$18, $19, $20, $21)
 			RETURNING id
 		`,
 			ev.AdventureSlug, orgID, eventAuthorID, ev.State,
@@ -1036,7 +1045,7 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 			ev.PublicForSale, ev.PublicBlurb,
 			nullableInt64(ev.TicketPriceCents), defaultStr(ev.TicketCurrency, settings.Currency), defaultInt(ev.TicketTeamSize, 5),
 			sqlNullStr(ev.StartedAt), sqlNullStr(ev.CompletedAt), sqlNullStr(ev.CancelledAt),
-			coverMime, coverBytes, int64(len(coverBytes)),
+			coverMime, coverBytes, int64(len(coverBytes)), listingTranslationsJSON(ev.ListingTranslations),
 		).Scan(&newEventID); err != nil {
 			cleanupOrg()
 			return summary, fmt.Errorf("create event idx %d: %w", ev.Idx, err)
@@ -1374,4 +1383,15 @@ func resolveOrgName(ctx context.Context, db *sql.DB, base string) (string, error
 		}
 	}
 	return "", fmt.Errorf("could not find a free org name after 50 attempts (base %q)", base)
+}
+
+// listingTranslationsJSON is an imported event's listing translations
+// for its column, checked as the console's are: none when they fail.
+func listingTranslationsJSON(in listing.Translations) []byte {
+	tr, err := cleanListingTranslations(in)
+	if err != nil {
+		return []byte("{}")
+	}
+	doc, _ := json.Marshal(tr)
+	return doc
 }

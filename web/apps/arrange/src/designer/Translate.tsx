@@ -6,6 +6,7 @@ import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { useT } from "../i18n.tsx";
 import { Button, ICON, Modal } from "./dz/ui.tsx";
 import { STEP } from "./dz/types.tsx";
+import { LANGUAGE_NAMES, languageName } from "../languages.ts";
 
 /**
  * Translating an adventure. The structure — steps, routes, answers — is
@@ -21,18 +22,7 @@ import { STEP } from "./dz/types.tsx";
  * graph as it is saved.
  */
 
-/** Each language in its own words. */
-export const LANGUAGE_NAMES: Record<string, string> = {
-  sv: "Svenska",
-  en: "English",
-  de: "Deutsch",
-  fi: "Suomi",
-  no: "Norsk",
-  da: "Dansk",
-  fr: "Français",
-  es: "Español",
-};
-export const languageName = (l: string) => LANGUAGE_NAMES[l] ?? l.toUpperCase();
+export { LANGUAGE_NAMES, languageName };
 
 export const translationLanguages = (g: Graph, main: string) => Object.keys(g.translations ?? {}).filter((l) => l !== main).sort();
 

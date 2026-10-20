@@ -11,6 +11,20 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Store: a listing speaks the languages its adventure is played in. An
+  event's store settings take its name and public description in each
+  of the adventure's other languages, reviewed with the rest of the
+  listing; the adventure's title, meeting point and area are
+  translated in the designer's Translations panel, with its other
+  texts, and reach the store with the version the event plays. The
+  store, an event's page and its embeddable card show the page's
+  language where there is a translation, and say which languages a
+  listing is played in. The start screen names the meeting point in
+  the team's language too. `update_event` takes
+  `listing_translations`; `get_event` lists them and the languages.
+
 ## [0.33.18] - 2026-10-20
 
 ### Added

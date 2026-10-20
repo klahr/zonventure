@@ -18,6 +18,7 @@ package admin
 // last — by the listing's approval or a later proposal's.
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -145,6 +146,15 @@ func (h *Handlers) checkServed(ctx context.Context) (servedReport, error) {
 	return rep, nil
 }
 
+// sameFields reports whether two listings say the same. By their JSON:
+// a snapshot taken before listings had translations has none, as one
+// with an empty set.
+func sameFields(a, b listingFieldsDTO) bool {
+	ja, errA := json.Marshal(a)
+	jb, errB := json.Marshal(b)
+	return errA == nil && errB == nil && bytes.Equal(ja, jb)
+}
+
 // diffSnapshots names what differs between what was approved and what
 // is served: what only an approval may change, and what is edited live.
 func diffSnapshots(approved, served reviewSnapshot) (changed, unreviewed []string) {
@@ -154,7 +164,7 @@ func diffSnapshots(approved, served reviewSnapshot) (changed, unreviewed []strin
 			parts[part] = kind
 		}
 	}
-	if approved.Revision != served.Revision || approved.Draft != served.Draft {
+	if approved.Revision != served.Revision || !sameFields(approved.Draft, served.Draft) {
 		mark("listing", "changed")
 	}
 	if approved.GraphID != served.GraphID || approved.Version != served.Version {

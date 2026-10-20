@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/listing"
 	"github.com/klahr/zonventure/internal/printmat"
 	"github.com/klahr/zonventure/internal/public"
 )
@@ -82,6 +83,10 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		brandText            sql.NullString
 		brandFont            string
 	)
+	var (
+		mainLang           string
+		advTexts, ownTexts []byte
+	)
 	err = db.QueryRowContext(r.Context(), `
 		SELECT l.name, e.adventure_slug,
 		       a.title AS adv_title,
@@ -96,7 +101,8 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,
 		       COALESCE((g.graph->>'tour')::boolean, FALSE) AS tour,
 		       (a.start_lat IS NULL AND NOT COALESCE(jsonb_typeof(g.graph->'zones') = 'array' AND jsonb_array_length(g.graph->'zones') > 0, FALSE)) AS home,
-		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color, o.brand_font
+		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color, o.brand_font,
+		       `+listing.Columns+`
 		FROM events e
 		JOIN event_listings l ON l.event_id = e.id
 		JOIN organizations o ON o.id = e.org_id
@@ -109,7 +115,8 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		  AND NOT e.sales_stopped
 	`, id).Scan(&eventName, &advSlug, &advTitle, &orgName, &orgSlug, &orgVerified, &blurb, &priceCents,
 		&currency, &teamSize, &startLabel, &startLat, &startLng, &hasCover, &hasIcon, &tour, &home,
-		&brandAccent, &brandAccentSecondary, &brandBackground, &brandText, &brandFont)
+		&brandAccent, &brandAccentSecondary, &brandBackground, &brandText, &brandFont,
+		&mainLang, &advTexts, &ownTexts)
 	if errors.Is(err, sql.ErrNoRows) {
 		renderStoreEventGone(w, r, db, id, slugFromURL)
 		return
@@ -118,6 +125,16 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		http.Error(w, "lookup failed", http.StatusInternalServerError)
 		return
 	}
+	texts, err := listing.Scan(mainLang, advTexts, ownTexts)
+	if err != nil {
+		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		return
+	}
+
+	// The listing in the page's language, where it is translated.
+	lang := resolveLang(w, r)
+	tr := texts.In(lang, listing.Texts{Name: eventName.String, Blurb: blurb, Title: advTitle.String, StartLabel: startLabel.String})
+	eventName.String, blurb, advTitle.String, startLabel.String = tr.Name, tr.Blurb, tr.Title, tr.StartLabel
 
 	// Cross-org tunnelling guard: if the page was reached via
 	// /o/{slug}/store/event/{id} but the event belongs to a
@@ -195,7 +212,6 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	// Localised topbar chrome + body copy. Both pull from the
 	// shared landingLocales table so a translator updates one place
 	// and every store surface follows.
-	lang := resolveLang(w, r)
 	s := landingLocales[lang]
 	if !simulated {
 		s.StoreEventTermsHTML = s.StoreEventPaymentByStripe + " " + s.StoreEventTermsHTML
@@ -239,6 +255,8 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{TEAM_LABEL}}", html.EscapeString(teamLabel)},
 		[2]string{"{{START_LABEL}}", html.EscapeString(strings.TrimSpace(startLabel.String))},
 		[2]string{"{{START_LABEL_HIDDEN}}", hiddenIf(strings.TrimSpace(startLabel.String) == "")},
+		[2]string{"{{LANGUAGES}}", html.EscapeString(strings.Join(texts.Languages(), ", "))},
+		[2]string{"{{LANGUAGES_HIDDEN}}", hiddenIf(len(texts.Languages()) == 0)},
 		// Where it starts, on a map under the ticket's details; hidden
 		// for one played wherever the buyer is.
 		[2]string{"{{HAS_START}}", boolAttr(startLat.Valid && startLng.Valid)},

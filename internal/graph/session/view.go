@@ -720,7 +720,12 @@ func (t *Team) translate(v *View) {
 			return nil
 		}
 		c := *z
-		c.Name = tr(graph.ZoneKey(z.Slug), z.Name)
+		if z.Slug == StartPlaceSlug {
+			// The adventure's starting point, named by its meeting point.
+			c.Name = tr(graph.MetaKey("start_label"), z.Name)
+		} else {
+			c.Name = tr(graph.ZoneKey(z.Slug), z.Name)
+		}
 		return &c
 	}
 	for i := range v.Starts {

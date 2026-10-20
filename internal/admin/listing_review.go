@@ -52,6 +52,7 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/listing"
 	"github.com/klahr/zonventure/internal/logx"
 )
 
@@ -65,10 +66,13 @@ const MaxRejectReasonLen = 1000
 
 // eventListingRevision and partyListingRevision hash a draft and the
 // adventure version it plays: what a reviewer approves. They read from
-// events e, or party_offers o joined to adventures a.
+// events e, or party_offers o joined to adventures a. The listing's
+// translations are appended outside row(), so a draft without any keeps
+// the revision it had before listings had them.
 const eventListingRevision = `md5(row(e.name, e.public_blurb, e.ticket_price_cents, e.ticket_currency, e.ticket_team_size,
 	e.cover_image_mime_type, md5(e.cover_image_content), COALESCE(e.next_graph_id, e.graph_id),
-	(SELECT string_agg(f.id::text || ':' || md5(f.content), ',' ORDER BY f.id) FROM event_files f WHERE f.event_id = e.id))::text)`
+	(SELECT string_agg(f.id::text || ':' || md5(f.content), ',' ORDER BY f.id) FROM event_files f WHERE f.event_id = e.id))::text
+	|| CASE WHEN e.listing_translations = '{}'::jsonb THEN '' ELSE e.listing_translations::text END)`
 
 // The offer's name is appended outside row(), so a draft without one
 // keeps the revision it had before offers had names.
@@ -77,7 +81,7 @@ const partyListingRevision = `md5(row(o.blurb, o.base_cents, o.per_kid_cents, o.
 
 // eventUnchanged and partyUnchanged say a draft is what is approved.
 const eventUnchanged = `COALESCE(l.event_id IS NOT NULL
-	AND l.name = e.name AND l.blurb = e.public_blurb
+	AND l.name = e.name AND l.blurb = e.public_blurb AND l.translations = e.listing_translations
 	AND l.price_cents = e.ticket_price_cents AND l.currency = e.ticket_currency
 	AND l.team_size = e.ticket_team_size
 	AND l.cover_mime_type IS NOT DISTINCT FROM e.cover_image_mime_type
@@ -353,12 +357,12 @@ func (h *Handlers) approve(ctx context.Context, q execer, kind string, id, revie
 func (h *Handlers) approveEventListing(ctx context.Context, q execer, eventID, reviewer int64) error {
 	by := sql.NullInt64{Int64: reviewer, Valid: reviewer > 0}
 	if _, err := q.ExecContext(ctx, `
-		INSERT INTO event_listings (event_id, name, blurb, price_cents, currency, team_size, cover_mime_type, cover_content, graph_id, approved_at, approved_by)
-		SELECT id, name, public_blurb, ticket_price_cents, ticket_currency, ticket_team_size,
+		INSERT INTO event_listings (event_id, name, blurb, translations, price_cents, currency, team_size, cover_mime_type, cover_content, graph_id, approved_at, approved_by)
+		SELECT id, name, public_blurb, listing_translations, ticket_price_cents, ticket_currency, ticket_team_size,
 		       cover_image_mime_type, cover_image_content, COALESCE(next_graph_id, graph_id), now(), $2
 		FROM events WHERE id = $1 AND ticket_price_cents IS NOT NULL
 		ON CONFLICT (event_id) DO UPDATE SET
-		    name = EXCLUDED.name, blurb = EXCLUDED.blurb, price_cents = EXCLUDED.price_cents,
+		    name = EXCLUDED.name, blurb = EXCLUDED.blurb, translations = EXCLUDED.translations, price_cents = EXCLUDED.price_cents,
 		    currency = EXCLUDED.currency, team_size = EXCLUDED.team_size,
 		    cover_mime_type = EXCLUDED.cover_mime_type, cover_content = EXCLUDED.cover_content,
 		    graph_id = EXCLUDED.graph_id, approved_at = EXCLUDED.approved_at, approved_by = EXCLUDED.approved_by
@@ -419,6 +423,8 @@ type listingFieldsDTO struct {
 	CoverURL    string `json:"cover_url,omitempty"`
 	// GraphID is the adventure version it plays.
 	GraphID int64 `json:"graph_id,omitempty"`
+	// Translations are its name and blurb in other languages.
+	Translations listing.Translations `json:"translations,omitempty"`
 }
 
 // listingReviewDTO is one listing waiting for review. Live is what the

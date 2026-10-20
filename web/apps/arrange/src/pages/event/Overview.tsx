@@ -8,6 +8,7 @@ import { useSession } from "../../session.tsx";
 import * as api from "./api.ts";
 import type { ConnectStatus, EventInfo, Team } from "./api.ts";
 import { pricing } from "../events/api.ts";
+import { languageName } from "../../languages.ts";
 import { copyText, fmtElapsedShort, fmtPoints, joinedCount, members, recapURL, teamStuck } from "./util.ts";
 
 /**
@@ -251,6 +252,12 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
   const [price, setPrice] = useState(saved);
   const [size, setSize] = useState(String(event.ticket_team_size || 5));
   const [blurb, setBlurb] = useState(event.public_blurb || "");
+  // The listing in the adventure's other languages; left empty, a text
+  // shows as in its own.
+  const others = (event.languages ?? []).slice(1);
+  const [translations, setTranslations] = useState(event.listing_translations ?? {});
+  const translate = (lang: string, field: "name" | "blurb", value: string) =>
+    setTranslations((m) => ({ ...m, [lang]: { ...m[lang], [field]: value } }));
   const [busy, setBusy] = useState(false);
   const [cover, setCover] = useState<{ has: boolean; bust: number }>({ has: !!event.has_cover_image, bust: 0 });
   const [submitting, setSubmitting] = useState(false);
@@ -303,7 +310,10 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
     if (!Number.isFinite(n) || n < 1 || n > 50) return toast.err(t.t("Team size must be between 1 and 50"));
     setBusy(true);
     try {
-      await api.patchEvent(event.id, { ticket_price_cents: cents, ticket_team_size: n, public_blurb: blurb.trim() });
+      const listing_translations = Object.fromEntries(
+        Object.entries(translations).map(([l, x]) => [l, { name: x.name?.trim() ?? "", blurb: x.blurb?.trim() ?? "" }]),
+      );
+      await api.patchEvent(event.id, { ticket_price_cents: cents, ticket_team_size: n, public_blurb: blurb.trim(), listing_translations });
       toast.ok(t.t("Saved"));
       onSaved();
     } catch (e) {
@@ -410,6 +420,19 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
       <Field label={t.t("Public description")}>
         <textarea rows={2} maxLength={1000} placeholder={t.t("Two-hour treasure hunt around the old town.")} value={blurb} onChange={(e) => setBlurb(e.target.value)} />
       </Field>
+      {others.map((l, i) => (
+        <Row key={l}>
+          <Field label={t.t("Name in {{lang}}", { lang: languageName(l) })}>
+            <input maxLength={200} placeholder={event.name} value={translations[l]?.name ?? ""} onChange={(e) => translate(l, "name", e.target.value)} />
+          </Field>
+          <Field
+            label={t.t("Public description in {{lang}}", { lang: languageName(l) })}
+            {...(i === 0 ? { hint: t.t("Left empty, it shows as above. The adventure's title and meeting point are translated in the designer.") } : {})}
+          >
+            <textarea rows={2} maxLength={1000} placeholder={blurb} value={translations[l]?.blurb ?? ""} onChange={(e) => translate(l, "blurb", e.target.value)} />
+          </Field>
+        </Row>
+      ))}
       <Row>
         <Button variant="primary" size="sm" loading={busy} disabled={tooLow} onClick={() => void save()}>{t.t("Save")}</Button>
         {/* Its own page in the organisation's store; the short link leads there. */}

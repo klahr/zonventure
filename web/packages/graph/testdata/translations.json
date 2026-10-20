@@ -8,7 +8,9 @@
   "meta": {
     "title": "MAIN meta:title",
     "intro": "MAIN meta:intro",
-    "outro": "MAIN meta:outro"
+    "outro": "MAIN meta:outro",
+    "start_label": "MAIN meta:start_label",
+    "area": "MAIN meta:area"
   },
   "graph": {
     "language": "sv",
@@ -732,8 +734,10 @@
     "j:note:media:0:alt",
     "j:note:title",
     "js:MAIN section",
+    "meta:area",
     "meta:intro",
     "meta:outro",
+    "meta:start_label",
     "meta:title",
     "n:choice:block:t",
     "n:choice:field:0:label",
@@ -834,6 +838,7 @@
     "z:park"
   ],
   "not_shown": {
-    "n:typed:out:right:label": "an answer's route is named for the author: only a route out for a team without the items shows its label"
+    "n:typed:out:right:label": "an answer's route is named for the author: only a route out for a team without the items shows its label",
+    "meta:area": "where it is played is the store's (internal/listing), not the game's"
   }
 }

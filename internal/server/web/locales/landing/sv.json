@@ -121,6 +121,7 @@
 "StoreLoadingBody": "Hämtar veckans äventyr.",
 "StoreLoadingHeading": "Laddar…",
 "StoreMeetsAt": "samling vid",
+"StorePlayedIn": "Spelas på",
 "StoreMapLabel": "Karta över äventyren",
 "StorePlaysAnywhere": "Spelas var som helst:",
 "StoreMapZoomHint": "Håll ned {key} och scrolla för att zooma i kartan",

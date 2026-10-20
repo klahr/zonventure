@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/domains"
+	"github.com/klahr/zonventure/internal/listing"
 )
 
 // embedPrefix is the one place other sites may frame: an event's buy
@@ -48,6 +49,8 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		hasCover, tour, home                              bool
 		accent, accent2, bg, ink                          sql.NullString
 		brandFont                                         string
+		mainLang                                          string
+		advTexts, ownTexts                                []byte
 	)
 	err = db.QueryRowContext(r.Context(), `
 		SELECT COALESCE(l.name, e.name), COALESCE(l.blurb, ''), COALESCE(l.currency, ''),
@@ -56,7 +59,8 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		       COALESCE(l.cover_mime_type IS NOT NULL, FALSE),
 		       COALESCE((g.graph->>'tour')::boolean, FALSE),
 		       (a.start_lat IS NULL AND NOT COALESCE(jsonb_typeof(g.graph->'zones') = 'array' AND jsonb_array_length(g.graph->'zones') > 0, FALSE)),
-		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color, o.brand_font
+		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color, o.brand_font,
+		       `+listing.Columns+`
 		FROM events e
 		JOIN organizations o ON o.id = e.org_id
 		LEFT JOIN event_listings l ON l.event_id = e.id
@@ -64,7 +68,7 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		LEFT JOIN adventure_graphs g ON g.id = e.graph_id
 		WHERE e.id = $1 AND e.public_for_sale
 	`, id).Scan(&name, &blurb, &currency, &advTitle, &orgName, &orgSlug, &priceCents, &teamSize,
-		&hasCover, &tour, &home, &accent, &accent2, &bg, &ink, &brandFont)
+		&hasCover, &tour, &home, &accent, &accent2, &bg, &ink, &brandFont, &mainLang, &advTexts, &ownTexts)
 	found := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "lookup failed", http.StatusInternalServerError)
@@ -74,6 +78,16 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 
 	lang := resolveLang(w, r)
 	s := landingLocales[lang]
+	if found {
+		// The listing in the page's language, where it is translated.
+		texts, err := listing.Scan(mainLang, advTexts, ownTexts)
+		if err != nil {
+			http.Error(w, "lookup failed", http.StatusInternalServerError)
+			return
+		}
+		tr := texts.In(lang, listing.Texts{Name: name, Blurb: blurb, Title: advTitle})
+		name, blurb, advTitle = tr.Name, tr.Blurb, tr.Title
+	}
 	name, advTitle = strings.TrimSpace(name), strings.TrimSpace(advTitle)
 	subtitle := ""
 	if !strings.EqualFold(name, advTitle) {

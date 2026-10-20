@@ -24,6 +24,9 @@ func TestEveryTranslatableTextIsTranslated(t *testing.T) {
 		t.Fatalf("reading shared vectors: %v", err)
 	}
 	var vectors struct {
+		Meta struct {
+			StartLabel string `json:"start_label"`
+		} `json:"meta"`
 		Graph    graph.Graph       `json:"graph"`
 		Keys     []string          `json:"keys"`
 		NotShown map[string]string `json:"not_shown"`
@@ -73,6 +76,10 @@ func TestEveryTranslatableTextIsTranslated(t *testing.T) {
 	timedOut := team("end")
 	timedOut.TimedOut = true
 	show(timedOut)
+	// Waiting at the adventure's starting point, named by its meeting point.
+	waiting := team("")
+	waiting.StartPlace = NewStartPlace(&g.Zones[0].Lat, &g.Zones[0].Lng, &g.Zones[0].RadiusM, vectors.Meta.StartLabel)
+	show(waiting)
 	all := strings.Join(views, "\n")
 
 	// A wrong answer's reply comes with the answer, not the view.

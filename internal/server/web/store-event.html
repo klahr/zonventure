@@ -16,6 +16,7 @@
     {{TITLE}} {{SUBTITLE}} {{ORG_NAME}} {{BLURB}}
     {{PRICE_DISPLAY}} {{PRICE_MAJOR}} {{CURRENCY}}
     {{TEAM_SIZE}} {{TEAM_LABEL}} {{START_LABEL}}
+    {{LANGUAGES}} {{LANGUAGES_HIDDEN}} {{STORE_PLAYED_IN}} (the languages it is played in, as tags)
     {{COVER_URL}} {{HAS_COVER}} (the event's cover, else its look's)
     {{LOOK_FONT}} (the look's title typeface: a stylesheet and a rule)
     {{EVENT_ID}} {{ADVENTURE_SLUG}} {{CANONICAL_URL}}
@@ -252,6 +253,10 @@
           <div class="k">{{STORE_EVENT_META_MEETING_POINT}}</div>
           <div class="v">{{START_LABEL}}</div>
         </div>
+        <div class="meta-tile"{{LANGUAGES_HIDDEN}}>
+          <div class="k">{{STORE_PLAYED_IN}}</div>
+          <div class="v" data-langs="{{LANGUAGES}}">{{LANGUAGES}}</div>
+        </div>
       </div>
       <figure class="start-map" data-has="{{HAS_START}}">
         <figcaption><strong>{{STORE_EVENT_START_MAP}}</strong><span>{{START_LABEL}}</span><a href="{{START_MAP_URL}}" target="_blank" rel="noopener">{{STORE_EVENT_OPEN_MAP}}</a></figcaption>
@@ -300,6 +305,20 @@
      this JSON block server-side so the buy form's validation +
      error toasts stay in the caller's language. -->
 <script id="store-event-i18n" type="application/json">{{STORE_EVENT_I18N_JSON}}</script>
+<script>
+// The languages it is played in, by their names in the page's language
+// where the browser knows them; the tags stay otherwise.
+(function () {
+  var el = document.querySelector('[data-langs]');
+  if (!el || !el.dataset.langs) return;
+  var names = null;
+  try { names = new Intl.DisplayNames(['{{LANG_CODE}}'], { type: 'language' }); } catch (e) { return; }
+  el.textContent = el.dataset.langs.split(', ').map(function (l) {
+    var n = names.of(l);
+    return n ? n.charAt(0).toUpperCase() + n.slice(1) : l.toUpperCase();
+  }).join(' · ');
+})();
+</script>
 <script>
 (function () {
   var I18N = (function () {

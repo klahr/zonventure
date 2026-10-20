@@ -139,7 +139,8 @@ var servedRevision = map[string]string{
 	listingEvent: `SELECT md5(row(l.name, l.blurb, l.price_cents, l.currency, l.team_size,
 		l.cover_mime_type, md5(l.cover_content), l.graph_id,
 		(SELECT string_agg(f.id::text || ':' || md5(f.content), ',' ORDER BY f.id) FROM event_files f
-		 WHERE f.event_id = l.event_id AND f.approved_at IS NOT NULL))::text) FROM event_listings l WHERE l.event_id = $1`,
+		 WHERE f.event_id = l.event_id AND f.approved_at IS NOT NULL))::text
+		|| CASE WHEN l.translations = '{}'::jsonb THEN '' ELSE l.translations::text END) FROM event_listings l WHERE l.event_id = $1`,
 	listingParty: `SELECT md5(row(l.blurb, l.base_cents, l.per_kid_cents, l.currency, l.max_kids,
 		l.graph_id)::text || l.name) FROM party_offer_listings l WHERE l.offer_id = $1`,
 }
@@ -167,16 +168,18 @@ func (h *Handlers) contentOf(ctx context.Context, kind string, id int64, served 
 		draftCover, liveCover         bool
 		isLive                        bool
 		live                          listingFieldsDTO
+		draftTr, liveTr               []byte
 	)
 	draftCols := `e.name, e.public_blurb, COALESCE(e.ticket_price_cents, 0), 0, e.ticket_currency, e.ticket_team_size, 0,
 		e.cover_image_mime_type IS NOT NULL,
 		l.event_id IS NOT NULL, COALESCE(l.name, ''), COALESCE(l.blurb, ''), COALESCE(l.price_cents, 0), 0,
-		COALESCE(l.currency, ''), COALESCE(l.team_size, 0), 0, l.cover_mime_type IS NOT NULL, l.graph_id`
+		COALESCE(l.currency, ''), COALESCE(l.team_size, 0), 0, l.cover_mime_type IS NOT NULL, l.graph_id,
+		e.listing_translations, COALESCE(l.translations, '{}')`
 	joins := `JOIN adventures a ON a.slug = e.adventure_slug LEFT JOIN event_listings l ON l.event_id = e.id`
 	if kind == listingParty {
 		draftCols = `o.name, o.blurb, o.base_cents, o.per_kid_cents, o.currency, 0, o.max_kids, FALSE,
 		l.offer_id IS NOT NULL, COALESCE(l.name, ''), COALESCE(l.blurb, ''), COALESCE(l.base_cents, 0), COALESCE(l.per_kid_cents, 0),
-		COALESCE(l.currency, ''), 0, COALESCE(l.max_kids, 0), FALSE, l.graph_id`
+		COALESCE(l.currency, ''), 0, COALESCE(l.max_kids, 0), FALSE, l.graph_id, '{}'::jsonb, '{}'::jsonb`
 		joins = `LEFT JOIN party_offer_listings l ON l.offer_id = o.id`
 	}
 	x := t.alias
@@ -204,8 +207,14 @@ func (h *Handlers) contentOf(ctx context.Context, kind string, id int64, served 
 		&c.Draft.Name, &c.Draft.Blurb, &c.Draft.PriceCents, &c.Draft.PerKidCents, &c.Draft.Currency, &c.Draft.TeamSize, &c.Draft.MaxKids,
 		&draftCover,
 		&isLive, &live.Name, &live.Blurb, &live.PriceCents, &live.PerKidCents, &live.Currency, &live.TeamSize, &live.MaxKids,
-		&liveCover, &liveGraphID)
+		&liveCover, &liveGraphID, &draftTr, &liveTr)
 	if err != nil {
+		return c, err
+	}
+	if err := json.Unmarshal(draftTr, &c.Draft.Translations); err != nil {
+		return c, err
+	}
+	if err := json.Unmarshal(liveTr, &live.Translations); err != nil {
 		return c, err
 	}
 	c.SubmittedAt, c.AttestedAt = submitted.String, attested.String
@@ -235,9 +244,18 @@ func (h *Handlers) contentOf(ctx context.Context, kind string, id int64, served 
 			URL: reviewMediaURL(c.Kind, c.ID, ref)})
 	}
 
-	// The listing.
+	// The listing, in its languages.
 	text("Listing: name", c.Draft.Name)
 	text("Listing: blurb", c.Draft.Blurb)
+	langs := make([]string, 0, len(c.Draft.Translations))
+	for lang := range c.Draft.Translations {
+		langs = append(langs, lang)
+	}
+	sort.Strings(langs)
+	for _, lang := range langs {
+		text("Listing ("+lang+"): name", c.Draft.Translations[lang].Name)
+		text("Listing ("+lang+"): blurb", c.Draft.Translations[lang].Blurb)
+	}
 	if draftCover {
 		c.Draft.CoverURL = reviewMediaURL(kind, id, "event-cover")
 		media("event-cover", "image", "", "Listing: cover", 0)

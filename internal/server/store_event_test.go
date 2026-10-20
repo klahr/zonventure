@@ -87,7 +87,9 @@ func TestStorePages(t *testing.T) {
 			}
 		}
 		// A meeting point is set, so its tile shows.
-		if strings.Contains(body, `<div class="meta-tile" hidden>`) {
+		hiddenMeetingPoint := `<div class="meta-tile" hidden>
+          <div class="k">Meeting point</div>`
+		if strings.Contains(body, hiddenMeetingPoint) {
 			t.Error("meeting point tile hidden though the adventure has one")
 		}
 		// Without one the tile goes, rather than showing empty.
@@ -97,7 +99,7 @@ func TestStorePages(t *testing.T) {
 		defer db.Exec(`UPDATE adventures SET start_label = 'By the fountain' WHERE slug = 'demo'`) //nolint:errcheck
 		rec = httptest.NewRecorder()
 		r.ServeHTTP(rec, httptest.NewRequest("GET", "/store/event/"+itoa64(eventID), nil))
-		if !strings.Contains(rec.Body.String(), `<div class="meta-tile" hidden>`) {
+		if !strings.Contains(rec.Body.String(), hiddenMeetingPoint) {
 			t.Error("empty meeting point tile not hidden")
 		}
 		// Cache headers + content type are part of the contract.

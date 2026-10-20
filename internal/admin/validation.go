@@ -2,8 +2,11 @@ package admin
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/klahr/zonventure/internal/listing"
 )
 
 // Length caps for free-text fields that ride WebSocket state-change
@@ -63,4 +66,31 @@ func validateBlurb(s string, maxRunes int) (string, error) {
 		return "", errNameTooLong
 	}
 	return s, nil
+}
+
+// cleanListingTranslations checks a listing's name and blurb in other
+// languages, as the main ones are checked, trimmed, and leaves out a
+// language with nothing in it. Only the listing's own words are its to
+// translate: the adventure's are translated in the adventure.
+func cleanListingTranslations(in listing.Translations) (listing.Translations, error) {
+	out := listing.Translations{}
+	for lang, t := range in {
+		if !validLanguageTag(lang) {
+			return nil, fmt.Errorf("%q is not a language tag", lang)
+		}
+		if t.Title != "" || t.StartLabel != "" || t.Area != "" {
+			return nil, fmt.Errorf("%s: only name and blurb are the listing's to translate", lang)
+		}
+		t.Name, t.Blurb = strings.TrimSpace(t.Name), strings.TrimSpace(t.Blurb)
+		if _, err := validateBlurb(t.Name, MaxNameLen); err != nil {
+			return nil, fmt.Errorf("%s: name %w", lang, err)
+		}
+		if len(t.Blurb) > 1000 {
+			return nil, fmt.Errorf("%s: blurb is too long (max 1000 chars)", lang)
+		}
+		if t.Name != "" || t.Blurb != "" {
+			out[lang] = t
+		}
+	}
+	return out, nil
 }

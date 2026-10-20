@@ -121,6 +121,7 @@
 "StoreLoadingBody": "Fetching this week's adventures.",
 "StoreLoadingHeading": "Loading…",
 "StoreMeetsAt": "meets at",
+"StorePlayedIn": "Played in",
 "StoreMapLabel": "Map of the adventures",
 "StorePlaysAnywhere": "Plays anywhere:",
 "StoreMapZoomHint": "Use {key} + scroll to zoom the map",

@@ -30,6 +30,10 @@ export interface EventInfo {
   ticket_currency?: string;
   ticket_team_size?: number;
   public_blurb?: string;
+  /** The listing's name and blurb in the adventure's other languages. */
+  listing_translations?: Record<string, { name?: string; blurb?: string }>;
+  /** The languages the adventure is played in, its own first; absent for one language. */
+  languages?: string[];
   /** Where teams meet: said in invitations and the calendar entry. */
   meeting_place?: string;
   has_cover_image?: boolean;

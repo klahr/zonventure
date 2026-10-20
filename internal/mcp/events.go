@@ -73,7 +73,7 @@ func (s *Server) registerEventTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "update_event",
 		Scope:       scopeWrite,
-		Description: "Change an event's settings: name, scheduled_at (only while scheduled), meeting_place, show_map, secret_roles, and for a self-guided event (public_for_sale) its store listing — ticket_price_cents, ticket_currency, ticket_team_size, public_blurb. A self-guided event is sold in the store once it is running, has a price and its listing is approved: a platform admin reviews each new or changed listing (name, price, team size, blurb, cover) unless the organisation is a verified creator, and until then the store keeps showing the last approved version. get_event's listing_review says where it is (pending, approved, rejected with listing_reject_reason). Only the keys you pass change.",
+		Description: "Change an event's settings: name, scheduled_at (only while scheduled), meeting_place, show_map, secret_roles, and for a self-guided event (public_for_sale) its store listing — ticket_price_cents, ticket_currency, ticket_team_size, public_blurb, listing_translations. A self-guided event is sold in the store once it is running, has a price and its listing is approved: a platform admin reviews each new or changed listing (name, price, team size, blurb, cover) unless the organisation is a verified creator, and until then the store keeps showing the last approved version. get_event's listing_review says where it is (pending, approved, rejected with listing_reject_reason). Only the keys you pass change.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},
@@ -87,8 +87,19 @@ func (s *Server) registerEventTools() {
 				"ticket_currency":    map[string]any{"type": "string", "description": "Self-guided: always the platform's currency, the one tickets are sold in; may be left out."},
 				"ticket_team_size":   map[string]any{"type": "integer", "description": "Self-guided: players per ticket."},
 				"public_blurb":       map[string]any{"type": "string", "description": "Self-guided: the line shown in the store."},
-				"sales_stopped":      map[string]any{"type": "boolean", "description": "Self-guided: true takes it out of the store and refuses new tickets while teams that have one play on; false sells again."},
-				"meeting_place":      map[string]any{"type": "string", "description": "Where teams meet, e.g. \"By the fountain in Kungsträdgården\": said in invitations and the calendar entry. Empty string clears it."},
+				"listing_translations": map[string]any{
+					"type":        "object",
+					"description": "Self-guided: the listing's name and blurb in the other languages the adventure is played in (get_event's languages), by language tag: {\"en\": {\"name\": \"…\", \"blurb\": \"…\"}}. Replaces them all; {} removes them. Reviewed with the listing. The adventure's own title, meeting point (meta:start_label) and area (meta:area) are translated in the adventure's graph.",
+					"additionalProperties": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name":  map[string]any{"type": "string"},
+							"blurb": map[string]any{"type": "string"},
+						},
+					},
+				},
+				"sales_stopped": map[string]any{"type": "boolean", "description": "Self-guided: true takes it out of the store and refuses new tickets while teams that have one play on; false sells again."},
+				"meeting_place": map[string]any{"type": "string", "description": "Where teams meet, e.g. \"By the fountain in Kungsträdgården\": said in invitations and the calendar entry. Empty string clears it."},
 			},
 		},
 	}, updateEvent)
@@ -366,6 +377,14 @@ type updateEventArgs struct {
 	PublicBlurb      *string `json:"public_blurb,omitempty"`
 	SalesStopped     *bool   `json:"sales_stopped,omitempty"`
 	MeetingPlace     *string `json:"meeting_place,omitempty"`
+
+	ListingTranslations *map[string]listingTexts `json:"listing_translations,omitempty"`
+}
+
+// listingTexts are a listing's name and blurb in one language.
+type listingTexts struct {
+	Name  string `json:"name,omitempty"`
+	Blurb string `json:"blurb,omitempty"`
 }
 
 func updateEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {

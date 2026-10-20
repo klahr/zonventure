@@ -16,6 +16,7 @@ package admin
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/klahr/zonventure/internal/settings"
@@ -33,6 +34,7 @@ import (
 	"github.com/klahr/zonventure/internal/components"
 	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/listing"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/payments"
@@ -366,6 +368,12 @@ type eventDTO struct {
 	TicketCurrency   string `json:"ticket_currency,omitempty"`
 	TicketTeamSize   int    `json:"ticket_team_size,omitempty"`
 	PublicBlurb      string `json:"public_blurb,omitempty"`
+	// ListingTranslations are the listing's name and blurb in the other
+	// languages the adventure is played in, and Languages those
+	// languages, the adventure's own first (the version the event plays
+	// or moves to). Detail payload only.
+	ListingTranslations listing.Translations `json:"listing_translations,omitempty"`
+	Languages           []string             `json:"languages,omitempty"`
 	// MeetingPlace is where teams meet, said in the invitation and the
 	// calendar entry. Detail payload only.
 	MeetingPlace string `json:"meeting_place,omitempty"`
@@ -1095,6 +1103,10 @@ type updateEventRequest struct {
 	TicketCurrency   *string `json:"ticket_currency,omitempty"`
 	TicketTeamSize   *int    `json:"ticket_team_size,omitempty"`
 	PublicBlurb      *string `json:"public_blurb,omitempty"`
+	// ListingTranslations replaces the listing's name and blurb in other
+	// languages, by language tag: {"en": {"name": "…", "blurb": "…"}}.
+	// An empty one takes them all away.
+	ListingTranslations *listing.Translations `json:"listing_translations,omitempty"`
 	// SecretRoles turns the adventure's saboteur on or off for this
 	// event. Teams already dealt keep what they were dealt.
 	SecretRoles *bool `json:"secret_roles,omitempty"`
@@ -1124,7 +1136,7 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ScheduledAt == nil && req.ShowMap == nil && req.Name == nil &&
 		req.PublicForSale == nil && req.TicketPriceCents == nil &&
-		req.TicketCurrency == nil && req.TicketTeamSize == nil && req.PublicBlurb == nil && req.SecretRoles == nil && req.SalesStopped == nil && req.MeetingPlace == nil {
+		req.TicketCurrency == nil && req.TicketTeamSize == nil && req.PublicBlurb == nil && req.ListingTranslations == nil && req.SecretRoles == nil && req.SalesStopped == nil && req.MeetingPlace == nil {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
@@ -1291,8 +1303,21 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.ListingTranslations != nil {
+		tr, err := cleanListingTranslations(*req.ListingTranslations)
+		if err != nil {
+			httpx.Error(w, http.StatusBadRequest, "listing_translations: "+err.Error())
+			return
+		}
+		doc, _ := json.Marshal(tr)
+		if _, err := h.DB.ExecContext(r.Context(),
+			`UPDATE events SET listing_translations = $1 WHERE id = $2`, doc, eventID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
+	}
 	// What the store shows changed: a draft until it is submitted for review.
-	if req.Name != nil || req.TicketPriceCents != nil || req.TicketTeamSize != nil || req.PublicBlurb != nil {
+	if req.Name != nil || req.TicketPriceCents != nil || req.TicketTeamSize != nil || req.PublicBlurb != nil || req.ListingTranslations != nil {
 		if err := h.settleEventListing(r.Context(), eventID); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
 			return
