@@ -11,6 +11,13 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed
+
+- Player: a puzzle answered on a board (put in order, a lock, a
+  choice form, item slots) says "Not there yet" ("Inte framme än") on
+  its button while the team is away from the puzzle's place, as a
+  typed answer does, instead of only greying out.
+
 ## [0.33.17] - 2026-10-20
 
 ### Added

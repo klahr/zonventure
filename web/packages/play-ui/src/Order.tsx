@@ -22,12 +22,15 @@ export function OrderBoard({
   cards,
   storageKey,
   disabled,
+  label,
   t,
   onTry,
 }: {
   cards: Card[];
   storageKey: string;
   disabled: boolean;
+  /** The try button's words while it is disabled for a reason the team should read: "Not there yet". */
+  label?: string | undefined;
   t: Translate;
   onTry: (guess: string) => void;
 }) {
@@ -184,7 +187,7 @@ export function OrderBoard({
         {selected !== null ? t("Now tap where it goes.") : t("Drag a card by ⠿ to move it — or tap one, then where it goes.")}
       </p>
       <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={disabled} onClick={() => onTry(guessFor(stack))}>
-        {t("Try it")}
+        {label || t("Try it")}
       </button>
     </div>
   );

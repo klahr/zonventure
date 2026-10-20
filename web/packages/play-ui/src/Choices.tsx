@@ -14,11 +14,14 @@ const BUTTONS_UP_TO = 6;
 export function ChoiceForm({
   fields,
   disabled,
+  label,
   t,
   onAnswer,
 }: {
   fields: NonNullable<play.PlayInput["fields"]>;
   disabled: boolean;
+  /** The try button's words while it is disabled for a reason the team should read: "Not there yet". */
+  label?: string | undefined;
   t: Translate;
   onAnswer: (guess: string) => void;
 }) {
@@ -65,7 +68,7 @@ export function ChoiceForm({
       ))}
       {!single && (
         <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={disabled || picked.some((p) => !p)} onClick={() => onAnswer(picked.join("|"))}>
-          {t("Send in")}
+          {label || t("Send in")}
         </button>
       )}
     </div>

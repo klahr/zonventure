@@ -16,6 +16,7 @@ export function ItemSlotsBoard({
   input,
   items,
   disabled,
+  label,
   t,
   onTry,
   onLeave,
@@ -23,6 +24,8 @@ export function ItemSlotsBoard({
   input: play.PlayInput;
   items: play.ItemView[];
   disabled: boolean;
+  /** The try button's words while it is disabled for a reason the team should read: "Not there yet". */
+  label?: string | undefined;
   t: Translate;
   onTry: (guess: string) => void;
   /** Take the puzzle's route for a team without the items, when the server offers it. */
@@ -121,7 +124,7 @@ export function ItemSlotsBoard({
       )}
 
       <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={disabled || !full} onClick={() => onTry(placed.join("|"))}>
-        {t("Try it")}
+        {label || t("Try it")}
       </button>
       {input.leave && (
         <button type="button" className="pv-btn pv-btn--wide" disabled={disabled} onClick={onLeave}>

@@ -661,6 +661,7 @@ function PuzzleStep(props: StepProps) {
           symbols={lock.symbols!}
           start={lock.start}
           disabled={locked}
+          label={needsPlace ? t("Not there yet") : undefined}
           t={t}
           onTry={answer}
         />
@@ -672,6 +673,7 @@ function PuzzleStep(props: StepProps) {
           cards={order}
           storageKey={node}
           disabled={locked}
+          label={needsPlace ? t("Not there yet") : undefined}
           t={t}
           onTry={answer}
         />
@@ -683,6 +685,7 @@ function PuzzleStep(props: StepProps) {
           input={slots}
           items={view.items ?? []}
           disabled={locked}
+          label={needsPlace ? t("Not there yet") : undefined}
           t={t}
           onTry={answer}
           onLeave={() => onAction({ kind: "leave", node })}
@@ -694,6 +697,7 @@ function PuzzleStep(props: StepProps) {
           key={node}
           fields={choices}
           disabled={locked}
+          label={needsPlace ? t("Not there yet") : undefined}
           t={t}
           onAnswer={answer}
         />

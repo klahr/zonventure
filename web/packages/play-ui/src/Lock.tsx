@@ -13,6 +13,7 @@ export function LockBoard({
   symbols,
   start,
   disabled,
+  label,
   t,
   onTry,
 }: {
@@ -20,6 +21,8 @@ export function LockBoard({
   symbols: NonNullable<play.PlayInput["symbols"]>;
   start: number[] | undefined;
   disabled: boolean;
+  /** The try button's words while it is disabled for a reason the team should read: "Not there yet". */
+  label?: string | undefined;
   t: Translate;
   onTry: (guess: string) => void;
 }) {
@@ -65,7 +68,7 @@ export function LockBoard({
         })}
       </div>
       <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={disabled} onClick={() => onTry(at.map((s) => symbols[s]!.value).join("|"))}>
-        {t("Try it")}
+        {label || t("Try it")}
       </button>
     </div>
   );
