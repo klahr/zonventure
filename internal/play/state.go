@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -155,6 +156,12 @@ const walkStep = 15.0
 // of at least walkStep. Phones are counted apart, as two teammates a
 // street apart are not one person zig-zagging across it.
 func walkedSince(ctx context.Context, q Querier, teamID int64, since time.Time) (float64, error) {
+	return walkedBy(ctx, q, teamID, since, nil)
+}
+
+// walkedBy is walkedSince counting only the phones of slots — a group's,
+// for a team split up — or every phone, for nil.
+func walkedBy(ctx context.Context, q Querier, teamID int64, since time.Time, slots []int64) (float64, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT slot_id, lat, lng FROM location_pings
 		WHERE team_id = $1 AND server_ts >= $2 AND (accuracy IS NULL OR accuracy <= $3)
@@ -173,6 +180,9 @@ func walkedSince(ctx context.Context, q Querier, teamID int64, since time.Time) 
 		var lat, lng float64
 		if err := rows.Scan(&slot, &lat, &lng); err != nil {
 			return 0, err
+		}
+		if slots != nil && !slices.Contains(slots, slot) {
+			continue
 		}
 		p := paths[slot]
 		if p == nil {
@@ -342,6 +352,11 @@ var HaversineMeters = session.HaversineMeters
 type teamState struct {
 	*session.Team
 	teamID, eventID, graphID int64
+	// whole is the team's node as loaded, which the cursor's
+	// compare-and-swap compares against: the split, while it is split.
+	// wasSplit is whether it was split as loaded.
+	whole    string
+	wasSplit bool
 }
 
 // newTeamState returns an empty state for teamID at now.
@@ -392,6 +407,8 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 		startName string
 		anywhere  bool
 		station   sql.NullString
+		split     sql.NullString
+		strands   []byte
 	)
 	query := `
 		SELECT tgs.event_id, tgs.graph_id, tgs.current_node, tgs.node_entered_at, tgs.started_at,
@@ -399,7 +416,7 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 		       tgs.theme, tgs.last_answer, tgs.timed_out, tgs.lang, tgs.cheated,
 		       COALESCE(adv.start_code, ''), tgs.start_paused, tgs.node_paused, ev.paused_seconds, ev.paused_at,
 		       adv.start_lat, adv.start_lng, adv.start_radius_m, adv.start_label, tm.start_anywhere,
-		       tm.station_zone
+		       tm.station_zone, tgs.split, tgs.strands
 		FROM team_graph_state tgs
 		JOIN teams tm ON tm.id = tgs.team_id
 		JOIN adventure_graphs g ON g.id = tgs.graph_id
@@ -412,7 +429,7 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	err := q.QueryRowContext(ctx, query, teamID).Scan(&s.eventID, &s.graphID, &current, &entered, &s.StartedAt,
 		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme, &s.LatestAnswer, &s.TimedOut, &s.Lang, &s.Cheated,
 		&s.StartCode, &s.StartPaused, &s.NodePaused, &s.Paused, &pausedAt,
-		&startLat, &startLng, &startRad, &startName, &anywhere, &station)
+		&startLat, &startLng, &startRad, &startName, &anywhere, &station, &split, &strands)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoGraph
 	}
@@ -420,6 +437,14 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 		return nil, fmt.Errorf("loading team state: %w", err)
 	}
 	s.Current = current.String
+	s.whole = s.Current
+	s.Split = split.String
+	s.wasSplit = s.Split != ""
+	if s.Split != "" && len(strands) > 0 {
+		if err := json.Unmarshal(strands, &s.Strands); err != nil {
+			return nil, fmt.Errorf("reading the team's groups: %w", err)
+		}
+	}
 	if entered.Valid {
 		s.NodeEnteredAt = entered.Time
 	}
@@ -442,6 +467,11 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 		if _, ok := s.G.Node(s.Current); !ok {
 			s.Current = ""
 		}
+	}
+	if s.Split != "" && !splitFits(s.G, s.Split, s.Strands) {
+		// Only a dev team's graph changes under it: a split edited away
+		// while the team is split leaves it where it split.
+		s.Split, s.Strands = "", nil
 	}
 	return s, s.loadRest(ctx, q)
 }
@@ -540,19 +570,35 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 		}
 	}
 
-	// What each player did on the current step, for one done together.
+	// What each player did on the current step, for one done together —
+	// on each group's, for a team split up.
 	if s.Current != "" {
-		rows, err := q.QueryContext(ctx, `SELECT slot_id, value, pressed_at FROM team_presses WHERE team_id = $1 AND node = $2`,
-			s.teamID, s.Current)
+		nodes := []string{s.Current}
+		for _, st := range s.Strands {
+			nodes = append(nodes, st.Current)
+		}
+		rows, err := q.QueryContext(ctx, `SELECT node, slot_id, value, pressed_at FROM team_presses WHERE team_id = $1 AND node = ANY($2)`,
+			s.teamID, nodes)
 		if err != nil {
 			return err
 		}
 		for rows.Next() {
+			var node string
 			var slot int64
 			var p session.Press
-			if err := rows.Scan(&slot, &p.Value, &p.At); err != nil {
+			if err := rows.Scan(&node, &slot, &p.Value, &p.At); err != nil {
 				rows.Close()
 				return err
+			}
+			if s.Split != "" {
+				if s.PressesAt == nil {
+					s.PressesAt = map[string]map[int64]session.Press{}
+				}
+				if s.PressesAt[node] == nil {
+					s.PressesAt[node] = map[int64]session.Press{}
+				}
+				s.PressesAt[node][slot] = p
+				continue
 			}
 			if s.Presses == nil {
 				s.Presses = map[int64]session.Press{}

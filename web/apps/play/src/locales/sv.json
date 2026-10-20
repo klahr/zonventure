@@ -524,5 +524,12 @@
   "✓ {{role}}'s task: done": "✓ {{role}}s uppgift: klar",
   "Wait until everyone in your team has joined.": "Vänta tills alla i ditt lag har anslutit.",
   "Waiting for your team: {{n}} of {{m}} players have joined. You can start once everyone is in.": "Väntar på ditt lag: {{n}} av {{m}} spelare har anslutit. Ni kan börja när alla är med.",
-  "Your team already has as many players as this adventure takes. Ask the organiser.": "Ditt lag har redan så många spelare som äventyret tar. Fråga arrangören."
+  "Your team already has as many players as this adventure takes. Ask the organiser.": "Ditt lag har redan så många spelare som äventyret tar. Fråga arrangören.",
+  "Set off": "Ge er av",
+  "You go with: {{group}}": "Du går med: {{group}}",
+  "Waiting for 1 more group. The team goes on together once it is here.": "Väntar på 1 grupp till. Laget går vidare tillsammans när den är här.",
+  "Waiting for {{n}} more groups. The team goes on together once they are here.": "Väntar på {{n}} grupper till. Laget går vidare tillsammans när de är här.",
+  "Groups": "Grupper",
+  "you": "du",
+  "Arrived": "Framme"
 }

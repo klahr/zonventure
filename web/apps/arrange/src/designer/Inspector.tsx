@@ -14,6 +14,7 @@ import type {
   PuzzleConfig,
   Case,
   Response,
+  SplitConfig,
   SwitchConfig,
   AnswerBar,
   AnswerKind,
@@ -28,7 +29,7 @@ import type {
   WebhookMethod,
   Zone,
 } from "@zonventure/graph";
-import { ANSWER_KINDS, MAX_CARDS, MAX_SLOTS, MIN_CARDS, shuffledDeal, usesMatchers, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
+import { ANSWER_KINDS, MAX_PATHS, MIN_PATHS, MAX_CARDS, MAX_SLOTS, MIN_CARDS, shuffledDeal, usesMatchers, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
 import { THEMES } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
 import { emails, siteName } from "@zonventure/api";
@@ -389,6 +390,22 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
       break;
     case "switch":
       parts.push(...switchParts(node, graph, onGraphChange, t));
+      break;
+    case "split":
+      parts.push(...splitParts(node, graph, onGraphChange, t));
+      break;
+    case "join":
+      parts.push({
+        id: "join",
+        title: t.t("Meets"),
+        hint: t.t("Wire every path of one split here. Each group waits on this step until the last arrives; then the team goes on together, with every item, note and point each group found."),
+        summary: <SumRow label={t.t("Goes on")}>{t.t("once every group is here")}</SumRow>,
+        editor: (
+          <p className="field__hint">
+            {t.t("Wire every path of one split here. Each group waits on this step until the last arrives; then the team goes on together, with every item, note and point each group found.")}
+          </p>
+        ),
+      });
       break;
     case "effect":
       if (node.effect) parts.push({ id: "effect", title: t.t("Does"), editor: <EffectForm cfg={node.effect} graph={graph} onChange={(effect) => onChange({ ...node, effect })} onNewItem={(item) => onGraphChange(updateNode({ ...graph, items: [...(graph.items ?? []), item] }, node.slug, (n) => ({ ...n, effect: { ...n.effect!, item: item.slug } })))} onGraphChange={onGraphChange} /> });
@@ -1630,6 +1647,102 @@ function switchParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void
     },
   ];
   return parts;
+}
+
+/**
+ * A split: the text the team reads as it divides, and its groups. Each
+ * group is a path, wired to its own steps and on to one join; a role
+ * takes its player down the path, and the players a role does not claim
+ * are shared out evenly — so a crowd needs no roles at all.
+ */
+function splitParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void, t: T): Part[] {
+  const cfg: SplitConfig = node.split ?? {};
+  const paths = cfg.paths ?? [];
+  const roles = (graph.roles ?? []).filter((r) => !r.secret);
+  const roleName = (slug: string) => roles.find((r) => r.slug === slug)?.name || slug;
+  const setCfg = (next: SplitConfig) => onGraphChange(updateNode(graph, node.slug, (n) => ({ ...n, split: next })));
+  const setPaths = (next: NonNullable<SplitConfig["paths"]>) => setCfg({ ...cfg, paths: next });
+  return [
+    {
+      id: "text",
+      title: t.t("As the team splits"),
+      summary: cfg.text ? <SumRow>{cfg.text}</SumRow> : <SumNone>{t.t("no text")}</SumNone>,
+      editor: (
+        <Field label={t.t("What the groups are off to do")}>
+          <MarkdownArea className="field__input" value={cfg.text ?? ""} onChange={(e) => setCfg(withOptional({ ...cfg }, "text", e.target.value || undefined))} />
+        </Field>
+      ),
+    },
+    {
+      id: "paths",
+      title: t.t("Groups"),
+      hint: t.t("Each phone is told its group. A group's role takes its player; everyone else is shared out evenly among the groups. A player in two groups walks them one after the other, and a group no one is in is walked by whoever finishes first."),
+      count: paths.length,
+      ports: true,
+      summary: (
+        <>
+          {paths.map((p) => (
+            <SumRow key={p.port} label={p.label || (p.role ? roleName(p.role) : p.port)}>
+              {p.role ? t.t("the {{role}} and a share of everyone else", { role: roleName(p.role) }) : t.t("a share of everyone")}
+            </SumRow>
+          ))}
+        </>
+      ),
+      editor: (
+        <>
+          {paths.map((p, i) => (
+            <div key={p.port} className="box">
+              <div className="box__row">
+                <input
+                  className="field__input"
+                  value={p.label ?? ""}
+                  placeholder={p.role ? roleName(p.role) : p.port}
+                  onChange={(e) => setPaths(paths.map((x, j) => (j === i ? withOptional({ ...x }, "label", e.target.value || undefined) : x)))}
+                  aria-label={t.t("Group name")}
+                />
+                {paths.length > MIN_PATHS && (
+                  <Button variant="ghost" size="icon" className="danger" onClick={() => setPaths(paths.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
+                    <Trash2 size={ICON.sm} />
+                  </Button>
+                )}
+              </div>
+              {roles.length > 0 && (
+                <Field label={t.t("Role")}>
+                  <select
+                    className="field__input"
+                    value={p.role ?? ""}
+                    onChange={(e) => setPaths(paths.map((x, j) => (j === i ? withOptional({ ...x }, "role", e.target.value || undefined) : x)))}
+                  >
+                    <option value="">{t.t("None: a share of everyone")}</option>
+                    {roles
+                      .filter((r) => r.slug === p.role || !paths.some((x) => x.role === r.slug))
+                      .map((r) => (
+                        <option key={r.slug} value={r.slug}>
+                          {r.name || r.slug}
+                        </option>
+                      ))}
+                  </select>
+                </Field>
+              )}
+            </div>
+          ))}
+          {paths.length < MAX_PATHS && (
+            <button
+              type="button"
+              className="add-btn"
+              onClick={() => {
+                const port = nextBranchPort(paths.map((p) => p.port));
+                setPaths([...paths, { port, label: t.t("Group {{n}}", { n: port.toUpperCase() }) }]);
+              }}
+            >
+              <Plus size={ICON.sm} aria-hidden="true" />
+              {t.t("Add group")}
+            </button>
+          )}
+        </>
+      ),
+    },
+  ];
 }
 
 /** a, b, … z, then branch-27, branch-28 — never a port already in use. */

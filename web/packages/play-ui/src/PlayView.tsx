@@ -187,6 +187,8 @@ export function PlayView(props: PlayViewProps) {
   else if (kind === "puzzle") body = <PuzzleStep {...step} />;
   else if (kind === "story") body = <StoryStep {...step} />;
   else if (kind === "hub") body = <HubStep {...step} />;
+  else if (kind === "split") body = <SplitStep {...step} />;
+  else if (kind === "join") body = <JoinStep {...step} />;
   else body = <p className="pv-muted">{t("Moving on…")}</p>;
 
   const readyHints = view.next_hint && secondsUntil(view.next_hint.available_at, now) <= 0 ? 1 : 0;
@@ -242,6 +244,8 @@ export function PlayView(props: PlayViewProps) {
           <span aria-hidden>←</span> {view.back_label || t("Back")}
         </button>
       )}
+
+      {view.groups?.length && kind !== "split" && kind !== "join" ? <Groups view={view} t={t} /> : null}
 
       {view.players_min ? (
         <p className="pv-waiting" role="status">
@@ -1063,6 +1067,64 @@ function ContinueButton({ view, t, disabled, label, onClick }: { view: play.View
     <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={disabled || open || choosing} onClick={onClick}>
       {label ?? (open ? t("{{answered}} of {{total}} answered", { answered, total: asked.length }) : choosing ? t("Waiting for everyone to choose") : t("Continue"))}
     </button>
+  );
+}
+
+/**
+ * Where the team splits up: what the groups are off to do, which this
+ * phone goes with, and every group — so a player knows where the others
+ * went. Continue sets the phone's group off down its path.
+ */
+function SplitStep({ view, t, busy, onAction, feedback }: StepProps) {
+  const node = view.node ?? "";
+  return (
+    <>
+      <Title view={view} />
+      {view.text && <Markdown text={view.text} className="pv-text" />}
+      {view.group && (
+        <p className="pv-group-me" role="status">
+          {t("You go with: {{group}}", { group: view.group })}
+        </p>
+      )}
+      <Groups view={view} t={t} />
+      <div className="pv-dock">
+        <FeedbackLine feedback={feedback} />
+        <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={!!busy} onClick={() => onAction({ kind: "continue", node })}>
+          {t("Set off")}
+        </button>
+      </div>
+    </>
+  );
+}
+
+/** A group waiting where the groups meet, for the others to arrive. */
+function JoinStep({ view, t }: StepProps) {
+  const left = (view.groups ?? []).filter((g) => !g.arrived).length;
+  return (
+    <>
+      <Title view={view} />
+      <p className="pv-waiting" role="status">
+        {left === 1 ? t("Waiting for 1 more group. The team goes on together once it is here.") : t("Waiting for {{n}} more groups. The team goes on together once they are here.", { n: left })}
+      </p>
+      <Groups view={view} t={t} />
+    </>
+  );
+}
+
+/** Every group of a split team, where it is and whether it has arrived. */
+function Groups({ view, t }: { view: play.View; t: Translate }) {
+  return (
+    <ul className="pv-groups" aria-label={t("Groups")}>
+      {(view.groups ?? []).map((g) => (
+        <li key={g.port} className={"pv-groups__group" + (g.current ? " is-current" : "") + (g.arrived ? " is-arrived" : "")}>
+          <span className="pv-groups__name">
+            {g.label}
+            {g.mine && <span className="pv-groups__mine"> · {t("you")}</span>}
+          </span>
+          <span className="pv-groups__at">{g.arrived ? t("Arrived") : g.at}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

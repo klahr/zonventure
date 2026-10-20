@@ -295,6 +295,9 @@ func (e *Engine) Snapshot(ctx context.Context, teamID int64) (View, error) {
 	if err := e.locate(ctx, tx, s); err != nil {
 		return View{}, err
 	}
+	if _, err := e.divide(ctx, tx, s); err != nil {
+		return View{}, err
+	}
 	v := s.View()
 	if err := e.decorate(ctx, tx, s.G, s.eventID, teamID, &v); err != nil {
 		return View{}, err
@@ -334,6 +337,12 @@ func (e *Engine) act(ctx context.Context, teamID int64, a action, fn func(*sessi
 		}
 	}
 
+	// A split team's players are dealt into its groups as they come.
+	dealt, err := e.divide(ctx, tx, s)
+	if err != nil {
+		return Result{}, err
+	}
+
 	score := s.Score()
 	res, step, err := s.Act(func() (Result, *walk.Step, error) { return fn(s.Team) })
 	if err != nil {
@@ -354,6 +363,9 @@ func (e *Engine) act(ctx context.Context, teamID int64, a action, fn func(*sessi
 		err = e.commit(ctx, tx, s, *step)
 	} else {
 		err = e.stay(ctx, tx, s)
+	}
+	if err == nil && step == nil && dealt {
+		err = saveSplit(ctx, tx, s)
 	}
 	if err != nil {
 		return Result{}, err
@@ -474,7 +486,9 @@ func (e *Engine) stay(ctx context.Context, tx *sql.Tx, s *teamState) error {
 }
 
 // commit persists a step: the node left, every node passed, hub branch
-// bookkeeping, effects, and finally the cursor.
+// bookkeeping, effects, and finally the cursor. For a split team the
+// cursor stored is the split's (session.Team.Whole); where each group is
+// goes with the groups, in act.
 func (e *Engine) commit(ctx context.Context, tx *sql.Tx, s *teamState, step walk.Step) error {
 	now := s.Now
 	old := s.Current
@@ -562,8 +576,8 @@ func (e *Engine) commit(ctx context.Context, tx *sql.Tx, s *teamState, step walk
 		    outcome = COALESCE(outcome, $8), last_answer = $11, started_at = $12, timed_out = $13, lang = $14, cheated = $15, updated_at = $2,
 		    start_paused = $16, node_paused = $17
 		WHERE team_id = $9 AND current_node IS NOT DISTINCT FROM $10
-	`, nullIfEmpty(step.To), now, s.Points, s.PenaltyScore, s.PenaltySeconds, s.Theme,
-		completedAt, outcome, s.teamID, nullIfEmpty(old), s.LatestAnswer, s.StartedAt, s.TimedOut, s.Lang, s.Cheated,
+	`, nullIfEmpty(s.Whole()), now, s.Points, s.PenaltyScore, s.PenaltySeconds, s.Theme,
+		completedAt, outcome, s.teamID, nullIfEmpty(s.whole), s.LatestAnswer, s.StartedAt, s.TimedOut, s.Lang, s.Cheated,
 		s.StartPaused, s.Paused)
 	if err != nil {
 		return err
@@ -571,6 +585,13 @@ func (e *Engine) commit(ctx context.Context, tx *sql.Tx, s *teamState, step walk
 	if n, _ := res.RowsAffected(); n != 1 {
 		return ErrStale
 	}
+	// Where each group is, or that the team is one again.
+	if s.Split != "" || s.wasSplit {
+		if err := saveSplit(ctx, tx, s); err != nil {
+			return err
+		}
+	}
+	s.whole, s.wasSplit = s.Whole(), s.Split != ""
 	return nil
 }
 
@@ -711,6 +732,11 @@ func (e *Engine) media(ctx context.Context, teamID int64, prefetch bool) ([]int6
 	if err := e.locate(ctx, e.DB, s); err != nil {
 		return nil, err
 	}
+	// A split team's phone sees its own group's step.
+	if _, err := e.divide(ctx, e.DB, s); err != nil {
+		return nil, err
+	}
+	s.Focus()
 	seen := s.VisibleMedia(strict)
 	if prefetch {
 		seen = s.PrefetchMedia(strict)

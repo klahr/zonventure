@@ -121,6 +121,7 @@ func Check(g *graph.Graph) Report {
 	checkMedia(r, g)
 	checkTimeLimit(r, g)
 	checkPlayers(r, g)
+	checkSplits(r, g)
 	checkTranslations(r, g)
 	checkHostEdits(r, g)
 	checkPrintMaterials(r, g)
@@ -303,11 +304,129 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 		case graph.Switch:
 			checkSwitch(r, g, n)
 
-		case graph.Start, graph.Story, graph.End:
+		case graph.Split:
+			checkSplit(r, g, n)
+
+		case graph.Start, graph.Story, graph.End, graph.Join:
 			// No required configuration.
 
 		default:
 			r.err("node.type.unknown", n.Slug, "", "unknown node type %q", n.Type)
+		}
+	}
+}
+
+// checkSplit checks a split's paths: enough of them, each a port of its
+// own, and each role a public one taken by one path at most.
+func checkSplit(r *reporter, g *graph.Graph, n graph.Node) {
+	cfg := n.SplitCfg
+	if cfg == nil || len(cfg.Paths) < graph.MinPaths {
+		r.err("split.paths.few", n.Slug, "", "a split needs at least %d paths, one for each group", graph.MinPaths)
+		return
+	}
+	if len(cfg.Paths) > graph.MaxPaths {
+		r.err("split.paths.many", n.Slug, "", "a split has at most %d paths", graph.MaxPaths)
+	}
+	ports, roles := map[string]bool{}, map[string]bool{}
+	for _, p := range cfg.Paths {
+		if p.Port == "" {
+			r.err("split.port.empty", n.Slug, "", "a path has no port name")
+			continue
+		}
+		if ports[p.Port] {
+			r.err("split.port.duplicate", n.Slug, p.Port, "two paths share the port %q", p.Port)
+		}
+		ports[p.Port] = true
+		if p.Role == "" {
+			continue
+		}
+		role, ok := g.Role(p.Role)
+		switch {
+		case !ok:
+			r.err("split.role.unknown", n.Slug, p.Port, "the path is for the role %q, which does not exist", p.Role)
+		case role.Secret:
+			r.err("split.role.secret", n.Slug, p.Port, "a path cannot be a secret role's: every phone sees which group each player goes with")
+		case roles[p.Role]:
+			r.err("split.role.duplicate", n.Slug, p.Port, "two paths are for the role %q; its player can go only one way", p.Role)
+		}
+		roles[p.Role] = true
+	}
+}
+
+// checkSplits checks where a split's paths go. Each group walks its own
+// steps until it reaches the join, where it waits for the others; so the
+// paths may not share a step (two groups on one step would answer it for
+// each other), a group cannot split again, and every path that leads
+// anywhere must lead to the same join. A path may end the adventure
+// instead, which ends it for every group. A join is only ever a split's.
+func checkSplits(r *reporter, g *graph.Graph) {
+	types := map[string]graph.Type{}
+	for _, n := range g.Nodes {
+		types[n.Slug] = n.Type
+	}
+	joinOf := map[string]string{}
+	for _, n := range g.Nodes {
+		if n.Type != graph.Split || n.SplitCfg == nil {
+			continue
+		}
+		paths := g.SplitPaths(n.Slug)
+		owner := map[string]string{}
+		var joins []string
+		for _, p := range n.SplitCfg.Paths {
+			for _, slug := range paths.Steps[p.Port] {
+				if other, ok := owner[slug]; ok && other != p.Port {
+					r.err("split.paths.cross", slug, "", "this step is on two paths of the split %q (%s and %s); each group needs steps of its own until they meet at a join", n.Slug, other, p.Port)
+				}
+				owner[slug] = p.Port
+				if types[slug] == graph.Split {
+					r.err("split.nested", slug, "", "a group of the split %q cannot split again before it reaches its join", n.Slug)
+				}
+				if types[slug] == graph.Start {
+					r.err("split.start", slug, "", "a path of the split %q leads back to a start", n.Slug)
+				}
+			}
+			for _, j := range paths.Joins[p.Port] {
+				if !slices.Contains(joins, j) {
+					joins = append(joins, j)
+				}
+			}
+			if _, ok := g.Target(n.Slug, p.Port); ok && len(paths.Joins[p.Port]) == 0 {
+				r.warn("split.path.nojoin", n.Slug, p.Port, "this path never reaches a join, so the team only meets again if its group ends the adventure — which ends it for every group")
+			}
+		}
+		// A path returning to the split itself would split the group again.
+		for _, e := range g.Edges {
+			if e.To == n.Slug {
+				if port, ok := paths.PathOf(e.From); ok {
+					r.err("split.nested", e.From, e.FromPort, "this step on the path %q leads back to its split; a group cannot split again", port)
+				}
+			}
+		}
+		if len(joins) > 1 {
+			r.err("split.joins.many", n.Slug, "", "the paths of this split lead to different joins (%s); they must all meet at one", strings.Join(joins, ", "))
+		}
+		for _, j := range joins {
+			if other, ok := joinOf[j]; ok && other != n.Slug {
+				r.err("join.splits.many", j, "", "two splits, %q and %q, meet at this join; give each its own", other, n.Slug)
+			}
+			joinOf[j] = n.Slug
+			// Every way into the join must be one of the split's paths:
+			// another arriving there would never be waited for.
+			for _, e := range g.Edges {
+				if e.To != j || e.From == n.Slug {
+					continue
+				}
+				if _, ok := paths.PathOf(e.From); !ok {
+					r.err("join.entry.outside", e.From, e.FromPort, "this leads into the join %q from outside the paths of its split %q", j, n.Slug)
+				}
+			}
+		}
+	}
+	for _, n := range g.Nodes {
+		if n.Type == graph.Join {
+			if _, ok := joinOf[n.Slug]; !ok {
+				r.warn("join.split.none", n.Slug, "", "no split's paths meet here, so the join waits for no one")
+			}
 		}
 	}
 }
@@ -809,7 +928,8 @@ func checkTermination(r *reporter, g *graph.Graph) {
 func checkProgressFreeCycles(r *reporter, g *graph.Graph) {
 	passive := map[string]bool{}
 	for _, n := range g.Nodes {
-		if n.Type == graph.Effect || n.Type == graph.Gate || n.Type == graph.Switch {
+		// A join holds only a split team; anyone else walks through it.
+		if n.Type == graph.Effect || n.Type == graph.Gate || n.Type == graph.Switch || n.Type == graph.Join {
 			passive[n.Slug] = true
 		}
 	}

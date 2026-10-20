@@ -185,3 +185,81 @@ func TestSimulateCrewRoles(t *testing.T) {
 		}
 	}
 }
+
+// A crew splits as a team does: each phone shows its own group's path,
+// acts on it, and the crew is together again once both groups arrive.
+func TestSimulateCrewSplitPaths(t *testing.T) {
+	t.Parallel()
+	right := func(answer string) []graph.Output {
+		return []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: answer}}}}
+	}
+	g := &graph.Graph{
+		Roles: []graph.Role{{Slug: "scout", Name: "Scout"}},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "split", Type: graph.Split, SplitCfg: &graph.SplitConfig{Paths: []graph.SplitPath{{Port: "a", Role: "scout"}, {Port: "b", Label: "Others"}}}},
+			{Slug: "pa", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Outputs: right("bell")}},
+			{Slug: "pb", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Outputs: right("water")}},
+			{Slug: "join", Type: graph.Join},
+			{Slug: "after", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Outputs: right("x")}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "split"},
+			{From: "split", FromPort: "a", To: "pa"}, {From: "split", FromPort: "b", To: "pb"},
+			{From: "pa", FromPort: "solved", To: "join"}, {From: "pb", FromPort: "solved", To: "join"},
+			{From: "join", FromPort: "out", To: "after"}, {From: "after", FromPort: "solved", To: "end"},
+		},
+	}
+	var team *session.Team
+	crew := &simCrew{Players: []simPlayer{{Slot: 1, Name: "Ann"}, {Slot: 2, Name: "Bo"}, {Slot: 3, Name: "Cy"}}}
+	do := func(as int64, a simulateAction) simulateResponse {
+		t.Helper()
+		var in *session.Team
+		if team != nil {
+			in = roundTrip(t, team)
+		}
+		c := crew.clone()
+		c.As = as
+		r, status, msg := simulateCrew(g, nil, in, c, a, simT0)
+		if status != http.StatusOK || r.Refuse != nil {
+			t.Fatalf("%s as %d: %d %s %+v", a.Kind, as, status, msg, r.Refuse)
+		}
+		team, crew = r.Team, r.Crew
+		return r
+	}
+	at := func(r simulateResponse) []string {
+		var out []string
+		for _, p := range r.Phones {
+			out = append(out, p.View.Node)
+		}
+		return out
+	}
+	r := do(1, simulateAction{Kind: "start"})
+	r = do(1, simulateAction{Kind: "move"}) // a crew action, to deal the phones
+	if got := at(r); !slices.Equal(got, []string{"split", "split", "split"}) {
+		t.Fatalf("phones at %v", got)
+	}
+	// Ann is the scout; Bo is shared out to the others' path, Cy to the scout's.
+	for _, p := range r.Phones {
+		if p.Slot == 2 && p.View.Group != "Others" || p.Slot != 2 && p.View.Group != "Scout" {
+			t.Fatalf("phone %d is with %q", p.Slot, p.View.Group)
+		}
+		if p.Slot == 3 && slices.Contains(p.Roles, "scout") {
+			t.Errorf("Cy's own roles %v: the scout's role is only lent inside the group", p.Roles)
+		}
+	}
+	r = do(3, simulateAction{Kind: "continue", Node: "split"})
+	if got := at(r); !slices.Equal(got, []string{"pa", "split", "pa"}) {
+		t.Fatalf("after Cy set off: %v", got)
+	}
+	do(2, simulateAction{Kind: "continue", Node: "split"})
+	r = do(2, simulateAction{Kind: "answer", Node: "pb", Guess: "water"})
+	if got := at(r); !slices.Equal(got, []string{"pa", "join", "pa"}) {
+		t.Fatalf("Bo at the join: %v", got)
+	}
+	r = do(1, simulateAction{Kind: "answer", Node: "pa", Guess: "bell"})
+	if got := at(r); !slices.Equal(got, []string{"after", "after", "after"}) || team.Split != "" {
+		t.Fatalf("together again: %v, split %q", got, team.Split)
+	}
+}

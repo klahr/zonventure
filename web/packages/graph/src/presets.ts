@@ -350,6 +350,33 @@ export const PRESETS: Preset[] = [
     }),
   },
   {
+    id: "split",
+    type: "split",
+    category: "flow",
+    label: "Split up",
+    hint: "The team divides: each group goes its own way, until they meet again",
+    keywords: "split parallel groups divide fork teams roles separate",
+    build: () => ({
+      type: "split",
+      title: "Split up",
+      split: {
+        paths: [
+          { port: "a", label: "Group A" },
+          { port: "b", label: "Group B" },
+        ],
+      },
+    }),
+  },
+  {
+    id: "join",
+    type: "join",
+    category: "flow",
+    label: "Meet again",
+    hint: "Waits for every group of a split, then the team goes on together",
+    keywords: "join merge meet wait regroup together parallel",
+    build: () => ({ type: "join", title: "Meet again" }),
+  },
+  {
     id: "effect-score",
     type: "effect",
     category: "effect",
@@ -514,6 +541,10 @@ export function suggestionsFor(from: DragFrom | null): string[] {
     case "story":
       return ["puzzle-text", "story", "effect-score", "end"];
     case "switch":
+      return ["puzzle-text", "story", "end"];
+    case "split":
+      return ["puzzle-text", "story", "checkin"];
+    case "join":
       return ["puzzle-text", "story", "end"];
     case "hub":
       return from.port === "done" ? ["gate", "puzzle-text", "end"] : ["puzzle-text", "checkin", "story"];

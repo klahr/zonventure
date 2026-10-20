@@ -13,6 +13,21 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ### Added
 
+- Designer: parallel paths. A "Split up" step divides the team into
+  groups, one per path, each walking its own steps on its own phones
+  until they meet again at a "Meet again" step, where each group waits
+  for the last to arrive and the team goes on together. A path's role
+  takes its player down it; everyone else is shared out evenly, so a
+  team of a hundred with no roles splits in even halves. What any group
+  finds — items, notes, points, answers — is the whole team's. Every
+  phone sees where each group is; a step done together waits for its
+  group, a place is reached by one of the group, and a role no one in
+  the group holds is everyone's in it. A player in two groups walks them
+  one after the other, and a group whose players have all gone is
+  walked by whoever finishes first, so a team of any size can play a
+  split. The time limit, and an ending on any path, end it for every
+  group. The preview, the simulator and the AI assistant play splits
+  too.
 - Designer: a step done in parallel. Its answer is "Tasks": each task
   block is one role's part, answered only by that role's player, on
   their own phone and at their own place where it has one. Every phone

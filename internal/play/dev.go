@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/session"
 )
 
 // A dev team plays the adventure's draft as it is edited (graphstore's
@@ -67,6 +68,16 @@ func (e *Engine) DevMoveTo(ctx context.Context, teamID int64, node string) error
 		SET current_node = $2, node_entered_at = $3, completed_at = NULL, outcome = NULL, theme = $4, updated_at = $3
 		WHERE team_id = $1
 	`, teamID, node, now, themeBefore(s.G, node)); err != nil {
+		return err
+	}
+	// The team is one, wherever it is put — or, put on a split, splits
+	// there afresh, as on arriving.
+	placed, err := session.Place(s.G, node, now)
+	if err != nil {
+		return err
+	}
+	s.Split, s.Strands = placed.Split, placed.Strands
+	if err := saveSplit(ctx, tx, s); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -150,5 +161,5 @@ func reopenDev(ctx context.Context, q Querier, teamID, eventID int64) error {
 // Visible reports whether teams see a step of this type: the ones a dev
 // team may be put on.
 func Visible(t graph.Type) bool {
-	return t == graph.Puzzle || t == graph.Story || t == graph.Hub || t == graph.End
+	return t == graph.Puzzle || t == graph.Story || t == graph.Hub || t == graph.Split || t == graph.End
 }

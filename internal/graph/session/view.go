@@ -77,6 +77,13 @@ type View struct {
 	Offer     []OfferEntry `json:"offer,omitempty"`
 	CanFinish bool         `json:"can_finish,omitempty"`
 
+	// Groups are set while the team is split up (graph.SplitConfig):
+	// every group, where it is and whether it waits at the join. Group is
+	// the name of the one this view is for — on a split, the group the
+	// phone goes with.
+	Groups []GroupView `json:"groups,omitempty"`
+	Group  string      `json:"group,omitempty"`
+
 	// Together is how far the players are with a puzzle they do
 	// together: keys turned, players agreed.
 	Together *Together `json:"together,omitempty"`
@@ -738,8 +745,10 @@ func (t *Team) fill(s string) string {
 
 func number(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 
-// View renders the team's state for the player.
+// View renders the team's state for the player. A split team's view is
+// that of the group the phone asking is walking (Focus).
 func (t *Team) View() View {
+	t.Focus()
 	v := t.view()
 	v.Stations = t.G.Stations
 	for _, r := range t.G.Roles {
@@ -760,7 +769,7 @@ func (t *Team) View() View {
 	}
 	v.Reveal = t.reveal()
 	if t.tooFew() {
-		v.PlayersIn, v.PlayersMin = len(t.Players), t.G.MinPlayers
+		v.PlayersIn, v.PlayersMin = len(t.everyone()), t.G.MinPlayers
 	}
 	t.translate(&v)
 	return v
@@ -1116,6 +1125,15 @@ func (t *Team) view() View {
 		return v
 	}
 
+	if t.Split != "" {
+		v.Groups = t.groups()
+		for _, g := range v.Groups {
+			if g.Current {
+				v.Group = g.Label
+			}
+		}
+	}
+
 	n, ok := t.G.Node(t.Current)
 	if !ok {
 		return v
@@ -1209,6 +1227,10 @@ func (t *Team) view() View {
 		}
 		if q := t.Quiz(); t.Completed && (q.Total > 0 || q.Tiebreak != nil) {
 			v.Quiz = &q
+		}
+	case graph.Split:
+		if n.SplitCfg != nil {
+			v.Text = t.G.Tr(t.lang(), graph.NodeKey(n.Slug, "split-text"), n.SplitCfg.Text)
 		}
 	case graph.Hub:
 		// Recompute the offer: it is a function of state, not stored.

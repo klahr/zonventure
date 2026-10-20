@@ -364,10 +364,10 @@ func publishedGraphSummary(ctx context.Context, db *sql.DB, advID int64) (*graph
 			if n.StoryCfg != nil {
 				step.Zone = n.StoryCfg.Zone
 			}
-		case graph.Hub, graph.End:
+		case graph.Hub, graph.Split, graph.End:
 		default:
-			// Starts, gates, switches and effects happen without the
-			// team seeing a step.
+			// Starts, gates, switches, effects and joins happen without
+			// the team seeing a step of its own.
 			continue
 		}
 		for _, b := range n.Blocks() {

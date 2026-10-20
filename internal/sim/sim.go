@@ -503,6 +503,12 @@ func (b *bot) act() {
 		b.puzzle(v)
 	case v.Type == graph.Hub:
 		b.hub(v)
+	case v.Type == graph.Split:
+		// A simulated team is all of its players: it walks each group's
+		// path in turn (session.Team.Focus), setting each off from here.
+		if _, ok := b.do("continue", func() (session.Result, *walk.Step, error) { return b.t.Continue(v.Node) }); ok {
+			b.later(5 + b.rng().Float64()*10)
+		}
 	default:
 		b.waitFor(v)
 	}

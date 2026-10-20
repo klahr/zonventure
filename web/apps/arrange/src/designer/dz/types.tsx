@@ -1,4 +1,4 @@
-import { BookOpen, DoorOpen, Flag, Puzzle, Signpost, Sparkles, Split, Trophy, type LucideIcon } from "lucide-react";
+import { BookOpen, DoorOpen, Flag, GitFork, GitMerge, Puzzle, Signpost, Sparkles, Split, Trophy, type LucideIcon } from "lucide-react";
 import type { NodeType } from "@zonventure/graph";
 
 /**
@@ -14,8 +14,10 @@ export const STEP: Record<NodeType, { icon: LucideIcon; label: string; about: st
   gate: { icon: DoorOpen, label: "Gate", about: "Sends the team one way or another based on what it has done so far." },
   effect: { icon: Sparkles, label: "Effect", about: "Changes something — points, an item, a counter, a journal page — and moves straight on." },
   switch: { icon: Signpost, label: "Crossroads", about: "Sends the team different ways depending on what it answered. Teams never see it." },
+  split: { icon: GitFork, label: "Split up", about: "The team divides into groups, one per path, each walking its own steps on its own phones until they meet again at a join. A path's role takes its player; everyone else is shared out evenly." },
+  join: { icon: GitMerge, label: "Meet again", about: "Where a split's groups meet. Each group waits here until the last arrives, then the team goes on together with everything every group found." },
   end: { icon: Trophy, label: "End", about: "The adventure is over, as a success or a failure." },
 };
 
 /** Steps a player sees. The others run the moment a team reaches them. */
-export const VISIBLE: ReadonlySet<string> = new Set<NodeType>(["puzzle", "story", "hub", "end"]);
+export const VISIBLE: ReadonlySet<string> = new Set<NodeType>(["puzzle", "story", "hub", "split", "end"]);

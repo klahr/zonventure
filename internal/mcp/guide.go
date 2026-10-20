@@ -119,7 +119,7 @@ func authoringGuide() string {
 
 An adventure is a graph. Nodes are steps; edges run from a node's output port to the next node. Zones are places on the map, referenced by slug. Every path must lead from the one start node to an end node.
 
-Node types: start (port out), story (text to read; port out), puzzle (a question; one port per output), hub (a choice or shuffle of branches), gate and switch (conditions), effect (grant an item, add score…; port out), end.
+Node types: start (port out), story (text to read; port out), puzzle (a question; one port per output), hub (a choice or shuffle of branches), gate and switch (conditions), effect (grant an item, add score…; port out), split and join (parallel paths), end.
 
 The adventure's look is its main theme: the graph's "main_theme" names one of its saved themes, in "themes": {slug, name, look}, a whole look (colours, fonts, corners, cards, backdrop, style). Add or change one with edit_adventure_graph put_theme, with main: true to make it the main theme; like the rest of the draft it reaches players when published. A theme effect restyles the phone from that step on: "theme" is the slug of another saved theme, or default to go back to the main theme. A look's style.transition (none, fade, slide, zoom, flip, pop) sets how each step comes in.
 
@@ -179,6 +179,18 @@ Leave answer out for a typed answer. Otherwise:
 - tiles: a picture (answer.image, a media ref) cut into rows × cols to reorder.
 - order: cards [{text, color "#rrggbb", image (a media ref)}], 2 to 8, listed in their right order; start is the order they are dealt in, as card indices ([2,0,1]), reversed if left out. The team drags them into order.
 - questions: answered by quiz blocks in the step.
+
+## Parallel paths: split and join
+
+A split divides the team into groups that go their own ways and meet again at a join: one group to the church for the key, the other to the well for the map, the lock opened together after. Items, notes, points and answers stay the team's, so what one group finds the other can use.
+
+{"slug": "split-up", "type": "split", "title": "Split up", "split": {"text": "Two of you to the church, the rest to the well.", "paths": [{"port": "church", "role": "scout", "label": "Church party"}, {"port": "well", "label": "Well party"}]}}
+{"slug": "meet", "type": "join", "title": "Meet at the square"}
+
+- One port per path. A path with a role takes that role's player (a default role's: everyone holding no other role); everyone else is shared out evenly among the paths, so a big team with no roles splits into even groups. A path may not be a secret role's.
+- Wire each path's steps from the split's port to the join, and the join's out to what the team does together. The paths may not share a step, a group cannot split again before its join, and every path must lead to the same join (or end the adventure, which ends it for every group).
+- Each phone sees its own group's steps; a step done together (keys, unanimous) waits for the group; a role no one in the group holds is everyone's in it. A player in several groups — a small team — walks them one after another; a group with no one in it is walked by whoever has finished theirs.
+- simulate_adventure plays the groups in turn: continue past the split for the first group, play its path to the join, then the next group's.
 
 ## Writing the text
 

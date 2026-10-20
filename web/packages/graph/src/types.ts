@@ -10,7 +10,7 @@
 // settled that trade is now close; if these start drifting, generating
 // them from the Go structs (tygo) is the fix, not more care.
 
-export type NodeType = "start" | "puzzle" | "story" | "hub" | "gate" | "effect" | "switch" | "end";
+export type NodeType = "start" | "puzzle" | "story" | "hub" | "gate" | "effect" | "switch" | "split" | "join" | "end";
 
 export const PORT_OUT = "out";
 export const PORT_PASS = "pass";
@@ -190,6 +190,7 @@ export interface Node {
   gate?: GateConfig;
   effect?: EffectConfig;
   switch?: SwitchConfig;
+  split?: SplitConfig;
   end?: EndConfig;
   start?: StartConfig;
   /** Journal entries the team gains on reaching this step. */
@@ -586,6 +587,29 @@ export interface SwitchConfig {
   from?: string;
   cases?: Case[];
 }
+
+/**
+ * internal/graph: SplitConfig — divides the team into groups, one per
+ * path, until they meet at a join. A path's role takes its player; the
+ * rest are shared out evenly among the paths.
+ */
+export interface SplitConfig {
+  paths?: SplitPath[];
+  /** Shown above the group a player goes with. */
+  text?: string;
+}
+
+export interface SplitPath {
+  port: string;
+  /** The role whose player goes this way; empty takes only a share of everyone else. */
+  role?: string;
+  /** The group's name on the phones; empty is the role's name. */
+  label?: string;
+}
+
+/** graph.MinPaths and graph.MaxPaths. */
+export const MIN_PATHS = 2;
+export const MAX_PATHS = 8;
 
 export interface Case {
   port: string;

@@ -1586,6 +1586,42 @@
 
 /* --- Back to a home screen -------------------------------------------------- */
 
+/* A split team's groups: where each is, this phone's marked. */
+.pv-group-me {
+  margin: var(--sp-3) var(--sp-4) 0;
+  font-weight: 700;
+  color: var(--ink);
+}
+.pv-groups {
+  list-style: none;
+  margin: var(--sp-2) var(--sp-4) 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-1);
+  font-size: var(--text-sm);
+}
+.pv-groups__group {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink);
+}
+.pv-groups__group.is-current {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  font-weight: 600;
+}
+.pv-groups__at {
+  opacity: 0.75;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.pv-groups__group.is-arrived .pv-groups__at {
+  opacity: 1;
+}
+
 .pv-waiting {
   margin: var(--sp-2) var(--sp-4) 0;
   padding: var(--sp-2) var(--sp-3);

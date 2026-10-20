@@ -49,6 +49,8 @@ export const TYPE_LABEL: Record<Node["type"], string> = {
   gate: "Gate",
   effect: "Effect",
   switch: "Crossroads",
+  split: "Split up",
+  join: "Meet again",
   end: "End",
 };
 
@@ -105,6 +107,12 @@ function summary(n: Node, t: ReturnType<typeof useT>, sourceTitle?: string): str
           return t.t("Theme {{theme}}", { theme: e.theme || "?" });
       }
     }
+    case "split": {
+      const k = n.split?.paths?.length ?? 0;
+      return t.t(k === 1 ? "1 group" : "{{n}} groups", { n: k });
+    }
+    case "join":
+      return t.t("Waits for every group");
     case "end":
       return n.end?.outcome === "fail" ? t.t("Failure") : t.t("Success");
     default:

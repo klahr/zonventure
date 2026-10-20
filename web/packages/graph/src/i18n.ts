@@ -194,6 +194,12 @@ export function nodeTexts(n: Node): Translatable[] {
   }
   if (n.story) blocks(n.story.blocks, "Text");
   if (n.end) blocks(n.end.blocks, "Closing text");
+  if (n.split) {
+    add("split-text", "Text", n.split.text, { multiline: true });
+    for (const p of n.split.paths ?? []) {
+      add(`path:${p.port}:label`, "Group “{{name}}”", p.label, { vars: { name: p.label || p.port } });
+    }
+  }
   if (n.hub) {
     add("hub-text", "Text", n.hub.text, { multiline: true });
     for (const b of n.hub.branches ?? []) {
@@ -331,6 +337,12 @@ export function withTexts(n: Node, f: (key: string) => string | undefined): Node
             })),
           }
         : {}),
+    };
+  if (n.split)
+    out.split = {
+      ...n.split,
+      ...(n.split.text !== undefined ? { text: or("split-text", n.split.text) } : {}),
+      ...(n.split.paths ? { paths: n.split.paths.map((p) => (p.label === undefined ? p : { ...p, label: or(`path:${p.port}:label`, p.label) })) } : {}),
     };
   if (n.effect?.kind === "email")
     out.effect = {

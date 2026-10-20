@@ -29,8 +29,8 @@ import (
 	"github.com/klahr/zonventure/internal/graph/match"
 )
 
-// Type discriminates a node. Seven types replace fourteen legacy
-// entities; resist adding an eighth without deleting something.
+// Type discriminates a node. A handful of types replace fourteen legacy
+// entities; resist adding another without deleting something.
 type Type string
 
 const (
@@ -41,13 +41,15 @@ const (
 	Gate   Type = "gate"   // routes on a condition
 	Effect Type = "effect" // changes state, then continues
 	Switch Type = "switch" // routes on an answer the team gave
+	Split  Type = "split"  // divides the team: each group goes its own way
+	Join   Type = "join"   // waits for every group of a split, then goes on
 	End    Type = "end"    // finishes the run
 )
 
 // Well-known port names. A Puzzle's and a Hub's ports are author-defined
 // and therefore not listed here.
 const (
-	PortOut  = "out"  // Start, Story, Effect
+	PortOut  = "out"  // Start, Story, Effect, Join
 	PortPass = "pass" // Gate, condition held
 	PortFail = "fail" // Gate, condition did not hold
 	PortDone = "done" // Hub, enough branches completed
@@ -204,6 +206,7 @@ func (g *Graph) PrintMediaIDs() []int64 {
 //	out:<port>:answers  out:<port>:contains (more accepted answers, one per line)
 //	reply:<i>  hint:<i>
 //	branch:<port>:label  branch:<port>:note
+//	split-text  path:<port>:label (a split's)
 //	field:<i>:label  field:<i>:opt:<value>  sym:<value>  slot:<i>  card:<i>
 //	email:subject  email:body (an email effect's)
 //
@@ -350,6 +353,7 @@ type Node struct {
 	SwitchCfg *SwitchConfig `json:"switch,omitempty"`
 	EndCfg    *EndConfig    `json:"end,omitempty"`
 	StartCfg  *StartConfig  `json:"start,omitempty"`
+	SplitCfg  *SplitConfig  `json:"split,omitempty"`
 
 	// Unlocks lists journal entries the team gains the moment it reaches
 	// this step — a clue noted as it is read. It is the Effect node's
@@ -1068,6 +1072,79 @@ type StoryConfig struct {
 	Once bool `json:"once,omitempty"`
 }
 
+// SplitConfig divides a team into groups that go their own ways, each
+// down one path, until they meet again at a Join: one group to the
+// church for the key, the other to the well for the map, the lock
+// opened together after. It is the team's single token become several,
+// one per path; everything the groups earn — items, notes, points,
+// answers — is still the team's, so what one finds the other can use.
+//
+// A player goes down the path of a role they hold: the Navigator down
+// the Navigator's. Players holding none of the paths' roles — the crew
+// of a big team, or every player where the paths have no roles — are
+// shared out among the paths, each to the one with fewest so far. Who
+// is in which group is settled as the team arrives here and kept to
+// the join; a player who joins after is shared out the same way.
+//
+// A player in more than one group (a small team, a player holding two
+// paths' roles) walks them one after another, and a group with no one
+// in it is anyone's, walked by whoever has finished their own — so a
+// team of any size can play a split, a player alone walking every path.
+//
+// The paths may not cross, and each must lead to the same Join; see
+// valid. A path may end the adventure instead, which ends it for every
+// group: the team has failed, or won, wherever the others are.
+type SplitConfig struct {
+	Paths []SplitPath `json:"paths,omitempty"`
+	// Text is shown above the group the player is with, on the step
+	// where the team splits up: what the groups are off to do.
+	Text string `json:"text,omitempty"`
+}
+
+// SplitPath is one way out of a split, and the group that takes it.
+type SplitPath struct {
+	Port string `json:"port"`
+	// Role is the role whose player goes this way: a dealt role's one
+	// player, or the default role's every player. Empty takes only a
+	// share of the players no path's role claims.
+	Role string `json:"role,omitempty"`
+	// Label names the group on the phones, translated under
+	// NodeKey(…, "path:<port>:label"); empty is the role's name.
+	Label string `json:"label,omitempty"`
+}
+
+// MinPaths and MaxPaths bound a split: one path is not a split, and a
+// team spread more ways than this is no longer one team.
+const (
+	MinPaths = 2
+	MaxPaths = 8
+)
+
+// Path finds a split's path by port.
+func (n Node) Path(port string) (SplitPath, bool) {
+	if n.SplitCfg == nil {
+		return SplitPath{}, false
+	}
+	for _, p := range n.SplitCfg.Paths {
+		if p.Port == port {
+			return p, true
+		}
+	}
+	return SplitPath{}, false
+}
+
+// PathLabel is the name a split's path is shown under: its label, or
+// its role's name, or its port.
+func (g *Graph) PathLabel(p SplitPath) string {
+	switch {
+	case p.Label != "":
+		return p.Label
+	case p.Role != "":
+		return g.RoleName(p.Role)
+	}
+	return p.Port
+}
+
 // Policy decides which branch of a Hub a team enters.
 type Policy string
 
@@ -1564,8 +1641,17 @@ func (g *Graph) Target(nodeSlug, port string) (string, bool) {
 // the handles.
 func (n Node) Ports() []string {
 	switch n.Type {
-	case Start, Story, Effect:
+	case Start, Story, Effect, Join:
 		return []string{PortOut}
+	case Split:
+		if n.SplitCfg == nil {
+			return nil
+		}
+		out := make([]string, 0, len(n.SplitCfg.Paths))
+		for _, p := range n.SplitCfg.Paths {
+			out = append(out, p.Port)
+		}
+		return out
 	case Gate:
 		return []string{PortPass, PortFail}
 	case Switch:

@@ -8,7 +8,7 @@
 
 import { get, post, request, type RequestOptions } from "./http.ts";
 
-export type NodeType = "start" | "puzzle" | "story" | "hub" | "gate" | "effect" | "end";
+export type NodeType = "start" | "puzzle" | "story" | "hub" | "gate" | "effect" | "split" | "join" | "end";
 
 /** internal/graph: Zone */
 export interface PlayZone {
@@ -276,6 +276,21 @@ export interface JournalView {
   media?: PlayMedia[];
 }
 
+/** session.GroupView — one group of a split team. */
+export interface GroupView {
+  port: string;
+  label: string;
+  /** Where the group is: the step and its title. */
+  node: string;
+  at?: string;
+  /** Waits at the join for the others. */
+  arrived?: boolean;
+  /** This phone is with the group; current: this view is the group's. */
+  mine?: boolean;
+  current?: boolean;
+  players?: number;
+}
+
 /**
  * session.View — what the player sees. Every time in it is relative to
  * `now`, the engine's clock, not the device's.
@@ -316,6 +331,9 @@ export interface View {
   attempts?: number;
   offer?: OfferEntry[];
   can_finish?: boolean;
+  /** Every group while the team is split up (a split step), and the name of the one this view is for. */
+  groups?: GroupView[];
+  group?: string;
   /** Languages the adventure plays in, main first, and the view's own. */
   languages?: string[];
   lang?: string;

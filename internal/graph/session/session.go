@@ -239,6 +239,24 @@ type Team struct {
 	// read from its phones' positions by the live engine, added up from
 	// the moves the simulator makes.
 	WalkedMetres float64 `json:"walked,omitempty"`
+
+	// Split is the split the team is divided at, and Strands where each
+	// of its groups is, while it is: see split.go. Current is then the
+	// cursor of the group a view or action is for (Focus), and the split
+	// when it is for none.
+	Split   string   `json:"split,omitempty"`
+	Strands []Strand `json:"strands,omitempty"`
+	// Walks is how far each group has walked on its step, by path, as the
+	// live engine reads it from the group's phones. Never stored.
+	Walks map[string]float64 `json:"-"`
+	// PressesAt are what each player did on each group's step, by node,
+	// for a split team; focusing on a group makes its step's Presses.
+	// Never stored with the team.
+	PressesAt map[string]map[int64]Press `json:"-"`
+	// focus is the strand Current is, counted from 1, and saved what
+	// focusing on it narrowed.
+	focus int
+	saved *focused
 }
 
 // New returns an empty team on g at time now, not yet placed anywhere.
@@ -308,6 +326,7 @@ func Place(g *graph.Graph, node string, now time.Time) (*Team, error) {
 	t := New(g, now)
 	t.Current = node
 	t.Row(node)
+	t.applySplit(walk.Step{To: node})
 	return t, nil
 }
 
@@ -356,6 +375,7 @@ func (t *Team) Apply(step walk.Step) {
 	t.NodeEnteredAt = t.Now
 	t.NodePaused = t.Paused
 	t.WalkedMetres = 0
+	t.applySplit(step)
 }
 
 // FinishPoints are what the team scores as it finishes: its quiz walk
@@ -750,6 +770,11 @@ func (t *Team) current(node string) (graph.Node, error) {
 	if t.Completed {
 		return graph.Node{}, ErrFinished
 	}
+	if t.Split != "" {
+		if err := t.focusFor(node); err != nil {
+			return graph.Node{}, err
+		}
+	}
 	if t.Current != node {
 		return graph.Node{}, ErrStale
 	}
@@ -1047,7 +1072,7 @@ func (t *Team) Act(action func() (Result, *walk.Step, error)) (Result, *walk.Ste
 // needs. Only players count: the team as a whole — the organisers, a
 // simulated team — is never short.
 func (t *Team) tooFew() bool {
-	return t.Players != nil && t.G.MinPlayers > 0 && len(t.Players) < t.G.MinPlayers
+	return t.everyone() != nil && t.G.MinPlayers > 0 && len(t.everyone()) < t.G.MinPlayers
 }
 
 // TimeUp moves the team as the time limit says, if it is due — the
@@ -1063,6 +1088,8 @@ func (t *Team) TimeUp() (Result, *walk.Step, error) {
 
 func (t *Team) fireTimeUp() (Result, *walk.Step, error) {
 	t.TimedOut = true
+	// Wherever its groups are, the team is sent on together.
+	t.endSplit()
 	step, err := walk.Jump(t.G, t, t.Current, t.G.TimeLimit.To)
 	if err != nil {
 		return Result{}, nil, err
@@ -1093,7 +1120,8 @@ func (t *Team) Back(node string) (Result, *walk.Step, error) {
 // None once the time limit has moved it: where the limit sends a team is
 // where it stays, or it would play on with no clock.
 func (t *Team) backTo() (string, bool) {
-	if t.Current == "" || t.TimedOut {
+	// A group cannot go back alone to a home screen the team left.
+	if t.Current == "" || t.TimedOut || t.Split != "" {
 		return "", false
 	}
 	hub, ok := t.G.OwnerHub(t.Current)
@@ -1116,11 +1144,15 @@ func (t *Team) unanswered(n graph.Node) bool {
 	return false
 }
 
-// Continue moves the team past a story node.
+// Continue moves the team past a story node, or sets a group off down
+// its path from a split.
 func (t *Team) Continue(node string) (Result, *walk.Step, error) {
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
+	}
+	if n.Type == graph.Split {
+		return t.leaveSplit(n)
 	}
 	if n.Type != graph.Story {
 		return Result{}, nil, ErrWrongNode

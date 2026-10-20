@@ -493,3 +493,42 @@ func TestBotsDoTasks(t *testing.T) {
 		}
 	}
 }
+
+// Simulated teams walk each path of a split in turn, and finish.
+func TestTeamsWalkEveryPathOfASplit(t *testing.T) {
+	g := course()
+	g.Nodes = append(g.Nodes,
+		graph.Node{Slug: "split", Type: graph.Split, SplitCfg: &graph.SplitConfig{Paths: []graph.SplitPath{{Port: "a"}, {Port: "b"}}}},
+		graph.Node{Slug: "to-church", Type: graph.Story, StoryCfg: &graph.StoryConfig{Zone: "church", Blocks: graph.LegacyBlocks("Church.", nil)}},
+		graph.Node{Slug: "to-harbour", Type: graph.Story, StoryCfg: &graph.StoryConfig{Zone: "harbour", Blocks: graph.LegacyBlocks("Harbour.", nil)}},
+		graph.Node{Slug: "join", Type: graph.Join},
+	)
+	for i, e := range g.Edges {
+		if e.From == "stations" && e.FromPort == "done" {
+			g.Edges[i].To = "split"
+		}
+	}
+	g.Edges = append(g.Edges,
+		graph.Edge{From: "split", FromPort: "a", To: "to-church"},
+		graph.Edge{From: "split", FromPort: "b", To: "to-harbour"},
+		graph.Edge{From: "to-church", FromPort: "out", To: "join"},
+		graph.Edge{From: "to-harbour", FromPort: "out", To: "join"},
+		graph.Edge{From: "join", FromPort: "out", To: "end"},
+	)
+	c := config()
+	c.Teams = 5
+	res := run(t, g, c)
+	if res.Ended != "finished" {
+		t.Fatalf("ended %q, want finished", res.Ended)
+	}
+	for _, tm := range res.Teams {
+		if tm.Finished == nil {
+			t.Fatalf("%s did not finish", tm.Name)
+		}
+	}
+	for _, s := range res.Steps {
+		if (s.Node == "to-church" || s.Node == "to-harbour") && s.Reached != 5 {
+			t.Errorf("%s reached by %d teams, want 5", s.Node, s.Reached)
+		}
+	}
+}

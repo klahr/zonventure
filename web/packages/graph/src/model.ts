@@ -198,7 +198,10 @@ export function portsOf(n: Node): string[] {
     case "start":
     case "story":
     case "effect":
+    case "join":
       return [PORT_OUT];
+    case "split":
+      return (n.split?.paths ?? []).map((p) => p.port);
     case "gate":
       return [PORT_PASS, PORT_FAIL];
     case "switch":
@@ -233,6 +236,10 @@ export function portLabel(n: Node, port: string): string {
     if (port === PORT_DONE) return "done";
     const b = n.hub?.branches?.find((x) => x.port === port);
     return b?.label || port;
+  }
+  if (n.type === "split") {
+    const p = n.split?.paths?.find((x) => x.port === port);
+    return p?.label || p?.role || port;
   }
   if (n.type === "switch") {
     if (port === PORT_ELSE) return "Any other answer";
@@ -372,6 +379,10 @@ function bareNode(g: Graph, type: NodeType, at: { x: number; y: number }): Node 
       return { ...base, title: "Award points", effect: { kind: "score", points: 10 } };
     case "switch":
       return { ...base, title: "Crossroads", switch: { cases: [{ port: "a", label: "A" }] } };
+    case "split":
+      return { ...base, title: "Split up", split: { paths: [{ port: "a", label: "Group A" }, { port: "b", label: "Group B" }] } };
+    case "join":
+      return { ...base, title: "Meet again" };
     case "end":
       return { ...base, title: "End", end: {} };
     case "start":
@@ -611,6 +622,7 @@ function cleanNode(n: Node): Node {
   if (n.gate) out.gate = n.gate;
   if (n.effect) out.effect = n.effect;
   if (n.switch) out.switch = n.switch;
+  if (n.split) out.split = n.split;
   if (n.end) out.end = n.end;
   if (n.start) out.start = n.start;
   if (n.unlocks?.length) out.unlocks = n.unlocks;

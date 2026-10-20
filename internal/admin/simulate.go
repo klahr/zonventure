@@ -459,6 +459,8 @@ func (c *simCrew) deal(g *graph.Graph) {
 // holds which role — with the acting player's phone asking, and returns
 // the team.
 func (c *simCrew) seat(t *session.Team) *session.Team {
+	// A split team's group narrows all of the below: put it back first.
+	t.Unfocus()
 	slots := c.slots()
 	t.Players, t.Size = slots, len(slots)
 	t.Phones, t.PhoneAt = []session.Position{}, map[int64]session.Position{}
@@ -473,6 +475,8 @@ func (c *simCrew) seat(t *session.Team) *session.Team {
 	for role, h := range play.DealAmong(slots, c.Roles, t.G.DealtRoles()) {
 		t.RoleHolders[role] = h.Slot
 	}
+	// Into the groups of a split, as the live engine deals them.
+	t.Deal(slots, t.RoleHolders)
 	t.Viewer = c.viewer(t, c.As)
 	return t
 }
@@ -505,13 +509,16 @@ func (c *simCrew) phones(t *session.Team) []simPhone {
 	out := make([]simPhone, 0, len(c.Players))
 	for i, p := range c.Players {
 		t.Viewer = c.viewer(t, p.Slot)
+		// Its own roles: not those a group lends it (session.Team.Focus).
+		own := slices.Clone(t.Viewer.Roles)
 		v := t.View()
+		t.Unfocus()
 		// Each phone its roles marked, and who holds the others, as the
 		// player endpoints tell them.
 		v.Roles = slices.Clone(v.Roles)
 		for j := range v.Roles {
 			if r := &v.Roles[j]; !r.Secret {
-				r.Mine = slices.Contains(t.Viewer.Roles, r.Slug)
+				r.Mine = slices.Contains(own, r.Slug)
 				if holder, ok := t.RoleHolders[r.Slug]; ok && !r.Default {
 					r.Holder = c.player(holder).Name
 				}
@@ -526,7 +533,7 @@ func (c *simCrew) phones(t *session.Team) []simPhone {
 				b.Player, b.Players = i+1, len(c.Players)
 			}
 		}
-		out = append(out, simPhone{Slot: p.Slot, Roles: slices.Clone(t.Viewer.Roles), View: v})
+		out = append(out, simPhone{Slot: p.Slot, Roles: own, View: v})
 	}
 	t.Viewer = c.viewer(t, c.As)
 	return out

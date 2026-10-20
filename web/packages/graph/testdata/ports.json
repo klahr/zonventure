@@ -183,6 +183,43 @@
       "ports": [
         "else"
       ]
+    },
+    {
+      "node": {
+        "slug": "sp",
+        "type": "split",
+        "split": {
+          "paths": [
+            {
+              "port": "a",
+              "role": "scout"
+            },
+            {
+              "port": "b"
+            }
+          ]
+        }
+      },
+      "ports": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "node": {
+        "slug": "sp0",
+        "type": "split"
+      },
+      "ports": []
+    },
+    {
+      "node": {
+        "slug": "j",
+        "type": "join"
+      },
+      "ports": [
+        "out"
+      ]
     }
   ]
 }

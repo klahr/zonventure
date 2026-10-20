@@ -675,6 +675,7 @@ func (ps *playSession) screen(ctx context.Context, s *Server, note string, look 
 		if v.Text != "" && (len(v.Blocks) == 0 || v.Type == graph.Hub) {
 			b.WriteString(v.Text + "\n")
 		}
+		ps.groups(&b, v)
 		if len(v.Blocks) == 0 {
 			addMedia(v.Media...)
 		}
@@ -1003,6 +1004,10 @@ func (ps *playSession) input(b *strings.Builder, v session.View) {
 		switch v.Type {
 		case graph.Story:
 			b.WriteString("\n→ continue to go on.\n")
+		case graph.Split:
+			b.WriteString("\n→ continue to set off with your group.\n")
+		case graph.Join:
+			b.WriteString("\nWait here for the other groups: the last to arrive takes the team on.\n")
 		}
 		return
 	}
@@ -1093,6 +1098,23 @@ func (ps *playSession) input(b *strings.Builder, v session.View) {
 	}
 	if v.Attempts > 0 {
 		fmt.Fprintf(b, "  Tries so far: %d.\n", v.Attempts)
+	}
+}
+
+// groups renders where each group of a split team is.
+func (ps *playSession) groups(b *strings.Builder, v session.View) {
+	if len(v.Groups) == 0 {
+		return
+	}
+	if v.Group != "" {
+		fmt.Fprintf(b, "The team has split up; you are with %s. A simulated team walks each group's path in turn.\n", v.Group)
+	}
+	for _, g := range v.Groups {
+		where := "at " + g.At
+		if g.Arrived {
+			where = "waiting at " + g.At
+		}
+		fmt.Fprintf(b, "- %s: %s\n", g.Label, where)
 	}
 }
 
