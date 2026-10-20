@@ -107,6 +107,10 @@ export function nodeTexts(n: Node): Translatable[] {
         case "accuse":
           add(own, b.kind === "sabotage" ? "Sabotage" : "Accusation", b.text, { multiline: true });
           break;
+        case "mission":
+          add(own, "Mission", b.text, { multiline: true });
+          (b.options ?? []).forEach((o, i) => add(`${own}:option:${i}`, "Mission choice {{n}}", o, { vars: { n: i + 1 } }));
+          break;
         case "vote":
         case "draw":
           add(own, b.kind === "vote" ? "Vote question" : "Draw", b.text, { multiline: true });
@@ -238,6 +242,8 @@ export function withTexts(n: Node, f: (key: string) => string | undefined): Node
       case "vote":
       case "draw":
         return { ...b, ...(b.text !== undefined ? { text: or(own, b.text) } : {}), options: b.options.map((o, i) => or(`${own}:option:${i}`, o)) };
+      case "mission":
+        return { ...b, ...(b.text !== undefined ? { text: or(own, b.text) } : {}), ...(b.options ? { options: b.options.map((o, i) => or(`${own}:option:${i}`, o)) } : {}) };
       case "quiz": {
         const [a, x, c] = b.options.map((o, i) => or(`${own}:option:${i}`, o));
         return { ...b, ...(b.text !== undefined ? { text: or(own, b.text) } : {}), options: [a!, x!, c!] };

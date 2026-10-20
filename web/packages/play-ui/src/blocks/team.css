@@ -273,8 +273,8 @@
 /* The saboteur's button: set apart, quietly — over a shoulder it should
  * read as one more gadget, not a siren. */
 .pv-sabotage { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px dashed var(--muted); border-radius: var(--radius); }
-.pv-sabotage__tag { margin: 0; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
 .pv-sabotage__go { align-self: flex-start; }
+.pv-mission__done { margin: 0; font-weight: 700; color: var(--ink); }
 
 /* --- Roles ---------------------------------------------------------- */
 /* Portraits, two or three to a row: never four, never one. */

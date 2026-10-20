@@ -24,6 +24,7 @@ type fakeState struct {
 	here        map[string]bool
 	walked      float64
 	picks       map[string]string
+	betrayals   map[string]int
 	now         time.Time
 }
 
@@ -67,6 +68,7 @@ func (f *fakeState) ZonesHeld(zs []string) bool {
 }
 func (f *fakeState) Walked() float64           { return f.walked }
 func (f *fakeState) Picked(n, b string) string { return f.picks[n+"/"+b] }
+func (f *fakeState) Betrayals(n, b string) int { return f.betrayals[n+"/"+b] }
 func (f *fakeState) LocalTime() time.Time      { return f.now }
 
 // An empty predicate is the shape of a freshly-dragged Gate. It must be
@@ -333,6 +335,29 @@ func TestWalkedAndDrawn(t *testing.T) {
 	}
 	if Eval(Predicate{Op: OpDrawn, Node: "tavern", Block: "deck"}, s) {
 		t.Error("a drawn condition naming no card held")
+	}
+}
+
+// Betrayed reads as "at least once" bare, and compares the count when
+// the author gives one.
+func TestBetrayed(t *testing.T) {
+	s := newState()
+	bare := Predicate{Op: OpBetrayed, Node: "bridge", Block: "m1"}
+	if Eval(bare, s) {
+		t.Error("no betrayal yet, but betrayed held")
+	}
+	if !Eval(Predicate{Op: OpNot, Of: []Predicate{bare}}, s) {
+		t.Error("no betrayal yet, but not betrayed failed")
+	}
+	s.betrayals = map[string]int{"bridge/m1": 1}
+	if !Eval(bare, s) {
+		t.Error("betrayed once, but betrayed failed")
+	}
+	if Eval(Predicate{Op: OpBetrayed, Node: "bridge", Block: "m1", N: 2}, s) {
+		t.Error("betrayed once, but betrayed ≥ 2 held")
+	}
+	if !Eval(Predicate{Op: OpBetrayed, Node: "bridge", Block: "m1", Cmp: Eq, N: 0}, newState()) {
+		t.Error("betrayed = 0 failed with no betrayal")
 	}
 }
 

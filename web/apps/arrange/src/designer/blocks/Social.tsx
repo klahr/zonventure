@@ -112,7 +112,7 @@ function NumberInput({ label, value, set }: { label: string; value: number | und
 export const SabotageEditor: Editor<"sabotage"> = ({ block, set, t, graph }) => (
   <>
     <SecretRoleSelect value={block.role} set={(role) => set({ ...block, role })} graph={graph} t={t} />
-    <MarkdownArea className="field__input" rows={2} value={block.text ?? ""} placeholder={t.t("What the saboteur reads, such as “Cut the alarm wire: the team loses 5 points.”")} aria-label={t.t("Text")} onChange={(e) => set(withField(block, "text", e.target.value))} />
+    <MarkdownArea className="field__input" rows={2} value={block.text ?? ""} placeholder={t.t("What every phone shows, such as “Cut the alarm wire?”")} aria-label={t.t("Text")} onChange={(e) => set(withField(block, "text", e.target.value))} />
     <div className="box__row box__row--wrap">
       <NumberInput label={t.t("Costs the team (points)")} value={block.worth} set={(n) => set(withField(block, "worth", n || undefined))} />
       <NumberInput label={t.t("Locks the answer (s)")} value={block.seconds} set={(n) => set(withField(block, "seconds", n || undefined))} />
@@ -128,7 +128,7 @@ export const SabotageEditor: Editor<"sabotage"> = ({ block, set, t, graph }) => 
         ))}
       </select>
     </label>
-    <p className="field__hint">{t.t("Only the secret role's player sees this, and presses it once. Nothing tells the others who did it, but they may notice the points go, the lock, or the note.")}</p>
+    <p className="field__hint">{t.t("Every phone shows it, the same, on a team that was dealt the secret role, and any player may press it once. Only the secret role's press does anything; the others may notice the points go, the lock, or the note, but no screen tells who.")}</p>
   </>
 );
 
@@ -140,6 +140,43 @@ export const AccuseEditor: Editor<"accuse"> = ({ block, set, t, graph }) => (
     <p className="field__hint">{t.t("Each player names a teammate on their own phone. If most name the secret role's player, the team scores when it finishes, and the end screen tells all. Shown only to a team that was dealt the role.")}</p>
   </>
 );
+
+export const MissionEditor: Editor<"mission"> = ({ block, set, t, graph }) => {
+  const options = block.options ?? [];
+  const setOption = (i: number, v: string) => {
+    const next = [options[0] ?? "", options[1] ?? ""];
+    next[i] = v;
+    set(withField(block, "options", next.some((o) => o.trim()) ? next : undefined));
+  };
+  return (
+    <>
+      <SecretRoleSelect value={block.role} set={(role) => set({ ...block, role })} graph={graph} t={t} />
+      <label className="field">
+        <span className="field__label">{t.t("Post")}</span>
+        <select className="field__input" value={block.zone} onChange={(e) => set({ ...block, zone: e.target.value })}>
+          <option value="">{t.t("— pick the zone where players pick —")}</option>
+          {(graph.zones ?? []).map((z) => (
+            <option key={z.slug} value={z.slug}>
+              {z.name || z.slug}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field field--num">
+        <span className="field__label">{t.t("Players who pick")}</span>
+        <input className="field__input" type="number" min={1} value={block.count ?? 1} onChange={(e) => set(withField(block, "count", Math.max(1, Math.round(Number(e.target.value)) || 1)))} />
+      </label>
+      <MarkdownArea className="field__input" rows={2} value={block.text ?? ""} placeholder={t.t("What every phone shows, such as “The package is under the bench. Seal it.”")} aria-label={t.t("Text")} onChange={(e) => set(withField(block, "text", e.target.value))} />
+      <div className="box__row box__row--wrap">
+        <input className="field__input" value={options[0] ?? ""} placeholder={t.t("Deliver")} aria-label={t.t("The faithful choice")} onChange={(e) => setOption(0, e.target.value)} />
+        <input className="field__input" value={options[1] ?? ""} placeholder={t.t("Tamper")} aria-label={t.t("The betrayal")} onChange={(e) => setOption(1, e.target.value)} />
+      </div>
+      <p className="field__hint">
+        {t.t("Each player inside the post picks one, once, until this many have; the step waits until then. Only the secret role's betrayal counts, and every phone looks the same whatever was picked. Ask about it later with the condition “Mission betrayed”.")}
+      </p>
+    </>
+  );
+};
 
 export const RolesEditor: Editor<"roles"> = ({ block, set, t, graph }) => (
   <>

@@ -401,13 +401,21 @@ func shared(g *graph.Graph, step *walk.Step, scored bool) bool {
 	return false
 }
 
-// savePress persists the press an action recorded or withdrew, and any
-// note it unlocked by itself (a sabotage's false clue).
+// savePress persists the press an action recorded or withdrew, any
+// note it unlocked by itself (a sabotage's false clue), and a player's
+// pick at a mission.
 func savePress(ctx context.Context, tx *sql.Tx, s *teamState) error {
 	for _, entry := range s.NewJournal {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO team_journal (team_id, entry, unlocked_at) VALUES ($1, $2, $3)
 			ON CONFLICT (team_id, entry) DO NOTHING`, s.teamID, entry, s.Now); err != nil {
+			return err
+		}
+	}
+	if c := s.SealChanged; c != nil {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO team_block_votes (team_id, node, block_id, slot_id, choice) VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (team_id, node, block_id, slot_id) DO NOTHING`, s.teamID, c.Node, c.Block, c.Slot, c.Choice); err != nil {
 			return err
 		}
 	}
@@ -426,10 +434,16 @@ func savePress(ctx context.Context, tx *sql.Tx, s *teamState) error {
 	return err
 }
 
-// Sabotage presses a sabotage block for the saboteur asking (see
+// Sabotage presses a sabotage block for the player asking (see
 // session.Team.Sabotage); the request must be ForPhone.
 func (e *Engine) Sabotage(ctx context.Context, teamID int64, node, block string) (Result, error) {
 	return e.act(ctx, teamID, action{"sabotage", node, block}, func(t *session.Team) (Result, *walk.Step, error) { return t.Sabotage(node, block) })
+}
+
+// Seal records the asking player's pick at a mission (see
+// session.Team.Seal); the request must be ForPhone.
+func (e *Engine) Seal(ctx context.Context, teamID int64, node, block, choice string) (Result, error) {
+	return e.act(ctx, teamID, action{"seal", node, block}, func(t *session.Team) (Result, *walk.Step, error) { return t.Seal(node, block, choice) })
 }
 
 // Turn turns the asking player's key in a two-key launch (see

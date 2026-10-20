@@ -1543,6 +1543,21 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 						r.err("ref.journal.unknown", n.Slug, "", "sabotage %q plants journal entry %q, which is not declared", b.ID, b.Journal)
 					}
 				}
+			case graph.BlockMission:
+				if ro, ok := g.Role(b.Role); !ok || !ro.Secret {
+					bad("block.role.secret", "belongs to no secret role; pick the one whose betrayal counts")
+				}
+				if b.Zone == "" {
+					bad("block.zone.missing", "has no post: pick the zone where players pick")
+				} else if !zones[b.Zone] {
+					r.err("ref.zone.unknown", n.Slug, "", "the mission on this step is picked at zone %q, which is not declared", b.Zone)
+				}
+				if b.Count < 0 {
+					bad("block.count", "waits for %d players; it must be 1 or more", b.Count)
+				}
+				if len(b.Options) != 0 && (len(b.Options) != 2 || filled(b.Options) != 2) {
+					bad("block.options", "has %d choices; name both, or leave them for Deliver and Tamper", filled(b.Options))
+				}
 			default:
 				r.err("block.kind", n.Slug, "", "content block %q is %q, which is not a kind of block", b.ID, b.Kind)
 			}

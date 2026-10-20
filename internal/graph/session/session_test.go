@@ -1640,9 +1640,11 @@ func saboteurGraph() *graph.Graph {
 	}
 }
 
-// Only the saboteur sees the sabotage and their secret role; pressing it
-// costs the team, locks the answer and plants a note, once. The
-// accusation is asked only of a team that has a saboteur.
+// A team with a saboteur sees the sabotage on every phone, and anyone
+// may press it, once; only the saboteur's press costs the team, locks
+// the answer and plants a note, and no phone tells which press did. Only
+// the saboteur sees their secret role. The accusation is asked only of a
+// team that has a saboteur.
 func TestSabotage(t *testing.T) {
 	tm, step, err := Start(saboteurGraph(), t0)
 	if err != nil {
@@ -1660,7 +1662,7 @@ func TestSabotage(t *testing.T) {
 		t.Errorf("no saboteur dealt: the scout sees %v", got)
 	}
 	tm.Secrets = map[string]int64{"saboteur": 2}
-	if got := blocks(); slices.Contains(got, "cut") || !slices.Contains(got, "who") {
+	if got := blocks(); !slices.Contains(got, "cut") || !slices.Contains(got, "who") {
 		t.Errorf("a saboteur among them: the scout sees %v", got)
 	}
 	for _, r := range tm.View().Roles {
@@ -1668,8 +1670,27 @@ func TestSabotage(t *testing.T) {
 			t.Errorf("the scout should not see the secret role: %+v", r)
 		}
 	}
-	if _, _, err := tm.Sabotage("heist", "cut"); err == nil {
-		t.Error("the scout should not be able to sabotage")
+	if _, _, err := tm.Sabotage("heist", "cut"); err != nil {
+		t.Fatalf("the scout's decoy press: %v", err)
+	}
+	if tm.PenaltyScore != 0 || tm.Nodes["heist"].BlockedUntil != nil || tm.Journal["lie"] || tm.SealChanged == nil || tm.SealChanged.Slot != 1 {
+		t.Errorf("a decoy press did something: penalty %v, journal %v, change %+v", tm.PenaltyScore, tm.Journal, tm.SealChanged)
+	}
+	if _, _, err := tm.Sabotage("heist", "cut"); err != ErrNotAllowed {
+		t.Errorf("the scout pressing twice: %v, want ErrNotAllowed", err)
+	}
+	sabotage := func() BlockView {
+		for _, b := range tm.View().Blocks {
+			if b.ID == "cut" {
+				return b
+			}
+		}
+		t.Fatal("no sabotage in view")
+		return BlockView{}
+	}
+	scout := sabotage()
+	if !scout.Sealed || scout.Journal != "" {
+		t.Errorf("the scout's sabotage after pressing: %+v", scout)
 	}
 
 	tm.Viewer = &Viewer{Slot: 2, Roles: []string{"saboteur"}}
@@ -1681,6 +1702,9 @@ func TestSabotage(t *testing.T) {
 	}
 	if _, _, err := tm.Sabotage("heist", "cut"); err != nil {
 		t.Fatal(err)
+	}
+	if saboteur := sabotage(); saboteur.Sealed != scout.Sealed || saboteur.Text != scout.Text || saboteur.Journal != "" {
+		t.Errorf("the phones differ: saboteur %+v, scout %+v", saboteur, scout)
 	}
 	if tm.PenaltyScore != 3 || tm.Nodes["heist"].BlockedUntil == nil || !tm.Journal["lie"] || !slices.Contains(tm.NewJournal, "lie") {
 		t.Errorf("after sabotage: penalty %v, blocked %v, journal %v", tm.PenaltyScore, tm.Nodes["heist"].BlockedUntil, tm.Journal)
@@ -1821,5 +1845,123 @@ func TestFailedGateBackToHubSaysNotYet(t *testing.T) {
 	res, st, err = tm.Act(func() (Result, *walk.Step, error) { return tm.Choose("hub", "tower") })
 	if err != nil || st == nil || st.To != "key" || res.NotYet {
 		t.Fatalf("a branch with no gate is not: %+v %+v %v", res, st, err)
+	}
+}
+
+func missionGraph() *graph.Graph {
+	betrayed := cond.Predicate{Op: cond.OpBetrayed, Node: "pickup", Block: "pkg"}
+	return &graph.Graph{
+		Roles: []graph.Role{{Slug: "police", Name: "Police", Secret: true}},
+		Zones: []graph.Zone{{Slug: "bridge", Lat: 59.3, Lng: 18.0, RadiusM: 30}},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "pickup", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Blocks:  []graph.Block{{ID: "pkg", Kind: graph.BlockMission, Role: "police", Zone: "bridge", Count: 2, Text: "Seal the package."}},
+				Outputs: []graph.Output{{Port: "done", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "go"}}}},
+			}},
+			{Slug: "vault", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Blocks: []graph.Block{
+					{ID: "real", Kind: graph.BlockText, Text: "Add 3.", Show: &graph.Show{When: cond.Predicate{Op: cond.OpNot, Of: []cond.Predicate{betrayed}}}},
+					{ID: "fake", Kind: graph.BlockText, Text: "Add 5.", Show: &graph.Show{When: betrayed}},
+				},
+				Outputs: []graph.Output{{Port: "done", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "7"}}}},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "pickup"}, {From: "pickup", FromPort: "done", To: "vault"}, {From: "vault", FromPort: "done", To: "end"}},
+	}
+}
+
+// A mission takes one pick from each player at its post until it has as
+// many as it waits for, and holds the team until then; every phone shows
+// the same, and only the secret role's betrayal counts later.
+func TestMission(t *testing.T) {
+	for _, police := range []int64{2, 3} {
+		tm, step, err := Start(missionGraph(), t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tm.Apply(step)
+		tm.Players = []int64{1, 2, 3}
+		tm.Secrets = map[string]int64{"police": police}
+		at := &Position{Lat: 59.3, Lng: 18.0}
+		away := &Position{Lat: 59.31, Lng: 18.0}
+		as := func(slot int64, p *Position) { tm.Viewer = &Viewer{Slot: slot, Position: p} }
+		mission := func() BlockView {
+			for _, b := range tm.View().Blocks {
+				if b.ID == "pkg" {
+					return b
+				}
+			}
+			t.Fatal("no mission in view")
+			return BlockView{}
+		}
+
+		as(1, away)
+		if _, _, err := tm.Seal("pickup", "pkg", "0"); err != ErrNotHere {
+			t.Errorf("away from the post: %v, want ErrNotHere", err)
+		}
+		if _, _, err := tm.Answer("pickup", "go"); err != ErrUnsealed {
+			t.Errorf("before sealing: %v, want ErrUnsealed", err)
+		}
+		as(1, at)
+		if _, _, err := tm.Seal("pickup", "pkg", "0"); err != nil {
+			t.Fatal(err)
+		}
+		if tm.SealChanged == nil || tm.SealChanged.Slot != 1 || tm.SealChanged.Choice != "0" {
+			t.Errorf("seal change: %+v", tm.SealChanged)
+		}
+		if _, _, err := tm.Seal("pickup", "pkg", "1"); err != ErrNotAllowed {
+			t.Errorf("picking twice: %v, want ErrNotAllowed", err)
+		}
+		kept := mission()
+		as(2, at)
+		if _, _, err := tm.Seal("pickup", "pkg", "1"); err != nil {
+			t.Fatal(err)
+		}
+		as(1, at)
+		if got := mission(); got.Seals != 2 || got.Need != 2 || !got.Sealed || kept.Seals != 1 {
+			t.Errorf("after both picked: %+v (before: %+v)", got, kept)
+		}
+		as(2, at)
+		betrayer := mission()
+		as(1, at)
+		if keeper := mission(); keeper.Sealed != betrayer.Sealed || keeper.Picked != betrayer.Picked || keeper.Voted != betrayer.Voted {
+			t.Errorf("the phones differ: kept %+v, betrayed %+v", keeper, betrayer)
+		}
+		as(3, at)
+		if _, _, err := tm.Seal("pickup", "pkg", "0"); err != ErrNotAllowed {
+			t.Errorf("a third pick: %v, want ErrNotAllowed", err)
+		}
+
+		res, next, err := tm.Answer("pickup", "go")
+		if err != nil || next == nil {
+			t.Fatalf("answer once sealed: %+v, %v", res, err)
+		}
+		tm.Apply(*next)
+		want := map[int64]string{2: "fake", 3: "real"}[police]
+		var shown []string
+		for _, b := range tm.View().Blocks {
+			shown = append(shown, b.ID)
+		}
+		if !slices.Equal(shown, []string{want}) {
+			t.Errorf("police is player %d: the vault shows %v, want %s", police, shown, want)
+		}
+	}
+}
+
+// The team as a whole — the organisers, a simulated team — has no
+// phones to pick with, so a mission does not hold it.
+func TestMissionTeamAsWhole(t *testing.T) {
+	tm, step, err := Start(missionGraph(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	if _, step, err := tm.Answer("pickup", "go"); err != nil || step == nil {
+		t.Errorf("team as a whole: %v", err)
+	}
+	if _, _, err := tm.Seal("pickup", "pkg", "0"); err == nil {
+		t.Error("the team as a whole picked at a mission")
 	}
 }

@@ -73,6 +73,9 @@ const (
 
 	OpWalked Op = "walked" // metres walked on the current node, compared Cmp N
 	OpDrawn  Op = "drawn"  // the card a draw Block on Node dealt is option Is (its index)
+	// OpBetrayed counts the betrayals of the mission Block on Node,
+	// compared Cmp N (default: at least 1).
+	OpBetrayed Op = "betrayed"
 
 	// Wall clock, for venue constraints like "the museum closes at 17:00".
 	OpTimeOfDay Op = "time_of_day" // local HH:MM compared Cmp Is
@@ -161,6 +164,9 @@ type State interface {
 	Walked() float64
 	// Picked is what the team picked or was dealt on a block, or "".
 	Picked(node, block string) string
+	// Betrayals is how many players holding a mission's secret role
+	// picked its betrayal.
+	Betrayals(node, block string) int
 	// LocalTime is the team's wall clock, used only by the wall-clock
 	// operators. Passed in rather than read from the process so a
 	// simulated or replayed event evaluates identically.
@@ -267,6 +273,13 @@ func Eval(p Predicate, s State) bool {
 
 	case OpDrawn:
 		return p.Is != "" && s.Picked(p.Node, p.Block) == p.Is
+
+	case OpBetrayed:
+		n := p.N
+		if p.Cmp == "" && n == 0 {
+			n = 1
+		}
+		return compare(float64(s.Betrayals(p.Node, p.Block)), p.Cmp, n)
 
 	case OpTimeOfDay:
 		mins, ok := parseHHMM(p.Is)
@@ -561,6 +574,12 @@ func Describe(p Predicate) string {
 		return fmt.Sprintf("walked on this step %s %gm", cmpWord(p.Cmp), p.N)
 	case OpDrawn:
 		return fmt.Sprintf("drew card %s from %q on %q", p.Is, p.Block, p.Node)
+	case OpBetrayed:
+		n := p.N
+		if p.Cmp == "" && n == 0 {
+			n = 1
+		}
+		return fmt.Sprintf("mission %q on %q betrayed %s %g", p.Block, p.Node, cmpWord(p.Cmp), n)
 	case OpTimeOfDay:
 		return fmt.Sprintf("time of day %s %s", cmpWord(p.Cmp), p.Is)
 	case OpWeekday:

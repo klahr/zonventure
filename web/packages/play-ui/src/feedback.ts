@@ -112,6 +112,8 @@ export function feedbackForRefusal(code: string | undefined, t: Translate): Feed
       return { tone: "info", text: t("Your team has finished.") };
     case "unanswered":
       return { tone: "bad", text: t("Answer the questions on this page first.") };
+    case "unsealed":
+      return { tone: "bad", text: t("Wait until the mission is sealed.") };
     case "paused":
       return { tone: "info", text: t("The game is paused. Hold on.") };
     case "not_running":

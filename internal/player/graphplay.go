@@ -590,8 +590,11 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 		// A two-key launch: this player's key.
 		res, err = e.Turn(ctx, tc.TeamID, req.Node)
 	case "sabotage":
-		// The saboteur's button. Not logged where teammates could see it.
+		// Anyone's button, the saboteur's alone doing harm. Never logged.
 		res, err = e.Sabotage(ctx, tc.TeamID, req.Node, req.Block)
+	case "seal":
+		// A player's pick at a mission. Like a sabotage, never logged.
+		res, err = e.Seal(ctx, tc.TeamID, req.Node, req.Block, req.Choice)
 	case "leave":
 		res, err = e.Leave(ctx, tc.TeamID, req.Node)
 	case "timeout":
@@ -715,6 +718,7 @@ func (h *Handlers) refusePlay(w http.ResponseWriter, res play.Result, err error)
 		"locked":         http.StatusTooManyRequests,
 		"wrong_node":     http.StatusBadRequest,
 		"unanswered":     http.StatusForbidden,
+		"unsealed":       http.StatusForbidden,
 		"not_yours":      http.StatusForbidden,
 	}[code]
 	if status == 0 {

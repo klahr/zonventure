@@ -16,7 +16,14 @@ export interface Point {
  * step just inside an edge, or just outside an "only if you are not
  * here" answer, without walking there.
  */
-export function SpoofMap({ zones, position, focus, onPick, disabled }: { zones: Zone[]; position: Point | null; focus?: Zone | null | undefined; onPick: (p: Point) => void; disabled?: boolean }) {
+/** Another phone's pin: shown, never dragged. */
+export interface OtherPin {
+  key: number;
+  label: string;
+  point: Point;
+}
+
+export function SpoofMap({ zones, position, focus, onPick, disabled, others }: { zones: Zone[]; position: Point | null; focus?: Zone | null | undefined; onPick: (p: Point) => void; disabled?: boolean; others?: OtherPin[] }) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("maplibre-gl").Map | null>(null);
@@ -27,12 +34,15 @@ export function SpoofMap({ zones, position, focus, onPick, disabled }: { zones: 
   disabledRef.current = disabled;
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const libRef = useRef<typeof import("maplibre-gl") | null>(null);
+  const otherPins = useRef<import("maplibre-gl").Marker[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     loadMapLibre()
       .then((lib) => {
         if (cancelled || !box.current) return;
+        libRef.current = lib;
         const first = position ?? zones[0] ?? defaultCentre();
         const map = new lib.Map({ container: box.current, style: mapStyle(), center: [first.lng, first.lat], zoom: 15, attributionControl: { compact: true }, locale: mapLocale(t) });
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
@@ -102,6 +112,21 @@ export function SpoofMap({ zones, position, focus, onPick, disabled }: { zones: 
     // Keep the team in view when a zone is picked from the list.
     if (!map.getBounds().contains([position.lng, position.lat])) map.easeTo({ center: [position.lng, position.lat] });
   }, [position, ready]);
+
+  // The other phones: small, labelled, and redrawn as they move.
+  useEffect(() => {
+    const map = mapRef.current;
+    const lib = libRef.current;
+    otherPins.current.forEach((m) => m.remove());
+    otherPins.current = [];
+    if (!ready || !map || !lib) return;
+    for (const o of others ?? []) {
+      const el = document.createElement("div");
+      el.className = "spoof-map__other";
+      el.textContent = o.label;
+      otherPins.current.push(new lib.Marker({ element: el }).setLngLat([o.point.lng, o.point.lat]).addTo(map));
+    }
+  }, [others, ready]);
 
   if (failed) return <p className="field__hint">{t.t("The map could not load. Check the connection.")}</p>;
   return (

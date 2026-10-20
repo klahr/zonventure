@@ -102,16 +102,25 @@ const (
 	// BlockDraw deals the team one of Options at random when it taps, kept
 	// in Picks: a show condition may then ask which (cond.OpDrawn).
 	BlockDraw BlockKind = "draw"
-	// BlockSabotage is a button only the holder of Role — a secret role —
-	// sees, and presses once: it costs the team Worth points, locks the
-	// step's answer for Seconds, and adds Journal, a false note, to the
-	// team's journal — any of the three. Text says what it does. Nothing
-	// tells the others who pressed it.
+	// BlockSabotage is a button every player of a team dealt Role — a
+	// secret role — sees alike and may press once. Only its holder's press
+	// does anything: it costs the team Worth points, locks the step's
+	// answer for Seconds, and adds Journal, a false note, to the team's
+	// journal — any of the three. Text is what every phone shows. Nothing
+	// tells who pressed, nor whose press did it.
 	BlockSabotage BlockKind = "sabotage"
 	// BlockAccuse asks Text — "Who is the saboteur?" — and each player
 	// names a teammate on their own phone. When the team finishes, if
 	// most name the holder of Role, the team scores Worth.
 	BlockAccuse BlockKind = "accuse"
+	// BlockMission is a secret choice at a post: each player whose phone
+	// is inside Zone picks one of two Options — Deliver or Tamper, unless
+	// the author names them otherwise — once, until Count have. Only the
+	// second counts, and only from the holder of Role, a secret role;
+	// every phone shows the same whatever was picked. The step waits
+	// until Count have picked, and a later condition asks how many
+	// betrayed it (cond.OpBetrayed).
+	BlockMission BlockKind = "mission"
 	// BlockRoles shows the player's own roles, or with Team every
 	// player's, under Text. With Choose its player can take a role or give
 	// one back there, as in the phone's menu. With Lock the roles are
@@ -129,7 +138,7 @@ var BlockKinds = []BlockKind{
 	BlockHotspots, BlockDivider, BlockRadar, BlockOverlay, BlockLevel, BlockNoise, BlockTorch, BlockCountdown,
 	BlockStatus, BlockStandings, BlockTitle, BlockPoints, BlockQuiz, BlockTiebreak, BlockSplit, BlockBearing,
 	BlockCall, BlockSuspects, BlockPhoto, BlockSpotDiff, BlockFlasher, BlockLetters, BlockShake, BlockVote,
-	BlockBulletin, BlockDraw, BlockSabotage, BlockAccuse, BlockRoles,
+	BlockBulletin, BlockDraw, BlockSabotage, BlockAccuse, BlockRoles, BlockMission,
 }
 
 // FixedKinds are the kinds a step is given by default, and the only
@@ -180,7 +189,7 @@ type Block struct {
 	HostEdit bool `json:"host_edit,omitempty"`
 
 	// Zone is the slug of the zone a compass points at, a map shows or a
-	// radar senses.
+	// radar senses, or a mission's post.
 	Zone string `json:"zone,omitempty"`
 	// HideDistance leaves the distance off a compass: the team gets a
 	// direction only.
@@ -231,7 +240,7 @@ type Block struct {
 	// Options are a quiz question's three answers, for 1, X and 2, and
 	// Answer the right one's QuizChoices name. Worth is its points: 0 is
 	// one point, and a photo's when approved. Options are also a vote's
-	// choices and a draw's cards. Translated under
+	// choices, a mission's two and a draw's cards. Translated under
 	// BlockFieldKey(…, "option:<i>").
 	Options []string `json:"options,omitempty"`
 	Answer  string   `json:"answer,omitempty"`
@@ -247,10 +256,12 @@ type Block struct {
 	// Cards are a suspect board's suspects.
 	Cards []Card `json:"cards,omitempty"`
 
-	// Role is the secret role a sabotage belongs to, or an accusation
-	// asks about; Journal the note a sabotage plants.
+	// Role is the secret role a sabotage or a mission belongs to, or an
+	// accusation asks about; Journal the note a sabotage plants.
 	Role    string `json:"role,omitempty"`
 	Journal string `json:"journal,omitempty"`
+	// Count is how many players a mission waits for: 0 is one.
+	Count int `json:"count,omitempty"`
 
 	// Roles: every player's roles rather than the player's own, a choice
 	// of them, and an end to choosing (see BlockRoles).

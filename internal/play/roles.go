@@ -98,6 +98,14 @@ func dealRoles(ctx context.Context, q Querier, teamID int64, players []int64, ro
 		}
 		return out, nil
 	}
+	return DealAmong(players, claims, roles), nil
+}
+
+// DealAmong deals roles among players, who must be at least one: a role
+// claimed by one of them is theirs, and the rest go in the author's
+// order, each to the player holding fewest so far, the first on a tie.
+func DealAmong(players []int64, claims map[string]int64, roles []string) map[string]Holding {
+	out := map[string]Holding{}
 	held := make([]int, len(players))
 	for _, r := range roles {
 		if i := slices.Index(players, claims[r]); i >= 0 {
@@ -118,7 +126,7 @@ func dealRoles(ctx context.Context, q Querier, teamID int64, players []int64, ro
 		out[r] = Holding{Slot: players[least]}
 		held[least]++
 	}
-	return out, nil
+	return out
 }
 
 // RolesOf are the roles slot holds, in the author's order.

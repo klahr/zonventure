@@ -12,8 +12,9 @@ import (
 	"github.com/klahr/zonventure/internal/graph/session"
 )
 
-// loadSecrets reads who holds the team's secret roles and whom it has
-// accused, for the session's rules (see session/secret.go).
+// loadSecrets reads who holds the team's secret roles, whom it has
+// accused, what its players picked at its missions and who pressed its
+// sabotages, for the session's rules (see session/secret.go).
 func (s *teamState) loadSecrets(ctx context.Context, q Querier) error {
 	if s.G == nil || len(s.G.SecretRoles()) == 0 {
 		return nil
@@ -34,12 +35,37 @@ func (s *teamState) loadSecrets(ctx context.Context, q Querier) error {
 
 	// Whom most of the team named at each accusation: the one slot with
 	// the most votes; a tie names no one.
-	accuse := map[string]bool{}
+	accuse, picked := map[string]bool{}, map[string]bool{}
 	for _, n := range s.G.Nodes {
 		for _, b := range n.Blocks() {
-			if b.Kind == graph.BlockAccuse {
+			switch b.Kind {
+			case graph.BlockAccuse:
 				accuse[session.PickKey(n.Slug, b.ID)] = true
+			case graph.BlockMission, graph.BlockSabotage:
+				picked[session.PickKey(n.Slug, b.ID)] = true
 			}
+		}
+	}
+	s.Seals = map[string]map[int64]string{}
+	if len(picked) > 0 {
+		if err := scanRows(ctx, q, `SELECT node, block_id, slot_id, choice FROM team_block_votes WHERE team_id = $1`, s.teamID,
+			func(rows *sql.Rows) error {
+				var node, block, choice string
+				var slot int64
+				if err := rows.Scan(&node, &block, &slot, &choice); err != nil {
+					return err
+				}
+				key := session.PickKey(node, block)
+				if !picked[key] {
+					return nil
+				}
+				if s.Seals[key] == nil {
+					s.Seals[key] = map[int64]string{}
+				}
+				s.Seals[key][slot] = choice
+				return nil
+			}); err != nil {
+			return err
 		}
 	}
 	type tally struct {

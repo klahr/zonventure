@@ -40,23 +40,25 @@ type GoalView struct {
 func (t *Team) secretHeld(role string) bool { return t.Secrets[role] != 0 }
 
 // roleShows reports whether a block's own role lets the player asking
-// see it: a sabotage is its saboteur's alone, and an accusation is only
-// asked of a team that has one. The team as a whole — the organisers, a
+// see it: a sabotage and an accusation show only on a team that has the
+// role's player — a sabotage then on every phone alike, so a screen
+// shown gives no one away. The team as a whole — the organisers, a
 // simulated team — sees sabotage, and is asked only about a dealt role.
 func (t *Team) roleShows(b graph.Block) bool {
 	switch b.Kind {
 	case graph.BlockSabotage:
-		return t.HasRole(b.Role)
+		return t.Viewer == nil || t.secretHeld(b.Role)
 	case graph.BlockAccuse:
 		return t.secretHeld(b.Role)
 	}
 	return true
 }
 
-// Sabotage presses a sabotage block on the current step, once: the team
-// loses its points, the step's answer locks for its seconds, and its note
-// joins the journal. Only the saboteur's phone is shown it, and only a
-// block shown can be pressed.
+// Sabotage presses a sabotage block on the current step. Every player
+// may, once, and every phone shows the same after; only the saboteur's
+// press does anything: the team loses its points, the step's answer
+// locks for its seconds, and its note joins the journal. The team as a
+// whole presses as its saboteur.
 func (t *Team) Sabotage(node, block string) (Result, *walk.Step, error) {
 	n, err := t.current(node)
 	if err != nil {
@@ -72,6 +74,16 @@ func (t *Team) Sabotage(node, block string) (Result, *walk.Step, error) {
 		return Result{}, nil, ErrWrongNode
 	}
 	key := PickKey(n.Slug, b.ID)
+	if t.Viewer != nil {
+		if _, done := t.Seals[key][t.Viewer.Slot]; done {
+			return Result{}, nil, ErrNotAllowed
+		}
+		t.pick(key, n.Slug, b.ID, "1")
+		if !t.HasRole(b.Role) {
+			// A decoy: pressed, and nothing happens.
+			return Result{}, nil, nil
+		}
+	}
 	if t.Picks[key] != "" {
 		return Result{}, nil, ErrNotAllowed
 	}
@@ -93,6 +105,104 @@ func (t *Team) Sabotage(node, block string) (Result, *walk.Step, error) {
 		t.NewJournal = append(t.NewJournal, b.Journal)
 	}
 	return Result{}, nil, nil
+}
+
+// SealChange is a player's pick at a mission or press of a sabotage, for
+// the engine to persist.
+type SealChange struct {
+	Node, Block string
+	Slot        int64
+	Choice      string
+}
+
+// Seal is a player's pick at a mission on the current step: "0" keeps
+// faith, "1" betrays. It is the player's alone, once, from inside the
+// mission's post, until as many as it waits for have picked.
+func (t *Team) Seal(node, block, choice string) (Result, *walk.Step, error) {
+	n, err := t.current(node)
+	if err != nil {
+		return Result{}, nil, err
+	}
+	b := missionOn(n, block)
+	if b == nil || !t.blockShown(n.Slug, *b) || choice != "0" && choice != "1" {
+		return Result{}, nil, ErrWrongNode
+	}
+	if t.Viewer == nil {
+		return Result{}, nil, ErrNotAllowed
+	}
+	if !t.Here(b.Zone) {
+		return Result{}, nil, ErrNotHere
+	}
+	key := PickKey(n.Slug, b.ID)
+	picks := t.Seals[key]
+	if _, done := picks[t.Viewer.Slot]; done || len(picks) >= t.sealsNeeded(*b) {
+		return Result{}, nil, ErrNotAllowed
+	}
+	t.pick(key, n.Slug, b.ID, choice)
+	return Result{}, nil, nil
+}
+
+// pick records the asking player's pick at a mission, or press of a
+// sabotage, for the engine to persist.
+func (t *Team) pick(key, node, block, choice string) {
+	if t.Seals == nil {
+		t.Seals = map[string]map[int64]string{}
+	}
+	if t.Seals[key] == nil {
+		t.Seals[key] = map[int64]string{}
+	}
+	t.Seals[key][t.Viewer.Slot] = choice
+	t.SealChanged = &SealChange{Node: node, Block: block, Slot: t.Viewer.Slot, Choice: choice}
+}
+
+func missionOn(n graph.Node, block string) *graph.Block {
+	for _, b := range n.Blocks() {
+		if b.ID == block && b.Kind == graph.BlockMission {
+			return &b
+		}
+	}
+	return nil
+}
+
+// sealsNeeded is how many picks a mission waits for: its count, but
+// never more than the team has players.
+func (t *Team) sealsNeeded(b graph.Block) int {
+	return min(max(b.Count, 1), t.playing())
+}
+
+// unsealed reports whether a step shows a mission still waiting for
+// picks. Only players wait for one: the team as a whole — the
+// organisers, a simulated team — has no phones to pick with.
+func (t *Team) unsealed(n graph.Node) bool {
+	if t.Players == nil {
+		return false
+	}
+	for _, b := range n.Blocks() {
+		if b.Kind == graph.BlockMission && t.blockShown(n.Slug, b) && len(t.Seals[PickKey(n.Slug, b.ID)]) < t.sealsNeeded(b) {
+			return true
+		}
+	}
+	return false
+}
+
+// Betrayals is how many of a mission's betrayals count: those picked by
+// the holder of its secret role.
+func (t *Team) Betrayals(node, block string) int {
+	n, ok := t.G.Node(node)
+	if !ok {
+		return 0
+	}
+	b := missionOn(n, block)
+	if b == nil {
+		return 0
+	}
+	count := 0
+	for slot, choice := range t.Seals[PickKey(node, block)] {
+		if choice == "1" && slot != 0 && t.Secrets[b.Role] == slot {
+			count++
+		}
+	}
+	return count
 }
 
 // accusePoints are what the team's accusations score: each accusation

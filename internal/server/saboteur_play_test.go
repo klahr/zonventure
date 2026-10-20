@@ -10,8 +10,9 @@ import (
 )
 
 // A saboteur over HTTP, with three players: dealt to one as the team
-// first moves, it alone sees and presses the sabotage, the others name
-// it, and the end reveals it to all. In an event with secret roles off
+// first moves, every phone sees the sabotage and anyone may press it, the
+// saboteur's press alone doing harm; the others name it, and the end
+// reveals it to all. In an event with secret roles off
 // no one is dealt it, and no one is asked.
 func TestSaboteurOverHTTP(t *testing.T) {
 	event, view, act, has := saboteurServer(t)
@@ -38,18 +39,9 @@ type (
 	hasFn  func(*session.View, string) bool
 )
 
-// saboteurServer publishes the heist with a saboteur; its event func
-// starts an event of one team of three, Ann, Bo and Cy, with secret
-// roles on or off.
+// saboteurServer publishes the heist with a saboteur; see playServer.
 func saboteurServer(t *testing.T) (func(secret bool) []*client, viewFn, actFn, hasFn) {
-	ts, assignmentID, cleanup := newTestServer(t)
-	t.Cleanup(cleanup)
-
-	pub := newClient(t, ts)
-	if s := pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
-		t.Fatalf("login = %d", s)
-	}
-	g := graph.Graph{
+	return playServer(t, graph.Graph{
 		Roles: []graph.Role{{Slug: "saboteur", Name: "Saboteur", Secret: true, Goals: []graph.RoleGoal{
 			{Text: "Cost them points.", When: cond.Predicate{Op: cond.OpScore, Cmp: cond.Lt, N: 10}},
 		}}},
@@ -70,6 +62,19 @@ func saboteurServer(t *testing.T) (func(secret bool) []*client, viewFn, actFn, h
 			{From: "intro", FromPort: "out", To: "heist"},
 			{From: "heist", FromPort: "done", To: "end"},
 		},
+	})
+}
+
+// playServer publishes g as the demo adventure; its event func starts an
+// event of one team of three, Ann, Bo and Cy, with secret roles on or
+// off.
+func playServer(t *testing.T, g graph.Graph) (func(secret bool) []*client, viewFn, actFn, hasFn) {
+	ts, assignmentID, cleanup := newTestServer(t)
+	t.Cleanup(cleanup)
+
+	pub := newClient(t, ts)
+	if s := pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
+		t.Fatalf("login = %d", s)
 	}
 	if s := pub.doAny("PUT", "/api/admin/adventures/demo/graph", graph.Envelope{Format: graph.FormatV2, Graph: g}, nil); s != 200 {
 		t.Fatalf("save graph = %d", s)
@@ -158,8 +163,8 @@ func playSaboteur(t *testing.T, crew []*client, view viewFn, act actFn, has hasF
 				saboteur = i
 			}
 		}
-		if has(v, "cut") != (saboteur == i) {
-			t.Errorf("player %d sees the sabotage: %v, saboteur %d", i, has(v, "cut"), saboteur)
+		if !has(v, "cut") {
+			t.Errorf("player %d does not see the sabotage", i)
 		}
 		if !has(v, "who") {
 			t.Errorf("player %d is not asked who the saboteur is", i)
@@ -169,8 +174,14 @@ func playSaboteur(t *testing.T, crew []*client, view viewFn, act actFn, has hasF
 		t.Fatal("no one was dealt the saboteur")
 	}
 	other := (saboteur + 1) % 3
+	if s := act(crew[other], "sabotage", map[string]string{"node": "heist", "block": "cut"}); s != 200 {
+		t.Fatalf("a decoy press = %d", s)
+	}
+	if v := view(crew[other]); v.PenaltyScore != 0 {
+		t.Errorf("a decoy press cost the team %v", v.PenaltyScore)
+	}
 	if s := act(crew[other], "sabotage", map[string]string{"node": "heist", "block": "cut"}); s == 200 {
-		t.Error("a player who is not the saboteur sabotaged")
+		t.Error("a player pressed the sabotage twice")
 	}
 	if s := act(crew[saboteur], "sabotage", map[string]string{"node": "heist", "block": "cut"}); s != 200 {
 		t.Fatalf("sabotage = %d", s)

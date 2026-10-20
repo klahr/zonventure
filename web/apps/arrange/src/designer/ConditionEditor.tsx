@@ -36,6 +36,7 @@ const OPS: { op: Op; label: string; group: string }[] = [
   { op: "node_elapsed", label: "Time on this step (s)", group: "Progress" },
   { op: "team_size", label: "Team size", group: "Progress" },
   { op: "drawn", label: "Card drawn", group: "Progress" },
+  { op: "betrayed", label: "Mission betrayed", group: "Players" },
   { op: "item", label: "Has an item", group: "State" },
   { op: "counter", label: "Shared counter", group: "State" },
   { op: "in_zone", label: "Is inside a zone", group: "Place & time" },
@@ -52,6 +53,7 @@ const OPS: { op: Op; label: string; group: string }[] = [
 const AMOUNT: Partial<Record<Op, string>> = {
   attempts: "Wrong guesses",
   item: "How many",
+  betrayed: "Betrayals",
   counter: "Value",
   score: "Points",
   elapsed: "Seconds",
@@ -107,6 +109,13 @@ export function ConditionEditor({ value, onChange, graph, depth = 0, forPlayer =
   };
   const drawSteps = graph.nodes.filter((n) => draws(n.slug).length > 0);
   const drawBlock = draws(value.node).find((b) => b.id === value.block);
+
+  // The steps with a mission, and the missions of one.
+  const missions = (slug?: string) => {
+    const n = graph.nodes.find((x) => x.slug === slug);
+    return (n?.puzzle?.blocks ?? n?.story?.blocks ?? []).flatMap((b) => (b.kind === "mission" ? [b] : []));
+  };
+  const missionSteps = graph.nodes.filter((n) => missions(n.slug).length > 0);
 
   // A gate or a branch decides for the whole team: "this player" means
   // nothing there, and the validator refuses it.
@@ -189,6 +198,36 @@ export function ConditionEditor({ value, onChange, graph, depth = 0, forPlayer =
         </>
       )}
 
+      {value.op === "betrayed" && (
+        <>
+          <select
+            className="field__input"
+            value={value.node ?? ""}
+            onChange={(e) => {
+              const first = missions(e.target.value)[0]?.id;
+              onChange({ ...value, node: e.target.value, ...(first ? { block: first } : {}) });
+            }}
+            aria-label={t.t("Step")}
+          >
+            <option value="">{missionSteps.length ? t.t("— pick a step with a mission —") : t.t("— no step has a mission yet —")}</option>
+            {missionSteps.map((n) => (
+              <option key={n.slug} value={n.slug}>
+                {n.title || n.slug}
+              </option>
+            ))}
+          </select>
+          {missions(value.node).length > 1 && (
+            <select className="field__input" value={value.block ?? ""} onChange={(e) => set({ block: e.target.value })} aria-label={t.t("Mission")}>
+              {missions(value.node).map((b, i) => (
+                <option key={b.id} value={b.id}>
+                  {b.text?.trim() || t.t("Mission {{n}}", { n: i + 1 })}
+                </option>
+              ))}
+            </select>
+          )}
+        </>
+      )}
+
       {value.op === "item" && (
         <select className="field__input" value={value.item ?? ""} onChange={(e) => set({ item: e.target.value })} aria-label={t.t("Item")}>
           <option value="">{t.t("— pick an item —")}</option>
@@ -222,7 +261,7 @@ export function ConditionEditor({ value, onChange, graph, depth = 0, forPlayer =
         </select>
       )}
 
-      {["attempts", "item", "counter", "score", "elapsed", "node_elapsed", "team_size", "players_in_zone", "walked", "time_of_day"].includes(value.op) && (
+      {["attempts", "item", "betrayed", "counter", "score", "elapsed", "node_elapsed", "team_size", "players_in_zone", "walked", "time_of_day"].includes(value.op) && (
         <div className="cond__cmp">
           <span className="cond__what">{t.t(AMOUNT[value.op] ?? "Value")}</span>
           <select className="field__input" value={value.cmp ?? "gte"} onChange={(e) => set({ cmp: e.target.value as Cmp })} aria-label={t.t("Comparison")}>
@@ -238,7 +277,7 @@ export function ConditionEditor({ value, onChange, graph, depth = 0, forPlayer =
             <input
               className="field__input"
               type="number"
-              value={value.n ?? (value.op === "item" || value.op === "players_in_zone" ? 1 : 0)}
+              value={value.n ?? (value.op === "item" || value.op === "betrayed" || value.op === "players_in_zone" ? 1 : 0)}
               onChange={(e) => set({ n: Number(e.target.value) })}
               aria-label={t.t(AMOUNT[value.op] ?? "Value")}
             />

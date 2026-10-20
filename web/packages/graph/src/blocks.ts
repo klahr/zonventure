@@ -113,6 +113,7 @@ const EMPTY: { [K in Exclude<BlockKind, FileKind>]: Extract<BlockBody, { kind: K
   draw: { kind: "draw", text: "", options: ["", ""] },
   sabotage: { kind: "sabotage", role: "", text: "", worth: 5 },
   accuse: { kind: "accuse", role: "", text: "", worth: 20 },
+  mission: { kind: "mission", role: "", zone: "", count: 2, text: "" },
   roles: { kind: "roles" },
 };
 

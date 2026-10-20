@@ -253,7 +253,8 @@ type StartOption struct {
 type BlockView struct {
 	graph.Block
 	Place *graph.Zone `json:"place,omitempty"`
-	// Here is a compass's: whether the phone asking is inside its zone,
+	// Here is a compass's and a mission's: whether the phone asking is
+	// inside its zone,
 	// by the same positions an answer is judged on, not the phone's own.
 	Here          *bool         `json:"here,omitempty"`
 	Locked        bool          `json:"locked,omitempty"`
@@ -273,6 +274,12 @@ type BlockView struct {
 	// the view, and Dealt is the one the team drew.
 	Deck  int    `json:"deck,omitempty"`
 	Dealt string `json:"dealt,omitempty"`
+	// Seals is how many players have picked at a mission, of Need, and
+	// Sealed whether the phone asking has: never what anyone picked.
+	// A sabotage's Sealed is whether this phone pressed it.
+	Seals  int  `json:"seals,omitempty"`
+	Need   int  `json:"need,omitempty"`
+	Sealed bool `json:"sealed,omitempty"`
 
 	// The rest is filled by the player endpoints, which know the player
 	// asking. Player is which of Players a split secret's phone is,
@@ -447,7 +454,7 @@ func (t *Team) setBlocks(v *View, n graph.Node) {
 	var shown []graph.Block
 	for _, b := range bs {
 		if !t.roleShows(b) {
-			// Not a teaser either: that a sabotage is here is the secret.
+			// Not a teaser either: an accusation with no one to name is not there.
 			continue
 		}
 		if b.Show != nil && !cond.Eval(b.Show.When, t) {
@@ -492,6 +499,26 @@ func (t *Team) setBlocks(v *View, n graph.Node) {
 				if i, err := strconv.Atoi(p); err == nil && i >= 0 && i < len(b.Options) {
 					bv.Picked, bv.Dealt = p, b.Options[i]
 				}
+			}
+		case graph.BlockSabotage:
+			// The same on every phone: whether this one pressed, never
+			// whether it did anything, nor which note it plants.
+			bv.Journal = ""
+			if t.Viewer != nil {
+				_, bv.Sealed = t.Seals[PickKey(n.Slug, b.ID)][t.Viewer.Slot]
+			} else {
+				bv.Sealed = t.Picks[PickKey(n.Slug, b.ID)] != ""
+			}
+		case graph.BlockMission:
+			picks := t.Seals[PickKey(n.Slug, b.ID)]
+			bv.Place, bv.Seals, bv.Need = t.zoneBySlug(b.Zone), len(picks), t.sealsNeeded(b)
+			here := t.Here(b.Zone)
+			bv.Here = &here
+			if t.Viewer != nil {
+				_, bv.Sealed = picks[t.Viewer.Slot]
+			}
+			if !bv.Sealed && bv.Seals < bv.Need && !t.G.Stations {
+				v.WatchPosition = true
 			}
 		case graph.BlockTitle:
 			bv.Text = n.Title

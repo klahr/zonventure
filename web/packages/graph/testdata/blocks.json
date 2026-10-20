@@ -41,6 +41,7 @@
     { "id": "roles", "kind": "roles", "text": "Take your parts.", "team": true, "choose": true, "lock": true },
     { "id": "draw", "kind": "draw", "text": "Draw your fortune.", "options": ["The tower", "The star", "The moon"] },
     { "id": "sabotage", "kind": "sabotage", "role": "saboteur", "text": "Cut the alarm wire.", "worth": 5, "seconds": 60, "journal": "lie" },
-    { "id": "accuse", "kind": "accuse", "role": "saboteur", "text": "Who is the saboteur?", "worth": 20 }
+    { "id": "accuse", "kind": "accuse", "role": "saboteur", "text": "Who is the saboteur?", "worth": 20 },
+    { "id": "mission", "kind": "mission", "role": "saboteur", "zone": "park", "count": 2, "text": "Seal the package.", "options": ["Deliver", "Tamper"] }
   ]
 }

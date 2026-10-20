@@ -39,6 +39,8 @@ export interface BlockContext {
    * player vote. The simulator and the designer's preview leave it off.
    */
   live?: boolean;
+  /** One of several simulated phones, each its own player: a mission or a sabotage can be picked, though not live. */
+  crew?: boolean;
   /** Sends the team's picture for a photo block; absent outside a real event. */
   photo?: ((block: string, file: File) => Promise<void>) | undefined;
   /** The organisers' newest message to the team, for a bulletin block. */

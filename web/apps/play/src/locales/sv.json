@@ -400,9 +400,8 @@
   "belongs to the {{role}}": "tillhör rollen {{role}}",
   "Do it": "Gör det",
   "Done. No one saw.": "Klart. Ingen såg.",
-  "Only you can see this": "Bara du kan se det här",
   "Players name a teammate from their own phones in a live event.": "Var och en pekar ut en lagkamrat från sin egen telefon under ett riktigt event.",
-  "The saboteur presses this on their own phone in a live event.": "Sabotören trycker på det här i sin egen telefon under ett riktigt event.",
+  "Every player sees this on their own phone in a live event; only the saboteur's press does anything.": "Alla spelare ser det här i sin egen telefon under ett riktigt event; bara sabotörens tryck gör något.",
   "The {{role}} was {{name}}!": "{{role}} var {{name}}!",
   "They got away with it.": "De kom undan.",
   "Who do you name?": "Vem pekar du ut?",
@@ -505,5 +504,14 @@
   "Cards to put in order": "Kort att sätta i ordning",
   "Drag a card by ⠿ to move it — or tap one, then where it goes.": "Dra ett kort i ⠿ för att flytta det – eller tryck på ett och sedan där det ska.",
   "Now tap where it goes.": "Tryck nu där det ska.",
-  "{{card}}, place {{n}} of {{of}}": "{{card}}, plats {{n}} av {{of}}"
+  "{{card}}, place {{n}} of {{of}}": "{{card}}, plats {{n}} av {{of}}",
+  "Deliver": "Leverera",
+  "Tamper": "Sabotera",
+  "Seal it": "Försegla",
+  "The mission is sealed.": "Uppdraget är förseglat.",
+  "Wait until the mission is sealed.": "Vänta tills uppdraget är förseglat.",
+  "Players pick at the post on their own phones in a live event.": "Spelarna väljer vid posten på sina egna telefoner under ett riktigt event.",
+  "{{n}} of {{m}} have picked. Go to the post to pick.": "{{n}} av {{m}} har valt. Gå till posten för att välja.",
+  "“{{choice}}”: you cannot change it.": "”{{choice}}”: du kan inte ändra det.",
+  "✓ Sealed. Head back to your team.": "✓ Förseglat. Gå tillbaka till ditt lag."
 }

@@ -928,9 +928,11 @@ func (ps *playSession) block(b *strings.Builder, v session.View, bl session.Bloc
 	case graph.BlockVote:
 		fmt.Fprintf(b, "A vote among the players: %s — %s (votes are not part of a playtest).\n", bl.Text, strings.Join(bl.Options, " / "))
 	case graph.BlockSabotage:
-		fmt.Fprintf(b, "The saboteur's secret button: %s (only their phone shows it; sabotage is not part of a playtest).\n", bl.Text)
+		fmt.Fprintf(b, "A sabotage button every phone shows alike: %s (only the saboteur's press does harm; sabotage is not part of a playtest).\n", bl.Text)
 	case graph.BlockAccuse:
 		fmt.Fprintf(b, "An accusation among the players: %s (it needs a dealt saboteur and real phones; not part of a playtest).\n", bl.Text)
+	case graph.BlockMission:
+		fmt.Fprintf(b, "A secret pick at zone %q for %d players: %s (picks are made on real phones; a playtest is never held by it and is never betrayed).\n", bl.Zone, max(bl.Count, 1), bl.Text)
 	case graph.BlockRoles:
 		if bl.Text != "" {
 			b.WriteString(bl.Text + "\n")

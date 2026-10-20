@@ -73,6 +73,8 @@ export interface PlayViewProps {
   instant?: boolean;
   /** The simulator's device, for compass and level blocks to read. */
   motion?: Motion;
+  /** The simulator playing as one of several phones: a player's own pick (a mission, a sabotage) works there. */
+  crew?: boolean;
   /** The adventure's palette. */
   brand?: play.Brand | null;
   /** The adventure's farewell, shown under the end step's own text. */
@@ -573,6 +575,7 @@ function blockContext(p: StepProps): BlockContext {
     motion: p.motion,
     // Votes come from players' own phones: never in the simulator or a preview.
     live: (p.live ?? true) && !p.preview,
+    crew: !!p.crew,
     photo: p.photo,
     bulletin: p.bulletin,
     roles: p.view.roles,

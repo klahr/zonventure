@@ -4,21 +4,21 @@ import { fillTeam, type Renderer } from "./context.ts";
 import "./team.css";
 
 /**
- * The saboteur's button: only their phone is sent it. It does its harm
- * once — points, a lockout, a false note — and says so only here.
+ * A sabotage: the same button on every phone, which anyone may press
+ * once. Only the saboteur's press does harm — points, a lockout, a false
+ * note — and every phone says the same after, so no screen tells.
  */
 export const SabotageBlock: Renderer<"sabotage"> = ({ block, ctx }) => {
   const { t } = ctx;
-  const done = !!block.picked;
+  const done = !!block.sealed;
   const press = () => ctx.node && ctx.act?.({ kind: "sabotage", node: ctx.node, block: block.id });
   return (
     <div className="pv-sabotage">
-      <p className="pv-sabotage__tag">{t("Only you can see this")}</p>
       {block.text && <Markdown text={fillTeam(block.text, ctx)} />}
-      <button type="button" className="pv-btn pv-sabotage__go" disabled={done || !ctx.live || ctx.busy || !ctx.act} onClick={press}>
+      <button type="button" className="pv-btn pv-sabotage__go" disabled={done || !(ctx.live || ctx.crew) || ctx.busy || !ctx.act} onClick={press}>
         {done ? t("Done. No one saw.") : t("Do it")}
       </button>
-      {!ctx.live && <p className="pv-vote__note">{t("The saboteur presses this on their own phone in a live event.")}</p>}
+      {!ctx.live && !ctx.crew && <p className="pv-vote__note">{t("Every player sees this on their own phone in a live event; only the saboteur's press does anything.")}</p>}
     </div>
   );
 };

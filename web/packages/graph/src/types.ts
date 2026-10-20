@@ -327,6 +327,8 @@ export type BlockBody =
   | { kind: "sabotage"; role: string; text?: string; worth?: number; seconds?: number; journal?: string }
   /** Each player names a teammate; if most name the secret role's holder, the team scores worth when it finishes. */
   | { kind: "accuse"; role: string; text: string; worth?: number }
+  /** A secret pick at the zone's post: each player there picks one of options (Deliver, Tamper when empty) once, until count have; only the secret role's second counts (op betrayed). */
+  | { kind: "mission"; role: string; zone: string; count?: number; text?: string; options?: string[] }
   /** The roles: the player's own, or with team every player's; choose lets them take one here, lock makes them final once the team moves on. */
   | { kind: "roles"; text?: string; team?: boolean; choose?: boolean; lock?: boolean };
 
@@ -711,6 +713,7 @@ export type Op =
   | "role"
   | "walked"
   | "drawn"
+  | "betrayed"
   | "time_of_day"
   | "weekday";
 
@@ -720,7 +723,7 @@ export interface Predicate {
   op: Op;
   of?: Predicate[];
   node?: string;
-  /** The draw block on node, for drawn; is is the card's index. */
+  /** The draw block on node, for drawn, or the mission, for betrayed; is is the card's index. */
   block?: string;
   item?: string;
   counter?: string;

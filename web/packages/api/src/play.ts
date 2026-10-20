@@ -160,10 +160,12 @@ export type PlayBlockBody =
   | { kind: "bulletin" }
   /** The cards stay face down: deck is how many, and once drawn picked is its index and dealt the card. */
   | { kind: "draw"; text?: string; deck?: number; picked?: string; dealt?: string }
-  /** Only the saboteur's phone gets it; picked "1" once pressed. */
-  | { kind: "sabotage"; text?: string; worth?: number; seconds?: number; picked?: string }
+  /** Every phone of a team with a saboteur gets it alike; sealed once this phone pressed. Only the saboteur's press does harm. */
+  | { kind: "sabotage"; text?: string; worth?: number; seconds?: number; sealed?: boolean }
   /** suspects are this player's teammates, tally counts each's votes in that order, voted the slot named. */
   | { kind: "accuse"; text: string; worth?: number; suspects?: { slot: number; name: string }[]; tally?: number[]; voted?: string; voters?: number }
+  /** seals of need players have picked at the post (place; here: this phone is inside it); sealed: this player has. Never what anyone picked. */
+  | { kind: "mission"; text?: string; options?: string[]; zone: string; count?: number; seals?: number; need?: number; sealed?: boolean }
   /** Drawn from the view's roles: the player's own, or with team everyone's. */
   | { kind: "roles"; text?: string; team?: boolean; choose?: boolean; lock?: boolean };
 
@@ -415,8 +417,10 @@ export type PlayAction =
   | { kind: "pick"; node: string; block: string; choice: string }
   /** This player's vote on a vote block: the option's index. Live events only. */
   | { kind: "vote"; node: string; block: string; choice: string }
-  /** The saboteur presses a sabotage block. Live events only. */
-  | { kind: "sabotage"; node: string; block: string };
+  /** This player presses a sabotage block, once; only the saboteur's press does harm. Live events only. */
+  | { kind: "sabotage"; node: string; block: string }
+  /** This player's pick at a mission, from inside its post: "0" keeps faith, "1" betrays. Final. Live events only. */
+  | { kind: "seal"; node: string; block: string; choice: "0" | "1" };
 
 /**
  * Refusal codes (session.Code, plus the player handler's own). A client
@@ -431,6 +435,7 @@ export type RefusalCode =
   | "finished"
   | "wrong_node"
   | "unanswered"
+  | "unsealed"
   | "paused"
   | "not_running"
   | "no_game"
@@ -695,18 +700,43 @@ export type SimAction =
   /** Take a puzzle output without its answer — the simulator's pass. */
   | { kind: "force"; node: string; port: string };
 
+/**
+ * A simulated team's phones (admin simulateCrew): each action is the
+ * player `as`'s, and the reply has every phone's screen. Kept by the
+ * client and sent back with the next action, like the team.
+ */
+export interface SimCrew {
+  players: { slot: number; name?: string; position?: { lat: number; lng: number } }[];
+  as?: number;
+  /** Public roles given to a player; the rest are dealt as a live team deals them. */
+  roles?: Record<string, number>;
+  /** Who holds each secret role, 0 for no one; one missing is dealt at random from three players. */
+  secrets?: Record<string, number>;
+  seals?: Record<string, Record<string, string>>;
+  presses?: Record<string, unknown>;
+}
+
+/** What one of a crew's phones shows. */
+export interface SimPhone {
+  slot: number;
+  roles?: string[];
+  view: View;
+}
+
 export interface SimResponse {
   team: SimTeam | null;
   result: Result;
   /** Every node the step passed through, including where it landed. */
   passed?: string[];
   refusal?: { code: RefusalCode; message: string };
+  crew?: SimCrew;
+  phones?: SimPhone[];
 }
 
-export const simulate = <Env>(slug: string, envelope: Env, team: SimTeam | null, action: SimAction, signal?: AbortSignal) =>
+export const simulate = <Env>(slug: string, envelope: Env, team: SimTeam | null, action: SimAction, signal?: AbortSignal, crew?: SimCrew | null) =>
   post<SimResponse>(
     `/api/admin/adventures/${encodeURIComponent(slug)}/simulate`,
-    { envelope, ...(team ? { team } : {}), action },
+    { envelope, ...(team ? { team } : {}), ...(crew ? { crew } : {}), action },
     signal ? { signal } : {},
   );
 

@@ -13,6 +13,20 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ### Added
 
+- Designer: the preview plays as several phones at once. Pick 2 to 6
+  players: each is a phone of its own, with its roles and its place on
+  the map, and acts as itself; the chosen phone shows large and the
+  others small underneath, marked when their screen changed. A secret
+  role is dealt at random from three players, or given to the player
+  the author picks, so roles, sabotage and missions can be tried
+  before anyone walks.
+- Designer: a mission block, for hidden-role adventures. Each player
+  inside the mission's post picks one of two choices — Deliver or
+  Tamper, or the author's own words — once, until as many as it waits
+  for have, and the step waits until then. Only a secret role's
+  betrayal counts, and every phone shows the same whatever was picked.
+  A new condition, "Mission betrayed", asks about it on a later step:
+  a tampered key, a detour, an ending.
 - Store: a listing speaks the languages its adventure is played in. An
   event's store settings take its name and public description in each
   of the adventure's other languages, reviewed with the rest of the
@@ -42,6 +56,13 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   it, those in the adventure's own. The team's page names the
   adventure and lists the files in the team's language. A team in a
   language the adventure is not played in gets everything as written.
+
+### Changed
+
+- Sabotage: every phone of a team with a saboteur shows the sabotage
+  alike, and any player may press it once; only the saboteur's press
+  costs the team. A screen shown to a teammate no longer gives the
+  saboteur away.
 
 ## [0.33.18] - 2026-10-20
 

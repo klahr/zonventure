@@ -55,6 +55,7 @@ func (f *fakeState) Here(string) bool             { return false }
 func (f *fakeState) HasRole(string) bool          { return false }
 func (f *fakeState) Walked() float64              { return 0 }
 func (f *fakeState) Picked(string, string) string { return "" }
+func (f *fakeState) Betrayals(string, string) int { return 0 }
 func (f *fakeState) LocalTime() time.Time         { return f.now }
 func (f *fakeState) Slot() int                    { return f.slot }
 func (f *fakeState) BranchDone(h, p string) bool  { return f.branches[h][p] }

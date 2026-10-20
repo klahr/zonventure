@@ -46,6 +46,8 @@ export function summarize(b: Block, graph: Graph, t: T, node: Node): string {
       return [b.worth ? t.t("−{{n}} points", { n: b.worth }) : "", b.seconds ? t.t("locks {{n}} s", { n: b.seconds }) : "", b.journal ? t.t("a false note") : ""].filter(Boolean).join(" · ") || t.t("does nothing yet");
     case "accuse":
       return clip(b.text) || t.t("no question yet");
+    case "mission":
+      return t.t("{{n}} players pick", { n: Math.max(b.count ?? 1, 1) }) + (b.zone ? ` · ${b.zone}` : ` · ${t.t("no post yet")}`);
     case "roles":
       return [b.team ? t.t("everyone's") : t.t("the player's own"), b.choose ? t.t("chosen here") : "", b.lock ? t.t("final after this step") : ""].filter(Boolean).join(" · ");
     case "draw":

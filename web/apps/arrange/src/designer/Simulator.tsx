@@ -7,7 +7,7 @@ import { I18n } from "@zonventure/i18n";
 import playEn from "../../../play/src/locales/en.json";
 import playSv from "../../../play/src/locales/sv.json";
 import { useT } from "../i18n.tsx";
-import { SpoofMap, type Point } from "./SpoofMap.tsx";
+import { SpoofMap, type OtherPin, type Point } from "./SpoofMap.tsx";
 import { DevicePanel } from "./DevicePanel.tsx";
 import { VISIBLE } from "./dz/types.tsx";
 import { locationError, zoneName } from "./zones.ts";
@@ -40,6 +40,12 @@ const START_PLACE = "_start";
  * Two controls exist only here: moving the clock, and placing the team
  * in a zone. They are how an author tries a hint delay, a time limit or
  * a zone gate without waiting or walking.
+ *
+ * With more than one phone the team is a crew: each phone is a player
+ * of its own, with its roles and its place, and acts as itself. The
+ * chosen phone is the big one; the others show small underneath, so a
+ * screen that differs — the saboteur's button, a role's clue, a mission
+ * picked — is seen at a glance.
  */
 
 export type SimMode = "step" | "run";
@@ -87,6 +93,13 @@ export const DEVICES = [
   { id: "ipad-mini", label: "iPad mini", w: 744, h: 1133 },
 ] as const;
 type DeviceId = (typeof DEVICES)[number]["id"];
+
+/** The most phones a crew has (admin maxCrew), and how small the others show. */
+const MAX_PHONES = 6;
+const MINI = 0.2;
+
+/** What a phone's screen is, to tell when it changed since it was looked at. */
+const signature = (v: play.View) => JSON.stringify([v.node, v.blocks, v.finished]);
 
 /** 0 is "fit": as large as the window allows, never above actual size. */
 const ZOOMS = [0, 1, 0.75, 0.5] as const;
@@ -169,6 +182,30 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   const langRef = useRef(lang);
   langRef.current = lang;
 
+  // A crew: how many phones (1 is the team as a whole), who the author
+  // gave each secret role (absent: dealt at random), the crew the server
+  // hands back, each phone's screen, and what each showed when last seen.
+  const [phoneCount, setPhoneCount] = useState(1);
+  const [secretPick, setSecretPick] = useState<Record<string, number>>({});
+  const [crew, setCrew] = useState<play.SimCrew | null>(null);
+  const crewRef = useRef<play.SimCrew | null>(null);
+  const [phones, setPhones] = useState<play.SimPhone[]>([]);
+  const [seen, setSeen] = useState<Record<number, string>>({});
+  // A new team gets a new crew: the same phones where they stood, no picks.
+  const freshCrew = (): play.SimCrew | null => {
+    if (bare || phoneCount < 2) return null;
+    const old = crewRef.current;
+    const players = Array.from({ length: phoneCount }, (_, i) => {
+      const at = old?.players[i]?.position;
+      return { slot: i + 1, name: t.t("Player {{n}}", { n: i + 1 }), ...(at ? { position: at } : {}) };
+    });
+    const secrets = Object.fromEntries(Object.entries(secretPick).filter(([, slot]) => slot <= phoneCount));
+    return { players, as: old?.as && old.as <= phoneCount ? old.as : 1, ...(Object.keys(secrets).length ? { secrets } : {}) };
+  };
+  const freshRef = useRef(freshCrew);
+  freshRef.current = freshCrew;
+  const crewKey = `${phoneCount}:${JSON.stringify(secretPick)}`;
+
   const say = useCallback((text: string, tone?: "warn") => {
     setLog((l) => [{ id: ++logId.current, text, ...(tone ? { tone } : {}) }, ...l].slice(0, 30));
   }, []);
@@ -180,9 +217,14 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
       setBusy(true);
       setError(null);
       try {
-        const r = await play.simulate(slug, envRef.current, from, action, signal);
+        const fresh = action.kind === "start" || action.kind === "place";
+        const r = await play.simulate(slug, envRef.current, from, action, signal, fresh ? freshRef.current() : crewRef.current);
         if (r.team) setTeam(r.team);
         setView(r.result.view);
+        crewRef.current = r.crew ?? null;
+        setCrew(r.crew ?? null);
+        setPhones(r.phones ?? []);
+        if (fresh) setSeen(Object.fromEntries((r.phones ?? []).map((p) => [p.slot, signature(p.view)])));
         onPosition(r.result.view.node ?? null);
         return r;
       } catch (e) {
@@ -225,7 +267,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     };
     // envelope is a dependency on purpose: every edit re-places the
     // team, which is what makes this a live preview.
-  }, [mode, placeable, selected, envelope, run, onPosition]);
+  }, [mode, placeable, selected, envelope, run, onPosition, crewKey]);
 
   // Run mode: start from the top when entered or restarted.
   useEffect(() => {
@@ -249,7 +291,8 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     });
     return () => ac.abort();
     // Deliberately not keyed on the graph: a run carries on across edits.
-  }, [mode, restart, nonce, run]);
+    // A different crew is a different team, so it starts over.
+  }, [mode, restart, nonce, run, crewKey]);
 
   // The toolbar's language changed: the team in play switches, as a player can.
   useEffect(() => {
@@ -281,6 +324,24 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   // Clear the canvas marker when the simulator goes away.
   useEffect(() => () => onPosition(null), [onPosition]);
 
+  const asSlot = crew?.as ?? 1;
+  const nameOf = (slot: number) => crew?.players.find((p) => p.slot === slot)?.name ?? "";
+  // A crew's line says which phone did it.
+  const sayAs = (text: string, tone?: "warn") => say(crewRef.current ? `${nameOf(crewRef.current.as ?? 1)}: ${text}` : text, tone);
+  const pick = (slot: number) => {
+    if (!crewRef.current) return;
+    crewRef.current = { ...crewRef.current, as: slot };
+    setCrew(crewRef.current);
+    setFeedback(null);
+    const mine = phones.find((p) => p.slot === slot);
+    if (mine) setView(mine.view);
+  };
+  // The phone in view has been looked at.
+  useEffect(() => {
+    const mine = phones.find((p) => p.slot === asSlot);
+    if (mine) setSeen((s) => ({ ...s, [asSlot]: signature(mine.view) }));
+  }, [phones, asSlot]);
+
   const act = async (a: play.PlayAction | Extract<play.SimAction, { kind: "force" }>) => {
     const before = view?.node;
     const r = await run(a, team);
@@ -288,7 +349,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     if (r.refusal) {
       if (r.refusal.code === "graph") {
         setFeedback(null);
-        say(t.t("The draft stopped the team: {{why}}", { why: r.refusal.message }), "warn");
+        sayAs(t.t("The draft stopped the team: {{why}}", { why: r.refusal.message }), "warn");
       } else {
         setFeedback(feedbackForRefusal(r.refusal.code, tr));
       }
@@ -299,8 +360,10 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     const after = r.result.view.node;
     const left = before ? nodeBySlug(graph, before) : undefined;
     const port = r.result.port && left ? portLabel(left, r.result.port) : r.result.port;
-    if (a.kind === "answer") say(t.t("Answered “{{guess}}”.", { guess: a.guess }));
-    if (a.kind === "force") say(t.t("Passed without answering."));
+    if (a.kind === "answer") sayAs(t.t("Answered “{{guess}}”.", { guess: a.guess }));
+    if (a.kind === "force") sayAs(t.t("Passed without answering."));
+    if (a.kind === "seal") sayAs(t.t("Picked at the mission."));
+    if (a.kind === "sabotage") sayAs(t.t("Pressed the sabotage."));
     if (r.result.port) {
       const via = (r.passed ?? []).filter((s) => s !== after).map(titleOf);
       say(
@@ -346,7 +409,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     else if (need) text = t.t("Moved the team to {{m}} m from {{zone}} — outside it.", { m: Math.round(metresBetween(p.lat, p.lng, need.lat, need.lng)), zone: placeName(need) });
     else text = t.t("Moved the team outside every zone.");
     void run(where, team).then((r) => {
-      if (r) say(text);
+      if (r) sayAs(text);
     });
   };
 
@@ -389,7 +452,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     if (!team) return;
     setFeedback(null);
     void run(z ? { kind: "move", zone: z } : { kind: "move" }, team).then((r) => {
-      if (r) say(z ? t.t("Now standing in {{zone}}.", { zone: zoneName(graph, z) }) : t.t("Now nowhere in particular."));
+      if (r) sayAs(z ? t.t("Now standing in {{zone}}.", { zone: zoneName(graph, z) }) : t.t("Now nowhere in particular."));
     });
   };
 
@@ -398,7 +461,12 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     : 0;
 
   const selectedNode = selected ? nodeBySlug(graph, selected) : undefined;
-  const pos = team?.["position"] as Point | undefined;
+  // A crew's map and distances are the chosen phone's.
+  const pos = crew ? crew.players.find((p) => p.slot === asSlot)?.position : (team?.["position"] as Point | undefined);
+  const insideOf = (p: Point | undefined) => (p ? places.find((z) => zoneContains(z, p.lat, p.lng)) : undefined);
+  const others: OtherPin[] = (crew?.players ?? []).flatMap((p) => (p.slot !== asSlot && p.position ? [{ key: p.slot, label: p.name ?? String(p.slot), point: p.position }] : []));
+  const secretRoles = (graph.roles ?? []).filter((r) => r.secret);
+  const roleName = (slug: string) => graph.roles?.find((r) => r.slug === slug)?.name || slug;
   // "About N m away", as the player app says it — the same line the
   // phone shows a real team.
   const placeNote = (z: play.PlayZone) => {
@@ -409,6 +477,19 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   const focus = view?.zone && !view.here ? view.zone : view?.starts?.find((o) => o.zone && !o.here)?.zone;
   // The puzzle the team is on, for passing it without the answer.
   const current = view?.type === "puzzle" && view.node && !view.finished ? nodeBySlug(graph, view.node) : undefined;
+
+  // A phone's roles, its secret one marked; where it stands; a mission picked.
+  const phoneStatus = (p: play.SimPhone) => {
+    const player = crew?.players.find((x) => x.slot === p.slot);
+    const roles = (p.roles ?? []).map((r) => (secretRoles.some((s) => s.slug === r) ? `🕵 ${roleName(r)}` : roleName(r)));
+    const at = insideOf(player?.position);
+    const sealed = p.view.blocks?.some((b) => b.kind === "mission" && b.sealed);
+    return [...roles, at ? `📍 ${placeName(at)}` : t.t("nowhere"), ...(sealed ? ["✓"] : [])].join(" · ");
+  };
+  const phoneLabel = (slot: number) => {
+    const p = phones.find((x) => x.slot === slot);
+    return p ? `${nameOf(slot)} · ${phoneStatus(p)}` : nameOf(slot);
+  };
 
   return (
     <div className={"sim" + (bare ? " sim--bare" : "")}>
@@ -463,6 +544,46 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
             </label>
           </div>
 
+          <div className="sim__crew">
+            <label className="field">
+              <span className="field__label">{t.t("Phones")}</span>
+              <select className="field__input" value={phoneCount} disabled={busy} onChange={(e) => setPhoneCount(Number(e.target.value))}>
+                {Array.from({ length: MAX_PHONES }, (_, i) => i + 1).map((n) => (
+                  <option key={n} value={n}>
+                    {n === 1 ? t.t("1 · the whole team") : t.t("{{n}} players", { n })}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {phoneCount > 1 &&
+              secretRoles.map((r) => (
+                <label key={r.slug} className="field">
+                  <span className="field__label">{t.t("{{role}} is", { role: r.name || r.slug })}</span>
+                  <select
+                    className="field__input"
+                    value={secretPick[r.slug] ?? "random"}
+                    disabled={busy}
+                    onChange={(e) =>
+                      setSecretPick((sp) => {
+                        const next = { ...sp };
+                        if (e.target.value === "random") delete next[r.slug];
+                        else next[r.slug] = Number(e.target.value);
+                        return next;
+                      })
+                    }
+                  >
+                    <option value="random">{phoneCount >= 3 ? t.t("Dealt at random") : t.t("No one: too few players")}</option>
+                    {Array.from({ length: phoneCount }, (_, i) => i + 1).map((n) => (
+                      <option key={n} value={n}>
+                        {t.t("Player {{n}}", { n })}
+                      </option>
+                    ))}
+                    <option value={0}>{t.t("No one")}</option>
+                  </select>
+                </label>
+              ))}
+          </div>
+
           <div className="sim__controls">
             <span className="sim__clock" title={t.t("Time since the team started")}>⏱ {formatSeconds(elapsed)}</span>
             {[60, 300, 1800].map((s) => (
@@ -489,8 +610,8 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
           </div>
 
           <label className="field sim__where">
-            <span className="field__label">{t.t("Team is at")}</span>
-            <select className="field__input" value={zone} disabled={!team || busy} onChange={(e) => move(e.target.value)}>
+            <span className="field__label">{crew ? t.t("{{name}} is at", { name: nameOf(asSlot) }) : t.t("Team is at")}</span>
+            <select className="field__input" value={crew ? (insideOf(pos)?.slug ?? "") : zone} disabled={!team || busy} onChange={(e) => move(e.target.value)}>
               <option value="">{t.t("Nowhere in particular")}</option>
               {places.map((z) => (
                 <option key={z.slug} value={z.slug}>
@@ -508,7 +629,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
             {followNote && <span className={"field__hint" + (followNote.warn ? " zone-here__warn" : "")}>{followNote.text}</span>}
           </div>
 
-          <SpoofMap zones={places} position={pos ?? null} focus={focus} onPick={moveTo} disabled={!team || busy || follow} />
+          <SpoofMap zones={places} position={pos ?? null} focus={focus} onPick={moveTo} disabled={!team || busy || follow} others={others} />
 
           {view?.blocks?.some((b) => !b.locked && (b.kind === "compass" || b.kind === "level" || b.kind === "bearing")) && <DevicePanel motion={motion} onChange={setMotion} />}
 
@@ -544,38 +665,79 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
           and fits exactly as on the device, only smaller. The scale also
           makes the frame the containing block for the step's fixed
           overlays — confetti and sheets cover the phone, not the designer. */}
-      <div className="phone-fit" style={{ width: frameW * scale, height: frameH * scale }}>
-        <div className="phone" aria-label={t.t("What the team sees")} style={{ width: frameW, height: frameH, transform: `scale(${scale})` }}>
-          <div className="phone__screen">
-            {view ? (
-              <PlayView
-                key={replay}
-                view={view}
-                onAction={(a) => void act(a)}
-                busy={busy}
-                feedback={feedback}
-                live={false}
-                t={tr}
-                brand={brand}
-                teamName={t.t("Test team")}
-                placeNote={placeNote}
-                {...(pos ? { position: pos } : {})}
-                preview
-                instant={mode === "step"}
-                motion={motion}
-                storageKey={`sim-${slug}`}
-                {...(view.zone && !view.here ? { zoneNote: placeNote(view.zone) } : {})}
-              />
-            ) : (
-              <p className="phone__empty">
-                {mode === "step" && selectedNode && !VISIBLE.has(selectedNode.type)
-                  ? t.t("Teams never see this step. It happens the moment they reach it, and they carry on.")
-                  : t.t("Select a puzzle, story or hub to see it as a team will.")}
-              </p>
-            )}
+      <div className="sim__stage">
+        {crew && <p className="sim__who">{phoneLabel(asSlot)}</p>}
+        <div className="phone-fit" style={{ width: frameW * scale, height: frameH * scale }}>
+          <div className="phone" aria-label={t.t("What the team sees")} style={{ width: frameW, height: frameH, transform: `scale(${scale})` }}>
+            <div className="phone__screen">
+              {view ? (
+                <PlayView
+                  key={replay}
+                  view={view}
+                  onAction={(a) => void act(a)}
+                  busy={busy}
+                  feedback={feedback}
+                  live={false}
+                  t={tr}
+                  brand={brand}
+                  teamName={t.t("Test team")}
+                  placeNote={placeNote}
+                  {...(pos ? { position: pos } : {})}
+                  preview
+                  instant={mode === "step"}
+                  motion={motion}
+                  storageKey={crew ? `sim-${slug}-${asSlot}` : `sim-${slug}`}
+                  crew={!!crew}
+                  {...(view.zone && !view.here ? { zoneNote: placeNote(view.zone) } : {})}
+                />
+              ) : (
+                <p className="phone__empty">
+                  {mode === "step" && selectedNode && !VISIBLE.has(selectedNode.type)
+                    ? t.t("Teams never see this step. It happens the moment they reach it, and they carry on.")
+                    : t.t("Select a puzzle, story or hub to see it as a team will.")}
+                </p>
+              )}
+            </div>
+            {ceremony && <StartCeremony title={title} brand={brand} onDone={() => setCeremony(false)} />}
           </div>
-          {ceremony && <StartCeremony title={title} brand={brand} onDone={() => setCeremony(false)} />}
         </div>
+        {crew && phones.length > 1 && (
+          <div className="sim-crew" role="group" aria-label={t.t("The other phones")}>
+            {phones
+              .filter((p) => p.slot !== asSlot)
+              .map((p) => (
+                // Not a <button>: the small screen inside has buttons of its own.
+                <div
+                  key={p.slot}
+                  role="button"
+                  tabIndex={0}
+                  className="sim-crew__phone"
+                  onClick={() => pick(p.slot)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      pick(p.slot);
+                    }
+                  }}
+                  title={t.t("Show {{name}}'s phone", { name: nameOf(p.slot) })}
+                  aria-label={`${t.t("Show {{name}}'s phone", { name: nameOf(p.slot) })}: ${phoneStatus(p)}`}
+                >
+                  <div className="sim-crew__fit" style={{ width: frameW * MINI, height: frameH * MINI }} aria-hidden="true" inert>
+                    <div className="phone" style={{ width: frameW, height: frameH, transform: `scale(${MINI})` }}>
+                      <div className="phone__screen">
+                        <PlayView view={p.view} onAction={() => {}} live={false} t={tr} brand={brand} teamName={t.t("Test team")} preview instant motion={motion} storageKey={`sim-${slug}-${p.slot}`} crew />
+                      </div>
+                    </div>
+                  </div>
+                  <span className="sim-crew__name">
+                    {seen[p.slot] !== undefined && seen[p.slot] !== signature(p.view) && <span className="sim-crew__dot" title={t.t("Changed since you looked")} />}
+                    {nameOf(p.slot)}
+                  </span>
+                  <span className="sim-crew__status">{phoneStatus(p)}</span>
+                </div>
+              ))}
+          </div>
+        )}
       </div>
     </div>
   );

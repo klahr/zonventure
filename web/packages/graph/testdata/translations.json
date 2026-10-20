@@ -127,6 +127,16 @@
               "role": "spy"
             },
             {
+              "id": "mission",
+              "kind": "mission",
+              "text": "MAIN n:s:block:mission",
+              "role": "spy",
+              "options": [
+                "MAIN n:s:block:mission:option:0",
+                "MAIN n:s:block:mission:option:1"
+              ]
+            },
+            {
               "id": "vote",
               "kind": "vote",
               "text": "MAIN n:s:block:vote",
@@ -792,6 +802,9 @@
     "n:s:block:letters",
     "n:s:block:level",
     "n:s:block:map:marker:0",
+    "n:s:block:mission",
+    "n:s:block:mission:option:0",
+    "n:s:block:mission:option:1",
     "n:s:block:noise",
     "n:s:block:note",
     "n:s:block:overlay:alt",

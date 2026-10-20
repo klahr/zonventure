@@ -15,20 +15,31 @@ package admin
 // moves the clock forward so hint delays and time limits can be tried
 // without waiting, and move puts the team in a zone (or nowhere) without
 // walking there.
+//
+// Without a crew the team plays as a whole, every player at once. With
+// one it is that crew's phones: each action is one player's, move moves
+// that player, and the reply has every phone's screen, for steps where
+// players see and do different things — roles, a saboteur, a mission.
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
 	"io"
+	"math/rand/v2"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/graph/walk"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/play"
 )
+
+// maxCrew is the most phones a simulated team may have.
+const maxCrew = 6
 
 // maxSimulateWait caps a single clock jump, so a typo cannot push a
 // simulated team a century past every deadline.
@@ -56,9 +67,42 @@ type simulateAction struct {
 	Lng *float64 `json:"lng,omitempty"`
 }
 
+// simCrew is a simulated team's phones. The server keeps nothing: like
+// the team, the client sends it with each action and gets it back.
+type simCrew struct {
+	Players []simPlayer `json:"players"`
+	// As is the slot of the player the action is from; 0 is the first.
+	As int64 `json:"as,omitempty"`
+	// Roles are public roles the author gave to a player; the rest are
+	// dealt as a live team deals them.
+	Roles map[string]int64 `json:"roles,omitempty"`
+	// Secrets are who holds each secret role, 0 for no one. One missing
+	// is dealt at random once there are players enough to hide among.
+	Secrets map[string]int64 `json:"secrets,omitempty"`
+	// Seals are the picks at missions, and Presses each player's part in
+	// a step done together, until the team leaves it.
+	Seals   map[string]map[int64]string `json:"seals,omitempty"`
+	Presses map[int64]session.Press     `json:"presses,omitempty"`
+}
+
+// simPlayer is one phone: its slot, a name to show, and where it is.
+type simPlayer struct {
+	Slot     int64             `json:"slot"`
+	Name     string            `json:"name,omitempty"`
+	Position *session.Position `json:"position,omitempty"`
+}
+
+// simPhone is what one of the crew's phones shows.
+type simPhone struct {
+	Slot  int64        `json:"slot"`
+	Roles []string     `json:"roles,omitempty"`
+	View  session.View `json:"view"`
+}
+
 type simulateRequest struct {
 	Envelope json.RawMessage `json:"envelope"`
 	Team     *session.Team   `json:"team,omitempty"`
+	Crew     *simCrew        `json:"crew,omitempty"`
 	Action   simulateAction  `json:"action"`
 	// AnyPlace lets the team begin wherever it stands, as when a draft is
 	// tried away from the site: the adventure's starting point, if it
@@ -80,6 +124,10 @@ type simulateResponse struct {
 	Result session.Result   `json:"result"`
 	Passed []string         `json:"passed,omitempty"`
 	Refuse *simulateRefusal `json:"refusal,omitempty"`
+	// Crew and Phones are a crew's, when the request had one: Result's
+	// view is then the acting player's.
+	Crew   *simCrew   `json:"crew,omitempty"`
+	Phones []simPhone `json:"phones,omitempty"`
 }
 
 // SimulateAdventureGraph runs one simulated action.
@@ -112,7 +160,7 @@ func (h *Handlers) SimulateAdventureGraph(w http.ResponseWriter, r *http.Request
 	if req.AnyPlace {
 		place = nil
 	}
-	resp, status, msg := simulate(&env.Graph, place, req.Team, req.Action, time.Now().UTC())
+	resp, status, msg := simulateCrew(&env.Graph, place, req.Team, req.Crew, req.Action, time.Now().UTC())
 	if status != http.StatusOK {
 		httpx.JSON(w, status, graphRefusal{Error: msg, Code: "simulate_malformed"})
 		return
@@ -125,6 +173,29 @@ func (h *Handlers) SimulateAdventureGraph(w http.ResponseWriter, r *http.Request
 // place is the adventure's required starting point, if any: like a live
 // event, the simulated team waits at the start screen until it is there.
 func simulate(g *graph.Graph, place *graph.Zone, team *session.Team, a simulateAction, now time.Time) (simulateResponse, int, string) {
+	return simulateCrew(g, place, team, nil, a, now)
+}
+
+// simulateCrew is simulate as one of a crew's phones, or as the team as
+// a whole when crew is nil.
+func simulateCrew(g *graph.Graph, place *graph.Zone, team *session.Team, crew *simCrew, a simulateAction, now time.Time) (simulateResponse, int, string) {
+	if crew != nil {
+		if msg := crew.check(); msg != "" {
+			return simulateResponse{}, http.StatusBadRequest, msg
+		}
+	}
+	resp, status, msg := simulateAs(g, place, team, crew, a, now)
+	if status != http.StatusOK || crew == nil || resp.Team == nil {
+		return resp, status, msg
+	}
+	crew.deal(g)
+	resp.Crew = crew
+	resp.Phones = crew.phones(resp.Team)
+	resp.Result.View = crew.seat(resp.Team).View()
+	return resp, status, msg
+}
+
+func simulateAs(g *graph.Graph, place *graph.Zone, team *session.Team, crew *simCrew, a simulateAction, now time.Time) (simulateResponse, int, string) {
 	var (
 		res  session.Result
 		step *walk.Step
@@ -157,6 +228,12 @@ func simulate(g *graph.Graph, place *graph.Zone, team *session.Team, a simulateA
 	// the state the client sends back, so it is set again on every action.
 	team.StartPlace = place
 	team.Init()
+	var crewBefore *simCrew
+	if crew != nil {
+		crew.deal(g)
+		crewBefore = crew.clone()
+		crew.seat(team)
+	}
 
 	// An action that fails part-way may already have changed the team —
 	// a right answer marks the puzzle solved before the walk finds its
@@ -202,6 +279,10 @@ func simulate(g *graph.Graph, place *graph.Zone, team *session.Team, a simulateA
 		act(func() (session.Result, *walk.Step, error) { return team.RevealHint(a.Node, a.Index) })
 	case "pick":
 		act(func() (session.Result, *walk.Step, error) { return team.Pick(a.Node, a.Block, a.Choice) })
+	case "seal":
+		act(func() (session.Result, *walk.Step, error) { return team.Seal(a.Node, a.Block, a.Choice) })
+	case "sabotage":
+		act(func() (session.Result, *walk.Step, error) { return team.Sabotage(a.Node, a.Block) })
 	case "wait":
 		if a.Seconds <= 0 || a.Seconds > maxSimulateWait {
 			return simulateResponse{}, http.StatusBadRequest, "seconds must be between 1 and 86400"
@@ -236,6 +317,9 @@ func simulate(g *graph.Graph, place *graph.Zone, team *session.Team, a simulateA
 		if from != nil && team.Position != nil {
 			team.WalkedMetres += session.HaversineMeters(from.Lat, from.Lng, team.Position.Lat, team.Position.Lng)
 		}
+		if crew != nil {
+			crew.player(crew.As).Position = team.Position
+		}
 	default:
 		return simulateResponse{}, http.StatusBadRequest, "unknown action " + a.Kind
 	}
@@ -243,6 +327,10 @@ func simulate(g *graph.Graph, place *graph.Zone, team *session.Team, a simulateA
 	if err != nil {
 		out := refused(before, err)
 		out.Result = res
+		if crew != nil {
+			*crew = *crewBefore
+			crew.seat(before)
+		}
 		out.Result.View = before.View()
 		return out, http.StatusOK, ""
 	}
@@ -250,6 +338,13 @@ func simulate(g *graph.Graph, place *graph.Zone, team *session.Team, a simulateA
 	if step != nil {
 		team.Apply(*step)
 		passed = step.Passed
+	}
+	if crew != nil {
+		crew.Seals, crew.Presses = team.Seals, team.Presses
+		// A step done together starts afresh at the next one.
+		if step != nil {
+			crew.Presses, team.Presses = nil, nil
+		}
 	}
 	res.View = team.View()
 	return simulateResponse{Team: team, Result: res, Passed: passed}, http.StatusOK, ""
@@ -296,4 +391,123 @@ func startPlaceOf(ctx context.Context, db *sql.DB, advID int64) (*graph.Zone, er
 		return &v.Float64
 	}
 	return session.NewStartPlace(f(lat), f(lng), f(radius), label), nil
+}
+
+// check refuses a crew the simulator cannot seat.
+func (c *simCrew) check() string {
+	if len(c.Players) == 0 || len(c.Players) > maxCrew {
+		return "a crew has 1 to 6 players"
+	}
+	seen := map[int64]bool{}
+	for _, p := range c.Players {
+		if p.Slot <= 0 || seen[p.Slot] {
+			return "each player needs a slot of their own"
+		}
+		seen[p.Slot] = true
+	}
+	if c.As == 0 {
+		c.As = c.Players[0].Slot
+	}
+	if !seen[c.As] {
+		return "the acting player is not in the crew"
+	}
+	return ""
+}
+
+func (c *simCrew) slots() []int64 {
+	out := make([]int64, len(c.Players))
+	for i, p := range c.Players {
+		out[i] = p.Slot
+	}
+	return out
+}
+
+func (c *simCrew) player(slot int64) *simPlayer {
+	for i := range c.Players {
+		if c.Players[i].Slot == slot {
+			return &c.Players[i]
+		}
+	}
+	return nil
+}
+
+// deal gives each secret role nobody was given to a player at random,
+// once the crew is big enough to hide among, as a live team's first move
+// does. A role the author gave to no one (0) stays no one's.
+func (c *simCrew) deal(g *graph.Graph) {
+	if len(c.Players) < graph.MinSecretPlayers {
+		return
+	}
+	for _, role := range g.SecretRoles() {
+		if _, dealt := c.Secrets[role]; dealt {
+			continue
+		}
+		if c.Secrets == nil {
+			c.Secrets = map[string]int64{}
+		}
+		c.Secrets[role] = c.Players[rand.IntN(len(c.Players))].Slot
+	}
+}
+
+// seat puts the crew on the team — who plays, where each phone is, who
+// holds which role — with the acting player's phone asking, and returns
+// the team.
+func (c *simCrew) seat(t *session.Team) *session.Team {
+	slots := c.slots()
+	t.Players, t.Size = slots, len(slots)
+	t.Phones, t.PhoneAt = []session.Position{}, map[int64]session.Position{}
+	for _, p := range c.Players {
+		if p.Position != nil {
+			t.Phones = append(t.Phones, *p.Position)
+			t.PhoneAt[p.Slot] = *p.Position
+		}
+	}
+	t.Secrets, t.Seals, t.Presses = c.Secrets, c.Seals, c.Presses
+	t.RoleHolders = map[string]int64{}
+	for role, h := range play.DealAmong(slots, c.Roles, t.G.DealtRoles()) {
+		t.RoleHolders[role] = h.Slot
+	}
+	t.Viewer = c.viewer(t, c.As)
+	return t
+}
+
+// viewer is slot's phone: where it is and the roles its player holds.
+func (c *simCrew) viewer(t *session.Team, slot int64) *session.Viewer {
+	v := &session.Viewer{Slot: slot}
+	if p := c.player(slot); p != nil {
+		v.Position = p.Position
+	}
+	for _, role := range t.G.DealtRoles() {
+		if t.RoleHolders[role] == slot {
+			v.Roles = append(v.Roles, role)
+		}
+	}
+	if d := t.G.DefaultRole(); d != "" && (len(v.Roles) == 0 || len(c.Players) <= 1) {
+		v.Roles = append(v.Roles, d)
+	}
+	for _, role := range t.G.SecretRoles() {
+		if c.Secrets[role] == slot {
+			v.Roles = append(v.Roles, role)
+		}
+	}
+	return v
+}
+
+// phones are what each of the crew's phones shows.
+func (c *simCrew) phones(t *session.Team) []simPhone {
+	c.seat(t)
+	out := make([]simPhone, 0, len(c.Players))
+	for _, p := range c.Players {
+		t.Viewer = c.viewer(t, p.Slot)
+		out = append(out, simPhone{Slot: p.Slot, Roles: slices.Clone(t.Viewer.Roles), View: t.View()})
+	}
+	t.Viewer = c.viewer(t, c.As)
+	return out
+}
+
+func (c *simCrew) clone() *simCrew {
+	b, _ := json.Marshal(c)
+	var out simCrew
+	_ = json.Unmarshal(b, &out)
+	return &out
 }

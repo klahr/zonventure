@@ -72,6 +72,9 @@ var (
 	// questions, still has quiz questions the team has not answered, so
 	// it cannot continue. Map to 403.
 	ErrUnanswered = errors.New("answer the questions on this step first")
+	// ErrUnsealed means a step's mission still waits for players to pick
+	// at its post, so the team cannot move on. Map to 403.
+	ErrUnsealed = errors.New("the mission on this step is not sealed yet")
 )
 
 // NodeState is what a team has done at one node.
@@ -210,6 +213,12 @@ type Team struct {
 	Secrets    map[string]int64 `json:"-"`
 	Accused    map[string]int64 `json:"-"`
 	NewJournal []string         `json:"-"`
+	// Seals are each mission's picks, by PickKey and slot — "0" kept,
+	// "1" betrayed — and each sabotage's presses ("1"); SealChanged is
+	// the one an action made, for the engine to persist. Neither is
+	// stored with the team.
+	Seals       map[string]map[int64]string `json:"-"`
+	SealChanged *SealChange                 `json:"-"`
 	// Holders are the kit items handed to a player, by slot: theirs to
 	// use, not the role's. Not stored with the team.
 	Holders map[string]int64 `json:"-"`
@@ -777,6 +786,9 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 	if cfg.Kind() == graph.AnswerQuestions && t.unanswered(n) {
 		return Result{}, nil, ErrUnanswered
 	}
+	if t.unsealed(n) {
+		return Result{}, nil, ErrUnsealed
+	}
 	if cfg.Kind() == graph.AnswerItems && t.usesOthersKit(guess) {
 		return Result{}, nil, ErrNotYours
 	}
@@ -1104,6 +1116,9 @@ func (t *Team) continueStory(n graph.Node) (Result, *walk.Step, error) {
 	if t.unanswered(n) {
 		return Result{}, nil, ErrUnanswered
 	}
+	if t.unsealed(n) {
+		return Result{}, nil, ErrUnsealed
+	}
 	t.Row(n.Slug).Solved = true
 	step, err := t.leave(n, graph.PortOut, 0)
 	return Result{Port: graph.PortOut}, step, err
@@ -1426,6 +1441,8 @@ func Code(err error) string {
 		return "wrong_node"
 	case errors.Is(err, ErrUnanswered):
 		return "unanswered"
+	case errors.Is(err, ErrUnsealed):
+		return "unsealed"
 	}
 	return ""
 }
