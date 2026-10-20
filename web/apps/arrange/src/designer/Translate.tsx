@@ -227,7 +227,7 @@ export function TranslatorModal({ graph, main, meta, onChange, onMainChange, onR
     texts.filter((x) => (!kept || kept.has(x.key)) && (!q || x.main.toLowerCase().includes(q) || (tr[x.key] ?? "").toLowerCase().includes(q) || t.t(x.label, x.vars).toLowerCase().includes(q)));
 
   const groups: { key: string; title: ReactNode; icon: ReactNode; texts: Translatable[] }[] = [
-    { key: "adventure", title: t.t("Title, journal, places and messages"), icon: <BookMarked size={ICON.sm} />, texts: shown(adventureTexts(graph, meta)) },
+    { key: "adventure", title: t.t("Title, journal, places, items and messages"), icon: <BookMarked size={ICON.sm} />, texts: shown(adventureTexts(graph, meta)) },
     ...outline(graph).flatMap((r) => {
       if (r.kind !== "step") return [];
       const n = nodeBySlug(graph, r.slug)!;

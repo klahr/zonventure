@@ -11,6 +11,21 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Translations: the texts players saw in the main language whatever
+  they played in can now be translated in the designer's
+  "Translations" panel: item names (the backpack, and what a slot
+  says is missing), counter names (a status block), a look's own
+  words for a right and a wrong answer, an email effect's subject and
+  text, and the description of every picture and sound (image, audio,
+  video and the other picture blocks, hint pictures, journal
+  pictures, a role's picture, a tile picture, an order card's, a lock
+  symbol's and a branch's picture), which screen readers read out.
+  The panel's adventure-wide section is now "Title, journal, places,
+  items and messages". Translations left behind by a deleted item,
+  counter or look are counted as stale.
+
 ### Fixed
 
 - Player: a puzzle answered on a board (put in order, a lock, a
@@ -21,6 +36,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   back when dropped, and the cards making way for a dragged card move
   by its own height, so cards of different heights (a line that wraps)
   no longer overlap or leave gaps while one is dragged.
+- Player: an older phone that reads a step's pictures apart from its
+  blocks gets their descriptions in the team's language too.
 
 ## [0.33.17] - 2026-10-20
 

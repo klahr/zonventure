@@ -1,0 +1,839 @@
+{
+  "_comment": [
+    "Every text an author can translate, each starting with MAIN, and their keys.",
+    "@zonventure/graph's allTexts must list exactly these keys (i18n.test.ts), and the engine",
+    "must show each one translated and none in the main language (session translate_test.go).",
+    "A new translatable text goes in here, in both lists."
+  ],
+  "meta": {
+    "title": "MAIN meta:title",
+    "intro": "MAIN meta:intro",
+    "outro": "MAIN meta:outro"
+  },
+  "graph": {
+    "language": "sv",
+    "nodes": [
+      {
+        "slug": "start",
+        "type": "start"
+      },
+      {
+        "slug": "s",
+        "type": "story",
+        "title": "MAIN n:s:title",
+        "story": {
+          "blocks": [
+            {
+              "id": "text",
+              "kind": "text",
+              "text": "MAIN n:s:block:text"
+            },
+            {
+              "id": "note",
+              "kind": "note",
+              "text": "MAIN n:s:block:note",
+              "style": "paper"
+            },
+            {
+              "id": "countdown",
+              "kind": "countdown",
+              "text": "MAIN n:s:block:countdown",
+              "seconds": 600
+            },
+            {
+              "id": "level",
+              "kind": "level",
+              "text": "MAIN n:s:block:level",
+              "pitch": 30
+            },
+            {
+              "id": "noise",
+              "kind": "noise",
+              "text": "MAIN n:s:block:noise",
+              "threshold": 50
+            },
+            {
+              "id": "bearing",
+              "kind": "bearing",
+              "text": "MAIN n:s:block:bearing",
+              "heading": 90
+            },
+            {
+              "id": "shake",
+              "kind": "shake",
+              "text": "MAIN n:s:block:shake",
+              "threshold": 50
+            },
+            {
+              "id": "split",
+              "kind": "split",
+              "parts": [
+                "MAIN n:s:block:split:part:0",
+                "MAIN n:s:block:split:part:1"
+              ]
+            },
+            {
+              "id": "call",
+              "kind": "call",
+              "who": "MAIN n:s:block:call:who",
+              "media": 2,
+              "alt": "MAIN n:s:block:call:alt"
+            },
+            {
+              "id": "suspects",
+              "kind": "suspects",
+              "cards": [
+                {
+                  "name": "MAIN n:s:block:suspects:card:0:name",
+                  "text": "MAIN n:s:block:suspects:card:0:text",
+                  "media": 3,
+                  "alt": "MAIN n:s:block:suspects:card:0:alt"
+                }
+              ]
+            },
+            {
+              "id": "photo",
+              "kind": "photo",
+              "text": "MAIN n:s:block:photo"
+            },
+            {
+              "id": "flasher",
+              "kind": "flasher",
+              "text": "MAIN n:s:block:flasher"
+            },
+            {
+              "id": "letters",
+              "kind": "letters",
+              "text": "MAIN n:s:block:letters"
+            },
+            {
+              "id": "roles",
+              "kind": "roles",
+              "text": "MAIN n:s:block:roles"
+            },
+            {
+              "id": "sabotage",
+              "kind": "sabotage",
+              "text": "MAIN n:s:block:sabotage",
+              "role": "spy"
+            },
+            {
+              "id": "accuse",
+              "kind": "accuse",
+              "text": "MAIN n:s:block:accuse",
+              "role": "spy"
+            },
+            {
+              "id": "vote",
+              "kind": "vote",
+              "text": "MAIN n:s:block:vote",
+              "options": [
+                "MAIN n:s:block:vote:option:0",
+                "MAIN n:s:block:vote:option:1"
+              ]
+            },
+            {
+              "id": "draw",
+              "kind": "draw",
+              "text": "MAIN n:s:block:draw",
+              "options": [
+                "MAIN n:s:block:draw:option:0"
+              ]
+            },
+            {
+              "id": "spotdiff",
+              "kind": "spotdiff",
+              "media": 4,
+              "other": 5,
+              "alt": "MAIN n:s:block:spotdiff:alt",
+              "spots": [
+                {
+                  "x": 0.5,
+                  "y": 0.5,
+                  "text": "MAIN n:s:block:spotdiff:spot:0"
+                }
+              ]
+            },
+            {
+              "id": "chat",
+              "kind": "chat",
+              "media": 6,
+              "alt": "MAIN n:s:block:chat:alt",
+              "lines": [
+                {
+                  "who": "MAIN n:s:block:chat:who:0",
+                  "text": "MAIN n:s:block:chat:line:0"
+                }
+              ]
+            },
+            {
+              "id": "hotspots",
+              "kind": "hotspots",
+              "media": 7,
+              "alt": "MAIN n:s:block:hotspots:alt",
+              "spots": [
+                {
+                  "x": 0.5,
+                  "y": 0.5,
+                  "text": "MAIN n:s:block:hotspots:spot:0"
+                }
+              ]
+            },
+            {
+              "id": "map",
+              "kind": "map",
+              "zone": "park",
+              "markers": [
+                {
+                  "lat": 59.3,
+                  "lng": 18.0,
+                  "label": "MAIN n:s:block:map:marker:0"
+                }
+              ]
+            },
+            {
+              "id": "image",
+              "kind": "image",
+              "media": 8,
+              "alt": "MAIN n:s:block:image:alt"
+            },
+            {
+              "id": "audio",
+              "kind": "audio",
+              "media": 9,
+              "alt": "MAIN n:s:block:audio:alt"
+            },
+            {
+              "id": "video",
+              "kind": "video",
+              "media": 10,
+              "alt": "MAIN n:s:block:video:alt"
+            },
+            {
+              "id": "overlay",
+              "kind": "overlay",
+              "media": 11,
+              "alt": "MAIN n:s:block:overlay:alt"
+            },
+            {
+              "id": "torch",
+              "kind": "torch",
+              "media": 12,
+              "alt": "MAIN n:s:block:torch:alt"
+            },
+            {
+              "id": "status",
+              "kind": "status",
+              "counters": [
+                "coins"
+              ],
+              "items": true
+            }
+          ]
+        }
+      },
+      {
+        "slug": "here",
+        "type": "story",
+        "title": "MAIN n:here:title",
+        "story": {
+          "zone": "park",
+          "blocks": [
+            {
+              "id": "t",
+              "kind": "text",
+              "text": "MAIN n:here:block:t"
+            }
+          ]
+        }
+      },
+      {
+        "slug": "q",
+        "type": "puzzle",
+        "title": "MAIN n:q:title",
+        "puzzle": {
+          "blocks": [
+            {
+              "id": "quiz",
+              "kind": "quiz",
+              "text": "MAIN n:q:block:quiz",
+              "answer": "1",
+              "options": [
+                "MAIN n:q:block:quiz:option:0",
+                "MAIN n:q:block:quiz:option:1",
+                "MAIN n:q:block:quiz:option:2"
+              ]
+            },
+            {
+              "id": "tie",
+              "kind": "tiebreak",
+              "text": "MAIN n:q:block:tie",
+              "target": 7
+            }
+          ],
+          "answer": {
+            "kind": "questions"
+          },
+          "outputs": [
+            {
+              "port": "done",
+              "trigger": "answer"
+            }
+          ]
+        }
+      },
+      {
+        "slug": "typed",
+        "type": "puzzle",
+        "title": "MAIN n:typed:title",
+        "puzzle": {
+          "blocks": [
+            {
+              "id": "t",
+              "kind": "text",
+              "text": "MAIN n:typed:block:t"
+            }
+          ],
+          "outputs": [
+            {
+              "port": "right",
+              "label": "MAIN n:typed:out:right:label",
+              "trigger": "answer",
+              "matchers": [
+                {
+                  "id": "e",
+                  "kind": "exact",
+                  "value": "MAIN n:typed:out:right:answers"
+                },
+                {
+                  "id": "c",
+                  "kind": "contains",
+                  "value": "MAIN n:typed:out:right:contains"
+                }
+              ]
+            }
+          ],
+          "bar": {
+            "placeholder": "MAIN n:typed:bar:placeholder",
+            "button": "MAIN n:typed:bar:button"
+          },
+          "responses": [
+            {
+              "text": "MAIN n:typed:reply:0"
+            }
+          ],
+          "hints": [
+            {
+              "text": "MAIN n:typed:hint:0",
+              "media": [
+                {
+                  "id": 13,
+                  "kind": "image",
+                  "alt": "MAIN n:typed:hint:0:media:0:alt"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "slug": "choice",
+        "type": "puzzle",
+        "title": "MAIN n:choice:title",
+        "puzzle": {
+          "blocks": [
+            {
+              "id": "t",
+              "kind": "text",
+              "text": "MAIN n:choice:block:t"
+            }
+          ],
+          "answer": {
+            "kind": "choice",
+            "fields": [
+              {
+                "label": "MAIN n:choice:field:0:label",
+                "options": [
+                  {
+                    "value": "a",
+                    "label": "MAIN n:choice:field:0:opt:a"
+                  },
+                  {
+                    "value": "b",
+                    "label": "MAIN n:choice:field:0:opt:b"
+                  }
+                ]
+              }
+            ]
+          },
+          "outputs": [
+            {
+              "port": "right",
+              "trigger": "answer",
+              "matchers": [
+                {
+                  "id": "a",
+                  "kind": "exact",
+                  "value": "a"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "slug": "lock",
+        "type": "puzzle",
+        "title": "MAIN n:lock:title",
+        "puzzle": {
+          "blocks": [
+            {
+              "id": "t",
+              "kind": "text",
+              "text": "MAIN n:lock:block:t"
+            }
+          ],
+          "answer": {
+            "kind": "lock",
+            "wheels": 1,
+            "symbols": [
+              {
+                "value": "x",
+                "label": "MAIN n:lock:sym:x",
+                "image": {
+                  "id": 14,
+                  "kind": "image",
+                  "alt": "MAIN n:lock:sym:x:alt"
+                }
+              },
+              {
+                "value": "y",
+                "label": "MAIN n:lock:sym:y"
+              }
+            ]
+          },
+          "outputs": [
+            {
+              "port": "right",
+              "trigger": "answer",
+              "matchers": [
+                {
+                  "id": "x",
+                  "kind": "exact",
+                  "value": "x"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "slug": "slots",
+        "type": "puzzle",
+        "title": "MAIN n:slots:title",
+        "puzzle": {
+          "blocks": [
+            {
+              "id": "t",
+              "kind": "text",
+              "text": "MAIN n:slots:block:t"
+            }
+          ],
+          "answer": {
+            "kind": "items",
+            "missing": "name",
+            "slots": [
+              {
+                "item": "lamp",
+                "label": "MAIN n:slots:slot:0"
+              }
+            ]
+          },
+          "outputs": [
+            {
+              "port": "right",
+              "trigger": "answer"
+            },
+            {
+              "port": "later",
+              "label": "MAIN n:slots:out:later:label",
+              "trigger": "missing"
+            }
+          ]
+        }
+      },
+      {
+        "slug": "order",
+        "type": "puzzle",
+        "title": "MAIN n:order:title",
+        "puzzle": {
+          "blocks": [
+            {
+              "id": "t",
+              "kind": "text",
+              "text": "MAIN n:order:block:t"
+            }
+          ],
+          "answer": {
+            "kind": "order",
+            "cards": [
+              {
+                "text": "MAIN n:order:card:0",
+                "image": {
+                  "id": 15,
+                  "kind": "image",
+                  "alt": "MAIN n:order:card:0:alt"
+                }
+              },
+              {
+                "text": "MAIN n:order:card:1"
+              }
+            ],
+            "start": [
+              1,
+              0
+            ]
+          },
+          "outputs": [
+            {
+              "port": "right",
+              "trigger": "answer"
+            }
+          ]
+        }
+      },
+      {
+        "slug": "tiles",
+        "type": "puzzle",
+        "title": "MAIN n:tiles:title",
+        "puzzle": {
+          "blocks": [
+            {
+              "id": "t",
+              "kind": "text",
+              "text": "MAIN n:tiles:block:t"
+            }
+          ],
+          "answer": {
+            "kind": "tiles",
+            "rows": 2,
+            "cols": 2,
+            "image": {
+              "id": 16,
+              "kind": "image",
+              "alt": "MAIN n:tiles:image:alt"
+            }
+          },
+          "outputs": [
+            {
+              "port": "right",
+              "trigger": "answer"
+            }
+          ]
+        }
+      },
+      {
+        "slug": "hub",
+        "type": "hub",
+        "title": "MAIN n:hub:title",
+        "hub": {
+          "policy": "choice",
+          "text": "MAIN n:hub:hub-text",
+          "branches": [
+            {
+              "port": "a",
+              "label": "MAIN n:hub:branch:a:label",
+              "note": "MAIN n:hub:branch:a:note",
+              "image": {
+                "id": 17,
+                "kind": "image",
+                "alt": "MAIN n:hub:branch:a:alt"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "slug": "mail",
+        "type": "effect",
+        "title": "MAIN n:mail:title",
+        "effect": {
+          "kind": "email",
+          "subject": "MAIN n:mail:email:subject",
+          "body": "MAIN n:mail:email:body"
+        }
+      },
+      {
+        "slug": "end",
+        "type": "end",
+        "title": "MAIN n:end:title",
+        "end": {
+          "outcome": "complete",
+          "blocks": [
+            {
+              "id": "t",
+              "kind": "text",
+              "text": "MAIN n:end:block:t"
+            }
+          ]
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "start",
+        "from_port": "out",
+        "to": "s"
+      },
+      {
+        "from": "s",
+        "from_port": "out",
+        "to": "here"
+      },
+      {
+        "from": "here",
+        "from_port": "out",
+        "to": "q"
+      },
+      {
+        "from": "q",
+        "from_port": "done",
+        "to": "typed"
+      },
+      {
+        "from": "typed",
+        "from_port": "right",
+        "to": "choice"
+      },
+      {
+        "from": "choice",
+        "from_port": "right",
+        "to": "lock"
+      },
+      {
+        "from": "lock",
+        "from_port": "right",
+        "to": "slots"
+      },
+      {
+        "from": "slots",
+        "from_port": "right",
+        "to": "order"
+      },
+      {
+        "from": "order",
+        "from_port": "right",
+        "to": "tiles"
+      },
+      {
+        "from": "tiles",
+        "from_port": "right",
+        "to": "hub"
+      },
+      {
+        "from": "hub",
+        "from_port": "done",
+        "to": "mail"
+      },
+      {
+        "from": "mail",
+        "from_port": "out",
+        "to": "end"
+      },
+      {
+        "from": "hub",
+        "from_port": "a",
+        "to": "end"
+      }
+    ],
+    "zones": [
+      {
+        "slug": "park",
+        "name": "MAIN z:park",
+        "lat": 59.3,
+        "lng": 18.0,
+        "radius_m": 40
+      }
+    ],
+    "journal": [
+      {
+        "slug": "note",
+        "title": "MAIN j:note:title",
+        "body": "MAIN j:note:body",
+        "section": "MAIN section",
+        "media": [
+          {
+            "id": 18,
+            "kind": "image",
+            "alt": "MAIN j:note:media:0:alt"
+          }
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "slug": "spy",
+        "secret": true,
+        "name": "MAIN r:spy:name",
+        "text": "MAIN r:spy:text",
+        "image": {
+          "id": 19,
+          "kind": "image",
+          "alt": "MAIN r:spy:image:alt"
+        },
+        "goals": [
+          {
+            "text": "MAIN r:spy:goal:0"
+          }
+        ]
+      }
+    ],
+    "items": [
+      {
+        "slug": "key",
+        "name": "MAIN i:key:name"
+      },
+      {
+        "slug": "lamp",
+        "name": "MAIN i:lamp:name"
+      }
+    ],
+    "counters": [
+      {
+        "slug": "coins",
+        "name": "MAIN c:coins:name"
+      }
+    ],
+    "themes": [
+      {
+        "slug": "paper",
+        "name": "Paper",
+        "look": {
+          "accent": "#8b2a1d",
+          "style": {
+            "cheer_text": "MAIN t:paper:cheer_text",
+            "miss_text": "MAIN t:paper:miss_text"
+          }
+        }
+      }
+    ],
+    "main_theme": "paper",
+    "time_limit": {
+      "seconds": 3600,
+      "to": "end",
+      "text": "MAIN time-up"
+    }
+  },
+  "keys": [
+    "c:coins:name",
+    "i:key:name",
+    "i:lamp:name",
+    "j:note:body",
+    "j:note:media:0:alt",
+    "j:note:title",
+    "js:MAIN section",
+    "meta:intro",
+    "meta:outro",
+    "meta:title",
+    "n:choice:block:t",
+    "n:choice:field:0:label",
+    "n:choice:field:0:opt:a",
+    "n:choice:field:0:opt:b",
+    "n:choice:title",
+    "n:end:block:t",
+    "n:end:title",
+    "n:here:block:t",
+    "n:here:title",
+    "n:hub:branch:a:alt",
+    "n:hub:branch:a:label",
+    "n:hub:branch:a:note",
+    "n:hub:hub-text",
+    "n:hub:title",
+    "n:lock:block:t",
+    "n:lock:sym:x",
+    "n:lock:sym:x:alt",
+    "n:lock:sym:y",
+    "n:lock:title",
+    "n:mail:email:body",
+    "n:mail:email:subject",
+    "n:mail:title",
+    "n:order:block:t",
+    "n:order:card:0",
+    "n:order:card:0:alt",
+    "n:order:card:1",
+    "n:order:title",
+    "n:q:block:quiz",
+    "n:q:block:quiz:option:0",
+    "n:q:block:quiz:option:1",
+    "n:q:block:quiz:option:2",
+    "n:q:block:tie",
+    "n:q:title",
+    "n:s:block:accuse",
+    "n:s:block:audio:alt",
+    "n:s:block:bearing",
+    "n:s:block:call:alt",
+    "n:s:block:call:who",
+    "n:s:block:chat:alt",
+    "n:s:block:chat:line:0",
+    "n:s:block:chat:who:0",
+    "n:s:block:countdown",
+    "n:s:block:draw",
+    "n:s:block:draw:option:0",
+    "n:s:block:flasher",
+    "n:s:block:hotspots:alt",
+    "n:s:block:hotspots:spot:0",
+    "n:s:block:image:alt",
+    "n:s:block:letters",
+    "n:s:block:level",
+    "n:s:block:map:marker:0",
+    "n:s:block:noise",
+    "n:s:block:note",
+    "n:s:block:overlay:alt",
+    "n:s:block:photo",
+    "n:s:block:roles",
+    "n:s:block:sabotage",
+    "n:s:block:shake",
+    "n:s:block:split:part:0",
+    "n:s:block:split:part:1",
+    "n:s:block:spotdiff:alt",
+    "n:s:block:spotdiff:spot:0",
+    "n:s:block:suspects:card:0:alt",
+    "n:s:block:suspects:card:0:name",
+    "n:s:block:suspects:card:0:text",
+    "n:s:block:text",
+    "n:s:block:torch:alt",
+    "n:s:block:video:alt",
+    "n:s:block:vote",
+    "n:s:block:vote:option:0",
+    "n:s:block:vote:option:1",
+    "n:s:title",
+    "n:slots:block:t",
+    "n:slots:out:later:label",
+    "n:slots:slot:0",
+    "n:slots:title",
+    "n:tiles:block:t",
+    "n:tiles:image:alt",
+    "n:tiles:title",
+    "n:typed:bar:button",
+    "n:typed:bar:placeholder",
+    "n:typed:block:t",
+    "n:typed:hint:0",
+    "n:typed:hint:0:media:0:alt",
+    "n:typed:out:right:answers",
+    "n:typed:out:right:contains",
+    "n:typed:out:right:label",
+    "n:typed:reply:0",
+    "n:typed:title",
+    "r:spy:goal:0",
+    "r:spy:image:alt",
+    "r:spy:name",
+    "r:spy:text",
+    "t:paper:cheer_text",
+    "t:paper:miss_text",
+    "time-up",
+    "z:park"
+  ],
+  "not_shown": {
+    "n:typed:out:right:label": "an answer's route is named for the author: only a route out for a team without the items shows its label"
+  }
+}

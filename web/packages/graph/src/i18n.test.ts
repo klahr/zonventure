@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { adventureTexts, allTexts, coverage, blockKey, isOutdated, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey, sourceFingerprint, trackTranslations, translatedNode, translateEdit, translationOriginal, withTexts } from "./i18n.ts";
 import type { Graph } from "./types.ts";
 
@@ -177,4 +178,30 @@ test("an edit to a step shown in a translation translates its texts and keeps th
   assert.equal(translationOriginal(out, "en", nodeKey("q", "reply:0")), "Fel.");
   const fewer = { ...shown, puzzle: { ...shown.puzzle!, responses: [] } };
   assert.equal(translateEdit(graph, "en", q, shown, fewer), null, "removing a text is the main language's to do");
+});
+
+// The shared vectors the engine's tests read too (internal/graph/session):
+// every text an author can translate, each starting with MAIN, and its
+// key. The designer must list exactly these, and the engine must show
+// every one translated, so the two lists cannot drift apart.
+const vectors = JSON.parse(readFileSync(new URL("../testdata/translations.json", import.meta.url), "utf8")) as {
+  meta: { title: string; intro: string; outro: string };
+  graph: Graph;
+  keys: string[];
+};
+
+test("allTexts lists every translatable text of the shared vectors, and nothing else", () => {
+  const listed = allTexts(vectors.graph, vectors.meta);
+  assert.deepEqual(listed.map((x) => x.key).sort(), [...vectors.keys].sort());
+  // A journal section's key is its heading itself.
+  for (const x of listed) assert.equal(x.main, x.key.startsWith("js:") ? x.key.slice(3) : `MAIN ${x.key}`, `${x.key} should read its own text`);
+});
+
+test("withTexts puts a translation into every text nodeTexts lists", () => {
+  for (const n of vectors.graph.nodes) {
+    const tr = Object.fromEntries(nodeTexts(n).map((x) => [x.key, `XX ${x.key}`]));
+    for (const x of nodeTexts(translatedNode(n, tr))) {
+      if (!x.answers) assert.equal(x.main, `XX ${x.key}`, `${x.key} of ${n.slug} should be translated`);
+    }
+  }
 });

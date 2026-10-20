@@ -198,10 +198,26 @@ func (g *Graph) PrintMediaIDs() []int64 {
 //	reply:<i>  hint:<i>
 //	branch:<port>:label  branch:<port>:note
 //	field:<i>:label  field:<i>:opt:<value>  sym:<value>  slot:<i>  card:<i>
+//	email:subject  email:body (an email effect's)
+//
+// A picture's or a sound's description is its owner's key and ":alt":
+// block:<id>:alt, hint:<i>:media:<j>:alt, image:alt (a tile picture),
+// card:<i>:alt, sym:<value>:alt, branch:<port>:alt; a role's alt and a
+// journal note's media:<i>:alt.
+//
+// Items and counters have name, and a saved theme cheer_text and
+// miss_text: its own words for a right and a wrong answer.
 func NodeKey(slug, field string) string    { return "n:" + slug + ":" + field }
 func ZoneKey(slug string) string           { return "z:" + slug }
 func RoleKey(slug, field string) string    { return "r:" + slug + ":" + field }
 func JournalKey(slug, field string) string { return "j:" + slug + ":" + field }
+func ItemKey(slug, field string) string    { return "i:" + slug + ":" + field }
+func CounterKey(slug, field string) string { return "c:" + slug + ":" + field }
+func ThemeKey(slug, field string) string   { return "t:" + slug + ":" + field }
+
+// AltKey is the key of a description of a picture or a sound, beside
+// the key of what it belongs to.
+func AltKey(owner string) string { return owner + ":alt" }
 
 // SectionKey is a journal section's heading: one per section, however
 // many notes share it.
@@ -222,6 +238,24 @@ func (g *Graph) Tr(lang, key, main string) string {
 		return g.Translations[lang][key]
 	}
 	return main
+}
+
+// TrMedia is m with its description in lang, under AltKey(owner).
+func (g *Graph) TrMedia(lang, owner string, m Media) Media {
+	if m.Alt != "" {
+		m.Alt = g.Tr(lang, AltKey(owner), m.Alt)
+	}
+	return m
+}
+
+// Email is an email effect's subject and body, and the title of the
+// step it is sent from, in lang.
+func (g *Graph) Email(lang string, n Node) (subject, body, step string) {
+	fx := n.EffectCfg
+	if fx == nil {
+		return "", "", g.Tr(lang, NodeKey(n.Slug, "title"), n.Title)
+	}
+	return g.Tr(lang, NodeKey(n.Slug, "email:subject"), fx.Subject), g.Tr(lang, NodeKey(n.Slug, "email:body"), fx.Body), g.Tr(lang, NodeKey(n.Slug, "title"), n.Title)
 }
 
 // Languages lists the languages the adventure can be played in: its main

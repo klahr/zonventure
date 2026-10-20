@@ -2,8 +2,8 @@
 // language — the adventure's own, which the server writes into
 // graph.language — and other languages live in graph.translations, keyed
 // by field: the same keys the engine reads (graph.NodeKey, ZoneKey,
-// JournalKey, RoleKey, SectionKey, MetaKey in Go). A missing translation falls
-// back to the main text.
+// JournalKey, RoleKey, SectionKey, MetaKey, ItemKey, CounterKey, ThemeKey and
+// AltKey in Go). A missing translation falls back to the main text.
 
 import type { Block, Graph, Node } from "./types.ts";
 
@@ -18,6 +18,12 @@ export const sectionKey = (section: string) => `js:${section}`;
 /** The adventure's own title, intro and outro, which live outside the graph. */
 export const metaKey = (field: "title" | "intro" | "outro") => `meta:${field}`;
 export const TIME_UP_KEY = "time-up";
+export const itemKey = (slug: string, field: "name") => `i:${slug}:${field}`;
+export const counterKey = (slug: string, field: "name") => `c:${slug}:${field}`;
+/** A saved theme's own words for a right and a wrong answer. */
+export const themeKey = (slug: string, field: "cheer_text" | "miss_text") => `t:${slug}:${field}`;
+/** A picture's or a sound's description, beside the key of what it belongs to: graph.AltKey. */
+export const altKey = (owner: string) => `${owner}:alt`;
 
 /** The adventure's own texts, from its settings rather than its graph. */
 export interface AdventureMeta {
@@ -124,6 +130,8 @@ export function nodeTexts(n: Node): Translatable[] {
           (b.markers ?? []).forEach((m, i) => add(`${own}:marker:${i}`, "Map marker", m.label));
           break;
       }
+      if ("alt" in b) add(`${own}:alt`, "Description of the picture or sound", b.alt);
+      if (b.kind === "suspects") b.cards.forEach((c, i) => add(`${own}:card:${i}:alt`, "Suspect: picture description", c.alt));
     }
   };
   const p = n.puzzle;
@@ -145,7 +153,10 @@ export function nodeTexts(n: Node): Translatable[] {
     add("bar:placeholder", "Answer bar: placeholder", p.bar?.placeholder);
     add("bar:button", "Answer bar: button", p.bar?.button);
     (p.responses ?? []).forEach((r, i) => add(`reply:${i}`, "Wrong-answer reply {{n}}", r.text, { multiline: true, vars: { n: i + 1 } }));
-    (p.hints ?? []).forEach((h, i) => add(`hint:${i}`, "Hint {{i}}", h.text, { multiline: true, vars: { i: i + 1 } }));
+    (p.hints ?? []).forEach((h, i) => {
+      add(`hint:${i}`, "Hint {{i}}", h.text, { multiline: true, vars: { i: i + 1 } });
+      (h.media ?? []).forEach((m, j) => add(`hint:${i}:media:${j}:alt`, "Hint {{i}}: picture description", m.alt, { vars: { i: i + 1 } }));
+    });
     if (p.answer?.kind === "choice") {
       p.answer.fields.forEach((f, i) => {
         add(`field:${i}:label`, "Question {{n}}", f.label, { vars: { n: i + 1 } });
@@ -153,13 +164,20 @@ export function nodeTexts(n: Node): Translatable[] {
       });
     }
     if (p.answer?.kind === "lock") {
-      for (const s of p.answer.symbols) add(`sym:${s.value}`, "Lock symbol", s.label || (s.image ? "" : s.value));
+      for (const s of p.answer.symbols) {
+        add(`sym:${s.value}`, "Lock symbol", s.label || (s.image ? "" : s.value));
+        add(`sym:${s.value}:alt`, "Lock symbol: picture description", s.image?.alt);
+      }
     }
+    if (p.answer?.kind === "tiles") add("image:alt", "Tile picture: description", p.answer.image?.alt);
     if (p.answer?.kind === "items") {
       p.answer.slots.forEach((s, i) => add(`slot:${i}`, "Slot {{n}}", s.label, { vars: { n: i + 1 } }));
     }
     if (p.answer?.kind === "order") {
-      p.answer.cards.forEach((c, i) => add(`card:${i}`, "Card {{n}}", c.text, { vars: { n: i + 1 } }));
+      p.answer.cards.forEach((c, i) => {
+        add(`card:${i}`, "Card {{n}}", c.text, { vars: { n: i + 1 } });
+        add(`card:${i}:alt`, "Card {{n}}: picture description", c.image?.alt, { vars: { n: i + 1 } });
+      });
     }
   }
   if (n.story) blocks(n.story.blocks, "Text");
@@ -169,7 +187,12 @@ export function nodeTexts(n: Node): Translatable[] {
     for (const b of n.hub.branches ?? []) {
       add(`branch:${b.port}:label`, "Branch “{{name}}”", b.label, { vars: { name: b.label || b.port } });
       add(`branch:${b.port}:note`, "Branch “{{name}}”: subtitle", b.note, { vars: { name: b.label || b.port } });
+      add(`branch:${b.port}:alt`, "Branch “{{name}}”: picture description", b.image?.alt, { vars: { name: b.label || b.port } });
     }
+  }
+  if (n.effect?.kind === "email") {
+    add("email:subject", "Email subject", n.effect.subject);
+    add("email:body", "Email text", n.effect.body, { multiline: true });
   }
   return out;
 }
@@ -225,7 +248,16 @@ export function withTexts(n: Node, f: (key: string) => string | undefined): Node
         return b;
     }
   };
-  const blocks = (list: Block[] | undefined) => list?.map(block);
+  // A block with a picture or a sound keeps its description beside its texts.
+  const described = (b: Block): Block => {
+    const own = `block:${b.id}`;
+    let out = b;
+    if ("alt" in out && out.alt !== undefined && k(`${own}:alt`) !== undefined) out = { ...out, alt: k(`${own}:alt`)! };
+    if (out.kind === "suspects") out = { ...out, cards: out.cards.map((c, i) => (c.alt === undefined ? c : { ...c, alt: or(`${own}:card:${i}:alt`, c.alt) })) };
+    return out;
+  };
+  const media = <M extends { alt?: string }>(owner: string, m: M | undefined): M | undefined => (m?.alt === undefined || k(`${owner}:alt`) === undefined ? m : { ...m, alt: k(`${owner}:alt`)! });
+  const blocks = (list: Block[] | undefined) => list?.map((b) => described(block(b)));
   const title = opt("title", n.title);
   const out: Node = { ...n, ...(title !== undefined ? { title } : {}) };
   const p = n.puzzle;
@@ -235,18 +267,35 @@ export function withTexts(n: Node, f: (key: string) => string | undefined): Node
     if (answer?.kind === "choice")
       answer = { ...answer, fields: answer.fields.map((fl, i) => ({ ...fl, ...(fl.label !== undefined ? { label: or(`field:${i}:label`, fl.label) } : {}), options: fl.options.map((o) => (k(`field:${i}:opt:${o.value}`) === undefined ? o : { ...o, label: k(`field:${i}:opt:${o.value}`)! })) })) };
     else if (answer?.kind === "lock")
-      answer = { ...answer, symbols: answer.symbols.map((sy) => (k(`sym:${sy.value}`) === undefined ? sy : { ...sy, label: k(`sym:${sy.value}`)! })) };
+      answer = {
+        ...answer,
+        symbols: answer.symbols.map((sy) => {
+          const label = k(`sym:${sy.value}`);
+          const image = media(`sym:${sy.value}`, sy.image);
+          return { ...sy, ...(label !== undefined ? { label } : {}), ...(image ? { image } : {}) };
+        }),
+      };
+    else if (answer?.kind === "tiles") {
+      const image = media("image", answer.image);
+      answer = { ...answer, ...(image ? { image } : {}) };
+    }
     else if (answer?.kind === "items")
       answer = { ...answer, slots: answer.slots.map((sl, i) => (sl.label === undefined ? sl : { ...sl, label: or(`slot:${i}`, sl.label) })) };
     else if (answer?.kind === "order")
-      answer = { ...answer, cards: answer.cards.map((c, i) => (c.text === undefined ? c : { ...c, text: or(`card:${i}`, c.text) })) };
+      answer = {
+        ...answer,
+        cards: answer.cards.map((c, i) => {
+          const image = media(`card:${i}`, c.image);
+          return { ...c, ...(c.text !== undefined ? { text: or(`card:${i}`, c.text) } : {}), ...(image ? { image } : {}) };
+        }),
+      };
     out.puzzle = {
       ...p,
       ...(p.blocks ? { blocks: blocks(p.blocks)! } : {}),
       ...(p.outputs ? { outputs: p.outputs.map((o) => (o.label === undefined ? o : { ...o, label: or(`out:${o.port}:label`, o.label) })) } : {}),
       ...(bar ? { bar } : {}),
       ...(p.responses ? { responses: p.responses.map((r, i) => ({ ...r, text: or(`reply:${i}`, r.text) })) } : {}),
-      ...(p.hints ? { hints: p.hints.map((h, i) => ({ ...h, text: or(`hint:${i}`, h.text) })) } : {}),
+      ...(p.hints ? { hints: p.hints.map((h, i) => ({ ...h, text: or(`hint:${i}`, h.text), ...(h.media ? { media: h.media.map((m, j) => media(`hint:${i}:media:${j}`, m)!) } : {}) })) } : {}),
       ...(answer ? { answer } : {}),
     };
   }
@@ -262,9 +311,16 @@ export function withTexts(n: Node, f: (key: string) => string | undefined): Node
               ...b,
               ...(b.label !== undefined ? { label: or(`branch:${b.port}:label`, b.label) } : {}),
               ...(b.note !== undefined ? { note: or(`branch:${b.port}:note`, b.note) } : {}),
+              ...(b.image ? { image: media(`branch:${b.port}`, b.image)! } : {}),
             })),
           }
         : {}),
+    };
+  if (n.effect?.kind === "email")
+    out.effect = {
+      ...n.effect,
+      ...(n.effect.subject !== undefined ? { subject: or("email:subject", n.effect.subject) } : {}),
+      ...(n.effect.body !== undefined ? { body: or("email:body", n.effect.body) } : {}),
     };
   return out;
 }
@@ -302,7 +358,8 @@ export function translateEdit(g: Graph, lang: string, main: Node, shown: Node, e
 
 /**
  * The adventure-wide texts: its title, intro and outro, journal notes,
- * zone names, the time-up message.
+ * zone names, roles, the time-up message, item and counter names and the
+ * looks' words for a right and a wrong answer.
  */
 export function adventureTexts(g: Graph, meta: AdventureMeta = {}): Translatable[] {
   const out: Translatable[] = [];
@@ -312,6 +369,9 @@ export function adventureTexts(g: Graph, meta: AdventureMeta = {}): Translatable
   for (const j of g.journal ?? []) {
     if (j.title?.trim()) out.push({ key: journalKey(j.slug, "title"), label: "Journal: {{name}}", vars: { name: j.title }, main: j.title });
     if (j.body?.trim()) out.push({ key: journalKey(j.slug, "body"), label: "Journal: {{name}}", vars: { name: j.title || j.slug }, main: j.body, multiline: true });
+    (j.media ?? []).forEach((m, i) => {
+      if (m.alt?.trim()) out.push({ key: altKey(journalKey(j.slug, `media:${i}`)), label: "Journal: {{name}}: picture description", vars: { name: j.title || j.slug }, main: m.alt });
+    });
   }
   for (const s of new Set((g.journal ?? []).map((j) => j.section).filter((x): x is string => !!x))) {
     out.push({ key: sectionKey(s), label: "Journal section", main: s });
@@ -320,11 +380,19 @@ export function adventureTexts(g: Graph, meta: AdventureMeta = {}): Translatable
   for (const r of g.roles ?? []) {
     if (r.name?.trim()) out.push({ key: roleKey(r.slug, "name"), label: "Role", main: r.name });
     if (r.text?.trim()) out.push({ key: roleKey(r.slug, "text"), label: "Role: {{name}}", vars: { name: r.name || r.slug }, main: r.text, multiline: true });
+    if (r.image?.alt?.trim()) out.push({ key: altKey(`r:${r.slug}:image`), label: "Role: {{name}}: picture description", vars: { name: r.name || r.slug }, main: r.image.alt });
     (r.goals ?? []).forEach((g, i) => {
       if (g.text.trim()) out.push({ key: `r:${r.slug}:goal:${i}`, label: "Goal of {{name}}", vars: { name: r.name || r.slug }, main: g.text });
     });
   }
   if (g.time_limit?.text?.trim()) out.push({ key: TIME_UP_KEY, label: "Time is up: message", main: g.time_limit.text, multiline: true });
+  for (const it of g.items ?? []) if (it.name?.trim()) out.push({ key: itemKey(it.slug, "name"), label: "Item", main: it.name });
+  for (const c of g.counters ?? []) if (c.name?.trim()) out.push({ key: counterKey(c.slug, "name"), label: "Counter", main: c.name });
+  for (const th of g.themes ?? []) {
+    const st = th.look.style;
+    if (st?.cheer_text?.trim()) out.push({ key: themeKey(th.slug, "cheer_text"), label: "Look “{{name}}”: right answer", vars: { name: th.name || th.slug }, main: st.cheer_text });
+    if (st?.miss_text?.trim()) out.push({ key: themeKey(th.slug, "miss_text"), label: "Look “{{name}}”: wrong answer", vars: { name: th.name || th.slug }, main: st.miss_text });
+  }
   return out;
 }
 

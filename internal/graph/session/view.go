@@ -728,10 +728,29 @@ func (t *Team) translate(v *View) {
 		s.Title = tr(graph.NodeKey(s.Node, "title"), s.Title)
 		s.Zone = zone(s.Zone)
 	}
+	media := func(owner string, m *graph.Media) *graph.Media {
+		if m == nil {
+			return nil
+		}
+		c := g.TrMedia(l, owner, *m)
+		return &c
+	}
+	medias := func(owner func(i int) string, ms []graph.Media) []graph.Media {
+		if ms == nil {
+			return nil
+		}
+		out := make([]graph.Media, len(ms))
+		for i, m := range ms {
+			out[i] = g.TrMedia(l, owner(i), m)
+		}
+		return out
+	}
+	v.Roles = append([]RoleView(nil), v.Roles...)
 	for i := range v.Roles {
 		r := &v.Roles[i]
 		r.Name = tr(graph.RoleKey(r.Slug, "name"), r.Name)
 		r.Text = tr(graph.RoleKey(r.Slug, "text"), r.Text)
+		r.Image = media(graph.RoleKey(r.Slug, "image"), r.Image)
 	}
 	v.Journal = append([]JournalView(nil), v.Journal...)
 	for i := range v.Journal {
@@ -741,6 +760,24 @@ func (t *Team) translate(v *View) {
 		if j.Section != "" {
 			j.Section = tr(graph.SectionKey(j.Section), j.Section)
 		}
+		j.Media = medias(func(i int) string { return graph.JournalKey(j.Slug, fmt.Sprintf("media:%d", i)) }, j.Media)
+	}
+	v.Items = append([]ItemView(nil), v.Items...)
+	for i := range v.Items {
+		if it := &v.Items[i]; it.Name != "" {
+			it.Name = tr(graph.ItemKey(it.Slug, "name"), it.Name)
+		}
+	}
+	if th := t.lookTheme(); th != nil && v.ThemeLook != nil && v.ThemeLook.Style != nil {
+		lk, st := *v.ThemeLook, *v.ThemeLook.Style
+		if st.CheerText != "" {
+			st.CheerText = tr(graph.ThemeKey(th.Slug, "cheer_text"), st.CheerText)
+		}
+		if st.MissText != "" {
+			st.MissText = tr(graph.ThemeKey(th.Slug, "miss_text"), st.MissText)
+		}
+		lk.Style = &st
+		v.ThemeLook = &lk
 	}
 	if v.TimeUpText != "" && g.TimeLimit != nil {
 		v.TimeUpText = tr(graph.TimeUpKey, v.TimeUpText)
@@ -805,6 +842,17 @@ func (t *Team) translate(v *View) {
 			if b.Who != "" {
 				b.Who = tr(graph.BlockFieldKey(v.Node, b.ID, "who"), b.Who)
 			}
+			if b.Alt != "" {
+				b.Alt = tr(graph.AltKey(graph.BlockKey(v.Node, b.ID)), b.Alt)
+			}
+			if b.CounterValues != nil {
+				b.CounterValues = append([]CounterView(nil), b.CounterValues...)
+				for j := range b.CounterValues {
+					if c := &b.CounterValues[j]; c.Name != "" {
+						c.Name = tr(graph.CounterKey(c.Slug, "name"), c.Name)
+					}
+				}
+			}
 			if b.Cards != nil {
 				b.Cards = append([]graph.Card(nil), b.Cards...)
 				for j := range b.Cards {
@@ -812,6 +860,9 @@ func (t *Team) translate(v *View) {
 					c.Name = tr(graph.BlockFieldKey(v.Node, b.ID, fmt.Sprintf("card:%d:name", j)), c.Name)
 					if c.Text != "" {
 						c.Text = t.fill(tr(graph.BlockFieldKey(v.Node, b.ID, fmt.Sprintf("card:%d:text", j)), c.Text))
+					}
+					if c.Alt != "" {
+						c.Alt = tr(graph.AltKey(graph.BlockFieldKey(v.Node, b.ID, fmt.Sprintf("card:%d", j))), c.Alt)
 					}
 				}
 			}
@@ -823,7 +874,7 @@ func (t *Team) translate(v *View) {
 				plain = append(plain, b.Block)
 			}
 		}
-		v.Text = graph.TextOf(plain)
+		v.Text, v.Media = graph.TextOf(plain), legacyMedia(plain)
 	}
 	v.Zone = zone(v.Zone)
 	if v.Quiz != nil {
@@ -844,13 +895,18 @@ func (t *Team) translate(v *View) {
 		}
 		v.Quiz = &q
 	}
+	v.Hints = append([]HintView(nil), v.Hints...)
 	for i := range v.Hints {
-		v.Hints[i].Text = tr(key(fmt.Sprintf("hint:%d", i)), v.Hints[i].Text)
+		h := &v.Hints[i]
+		h.Text = tr(key(fmt.Sprintf("hint:%d", i)), h.Text)
+		h.Media = medias(func(j int) string { return key(fmt.Sprintf("hint:%d:media:%d", i, j)) }, h.Media)
 	}
+	v.Offer = append([]OfferEntry(nil), v.Offer...)
 	for i := range v.Offer {
 		o := &v.Offer[i]
 		o.Label = tr(key("branch:"+o.Port+":label"), o.Label)
 		o.Note = tr(key("branch:"+o.Port+":note"), o.Note)
+		o.Image = media(key("branch:"+o.Port), o.Image)
 	}
 	if in := v.Input; in != nil {
 		c := *in
@@ -881,11 +937,27 @@ func (t *Team) translate(v *View) {
 			c.Symbols = make([]graph.LockSymbol, len(in.Symbols))
 			for i, s := range in.Symbols {
 				s.Label = tr(key("sym:"+s.Value), s.Label)
+				s.Image = media(key("sym:"+s.Value), s.Image)
 				c.Symbols[i] = s
 			}
 		}
+		c.Image = media(key("image"), in.Image)
 		v.Input = &c
 	}
+}
+
+// lookTheme is the saved theme whose look the team sees: the one a theme
+// effect switched to, or else the main theme of the version the team
+// plays, not the adventure's look of the latest. An empty main theme
+// leaves the organisation's look to show, and so does none.
+func (t *Team) lookTheme() *graph.Theme {
+	if th := t.G.Theme(t.Theme); th != nil {
+		return th
+	}
+	if th := t.G.Theme(t.G.MainTheme); th != nil && (t.Theme == "" || t.Theme == "default") && !th.Look.Empty() {
+		return th
+	}
+	return nil
 }
 
 func (t *Team) view() View {
@@ -901,12 +973,7 @@ func (t *Team) view() View {
 		Theme:          t.Theme,
 		Now:            t.Now,
 	}
-	if th := t.G.Theme(t.Theme); th != nil {
-		v.ThemeLook = &th.Look
-	} else if th := t.G.Theme(t.G.MainTheme); th != nil && (t.Theme == "" || t.Theme == "default") && !th.Look.Empty() {
-		// The main theme of the version the team plays, not the
-		// adventure's look of the latest. An empty one leaves the
-		// organisation's look to show.
+	if th := t.lookTheme(); th != nil {
 		v.ThemeLook = &th.Look
 	}
 	for _, slug := range sortedKeys(t.Items) {

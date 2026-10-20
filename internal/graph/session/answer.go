@@ -45,6 +45,10 @@ func (t *Team) answerInput(n graph.Node) *Input {
 			if c.Text != "" {
 				c.Text = t.G.Tr(t.lang(), graph.NodeKey(n.Slug, fmt.Sprintf("card:%d", i)), c.Text)
 			}
+			if c.Image != nil {
+				m := t.G.TrMedia(t.lang(), graph.NodeKey(n.Slug, fmt.Sprintf("card:%d", i)), *c.Image)
+				c.Image = &m
+			}
 			in.Cards = append(in.Cards, c)
 		}
 		return in
@@ -184,11 +188,12 @@ func (t *Team) short(need map[string]int) []string {
 	return out
 }
 
-// itemName is an item's name as the backpack shows it.
+// itemName is an item's name as the backpack shows it, in the player's
+// language.
 func (t *Team) itemName(slug string) string {
 	for _, it := range t.G.Items {
 		if it.Slug == slug && it.Name != "" {
-			return it.Name
+			return t.G.Tr(t.lang(), graph.ItemKey(slug, "name"), it.Name)
 		}
 	}
 	return slug

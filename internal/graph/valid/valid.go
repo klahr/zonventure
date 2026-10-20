@@ -1236,6 +1236,9 @@ func checkTranslations(r *reporter, g *graph.Graph) {
 	zones := slugSet(len(g.Zones), func(i int) string { return g.Zones[i].Slug })
 	journal := slugSet(len(g.Journal), func(i int) string { return g.Journal[i].Slug })
 	sections := slugSet(len(g.Journal), func(i int) string { return g.Journal[i].Section })
+	items := slugSet(len(g.Items), func(i int) string { return g.Items[i].Slug })
+	counters := slugSet(len(g.Counters), func(i int) string { return g.Counters[i].Slug })
+	themes := slugSet(len(g.Themes), func(i int) string { return g.Themes[i].Slug })
 	langs := make([]string, 0, len(g.Translations))
 	for l := range g.Translations {
 		langs = append(langs, l)
@@ -1255,12 +1258,13 @@ func checkTranslations(r *reporter, g *graph.Graph) {
 			switch {
 			case kind == "n" && !nodes[slug], kind == "z" && !zones[slug], kind == "j" && !journal[slug],
 				kind == "js" && !sections[rest],
+				kind == "i" && !items[slug], kind == "c" && !counters[slug], kind == "t" && !themes[slug],
 				kind == "n" && isBlock && !blocks[graph.BlockKey(slug, id)]:
 				stale++
 			}
 		}
 		if stale > 0 {
-			r.warn("translation.stale", "", "", "%d %s translations belong to steps, content blocks, zones, notes or journal sections that no longer exist", stale, l)
+			r.warn("translation.stale", "", "", "%d %s translations belong to steps, content blocks, zones, notes, journal sections, items, counters or themes that no longer exist", stale, l)
 		}
 	}
 }
