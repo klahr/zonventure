@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.33.16] - 2026-10-20
+
 ### Added
 
 - Designer: a new way to answer a puzzle, "Put in order" ("Sätt i
