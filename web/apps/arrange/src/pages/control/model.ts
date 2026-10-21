@@ -29,12 +29,29 @@ export function teamProgress(d: EventDetail, tm: Team, t: I18n): { main: string;
 export function elapsedSeconds(e: EventInfo, offsetMs: number, now: number): number {
   const start = toDate(e.started_at)?.getTime();
   if (start === undefined) return 0;
+  return Math.max(0, Math.floor((clockEnd(e, offsetMs, now) - start) / 1000 - (e.paused_seconds ?? 0)));
+}
+
+/** Where the event's clock stands, in server time: now, or when it was paused, ended or cancelled. */
+function clockEnd(e: EventInfo, offsetMs: number, now: number): number {
   let end = now + offsetMs;
   for (const ts of [e.completed_at, e.cancelled_at, e.paused_at]) {
     const ms = toDate(ts)?.getTime();
     if (ms !== undefined && ms < end) end = ms;
   }
-  return Math.max(0, Math.floor((end - start) / 1000 - (e.paused_seconds ?? 0)));
+  return end;
+}
+
+/**
+ * How long a split team's group has been on its step, in play time. The
+ * server moves since past the pauses that ended since the group got
+ * there (internal/admin.groupsOf), so only a pause still on, the end and
+ * the clock offset are left to take in here.
+ */
+export function groupSeconds(e: EventInfo, since: string | undefined, offsetMs: number, now: number): number | undefined {
+  const at = toDate(since)?.getTime();
+  if (at === undefined) return undefined;
+  return Math.max(0, Math.floor((clockEnd(e, offsetMs, now) - at) / 1000));
 }
 
 export function fmtElapsedShort(sec: number): string {

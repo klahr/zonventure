@@ -47,7 +47,7 @@ const maxSimulateWait = 24 * 60 * 60
 
 type simulateAction struct {
 	// Kind is start, place, begin, answer, continue, choose, skip, timeout,
-	// hint, back, timeup, language, pick, force, wait or move.
+	// hint, back, timeup, language, pick, force, walk, wait or move.
 	Kind  string `json:"kind"`
 	Node  string `json:"node,omitempty"`
 	Guess string `json:"guess,omitempty"`
@@ -290,6 +290,9 @@ func simulateAs(g *graph.Graph, place *graph.Zone, team *session.Team, crew *sim
 		act(func() (session.Result, *walk.Step, error) { return team.Seal(a.Node, a.Block, a.Choice) })
 	case "task":
 		act(func() (session.Result, *walk.Step, error) { return team.Task(a.Node, a.Block, a.Guess) })
+	case "walk":
+		// The phone asking walks another of its groups: Port is its key.
+		act(func() (session.Result, *walk.Step, error) { return team.Walk(a.Port) })
 	case "sabotage":
 		act(func() (session.Result, *walk.Step, error) { return team.Sabotage(a.Node, a.Block) })
 	case "wait":
@@ -495,10 +498,11 @@ func (c *simCrew) seat(t *session.Team) *session.Team {
 	t.Secrets, t.Seals, t.Presses = c.Secrets, c.Seals, c.Presses
 	t.PressesAt = nil
 	if t.Split != "" {
-		t.PressesAt = c.PressesAt
-		if t.PressesAt == nil {
-			t.PressesAt = map[string]map[int64]session.Press{}
+		// One map, the crew's and the team's alike.
+		if c.PressesAt == nil {
+			c.PressesAt = map[string]map[int64]session.Press{}
 		}
+		t.PressesAt = c.PressesAt
 	}
 	t.RoleHolders = map[string]int64{}
 	for role, h := range play.DealAmong(slots, c.Roles, t.G.DealtRoles()) {

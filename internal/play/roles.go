@@ -169,13 +169,13 @@ func LockRoles(ctx context.Context, q Querier, teamID int64, players []int64, ro
 
 // lockRolesLeaving locks the team's roles as it leaves node, when a roles
 // block there asks for it (graph.BlockRoles, Lock), among the players
-// playing then.
+// playing then: the whole team's, though a group of it is leaving.
 func lockRolesLeaving(ctx context.Context, q Querier, s *teamState, node string) error {
 	n, ok := s.G.Node(node)
 	if !ok || !slices.ContainsFunc(n.Blocks(), func(b graph.Block) bool { return b.Kind == graph.BlockRoles && b.Lock && !b.Disabled }) {
 		return nil
 	}
-	players := s.Players
+	players := s.Everyone()
 	if players == nil {
 		var err error
 		if players, err = Players(ctx, q, s.teamID, 0); err != nil {

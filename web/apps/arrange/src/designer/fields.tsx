@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from "react";
-import { isPolygon, type Graph, type Zone } from "@zonventure/graph";
+import { createContext, useContext, useState, type ReactNode } from "react";
+import { isPolygon, type Graph, type Node, type Zone } from "@zonventure/graph";
 import { LocateFixed, Map as MapIcon, MapPin } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { Button, ICON } from "./dz/ui.tsx";
@@ -34,6 +34,34 @@ export function focusAdded(list: Element | null, item: string) {
  * Lets a zone-picking field create its zone where the author stands: the
  * caller writes the new zone list and the choice in one edit.
  */
+/**
+ * An edit of the selected step: `g` carries what changes beside it (a new
+ * place, a new item, an answer named), `step` what changes in the step.
+ * `step` is applied to the step as the inspector shows it — a draft being
+ * suggested, or the step in a translation, whose texts then become
+ * translations — never to the saved step behind it.
+ */
+export type StepEdit = (g: Graph, step: (n: Node) => Node, opts?: StepEditOpts) => void;
+
+export interface StepEditOpts {
+  /**
+   * `g`'s new names are in the main language, as asked for by name: in a
+   * translation they are kept as they are rather than made translations.
+   */
+  main?: boolean;
+}
+
+/**
+ * How the inspector's step is being edited: as a suggestion (the step
+ * alone, so nothing beside it may change), or in a translation — its
+ * language, the main language's name and its translations.
+ */
+export interface EditingAs {
+  suggesting?: boolean;
+  translating?: { lang: string; mainName: string; tr: Record<string, string> };
+}
+export const EditingAs = createContext<EditingAs>({});
+
 export interface ZoneHere {
   /** What a new zone is called: the step's name. */
   name: string;
@@ -44,7 +72,7 @@ const SIZES = [15, 30, 60];
 
 const NEW_ZONE = "\u0000new";
 
-export function ZoneSelect({ graph, label, value, onChange, empty, here, onNew }: {
+export function ZoneSelect({ graph, label, value, onChange, empty, here: offered, onNew: offeredNew }: {
   graph: Graph;
   label: string;
   value: string | undefined;
@@ -55,6 +83,10 @@ export function ZoneSelect({ graph, label, value, onChange, empty, here, onNew }
   onNew?: () => void;
 }) {
   const t = useT();
+  // A suggestion is the step alone: making or moving a place is not part of one.
+  const { suggesting } = useContext(EditingAs);
+  const here = suggesting ? undefined : offered;
+  const onNew = suggesting ? undefined : offeredNew;
   const zones = graph.zones ?? [];
   const chosen = zones.find((z) => z.slug === value);
   const [busy, setBusy] = useState(false);
@@ -95,7 +127,9 @@ export function ZoneSelect({ graph, label, value, onChange, empty, here, onNew }
     }
   };
 
-  const hint = here || onNew ? undefined : zones.length === 0 ? t.t("Add zones under Adventure settings (⋮ menu) → Zones.") : undefined;
+  const hint = suggesting && (offered || offeredNew)
+    ? t.t("Places are made and moved outside a suggestion.")
+    : here || onNew ? undefined : zones.length === 0 ? t.t("Add zones under Adventure settings (⋮ menu) → Zones.") : undefined;
   return (
     <>
       <Field label={label} hint={hint}>

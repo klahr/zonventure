@@ -368,6 +368,12 @@ type Node struct {
 // graph's shape, not remembered per team: the innermost hub in front of
 // a step is the same for every team that stands on it. A node that two
 // hubs both reach that way has no single owner, and reports false.
+//
+// Ownership does not cross a split's edge: a hub owns only steps walked
+// by whoever stands on it — on the same split's path as it, or, off any
+// path, steps off every path. A hub on a path stops at the path's join;
+// one before a split owns none of its paths' steps, but passes through
+// them to what the team, together again, walks after the join.
 func (g *Graph) OwnerHub(slug string) (string, bool) {
 	h, ok := g.OwnerHubs()[slug]
 	return h, ok
@@ -384,6 +390,16 @@ func (g *Graph) OwnerHubs() map[string]string {
 	for _, n := range g.Nodes {
 		isHub[n.Slug] = n.Type == Hub
 	}
+	// Each node's innermost path, and the steps of each path: none
+	// without splits, where every hub owns as it always has.
+	var inner map[string]string
+	var steps map[string]map[string]bool
+	for _, n := range g.Nodes {
+		if n.Type == Split {
+			inner, steps = g.Splits().innerPaths()
+			break
+		}
+	}
 	owner := map[string]string{}
 	shared := map[string]bool{}
 	for _, h := range g.Nodes {
@@ -391,7 +407,11 @@ func (g *Graph) OwnerHubs() map[string]string {
 			continue
 		}
 		// Everything the hub's branches reach without passing through a
-		// hub; the hub it stops at is reached, not passed.
+		// hub; the hub it stops at is reached, not passed. On a path, it
+		// goes no further than the path's steps, and owns only those of
+		// its own path, not of a split nested on it.
+		region := inner[h.Slug]
+		within := steps[region]
 		seen := map[string]bool{h.Slug: true}
 		var queue []string
 		for _, b := range h.HubCfg.Branches {
@@ -406,6 +426,15 @@ func (g *Graph) OwnerHubs() map[string]string {
 				continue
 			}
 			seen[n] = true
+			if region != "" && !within[n] {
+				continue
+			}
+			if inner[n] != region {
+				// A hub on the path is its group's, not this one's: the
+				// team still walks on through it to the join.
+				queue = append(queue, next[n]...)
+				continue
+			}
 			if o, ok := owner[n]; ok && o != h.Slug {
 				shared[n] = true
 			}
@@ -434,6 +463,18 @@ func (g *Graph) BranchReturns(hub, port string) []Edge {
 	if !ok {
 		return nil
 	}
+	// A hub on a split's path the hub is not on belongs to its group,
+	// and the branch goes on through it, as OwnerHubs passes through it;
+	// a hub on a path looks no further than the path's steps.
+	var inner map[string]string
+	var steps map[string]map[string]bool
+	for _, n := range g.Nodes {
+		if n.Type == Split {
+			inner, steps = g.Splits().innerPaths()
+			break
+		}
+	}
+	region := inner[hub]
 	var back []Edge
 	seen := map[string]bool{hub: true}
 	queue := []string{start}
@@ -444,7 +485,10 @@ func (g *Graph) BranchReturns(hub, port string) []Edge {
 			continue
 		}
 		seen[n] = true
-		if node, ok := g.Node(n); !ok || node.Type == Hub {
+		if region != "" && !steps[region][n] {
+			continue
+		}
+		if node, ok := g.Node(n); !ok || node.Type == Hub && inner[n] == region {
 			continue
 		}
 		for _, e := range next[n] {

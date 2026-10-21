@@ -170,7 +170,7 @@ export function EventSim({ slug, graph, envelope }: Props) {
   const portOf = useCallback(
     (s: string | undefined, port: string) => {
       const n = s ? nodeBySlug(graph, s) : undefined;
-      return n ? portLabel(n, port) : port;
+      return n ? portLabel(n, port, graph.roles) : port;
     },
     [graph],
   );

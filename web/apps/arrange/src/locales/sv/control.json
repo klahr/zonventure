@@ -9,5 +9,7 @@
   "Zoom out": "Zooma ut",
   "Drag to rotate map, click to reset north": "Dra för att vrida kartan, klicka för att återställa norr",
   "Enter fullscreen": "Helskärm",
-  "Exit fullscreen": "Lämna helskärm"
+  "Exit fullscreen": "Lämna helskärm",
+  "On this step a long while": "På det här steget länge",
+  "waiting at {{step}}": "väntar vid {{step}}"
 }

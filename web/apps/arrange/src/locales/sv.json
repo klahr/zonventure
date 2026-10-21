@@ -510,6 +510,8 @@
   "error.team_finished": "Laget har redan gått i mål.",
   "error.team_moved": "Laget har gått vidare sedan du tittade. Uppdatera och försök igen.",
   "error.not_rescuable": "Laget står inte på ett pussel som det kan flyttas förbi.",
+  "error.which_group": "Laget är uppdelat: säg vilken grupp som ska flyttas vidare.",
+  "error.too_few": "Laget väntar på fler spelare.",
   "error.totp_setup_required": "Aktivera tvåfaktorsautentisering först.",
   "error.refund_pending": "En återbetalning av det här köpet pågår redan.",
   "What brings you here?": "Vad vill du göra?",

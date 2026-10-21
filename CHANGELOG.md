@@ -22,16 +22,34 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   finds — items, notes, points, answers — is the whole team's. Every
   phone sees where each group is; a step done together waits for its
   group, a place is reached by one of the group, and a role no one in
-  the group holds is everyone's in it. A player in two groups walks them
-  one after the other, and a group whose players have all gone is
-  walked by whoever finishes first, so a team of any size can play a
-  split. The time limit, and an ending on any path, end it for every
-  group. The preview, the simulator and the AI assistant play splits
-  too, and the console shows where each group is and moves a stuck
-  group on by itself. Splits nest: a group that reaches a split on its
+  the group holds is everyone's in it. A player in two groups walks
+  whichever of them they choose, and can switch between them at any
+  step, so one group can fetch what the other needs; a group whose
+  players have all gone, or whose phones have all gone quiet for three
+  minutes with the app closed, is open to anyone and walked by whoever
+  finishes first, so a team of any size can play a split. The time
+  limit, and an ending on any path, end it for every group. A path may
+  not be entered from outside its split — by going back to a home
+  screen or by the time limit either — nor lead past its join to
+  anything the team walks together after it.
+  The preview, the simulator and the AI assistant play splits too.
+  Race control follows each group: on its map a trail and marker per
+  group, from what the phones walking it sent while they did — the live
+  audience map too — rather than one between them where no one is; in
+  the leaderboard each group's step and how long it has been there,
+  pauses aside, flagged after a quarter of an hour; and in a team's
+  dialog each player's roles and group, and a button to move one stuck
+  group on from any step of its path — at a split too, setting it off.
+  Splits nest: a group that reaches a split on its
   path divides again among its own players, and its groups meet at a
   join of their own before going on — "North › Tower" — up to four
   deep.
+- AI assistant: splits throughout. `simulate_adventure` says which
+  group plays next and where every group is; `get_event_state_summary`
+  lists a split team's groups; `unlock_team` takes a group (`group`)
+  or its step (`node`) to move one stuck group on; the playtest can
+  `walk` another of its groups; `dev_go_to` puts the dev phone on a
+  split.
 - Designer: a step done in parallel. Its answer is "Tasks": each task
   block is one role's part, answered only by that role's player, on
   their own phone and at their own place where it has one. Every phone
@@ -57,6 +75,15 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ### Fixed
 
+- Designer: in a translation, renaming a step, picking its place,
+  marking where you stand or making a new item no longer writes the
+  step's translated words over its originals; in a suggestion, it no
+  longer drops the suggestion's other edits.
+- A move sent from a phone while offline that the game then refuses no
+  longer holds up every move after it.
+- AI assistant: `set_text` no longer renames what a step's words name —
+  a route's port, a role, an item, a post — when the words match it,
+  which could cut a wire or a reference.
 - A step with a mission can no longer be opened by its keys before the
   mission is sealed.
 - Designer: in the multi-phone preview, a mission pick not yet

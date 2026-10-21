@@ -1,18 +1,49 @@
-import type { Graph, Node, Zone } from "@zonventure/graph";
+import { setTranslation, zoneKey, type Graph, type Node, type Zone } from "@zonventure/graph";
 
 /**
  * The graph with a step retitled. The zone the step stands in follows the
  * new title while the zone still has no name, the step's old title, or
  * one of `fallbacks` (what "Mark where I stand" names it for a step
  * without a title): once the author renames the zone, it keeps its own name.
+ * In a translation (`translating`, as EditingAs has it), `node` is the step
+ * as shown: the zone's name is compared as shown too, and a named zone's
+ * new name is its translation, as renameZone makes it — even typed back to
+ * the main name. An unnamed zone is named for the Designer to sort out.
  */
-export function retitle(graph: Graph, node: Node, title: string, fallbacks: string[] = []): Graph {
+export function retitle(graph: Graph, node: Node, title: string, fallbacks: string[] = [], translating?: { lang: string; tr: Record<string, string> }): Graph {
+  const tr = translating?.tr;
   const old = node.title ?? "";
   const zoneSlug = node.puzzle?.zone ?? node.story?.zone ?? node.start?.zone;
-  const follows = (z: Zone) => z.slug === zoneSlug && (!z.name || z.name === old || fallbacks.includes(z.name));
+  const shown = (z: Zone) => (z.group ? undefined : tr?.[zoneKey(z.slug)]?.trim()) || z.name;
+  const follows = (z: Zone) => {
+    const name = shown(z);
+    return z.slug === zoneSlug && (!name || name === old || fallbacks.includes(name));
+  };
   const nodes = graph.nodes.map((n) => (n.slug === node.slug ? { ...node, title } : n));
   if (!graph.zones?.some(follows)) return { ...graph, nodes };
-  return { ...graph, nodes, zones: graph.zones.map((z) => (follows(z) ? { ...z, name: title } : z)) };
+  const translated = (z: Zone) => !!translating && !z.group && !!z.name?.trim();
+  let out: Graph = { ...graph, nodes, zones: graph.zones.map((z) => (follows(z) && !translated(z) ? { ...z, name: title } : z)) };
+  for (const z of graph.zones) if (follows(z) && translated(z)) out = renameZone(out, z, title, translating);
+  return out;
+}
+
+/**
+ * The graph with a zone renamed from a name field. In a translation
+ * (`translating`, as EditingAs has it) the name typed is that language's,
+ * as setTranslation makes it: emptied, the zone is untranslated again, and
+ * typed as the main name, its translation is that name. A zone without a
+ * main name keeps none: it is only translated, as the main language's to
+ * name. A grouped zone, whose name is not translated, is renamed as
+ * outside one.
+ */
+export function renameZone(graph: Graph, zone: Zone, name: string, translating?: { lang: string }): Graph {
+  if (translating && !zone.group) return setTranslation(graph, translating.lang, zoneKey(zone.slug), name, zone.name ?? "");
+  return { ...graph, zones: (graph.zones ?? []).map((z) => (z.slug === zone.slug ? { ...z, name } : z)) };
+}
+
+/** The name a zone's name field shows: its translation, in one, else its main name. */
+export function shownZoneName(zone: Zone, translating?: { tr: Record<string, string> }): string {
+  return (translating && !zone.group ? translating.tr[zoneKey(zone.slug)]?.trim() : undefined) || (zone.name ?? "");
 }
 
 /** A zone's name for display, or its slug when it has none. */

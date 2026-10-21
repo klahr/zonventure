@@ -336,6 +336,9 @@ func checkSplit(r *reporter, g *graph.Graph, n graph.Node) {
 		if ports[p.Port] {
 			r.err("split.port.duplicate", n.Slug, p.Port, "two paths share the port %q", p.Port)
 		}
+		if strings.Contains(p.Port, ">") {
+			r.err("split.port.char", n.Slug, p.Port, "a path's port name cannot contain \">\"; it is kept for naming a group within a group")
+		}
 		ports[p.Port] = true
 		if p.Role == "" {
 			continue
@@ -357,72 +360,147 @@ func checkSplit(r *reporter, g *graph.Graph, n graph.Node) {
 // steps until it reaches the join, where it waits for the others; so the
 // paths may not share a step (two groups on one step would answer it for
 // each other), a group splits again only at a split nested whole on its
-// path, and every path that leads anywhere must lead to the same join. A path may end the adventure
-// instead, which ends it for every group. A join is only ever a split's.
+// path, and every path that leads anywhere must lead to the same join. A
+// path may end the adventure instead, which ends it for every group. A
+// join is only ever a split's, and a path's steps are only ever its own:
+// none is reached from outside it, and none leads past the join without
+// passing it.
 func checkSplits(r *reporter, g *graph.Graph) {
-	types := map[string]graph.Type{}
+	sc := splitCheck{r: r, g: g, types: map[string]graph.Type{}, next: map[string][]string{}, prev: map[string][]string{},
+		in: map[string][]graph.Edge{}, backIn: map[string][]string{}, team: map[string][]string{}, ends: map[string]ending{}, reported: map[string]bool{}}
+	var slugs []string
 	for _, n := range g.Nodes {
-		types[n.Slug] = n.Type
+		sc.types[n.Slug] = n.Type
+		if n.Type == graph.Split && n.SplitCfg != nil {
+			slugs = append(slugs, n.Slug)
+		}
+	}
+	for _, e := range g.Edges {
+		sc.next[e.From] = append(sc.next[e.From], e.To)
+		sc.prev[e.To] = append(sc.prev[e.To], e.From)
+		sc.in[e.To] = append(sc.in[e.To], e)
+	}
+	// In order of slug: a split in a loop covers what it does by which
+	// split was asked first, and the verdict should not hang on the
+	// order the nodes were drawn in.
+	slices.Sort(slugs)
+	splits := g.Splits()
+	// Back leads on as an edge would, though none is drawn.
+	for slug, hub := range backs(g, splits) {
+		sc.next[slug] = append(sc.next[slug], hub)
+		sc.prev[hub] = append(sc.prev[hub], slug)
+		sc.backIn[hub] = append(sc.backIn[hub], slug)
+	}
+	for _, from := range sc.backIn {
+		slices.Sort(from)
+	}
+	// team is where the team, together, goes on to: from a split, its
+	// joins, its paths being its groups' alone.
+	for from, to := range sc.next {
+		if sc.types[from] != graph.Split {
+			sc.team[from] = to
+		}
+	}
+	for _, slug := range slugs {
+		paths := splits.Paths(slug)
+		for _, port := range slices.Sorted(maps.Keys(paths.Joins)) {
+			sc.team[slug] = append(sc.team[slug], paths.Joins[port]...)
+		}
+	}
+	// live is what can lead to a split or a join. Anything else leads
+	// only to endings, and is as good as one: whichever group reaches it
+	// ends the adventure for every group, as an ending would.
+	var seeds []string
+	for _, n := range g.Nodes {
+		if n.Type == graph.Split || n.Type == graph.Join {
+			seeds = append(seeds, n.Slug)
+		}
+	}
+	sc.live = spread(seeds, sc.prev, "", nil)
+	for _, s := range seeds {
+		sc.live[s] = true
 	}
 	joinOf := map[string]string{}
-	for _, n := range g.Nodes {
-		if n.Type != graph.Split || n.SplitCfg == nil {
-			continue
-		}
-		paths := g.SplitPaths(n.Slug)
-		owner := map[string]string{}
+	for _, slug := range slugs {
+		n, _ := g.Node(slug)
+		paths := splits.Paths(slug)
 		var joins []string
 		for _, p := range n.SplitCfg.Paths {
-			for _, slug := range paths.Steps[p.Port] {
-				// An ending may be every path's: whichever group reaches
-				// it ends the adventure, and no group stands on it after.
-				if types[slug] == graph.End {
-					continue
-				}
-				if other, ok := owner[slug]; ok && other != p.Port {
-					r.err("split.paths.cross", slug, "", "this step is on two paths of the split %q (%s and %s); each group needs steps of its own until they meet at a join", n.Slug, other, p.Port)
-				}
-				owner[slug] = p.Port
-				if types[slug] == graph.Start {
-					r.err("split.start", slug, "", "a path of the split %q leads back to a start", n.Slug)
-				}
-			}
 			for _, j := range paths.Joins[p.Port] {
 				if !slices.Contains(joins, j) {
 					joins = append(joins, j)
 				}
 			}
-			if _, ok := g.Target(n.Slug, p.Port); ok && len(paths.Joins[p.Port]) == 0 {
-				r.warn("split.path.nojoin", n.Slug, p.Port, "this path never reaches a join, so the team only meets again if its group ends the adventure — which ends it for every group")
+			if _, ok := g.Target(slug, p.Port); ok && len(paths.Joins[p.Port]) == 0 {
+				r.warn("split.path.nojoin", slug, p.Port, "this path never reaches a join, so the team only meets again if its group ends the adventure — which ends it for every group")
 			}
 		}
 		// A group may split again on its path — a split nested whole, its
 		// own join before this one's — but not into the split it came from.
 		for _, port := range paths.Loops {
-			r.err("split.loop", n.Slug, port, "this path leads back into its own split, or one it is inside; a group can split again only at a split of its own, met at a join of its own")
+			r.err("split.loop", slug, port, "this path leads back into its own split, or one it is inside; a group can split again only at a split of its own, met at a join of its own")
 		}
-		if d := g.SplitDepth(n.Slug); d > graph.MaxSplitDepth {
-			r.err("split.depth", n.Slug, "", "splits nest %d deep here; at most %d — a group of a group, and so on — keeps who is with whom clear", d, graph.MaxSplitDepth)
+		if d := splits.Depth(slug); d > graph.MaxSplitDepth {
+			r.err("split.depth", slug, "", "splits nest %d deep here; at most %d — a group of a group, and so on — keeps who is with whom clear", d, graph.MaxSplitDepth)
 		}
+		own := joins
 		if len(joins) > 1 {
-			r.err("split.joins.many", n.Slug, "", "the paths of this split lead to different joins (%s); they must all meet at one", strings.Join(joins, ", "))
+			r.err("split.joins.many", slug, "", "the paths of this split lead to different joins (%s); they must all meet at one", strings.Join(joins, ", "))
+			// Its own is the nearest: one another of them leads on to
+			// is an enclosing split's, already told so.
+			own = slices.DeleteFunc(slices.Clone(joins), func(j string) bool {
+				return slices.ContainsFunc(joins, func(from string) bool { return from != j && spread([]string{from}, sc.next, "", nil)[j] })
+			})
 		}
-		for _, j := range joins {
-			if other, ok := joinOf[j]; ok && other != n.Slug {
-				r.err("join.splits.many", j, "", "two splits, %q and %q, meet at this join; give each its own", other, n.Slug)
-			}
-			joinOf[j] = n.Slug
-			// Every way into the join must be one of the split's paths:
-			// another arriving there would never be waited for.
-			for _, e := range g.Edges {
-				if e.To != j || e.From == n.Slug {
+		owner := map[string]string{}
+		for _, p := range n.SplitCfg.Paths {
+			for _, step := range paths.Steps[p.Port] {
+				// An ending may be every path's: whichever group reaches
+				// it ends the adventure, and no group stands on it after.
+				// A step leading only to endings may not: until it ends
+				// the adventure, its attempts, lockout and hints are the
+				// team's, so two groups on it would answer it for each
+				// other. A gate, an effect or a crossroads holds no one,
+				// so leading only to endings it is as good as one, the
+				// joins leading there too or not: a step it leads to that
+				// holds a group is a crossing of its own.
+				if sc.types[step] == graph.End {
 					continue
 				}
-				if _, ok := paths.PathOf(e.From); !ok {
-					r.err("join.entry.outside", e.From, e.FromPort, "this leads into the join %q from outside the paths of its split %q", j, n.Slug)
+				if other, ok := owner[step]; ok && other != p.Port {
+					if sc.passes(step) && !sc.live[step] {
+						continue
+					}
+					// Once a step: every split it is nested in finds the
+					// crossing again.
+					if sc.once("split.paths.cross", graph.Edge{To: step}) {
+						r.err("split.paths.cross", step, "", "this step is on two paths of the split %q (%s and %s); each group needs steps of its own until they meet at a join", slug, other, p.Port)
+					}
+				}
+				owner[step] = p.Port
+				if sc.types[step] == graph.Start {
+					r.err("split.start", step, "", "a path of the split %q leads back to a start", slug)
 				}
 			}
 		}
+		for _, j := range own {
+			if other, ok := joinOf[j]; !ok {
+				joinOf[j] = slug
+			} else if other != slug && sc.once("join.splits.many", graph.Edge{To: j}) {
+				r.err("join.splits.many", j, "", "two splits, %q and %q, meet at this join; give each its own", other, slug)
+			}
+			// Every way into the join must be one of the split's paths:
+			// another arriving there would never be waited for.
+			for _, e := range sc.in[j] {
+				if e.From == slug || owner[e.From] != "" {
+					continue
+				}
+				if sc.once("join.entry.outside", e) {
+					r.err("join.entry.outside", e.From, e.FromPort, "this leads into the join %q from outside the paths of its split %q", j, slug)
+				}
+			}
+		}
+		sc.pathEdges(n, paths, own)
 	}
 	for _, n := range g.Nodes {
 		if n.Type == graph.Join {
@@ -431,6 +509,211 @@ func checkSplits(r *reporter, g *graph.Graph) {
 			}
 		}
 	}
+}
+
+// splitCheck is what checkSplits works out once for every split.
+type splitCheck struct {
+	r     *reporter
+	g     *graph.Graph
+	types map[string]graph.Type
+	// next and prev are where each node leads and is led to from, Back
+	// included, and in the edges into each.
+	next, prev map[string][]string
+	in         map[string][]graph.Edge
+	// backIn are the steps going back to each home hub.
+	backIn map[string][]string
+	// team is next as the team walks it together: a split leads to its
+	// joins.
+	team map[string][]string
+	live map[string]bool
+	// ends is endings, by step, as worked out.
+	ends map[string]ending
+	// reported are the edges already reported, by code: one edge into
+	// several splits' paths, or joins, is one mistake.
+	reported map[string]bool
+}
+
+// once reports whether an issue about edge e is yet to be reported.
+func (sc *splitCheck) once(code string, e graph.Edge) bool {
+	k := code + "\x00" + e.From + "\x00" + e.FromPort + "\x00" + e.To
+	if sc.reported[k] {
+		return false
+	}
+	sc.reported[k] = true
+	return true
+}
+
+// passes reports whether a team passes a node without stopping on it.
+func (sc *splitCheck) passes(slug string) bool {
+	switch sc.types[slug] {
+	case graph.Effect, graph.Gate, graph.Switch:
+		return true
+	}
+	return false
+}
+
+// ending is how a step leads only to endings: whether it reaches one at
+// all, and whether at once, through steps no one stops on — reaching it
+// ends the adventure there and then.
+type ending struct{ reaches, atOnce bool }
+
+// endings is ending for a step leading to no split or join.
+func (sc *splitCheck) endings(slug string) ending {
+	if v, ok := sc.ends[slug]; ok {
+		return v
+	}
+	v := ending{atOnce: true}
+	seen := map[string]bool{slug: true}
+	stack := []string{slug}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		switch {
+		case sc.types[cur] == graph.End:
+			v.reaches = true
+			continue
+		case !sc.passes(cur):
+			v.atOnce = false
+		}
+		for _, x := range sc.next[cur] {
+			if !seen[x] {
+				seen[x] = true
+				stack = append(stack, x)
+			}
+		}
+	}
+	sc.ends[slug] = v
+	return v
+}
+
+// pathEdges checks the ways onto and off a split's paths. A step after
+// the join — one the join leads to that cannot lead back to it — is the
+// team's together; a path leading there skips the join, and the other
+// groups would wait at it forever, or the group would play alone what
+// is the team's. Any other step on a path is its group's, which only the
+// split leads onto: a group arriving there from elsewhere would walk
+// among one it is not part of. A step leading only to endings, and not
+// after the join, is neither: whoever reaches it ends the adventure.
+// After the join too, the group plays it alone while the others wait,
+// until it ends the adventure: only a warning, and none where no one
+// stops on the way to the ending.
+func (sc *splitCheck) pathEdges(split graph.Node, paths graph.Paths, joins []string) {
+	// before is what leads to the joins, and after what they lead to,
+	// neither going through the split itself: around again is a new
+	// split, not this one. Only steps that cannot reach a join are ever
+	// after, so the joins are followed forward only to find those. One
+	// leading only to endings is after only where the team walks
+	// together: reached on another split's path, it is a group's alone
+	// there too.
+	before := spread(joins, sc.prev, split.Slug, nil)
+	want, fall := map[string]bool{}, map[string]bool{}
+	for _, p := range split.SplitCfg.Paths {
+		for _, step := range paths.Steps[p.Port] {
+			switch {
+			case sc.types[step] == graph.End || before[step] || slices.Contains(joins, step):
+			case sc.live[step]:
+				want[step] = true
+			default:
+				fall[step] = true
+			}
+		}
+	}
+	var after, together map[string]bool
+	if len(want) > 0 {
+		after = spread(joins, sc.next, split.Slug, want)
+	}
+	if len(fall) > 0 {
+		together = spread(joins, sc.team, split.Slug, fall)
+	}
+	isAfter := func(slug string) bool {
+		switch {
+		case before[slug] || slices.Contains(joins, slug):
+			return false
+		case sc.live[slug]:
+			return after[slug]
+		}
+		return together[slug]
+	}
+	for _, p := range split.SplitCfg.Paths {
+		on := map[string]bool{}
+		for _, step := range paths.Steps[p.Port] {
+			on[step] = true
+		}
+		for _, step := range paths.Steps[p.Port] {
+			if sc.types[step] == graph.End {
+				continue
+			}
+			stepAfter := isAfter(step)
+			if !stepAfter && !sc.live[step] {
+				continue
+			}
+			for _, e := range sc.in[step] {
+				switch {
+				case stepAfter:
+					if !on[e.From] && e.From != split.Slug || isAfter(e.From) {
+						break
+					}
+					// Into steps leading only to endings, the group plays
+					// alone until one ends the adventure; at once, through
+					// steps no one stops on, as at an ending itself.
+					// One leading nowhere holds it for good.
+					ends := ending{}
+					if !sc.live[step] {
+						ends = sc.endings(step)
+					}
+					switch {
+					case ends.reaches && ends.atOnce:
+					case ends.reaches:
+						if sc.once("split.path.alone", e) {
+							sc.r.warn("split.path.alone", e.From, e.FromPort, "this group plays on alone into steps the team also reaches after the join; the others wait at the join until the game ends")
+						}
+					case sc.once("split.path.skip", e):
+						sc.r.err("split.path.skip", e.From, e.FromPort, "this leads past the join its group meets the others at, without passing it; the others would wait there forever")
+					}
+				case !on[e.From] && e.From != split.Slug && sc.once("split.entry.outside", e):
+					sc.r.err("split.entry.outside", e.From, e.FromPort, "this leads onto a path of a split from outside it; only the split leads a group onto its path")
+				}
+			}
+			// Back from a path's step to a hub after the join is refused
+			// a group, so only one from outside the path leads here.
+			if stepAfter {
+				continue
+			}
+			for _, from := range sc.backIn[step] {
+				if !on[from] && sc.once("split.entry.back", graph.Edge{From: from, To: step}) {
+					sc.r.err("split.entry.back", from, "", "going back from here leads onto a path of a split from outside it; only the split leads a group onto its path")
+				}
+			}
+		}
+	}
+}
+
+// spread is what can be reached from the nodes from along adj, not going
+// on through stop. Given want, it stops once it has found them all.
+func spread(from []string, adj map[string][]string, stop string, want map[string]bool) map[string]bool {
+	seen := map[string]bool{}
+	left := len(want)
+	stack := slices.Clone(from)
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if cur == stop {
+			continue
+		}
+		for _, x := range adj[cur] {
+			if seen[x] {
+				continue
+			}
+			seen[x] = true
+			stack = append(stack, x)
+			if want[x] {
+				if left--; left == 0 {
+					return seen
+				}
+			}
+		}
+	}
+	return seen
 }
 
 // checkSwitch checks a switch's cases and its source.
@@ -888,11 +1171,9 @@ func checkTermination(r *reporter, g *graph.Graph) {
 		rev[e.To] = append(rev[e.To], e.From)
 	}
 	// Back is a way out too: a step inside a home screen's branch can
-	// always return to it, with no edge drawn.
-	for slug, hub := range g.OwnerHubs() {
-		if h, _ := g.Node(hub); h.HubCfg != nil && h.HubCfg.Home {
-			rev[hub] = append(rev[hub], slug)
-		}
+	// return to it, with no edge drawn.
+	for slug, hub := range backs(g, nil) {
+		rev[hub] = append(rev[hub], slug)
 	}
 	canEnd := map[string]bool{}
 	var stack []string
@@ -919,6 +1200,59 @@ func checkTermination(r *reporter, g *graph.Graph) {
 			r.err("node.nodeadend", n.Slug, "", "no route from here reaches an end, so a team arriving here could never finish")
 		}
 	}
+}
+
+// backs are where Back goes, by step, with no edge drawn: from a step a
+// team stands on inside a home hub's branch, to that hub. A group goes
+// back only to a home hub on its own path, so from a step on a split's
+// path it goes nowhere unless the hub is on that path too; and the team,
+// together, never to one on a path, which is a group's. A join holds a
+// group and a split parks one, neither on the path it goes back from.
+// OwnerHubs keeps to this already; it is checked again here, as the
+// runtime does. Given no splits, it works them out if it needs them.
+func backs(g *graph.Graph, splits *graph.Splits) map[string]string {
+	nodes := make(map[string]graph.Node, len(g.Nodes))
+	for _, n := range g.Nodes {
+		nodes[n.Slug] = n
+	}
+	out := map[string]string{}
+	for slug, hub := range g.OwnerHubs() {
+		if h := nodes[hub]; h.HubCfg == nil || !h.HubCfg.Home {
+			continue
+		}
+		switch nodes[slug].Type {
+		case graph.Puzzle, graph.Story, graph.Hub:
+			out[slug] = hub
+		}
+	}
+	if len(out) == 0 {
+		return out
+	}
+	if splits == nil {
+		splits = g.Splits()
+	}
+	var slugs []string
+	for _, n := range g.Nodes {
+		if n.Type == graph.Split && n.SplitCfg != nil {
+			slugs = append(slugs, n.Slug)
+		}
+	}
+	slices.Sort(slugs)
+	for _, s := range slugs {
+		for _, steps := range splits.Paths(s).Steps {
+			for _, x := range steps {
+				if hub, ok := out[x]; ok && !slices.Contains(steps, hub) {
+					delete(out, x)
+				}
+			}
+			for x, hub := range out {
+				if slices.Contains(steps, hub) && !slices.Contains(steps, x) {
+					delete(out, x)
+				}
+			}
+		}
+	}
+	return out
 }
 
 // checkProgressFreeCycles finds a loop a team would traverse forever.
@@ -1433,7 +1767,27 @@ func checkTimeLimit(r *reporter, g *graph.Graph) {
 		r.err("time_limit.to", "", "", "the adventure's time limit sends teams to %q, which is not a step", tl.To)
 	case n.Type == graph.Start:
 		r.err("time_limit.to", tl.To, "", "the time limit cannot send teams back to a start")
+	case n.Type == graph.Join || onSplitPath(g, tl.To):
+		// Time up ends any split: the whole team would walk one group's
+		// steps, or wait at a join for groups that are gone.
+		r.err("time_limit.to", tl.To, "", "the time limit cannot send teams onto a split's path or to a join; it brings the groups together, and the whole team would walk one group's steps")
 	}
+}
+
+// onSplitPath reports whether a node is a step of any split's path.
+func onSplitPath(g *graph.Graph, slug string) bool {
+	splits := g.Splits()
+	for _, n := range g.Nodes {
+		if n.Type != graph.Split || n.SplitCfg == nil {
+			continue
+		}
+		for _, steps := range splits.Paths(n.Slug).Steps {
+			if slices.Contains(steps, slug) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // blockNames are the kinds of block in the designer's words, where the

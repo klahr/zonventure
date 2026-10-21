@@ -1,16 +1,18 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { MAP_ZOOM, type Graph, type Marker, type Zone } from "@zonventure/graph";
 import { CompassFace, FitMap } from "@zonventure/play-ui";
 import { X } from "lucide-react";
 import { contentT } from "../../i18n.tsx";
-import { Field, ZoneSelect } from "../fields.tsx";
+import { EditingAs, Field, ZoneSelect } from "../fields.tsx";
 import { ZoneMap } from "../ZoneMap.tsx";
-import { nearLastZone, zoneAt } from "../zones.ts";
+import { nearLastZone, renameZone, shownZoneName, zoneAt } from "../zones.ts";
 import { Button, ICON } from "../dz/ui.tsx";
 import { withField, type Editor, type Of, type T } from "./types.ts";
 
-function PlaceSelect<B extends Of<"compass" | "map" | "radar">>({ block, set, t, graph, withZones }: { block: B; set: (b: B) => void; t: T; graph: Graph; withZones?: ((zones: Zone[], b: B) => void) | undefined }) {
+function PlaceSelect<B extends Of<"compass" | "map" | "radar">>({ block, set, t, graph, withGraph }: { block: B; set: (b: B) => void; t: T; graph: Graph; withGraph?: ((g: Graph, b: B) => void) | undefined }) {
   const [editing, setEditing] = useState(false);
+  // A suggestion is the step alone: its places are made, moved and named outside one.
+  const { suggesting, translating } = useContext(EditingAs);
   const zones = graph.zones ?? [];
   // A compass or map usually points on to the next place, not this
   // step's own: a new one gets a plain name that is its own, to rename.
@@ -26,31 +28,38 @@ function PlaceSelect<B extends Of<"compass" | "map" | "radar">>({ block, set, t,
       empty={t.t("Choose a zone")}
       value={block.zone || undefined}
       onChange={(slug) => set({ ...block, zone: slug ?? "" })}
-      {...(withZones
+      {...(withGraph
         ? {
             // A new place starts beside the last one; its map opens so
             // the pin can be dragged, or put where the author stands.
             onNew: () => {
               const z = zoneAt(zones, name, nearLastZone(zones));
-              withZones([...zones, z], { ...block, zone: z.slug });
+              withGraph({ ...graph, zones: [...zones, z] }, { ...block, zone: z.slug });
               setEditing(true);
             },
           }
         : {})}
     />
   );
-  if (!withZones || !zone) return select;
-  const editZone = (z: Zone) => withZones(zones.map((x) => (x.slug === z.slug ? z : x)), block);
+  if (!withGraph || !zone) return select;
+  const editZone = (z: Zone) => withGraph({ ...graph, zones: zones.map((x) => (x.slug === z.slug ? z : x)) }, block);
   return (
     <>
       {select}
-      <Button variant="link" className="blk__zone-edit" aria-expanded={editing} onClick={() => setEditing((v) => !v)}>
-        {editing ? t.t("Done") : t.t("Edit the place on the map")}
+      <Button
+        variant="link"
+        className="blk__zone-edit"
+        aria-expanded={editing && !suggesting}
+        disabled={suggesting}
+        title={suggesting ? t.t("Places are made and moved outside a suggestion.") : undefined}
+        onClick={() => setEditing((v) => !v)}
+      >
+        {editing && !suggesting ? t.t("Done") : t.t("Edit the place on the map")}
       </Button>
-      {editing && (
+      {editing && !suggesting && (
         <div className="blk__zone">
           <Field label={t.t("Name of the place")} hint={t.t("The team sees this name.")}>
-            <input className="field__input" value={zone.name ?? ""} placeholder={zone.slug} onChange={(e) => editZone({ ...zone, name: e.target.value })} />
+            <input className="field__input" value={shownZoneName(zone, translating)} placeholder={zone.slug} onChange={(e) => withGraph(renameZone(graph, zone, e.target.value, translating), block)} />
           </Field>
           <ZoneMap key={zone.slug} zone={zone} onChange={editZone} />
         </div>
@@ -61,18 +70,19 @@ function PlaceSelect<B extends Of<"compass" | "map" | "radar">>({ block, set, t,
 
 const zoneOf = (graph: Graph, slug: string) => graph.zones?.find((z) => z.slug === slug);
 
-export const CompassEditor: Editor<"compass"> = ({ block, set, t, graph, withZones }) => {
+export const CompassEditor: Editor<"compass"> = ({ block, set, t, graph, withGraph }) => {
   const zone = zoneOf(graph, block.zone);
+  const { translating } = useContext(EditingAs);
   return (
     <>
-      <PlaceSelect block={block} set={set} t={t} graph={graph} withZones={withZones} />
+      <PlaceSelect block={block} set={set} t={t} graph={graph} withGraph={withGraph} />
       <label className="check">
         <input type="checkbox" checked={!block.hide_distance} onChange={(e) => set(withField(block, "hide_distance", !e.target.checked))} />
         <span>{t.t("Show the distance")}</span>
       </label>
       {zone && (
         <div className="blk__preview" aria-label={t.t("Preview")}>
-          <CompassFace name={zone.name || zone.slug} angle={45} northUp={false} t={(k, v) => t.t(k, v)} distance={block.hide_distance ? null : t.t("About {{m}} m away", { m: 250 })} />
+          <CompassFace name={shownZoneName(zone, translating) || zone.slug} angle={45} northUp={false} t={(k, v) => t.t(k, v)} distance={block.hide_distance ? null : t.t("About {{m}} m away", { m: 250 })} />
         </div>
       )}
       <p className="field__hint">{t.t("Points the phone at the zone. Without a compass on the phone, north is up.")}</p>
@@ -80,20 +90,20 @@ export const CompassEditor: Editor<"compass"> = ({ block, set, t, graph, withZon
   );
 };
 
-export const RadarEditor: Editor<"radar"> = ({ block, set, t, graph, withZones }) => (
+export const RadarEditor: Editor<"radar"> = ({ block, set, t, graph, withGraph }) => (
   <>
-    <PlaceSelect block={block} set={set} t={t} graph={graph} withZones={withZones} />
+    <PlaceSelect block={block} set={set} t={t} graph={graph} withGraph={withGraph} />
     <p className="field__hint">{t.t("Pulses faster and warmer as the team gets closer, without saying which way.")}</p>
   </>
 );
 
-export const MapEditor: Editor<"map"> = ({ block, set, t, graph, withZones }) => {
+export const MapEditor: Editor<"map"> = ({ block, set, t, graph, withGraph }) => {
   const zone = zoneOf(graph, block.zone);
   const markers = block.markers ?? [];
   const setMarkers = (next: Marker[]) => set(withField(block, "markers", next.length ? next : undefined));
   return (
     <>
-      <PlaceSelect block={block} set={set} t={t} graph={graph} withZones={withZones} />
+      <PlaceSelect block={block} set={set} t={t} graph={graph} withGraph={withGraph} />
       <label className="check">
         <input type="checkbox" checked={!block.hide_team} onChange={(e) => set(withField(block, "hide_team", !e.target.checked))} />
         <span>{t.t("Show the team's own position")}</span>

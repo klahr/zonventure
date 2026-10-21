@@ -389,6 +389,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Post("/email-preview", adminH.DraftPreview)
 			r.Post("/email-test", adminH.SendMeTest)
 
+			r.Get("/teams/{teamID}/players", adminH.TeamPlayers)
 			r.Patch("/teams/{teamID}", adminH.UpdateTeam)
 			r.Delete("/teams/{teamID}", adminH.DeleteTeam)
 			r.Post("/teams/{teamID}/avatar", adminH.SetTeamAvatar)

@@ -71,6 +71,8 @@ import {
   type Report,
   translateEdit,
   translatedNode,
+  translateSideEdit,
+  changesBeside,
 } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { href } from "../router.ts";
@@ -93,6 +95,7 @@ import { Simulator, type SimMode } from "./Simulator.tsx";
 import { EventSim } from "./EventSim.tsx";
 import { FloatingWindow } from "./FloatingWindow.tsx";
 import { OpenThemes, ThemesModal } from "./ThemesModal.tsx";
+import { EditingAs } from "./fields.tsx";
 import { DevTicketModal } from "./DevTicket.tsx";
 import { useInspectorWidth } from "./InspectorResize.tsx";
 import { TopBarPortal, useTopBarTitle } from "../topbar.tsx";
@@ -210,7 +213,7 @@ const CELEBRATION_MS = 1200;
 
 const portLabelFor = (g: Graph, slug: string, port: string) => {
   const n = nodeBySlug(g, slug);
-  return n ? portLabel(n, port) : port;
+  return n ? portLabel(n, port, g.roles) : port;
 };
 
 const envelope = (g: Graph): Envelope => ({ format: FORMAT_V2, graph: cleanGraph(g) });
@@ -1882,52 +1885,66 @@ export function Designer({ slug }: { slug: string }) {
                     </div>
                   )
                 )}
-                <Inspector
-                  key={node.slug + (proposing ? ":suggesting" : shownIn ? `:${editLang}` : "")}
-                  node={proposing ? proposing.draft : shownIn ? translatedNode(node, shownIn) : node}
-                  graph={graph}
-                  readOnly={readOnly || (!!holder && !proposing)}
-                  {...(preview
-                    ? {}
-                    : {
-                        after: (
-                          <StepTalk
-                            slug={slug}
-                            node={node}
-                            graph={graph}
-                            collab={collab}
-                            me={me}
-                            onChanged={reloadCollab}
-                            onSuggest={proposing ? undefined : () => startSuggesting(node)}
-                            onAccept={acceptSuggestion}
-                          />
-                        ),
-                      })}
-                  issues={shownIssues.filter((i) => i.node === node.slug)}
-                  save={saveError && !saving ? "failed" : saving || unsaved ? "saving" : "saved"}
-                  onChange={(n) => {
-                    if (proposing) return setSuggesting((x) => x && { ...x, draft: n });
-                    if (!shownIn) return change(updateNode(graph, node.slug, () => n));
-                    const next = translateEdit(graph, editLang, node, translatedNode(node, shownIn), n);
-                    if (next) change(next);
-                    else toast.err(t.t("Adding or removing parts of a step is done in {{lang}}. Switch the language at the top first.", { lang: languageName(mainLang) }));
-                  }}
-                  onGraphChange={(g) => {
-                    if (!proposing) return change(g);
-                    // A proposal is the step alone: what it changes elsewhere is not part of it.
-                    const n = nodeBySlug(g, node.slug);
-                    if (n) setSuggesting((x) => x && { ...x, draft: n });
-                  }}
-                  onClose={() => choose(null)}
-                  onPreview={() => {
-                    setSimMode("step");
-                    setPreviewing(true);
-                  }}
-                  onDelete={() => {
-                    change(removeNode(graph, node.slug));
-                    setSelected(null);
-                  }}
-                />
+                <EditingAs.Provider value={proposing ? { suggesting: true } : shownIn ? { translating: { lang: editLang, mainName: languageName(mainLang), tr: shownIn } } : {}}>
+                  <Inspector
+                    key={node.slug + (proposing ? ":suggesting" : shownIn ? `:${editLang}` : "")}
+                    node={proposing ? proposing.draft : shownIn ? translatedNode(node, shownIn) : node}
+                    graph={graph}
+                    readOnly={readOnly || (!!holder && !proposing)}
+                    {...(preview
+                      ? {}
+                      : {
+                          after: (
+                            <StepTalk
+                              slug={slug}
+                              node={node}
+                              graph={graph}
+                              collab={collab}
+                              me={me}
+                              onChanged={reloadCollab}
+                              onSuggest={proposing ? undefined : () => startSuggesting(node)}
+                              onAccept={acceptSuggestion}
+                            />
+                          ),
+                        })}
+                    issues={shownIssues.filter((i) => i.node === node.slug)}
+                    save={saveError && !saving ? "failed" : saving || unsaved ? "saving" : "saved"}
+                    onChange={(n) => {
+                      if (proposing) return setSuggesting((x) => x && { ...x, draft: n });
+                      if (!shownIn) return change(updateNode(graph, node.slug, () => n));
+                      const next = translateEdit(graph, editLang, node, translatedNode(node, shownIn), n);
+                      if (next) change(next);
+                      else toast.err(t.t("Adding or removing parts of a step is done in {{lang}}. Switch the language at the top first.", { lang: languageName(mainLang) }));
+                    }}
+                    onEdit={(g, step, opts) => {
+                      // A proposal is the step alone: an edit that changes more
+                      // (a new place or item, a wire taken away) can't be one.
+                      if (proposing) {
+                        if (changesBeside(graph, g, node.slug)) return toast.err(t.t("This changes more than the step, so it can't be part of a suggestion."));
+                        return setSuggesting((x) => x && { ...x, draft: step(x.draft) });
+                      }
+                      if (!shownIn) return change(updateNode(g, node.slug, step));
+                      // In a translation the step's edit is made to the step as shown,
+                      // so its texts become translations and the main ones stay —
+                      // the names of places and items it touches too.
+                      const shown = translatedNode(node, shownIn);
+                      const edited = step(shown);
+                      const beside = opts?.main ? g : translateSideEdit(graph, g, editLang, node, edited);
+                      const next = translateEdit(beside, editLang, node, shown, edited);
+                      if (next) change(next);
+                      else toast.err(t.t("Adding or removing parts of a step is done in {{lang}}. Switch the language at the top first.", { lang: languageName(mainLang) }));
+                    }}
+                    onClose={() => choose(null)}
+                    onPreview={() => {
+                      setSimMode("step");
+                      setPreviewing(true);
+                    }}
+                    onDelete={() => {
+                      change(removeNode(graph, node.slug));
+                      setSelected(null);
+                    }}
+                  />
+                </EditingAs.Provider>
               </OpenThemes.Provider>
             </AdventureSlug.Provider>
           ) : null}

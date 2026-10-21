@@ -5,6 +5,7 @@
 // JournalKey, RoleKey, SectionKey, MetaKey, ItemKey, CounterKey, ThemeKey and
 // AltKey in Go). A missing translation falls back to the main text.
 
+import { updateNode } from "./model.ts";
 import type { Block, Graph, Node } from "./types.ts";
 
 export const nodeKey = (slug: string, field: string) => `n:${slug}:${field}`;
@@ -377,9 +378,66 @@ export function translateEdit(g: Graph, lang: string, main: Node, shown: Node, e
   const own = texts(main);
   if (before.size !== after.size || [...before.keys()].some((key) => !after.has(key))) return null;
   const step = withTexts(edited, (key) => (after.get(key) !== own.get(key) ? own.get(key) : undefined));
-  let out: Graph = { ...g, nodes: g.nodes.map((n) => (n.slug === main.slug ? step : n)) };
+  // As updateNode, so a port the edit removed takes its wire and its
+  // translations with it here too.
+  let out = updateNode(g, main.slug, () => step);
   for (const [key, text] of after) {
     if (text !== before.get(key)) out = setTranslation(out, lang, key, text, own.get(key));
+  }
+  return out;
+}
+
+/**
+ * What a step edit made in a translation changes beside the step (`before`
+ * the live graph, `after` the edit's), made fit for that language: a place
+ * or an item renamed there gets the name as its translation and keeps its
+ * main name, and one cleared there loses its translation (a grouped place,
+ * whose name is not translated, is left as it was). A place made or first
+ * named there after the step, as "Mark where I stand" and a retitle do, is
+ * named after the step's main title, with the title as `edited` (the step
+ * as shown, after the edit) has it for the translation. Without a main
+ * title the place is left without a main name, and only translated: an
+ * edit in a translation doesn't name things in the main language.
+ *
+ * A name typed back to the main one can't be told from one left alone, so
+ * a field for a name in a translation sets the translation itself
+ * (setTranslation) instead of renaming the place or item.
+ */
+export function translateSideEdit(before: Graph, after: Graph, lang: string, main: Node, edited: Node): Graph {
+  let out = after;
+  const editedTitle = edited.title?.trim() ? edited.title : undefined;
+  const mainTitle = main.title?.trim() ? main.title : undefined;
+  if (after.zones && after.zones !== before.zones) {
+    const was = new Map((before.zones ?? []).map((z) => [z.slug, z]));
+    const named: [string, string, string][] = [];
+    const zones = after.zones.map((z) => {
+      const old = was.get(z.slug);
+      const name = z.name ?? "";
+      if (old && (old.name ?? "") === name) return z;
+      if (!old?.name?.trim()) {
+        if (name !== editedTitle || name === mainTitle) return z;
+        if (!z.group) named.push([zoneKey(z.slug), name, mainTitle ?? ""]);
+        if (mainTitle) return { ...z, name: mainTitle };
+        const { name: _, ...unnamed } = z;
+        return unnamed;
+      }
+      if (!z.group) named.push([zoneKey(z.slug), name, old.name]);
+      return { ...z, name: old.name };
+    });
+    out = { ...out, zones };
+    for (const [key, text, from] of named) out = setTranslation(out, lang, key, text, from);
+  }
+  if (after.items && after.items !== before.items) {
+    const was = new Map((before.items ?? []).map((it) => [it.slug, it]));
+    const named: [string, string, string][] = [];
+    const items = after.items.map((it) => {
+      const old = was.get(it.slug);
+      if (!old?.name?.trim() || old.name === it.name) return it;
+      named.push([itemKey(it.slug, "name"), it.name ?? "", old.name]);
+      return { ...it, name: old.name };
+    });
+    out = { ...out, items };
+    for (const [key, text, from] of named) out = setTranslation(out, lang, key, text, from);
   }
   return out;
 }
@@ -525,4 +583,51 @@ export function setTranslation(g: Graph, lang: string, key: string, text: string
   if (!Object.keys(originals).length) delete out.translation_originals;
   if (!Object.keys(sources).length) delete out.translation_sources;
   return out;
+}
+
+/**
+ * The graph without the translations whose key `gone` picks, in every
+ * language, with the originals and sources kept beside them — for texts
+ * whose owner is removed, so a later one under the same key starts afresh.
+ */
+export function dropTranslations(g: Graph, gone: (key: string) => boolean): Graph {
+  const prune = (all: Record<string, Record<string, string>> | undefined) => {
+    if (!all) return { all, changed: false };
+    let changed = false;
+    const out: Record<string, Record<string, string>> = {};
+    for (const [lang, tr] of Object.entries(all)) {
+      const keys = Object.keys(tr).filter(gone);
+      if (!keys.length) {
+        out[lang] = tr;
+        continue;
+      }
+      changed = true;
+      const one = { ...tr };
+      for (const k of keys) delete one[k];
+      out[lang] = one;
+    }
+    return { all: changed ? out : all, changed };
+  };
+  const tr = prune(g.translations);
+  const originals = prune(g.translation_originals);
+  const sources = prune(g.translation_sources);
+  if (!tr.changed && !originals.changed && !sources.changed) return g;
+  return {
+    ...g,
+    ...(tr.all ? { translations: tr.all } : {}),
+    ...(originals.all ? { translation_originals: originals.all } : {}),
+    ...(sources.all ? { translation_sources: sources.all } : {}),
+  };
+}
+
+/**
+ * The node keys of a port's texts (a route's, a branch's, a group's):
+ * nodeTexts' `out:`, `branch:` and `path:` fields. The port is followed by
+ * exactly one field, so port "x" does not claim port "x:y"'s texts.
+ */
+export function isPortKey(slug: string, port: string, key: string): boolean {
+  return ["out", "branch", "path"].some((kind) => {
+    const head = nodeKey(slug, `${kind}:${port}:`);
+    return key.startsWith(head) && key.length > head.length && !key.slice(head.length).includes(":");
+  });
 }

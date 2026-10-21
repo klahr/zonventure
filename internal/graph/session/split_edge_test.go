@@ -174,6 +174,34 @@ func TestHomeHubOnAPath(t *testing.T) {
 	}
 }
 
+// A home screen on a path owns nothing past its join: the team, together
+// again after it, is not sent back onto the path.
+func TestHomeHubOnAPathThenOn(t *testing.T) {
+	g := newGB().split("s", "a", "b").
+		add(graph.Node{Slug: "home", Type: graph.Hub, HubCfg: &graph.HubConfig{Policy: graph.PolicyChoice, Home: true, Branches: []graph.Branch{{Port: "look"}, {Port: "leave"}}}}).
+		puzzle("look1", "x").puzzle("leave1", "go").puzzle("b1", "b").join("j").puzzle("post", "p").end("end").
+		wire("start", "out", "s").wire("s", "a", "home").wire("s", "b", "b1").
+		wire("home", "look", "look1").wire("look1", "solved", "home").
+		wire("home", "leave", "leave1").wire("leave1", "solved", "j").
+		wire("b1", "solved", "j").wire("j", "out", "post").wire("post", "solved", "end").valid(t)
+	tm := begin(t, g)
+	moved(t, tm, "a")(tm.Continue("s"))
+	moved(t, tm, "leave")(tm.Choose("home", "leave"))
+	moved(t, tm, "leave1")(tm.Answer("leave1", "go"))
+	moved(t, tm, "b")(tm.Continue("s"))
+	moved(t, tm, "b1")(tm.Answer("b1", "b"))
+	if v := tm.View(); v.Node != "post" || v.BackTo != "" {
+		t.Fatalf("together after the join, no going back onto path a: %+v", v)
+	}
+	if _, _, err := tm.Back("post"); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("back from post: %v", err)
+	}
+	moved(t, tm, "post")(tm.Answer("post", "p"))
+	if !tm.Completed {
+		t.Fatal("finish")
+	}
+}
+
 // A split on a home screen's branch: no group goes back to the home
 // screen alone, and once together again the team may.
 func TestSplitInsideAHomeBranch(t *testing.T) {

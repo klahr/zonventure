@@ -7,6 +7,7 @@
 // silently rewrite history.
 
 import { newBlock, withFixed } from "./blocks.ts";
+import { dropTranslations, isPortKey } from "./i18n.ts";
 import {
   PORT_DONE,
   PORT_ELSE,
@@ -25,6 +26,7 @@ import {
   type ChoiceOption,
   type Output,
   type PuzzleConfig,
+  type Role,
 } from "./types.ts";
 
 /** Whether a choice is a form marked against answers. Mirrors Answer.Graded in Go. */
@@ -226,8 +228,12 @@ export function hasInput(n: Node): boolean {
   return n.type !== "start";
 }
 
-/** A human label for a port, for handles and the list view. */
-export function portLabel(n: Node, port: string): string {
+/**
+ * A human label for a port, for handles and the list view. A split's path
+ * without a label is named for its role, as internal/graph.PathLabel:
+ * pass the graph's roles to name it, not its slug.
+ */
+export function portLabel(n: Node, port: string, roles?: Role[]): string {
   if (n.type === "puzzle") {
     const o = n.puzzle?.outputs?.find((x) => x.port === port);
     return o?.label || port;
@@ -239,7 +245,9 @@ export function portLabel(n: Node, port: string): string {
   }
   if (n.type === "split") {
     const p = n.split?.paths?.find((x) => x.port === port);
-    return p?.label || p?.role || port;
+    if (p?.label) return p.label;
+    if (p?.role) return roles?.find((r) => r.slug === p.role)?.name || p.role;
+    return port;
   }
   if (n.type === "switch") {
     if (port === PORT_ELSE) return "Any other answer";
@@ -319,7 +327,26 @@ export function updateNode(g: Graph, slug: string, fn: (n: Node) => Node): Graph
   const updated = nodes.find((n) => n.slug === slug)!;
   const ports = new Set(portsOf(updated));
   const edges = g.edges.filter((e) => e.from !== slug || ports.has(e.from_port));
-  return { ...g, nodes, edges };
+  // Its translated texts go with it too, or a port given the same name
+  // later would take on the old one's words.
+  const gone = portsOf(g.nodes.find((n) => n.slug === slug)!).filter((p) => !ports.has(p));
+  const out = { ...g, nodes, edges };
+  return gone.length ? dropTranslations(out, (k) => gone.some((p) => isPortKey(slug, p, k))) : out;
+}
+
+/**
+ * Whether `after` changes more of the graph than the step `slug`: another
+ * step, a wire, a place, an item, anything. What a suggestion can't carry,
+ * being the step alone.
+ */
+export function changesBeside(before: Graph, after: Graph, slug: string): boolean {
+  if (before === after) return false;
+  // A list copied with the same entries (updateNode's edges) is the same.
+  const same = (a: unknown, b: unknown) => a === b || (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]));
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)] as (keyof Graph)[]);
+  for (const k of keys) if (k !== "nodes" && !same(before[k], after[k])) return true;
+  if (before.nodes.length !== after.nodes.length) return true;
+  return after.nodes.some((n, i) => n !== before.nodes[i] && (n.slug !== slug || before.nodes[i]!.slug !== slug));
 }
 
 export function moveNode(g: Graph, slug: string, x: number, y: number): Graph {

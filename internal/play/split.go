@@ -36,7 +36,8 @@ func splitFits(g *graph.Graph, split string, strands []session.Strand) bool {
 // divide readies a split team for a view or an action: anyone playing
 // who is in no group yet is dealt into one (session.Team.Deal), and,
 // where the graph asks, each group's walk is read from its own phones.
-// It reports whether anyone was dealt, for an action to store.
+// It reports whether anyone was dealt, or a choice of a group dropped,
+// for an action to store.
 func (e *Engine) divide(ctx context.Context, q Querier, s *teamState) (bool, error) {
 	if s.Split == "" {
 		return false, nil
@@ -60,13 +61,32 @@ func (e *Engine) divide(ctx context.Context, q Querier, s *teamState) (bool, err
 			holders[role] = h.Slot
 		}
 	}
+	if s.Away == nil {
+		// A group whose players are all away is anyone's until one is back.
+		var err error
+		if s.Away, err = away(ctx, q, s.teamID, s.Now); err != nil {
+			return false, fmt.Errorf("reading who is away: %w", err)
+		}
+	}
+	if me != 0 {
+		// The phone asking is not.
+		delete(s.Away, me)
+	}
+	// After who is away is known: dealing drops a choice of a group whose
+	// players are back.
 	dealt := s.Deal(players, holders)
 	if usesWalked(s.G) {
+		// Each group's walk is its walkers', whoever they are: its own
+		// players, or those walking it for players gone. No one's is none.
 		s.Walks = map[string]float64{}
+		walkers := s.Walkers(players)
 		for _, st := range s.Strands {
-			w, err := walkedBy(ctx, q, s.teamID, st.EnteredAt, st.Members)
-			if err != nil {
-				return false, fmt.Errorf("reading walked distance: %w", err)
+			var w float64
+			if slots := walkers[st.Key()]; len(slots) > 0 {
+				var err error
+				if w, err = walkedBy(ctx, q, s.teamID, st.EnteredAt, slots); err != nil {
+					return false, fmt.Errorf("reading walked distance: %w", err)
+				}
 			}
 			s.Walks[st.Key()] = w
 		}

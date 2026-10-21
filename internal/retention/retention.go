@@ -221,6 +221,23 @@ func pruneCompletedEventPings(ctx context.Context, db *sql.DB, days int) {
 		)
 	`
 	runBoundedDelete(ctx, db, "retention.location_pings", stmt, days)
+	// When a phone was last heard from (auth.SeenSlot) says when its
+	// player was out as much as a ping does, and goes on the same clock.
+	seen := `
+		UPDATE player_slots SET last_seen_at = NULL
+		WHERE id IN (
+		  SELECT s.id
+		  FROM player_slots s
+		  JOIN teams t ON t.id = s.team_id
+		  JOIN events ar ON ar.id = t.event_id
+		  WHERE s.last_seen_at IS NOT NULL
+		    AND ar.state IN ('completed','cancelled')
+		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamp AT TIME ZONE 'UTC' < now() - make_interval(days => $1)
+		  LIMIT ` + strconv.Itoa(batchSize) + `
+		)
+	`
+	runBoundedDelete(ctx, db, "retention.slot_last_seen", seen, days)
 }
 
 func pruneCompletedEventAnswers(ctx context.Context, db *sql.DB, days int) {

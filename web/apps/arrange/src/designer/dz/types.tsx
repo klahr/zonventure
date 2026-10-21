@@ -20,4 +20,4 @@ export const STEP: Record<NodeType, { icon: LucideIcon; label: string; about: st
 };
 
 /** Steps a player sees. The others run the moment a team reaches them. */
-export const VISIBLE: ReadonlySet<string> = new Set<NodeType>(["puzzle", "story", "hub", "split", "end"]);
+export const VISIBLE: ReadonlySet<string> = new Set<NodeType>(["puzzle", "story", "hub", "split", "join", "end"]);

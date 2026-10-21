@@ -21,6 +21,7 @@ import (
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/storage"
+	"github.com/klahr/zonventure/internal/tracks"
 	"github.com/klahr/zonventure/internal/ws"
 )
 
@@ -316,18 +317,9 @@ func (h *Handlers) Live(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, resp)
 }
 
-type trackPoint struct {
-	Lat      float64 `json:"lat"`
-	Lng      float64 `json:"lng"`
-	ServerTS string  `json:"server_ts"`
-}
-
-type trackDTO struct {
-	TeamID    int64        `json:"team_id"`
-	TeamName  string       `json:"team_name"`
-	AvatarURL string       `json:"avatar_url,omitempty"`
-	Points    []trackPoint `json:"points"`
-}
+// trackDTO is a trail: a team's, or one group's of a team split up, as
+// race control draws them (see tracks.Track).
+type trackDTO = tracks.Track
 
 // TracksResponse is the payload for the tracks endpoint and for the
 // "tracks" WS push. Named so the WS handler can reuse it.
@@ -335,71 +327,15 @@ type TracksResponse struct {
 	Tracks []trackDTO `json:"tracks"`
 }
 
-// queryTracks fetches per-team ping history for an event. Returns
-// (resp, status, errMsg). Caller is responsible for authorising by token.
-// Callers go through buildTracks, which caches the result.
+// queryTracks fetches the event's trails. Returns (resp, status, errMsg).
+// Caller is responsible for authorising by token. Callers go through
+// buildTracks, which caches the result.
 func (h *Handlers) queryTracks(ctx context.Context, eventID int64) (TracksResponse, int, string) {
-	// Smooth the per-team line by collapsing pings into time buckets and
-	// emitting one centroid per bucket. Buckets are 10s wide, widened in
-	// 10s steps once the event's ping history spans more than 20 minutes
-	// so a track never exceeds ~120 points: this is resent on every push,
-	// and full 10s resolution over a multi-hour event made it megabytes.
-	// server_ts is a UTC 'YYYY-MM-DD HH24:MI:SS' string from now_text(),
-	// and the bucket start goes back out in that format. The centroid is an
-	// inverse-variance weighted mean: pings with smaller `accuracy` (in
-	// metres) dominate, with a 1m floor to bound the weight and a 50m
-	// fallback when accuracy is null.
-	rows, err := h.DB.QueryContext(ctx, `
-		WITH span AS (
-		  SELECT GREATEST(10, CEIL(EXTRACT(EPOCH FROM
-		           MAX(server_ts::timestamp) - MIN(server_ts::timestamp)) / 1200) * 10) AS w
-		  FROM location_pings WHERE event_id = $1
-		)
-		SELECT p.team_id, t.name, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       SUM(p.lat / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) /
-		         SUM(1.0 / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) AS lat,
-		       SUM(p.lng / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) /
-		         SUM(1.0 / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) AS lng,
-		       to_char(to_timestamp(FLOOR(EXTRACT(EPOCH FROM p.server_ts::timestamp) / s.w) * s.w)
-		         AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') AS server_ts
-		FROM location_pings p JOIN teams t ON t.id = p.team_id CROSS JOIN span s
-		WHERE p.event_id = $1
-		GROUP BY p.team_id, t.name, (t.avatar_mime_type IS NOT NULL),
-		         FLOOR(EXTRACT(EPOCH FROM p.server_ts::timestamp) / s.w), s.w
-		ORDER BY p.team_id, server_ts
-	`, eventID)
+	tr, err := tracks.Query(ctx, h.DB, eventID)
 	if err != nil {
 		return TracksResponse{}, http.StatusInternalServerError, "query failed"
 	}
-	defer rows.Close()
-	byTeam := map[int64]*trackDTO{}
-	order := []int64{}
-	for rows.Next() {
-		var (
-			teamID    int64
-			name      string
-			hasAvatar int
-			p         trackPoint
-		)
-		if err := rows.Scan(&teamID, &name, &hasAvatar, &p.Lat, &p.Lng, &p.ServerTS); err != nil {
-			return TracksResponse{}, http.StatusInternalServerError, "scan failed"
-		}
-		t, ok := byTeam[teamID]
-		if !ok {
-			t = &trackDTO{TeamID: teamID, TeamName: name}
-			if hasAvatar != 0 {
-				t.AvatarURL = fmt.Sprintf("/adventure-assets/team-avatar/%d", teamID)
-			}
-			byTeam[teamID] = t
-			order = append(order, teamID)
-		}
-		t.Points = append(t.Points, p)
-	}
-	tracks := make([]trackDTO, 0, len(order))
-	for _, id := range order {
-		tracks = append(tracks, *byTeam[id])
-	}
-	return TracksResponse{Tracks: tracks}, http.StatusOK, ""
+	return TracksResponse{Tracks: tr}, http.StatusOK, ""
 }
 
 // Tracks returns per-team ping history for the live map. Refuses when the

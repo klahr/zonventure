@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, NetworkError, play } from "@zonventure/api";
-import { Outbox, PENDING_ANSWERS_MAX, clientActionId, type PendingAction } from "@zonventure/outbox";
-import { feedbackForRefusal, feedbackForResult, type Feedback, type Translate } from "@zonventure/play-ui";
+import {
+  Outbox,
+  PENDING_ANSWERS_MAX,
+  clientActionId,
+  type PendingAction,
+} from "@zonventure/outbox";
+import {
+  feedbackForRefusal,
+  feedbackForResult,
+  type Feedback,
+  type Translate,
+} from "@zonventure/play-ui";
 import { downscalePhoto } from "./downscale.ts";
 
 /**
@@ -32,7 +42,8 @@ import { downscalePhoto } from "./downscale.ts";
  */
 export type GameStatus = "loading" | "signed-out" | "ended" | "ready" | "error";
 
-export type Over = "completed" | "cancelled" | "replaced" | "taken_out" | "game_finished" | null;
+export type Over =
+  "completed" | "cancelled" | "replaced" | "taken_out" | "game_finished" | null;
 
 export interface Game {
   status: GameStatus;
@@ -49,7 +60,7 @@ export interface Game {
    * before the team did.
    */
   over: Over;
-  act:(a: play.PlayAction) => void;
+  act: (a: play.PlayAction) => void;
   /** Sends the team's picture for a photo block, then reloads. Throws when it does not arrive. */
   photo: (node: string, block: string, file: File) => Promise<void>;
   refresh: () => void;
@@ -91,7 +102,8 @@ function loadLast(): play.PlayState | null {
     // on by the time since, so countdowns are right before a reload lands.
     if (s.view?.now && typeof s.saved_at === "number") {
       const t = Date.parse(s.view.now) + Math.max(0, Date.now() - s.saved_at);
-      if (Number.isFinite(t)) s.view = { ...s.view, now: new Date(t).toISOString() };
+      if (Number.isFinite(t))
+        s.view = { ...s.view, now: new Date(t).toISOString() };
     }
     return s;
   } catch {
@@ -101,7 +113,11 @@ function loadLast(): play.PlayState | null {
 
 function saveLast(s: play.PlayState | null) {
   try {
-    if (s) localStorage.setItem(LAST_KEY, JSON.stringify({ ...s, saved_at: Date.now() }));
+    if (s)
+      localStorage.setItem(
+        LAST_KEY,
+        JSON.stringify({ ...s, saved_at: Date.now() }),
+      );
     else localStorage.removeItem(LAST_KEY);
   } catch {
     /* private mode / full: best effort */
@@ -112,8 +128,12 @@ function saveLast(s: play.PlayState | null) {
  * Tell the service worker which files this team may keep offline (see
  * public/sw.js). Sent on every load; the worker skips what it has.
  */
-function toWorker(msg: { type: "prefetch"; team: number; urls: string[] } | { type: "forget" }) {
-  navigator.serviceWorker?.ready.then((r) => r.active?.postMessage(msg)).catch(() => {});
+function toWorker(
+  msg: { type: "prefetch"; team: number; urls: string[] } | { type: "forget" },
+) {
+  navigator.serviceWorker?.ready
+    .then((r) => r.active?.postMessage(msg))
+    .catch(() => {});
 }
 
 function playEntries(): PendingAction[] {
@@ -127,16 +147,33 @@ function playEntries(): PendingAction[] {
  */
 let currentTeam: number | null = null;
 
-/**
- * Refusals that settle a queued action: the server has decided, and
- * sending it again can't change that. Anything else — a server error, a
- * rate limit, a paused game — keeps the action queued for the next try.
- */
-const SETTLED = new Set(["stale", "finished", "wrong_node", "not_allowed", "unanswered", "unsealed", "too_few", "time_up", "not_here", "no_fix", "no_game", "unknown_action", "too_long", "unknown_station"]);
+/** What a flush of the queue comes to: see sendQueued. */
+type Flushed = ApiError | "failed" | null;
 
+/**
+ * Refusals that pass: the game is paused or not running, or the phone is
+ * asked to slow down. The action may go through later, so it stays queued.
+ */
+const PASSING = new Set([
+  "paused",
+  "not_running",
+  "maintenance",
+  "locked",
+  "rate_limited",
+]);
+
+/**
+ * Whether a refusal settles a queued action: the server has decided (a
+ * step gone on, a group no longer this phone's, the game over), and
+ * sending it again can't change that. Every refusal settles but a passing
+ * one; a server error, a timeout or a rate limit keeps the action queued
+ * for the next try — as an action refused for good must not, or every
+ * move after it waits behind it forever.
+ */
 function settles(e: ApiError): boolean {
-  if (e.code) return SETTLED.has(e.code);
-  return e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429;
+  if (e.status < 400 || e.status >= 500 || e.status === 408 || e.status === 429)
+    return false;
+  return !e.code || !PASSING.has(e.code);
 }
 
 export function useGame(t: Translate): Game {
@@ -178,13 +215,24 @@ export function useGame(t: Translate): Game {
       setQueued(0);
       const last = loadLast();
       // The event is over, the team finished or not: it keeps what it had.
-      const over = e.code === "event_cancelled" ? "cancelled" : e.code === "event_ended" || e.code === "game_finished" ? "completed" : null;
+      const over =
+        e.code === "event_cancelled"
+          ? "cancelled"
+          : e.code === "event_ended" || e.code === "game_finished"
+            ? "completed"
+            : null;
       // A party's team the host took out, or that had not finished when
       // the host finished the game, gets the party's end screen instead.
-      const party = e.code === "taken_out" || e.code === "game_finished" ? e.code : null;
+      const party =
+        e.code === "taken_out" || e.code === "game_finished" ? e.code : null;
       // Another phone took this player's seat: it plays on, this one stops.
       const replaced = e.code === "session_replaced";
-      if (!replaced && last && party !== "taken_out" && (last.view?.finished || (over && !party))) {
+      if (
+        !replaced &&
+        last &&
+        party !== "taken_out" &&
+        (last.view?.finished || (over && !party))
+      ) {
         if (over) last.event = { ...last.event, state: over };
         setState(last);
         setStatus("ended");
@@ -192,7 +240,7 @@ export function useGame(t: Translate): Game {
       }
       saveLast(null);
       setState(null);
-      setOver(replaced ? "replaced" : party ?? over);
+      setOver(replaced ? "replaced" : (party ?? over));
       toWorker({ type: "forget" });
       setStatus("signed-out");
       return true;
@@ -213,18 +261,36 @@ export function useGame(t: Translate): Game {
       const prev = viewRef.current;
       // Only from a step the player could act on: leaving a start or a
       // place the team was walking to is the team's own arrival.
-      const working = !!prev && (prev.type === "puzzle" || prev.type === "story") && !(prev.zone && !prev.here);
+      const working =
+        !!prev &&
+        (prev.type === "puzzle" || prev.type === "story") &&
+        !(prev.zone && !prev.here);
       // The organisers moving the team on says so in its own banner.
-      if (working && prev?.node && s.view?.node && prev.node !== s.view.node && !s.view.finished && !s.moved_on) {
+      if (
+        working &&
+        prev?.node &&
+        s.view?.node &&
+        prev.node !== s.view.node &&
+        !s.view.finished &&
+        !s.moved_on
+      ) {
         // A teammate answered: say so, or the step just swaps under the
         // player (and whatever they were typing is gone).
-        setFeedback({ tone: "info", text: tRef.current("Your team moved on. Here's the next step.") });
+        setFeedback({
+          tone: "info",
+          text: tRef.current("Your team moved on. Here's the next step."),
+        });
       } else if (prev?.node !== s.view?.node || prev?.here !== s.view?.here) {
         setFeedback(null);
       }
       setState(s);
       saveLast(s);
-      if (s.prefetch?.length) toWorker({ type: "prefetch", team: s.team.id, urls: s.prefetch.map(play.mediaURL) });
+      if (s.prefetch?.length)
+        toWorker({
+          type: "prefetch",
+          team: s.team.id,
+          urls: s.prefetch.map(play.mediaURL),
+        });
       setStatus("ready");
       setOnline(true);
     } catch (e) {
@@ -241,17 +307,24 @@ export function useGame(t: Translate): Game {
   }, [fail]);
 
   // Send whatever is queued, oldest first, stopping at the first network
-  // failure so order is kept.
-  const flushing = useRef(false);
-  const flush = useCallback(async () => {
-    if (flushing.current) return;
-    flushing.current = true;
+  // failure so order is kept. It comes to the passing refusal that holds
+  // the queue, if one does, "failed" when fail() took the player out of the
+  // game (signed out, the event over), or null (all sent, or offline).
+  const flushing = useRef<Promise<Flushed> | null>(null);
+  const sendQueued = useCallback(async (): Promise<Flushed> => {
+    let held: Flushed = null;
     try {
       for (const entry of playEntries()) {
         const id = entry.data.client_action_id;
         const action = entry.data["action"] as play.PlayAction | undefined;
         const team = entry.data["team"];
-        if (!id || !action || (typeof team === "number" && currentTeam !== null && team !== currentTeam)) {
+        if (
+          !id ||
+          !action ||
+          (typeof team === "number" &&
+            currentTeam !== null &&
+            team !== currentTeam)
+        ) {
           // Unsendable. ack() matches by id, which this may not have.
           const i = outbox.pending.indexOf(entry);
           if (i >= 0) outbox.pending.splice(i, 1);
@@ -261,16 +334,29 @@ export function useGame(t: Translate): Game {
         try {
           const r = await play.sendAction(action, id);
           showView(r.view);
-          setFeedback(feedbackForResult(action.kind, r, tRef.current, "node" in action ? action.node : undefined));
+          setFeedback(
+            feedbackForResult(
+              action.kind,
+              r,
+              tRef.current,
+              "node" in action ? action.node : undefined,
+            ),
+          );
         } catch (e) {
           if (e instanceof NetworkError) {
             setOnline(false);
             break;
           }
-          if (fail(e)) break;
+          if (fail(e)) {
+            held = "failed";
+            break;
+          }
           // A passing refusal (server trouble, a paused game) keeps the
           // action, and the ones after it, for the next try.
-          if (e instanceof ApiError && !settles(e)) break;
+          if (e instanceof ApiError && !settles(e)) {
+            held = e;
+            break;
+          }
           if (e instanceof ApiError) showView(refusalView(e));
         }
         outbox.ack(id);
@@ -278,43 +364,118 @@ export function useGame(t: Translate): Game {
         setOnline(true);
       }
     } finally {
-      flushing.current = false;
       setQueued(playEntries().length);
     }
+    return held;
   }, [fail, showView]);
+  // One flush at a time. Asked for while one runs, it is that one — or,
+  // `behind` it, for what was queued since, a new one once it is done.
+  const flush = useCallback(
+    async (behind = false): Promise<Flushed> => {
+      if (flushing.current) {
+        const held = await flushing.current;
+        if (!behind) return held;
+        if (flushing.current) return flushing.current;
+      }
+      const run = sendQueued().finally(() => {
+        if (flushing.current === run) flushing.current = null;
+      });
+      flushing.current = run;
+      return run;
+    },
+    [sendQueued],
+  );
 
   const act = useCallback(
     async (action: play.PlayAction) => {
       const id = clientActionId();
       const queue = (): boolean => {
         const waiting = playEntries();
-        const same = action.kind === "answer" && waiting.some((p) => {
-          const a = p.data["action"] as play.PlayAction | undefined;
-          return a?.kind === "answer" && a.node === action.node;
-        });
+        const same =
+          action.kind === "answer" &&
+          waiting.some((p) => {
+            const a = p.data["action"] as play.PlayAction | undefined;
+            return a?.kind === "answer" && a.node === action.node;
+          });
         if (same || waiting.length >= PENDING_ANSWERS_MAX) {
           setFeedback({
             tone: "info",
             text: same
-              ? tRef.current("Your answer is waiting to send. We'll send it as soon as you're back online.")
-              : tRef.current("Several moves are waiting to send. Wait until you're back online."),
+              ? tRef.current(
+                  "Your answer is waiting to send. We'll send it as soon as you're back online.",
+                )
+              : tRef.current(
+                  "Several moves are waiting to send. Wait until you're back online.",
+                ),
           });
           return false;
         }
-        outbox.enqueue({ kind: "play", data: { client_action_id: id, action, ...(currentTeam !== null ? { team: currentTeam } : {}) } });
+        outbox.enqueue({
+          kind: "play",
+          data: {
+            client_action_id: id,
+            action,
+            ...(currentTeam !== null ? { team: currentTeam } : {}),
+          },
+        });
         setQueued(playEntries().length);
         return true;
       };
       setBusy(true);
       setFeedback(null);
+      // A walk is never queued: by the time the phone is back the group
+      // may have moved on. What is waiting goes first; if it can't, the
+      // phone is offline and the walk just fails.
+      if (action.kind === "walk" && playEntries().length > 0) {
+        const held = await flush(true);
+        // Out of the game: its own screen says why.
+        if (held === "failed") {
+          setBusy(false);
+          return;
+        }
+        if (playEntries().length > 0) {
+          // Held by the server (a paused game, slow down) is said as such.
+          setFeedback(
+            held
+              ? feedbackForRefusal(held.code, tRef.current, true)
+              : {
+                  tone: "bad",
+                  text: tRef.current(
+                    "No connection. Try again when you're back online.",
+                  ),
+                },
+          );
+          setBusy(false);
+          return;
+        }
+      }
       // Something already waiting goes first, so this can't overtake it.
       // A cheat carries its password, so it is never queued (the queue
       // is kept in the phone's storage): offline, it just fails.
-      if (playEntries().length > 0 && action.kind !== "timeout" && action.kind !== "cheat") {
+      if (
+        playEntries().length > 0 &&
+        action.kind !== "timeout" &&
+        action.kind !== "cheat" &&
+        action.kind !== "walk"
+      ) {
         if (queue()) {
-          await flush();
-          if (outbox.pending.some((p) => p.data.client_action_id === id)) {
-            setFeedback({ tone: "info", text: tRef.current("No connection. We'll send it as soon as you're back online.") });
+          const held = await flush(true);
+          if (
+            held !== "failed" &&
+            outbox.pending.some((p) => p.data.client_action_id === id)
+          ) {
+            // Kept to send later, so nothing that says to try again: a
+            // paused game is said as such, anything else as offline.
+            setFeedback(
+              held && (held.code === "paused" || held.code === "not_running")
+                ? feedbackForRefusal(held.code, tRef.current)
+                : {
+                    tone: "info",
+                    text: tRef.current(
+                      "No connection. We'll send it as soon as you're back online.",
+                    ),
+                  },
+            );
           }
         }
         setBusy(false);
@@ -323,7 +484,14 @@ export function useGame(t: Translate): Game {
       try {
         const r = await play.sendAction(action, id);
         showView(r.view);
-        setFeedback(feedbackForResult(action.kind, r, tRef.current, "node" in action ? action.node : undefined));
+        setFeedback(
+          feedbackForResult(
+            action.kind,
+            r,
+            tRef.current,
+            "node" in action ? action.node : undefined,
+          ),
+        );
         setOnline(true);
         // The adventure's title and intro come with the state, not the view.
         if (action.kind === "language") void refresh();
@@ -333,18 +501,37 @@ export function useGame(t: Translate): Game {
           // Moves are queued; so are hints and skips, which a player
           // chose deliberately. A timeout is not: the server decides that
           // from its own clock, and the next load will show it.
-          if (action.kind === "cheat") {
-            setFeedback({ tone: "bad", text: tRef.current("No connection. Try again when you're back online.") });
+          // Nor is switching groups: by the time the phone is back the
+          // group may have moved on, and the choice is the player's to make again.
+          if (action.kind === "cheat" || action.kind === "walk") {
+            setFeedback({
+              tone: "bad",
+              text: tRef.current(
+                "No connection. Try again when you're back online.",
+              ),
+            });
           } else if (action.kind !== "timeout" && queue()) {
             setFeedback({
               tone: "info",
-              text: tRef.current("No connection. We'll send it as soon as you're back online."),
+              text: tRef.current(
+                "No connection. We'll send it as soon as you're back online.",
+              ),
             });
           }
           setOnline(false);
         } else if (e instanceof ApiError) {
-          showView(refusalView(e));
-          setFeedback(feedbackForRefusal(e.code, tRef.current));
+          // Refused as it stood: a not_yours then is a group's, or a role's —
+          // as the refusal's own view tells, else the one on screen.
+          const fresh = refusalView(e);
+          const split =
+            action.kind === "walk" ||
+            !!(fresh ?? viewRef.current)?.groups?.length;
+          showView(fresh);
+          // A group that went on meanwhile just leaves the list: the view
+          // shown is the news, with no word about it.
+          if (action.kind === "walk" && e.code === "stale") {
+            if (!refusalView(e)) void refresh();
+          } else setFeedback(feedbackForRefusal(e.code, tRef.current, split));
         } else {
           setFeedback(feedbackForRefusal(undefined, tRef.current));
         }
@@ -387,7 +574,10 @@ export function useGame(t: Translate): Game {
   // the next step while that one waits for the team to reach a place.
   useEffect(() => {
     if (feedback?.tone !== "good") return;
-    const id = setTimeout(() => setFeedback((f) => (f === feedback ? null : f)), 5_000);
+    const id = setTimeout(
+      () => setFeedback((f) => (f === feedback ? null : f)),
+      5_000,
+    );
     return () => clearTimeout(id);
   }, [feedback]);
 
@@ -398,7 +588,7 @@ export function useGame(t: Translate): Game {
       outbox.load();
     }
     setQueued(playEntries().length);
-    void refresh().then(flush);
+    void refresh().then(() => flush());
   }, [refresh, flush]);
 
   // Back online: flush first so the queued answer lands before we

@@ -98,6 +98,22 @@ export interface TeamGroup {
   port: string;
   label: string;
   node: string;
+  /** label's parts, one per split the group came down, outermost first. */
+  labels?: string[];
+  /** When the group reached its step, moved past the event's ended pauses. */
+  since?: string;
+  /** Waits at its join for the others of its split. */
+  arrived?: boolean;
+}
+
+/** internal/admin/team_players.go: teamPlayerDTO — a player's public roles and groups. */
+export interface TeamPlayer {
+  id: number;
+  name: string;
+  /** Has opened their link: roles are dealt among those playing. */
+  playing: boolean;
+  roles: string[];
+  groups: string[];
 }
 
 /** internal/admin/ws.go: eventGraphDTO (zones left out: this page has no map). */
@@ -106,6 +122,8 @@ export interface EventGraph {
   titles: Record<string, string>;
   /** The steps "Move team on" can move a team past. */
   rescuable?: string[];
+  /** The steps "Move group on" can move a group of a split team on from: rescuable's, and a story or hub on its path. */
+  rescuable_on_path?: string[];
 }
 
 /** internal/admin/ws.go: eventDetailDTO — GET /events/{id} and the watch push alike. */
@@ -320,6 +338,8 @@ export const photoSrc = (id: number, photoId: number) => `${E(id)}/photos/${phot
 export const reviewPhoto = (id: number, photoId: number, status: string) => post<void>(`${E(id)}/photos/${photoId}/review`, { status });
 
 const T = (id: number) => `/api/admin/teams/${id}`;
+export const getTeamPlayers = (id: number, signal?: AbortSignal) =>
+  get<{ players: TeamPlayer[] }>(T(id) + "/players", signal ? { signal } : {}).then((r) => r.players);
 export const createTeam = (eventId: number, body: RosterTeam) => post<unknown>(E(eventId) + "/teams", body);
 export const bulkTeams = (eventId: number, teams: RosterTeam[]) => post<BulkResult>(E(eventId) + "/teams/bulk", { teams });
 export const importTeams = (eventId: number, file: File) => {
@@ -331,7 +351,8 @@ export const patchTeam = (id: number, body: { name?: string; email?: string; lan
 export const deleteTeam = (id: number, password: string) => request<void>(T(id), { method: "DELETE", ...pw(password) });
 /** Let a team begin away from the adventure's required starting point. */
 export const letTeamStartAnywhere = (id: number) => post<{ start_anywhere: boolean }>(T(id) + "/start-anywhere");
-export const unlockTeam = (id: number, node?: string) => post<{ completed?: boolean }>(T(id) + "/unlock", node ? { node } : undefined);
+export const unlockTeam = (id: number, node?: string, group?: string) =>
+  post<{ completed?: boolean }>(T(id) + "/unlock", node ? { node, ...(group ? { group } : {}) } : undefined);
 export const withdrawTeam = (id: number) => post<unknown>(T(id) + "/withdraw");
 export const unwithdrawTeam = (id: number) => post<unknown>(T(id) + "/unwithdraw");
 export const sendTeamInvitation = (id: number) => post<unknown>(T(id) + "/invitations/send", {});

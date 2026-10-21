@@ -180,6 +180,12 @@ func (e *Engine) Continue(ctx context.Context, teamID int64, node string) (Resul
 	return e.act(ctx, teamID, action{"continue", node, ""}, func(t *session.Team) (Result, *walk.Step, error) { return t.Continue(node) })
 }
 
+// Walk is a phone's choice of which of its groups it walks, by the
+// group's key (session.GroupView.Port). See session.Team.Walk.
+func (e *Engine) Walk(ctx context.Context, teamID int64, group string) (Result, error) {
+	return e.act(ctx, teamID, action{"walk", "", group}, func(t *session.Team) (Result, *walk.Step, error) { return t.Walk(group) })
+}
+
 // SetLanguage switches the language the team plays in, or, asked by a
 // phone, the language its own player reads: teammates keep theirs.
 func (e *Engine) SetLanguage(ctx context.Context, teamID int64, lang string) (Result, error) {
@@ -364,7 +370,7 @@ func (e *Engine) act(ctx context.Context, teamID int64, a action, fn func(*sessi
 	} else {
 		err = e.stay(ctx, tx, s)
 	}
-	if err == nil && step == nil && dealt {
+	if err == nil && step == nil && (dealt || s.GroupsChanged || s.afresh) {
 		err = saveSplit(ctx, tx, s)
 	}
 	if err != nil {

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { adventureTexts, allTexts, coverage, blockKey, isOutdated, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey, sourceFingerprint, trackTranslations, translatedNode, translateEdit, translationOriginal, withTexts } from "./i18n.ts";
+import { adventureTexts, allTexts, coverage, blockKey, isOutdated, isPortKey, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey, sourceFingerprint, trackTranslations, translatedNode, translateEdit, translateSideEdit, translationOriginal, withTexts, zoneKey, itemKey } from "./i18n.ts";
 import type { Graph } from "./types.ts";
 
 const g: Graph = {
@@ -180,6 +180,28 @@ test("an edit to a step shown in a translation translates its texts and keeps th
   assert.equal(translateEdit(graph, "en", q, shown, fewer), null, "removing a text is the main language's to do");
 });
 
+test("a split's group name edited in a translation is a translation, not the main name", () => {
+  const split = { slug: "s", type: "split", split: { text: "Dela er", paths: [{ port: "a", label: "Norr" }, { port: "b", label: "Söder" }] } } as Graph["nodes"][number];
+  const graph: Graph = { ...g, nodes: [...g.nodes, split] };
+  const shown = translatedNode(split, {});
+  const edited = { ...shown, split: { ...shown.split!, text: "Split up", paths: shown.split!.paths!.map((p, i) => (i === 0 ? { ...p, label: "North" } : p)) } };
+  const out = translateEdit(graph, "en", split, shown, edited)!;
+  const step = out.nodes.find((n) => n.slug === "s")!;
+  assert.equal(step.split!.text, "Dela er", "the main text stays");
+  assert.equal(step.split!.paths![0]!.label, "Norr", "the main group name stays");
+  assert.equal(out.translations!.en![nodeKey("s", "split-text")], "Split up");
+  assert.equal(out.translations!.en![nodeKey("s", "path:a:label")], "North");
+});
+
+test("a port's keys are its own, not those of a port its name begins", () => {
+  assert.ok(isPortKey("s", "x", nodeKey("s", "path:x:label")));
+  assert.ok(isPortKey("s", "x", nodeKey("s", "out:x:answers")));
+  assert.ok(!isPortKey("s", "x", nodeKey("s", "path:x:y:label")), "port x:y is another port");
+  assert.ok(isPortKey("s", "x:y", nodeKey("s", "path:x:y:label")));
+  assert.ok(!isPortKey("s", "x", nodeKey("s", "path:xy:label")));
+  assert.ok(!isPortKey("t", "x", nodeKey("s", "path:x:label")));
+});
+
 // The shared vectors the engine's tests read too (internal/graph/session):
 // every text an author can translate, each starting with MAIN, and its
 // key. The designer must list exactly these, and the engine must show
@@ -204,4 +226,89 @@ test("withTexts puts a translation into every text nodeTexts lists", () => {
       if (!x.answers) assert.equal(x.main, `XX ${x.key}`, `${x.key} of ${n.slug} should be translated`);
     }
   }
+});
+
+test("a port removed in a translation takes its wire and its translations with it", () => {
+  const sw = { slug: "s", type: "switch", switch: { cases: [{ port: "a" }, { port: "b" }] } } as Graph["nodes"][number];
+  const graph: Graph = {
+    nodes: [sw, { slug: "x", type: "end" }],
+    edges: [{ from: "s", from_port: "a", to: "x" }, { from: "s", from_port: "b", to: "x" }],
+    translations: { en: { [nodeKey("s", "out:b:label")]: "B" } },
+  };
+  const shown = translatedNode(sw, {});
+  const out = translateEdit(graph, "en", sw, shown, { ...shown, switch: { cases: [{ port: "a" }] } })!;
+  assert.deepEqual(out.edges, [{ from: "s", from_port: "a", to: "x" }], "the removed case's wire goes");
+  assert.deepEqual(out.translations!.en, {}, "and so does its translation");
+});
+
+test("in a translation, a place renamed after the step gets a translated name, its main name kept", () => {
+  const step = { slug: "p", type: "story", title: "Eken", story: { zone: "z" } } as Graph["nodes"][number];
+  const before: Graph = { nodes: [step], edges: [], zones: [{ slug: "z", name: "Eken", lat: 0, lng: 0, radius_m: 30 }], translations: { en: {} } };
+  const shown = translatedNode(step, {});
+  // What retitle writes: the zone follows the shown title.
+  const after: Graph = { ...before, zones: [{ ...before.zones![0]!, name: "The oak" }] };
+  const out = translateSideEdit(before, after, "en", step, { ...shown, title: "The oak" });
+  assert.equal(out.zones![0]!.name, "Eken", "the main name stays");
+  assert.equal(out.translations!.en![zoneKey("z")], "The oak");
+  assert.equal(translationOriginal(out, "en", zoneKey("z")), "Eken");
+  // A grouped place's name is not translated: it is left as it was.
+  const grid: Graph = { ...before, zones: [{ ...before.zones![0]!, group: "g" }] };
+  const left = translateSideEdit(grid, { ...grid, zones: [{ ...grid.zones![0]!, name: "The oak" }] }, "en", step, shown);
+  assert.equal(left.zones![0]!.name, "Eken");
+  assert.equal(left.translations!.en![zoneKey("z")], undefined);
+});
+
+test("in a translation, a place made where the author stands is named after the step's main title", () => {
+  const step = { slug: "p", type: "puzzle", title: "Eken", puzzle: {} } as Graph["nodes"][number];
+  const before: Graph = { nodes: [step], edges: [], zones: [] };
+  const shown = translatedNode(step, { [nodeKey("p", "title")]: "The oak" });
+  const after: Graph = { ...before, zones: [{ slug: "the-oak", name: "The oak", lat: 0, lng: 0, radius_m: 30 }] };
+  const out = translateSideEdit(before, after, "en", step, shown);
+  assert.equal(out.zones![0]!.name, "Eken");
+  assert.equal(out.translations!.en![zoneKey("the-oak")], "The oak");
+  // Named something else (a fallback), it keeps that name.
+  const other = translateSideEdit(before, { ...before, zones: [{ slug: "place", name: "Place", lat: 0, lng: 0, radius_m: 30 }] }, "en", step, shown);
+  assert.equal(other.zones![0]!.name, "Place");
+});
+
+test("in a translation, an unnamed place that follows a retitle is named after the main title, the new title its translation", () => {
+  const step = { slug: "p", type: "story", title: "Bridge", story: { zone: "z" } } as Graph["nodes"][number];
+  const before: Graph = { nodes: [step], edges: [], zones: [{ slug: "z", lat: 0, lng: 0, radius_m: 30 }], translations: { sv: { [nodeKey("p", "title")]: "Bro" } } };
+  const shown = translatedNode(step, before.translations!.sv!);
+  // What retitle writes for "Bron" typed over "Bro": the zone takes the new title.
+  const after: Graph = { ...before, zones: [{ ...before.zones![0]!, name: "Bron" }] };
+  const out = translateSideEdit(before, after, "sv", step, { ...shown, title: "Bron" });
+  assert.equal(out.zones![0]!.name, "Bridge", "the main name is the main title, not the typed one");
+  assert.equal(out.translations!.sv![zoneKey("z")], "Bron");
+  assert.equal(translationOriginal(out, "sv", zoneKey("z")), "Bridge");
+  // A step without a main title names nothing in the main language.
+  const { title: _, ...bare } = step;
+  const nameless = translateSideEdit({ ...before, nodes: [bare] }, { ...after, nodes: [bare] }, "sv", bare, { ...bare, title: "Bron" });
+  assert.equal(nameless.zones![0]!.name, undefined);
+  assert.equal(nameless.translations!.sv![zoneKey("z")], "Bron");
+});
+
+test("in a translation, a place or item name cleared loses its translation and keeps its main name", () => {
+  const step = { slug: "p", type: "story", title: "Eken", story: { zone: "z" } } as Graph["nodes"][number];
+  const before: Graph = {
+    nodes: [step], edges: [],
+    zones: [{ slug: "z", name: "Eken", lat: 0, lng: 0, radius_m: 30 }],
+    items: [{ slug: "key", name: "Nyckel" }],
+    translations: { en: { [zoneKey("z")]: "The oak", [itemKey("key", "name")]: "Key" } },
+  };
+  const after: Graph = { ...before, zones: [{ ...before.zones![0]!, name: "" }], items: [{ slug: "key", name: "" }] };
+  const out = translateSideEdit(before, after, "en", step, step);
+  assert.equal(out.zones![0]!.name, "Eken");
+  assert.deepEqual(out.items, [{ slug: "key", name: "Nyckel" }]);
+  assert.deepEqual(out.translations!.en, {});
+});
+
+test("in a translation, an item renamed gets a translated name, and one without a name yet its main name", () => {
+  const step = { slug: "p", type: "effect", effect: { kind: "grant_item", item: "key" } } as Graph["nodes"][number];
+  const before: Graph = { nodes: [step], edges: [], items: [{ slug: "key", name: "Nyckel" }, { slug: "item-1", name: "" }] };
+  const after: Graph = { ...before, items: [{ slug: "key", name: "Key" }, { slug: "item-1", name: "Lykta" }] };
+  const out = translateSideEdit(before, after, "en", step, step);
+  assert.deepEqual(out.items, [{ slug: "key", name: "Nyckel" }, { slug: "item-1", name: "Lykta" }]);
+  assert.deepEqual(out.translations!.en, { [itemKey("key", "name")]: "Key" });
+  assert.equal(translateSideEdit(before, before, "en", step, step), before, "nothing beside the step changed, nothing to do");
 });

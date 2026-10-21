@@ -156,6 +156,7 @@ func (s *Server) registerPlayTools() {
 			"turn turns the team's keys in a two-key launch — you are all the players, so every key at once, each at its post if it has posts; " +
 			"pick {block, choice} answers a quiz question, tie-breaker, suspect board or draw; task {block, guess} does one role's task on a step done in parallel — you are all the players, so every role's, each at its place if it has one; use {block} works a gadget (shake, tilt, torch, tap the picture) to see what it shows; " +
 			"move {place} walks the team to a place by name or slug, taking walking time; wait {seconds} lets time pass, as for a hint to open; " +
+			"walk {port} turns to another of your groups of a team split up, by its key, to play its path (one not waiting at the join); " +
 			"language {lang}; look shows the screen again with its pictures. " +
 			"Every action but move, wait and look first spends seconds (default 20) of thinking time. Play fairly: you are the players.",
 		InputSchema: map[string]any{
@@ -163,7 +164,7 @@ func (s *Server) registerPlayTools() {
 			"required": []string{"session", "kind"},
 			"properties": map[string]any{
 				"session": map[string]any{"type": "string"},
-				"kind":    map[string]any{"type": "string", "enum": []string{"begin", "answer", "continue", "choose", "back", "hint", "skip", "timeout", "leave", "turn", "pick", "task", "use", "move", "wait", "language", "look"}},
+				"kind":    map[string]any{"type": "string", "enum": []string{"begin", "answer", "continue", "choose", "back", "hint", "skip", "timeout", "leave", "turn", "pick", "task", "use", "walk", "move", "wait", "language", "look"}},
 				"start":   map[string]any{"type": "string"},
 				"guess":   map[string]any{"type": "string"},
 				"port":    map[string]any{"type": "string"},
@@ -334,7 +335,7 @@ func playAct(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResul
 		act["port"] = a.Start
 	case "answer":
 		act["guess"] = a.Guess
-	case "choose":
+	case "choose", "walk":
 		act["port"] = a.Port
 	case "pick":
 		act["block"], act["choice"] = a.Block, a.Choice
@@ -1007,7 +1008,11 @@ func (ps *playSession) input(b *strings.Builder, v session.View) {
 		case graph.Split:
 			b.WriteString("\n→ continue to set off with your group.\n")
 		case graph.Join:
-			b.WriteString("\nWait here for the other groups: the last to arrive takes the team on.\n")
+			goesOn := "the team goes on together"
+			if v.Rejoin != "" {
+				goesOn = v.Rejoin + " goes on together"
+			}
+			fmt.Fprintf(b, "\nWaiting here for %d more group(s); when the last arrives, %s. Nothing to do here meanwhile.\n", v.Awaiting, goesOn)
 		}
 		return
 	}
@@ -1107,14 +1112,30 @@ func (ps *playSession) groups(b *strings.Builder, v session.View) {
 		return
 	}
 	if v.Group != "" {
-		fmt.Fprintf(b, "The team has split up; you are with %s. A simulated team walks each group's path in turn.\n", v.Group)
+		fmt.Fprintf(b, "The team has split up; you are with %s.\n", v.Group)
 	}
+	other := false
 	for _, g := range v.Groups {
 		where := "at " + g.At
 		if g.Arrived {
 			where = "waiting at " + g.At
 		}
-		fmt.Fprintf(b, "- %s: %s\n", g.Label, where)
+		marks := []string{"key " + strconv.Quote(g.Port)}
+		if g.Current {
+			marks = append(marks, "this screen")
+		}
+		if g.Mine {
+			marks = append(marks, "yours")
+		}
+		if g.Open {
+			// No one playing is with it, or all of them are away.
+			marks = append(marks, "anyone's")
+		}
+		fmt.Fprintf(b, "- %s: %s (%s)\n", g.Label, where, strings.Join(marks, ", "))
+		other = other || (g.Mine || g.Open) && !g.Current && !g.Arrived
+	}
+	if other {
+		b.WriteString("→ walk with port <key> to walk another of your groups, or one that is anyone's (one not waiting at the join)\n")
 	}
 }
 

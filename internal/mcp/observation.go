@@ -16,7 +16,7 @@ func (s *Server) registerObservationTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "list_positions",
 		Scope:       scopeRead,
-		Description: "Latest known location ping per team for an event. One row per team that has ever pinged: team_id, team_name, page_index (their current puzzle), lat, lng, server_ts. Poll every 10–30 seconds during a live event; the data refreshes per ping the players' phones send (every 5–15 seconds typically).",
+		Description: "Latest known location ping per team for an event. One row per team that has ever pinged: team_id, team_name, node (their current step), lat, lng, server_ts — and, for a team split up into groups (a split step), groups: each group's step and its own players' latest fix. Poll every 10–30 seconds during a live event; the data refreshes per ping the players' phones send (every 5–15 seconds typically).",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},
@@ -43,7 +43,7 @@ func (s *Server) registerObservationTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "list_tracks",
 		Scope:       scopeRead,
-		Description: "Full ping history per team, smoothed into 10s buckets with accuracy-weighted centroids — same data the live audience map renders. Poll sparingly; the payload grows linearly with event duration. Most observation use cases want list_positions instead.",
+		Description: "Full ping history per team, smoothed into 10s buckets with accuracy-weighted centroids — same data the live audience map renders. A team split up into groups (a split step) has a track per group, of its own players' phones, with group and group_label set. Poll sparingly; the payload grows linearly with event duration. Most observation use cases want list_positions instead.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},
@@ -56,7 +56,7 @@ func (s *Server) registerObservationTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "get_event_state_summary",
 		Scope:       scopeRead,
-		Description: "Compact poll-friendly summary of one event's progress. Returns: state, allowed_ops (the team and schedule edits the state allows; the lifecycle moves each state allows — start, pause, resume, end, cancel — are in describe_event_lifecycle), teams_count, completed_count, withdrawn_count, leaderboard (top 5 teams by rank, with score, current step and completion / withdrawal flags). Use as the heartbeat in a 'wait for this event to finish' loop — much smaller payload than get_event.",
+		Description: "Compact poll-friendly summary of one event's progress. Returns: state, allowed_ops (the team and schedule edits the state allows; the lifecycle moves each state allows — start, pause, resume, end, cancel — are in describe_event_lifecycle), teams_count, completed_count, withdrawn_count, leaderboard (top 5 teams by rank, with score, current step — and, for a team split up into groups, each group's step — and completion / withdrawal flags). Use as the heartbeat in a 'wait for this event to finish' loop — much smaller payload than get_event.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},
@@ -155,13 +155,20 @@ type eventDetailForSummary struct {
 }
 
 type summaryTeam struct {
-	ID          int64    `json:"id"`
-	Name        string   `json:"name"`
-	Node        string   `json:"node,omitempty"`
-	Score       *float64 `json:"score,omitempty"`
-	Rank        int      `json:"rank,omitempty"`
-	CompletedAt string   `json:"completed_at,omitempty"`
-	WithdrawnAt string   `json:"withdrawn_at,omitempty"`
+	ID          int64          `json:"id"`
+	Name        string         `json:"name"`
+	Node        string         `json:"node,omitempty"`
+	Score       *float64       `json:"score,omitempty"`
+	Rank        int            `json:"rank,omitempty"`
+	CompletedAt string         `json:"completed_at,omitempty"`
+	WithdrawnAt string         `json:"withdrawn_at,omitempty"`
+	Groups      []summaryGroup `json:"groups,omitempty"`
+}
+
+// summaryGroup is one group of a split team: its name and its step.
+type summaryGroup struct {
+	Label string `json:"label"`
+	Node  string `json:"node"`
 }
 
 type leaderboardEntry struct {
@@ -172,6 +179,9 @@ type leaderboardEntry struct {
 	Step      string   `json:"step,omitempty"`
 	Completed bool     `json:"completed"`
 	Withdrawn bool     `json:"withdrawn"`
+	// Groups is where each group of a team split up is; Step is then the
+	// split.
+	Groups []summaryGroup `json:"groups,omitempty"`
 }
 
 type eventStateSummary struct {
@@ -249,6 +259,7 @@ func summariseDetail(d eventDetailForSummary) eventStateSummary {
 			Rank:      t.Rank,
 			Score:     t.Score,
 			Step:      t.Node,
+			Groups:    t.Groups,
 			Completed: t.CompletedAt != "",
 			Withdrawn: t.WithdrawnAt != "",
 		}

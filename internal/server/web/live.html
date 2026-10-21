@@ -315,6 +315,16 @@ html, body {
   color: #fff; font-weight: 800; font-size: 13px;
 }
 .team-marker-lv img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* A group of a team split up: its own marker, its name hung beneath. */
+.team-marker-lv--group { overflow: visible; position: relative; }
+.team-marker-lv--group img { border-radius: 50%; }
+.team-marker-lv__group {
+  position: absolute; top: calc(100% + 5px); left: 50%; transform: translateX(-50%);
+  white-space: nowrap; font-size: 11px; font-weight: 700; line-height: 1.4;
+  padding: 0 6px; border-radius: 6px;
+  background: var(--team-col, #e24080); color: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
 .members {
   color: var(--muted);
   font-size: clamp(.75rem, 1vw, 1rem);
@@ -978,8 +988,8 @@ function buildMapSlot() {
 // marker positions animateable (no flicker from remove→add). The tracks
 // are one GeoJSON source, redrawn whole.
 const mapLayers = {
-  teamMarkers: new Map(),           // team_id -> { marker }
-  teamTweens: new Map(),            // team_id -> rAF handle
+  teamMarkers: new Map(),           // team_id, or "team_id/group" for a split team's group -> { marker }
+  teamTweens: new Map(),            // the same key -> rAF handle
 };
 
 // tweenMarker glides a team marker from its current position to the
@@ -1076,15 +1086,21 @@ async function renderLiveMap(inner, hint, data) {
     if (!track.points?.length) continue;
     const colour = teamColourByID.get(track.team_id) || '#e24080';
     const last = track.points[track.points.length - 1];
-    seenTeamIDs.add(track.team_id);
+    // A team split up into groups has a track per group, and a marker
+    // for each: one marker for both would glide between them.
+    const key = track.group ? `${track.team_id}/${track.group}` : track.team_id;
     if (track.points.length >= 2) {
       lines.push({ type: 'Feature', properties: { colour }, geometry: { type: 'LineString', coordinates: track.points.map((p) => [p.lng, p.lat]) } });
     }
+    // A past trail — a group met the others again, or the team's own
+    // while it is split up — has no one at its end: no marker.
+    if (track.past) continue;
+    seenTeamIDs.add(key);
 
     // Team marker: on first sight create it at the latest position; on
     // subsequent renders tween to the new position so movement reads as
     // movement rather than teleporting.
-    let entry = mapLayers.teamMarkers.get(track.team_id);
+    let entry = mapLayers.teamMarkers.get(key);
     if (!entry) {
       const initials = teamInitials(track.team_name);
       const size = 34;
@@ -1103,11 +1119,22 @@ async function renderLiveMap(inner, hint, data) {
       // have the staff /api/admin/positions view, which is gated.
       const holder = document.createElement('div');
       holder.innerHTML = html;
-      const marker = new ml.Marker({ element: holder.firstElementChild }).setLngLat([last.lng, last.lat]).addTo(map);
+      const el = holder.firstElementChild;
+      // A group's marker says which group it is, by its path's name —
+      // the innermost split's — hung beneath, as race control's does.
+      const tag = track.group_labels?.length ? track.group_labels[track.group_labels.length - 1] : track.group_label;
+      if (track.group && tag) {
+        el.classList.add('team-marker-lv--group');
+        const small = document.createElement('small');
+        small.className = 'team-marker-lv__group';
+        small.textContent = tag;
+        el.append(small);
+      }
+      const marker = new ml.Marker({ element: el }).setLngLat([last.lng, last.lat]).addTo(map);
       entry = { marker };
-      mapLayers.teamMarkers.set(track.team_id, entry);
+      mapLayers.teamMarkers.set(key, entry);
     } else {
-      tweenMarker(track.team_id, entry.marker, { lat: last.lat, lng: last.lng });
+      tweenMarker(key, entry.marker, { lat: last.lat, lng: last.lng });
     }
   }
   map.getSource('tracks').setData({ type: 'FeatureCollection', features: lines });
@@ -1130,16 +1157,20 @@ async function renderLiveMap(inner, hint, data) {
   // Rank already baked in by the server (data.teams is sorted),
   // so we just index into it to find "top 3" team ids.
   const rankIdx = new Map((data.teams || []).map((t, i) => [t.id, i]));
+  // A team split up has a marker per group: "three" counts teams, and
+  // a top team frames all of its groups.
   const teamLatLngs = [];
   for (const track of tracks) {
-    if (!track.points?.length) continue;
+    if (!track.points?.length || track.past) continue;
     const last = track.points[track.points.length - 1];
     teamLatLngs.push({
+      team: track.team_id,
       rank: rankIdx.has(track.team_id) ? rankIdx.get(track.team_id) : Infinity,
       ll: { lat: last.lat, lng: last.lng },
     });
   }
   teamLatLngs.sort((a, b) => a.rank - b.rank);
+  const topTeams = [...new Set(teamLatLngs.map((t) => t.team))].slice(0, 3);
 
   const boundsOf = (lls) => lls.reduce((b, ll) => b.extend([ll.lng, ll.lat]), new ml.LngLatBounds([lls[0].lng, lls[0].lat], [lls[0].lng, lls[0].lat]));
   let fitTarget = null;
@@ -1148,10 +1179,10 @@ async function renderLiveMap(inner, hint, data) {
     const ne = all.getNorthEast();
     const sw = all.getSouthWest();
     const span = metresBetween({ lat: ne.lat, lng: ne.lng }, { lat: sw.lat, lng: sw.lng });
-    if (span <= MAX_SPAN_METERS || teamLatLngs.length <= 3) {
+    if (span <= MAX_SPAN_METERS || new Set(teamLatLngs.map((t) => t.team)).size <= 3) {
       fitTarget = all;
     } else {
-      fitTarget = boundsOf(teamLatLngs.slice(0, 3).map((t) => t.ll));
+      fitTarget = boundsOf(teamLatLngs.filter((t) => topTeams.includes(t.team)).map((t) => t.ll));
     }
   }
 

@@ -7,12 +7,14 @@ import { Bot, CircleCheck, CircleDashed, CircleDot, GitPullRequestArrow, Lightbu
 import { initials } from "../ui/kit.tsx";
 import { statusLabel, type CardTalk } from "./Collab.tsx";
 import { Handle, Position, type NodeProps, type Node as RFNode } from "@xyflow/react";
-import { blocksOf, hasInput, mediaOf, portLabel, portsOf, textOf, type Issue, type Node, type Zone } from "@zonventure/graph";
+import { blocksOf, hasInput, mediaOf, portLabel, portsOf, textOf, type Issue, type Node, type Role, type Zone } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 
 export interface CardData extends Record<string, unknown> {
   node: Node;
   issues: Issue[];
+  /** The adventure's roles, for a split whose paths are named by role. */
+  roles?: Role[];
   /** The simulated team is here. */
   playing?: boolean;
   /** Someone else just changed it: their colour. */
@@ -141,7 +143,7 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
     return trigger ? ` concept--${TRIGGER[trigger]}` : "";
   };
   const portText = (p: string) => {
-    const l = portLabel(n, p);
+    const l = portLabel(n, p, data.roles);
     return n.type === "puzzle" || !PORT_TEXT[l] ? l : t.t(PORT_TEXT[l]);
   };
 

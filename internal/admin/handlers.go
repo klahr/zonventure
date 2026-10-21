@@ -44,6 +44,7 @@ import (
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/teamimport"
 	"github.com/klahr/zonventure/internal/tokenx"
+	"github.com/klahr/zonventure/internal/tracks"
 	"github.com/klahr/zonventure/internal/updates"
 	"github.com/klahr/zonventure/internal/webhooks"
 	"github.com/klahr/zonventure/internal/ws"
@@ -1765,8 +1766,24 @@ type positionDTO struct {
 	Lat      float64 `json:"lat"`
 	Lng      float64 `json:"lng"`
 	ServerTS string  `json:"server_ts"`
-	// Node is the graph step the team is on.
-	Node string `json:"node,omitempty"`
+	// Node is the graph step the team is on: the split, while it is
+	// split up, and Groups where each of its groups is.
+	Node   string             `json:"node,omitempty"`
+	Groups []groupPositionDTO `json:"groups,omitempty"`
+}
+
+// groupPositionDTO is one group of a split team: its step, and its
+// latest ping — whoever walked it, its own players or others for them.
+type groupPositionDTO struct {
+	Group string `json:"group"`
+	Label string `json:"label"`
+	// Labels are Label's parts, one per split the group came down,
+	// outermost first.
+	Labels   []string `json:"labels,omitempty"`
+	Node     string   `json:"node"`
+	Lat      float64  `json:"lat,omitempty"`
+	Lng      float64  `json:"lng,omitempty"`
+	ServerTS string   `json:"server_ts,omitempty"`
 }
 
 // buildPositions is the query-only helper used by both the HTTP ListPositions
@@ -1801,7 +1818,29 @@ func (h *Handlers) buildPositions(ctx context.Context, eventID int64) ([]positio
 		}
 		out = append(out, d)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, h.groupPositions(ctx, eventID, out)
+}
+
+// groupPositions adds where each group of a split team is: its step and
+// its latest ping, whoever walked it.
+func (h *Handlers) groupPositions(ctx context.Context, eventID int64, out []positionDTO) error {
+	groups, err := tracks.Groups(ctx, h.DB, eventID)
+	if err != nil || len(groups) == 0 {
+		return err
+	}
+	for i := range out {
+		for _, g := range groups[out[i].TeamID] {
+			gp := groupPositionDTO{Group: g.Key, Label: g.Label, Labels: g.Labels, Node: g.Node}
+			if g.At != nil {
+				gp.Lat, gp.Lng, gp.ServerTS = g.At.Lat, g.At.Lng, g.At.ServerTS
+			}
+			out[i].Groups = append(out[i].Groups, gp)
+		}
+	}
+	return nil
 }
 
 // ListPositions returns the most recent location ping per team for an event.
@@ -1822,18 +1861,9 @@ func (h *Handlers) ListPositions(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"positions": out})
 }
 
-type trackPoint struct {
-	Lat      float64 `json:"lat"`
-	Lng      float64 `json:"lng"`
-	ServerTS string  `json:"server_ts"`
-}
-
-type trackDTO struct {
-	TeamID    int64        `json:"team_id"`
-	TeamName  string       `json:"team_name"`
-	AvatarURL string       `json:"avatar_url,omitempty"`
-	Points    []trackPoint `json:"points"`
-}
+// trackDTO is a trail: a team's, or one group's of a team split up
+// (see tracks.Track).
+type trackDTO = tracks.Track
 
 // tracksTTL is how long buildTracks reuses a result. Every watcher's
 // push and every race-control refresh asks for the same aggregate over
@@ -1905,69 +1935,9 @@ func (h *Handlers) buildTracks(ctx context.Context, eventID int64) ([]trackDTO, 
 	return tracks, nil
 }
 
-// queryTracks aggregates an event's ping history into per-team tracks.
+// queryTracks aggregates an event's ping history into its trails.
 func (h *Handlers) queryTracks(ctx context.Context, eventID int64) ([]trackDTO, error) {
-	// Smooth the per-team line by collapsing pings into time buckets and
-	// emitting one centroid per bucket. Buckets are 10s wide, widened in
-	// 10s steps once the event's ping history spans more than 20 minutes
-	// so a track never exceeds ~120 points: this is resent on every push,
-	// and full 10s resolution over a multi-hour event made it megabytes.
-	// server_ts is a UTC 'YYYY-MM-DD HH24:MI:SS' string from now_text(),
-	// and the bucket start goes back out in that format. The centroid is an
-	// inverse-variance weighted mean: pings with smaller `accuracy` (in
-	// metres) dominate, with a 1m floor to bound the weight and a 50m
-	// fallback when accuracy is null.
-	rows, err := h.DB.QueryContext(ctx, `
-		WITH span AS (
-		  SELECT GREATEST(10, CEIL(EXTRACT(EPOCH FROM
-		           MAX(server_ts::timestamp) - MIN(server_ts::timestamp)) / 1200) * 10) AS w
-		  FROM location_pings WHERE event_id = $1
-		)
-		SELECT p.team_id, t.name, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       SUM(p.lat / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) /
-		         SUM(1.0 / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) AS lat,
-		       SUM(p.lng / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) /
-		         SUM(1.0 / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) AS lng,
-		       to_char(to_timestamp(FLOOR(EXTRACT(EPOCH FROM p.server_ts::timestamp) / s.w) * s.w)
-		         AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') AS server_ts
-		FROM location_pings p JOIN teams t ON t.id = p.team_id CROSS JOIN span s
-		WHERE p.event_id = $1
-		GROUP BY p.team_id, t.name, (t.avatar_mime_type IS NOT NULL),
-		         FLOOR(EXTRACT(EPOCH FROM p.server_ts::timestamp) / s.w), s.w
-		ORDER BY p.team_id, server_ts
-	`, eventID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	byTeam := map[int64]*trackDTO{}
-	order := []int64{}
-	for rows.Next() {
-		var (
-			teamID    int64
-			name      string
-			hasAvatar int
-			p         trackPoint
-		)
-		if err := rows.Scan(&teamID, &name, &hasAvatar, &p.Lat, &p.Lng, &p.ServerTS); err != nil {
-			return nil, err
-		}
-		t, ok := byTeam[teamID]
-		if !ok {
-			t = &trackDTO{TeamID: teamID, TeamName: name}
-			if hasAvatar != 0 {
-				t.AvatarURL = teamAvatarURL(teamID)
-			}
-			byTeam[teamID] = t
-			order = append(order, teamID)
-		}
-		t.Points = append(t.Points, p)
-	}
-	tracks := make([]trackDTO, 0, len(order))
-	for _, id := range order {
-		tracks = append(tracks, *byTeam[id])
-	}
-	return tracks, nil
+	return tracks.Query(ctx, h.DB, eventID)
 }
 
 // ListTracks returns the full ping history per team for an event.

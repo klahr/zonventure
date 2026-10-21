@@ -125,7 +125,25 @@ func fromTree(v any) (graph.Node, error) {
 
 // textKeys are a step's names for things, not its words: set_text
 // leaves them alone, so a quoted word cannot rename a slug or a kind.
-var textKeys = map[string]bool{"slug": true, "id": true, "kind": true, "type": true, "zone": true, "theme": true, "font": true, "heading_font": true, "media": true}
+var textKeys = map[string]bool{"slug": true, "id": true, "kind": true, "type": true, "zone": true, "theme": true, "font": true, "heading_font": true, "media": true,
+	// Names of other things — ports, roles, posts, items, counters, notes,
+	// the puzzle a crossroads reads and its answers' references — and the
+	// settings spelled as words: changing words never renames them.
+	"port": true, "role": true, "by": true, "post_roles": true, "posts": true, "item": true, "counter": true,
+	"journal_entry": true, "unlocks": true, "from": true, "answers": true, "group": true,
+	"policy": true, "trigger": true, "outcome": true, "op": true, "keyboard": true, "missing": true, "method": true,
+	// A sabotage's note, a status's counters, a webhook's address, and the
+	// words a style, a cipher, an animation or a colour is chosen by.
+	"journal": true, "counters": true, "url": true, "style": true, "cipher": true,
+	"entrance": true, "attention": true, "repeat": true, "color": true,
+	// A condition's steps, blocks, ports and comparisons.
+	"node": true, "block": true, "is": true, "cmp": true}
+
+// condKeys hold conditions — a block's show.when, a branch's and an
+// output's condition — which are all names and settings: their members
+// are zones and weekdays where a set answer's are words, so set_text
+// leaves the whole condition alone.
+var condKeys = map[string]bool{"when": true, "condition": true}
 
 // setText replaces find with replace in the step's texts: once, unless all.
 func setText(g *graph.Graph, slug, find, replace string, all bool) error {
@@ -147,7 +165,9 @@ func setText(g *graph.Graph, slug, find, replace string, all bool) error {
 		switch x := v.(type) {
 		case map[string]any:
 			for k, c := range x {
-				x[k] = walk(c, path+"."+k, k)
+				if !condKeys[k] {
+					x[k] = walk(c, path+"."+k, k)
+				}
 			}
 		case []any:
 			for j, c := range x {

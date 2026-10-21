@@ -22,10 +22,12 @@ import (
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/logx"
 	mailerpkg "github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/results"
 	"github.com/klahr/zonventure/internal/storage"
+	"github.com/klahr/zonventure/internal/tracks"
 	"github.com/klahr/zonventure/internal/webhooks"
 	"github.com/klahr/zonventure/internal/ws"
 )
@@ -273,7 +275,8 @@ func (h *Handlers) Forget(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := tx.ExecContext(r.Context(), `
 		UPDATE player_slots
-		   SET name = '(forgotten)', token = $1, expires_at = '1970-01-01 00:00:00'
+		   SET name = '(forgotten)', token = $1, expires_at = '1970-01-01 00:00:00',
+		       last_seen_at = NULL
 		 WHERE id = $2
 	`, deadToken, slot.ID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "wipe slot", err)
@@ -514,10 +517,18 @@ func (h *Handlers) recordLocation(ctx context.Context, slot auth.Slot, req Locat
 	if req.ClientTS != "" {
 		cts = req.ClientTS
 	}
+	// The ping remembers the group its phone walks, for the group's trail.
+	// Not known, it is the team's: a trail drawn wrong is no reason to
+	// lose where the phone is.
+	groups, err := tracks.PingGroups(ctx, h.DB, slot.TeamID, slot.ID, time.Now().UTC())
+	if err != nil {
+		logx.Warn("player.ping_groups_failed", "slot", slot.ID, "err", err.Error())
+		groups = nil
+	}
 	if _, err := h.DB.ExecContext(ctx, `
-		INSERT INTO location_pings(slot_id, team_id, event_id, lat, lng, accuracy, speed, heading, client_ts)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, slot.ID, slot.TeamID, slot.EventID, req.Lat, req.Lng, acc, speed, heading, cts); err != nil {
+		INSERT INTO location_pings(slot_id, team_id, event_id, lat, lng, accuracy, speed, heading, client_ts, groups)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, slot.ID, slot.TeamID, slot.EventID, req.Lat, req.Lng, acc, speed, heading, cts, groups); err != nil {
 		return http.StatusInternalServerError, "save ping failed"
 	}
 	return http.StatusNoContent, ""

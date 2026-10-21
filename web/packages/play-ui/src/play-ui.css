@@ -1621,6 +1621,11 @@
 .pv-groups__group.is-arrived .pv-groups__at {
   opacity: 1;
 }
+.pv-groups__walk {
+  display: block;
+  margin-left: auto;
+  color: var(--ink);
+}
 
 .pv-waiting {
   margin: var(--sp-2) var(--sp-4) 0;

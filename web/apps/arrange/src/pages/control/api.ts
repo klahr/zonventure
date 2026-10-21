@@ -42,6 +42,21 @@ export interface Team {
   outcome?: string;
   /** Played a step with the cheat password: unranked. */
   cheated?: boolean;
+  /** Where each group is while the team is split up (a split step); node is then the split. */
+  groups?: TeamGroup[];
+}
+
+/** internal/admin/ws.go: teamGroupDTO. */
+export interface TeamGroup {
+  port: string;
+  label: string;
+  node: string;
+  /** label's parts, one per split the group came down, outermost first. */
+  labels?: string[];
+  /** When the group reached its step, moved past the event's ended pauses: how long it has been on it. */
+  since?: string;
+  /** Waits at its join for the others of its split. */
+  arrived?: boolean;
 }
 
 /** internal/admin/ws.go: eventDetailDTO — GET /events/{id} and the event_detail push. */
@@ -52,12 +67,22 @@ export interface EventDetail {
   graph?: { puzzle_count: number; titles: Record<string, string>; zones: Zone[] | null };
 }
 
-/** internal/admin/handlers.go: trackDTO. server_ts is "YYYY-MM-DD HH:MM:SS" UTC. */
+/** internal/tracks: Track. server_ts is "YYYY-MM-DD HH:MM:SS" UTC. */
 export interface Track {
   team_id: number;
   team_name: string;
   avatar_url?: string;
   points: { lat: number; lng: number; server_ts: string }[] | null;
+  /**
+   * Set on the track of one group of a team split up: its key and name,
+   * and the name's parts, one per split, outermost first. A team can have
+   * its own track beside its groups'.
+   */
+  group?: string;
+  group_label?: string;
+  group_labels?: string[];
+  /** A trail walked before (a group since met the others, or the team before it split): a line, but no marker. */
+  past?: boolean;
 }
 
 /** internal/admin/events.go: activityDTO. */

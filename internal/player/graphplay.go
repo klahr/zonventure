@@ -598,6 +598,10 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 	case "seal":
 		// A player's pick at a mission. Like a sabotage, never logged.
 		res, err = e.Seal(ctx, tc.TeamID, req.Node, req.Block, req.Choice)
+	case "walk":
+		// Which of the player's groups of a split team they walk: the
+		// group's key in Port.
+		res, err = e.Walk(ctx, tc.TeamID, req.Port)
 	case "leave":
 		res, err = e.Leave(ctx, tc.TeamID, req.Node)
 	case "timeout":

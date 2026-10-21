@@ -3,10 +3,12 @@ package admin
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -409,6 +411,9 @@ func (h *Handlers) LetTeamStartAnywhere(w http.ResponseWriter, r *http.Request) 
 func (h *Handlers) rescueGraphTeam(w http.ResponseWriter, r *http.Request, eventID, teamID int64) {
 	var req struct {
 		Node string `json:"node"`
+		// Group is the key of the group of a split team to move on: the
+		// one on Node, where several groups may stand on one split.
+		Group string `json:"group"`
 	}
 	if r.ContentLength > 0 && !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -416,9 +421,10 @@ func (h *Handlers) rescueGraphTeam(w http.ResponseWriter, r *http.Request, event
 	var (
 		current   sql.NullString
 		completed sql.NullTime
+		strands   []byte
 	)
 	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT current_node, completed_at FROM team_graph_state WHERE team_id = $1`, teamID).Scan(&current, &completed)
+		`SELECT current_node, completed_at, strands FROM team_graph_state WHERE team_id = $1`, teamID).Scan(&current, &completed, &strands)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "this team hasn't started yet", "code": "team_not_started"})
 		return
@@ -432,24 +438,55 @@ func (h *Handlers) rescueGraphTeam(w http.ResponseWriter, r *http.Request, event
 		return
 	}
 	node := req.Node
+	if req.Group != "" {
+		// A group named is on its own step, not the split the team is on
+		// meanwhile. One gone since — met the others, or the team together
+		// again — is stale: never the team's step instead, which would
+		// move the whole team.
+		var ss []session.Strand
+		_ = json.Unmarshal(strands, &ss)
+		i := slices.IndexFunc(ss, func(s session.Strand) bool { return s.Key() == req.Group })
+		if i < 0 {
+			httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team has moved on since you looked; refresh and try again", "code": "team_moved"})
+			return
+		}
+		if node == "" {
+			node = ss[i].Current
+		}
+	}
 	if node == "" {
 		node = current.String
 	}
-	res, err := h.Engine.Rescue(r.Context(), teamID, node)
+	// The group moved on, named as the console names it, for the log.
+	group := h.rescuedGroup(r.Context(), teamID, node, req.Group)
+	res, err := h.Engine.RescueGroup(r.Context(), teamID, node, req.Group)
 	switch {
+	case errors.Is(err, session.ErrFinished):
+		// Finished since the check above.
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "team already finished", "code": "team_finished"})
+		return
 	case errors.Is(err, session.ErrStale):
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team has moved on since you looked; refresh and try again", "code": "team_moved"})
 		return
+	case errors.Is(err, session.ErrWhichGroup):
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team is split up: say which group to move on", "code": "which_group"})
+		return
 	case errors.Is(err, session.ErrWrongNode), errors.Is(err, session.ErrNotAllowed):
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team isn't on a puzzle it can be moved past", "code": "not_rescuable"})
+		return
+	case errors.Is(err, session.ErrTooFew):
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team is waiting for more players", "code": "too_few"})
 		return
 	case err != nil:
 		httpx.ServerErr(w, http.StatusInternalServerError, "move failed", err)
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
-	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamUnlocked,
-		map[string]any{"node": node, "port": res.Port, "to": res.View.Node, "by_arranger": true})
+	payload := map[string]any{"node": node, "port": res.Port, "to": res.View.Node, "by_arranger": true}
+	if group != "" {
+		payload["group"] = group
+	}
+	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamUnlocked, payload)
 	if res.View.Finished {
 		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamCompleted,
 			map[string]any{"outcome": res.View.Outcome, "by_arranger": true})

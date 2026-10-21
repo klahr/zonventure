@@ -458,6 +458,11 @@ type bot struct {
 	// then, and roundSince when it first stood there that way.
 	round      string
 	roundSince float64
+
+	// waits are the groups of a split team found able to do nothing, by
+	// key, and when each is worth a look again: hopping to one before
+	// then gets nowhere. Forgotten as the team gets anything done.
+	waits map[string]float64
 }
 
 // mark notes key under node in m, making the maps as needed.
@@ -557,6 +562,10 @@ func (b *bot) do(kind string, action func() (session.Result, *walk.Step, error))
 		b.t.Apply(*step)
 		b.applied(*step)
 	}
+	if kind != "walk" {
+		// Anything done may be what a waiting group waits for.
+		b.waits = nil
+	}
 	b.idle = 0
 	return res, true
 }
@@ -625,8 +634,24 @@ func (b *bot) stall(why string) {
 }
 
 // waitFor is a step the team can do nothing on: a gate waiting for a
-// time, say. It looks again when the view says to, or in a minute.
+// time, say. It looks again when the view says to, or in a minute — or,
+// split up, when the first of its groups is worth a look again.
 func (b *bot) waitFor(v session.View) {
+	again := b.r.now + 60
+	if v.RecheckAt != nil && v.RecheckAt.After(b.t.Now) {
+		again = v.RecheckAt.Sub(b.r.c.Start).Seconds() + 1
+	}
+	if v.Group != "" {
+		if at := slices.IndexFunc(v.Groups, func(g session.GroupView) bool { return g.Current }); at >= 0 {
+			if b.waits == nil {
+				b.waits = map[string]float64{}
+			}
+			b.waits[v.Groups[at].Port] = again
+		}
+	}
+	if b.hop(v) {
+		return
+	}
 	if b.idle == 0 {
 		b.idle = b.r.now
 	}
@@ -634,11 +659,42 @@ func (b *bot) waitFor(v session.View) {
 		b.stall("nothing to do on this step")
 		return
 	}
-	if v.RecheckAt != nil && v.RecheckAt.After(b.t.Now) {
-		b.wake = v.RecheckAt.Sub(b.r.c.Start).Seconds() + 1
-		return
+	for _, g := range v.Groups {
+		if w, ok := b.waits[g.Port]; ok && !g.Current && !g.Arrived && w < again {
+			again = w
+		}
 	}
-	b.later(60)
+	b.wake = math.Max(b.r.now+1, again)
+}
+
+// hop puts a split team on the next of its groups still on its way,
+// when the one it walks can do nothing: another may find what this one
+// needs (session.Team.Walk). A group found waiting is not hopped to
+// until it is worth a look again (waits), so groups all waiting — on the
+// clock, say — are waited for, not hopped between. Hopping is not
+// doing, so a team hopping between groups all stuck still stalls.
+func (b *bot) hop(v session.View) bool {
+	at := slices.IndexFunc(v.Groups, func(g session.GroupView) bool { return g.Current })
+	if at < 0 {
+		return false
+	}
+	for k := 1; k < len(v.Groups); k++ {
+		g := v.Groups[(at+k)%len(v.Groups)]
+		if w, ok := b.waits[g.Port]; g.Arrived || ok && w > b.r.now {
+			continue
+		}
+		idle := b.idle
+		if idle == 0 {
+			idle = b.r.now
+		}
+		_, ok := b.do("walk", func() (session.Result, *walk.Step, error) { return b.t.Walk(g.Port) })
+		if b.idle = idle; ok && b.r.now-idle <= stallAfter {
+			b.later(5)
+			return true
+		}
+		return false
+	}
+	return false
 }
 
 // --- moving ---------------------------------------------------------------
@@ -1243,6 +1299,10 @@ func (b *bot) attempt(v session.View, n graph.Node, spent float64) {
 			// there is a way back out.
 			if v.BackTo != "" {
 				b.do("back", func() (session.Result, *walk.Step, error) { return b.t.Back(v.Node) })
+				return
+			}
+			// Or another group may find them.
+			if b.hop(v) {
 				return
 			}
 		}

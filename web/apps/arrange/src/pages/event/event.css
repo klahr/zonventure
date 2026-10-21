@@ -97,6 +97,9 @@
 .dz .ev-td__head { display: flex; align-items: center; gap: var(--dz-space-3); }
 .dz .ev-td__members { display: flex; flex-direction: column; gap: var(--dz-space-1); margin: 0; padding: 0; list-style: none; }
 .dz .ev-td__members li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--dz-space-2); }
+/* A split team's group: its name, and on the right its step and the move. */
+.dz .ev-td__group { align-items: center; }
+.dz .ev-td__group-at { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--dz-space-2); }
 .dz .ev-slots { display: flex; flex-direction: column; gap: var(--dz-space-2); }
 .dz .ev-slot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-1) var(--dz-space-2); }
 .dz .ev-slot__name { min-width: 8ch; }

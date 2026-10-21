@@ -1,6 +1,7 @@
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import type {
   Branch,
+  Edge,
   EffectConfig,
   Graph,
   Hint,
@@ -29,7 +30,7 @@ import type {
   WebhookMethod,
   Zone,
 } from "@zonventure/graph";
-import { ANSWER_KINDS, MAX_PATHS, MIN_PATHS, MAX_CARDS, MAX_SLOTS, MIN_CARDS, shuffledDeal, usesMatchers, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
+import { ANSWER_KINDS, MAX_PATHS, MIN_PATHS, MAX_CARDS, MAX_SLOTS, MIN_CARDS, shuffledDeal, usesMatchers, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer } from "@zonventure/graph";
 import { THEMES } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
 import { emails, siteName } from "@zonventure/api";
@@ -40,13 +41,13 @@ import { ConditionEditor } from "./ConditionEditor.tsx";
 import { AdventureSlug, MediaEditor } from "./MediaEditor.tsx";
 import { OpenThemes } from "./ThemesModal.tsx";
 import { BlocksEditor } from "./BlocksEditor.tsx";
-import { Field, ZoneSelect, focusAdded, type ZoneHere } from "./fields.tsx";
+import { EditingAs, Field, ZoneSelect, focusAdded, type StepEdit, type StepEditOpts, type ZoneHere } from "./fields.tsx";
 import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, Eye, Loader2, Plus, Trash2, X } from "lucide-react";
 import { Button, HelpPopover, ICON } from "./dz/ui.tsx";
 import { STEP, VISIBLE } from "./dz/types.tsx";
 import { ConceptIcon, PART, TRIGGER } from "./dz/concepts.tsx";
 import { ZoneMap } from "./ZoneMap.tsx";
-import { nearLastZone, retitle, zoneGroups, zoneName } from "./zones.ts";
+import { nearLastZone, renameZone, retitle, shownZoneName, zoneGroups, zoneName } from "./zones.ts";
 import { MarkdownArea } from "./MarkdownArea.tsx";
 import { SimpleStep } from "./SimpleStep.tsx";
 import { isNarrow } from "./device.ts";
@@ -57,7 +58,7 @@ interface Props {
   issues: Issue[];
   onChange: (n: Node) => void;
   /** For edits that reach beyond this node, such as naming an answer a crossroads refers to. */
-  onGraphChange: (g: Graph) => void;
+  onEdit: StepEdit;
   onDelete: () => void;
   /** Close the inspector (deselect). */
   onClose: () => void;
@@ -83,7 +84,7 @@ interface Props {
  * in the card; everything else shows a read-only digest with Edit, which
  * opens the part alone on a page of its own.
  */
-export function Inspector({ node, graph, issues, onChange: change, onGraphChange: changeGraph, onDelete, onClose, onPreview, readOnly, after, save }: Props) {
+export function Inspector({ node, graph, issues, onChange: change, onEdit: edit, onDelete, onClose, onPreview, readOnly, after, save }: Props) {
   const t = useT();
   // An edit made here is said to be saved here, beside it: the toolbar's
   // mark is far off, and only an icon on a laptop. "Saved" stays a moment.
@@ -92,10 +93,11 @@ export function Inspector({ node, graph, issues, onChange: change, onGraphChange
     setEdited(true);
     change(n);
   };
-  const onGraphChange = (g: Graph) => {
+  const onEdit: StepEdit = (g, step, opts) => {
     setEdited(true);
-    changeGraph(g);
+    edit(g, step, opts);
   };
+  const editingAs = useContext(EditingAs);
   useEffect(() => {
     if (!edited || save !== "saved") return;
     const id = setTimeout(() => setEdited(false), 2000);
@@ -108,7 +110,7 @@ export function Inspector({ node, graph, issues, onChange: change, onGraphChange
   // shows every setting, for this step until another is selected.
   const [fullFor, setFullFor] = useState<string | null>(null);
   const simple = !readOnly && isNarrow() && (node.type === "puzzle" || node.type === "story") && fullFor !== node.slug;
-  const parts = partsOf(node, graph, onChange, onGraphChange, t, setOpen);
+  const parts = partsOf(node, graph, onChange, onEdit, t, setOpen, editingAs);
   const page = parts.find((p) => p.id === open);
   // Issues about a route, branch or path belong to the part listing them.
   const portIssues = issues.filter((i) => i.port).length;
@@ -129,7 +131,12 @@ export function Inspector({ node, graph, issues, onChange: change, onGraphChange
               placeholder={t.t(kind.label)}
               spellCheck={false}
               disabled={readOnly}
-              onChange={(e) => onGraphChange(retitle(graph, node, e.target.value, [t.t("Puzzle"), t.t("Story"), t.t("Start"), t.t("Place")]))}
+              onChange={(e) => {
+                const title = e.target.value;
+                // A suggestion is the step alone: its zone keeps its name.
+                const g = editingAs.suggesting ? graph : retitle(graph, node, title, [t.t("Puzzle"), t.t("Story"), t.t("Start"), t.t("Place")], editingAs.translating);
+                onEdit(g, (n) => ({ ...n, title }));
+              }}
               aria-label={t.t("Title")}
             />
             <span className="inspector-subtitle">{t.t(kind.label)}</span>
@@ -192,7 +199,7 @@ export function Inspector({ node, graph, issues, onChange: change, onGraphChange
         <ul className="insp__issues">
           {issues.map((i, k) => (
             <li key={k} className={`issue issue--${i.severity}`}>
-              {i.port ? <strong>{portLabel(node, i.port)}: </strong> : null}
+              {i.port ? <strong>{portLabel(node, i.port, graph.roles)}: </strong> : null}
               {t.t(i.message)}
             </li>
           ))}
@@ -200,7 +207,7 @@ export function Inspector({ node, graph, issues, onChange: change, onGraphChange
       )}
 
       {simple ? (
-        <SimpleStep node={node} graph={graph} onChange={onChange} onGraphChange={onGraphChange} onDelete={onDelete} onMore={() => setFullFor(node.slug)} />
+        <SimpleStep node={node} graph={graph} onChange={onChange} onEdit={onEdit} onDelete={onDelete} onMore={() => setFullFor(node.slug)} />
       ) : page ? (
         <>
           {page.hint && <p className="field__hint ipage__hint">{page.hint}</p>}
@@ -312,14 +319,19 @@ function clip(s: string | undefined, n = 60): string {
 }
 
 /** The parts of a node's settings, in the order the inspector shows them. */
-function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphChange: (g: Graph) => void, t: T, openPart: (id: string) => void): Part[] {
+function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onEdit: StepEdit, t: T, openPart: (id: string) => void, editingAs: EditingAs): Part[] {
+  // An edit beside the step: the step itself stays as it is.
+  const onGraphChange = (g: Graph, opts?: StepEditOpts) => onEdit(g, (n) => n, opts);
+  // A hub's wire from Done, which a home screen takes away: not something a
+  // suggestion, the step alone, can do.
+  const doneWire = (e: Edge) => e.from === node.slug && e.from_port === "done";
   const parts: Part[] = [];
   switch (node.type) {
     case "start":
-      parts.push({ id: "place", title: t.t("Where teams start"), editor: <StartForm node={node} graph={graph} onGraphChange={onGraphChange} /> });
+      parts.push({ id: "place", title: t.t("Where teams start"), editor: <StartForm node={node} graph={graph} onEdit={onEdit} /> });
       break;
     case "puzzle":
-      if (node.puzzle) parts.push(...puzzleParts(node, node.puzzle, graph, (puzzle) => onChange({ ...node, puzzle }), onGraphChange, t, openPart));
+      if (node.puzzle) parts.push(...puzzleParts(node, node.puzzle, graph, (puzzle) => onChange({ ...node, puzzle }), onEdit, t, openPart));
       break;
     case "story": {
       const story = node.story ?? {};
@@ -328,7 +340,7 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
         title: t.t("What the team sees"),
         editor: (
           <>
-            <BlocksEditor node={node} graph={graph} blocks={story.blocks} textLabel={t.t("Text")} onChange={(blocks) => onChange(withBlocks(node, blocks))} onGraphChange={onGraphChange} />
+            <BlocksEditor node={node} graph={graph} blocks={story.blocks} textLabel={t.t("Text")} onChange={(blocks) => onChange(withBlocks(node, blocks))} onEdit={onEdit} />
           </>
         ),
       });
@@ -350,7 +362,7 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
               onChange={(zone) => onChange({ ...node, story: withOptional({ ...story }, "zone", zone) })}
               here={{
                 name: node.title || t.t("Story"),
-                set: (zones, slug) => onGraphChange(updateNode({ ...graph, zones }, node.slug, (n) => ({ ...n, story: { ...n.story, zone: slug } }))),
+                set: (zones, slug) => onEdit({ ...graph, zones }, (n) => ({ ...n, story: { ...n.story, zone: slug } })),
               }}
             />
             <label className="check">
@@ -368,10 +380,12 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
     case "hub":
       if (node.hub)
         parts.push(
-          ...hubParts(node.hub, graph, (hub) => onChange({ ...node, hub }), (home) => {
+          ...hubParts(node.hub, graph, (hub) => onChange({ ...node, hub }), editingAs.suggesting && graph.edges.some(doneWire) ? undefined : (home) => {
             // A home screen has no done output; drop a wire from it with it.
-            const g = updateNode(graph, node.slug, (n) => ({ ...n, hub: withOptional(withOptional({ ...n.hub! }, "required", home ? undefined : n.hub!.required), "home", home || undefined) }));
-            onGraphChange(home ? { ...g, edges: g.edges.filter((e) => !(e.from === node.slug && e.from_port === "done")) } : g);
+            onEdit(home && graph.edges.some(doneWire) ? { ...graph, edges: graph.edges.filter((e) => !doneWire(e)) } : graph, (n) => ({
+              ...n,
+              hub: withOptional(withOptional({ ...n.hub! }, "required", home ? undefined : n.hub!.required), "home", home || undefined),
+            }));
           }, t),
         );
       break;
@@ -389,10 +403,10 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
         });
       break;
     case "switch":
-      parts.push(...switchParts(node, graph, onGraphChange, t));
+      parts.push(...switchParts(node, graph, onEdit, t));
       break;
     case "split":
-      parts.push(...splitParts(node, graph, onGraphChange, t));
+      parts.push(...splitParts(node, onChange, graph, t));
       break;
     case "join":
       parts.push({
@@ -408,7 +422,7 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
       });
       break;
     case "effect":
-      if (node.effect) parts.push({ id: "effect", title: t.t("Does"), editor: <EffectForm cfg={node.effect} graph={graph} onChange={(effect) => onChange({ ...node, effect })} onNewItem={(item) => onGraphChange(updateNode({ ...graph, items: [...(graph.items ?? []), item] }, node.slug, (n) => ({ ...n, effect: { ...n.effect!, item: item.slug } })))} onGraphChange={onGraphChange} /> });
+      if (node.effect) parts.push({ id: "effect", title: t.t("Does"), editor: <EffectForm cfg={node.effect} graph={graph} onChange={(effect) => onChange({ ...node, effect })} onNewItem={editingAs.suggesting ? undefined : (item) => onEdit({ ...graph, items: [...(graph.items ?? []), item] }, (n) => ({ ...n, effect: { ...n.effect!, item: item.slug } }))} onGraphChange={onGraphChange} /> });
       break;
     case "end": {
       const end = node.end ?? {};
@@ -424,7 +438,7 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
                 <option value="fail">{t.t("Failure")}</option>
               </select>
             </Field>
-            <BlocksEditor node={node} graph={graph} blocks={end.blocks} textLabel={t.t("Closing text")} onChange={(blocks) => onChange(withBlocks({ ...node, end }, blocks))} onGraphChange={onGraphChange} />
+            <BlocksEditor node={node} graph={graph} blocks={end.blocks} textLabel={t.t("Closing text")} onChange={(blocks) => onChange(withBlocks({ ...node, end }, blocks))} onEdit={onEdit} />
           </>
         ),
       });
@@ -451,16 +465,17 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
  * are; give a start a place, or add a second start, and each team picks
  * one and must stand in its zone to begin.
  */
-function StartForm({ node, graph, onGraphChange }: { node: Node; graph: Graph; onGraphChange: (g: Graph) => void }) {
+function StartForm({ node, graph, onEdit }: { node: Node; graph: Graph; onEdit: StepEdit }) {
   const t = useT();
+  const { suggesting, translating } = useContext(EditingAs);
   const zones = graph.zones ?? [];
   const slug = node.start?.zone;
   const zone = zones.find((z) => z.slug === slug);
   const starts = graph.nodes.filter((n) => n.type === "start").length;
 
   const setZone = (g: Graph, z: string | undefined) =>
-    onGraphChange(updateNode(g, node.slug, (n) => withOptional({ ...n }, "start", z ? { zone: z } : undefined)));
-  const editZone = (next: Zone) => onGraphChange({ ...graph, zones: zones.map((z) => (z.slug === next.slug ? next : z)) });
+    onEdit(g, (n) => withOptional({ ...n }, "start", z ? { zone: z } : undefined));
+  const editZone = (next: Zone) => onEdit({ ...graph, zones: zones.map((z) => (z.slug === next.slug ? next : z)) }, (n) => n);
   const newPlace = () => {
     const used = new Set(zones.map((z) => z.slug));
     let i = 1;
@@ -491,17 +506,18 @@ function StartForm({ node, graph, onGraphChange }: { node: Node; graph: Graph; o
         </select>
       </Field>
       {!zone && (
-        <button type="button" className="add-btn" onClick={newPlace}>
+        <button type="button" className="add-btn" disabled={suggesting} title={suggesting ? t.t("Places are made and moved outside a suggestion.") : undefined} onClick={newPlace}>
           <Plus size={ICON.sm} aria-hidden="true" />
           {t.t("Pick a place on the map")}
         </button>
       )}
       {zone && (
         <>
-          <Field label={t.t("Name of the place")} hint={t.t("Teams see this when they choose where to start.")}>
-            <input className="field__input" value={zone.name ?? ""} placeholder={zone.slug} onChange={(e) => editZone({ ...zone, name: e.target.value })} />
+          {/* A suggestion is the step alone: the place is renamed and moved outside one. */}
+          <Field label={t.t("Name of the place")} hint={suggesting ? t.t("Places are made and moved outside a suggestion.") : t.t("Teams see this when they choose where to start.")}>
+            <input className="field__input" value={shownZoneName(zone, translating)} placeholder={zone.slug} disabled={suggesting} onChange={(e) => onEdit(renameZone(graph, zone, e.target.value, translating), (n) => n)} />
           </Field>
-          <ZoneMap key={zone.slug} zone={zone} onChange={editZone} />
+          {!suggesting && <ZoneMap key={zone.slug} zone={zone} onChange={editZone} />}
         </>
       )}
     </>
@@ -545,7 +561,7 @@ const MISSING_LABEL: Record<MissingHint | "", string> = {
   none: "Nothing",
 };
 
-function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: PuzzleConfig) => void, onGraphChange: (g: Graph) => void, t: T, openPart: (id: string) => void): Part[] {
+function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: PuzzleConfig) => void, onEdit: StepEdit, t: T, openPart: (id: string) => void): Part[] {
   const outputs = cfg.outputs ?? [];
   const answer = cfg.answer;
   const setOutput = (i: number, o: Output) => onChange({ ...cfg, outputs: outputs.map((x, j) => (j === i ? o : x)) });
@@ -574,7 +590,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
       title: t.t("What the team sees"),
       editor: (
         <>
-          <BlocksEditor node={{ ...node, puzzle: cfg }} graph={graph} blocks={cfg.blocks} textLabel={t.t("Text")} onChange={(blocks) => onChange(withOptional({ ...cfg }, "blocks", blocks.length ? blocks : undefined))} onGraphChange={onGraphChange} />
+          <BlocksEditor node={{ ...node, puzzle: cfg }} graph={graph} blocks={cfg.blocks} textLabel={t.t("Text")} onChange={(blocks) => onChange(withOptional({ ...cfg }, "blocks", blocks.length ? blocks : undefined))} onEdit={onEdit} />
           <p className="field__hint">{t.t("Shown in this order, above the answer. A team only receives pictures and sounds once it reaches this step.")}</p>
         </>
       ),
@@ -1104,7 +1120,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
           label={t.t("Only answerable inside a zone")}
           value={cfg.zone}
           onChange={(zone) => onChange(withOptional({ ...cfg }, "zone", zone))}
-          here={puzzleHere(node, graph, onGraphChange, t)}
+          here={puzzleHere(node, graph, onEdit, t)}
         />
         <div className="box__row box__row--wrap">
           <NumberField label={t.t("Time limit (s)")} value={cfg.time_limit_seconds} onChange={(n) => onChange(withOptional({ ...cfg }, "time_limit_seconds", n))} />
@@ -1332,7 +1348,7 @@ const POLICIES: { p: Policy; label: string; hint: string }[] = [
   { p: "random", label: "Random", hint: "Random, but reproducible for each team." },
 ];
 
-function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void, onHome: (home: boolean) => void, t: T): Part[] {
+function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void, onHome: ((home: boolean) => void) | undefined, t: T): Part[] {
   const branches = cfg.branches ?? [];
   const policy = POLICIES.find((p) => p.p === cfg.policy);
   const setBranch = (i: number, b: Branch) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? b : x)) });
@@ -1364,12 +1380,13 @@ function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void
           </Field>
           {cfg.policy === "choice" && (
             <label className="check">
-              <input type="checkbox" checked={!!cfg.home} onChange={(e) => onHome(e.target.checked)} />
+              <input type="checkbox" checked={!!cfg.home} disabled={!onHome} onChange={(e) => onHome?.(e.target.checked)} />
               <span>
                 {t.t("Home screen")}
                 <span className="field__hint check__hint">
                   {t.t("Teams keep coming back here. Branches stay open after a visit, teams can go back here from anywhere inside them, and it never finishes — end the adventure from one of its branches.")}
                 </span>
+                {!onHome && <span className="field__hint check__hint">{t.t("Switched on outside a suggestion: it takes away the step's wire onward.")}</span>}
               </span>
             </label>
           )}
@@ -1507,7 +1524,7 @@ function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void
  * working. Typed answers remain, folded away, for open questions whose
  * puzzle accepts anything. "Any other answer" is always there.
  */
-function switchParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void, t: T): Part[] {
+function switchParts(node: Node, graph: Graph, onEdit: StepEdit, t: T): Part[] {
   const cfg: SwitchConfig = node.switch ?? {};
   const cases = cfg.cases ?? [];
   const puzzles = graph.nodes.filter((n) => n.type === "puzzle");
@@ -1517,7 +1534,7 @@ function switchParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void
   const options = sources.flatMap((s) => answerOptions(graph, s));
   const titleOf = (slug: string) => nodeBySlug(graph, slug)?.title || slug;
 
-  const setCfg = (g: Graph, next: SwitchConfig) => onGraphChange(updateNode(g, node.slug, (n) => ({ ...n, switch: next })));
+  const setCfg = (g: Graph, next: SwitchConfig) => onEdit(g, (n) => ({ ...n, switch: next }));
   const setCase = (g: Graph, i: number, c: Case) => setCfg(g, { ...cfg, cases: cases.map((x, j) => (j === i ? c : x)) });
 
   const parts: Part[] = [
@@ -1655,12 +1672,22 @@ function switchParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void
  * takes its player down the path, and the players a role does not claim
  * are shared out evenly — so a crowd needs no roles at all.
  */
-function splitParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void, t: T): Part[] {
+function splitParts(node: Node, onChange: (n: Node) => void, graph: Graph, t: T): Part[] {
   const cfg: SplitConfig = node.split ?? {};
   const paths = cfg.paths ?? [];
   const roles = (graph.roles ?? []).filter((r) => !r.secret);
-  const roleName = (slug: string) => roles.find((r) => r.slug === slug)?.name || slug;
-  const setCfg = (next: SplitConfig) => onGraphChange(updateNode(graph, node.slug, (n) => ({ ...n, split: next })));
+  // The phones name a path for its role as internal/graph.RoleName does:
+  // any role's name, secret or not, else the slug.
+  const roleName = (slug: string) => graph.roles?.find((r) => r.slug === slug)?.name || slug;
+  // A path's role that is gone, or secret, which a path cannot take: shown so it can be cleared.
+  const badRole = (slug: string | undefined): "gone" | "secret" | undefined => {
+    if (!slug) return undefined;
+    const r = graph.roles?.find((x) => x.slug === slug);
+    return !r ? "gone" : r.secret ? "secret" : undefined;
+  };
+  // Through onChange, as every edit of the step itself: in a translation
+  // the texts become translations, and a suggestion edits its draft.
+  const setCfg = (next: SplitConfig) => onChange({ ...node, split: next });
   const setPaths = (next: NonNullable<SplitConfig["paths"]>) => setCfg({ ...cfg, paths: next });
   return [
     {
@@ -1706,7 +1733,10 @@ function splitParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void,
                   </Button>
                 )}
               </div>
-              {roles.length > 0 && (
+              {!p.label && !p.role && (
+                <span className="field__hint zone-here__warn">{t.t("No name or role: the phones call this group “{{port}}”.", { port: p.port })}</span>
+              )}
+              {(roles.length > 0 || !!p.role) && (
                 <Field label={t.t("Role")}>
                   <select
                     className="field__input"
@@ -1714,6 +1744,8 @@ function splitParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void,
                     onChange={(e) => setPaths(paths.map((x, j) => (j === i ? withOptional({ ...x }, "role", e.target.value || undefined) : x)))}
                   >
                     <option value="">{t.t("None: a share of everyone")}</option>
+                    {p.role && badRole(p.role) === "gone" && <option value={p.role}>{t.t("{{role}} (role removed)", { role: p.role })}</option>}
+                    {p.role && badRole(p.role) === "secret" && <option value={p.role}>{t.t("{{role}} (secret role: pick another)", { role: roleName(p.role) })}</option>}
                     {roles
                       .filter((r) => r.slug === p.role || !paths.some((x) => x.role === r.slug))
                       .map((r) => (
@@ -1722,6 +1754,11 @@ function splitParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void,
                         </option>
                       ))}
                   </select>
+                  {badRole(p.role) && (
+                    <span className="field__hint zone-here__warn">
+                      {badRole(p.role) === "gone" ? t.t("This role no longer exists; choose another or none.") : t.t("A secret role cannot lead a group; choose another or none.")}
+                    </span>
+                  )}
                 </Field>
               )}
             </div>
@@ -1757,8 +1794,9 @@ function nextBranchPort(taken: string[]): string {
 
 // --- effect ----------------------------------------------------------------
 
-function EffectForm({ cfg, graph, onChange, onNewItem, onGraphChange }: { cfg: EffectConfig; graph: Graph; onChange: (c: EffectConfig) => void; onNewItem: (item: Item) => void; onGraphChange: (g: Graph) => void }) {
+function EffectForm({ cfg, graph, onChange, onNewItem, onGraphChange }: { cfg: EffectConfig; graph: Graph; onChange: (c: EffectConfig) => void; onNewItem: ((item: Item) => void) | undefined; onGraphChange: (g: Graph, opts?: StepEditOpts) => void }) {
   const t = useT();
+  const { translating } = useContext(EditingAs);
   const openThemes = useContext(OpenThemes);
   const saved = graph.themes ?? [];
   // An item made here is named here, beside the picker that made it.
@@ -1769,7 +1807,7 @@ function EffectForm({ cfg, graph, onChange, onNewItem, onGraphChange }: { cfg: E
     let i = 1;
     while (used.has(`item-${i}`)) i++;
     setFresh(`item-${i}`);
-    onNewItem({ slug: `item-${i}`, name: "" });
+    onNewItem?.({ slug: `item-${i}`, name: "" });
   };
   const freshItem = fresh && fresh === cfg.item ? items.find((x) => x.slug === fresh) : undefined;
   return (
@@ -1788,14 +1826,16 @@ function EffectForm({ cfg, graph, onChange, onNewItem, onGraphChange }: { cfg: E
       {cfg.kind === "score" && <NumberField label={t.t("Points (negative to deduct)")} value={cfg.points} onChange={(n) => onChange(withOptional({ ...cfg }, "points", n))} />}
       {cfg.kind === "grant_item" && (
         <div className="box__row">
-          <ResourceSelect label={t.t("Item")} value={cfg.item} options={items} onChange={(item) => onChange({ ...cfg, item })} onNew={newItem} newLabel={t.t("New item…")} />
+          <ResourceSelect label={t.t("Item")} value={cfg.item} options={items} onChange={(item) => onChange({ ...cfg, item })} {...(onNewItem ? { onNew: newItem } : {})} newLabel={t.t("New item…")} />
           <NumberField label={t.t("How many")} value={cfg.qty} onChange={(n) => onChange(withOptional({ ...cfg }, "qty", n))} />
         </div>
       )}
       {cfg.kind === "grant_item" && freshItem && (
-        <Field label={t.t("Name of the new item")}>
+        <Field label={translating ? t.t("Name of the new item in {{lang}}", { lang: translating.mainName }) : t.t("Name of the new item")}
+          hint={translating ? t.t("Its main name. Translate it with the adventure's other texts.") : undefined}>
+          {/* Asked for in the main language, so it is the main name even here. */}
           <input className="field__input" autoFocus value={freshItem.name ?? ""}
-            onChange={(e) => onGraphChange({ ...graph, items: items.map((x) => (x.slug === freshItem.slug ? { ...x, name: e.target.value } : x)) })} />
+            onChange={(e) => onGraphChange({ ...graph, items: items.map((x) => (x.slug === freshItem.slug ? { ...x, name: e.target.value } : x)) }, { main: true })} />
         </Field>
       )}
       {cfg.kind === "counter" && (
@@ -2401,10 +2441,10 @@ function ListEditor<T>({
  * for an absent field but a `null` would be a type error on its side.
  */
 /** "Mark where I stand" for a puzzle: the new zone and the puzzle's gate on it, in one edit. */
-function puzzleHere(node: Node, graph: Graph, onGraphChange: (g: Graph) => void, t: T): ZoneHere {
+function puzzleHere(node: Node, graph: Graph, onEdit: StepEdit, t: T): ZoneHere {
   return {
     name: node.title || t.t("Puzzle"),
-    set: (zones, slug) => onGraphChange(updateNode({ ...graph, zones }, node.slug, (n) => ({ ...n, puzzle: { ...n.puzzle!, zone: slug } }))),
+    set: (zones, slug) => onEdit({ ...graph, zones }, (n) => ({ ...n, puzzle: { ...n.puzzle!, zone: slug } })),
   };
 }
 

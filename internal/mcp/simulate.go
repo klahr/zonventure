@@ -30,7 +30,8 @@ func (s *Server) registerSimulateTools() {
 			"move there and begin {port: <start node slug>}. Then: answer {node, guess}; continue {node}; choose {node, port} at a hub; skip {node}; hint {node}; " +
 			"pick {node, block, choice} for quiz blocks; wait {seconds} jumps the clock; move {zone} puts the team in a zone (or nowhere when empty), " +
 			"move {lat, lng} at a point; language {lang} switches to a translation. Stops at the first refused action and says how many after it were not run; a hint before its delay is refused, so wait {seconds} first. Each step reports the node the team is now at, " +
-			"whether an answer was accepted, the port it left by, points, wrong-answer response and hint text.",
+			"whether an answer was accepted, the port it left by, points, wrong-answer response and hint text. " +
+			"A team split up into groups (a split step) is played one group after another, as one player alone would: while split, at is the step of the group to play next, group its name and group_key its key, and groups where every group is, each with its key; continue {node: <split>} sets the next group off down its path, and walk {port: <group key>} turns to another group not waiting at the join.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"slug", "actions"},
@@ -78,6 +79,22 @@ type simStep struct {
 	TimeUp   bool            `json:"time_up,omitempty"`
 	Passed   []string        `json:"passed,omitempty"`
 	Refusal  json.RawMessage `json:"refusal,omitempty"`
+	// Group, GroupKey and Groups are set while the team is split up: At
+	// is then the step of Group, the group the simulated team plays next
+	// — GroupKey is its key, for walk {port} — and Groups where every
+	// group is.
+	Group    string     `json:"group,omitempty"`
+	GroupKey string     `json:"group_key,omitempty"`
+	Groups   []simGroup `json:"groups,omitempty"`
+}
+
+// simGroup is one group of a split team: its name, its key (walk's
+// port), its step, and whether it waits at its join.
+type simGroup struct {
+	Group   string `json:"group"`
+	Key     string `json:"key"`
+	At      string `json:"at"`
+	Waiting bool   `json:"waiting,omitempty"`
 }
 
 func simulateAdventure(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
@@ -129,6 +146,17 @@ func simulateAdventure(ctx context.Context, s *Server, raw json.RawMessage) (Too
 				Response string  `json:"response"`
 				Hint     string  `json:"hint"`
 				TimeUp   bool    `json:"time_up"`
+				View     struct {
+					Node   string `json:"node"`
+					Group  string `json:"group"`
+					Groups []struct {
+						Port    string `json:"port"`
+						Label   string `json:"label"`
+						Node    string `json:"node"`
+						Arrived bool   `json:"arrived"`
+						Current bool   `json:"current"`
+					} `json:"groups"`
+				} `json:"view"`
 			} `json:"result"`
 		}
 		if err := json.Unmarshal(body, &resp); err != nil {
@@ -139,12 +167,22 @@ func simulateAdventure(ctx context.Context, s *Server, raw json.RawMessage) (Too
 			Completed bool   `json:"completed"`
 		}
 		_ = json.Unmarshal(resp.Team, &where)
-		steps = append(steps, simStep{
+		step := simStep{
 			Action: act, At: where.Current, Finished: where.Completed,
 			Accepted: resp.Result.Accepted, Port: resp.Result.Port, Points: resp.Result.Points,
 			Response: resp.Result.Response, Hint: resp.Result.Hint, TimeUp: resp.Result.TimeUp,
 			Passed: resp.Passed, Refusal: resp.Refuse,
-		})
+		}
+		if v := resp.Result.View; len(v.Groups) > 0 {
+			step.At, step.Group = v.Node, v.Group
+			for _, g := range v.Groups {
+				step.Groups = append(step.Groups, simGroup{Group: g.Label, Key: g.Port, At: g.Node, Waiting: g.Arrived})
+				if g.Current {
+					step.GroupKey = g.Port
+				}
+			}
+		}
+		steps = append(steps, step)
 		if len(resp.Refuse) > 0 && string(resp.Refuse) != "null" {
 			break
 		}

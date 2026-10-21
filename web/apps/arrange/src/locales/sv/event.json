@@ -261,5 +261,8 @@
   "Who gets {{name}}": "Vem som får {{name}}",
   "In other languages": "På andra språk",
   "A team gets its invitation and emails in the language it plays in. Left empty, a text shows as written. The adventure's own title and meeting point are translated in the designer.": "Ett lag får sin inbjudan och sina mejl på det språk det spelar på. Lämnas en text tom visas den som den är skriven. Äventyrets egen titel och mötesplats översätts i designern.",
-  "Move group on": "Flytta gruppen vidare"
+  "Move group on": "Flytta gruppen vidare",
+  "Move {{group}} of {{name}} on?": "Flytta {{group}} i {{name}} vidare?",
+  "This moves the group past the step it's on, without points: a puzzle by its skip route if it has one, otherwise as if the group had answered; a story as if read; a hub out, or into the first branch it may still take. The rest of the team stays where it is. Useful when the group is stuck or the location won't register. The action is recorded in the event log.": "Det här flyttar gruppen förbi steget den står på, utan poäng: ett pussel via dess överhoppningsväg om det finns en, annars som om gruppen hade svarat; en berättelse som om den var läst; ett nav ut, eller in i den första gren den fortfarande får ta. Resten av laget blir kvar där det är. Bra när gruppen har kört fast eller platsen inte registreras. Åtgärden loggas i eventloggen.",
+  "{{group}} of {{name}} moved on": "{{group}} i {{name}} gick vidare"
 }

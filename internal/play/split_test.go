@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/cond"
 	"github.com/klahr/zonventure/internal/graph/session"
 )
 
@@ -437,5 +438,213 @@ func TestDevMoveToASplit(t *testing.T) {
 	}
 	if v := f.phoneView(team, p[1]); v.Type != graph.Split {
 		t.Fatalf("view %+v", v)
+	}
+}
+
+// A team whose stored groups no longer fit its graph — a dev team's,
+// edited under it — splits afresh on the split it stands on, and plays
+// on. Regression: it stood there for good, every press the wrong step.
+func TestSplitThatNoLongerFitsSplitsAfresh(t *testing.T) {
+	t.Parallel()
+	f := setup(t, heist(false), 1)
+	team := f.teams[0]
+	p := f.players(team, 2)
+	if _, err := f.db.Exec(`UPDATE team_graph_state SET strands = '[{"port":"gone","current":"split"}]' WHERE team_id = $1`, team); err != nil {
+		t.Fatal(err)
+	}
+	if v := f.phoneView(team, p[0]); v.Type != graph.Split || len(v.Groups) != 2 {
+		t.Fatalf("view %+v", v)
+	}
+	if _, err := f.eng.Continue(phone(p[0]), team, "split"); err != nil {
+		t.Fatal(err)
+	}
+	if split, strands, _ := f.strands(team); split.String != "split" || len(strands) != 2 || strands[0].Current != "pa" {
+		t.Fatalf("split %v strands %+v", split, strands)
+	}
+}
+
+// Roles locked on a step of one group's path are dealt over the whole
+// team: the other group's role stays its holder's. Regression: the
+// group leaving took every role among its own.
+func TestLockRolesOnAPath(t *testing.T) {
+	t.Parallel()
+	g := heist(true)
+	g.Roles = append(g.Roles, graph.Role{Slug: "medic", Name: "Medic"})
+	for i := range g.Nodes {
+		if g.Nodes[i].Slug == "pa" {
+			g.Nodes[i].PuzzleCfg.Blocks = []graph.Block{{ID: "parts", Kind: graph.BlockRoles, Text: "Your parts.", Lock: true}}
+		}
+	}
+	f := setup(t, g, 1)
+	team := f.teams[0]
+	p := f.players(team, 4) // scout p0, medic p1; a: p0, p2; b: p1, p3
+	if _, err := f.eng.Continue(phone(p[0]), team, "split"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.eng.Answer(phone(p[0]), team, "pa", "bell"); err != nil {
+		t.Fatal(err)
+	}
+	var medic int64
+	mustScan(t, f.db.QueryRow(`SELECT slot_id FROM team_roles WHERE team_id = $1 AND role = 'medic'`, team), &medic)
+	if medic != p[1] {
+		t.Fatalf("the medic locked to %d, want %d", medic, p[1])
+	}
+}
+
+// A group whose players have gone is walked by whoever takes it on, and
+// its walk is theirs. Regression: it was its gone players', none, and a
+// walk on its path never opened.
+func TestWalkOfAGroupWithNoOneLeft(t *testing.T) {
+	t.Parallel()
+	g := heist(false)
+	// How far a group walked is asked for on its path.
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "far", Type: graph.Gate, GateCfg: &graph.GateConfig{Condition: cond.Predicate{Op: cond.OpWalked, N: 1000}}})
+	for i, e := range g.Edges {
+		if e.From == "pb" {
+			g.Edges[i].To = "far"
+		}
+	}
+	g.Edges = append(g.Edges, edge("far", graph.PortPass, "join"), edge("far", graph.PortFail, "join"))
+	f := setup(t, g, 1)
+	team := f.teams[0]
+	p := f.players(team, 4) // a: p0, p2; b: p1, p3
+	if _, err := f.eng.Continue(phone(p[0]), team, "split"); err != nil {
+		t.Fatal(err)
+	}
+	// b's players gone: neither counts as playing.
+	if _, err := f.db.Exec(`UPDATE player_slots SET last_login_at = NULL WHERE id IN ($1, $2)`, p[1], p[3]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.eng.Answer(phone(p[0]), team, "pa", "bell"); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.Advance(time.Minute)
+	if _, err := f.eng.Continue(phone(p[0]), team, "split"); err != nil {
+		t.Fatal(err)
+	}
+	for i, lat := range []float64{59.0, 59.01} {
+		if _, err := f.db.Exec(`
+			INSERT INTO location_pings(slot_id, team_id, event_id, lat, lng, server_ts)
+			VALUES ($1, $2, $3, $4, 18.0, $5)
+		`, p[0], team, f.eventID, lat, f.clock.Now().Add(time.Duration(i+1)*time.Minute).Format("2006-01-02 15:04:05")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := f.eng.loadCore(context.Background(), f.db, team, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.eng.divide(context.Background(), f.db, s); err != nil {
+		t.Fatal(err)
+	}
+	if w := s.Walks["b"]; w < 1000 || s.Walks["a"] != 0 {
+		t.Fatalf("walks %v: b's walkers walked 1.1 km", s.Walks)
+	}
+}
+
+// A phone's choice of group is kept: its next view, and its actions, are
+// that group's.
+func TestWalkLive(t *testing.T) {
+	t.Parallel()
+	f := setup(t, heist(false), 1)
+	team := f.teams[0]
+	p := f.players(team, 1)
+	if _, err := f.eng.Continue(phone(p[0]), team, "split"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.eng.Walk(phone(p[0]), team, "b"); err != nil {
+		t.Fatal(err)
+	}
+	if v := f.phoneView(team, p[0]); v.Node != "split" || !v.Groups[1].Current {
+		t.Fatalf("walking b: %+v", v)
+	}
+	if _, err := f.eng.Continue(phone(p[0]), team, "split"); err != nil {
+		t.Fatal(err)
+	}
+	if _, strands, _ := f.strands(team); strands[0].Current != "pa" || strands[1].Current != "pb" || !slices.Equal(strands[1].Chosen, []int64{p[0]}) {
+		t.Fatalf("strands %+v", strands)
+	}
+	if _, err := f.eng.Walk(phone(p[0]), team, "nowhere"); !errors.Is(err, session.ErrStale) {
+		t.Fatalf("walking no group: %v", err)
+	}
+}
+
+// A group whose players' phones are all away is anyone's until one is
+// back: the other group, done, walks it.
+func TestAwayGroupIsAnyonesLive(t *testing.T) {
+	t.Parallel()
+	f := setup(t, heist(false), 1)
+	team := f.teams[0]
+	p := f.players(team, 2) // a: p0; b: p1
+	// p1 opened their link long ago and has not been heard from since.
+	if _, err := f.db.Exec(`UPDATE player_slots SET last_login_at = '2026-09-22 09:00:00' WHERE id = $1`, p[1]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.eng.Continue(phone(p[0]), team, "split"); err != nil {
+		t.Fatal(err)
+	}
+	if v := f.phoneView(team, p[0]); !v.Groups[1].Open || v.Groups[1].Mine {
+		t.Fatalf("b should be p0's to walk too: %+v", v.Groups)
+	}
+	if _, err := f.eng.Walk(phone(p[0]), team, "b"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A phone heard from lately — the app open, sending no location — is not
+// away, however long ago its player opened their link; silent for
+// minutes, it is, and a ping counts as hearing from it too. Regression:
+// only pings and the link's opening counted, so in an adventure without
+// places every other phone was away three minutes in.
+func TestSeenPhoneIsNotAway(t *testing.T) {
+	t.Parallel()
+	f := setup(t, heist(false), 1)
+	team := f.teams[0]
+	p := f.players(team, 2) // a: p0; b: p1
+	seen := func(at string) {
+		t.Helper()
+		if _, err := f.db.Exec(`UPDATE player_slots SET last_login_at = '2026-09-22 09:00:00', last_seen_at = $2 WHERE id = $1`, p[1], at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seen("2026-09-22 09:59:30")
+	if _, err := f.eng.Continue(phone(p[0]), team, "split"); err != nil {
+		t.Fatal(err)
+	}
+	if v := f.phoneView(team, p[0]); v.Groups[1].Open {
+		t.Fatalf("p1 was seen half a minute ago: %+v", v.Groups)
+	}
+	seen("2026-09-22 09:50:00")
+	if v := f.phoneView(team, p[0]); !v.Groups[1].Open {
+		t.Fatalf("p1 silent for ten minutes: %+v", v.Groups)
+	}
+	if _, err := f.db.Exec(`
+		INSERT INTO location_pings(slot_id, team_id, event_id, lat, lng, server_ts)
+		VALUES ($1, $2, $3, 59.0, 18.0, '2026-09-22 09:59:50')
+	`, p[1], team, f.eventID); err != nil {
+		t.Fatal(err)
+	}
+	if v := f.phoneView(team, p[0]); v.Groups[1].Open {
+		t.Fatalf("p1 pinged ten seconds ago: %+v", v.Groups)
+	}
+}
+
+// A team split afresh off a split — its split edited into another kind
+// of step — is stored as one team by its next action, though it moves
+// nowhere. Regression: only a deal or a choice stored the groups, and the
+// stale ones stayed.
+func TestSplitAfreshOffASplitIsStored(t *testing.T) {
+	t.Parallel()
+	f := setup(t, heist(false), 1)
+	team := f.teams[0]
+	p := f.players(team, 1)
+	if _, err := f.db.Exec(`UPDATE team_graph_state SET split = 'pa', current_node = 'pa' WHERE team_id = $1`, team); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := f.eng.Answer(phone(p[0]), team, "pa", "nope"); err != nil || res.Accepted {
+		t.Fatalf("a wrong answer: %+v %v", res, err)
+	}
+	if split, strands, current := f.strands(team); split.Valid || strands != nil || current != "pa" {
+		t.Fatalf("split %v strands %+v at %q", split, strands, current)
 	}
 }

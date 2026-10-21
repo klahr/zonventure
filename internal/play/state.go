@@ -202,17 +202,22 @@ func walkedBy(ctx context.Context, q Querier, teamID int64, since time.Time, slo
 // pings are read only for those.
 var walkedGraphs sync.Map // *graph.Graph -> bool
 
-// awaySeconds is how long a phone may stay silent before its player
+// AwayAfter is how long a phone may stay silent before its player
 // counts as away: long enough to pocket it on the walk to a post, short
 // enough that a dead battery does not hold the team for long.
-const awaySeconds = 180.0
+const AwayAfter = 180 * time.Second
 
-// away are the team's players whose phones have not reported for
-// awaySeconds — counted, for a phone that never has, from when its
-// player opened their link, so one just joining is not away yet.
+// away are the team's players whose phones have not been heard from for
+// AwayAfter: neither a request of the player app or its live
+// connection (player_slots.last_seen_at, auth.SeenSlot) nor a location
+// ping, whichever came last — counted, for a phone that has done
+// neither, from when its player opened their link, so one just joining
+// is not away yet. A phone with its app open is heard from though it
+// sends no location.
 func away(ctx context.Context, q Querier, teamID int64, now time.Time) (map[int64]bool, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT s.id, COALESCE((SELECT max(p.server_ts) FROM location_pings p WHERE p.slot_id = s.id), s.last_login_at, '')
+		SELECT s.id, COALESCE(GREATEST((SELECT max(p.server_ts) FROM location_pings p WHERE p.slot_id = s.id), s.last_seen_at),
+		                      s.last_login_at, '')
 		FROM player_slots s WHERE s.team_id = $1`, teamID)
 	if err != nil {
 		return nil, err
@@ -225,7 +230,7 @@ func away(ctx context.Context, q Querier, teamID int64, now time.Time) (map[int6
 		if err := rows.Scan(&slot, &ts); err != nil {
 			return nil, err
 		}
-		if at, ok := icscal.ParseTimestamp(ts); !ok || now.Sub(at).Seconds() > awaySeconds {
+		if at, ok := icscal.ParseTimestamp(ts); !ok || now.Sub(at) > AwayAfter {
 			out[slot] = true
 		}
 	}
@@ -357,6 +362,9 @@ type teamState struct {
 	// wasSplit is whether it was split as loaded.
 	whole    string
 	wasSplit bool
+	// afresh says the team's stored groups no longer fit its graph and
+	// it was split afresh as loaded (SplitAfresh): an action stores that.
+	afresh bool
 }
 
 // newTeamState returns an empty state for teamID at now.
@@ -470,8 +478,10 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	}
 	if s.Split != "" && !splitFits(s.G, s.Split, s.Strands) {
 		// Only a dev team's graph changes under it: a split edited away
-		// while the team is split leaves it where it split.
-		s.Split, s.Strands = "", nil
+		// while the team is split leaves it where it split — split there
+		// afresh, if that is a split still.
+		s.SplitAfresh()
+		s.afresh = true
 	}
 	return s, s.loadRest(ctx, q)
 }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { FastForward, LogOut, Mail, MapPinOff, Pencil, Trash2, Undo2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { Button, Dialog, ErrorBox, ICON, Loading, Pill, useLoad } from "../../ui/index.ts";
@@ -27,9 +28,17 @@ export function TeamDetailDialog(props: {
   const { event, team } = props;
   const t = useT();
   const actions = useTeamActions(props.reload);
+  // What is being moved on — "" for the team, else a group's port — so a
+  // second click, or an alt-click's double, is not a second request.
+  const [moving, setMoving] = useState<string | null>(null);
   const log = useLoad((s) => api.getActivity(event.id, team.id, s), [event.id, team.id, props.activityKey]);
+  // Who holds which role, and which group each is in while the team is
+  // split up: re-read as the team moves.
+  const players = useLoad((s) => api.getTeamPlayers(team.id, s), [team.id, props.activityKey, team.node, JSON.stringify(team.groups ?? [])]);
+  const playerOf = new Map((players.data ?? []).map((p) => [p.id, p]));
   const finished = teamProgress(t, props.graph, team).done;
-  const canUnlock = !finished && !!team.node && !!props.graph?.rescuable?.includes(team.node) && canDo(event, "unlock_team");
+  // A team split up is moved on a group at a time, below.
+  const canUnlock = !finished && !!team.node && !team.groups?.length && !!props.graph?.rescuable?.includes(team.node) && canDo(event, "unlock_team");
   // A strict check: the server grants withdraw_team only while the event runs.
   const canWithdraw = (event.allowed_ops ?? []).includes("withdraw_team") && !team.completed_at;
 
@@ -70,7 +79,18 @@ export function TeamDetailDialog(props: {
             variant="primary"
             icon={<FastForward size={ICON.md} aria-hidden />}
             title={t.t("Alt-click to skip the confirmation")}
-            onClick={async (e) => { if (await actions.unlock(team, e.altKey)) props.onClose(); }}
+            disabled={moving !== null}
+            loading={moving === ""}
+            onClick={async (e) => {
+              setMoving("");
+              let moved = false;
+              try {
+                moved = await actions.unlock(team, e.altKey);
+              } finally {
+                setMoving(null);
+              }
+              if (moved) props.onClose();
+            }}
           >
             {t.t("Move team on")}
           </Button>
@@ -83,18 +103,33 @@ export function TeamDetailDialog(props: {
           <h3 className="ev-h3">{t.t("Groups")}</h3>
           <ul className="ev-td__members">
             {team.groups.map((g) => (
-              <li key={g.port}>
+              <li key={g.port} className="ev-td__group">
                 <span>{g.label}</span>
-                <span className="cs-sub">{stepTitle(props.graph, g.node)}</span>
-                {props.graph?.rescuable?.includes(g.node) && canDo(event, "unlock_team") && (
-                  <Button
-                    icon={<FastForward size={ICON.sm} aria-hidden />}
-                    title={t.t("Alt-click to skip the confirmation")}
-                    onClick={(e) => void actions.unlock(team, e.altKey, g.node)}
-                  >
-                    {t.t("Move group on")}
-                  </Button>
-                )}
+                <span className="ev-td__group-at">
+                  <span className="cs-sub">
+                    {g.arrived ? t.t("waiting at {{step}}", { step: stepTitle(props.graph, g.node) }) : stepTitle(props.graph, g.node)}
+                    {g.since && <> · <Ago at={g.since} /></>}
+                  </span>
+                  {(props.graph?.rescuable_on_path ?? props.graph?.rescuable)?.includes(g.node) && canDo(event, "unlock_team") && (
+                    <Button
+                      size="sm"
+                      icon={<FastForward size={ICON.sm} aria-hidden />}
+                      title={t.t("Alt-click to skip the confirmation")}
+                      disabled={moving !== null}
+                      loading={moving === g.port}
+                      onClick={async (e) => {
+                        setMoving(g.port);
+                        try {
+                          await actions.unlock(team, e.altKey, g);
+                        } finally {
+                          setMoving(null);
+                        }
+                      }}
+                    >
+                      {t.t("Move group on")}
+                    </Button>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
@@ -105,12 +140,21 @@ export function TeamDetailDialog(props: {
         <p className="cs-muted">{t.t("No members yet.")}</p>
       ) : (
         <ul className="ev-td__members">
-          {members(team).map((m) => (
-            <li key={m.id}>
-              <span>{m.name}</span>
-              <span className="cs-sub">{m.last_login_at ? <>{t.t("Last login")} <Ago at={m.last_login_at} /></> : t.t("Not joined yet")}</span>
-            </li>
-          ))}
+          {members(team).map((m) => {
+            const p = playerOf.get(m.id);
+            return (
+              <li key={m.id}>
+                <span>
+                  {m.name}
+                  {p?.roles.map((r) => <Pill key={r}>{r}</Pill>)}
+                </span>
+                <span className="cs-sub">
+                  {p?.groups.length ? <>{p.groups.join(", ")} · </> : null}
+                  {m.last_login_at ? <>{t.t("Last login")} <Ago at={m.last_login_at} /></> : t.t("Not joined yet")}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
       <h3 className="ev-h3">{t.t("Activity")}</h3>

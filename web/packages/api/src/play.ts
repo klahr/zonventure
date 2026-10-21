@@ -287,6 +287,8 @@ export interface GroupView {
   arrived?: boolean;
   /** This phone is with the group; current: this view is the group's. */
   mine?: boolean;
+  /** The group is anyone's to walk: no one playing is with it, or every one of them is away. */
+  open?: boolean;
   current?: boolean;
   players?: number;
 }
@@ -448,7 +450,13 @@ export type PlayAction =
   /** This player's pick at a mission, from inside its post: "0" keeps faith, "1" betrays. Final. Live events only. */
   | { kind: "seal"; node: string; block: string; choice: "0" | "1" }
   /** This player's answer to their role's task on a step done in parallel. */
-  | { kind: "task"; node: string; block: string; guess: string };
+  | { kind: "task"; node: string; block: string; guess: string }
+  /**
+   * Walk another of this phone's groups while the team is split up: the
+   * group's key (GroupView.port, "a>x" within a group). Refused stale
+   * once it has gone on, not_yours for a group the phone is not in.
+   */
+  | { kind: "walk"; port: string };
 
 /**
  * Refusal codes (session.Code, plus the player handler's own). A client
@@ -465,6 +473,8 @@ export type RefusalCode =
   | "unanswered"
   | "unsealed"
   | "too_few"
+  | "not_yours"
+  | "which_group"
   | "paused"
   | "not_running"
   | "no_game"

@@ -4,12 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math/rand/v2"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/klahr/zonventure/internal/billing"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/settings"
 	"github.com/klahr/zonventure/internal/tokenx"
 )
@@ -290,6 +292,109 @@ func SlotMiddleware(db *sql.DB, lookupFailed http.HandlerFunc) func(http.Handler
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// seenEvery is the most often a slot is stamped as seen (TouchSlot):
+// often enough that a phone with its app open never looks away
+// (play.away waits minutes), seldom enough that a busy phone costs no
+// write per request.
+const seenEvery = 30 * time.Second
+
+// seenTick is how often an open WebSocket is stamped: seenEvery, but
+// for tests.
+var seenTick = seenEvery
+
+// seenJitter is how much sooner than seenTick a socket's first stamp
+// comes, at random below seenTick: sockets reconnecting together after
+// a restart then spread their lookups and stamps over the tick, not
+// all in one second of it. Tests set it to none.
+var seenJitter = func(d time.Duration) time.Duration { return rand.N(d) }
+
+// TouchSlot stamps player_slots.last_seen_at, unless it was stamped
+// within seenEvery: the phone was just heard from. Stamps are whole
+// seconds, so the bar is a second short of seenEvery: a stamp left by
+// the socket's last tick, seenEvery ago to the second, is renewed by
+// this one rather than the next. A forgotten slot is never stamped: a
+// tick or request that found its session just before Forget cleared
+// the stamp would otherwise put it back.
+func TouchSlot(ctx context.Context, db *sql.DB, slotID int64) error {
+	_, err := db.ExecContext(ctx, `
+		UPDATE player_slots SET last_seen_at = now_text()
+		WHERE id = $1 AND name <> '(forgotten)' AND (last_seen_at IS NULL OR
+		      last_seen_at < to_char((now() - make_interval(secs => $2)) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS'))
+	`, slotID, (seenEvery - time.Second).Seconds())
+	return err
+}
+
+// SeenSlot stamps the signed-in slot as seen (TouchSlot) on each request
+// — and, for a WebSocket held open, every seenEvery while it lasts, so a
+// phone with the app open and no one tapping still counts as there. The
+// connection's own pings close it once the phone is gone. A socket
+// whose session has since gone — signed out, erased, its event ended,
+// or its seat taken over by another phone — is no longer stamped: its
+// request's context is cancelled, which closes the socket, and the
+// phone's reconnect is refused as any request of that session would
+// be. A failed stamp is logged, and never fails the request. Compose
+// after RequireSlot.
+func SeenSlot(db *sql.DB) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			s, ok := SlotFromContext(r.Context())
+			if !ok {
+				next.ServeHTTP(w, r)
+				return
+			}
+			touch := func(ctx context.Context) {
+				if err := TouchSlot(ctx, db, s.ID); err != nil && ctx.Err() == nil {
+					logx.Warn("auth.slot.seen_failed", "slot", s.ID, "err", err.Error())
+				}
+			}
+			touch(r.Context())
+			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+				ctx, cancel := context.WithCancel(r.Context())
+				defer cancel()
+				r = r.WithContext(ctx)
+				token := ""
+				if c, err := r.Cookie(SlotCookieName); err == nil {
+					token = c.Value
+				}
+				go func() {
+					defer logx.Guard("auth.slot.seen")
+					tick := time.NewTimer(seenTick - seenJitter(seenTick))
+					defer tick.Stop()
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						case <-tick.C:
+							if !sessionLive(ctx, db, token) {
+								cancel()
+								return
+							}
+							touch(ctx)
+							tick.Reset(seenTick)
+						}
+					}
+				}()
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// sessionLive reports whether a slot session still lets its phone play,
+// as SlotMiddleware and RequireSlot would judge it: there, not expired,
+// its event not ended, its seat not taken over. A failed lookup counts
+// as live — a database hiccup closes no one's socket.
+func sessionLive(ctx context.Context, db *sql.DB, token string) bool {
+	s, ok, err := LookupSlot(ctx, db, token)
+	if err != nil {
+		if ctx.Err() == nil {
+			logx.Warn("auth.slot.session_check_failed", "err", err.Error())
+		}
+		return true
+	}
+	return ok && !s.Ended && !s.Replaced
 }
 
 // RequireSlot refuses requests that have no authenticated slot. A

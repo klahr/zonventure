@@ -84,7 +84,8 @@ function ActivityLine({ e, event, graph }: { e: Activity; event: Info; graph: Ev
     case "team.unlocked":
       // A graph rescue names the step; a lane skip counts pages.
       badge = "brand"; symbol = "⇨";
-      msg = <>{team}{p.node ? t.t(" was moved past {{step}}", { step }) : t.t(" skipped past puzzle {{n}}", { n: num(p.from_page_index) + 1 })}</>;
+      // A split team's group is named after its team.
+      msg = <>{team}{p.group ? ` · ${str(p.group)}` : ""}{p.node ? t.t(" was moved past {{step}}", { step }) : t.t(" skipped past puzzle {{n}}", { n: num(p.from_page_index) + 1 })}</>;
       if (p.by_arranger && !e.actor) meta = t.t("by arranger");
       break;
     case "team.start_anywhere":

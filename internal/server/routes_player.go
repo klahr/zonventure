@@ -30,6 +30,8 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 	// stay open since they're idempotent and can't damage state.
 	r.Route("/api/player", func(r chi.Router) {
 		r.Use(auth.RequireSlot)
+		// The phone is heard from: its player is not away (play.away).
+		r.Use(auth.SeenSlot(env.playerH.DB))
 		r.Use(auth.RequireCSRF())
 		r.Use(player.ForPhone)
 		// The React player app.
@@ -72,6 +74,9 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 	// with a single push-when-changed socket.
 	r.Group(func(r chi.Router) {
 		r.Use(auth.RequireSlot)
+		// Stamped while the socket is open, too: an app on screen with no
+		// one tapping still polls, but a pocketed one may only listen.
+		r.Use(auth.SeenSlot(env.playerH.DB))
 		r.Get("/ws/play", playerH.WSPlay)
 	})
 }

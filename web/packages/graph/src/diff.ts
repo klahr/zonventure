@@ -108,7 +108,7 @@ function stable(v: unknown): string {
 
 // The node fields whose change counts as the step's settings: its typed
 // config, and the journal notes it unlocks.
-const SETTINGS = ["puzzle", "story", "hub", "gate", "effect", "switch", "end", "start", "unlocks"] as const;
+const SETTINGS = ["puzzle", "story", "hub", "gate", "effect", "switch", "split", "end", "start", "unlocks"] as const;
 
 function stepChanges(a: Node, b: Node): string[] {
   const fields: string[] = [];

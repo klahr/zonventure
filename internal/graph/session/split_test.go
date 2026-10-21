@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/cond"
 	"github.com/klahr/zonventure/internal/graph/match"
 	"github.com/klahr/zonventure/internal/graph/walk"
 )
@@ -371,7 +372,7 @@ func TestAGroupWithNoOneLeftIsAnyones(t *testing.T) {
 	moved(t, tm, "a")(asPlayer(tm, 1, atChurch).Continue("split"))
 	moved(t, tm, "pa")(asPlayer(tm, 3, atChurch).Answer("pa", "bell"))
 	v := asPlayer(tm, 3, atWell).View()
-	if v.Node != "split" || v.Group != "Medic" || v.Groups[1].Players != 0 || v.Groups[1].Mine != true {
+	if v.Node != "split" || v.Group != "Medic" || v.Groups[1].Players != 0 || !v.Groups[1].Open || v.Groups[1].Mine {
 		t.Fatalf("player 3 should be offered the medic's empty group: %+v", v)
 	}
 	moved(t, tm, "b")(asPlayer(tm, 3, atWell).Continue("split"))
@@ -563,5 +564,535 @@ func TestLateSetOffIsStale(t *testing.T) {
 	moved(t, tm, "2 sets off")(asPlayer(tm, 2, nil).Continue("split"))
 	if _, _, err := asPlayer(tm, 3, nil).Answer("pb", "water"); !errors.Is(err, ErrNotYours) {
 		t.Fatalf("3 at the well's step: %v, want ErrNotYours", err)
+	}
+}
+
+// A phone pressing to set off twice sets off its group once: the second
+// press is a repeat, stale, not one for a group no one is left in, nor
+// for the player's own next group — whose turn comes after the first is
+// at the join. Regression: a double tap sent the empty group off too.
+func TestSetOffTwiceIsStale(t *testing.T) {
+	tm := startedSplit(t)
+	players(tm, 4)
+	tm.Deal(tm.Players, tm.RoleHolders)
+	tm.Players = []int64{1, 3} // the medic's group goes home
+	moved(t, tm, "1 sets off")(asPlayer(tm, 1, nil).Continue("split"))
+	if _, _, err := asPlayer(tm, 1, nil).Continue("split"); !errors.Is(err, ErrStale) || tm.Strands[1].Current != "split" {
+		t.Fatalf("1 again: %v, strands %+v", err, tm.Strands)
+	}
+
+	tm = startedSplit(t)
+	tm.Players, tm.Size = []int64{7}, 1
+	tm.RoleHolders = map[string]int64{"scout": 7, "medic": 7}
+	tm.Deal(tm.Players, tm.RoleHolders)
+	moved(t, tm, "a")(asPlayer(tm, 7, atChurch).Continue("split"))
+	if _, _, err := asPlayer(tm, 7, atChurch).Continue("split"); !errors.Is(err, ErrStale) || tm.Strands[1].Current != "split" {
+		t.Fatalf("alone, again: %v, strands %+v", err, tm.Strands)
+	}
+	stand(tm, map[int64]*Position{7: atChurch})
+	moved(t, tm, "pa")(asPlayer(tm, 7, atChurch).Answer("pa", "bell"))
+	moved(t, tm, "b, in its turn")(asPlayer(tm, 7, atWell).Continue("split"))
+	if tm.Strands[1].Current != "pb" {
+		t.Fatalf("strands %+v", tm.Strands)
+	}
+}
+
+// A group's presses on its step are kept for its view: the first key
+// turned shows turned. Regression: the view showed none until the
+// second.
+func TestGroupPressesShowInItsView(t *testing.T) {
+	b := newGB().split("s", "a", "b").puzzle("b1", "x").join("j").end("end").
+		add(graph.Node{Slug: "launch", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+			Answer:  &graph.Answer{Kind: graph.AnswerKeys},
+			Outputs: []graph.Output{{Port: "go", Trigger: graph.OnAnswer}},
+		}}).
+		wire("start", "out", "s").wire("s", "a", "launch").wire("s", "b", "b1").
+		wire("launch", "go", "j").wire("b1", "solved", "j").wire("j", "out", "end")
+	tm := begin(t, b.valid(t))
+	tm.Unfocus()
+	tm.Players, tm.Size = []int64{1, 2, 3, 4}, 4 // a: 1, 3
+	tm.PressesAt = map[string]map[int64]Press{}
+	tm.Deal(tm.Players, nil)
+	moved(t, tm, "a")(asPlayer(tm, 1, nil).Continue("s"))
+	moved(t, tm, "1 turns")(asPlayer(tm, 1, nil).Turn("launch"))
+	if v := asPlayer(tm, 1, nil).View(); v.Together == nil || v.Together.Done != 1 || !v.Together.Mine {
+		t.Fatalf("1's key should show turned: %+v", v.Together)
+	}
+	if v := asPlayer(tm, 3, nil).View(); v.Together == nil || v.Together.Done != 1 || v.Together.Mine {
+		t.Fatalf("3 should see 1's key turned: %+v", v.Together)
+	}
+}
+
+// How far a group walks counts, though the team was sent through JSON
+// focused on it and moved unfocused, as the designer's simulator does:
+// the walk is the group's. Regression: it was lost, every time.
+func TestWalkedThroughJSONIsTheGroups(t *testing.T) {
+	tm := startedSplit(t)
+	moved(t, tm, "a")(tm.Continue("split"))
+	trip := func(tm *Team) *Team {
+		t.Helper()
+		tm.View() // focused on the church party
+		raw, err := json.Marshal(tm)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var back Team
+		if err := json.Unmarshal(raw, &back); err != nil {
+			t.Fatal(err)
+		}
+		back.G = tm.G
+		back.Init()
+		return &back
+	}
+	tm = trip(tm)
+	tm.WalkedMetres += 1100
+	tm = trip(tm)
+	tm.WalkedMetres += 1100
+	if tm.View(); tm.Walked() != 2200 {
+		t.Fatalf("the church party walked %v, want 2200", tm.Walked())
+	}
+	if tm.Unfocus(); tm.Strands[0].Walked != 2200 || tm.Strands[1].Walked != 0 {
+		t.Fatalf("strands %+v", tm.Strands)
+	}
+}
+
+// A team whose groups no longer fit its graph splits afresh where it
+// stands, if that is a split, or is one team.
+func TestSplitAfresh(t *testing.T) {
+	tm := startedSplit(t)
+	moved(t, tm, "a")(tm.Continue("split"))
+	tm.Unfocus()
+	tm.Strands[0].Port = "gone"
+	tm.SplitAfresh()
+	if tm.Split != "split" || len(tm.Strands) != 2 || tm.Strands[0].Current != "split" || tm.Strands[0].Port != "a" {
+		t.Fatalf("split %q strands %+v", tm.Split, tm.Strands)
+	}
+	// The split edited into a story: the team is one, on it.
+	g := expedition()
+	g.Nodes[1].Type, g.Nodes[1].SplitCfg = graph.Story, nil
+	tm.G = g
+	tm.SplitAfresh()
+	if tm.Split != "" || tm.Strands != nil || tm.Current != "split" {
+		t.Fatalf("split %q strands %+v at %q", tm.Split, tm.Strands, tm.Current)
+	}
+}
+
+// vaultAndKey splits at "s": the vault on path a opens with the key the
+// gift on path b grants.
+func vaultAndKey(t *testing.T) *graph.Graph {
+	t.Helper()
+	b := newGB()
+	b.g.Items = []graph.Item{{Slug: "key", Name: "Key"}}
+	return b.split("s", "a", "b").
+		add(graph.Node{Slug: "vault", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+			Answer:  &graph.Answer{Kind: graph.AnswerItems, Slots: []graph.ItemSlot{{Item: "key"}}},
+			Outputs: []graph.Output{{Port: "open", Trigger: graph.OnAnswer}},
+		}}).
+		add(graph.Node{Slug: "gift", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.GrantItem, Item: "key"}}).
+		add(graph.Node{Slug: "b1", Type: graph.Story, Title: "The key"}).join("j").end("end").
+		wire("start", "out", "s").wire("s", "a", "vault").wire("s", "b", "gift").wire("gift", "out", "b1").
+		wire("vault", "open", "j").wire("b1", "out", "j").wire("j", "out", "end").
+		valid(t)
+}
+
+// A player in two groups chooses which they walk, and hops between them
+// at any step: the vault on one path waits for the key the other finds.
+// Regression: a player alone stood at the vault for good.
+func TestWalkAnotherOfMyGroups(t *testing.T) {
+	tm := begin(t, vaultAndKey(t))
+	tm.Unfocus()
+	tm.Players, tm.Size = []int64{7}, 1
+	tm.Deal(tm.Players, nil)
+	moved(t, tm, "a")(asNobody(tm, 7).Continue("s"))
+	if res, _, _ := asNobody(tm, 7).Answer("vault", "key"); res.Accepted {
+		t.Fatal("the vault opened without the key")
+	}
+	moved(t, tm, "walk b")(asNobody(tm, 7).Walk("b"))
+	if v := asNobody(tm, 7).View(); v.Node != "s" || !v.Groups[1].Current || v.Groups[0].Current {
+		t.Fatalf("walking b: %+v", v)
+	}
+	moved(t, tm, "b")(asNobody(tm, 7).Continue("s"))
+	// Back to the vault before b is done, and to b again: any step.
+	moved(t, tm, "walk a")(asNobody(tm, 7).Walk("a"))
+	if v := asNobody(tm, 7).View(); v.Node != "vault" {
+		t.Fatalf("back at the vault: %+v", v)
+	}
+	moved(t, tm, "walk b again")(asNobody(tm, 7).Walk("b"))
+	moved(t, tm, "b1")(asNobody(tm, 7).Continue("b1"))
+	if _, _, err := asNobody(tm, 7).Walk("b"); !errors.Is(err, ErrStale) {
+		t.Fatalf("walking a group at its join: %v", err)
+	}
+	// b arrived: the choice is forgotten, and the player is at the vault.
+	if v := asNobody(tm, 7).View(); v.Node != "vault" {
+		t.Fatalf("after b: %+v", v)
+	}
+	moved(t, tm, "vault")(asNobody(tm, 7).Answer("vault", "key"))
+	if !tm.Completed {
+		t.Fatalf("not finished: %v", keys(tm))
+	}
+}
+
+// A phone walks only its own groups.
+func TestWalkNotMyGroup(t *testing.T) {
+	tm := startedSplit(t)
+	players(tm, 4) // a: 1, 3; b: 2, 4
+	tm.Deal(tm.Players, tm.RoleHolders)
+	if _, _, err := asPlayer(tm, 1, nil).Walk("b"); !errors.Is(err, ErrNotYours) {
+		t.Fatalf("1 walking b: %v", err)
+	}
+	if _, _, err := asPlayer(tm, 1, nil).Walk("nowhere"); !errors.Is(err, ErrStale) {
+		t.Fatalf("1 walking no group: %v", err)
+	}
+	// Its players away, b is anyone's: 1 may walk it.
+	tm.Away = map[int64]bool{2: true, 4: true}
+	moved(t, tm, "1 walks b")(asPlayer(tm, 1, nil).Walk("b"))
+	if v := asPlayer(tm, 1, nil).View(); v.Group != "Medic" || !v.Groups[1].Open || v.Groups[1].Mine || !v.Groups[0].Mine {
+		t.Fatalf("1's view: %+v", v)
+	}
+	// One of them back, it is theirs again.
+	tm.Away = map[int64]bool{4: true}
+	if v := asPlayer(tm, 1, nil).View(); v.Group != "Church party" || v.Groups[1].Mine || v.Groups[1].Open {
+		t.Fatalf("1's view with 2 back: %+v", v)
+	}
+}
+
+// The organisers move a group on from any step of its path with a way
+// on: a story no one is left to read.
+func TestRescueAGroupsStory(t *testing.T) {
+	g := vaultAndKey(t)
+	tm := begin(t, g)
+	moved(t, tm, "b")(tm.RescueGroup("s", "b"))
+	if _, _, err := tm.Rescue("start"); err == nil {
+		t.Fatal("rescued from nowhere")
+	}
+	moved(t, tm, "past b1")(tm.RescueGroup("b1", "b"))
+	if got := keys(tm); !slices.Equal(got, []string{"a@s", "b@j"}) {
+		t.Fatalf("groups %v", got)
+	}
+	if !CanRescueGroup(graph.Node{Type: graph.Story}) || CanRescue(graph.Node{Type: graph.Story}) || CanRescueGroup(graph.Node{Type: graph.Join}) {
+		t.Error("a group's story is rescuable; the team's, and a join, are not")
+	}
+}
+
+// A group at a hub on its path is moved on into its first branch, and
+// out once it has done enough there.
+func TestRescueAGroupsHub(t *testing.T) {
+	g := newGB().split("s", "a", "b").
+		add(graph.Node{Slug: "hub", Type: graph.Hub, HubCfg: &graph.HubConfig{Policy: graph.PolicyChoice, Required: 1, Branches: []graph.Branch{{Port: "x"}, {Port: "y"}}}}).
+		puzzle("hx", "x").puzzle("hy", "y").puzzle("b1", "b").join("j").end("end").
+		wire("start", "out", "s").wire("s", "a", "hub").wire("s", "b", "b1").
+		wire("hub", "x", "hx").wire("hub", "y", "hy").wire("hx", "solved", "hub").wire("hy", "solved", "hub").
+		wire("hub", "done", "j").wire("b1", "solved", "j").wire("j", "out", "end").valid(t)
+	tm := begin(t, g)
+	moved(t, tm, "a")(tm.RescueGroup("s", "a"))
+	moved(t, tm, "into x")(tm.RescueGroup("hub", "a"))
+	moved(t, tm, "past hx")(tm.RescueGroup("hx", "a"))
+	moved(t, tm, "out")(tm.RescueGroup("hub", "a"))
+	if got := keys(tm); !slices.Equal(got, []string{"a@j", "b@s"}) {
+		t.Fatalf("groups %v", got)
+	}
+}
+
+// A group anyone's because every one of its players is away is finished
+// by those walking it: a step done together waits for them, not for the
+// players away, and the role an away player holds is everyone's in it.
+// One of them back, the group is theirs again. Regression: the away
+// players were still counted, and the walker waited for them for good.
+func TestAwayGroupIsFinishedByItsWalkers(t *testing.T) {
+	g := expedition()
+	for i := range g.Nodes {
+		if g.Nodes[i].Slug == "pb" {
+			g.Nodes[i].PuzzleCfg.Unanimous = true
+			g.Nodes[i].PuzzleCfg.Zone = ""
+		}
+	}
+	tm, _, _ := Start(g, t0)
+	players(tm, 4) // a: 1, 3; b: 2, 4
+	tm.Deal(tm.Players, tm.RoleHolders)
+	tm.Away = map[int64]bool{2: true, 4: true}
+	if w := tm.Walkers(tm.Everyone()); len(w["b"]) != 0 || !slices.Equal(w["a"], []int64{1, 3}) {
+		t.Fatalf("walkers with b's players away: %v", w)
+	}
+	moved(t, tm, "1 walks b")(asPlayer(tm, 1, nil).Walk("b"))
+	if w := tm.Walkers(tm.Everyone()); !slices.Equal(w["b"], []int64{1}) || !slices.Equal(w["a"], []int64{3}) {
+		t.Fatalf("walkers with 1 on b: %v", w)
+	}
+	moved(t, tm, "1 sets b off")(asPlayer(tm, 1, nil).Continue("split"))
+	// 2 back: b is 2's and 4's again, and 1 is back with a.
+	tm.Away = map[int64]bool{4: true}
+	if w := tm.Walkers(tm.Everyone()); !slices.Equal(w["b"], []int64{2, 4}) || !slices.Equal(w["a"], []int64{1, 3}) {
+		t.Fatalf("walkers with 2 back: %v", w)
+	}
+	tm.Away = map[int64]bool{2: true, 4: true}
+	res := moved(t, tm, "1 agrees")(asPlayer(tm, 1, nil).Answer("pb", "water"))
+	if !res.Accepted || tm.Strands[1].Current != "join" {
+		t.Fatalf("1, b's one walker, agreed: %+v, strands %+v", res, tm.Strands)
+	}
+}
+
+// The role of a player away is everyone's in their group while it is
+// anyone's: the one walking it answers for the medic.
+func TestAwayHoldersRoleIsTheWalkers(t *testing.T) {
+	g := expedition()
+	for i := range g.Nodes {
+		if g.Nodes[i].Slug == "pb" {
+			g.Nodes[i].PuzzleCfg.By = "medic"
+			g.Nodes[i].PuzzleCfg.Zone = ""
+		}
+	}
+	tm, _, _ := Start(g, t0)
+	players(tm, 3) // a: 1, 3; b: 2, the medic
+	tm.Deal(tm.Players, tm.RoleHolders)
+	tm.Away = map[int64]bool{2: true}
+	moved(t, tm, "3 walks b")(asPlayer(tm, 3, nil).Walk("b"))
+	moved(t, tm, "3 sets b off")(asPlayer(tm, 3, nil).Continue("split"))
+	if v := asPlayer(tm, 3, nil).View(); v.Node != "pb" || v.Input == nil || v.Input.NotYours {
+		t.Fatalf("3's view at the well: %+v", v.Input)
+	}
+	moved(t, tm, "3 answers for the medic")(asPlayer(tm, 3, nil).Answer("pb", "water"))
+	if tm.Strands[1].Current != "join" {
+		t.Fatalf("strands %+v", tm.Strands)
+	}
+}
+
+// A rescue of a group the team no longer has — met at its join, or no
+// group of the team at all — is stale, and moves no one. Regression: a
+// team together again was moved on from its own step.
+func TestRescueOfAGroupGoneIsStale(t *testing.T) {
+	tm, err := Place(expedition(), "door", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := tm.RescueGroup("door", "a"); !errors.Is(err, ErrStale) || tm.Current != "door" {
+		t.Fatalf("rescuing group a of a team together: %v, at %q", err, tm.Current)
+	}
+	tm = startedSplit(t)
+	if _, _, err := tm.RescueGroup("split", "c"); !errors.Is(err, ErrStale) {
+		t.Fatalf("rescuing no group: %v", err)
+	}
+}
+
+// A phone that chose to walk a group walks on with it as it splits
+// again — with the group of it the phone may walk — on with a sibling
+// still on its way when that one waits at their join, and with the group
+// they make once they meet. Regression: the choice was lost at each, and
+// the phone sent back to its own group.
+func TestChoiceCarriedThroughANestedSplit(t *testing.T) {
+	tm := begin(t, citadel(t))
+	tm.Unfocus()
+	tm.Players, tm.Size = []int64{1, 2}, 2
+	tm.Deal(tm.Players, nil) // North 1, South 2
+	tm.Away = map[int64]bool{1: true}
+	moved(t, tm, "2 walks North")(asNobody(tm, 2).Walk("a"))
+	moved(t, tm, "North sets off")(asNobody(tm, 2).Continue("split"))
+	if v := asNobody(tm, 2).View(); v.Node != "inner" || v.Group != "North › Tower" {
+		t.Fatalf("2 after North split again: %q %q", v.Node, v.Group)
+	}
+	moved(t, tm, "Tower")(asNobody(tm, 2).Continue("inner"))
+	moved(t, tm, "x1")(asNobody(tm, 2).Answer("x1", "x"))
+	if v := asNobody(tm, 2).View(); v.Node != "inner" || v.Group != "North › Crypt" {
+		t.Fatalf("2 with the Tower at its join: %q %q", v.Node, v.Group)
+	}
+	moved(t, tm, "Crypt")(asNobody(tm, 2).Continue("inner"))
+	moved(t, tm, "y1")(asNobody(tm, 2).Answer("y1", "y"))
+	if v := asNobody(tm, 2).View(); v.Node != "a2" || v.Group != "North" {
+		t.Fatalf("2 after the North met again: %q %q (%v)", v.Node, v.Group, keys(tm))
+	}
+}
+
+// The team as a whole sets off the group it chose to walk, though the
+// focus did not travel with it: the designer's playtest, sent back and
+// forth as JSON. Regression: it set off the first group on the split.
+func TestTeamAsWholeSetsOffItsChoice(t *testing.T) {
+	tm := startedSplit(t)
+	moved(t, tm, "walk b")(tm.Walk("b"))
+	raw, err := json.Marshal(tm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Team
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
+	}
+	back.G = tm.G
+	back.Init()
+	moved(t, &back, "set off")(back.Continue("split"))
+	if back.Strands[0].Current != "split" || back.Strands[1].Current != "pb" {
+		t.Fatalf("strands %+v", back.Strands)
+	}
+}
+
+// A group rescued at a home screen on its path is taken toward its join:
+// by a branch that leads there, not one that comes back, nor one that
+// ends the adventure; with none open, by one that comes back, but not
+// round the same again — and never by one that ends the adventure, for
+// every group. Regression: it went into the first branch, each time, for
+// good; then, with nothing else, it took the ending, and finished the
+// team while the other group had not set off.
+func TestRescueAGroupsHomeHub(t *testing.T) {
+	key := cond.Predicate{Op: cond.OpItem, Item: "key"}
+	build := func(t *testing.T) *graph.Graph {
+		b := newGB()
+		b.g.Items = []graph.Item{{Slug: "key", Name: "Key"}}
+		return b.split("s", "a", "b").
+			add(graph.Node{Slug: "home", Type: graph.Hub, HubCfg: &graph.HubConfig{Policy: graph.PolicyChoice, Home: true, Branches: []graph.Branch{
+				{Port: "look"}, {Port: "quit"}, {Port: "leave", Condition: key},
+			}}}).
+			puzzle("look1", "x").puzzle("quit1", "q").puzzle("leave1", "go").puzzle("b1", "b").join("j").end("end").end("over").
+			wire("start", "out", "s").wire("s", "a", "home").wire("s", "b", "b1").
+			wire("home", "look", "look1").wire("look1", "solved", "home").
+			wire("home", "quit", "quit1").wire("quit1", "solved", "over").
+			wire("home", "leave", "leave1").wire("leave1", "solved", "j").
+			wire("b1", "solved", "j").wire("j", "out", "end").valid(t)
+	}
+	tm := begin(t, build(t))
+	moved(t, tm, "a")(tm.RescueGroup("s", "a"))
+	moved(t, tm, "into look")(tm.RescueGroup("home", "a"))
+	if got := keys(tm); !slices.Equal(got, []string{"a@look1", "b@s"}) {
+		t.Fatalf("with the way on shut, into the branch that comes back: %v", got)
+	}
+	moved(t, tm, "past look1")(tm.RescueGroup("look1", "a"))
+	if _, _, err := tm.RescueGroup("home", "a"); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("nothing else left but the branch that ends it: %v", err)
+	}
+	if got := keys(tm); !slices.Equal(got, []string{"a@home", "b@s"}) {
+		t.Fatalf("refused, and no one moved: %v", got)
+	}
+	// Nor when b is the one at its join, a the last on its way.
+	moved(t, tm, "b")(tm.RescueGroup("s", "b"))
+	moved(t, tm, "past b1")(tm.RescueGroup("b1", "b"))
+	if _, _, err := tm.RescueGroup("home", "a"); !errors.Is(err, ErrNotAllowed) || tm.Completed {
+		t.Fatalf("the last group on its way, into the ending: %v, completed %v", err, tm.Completed)
+	}
+	// With the key, the way on.
+	tm = begin(t, build(t))
+	tm.Items["key"] = 1
+	moved(t, tm, "a")(tm.RescueGroup("s", "a"))
+	moved(t, tm, "into leave")(tm.RescueGroup("home", "a"))
+	if got := keys(tm); !slices.Equal(got, []string{"a@leave1", "b@s"}) {
+		t.Fatalf("toward the join: %v", got)
+	}
+	// No way on, and the branch that comes back done: not rescued.
+	g := build(t)
+	for i := range g.Nodes {
+		if g.Nodes[i].Slug == "home" {
+			g.Nodes[i].HubCfg.Branches = g.Nodes[i].HubCfg.Branches[:1]
+			g.Nodes[i].HubCfg.Branches = append(g.Nodes[i].HubCfg.Branches, graph.Branch{Port: "leave", Condition: key})
+		}
+	}
+	tm = begin(t, g)
+	moved(t, tm, "a")(tm.RescueGroup("s", "a"))
+	moved(t, tm, "into look")(tm.RescueGroup("home", "a"))
+	moved(t, tm, "past look1")(tm.RescueGroup("look1", "a"))
+	if _, _, err := tm.RescueGroup("home", "a"); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("round again: %v", err)
+	}
+}
+
+// A team whose split was taken out of its graph is one team at the start
+// screen — the engine having found its node gone — not on the split.
+func TestSplitAfreshOnASplitTakenOut(t *testing.T) {
+	tm := startedSplit(t)
+	moved(t, tm, "a")(tm.Continue("split"))
+	tm.Unfocus()
+	g := expedition()
+	g.Nodes = slices.DeleteFunc(g.Nodes, func(n graph.Node) bool { return n.Slug == "split" })
+	tm.G, tm.Current = g, ""
+	tm.SplitAfresh()
+	if tm.Split != "" || tm.Strands != nil || tm.Current != "" {
+		t.Fatalf("split %q strands %+v at %q", tm.Split, tm.Strands, tm.Current)
+	}
+}
+
+// An organiser's rescue at a split sets off the group it names, though
+// the team as a whole chose to walk another standing there too — at the
+// team's split, and at a group's, where the choice was carried to the
+// group's first group. Regression: the chosen group was set off instead.
+func TestRescueOnASplitSetsOffTheGroupNamed(t *testing.T) {
+	tm := startedSplit(t)
+	moved(t, tm, "walk a")(tm.Walk("a"))
+	moved(t, tm, "rescue b")(tm.RescueGroup("split", "b"))
+	if got := keys(tm); !slices.Equal(got, []string{"a@split", "b@pb"}) {
+		t.Fatalf("groups %v", got)
+	}
+
+	tm = begin(t, citadel(t))
+	moved(t, tm, "walk North")(tm.Walk("a"))
+	moved(t, tm, "North sets off")(tm.Continue("split"))
+	if !slices.Contains(tm.Strands[0].Chosen, 0) || tm.Strands[0].Key() != "a>x" {
+		t.Fatalf("the choice carried to North › Tower: %+v", tm.Strands)
+	}
+	moved(t, tm, "rescue Crypt")(tm.RescueGroup("inner", "a>y"))
+	if got := keys(tm); !slices.Equal(got, []string{"a>x@inner", "a>y@y1", "b@split"}) {
+		t.Fatalf("groups %v", got)
+	}
+}
+
+// A choice of a group anyone's only while its players were away is spent
+// once one of them is back: the phone goes back to its own group, and
+// stays there when the group goes quiet again, until it chooses anew.
+// So is a choice of one group once the phone acts on another. Regression:
+// the phone was taken back to the quiet group, mid-step, unasked.
+func TestChoiceOfAQuietGroupIsSpent(t *testing.T) {
+	tm := startedSplit(t)
+	players(tm, 4) // a: 1, 3; b: 2, 4
+	tm.Deal(tm.Players, tm.RoleHolders)
+	tm.Away = map[int64]bool{2: true, 4: true}
+	moved(t, tm, "1 walks b")(asPlayer(tm, 1, nil).Walk("b"))
+	if v := asPlayer(tm, 1, nil).View(); v.Group != "Medic" {
+		t.Fatalf("1 walking b: %q", v.Group)
+	}
+	// 2 back: the engine deals the team afresh on the next request.
+	tm.Away = map[int64]bool{4: true}
+	if !tm.Deal(tm.Everyone(), tm.RoleHolders) {
+		t.Fatal("dropping the choice should be stored")
+	}
+	if slices.Contains(tm.Strands[1].Chosen, 1) {
+		t.Fatalf("1's choice of b kept with 2 back: %+v", tm.Strands[1].Chosen)
+	}
+	// 2 quiet again: 1 stays with a.
+	tm.Away = map[int64]bool{2: true, 4: true}
+	tm.Deal(tm.Everyone(), tm.RoleHolders)
+	if v := asPlayer(tm, 1, nil).View(); v.Group != "Church party" {
+		t.Fatalf("1 taken back to b unasked: %q", v.Group)
+	}
+
+	// Acting on a's step spends 1's choice of b.
+	moved(t, tm, "1 walks b again")(asPlayer(tm, 1, nil).Walk("b"))
+	moved(t, tm, "3 sets a off")(asPlayer(tm, 3, nil).Continue("split"))
+	tm.GroupsChanged = false
+	stand(tm, map[int64]*Position{1: atChurch})
+	if res := moved(t, tm, "1 answers at a")(asPlayer(tm, 1, atChurch).Answer("pa", "nope")); res.Accepted {
+		t.Fatal("a wrong answer accepted")
+	}
+	if slices.Contains(tm.Strands[1].Chosen, 1) || !tm.GroupsChanged {
+		t.Fatalf("1's choice of b kept after acting on a: %+v (changed %v)", tm.Strands[1].Chosen, tm.GroupsChanged)
+	}
+	if v := asPlayer(tm, 1, nil).View(); v.Group != "Church party" {
+		t.Fatalf("1 after acting on a: %q", v.Group)
+	}
+}
+
+// A phone acting on one of its groups while it would walk another — its
+// choice of that one spent, or none made — is among the group's players
+// for the action: it stands at the group's place.
+func TestActingOnAnotherOfMyGroups(t *testing.T) {
+	tm := startedSplit(t)
+	players(tm, 1)
+	tm.Deal(tm.Players, tm.RoleHolders)
+	moved(t, tm, "a")(asPlayer(tm, 1, nil).Continue("split"))
+	moved(t, tm, "walk b")(asPlayer(tm, 1, nil).Walk("b"))
+	moved(t, tm, "b")(asPlayer(tm, 1, nil).Continue("split"))
+	moved(t, tm, "walk a")(asPlayer(tm, 1, nil).Walk("a"))
+	stand(tm, map[int64]*Position{1: atWell})
+	if res := moved(t, tm, "1 answers at the well")(asPlayer(tm, 1, atWell).Answer("pb", "water")); !res.Accepted {
+		t.Fatalf("1 at the well, acting on b: %+v", res)
+	}
+	tm.Unfocus()
+	if tm.Strands[1].Current != "join" || slices.Contains(tm.Strands[0].Chosen, 1) {
+		t.Fatalf("strands %+v", tm.Strands)
+	}
+	if v := asPlayer(tm, 1, nil).View(); v.Node != "pa" {
+		t.Fatalf("b at its join, 1 walks a: %+v", v.Node)
 	}
 }

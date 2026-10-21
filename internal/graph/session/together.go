@@ -272,6 +272,10 @@ func (t *Team) setPress(slot int64, p *Press) {
 	} else {
 		t.Presses[slot] = *p
 	}
+	if t.focus > 0 && t.PressesAt != nil {
+		// A group's presses are kept by its step, for its next view.
+		t.PressesAt[t.Current] = t.Presses
+	}
 	t.PressChanged = &PressChange{Slot: slot, Press: p}
 }
 

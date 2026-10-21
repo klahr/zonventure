@@ -59,6 +59,22 @@ test("a step's words and its other settings are told apart", () => {
   assert.deepEqual(diffGraphs(withPuzzle(words), withPuzzle({ blocks: [{ id: "b1", kind: "text", text: "!" }] })).changed[0]?.fields, ["content"]);
 });
 
+test("a split's paths and text are its settings", () => {
+  const withSplit = (split: NonNullable<Graph["nodes"][number]["split"]>): Graph => ({ ...base, nodes: [...base.nodes, { slug: "sp", type: "split", split }] });
+  const paths = [{ port: "a", label: "North" }, { port: "b" }];
+  const was = withSplit({ paths });
+  for (const next of [
+    withSplit({ paths: [{ port: "a", label: "South" }, { port: "b" }] }),
+    withSplit({ paths: [{ port: "a", label: "North" }, { port: "b", role: "scout" }] }),
+    withSplit({ paths, text: "Go with your group" }),
+  ]) {
+    const d = diffGraphs(was, next);
+    assert.equal(d.changed.length, 1);
+    assert.equal(d.changed[0]?.slug, "sp");
+    assert.ok(d.changed[0]?.fields.includes("settings"));
+  }
+});
+
 test("a text that is added or emptied shows the other side empty", () => {
   const q = base.nodes[1]!;
   const changes = textChanges(q, { ...q, puzzle: { blocks: [], hints: [{ text: "Look up" }] } });

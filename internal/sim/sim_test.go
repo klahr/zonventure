@@ -2,6 +2,7 @@ package sim
 
 import (
 	"encoding/json"
+	"math/rand/v2"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +11,8 @@ import (
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/cond"
 	"github.com/klahr/zonventure/internal/graph/match"
+	"github.com/klahr/zonventure/internal/graph/session"
+	"github.com/klahr/zonventure/internal/graph/walk"
 )
 
 var t0 = time.Date(2026, 9, 22, 10, 0, 0, 0, time.UTC)
@@ -530,5 +533,110 @@ func TestTeamsWalkEveryPathOfASplit(t *testing.T) {
 		if (s.Node == "to-church" || s.Node == "to-harbour") && s.Reached != 5 {
 			t.Errorf("%s reached by %d teams, want 5", s.Node, s.Reached)
 		}
+	}
+}
+
+// A split team whose first group needs what the second finds hops to the
+// second, and comes back with it: the vault on path a opens with the key
+// path b grants. Regression: the team stood at the vault and stalled.
+func TestTeamsHopGroupsForAKey(t *testing.T) {
+	g := &graph.Graph{
+		Items: []graph.Item{{Slug: "key", Name: "Key"}},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "s", Type: graph.Split, SplitCfg: &graph.SplitConfig{Paths: []graph.SplitPath{{Port: "a"}, {Port: "b"}}}},
+			{Slug: "vault", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Answer:  &graph.Answer{Kind: graph.AnswerItems, Slots: []graph.ItemSlot{{Item: "key"}}},
+				Outputs: []graph.Output{{Port: "open", Trigger: graph.OnAnswer}},
+			}},
+			{Slug: "gift", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.GrantItem, Item: "key"}},
+			{Slug: "b1", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: graph.LegacyBlocks("A key.", nil)}},
+			{Slug: "j", Type: graph.Join},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "s"},
+			{From: "s", FromPort: "a", To: "vault"}, {From: "vault", FromPort: "open", To: "j"},
+			{From: "s", FromPort: "b", To: "gift"}, {From: "gift", FromPort: "out", To: "b1"}, {From: "b1", FromPort: "out", To: "j"},
+			{From: "j", FromPort: "out", To: "end"},
+		},
+	}
+	for _, members := range []int{1, 4} {
+		c := config()
+		c.Teams, c.Members = 5, members
+		res := run(t, g, c)
+		for _, tm := range res.Teams {
+			if tm.Finished == nil {
+				t.Fatalf("%d members: %s did not finish (stalled %v)", members, tm.Name, tm.Stalled)
+			}
+		}
+	}
+}
+
+// A split team whose groups all wait on the clock waits for it, rather
+// than hopping between them: it hops from a group found waiting to one
+// not yet looked at, but not back to one still waiting — it sleeps to
+// the first moment either is worth a look. Regression: it hopped every
+// five seconds, burning its actions, and stalled after half an hour.
+func TestGroupsAllWaitingWaitForTheClock(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "s", Type: graph.Split, SplitCfg: &graph.SplitConfig{Paths: []graph.SplitPath{{Port: "a"}, {Port: "b"}}}},
+			{Slug: "pa", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Outputs: []graph.Output{{Port: "ok", Trigger: graph.OnAnswer}}}},
+			{Slug: "pb", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Outputs: []graph.Output{{Port: "ok", Trigger: graph.OnAnswer}}}},
+			{Slug: "j", Type: graph.Join},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "s"},
+			{From: "s", FromPort: "a", To: "pa"}, {From: "pa", FromPort: "ok", To: "j"},
+			{From: "s", FromPort: "b", To: "pb"}, {From: "pb", FromPort: "ok", To: "j"},
+			{From: "j", FromPort: "out", To: "end"},
+		},
+	}
+	c := config()
+	c.Teams, c.StartSpread = 1, 0
+	r := &runner{g: g, c: c, rng: rand.New(rand.NewPCG(1, 2)), stats: map[string]*stepStat{}}
+	if err := r.addTeam(0); err != nil {
+		t.Fatal(err)
+	}
+	b := r.bots[0]
+	r.now, b.t.Now = 100, r.at(100)
+	if _, ok := b.do("continue", func() (session.Result, *walk.Step, error) { return b.t.Continue("s") }); !ok {
+		t.Fatal("setting a off")
+	}
+	open := r.at(2700)
+	waiting := func() session.View {
+		v := b.t.View()
+		v.RecheckAt = &open
+		return v
+	}
+	hops := func() (n int) {
+		for _, e := range r.events {
+			if e.Kind == "walk" {
+				n++
+			}
+		}
+		return n
+	}
+	if v := waiting(); v.Group != "a" {
+		t.Fatalf("on %q", v.Group)
+	}
+	b.waitFor(waiting())
+	if hops() != 1 || b.t.View().Group != "b" {
+		t.Fatalf("a waiting, the team should hop to b: %d hops, on %q", hops(), b.t.View().Group)
+	}
+	r.now, b.t.Now = 105, r.at(105)
+	b.waitFor(waiting())
+	if hops() != 1 || b.wake != 2701 {
+		t.Fatalf("both waiting, the team should sleep to 2701: %d hops, wakes at %v", hops(), b.wake)
+	}
+	// Then a, due, is looked at again.
+	r.now, b.t.Now = 2701, r.at(2701)
+	open = r.at(3600)
+	b.waitFor(waiting())
+	if hops() != 2 || b.t.View().Group != "a" {
+		t.Fatalf("a due again: %d hops, on %q", hops(), b.t.View().Group)
 	}
 }

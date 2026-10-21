@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"time"
@@ -44,6 +45,10 @@ type Strand struct {
 	// they were. None for a team whose players are not known: then every
 	// group is anyone's.
 	Members []int64 `json:"members,omitempty"`
+	// Chosen are the players who chose to walk this group of theirs
+	// (Walk) rather than their first still walking; 0 is the team as a
+	// whole. Forgotten as the group arrives at its join.
+	Chosen []int64 `json:"chosen,omitempty"`
 }
 
 // Fork is a split a group came to and the path it took there.
@@ -74,8 +79,10 @@ type GroupView struct {
 	// Arrived says the group waits at the join for the others.
 	Arrived bool `json:"arrived,omitempty"`
 	// Mine says the phone asking is with this group, and Current that
-	// this view is the group's.
+	// this view is the group's. Open says the group is anyone's to walk
+	// (Walk): no one playing is with it, or every one of them is away.
 	Mine    bool `json:"mine,omitempty"`
+	Open    bool `json:"open,omitempty"`
 	Current bool `json:"current,omitempty"`
 	// Players is how many players are with it, where they are known.
 	Players int `json:"players,omitempty"`
@@ -245,6 +252,24 @@ func (t *Team) beginSplit(slug string) {
 	}
 }
 
+// SplitAfresh divides the team again where it stands, as on arriving,
+// its groups' places forgotten — for a team whose groups no longer fit
+// its graph: on a split, every group on it; anywhere else, one team;
+// on a split taken out of the graph, one team at its start screen.
+func (t *Team) SplitAfresh() {
+	t.unfocus()
+	t.Split, t.Strands = "", nil
+	n, ok := t.G.Node(t.Current)
+	switch {
+	case !ok:
+		// The split itself is gone from the graph: the team is at its
+		// start screen, to begin again.
+		t.Current = ""
+	case n.Type == graph.Split:
+		t.beginSplit(t.Current)
+	}
+}
+
 // endSplit makes the team one again, where its cursor stands.
 func (t *Team) endSplit() {
 	at := t.Current
@@ -271,19 +296,72 @@ func (t *Team) subSplit(i int, slug string) {
 	for k := range ins {
 		ins[k] = i + k
 	}
-	t.dealAt(parent.Members, ins, depth, t.RoleHolders, parent.Members)
+	// Who plays and holds which role are the team's, whoever moved the
+	// group here: an organiser's rescue knows neither, so they are what
+	// the team was last dealt by.
+	players, holders := t.everyone(), t.RoleHolders
+	if players == nil {
+		players = t.dealing.players
+	}
+	if holders == nil {
+		holders = t.dealing.holders
+	}
+	// Those playing are dealt and counted; those gone after, for when they
+	// come back, so the group they make again is the one it was.
+	live, gone := parent.Members, []int64(nil)
+	if players != nil {
+		live = nil
+		for _, m := range parent.Members {
+			if slices.Contains(players, m) {
+				live = append(live, m)
+			} else {
+				gone = append(gone, m)
+			}
+		}
+	}
+	t.dealAt(live, ins, depth, holders, live)
+	t.dealAt(gone, ins, depth, holders, live)
+	// Those who chose to walk the group walk on with it: with its group
+	// they are in, or the first they may walk.
+	t.carry(parent.Chosen, ins)
+}
+
+// carry gives each of the players who chose a group, chosen, to the
+// first of the groups at ins they may walk — one they are with, else
+// one anyone's — or, for the team as a whole, to the first of them. It
+// returns those none of the groups take.
+func (t *Team) carry(chosen []int64, ins []int) []int64 {
+	var left []int64
+	for _, c := range chosen {
+		to := -1
+		if c == 0 {
+			if len(ins) > 0 {
+				to = ins[0]
+			}
+		} else if k := slices.IndexFunc(t.strandsOf(c), func(k int) bool { return slices.Contains(ins, k) }); k >= 0 {
+			to = t.strandsOf(c)[k]
+		}
+		if to < 0 {
+			left = append(left, c)
+			continue
+		}
+		if !slices.Contains(t.Strands[to].Chosen, c) {
+			t.Strands[to].Chosen = append(t.Strands[to].Chosen, c)
+		}
+	}
+	return left
 }
 
 // merge brings group i together with its siblings, the groups of its
 // innermost split, all at their join: they become the group they split
-// from, with all their players, at group i's cursor. It returns where the
-// merged group is in Strands.
+// from, with all their players and those who chose to walk any of them,
+// at group i's cursor. It returns where the merged group is in Strands.
 func (t *Team) merge(i int) int {
 	lin := t.lineage(i)
 	prefix := lin[:len(lin)-1]
 	merged := t.Strands[i]
 	merged.Sub = slices.Clone(merged.Sub[:len(merged.Sub)-1])
-	merged.Members = nil
+	merged.Members, merged.Chosen = nil, nil
 	at := -1
 	var keep []Strand
 	for j, st := range t.Strands {
@@ -292,6 +370,11 @@ func (t *Team) merge(i int) int {
 			for _, m := range st.Members {
 				if !slices.Contains(merged.Members, m) {
 					merged.Members = append(merged.Members, m)
+				}
+			}
+			for _, c := range st.Chosen {
+				if !slices.Contains(merged.Chosen, c) {
+					merged.Chosen = append(merged.Chosen, c)
 				}
 			}
 			if at < 0 {
@@ -313,13 +396,17 @@ func (t *Team) merge(i int) int {
 // own. holders is who holds each dealt role; a player holding none holds
 // the default role, as does a player alone. Those already dealt stay
 // where they are, so a player who joins mid-split changes no one else's
-// group. It reports whether anyone was dealt, for the live engine to
-// store.
+// group. A choice of a group the chooser may no longer walk — its own
+// players back from away — is dropped (dropStale), for Away as it is
+// now. It reports whether anyone was dealt or a choice dropped, for the
+// live engine to store.
 func (t *Team) Deal(players []int64, holders map[string]int64) bool {
+	t.dealing = dealing{players: players, holders: holders}
 	if t.Split == "" || len(players) == 0 || len(t.Strands) == 0 {
 		return false
 	}
 	t.unfocus()
+	dropped := t.dropStale(players)
 	dealt := map[int64]bool{}
 	for _, st := range t.Strands {
 		for _, m := range st.Members {
@@ -333,7 +420,7 @@ func (t *Team) Deal(players []int64, holders map[string]int64) bool {
 		}
 	}
 	if len(fresh) == 0 {
-		return false
+		return dropped
 	}
 	all := make([]int, len(t.Strands))
 	for i := range all {
@@ -341,6 +428,63 @@ func (t *Team) Deal(players []int64, holders map[string]int64) bool {
 	}
 	t.dealAt(fresh, all, 0, holders, players)
 	return true
+}
+
+// dropStale forgets each player's choice of a group that is no longer
+// one they may walk, among players those playing: chosen while it was
+// anyone's, its own players since back. The choice is spent — the
+// player went back to their own group — and the group going quiet again
+// later does not take the phone back to it unasked. The team as a
+// whole's choice stands. It reports whether any was dropped.
+func (t *Team) dropStale(players []int64) bool {
+	dropped := false
+	for i := range t.Strands {
+		chosen := t.Strands[i].Chosen
+		if len(chosen) == 0 {
+			continue
+		}
+		t.Strands[i].Chosen = slices.DeleteFunc(chosen, func(c int64) bool {
+			stale := c != 0 && !slices.Contains(t.strandsAmong(c, players), i)
+			dropped = dropped || stale
+			return stale
+		})
+		if len(t.Strands[i].Chosen) == 0 {
+			t.Strands[i].Chosen = nil
+		}
+	}
+	return dropped
+}
+
+// actsOn notes that the phone asking acts on group i: a choice it made
+// of another of its groups is spent, as it is back with this one; and
+// where it would still walk another first, it is taken to choose this
+// one, so that it is among the players acting. It reports whether the
+// choices changed, for the focus to be put on the group again, the phone
+// now among its players.
+func (t *Team) actsOn(i int) bool {
+	if t.Viewer == nil {
+		return false
+	}
+	slot := t.Viewer.Slot
+	if slices.Contains(t.Strands[i].Chosen, slot) {
+		return false
+	}
+	changed := false
+	for k := range t.Strands {
+		if k == i || !slices.Contains(t.Strands[k].Chosen, slot) {
+			continue
+		}
+		t.Strands[k].Chosen = slices.DeleteFunc(t.Strands[k].Chosen, func(s int64) bool { return s == slot })
+		if len(t.Strands[k].Chosen) == 0 {
+			t.Strands[k].Chosen = nil
+		}
+		t.GroupsChanged, changed = true, true
+	}
+	if t.walking(slot, t.strandsOf(slot)) != i {
+		t.Strands[i].Chosen = append(t.Strands[i].Chosen, slot)
+		t.GroupsChanged, changed = true, true
+	}
+	return changed
 }
 
 // dealAt deals players among the groups at ins, which share their first
@@ -427,6 +571,17 @@ func (t *Team) liveCount(i int, players []int64) int {
 	return n
 }
 
+// dealing is who plays and holds which role as Deal was last told: for a
+// group that splits again on an action that does not say, an organiser's.
+type dealing struct {
+	players []int64
+	holders map[string]int64
+}
+
+// Everyone is the team's players whatever the focus — not only the
+// group's it is focused on: nil for the team as a whole.
+func (t *Team) Everyone() []int64 { return t.everyone() }
+
 // everyone is the team's players whatever the focus: see Players.
 func (t *Team) everyone() []int64 {
 	if t.saved != nil {
@@ -437,8 +592,10 @@ func (t *Team) everyone() []int64 {
 
 // live are a group's members still playing; all of them for a team
 // whose players are not known.
-func (t *Team) live(i int) []int64 {
-	players := t.everyone()
+func (t *Team) live(i int) []int64 { return t.liveAmong(i, t.everyone()) }
+
+// liveAmong are a group's members among players; all of them for nil.
+func (t *Team) liveAmong(i int, players []int64) []int64 {
 	if players == nil {
 		return t.Strands[i].Members
 	}
@@ -453,18 +610,36 @@ func (t *Team) live(i int) []int64 {
 
 // strandsOf are the groups slot walks, in the order it walks them: its
 // own, then any no one playing is with — anyone's to walk.
-func (t *Team) strandsOf(slot int64) []int {
+func (t *Team) strandsOf(slot int64) []int { return t.strandsAmong(slot, t.everyone()) }
+
+// strandsAmong is strandsOf with players the ones playing.
+func (t *Team) strandsAmong(slot int64, players []int64) []int {
 	var own, anyone []int
 	for i := range t.Strands {
-		live := t.live(i)
 		switch {
-		case slices.Contains(live, slot):
+		case slices.Contains(t.liveAmong(i, players), slot):
 			own = append(own, i)
-		case len(live) == 0:
+		case t.anyones(i, players):
 			anyone = append(anyone, i)
 		}
 	}
 	return append(own, anyone...)
+}
+
+// anyones reports whether group i is anyone's to walk, among players
+// those playing: no one is left in it, or every one of them is away — a
+// phone flat, the app shut — until one is back.
+func (t *Team) anyones(i int, players []int64) bool {
+	return !slices.ContainsFunc(t.liveAmong(i, players), func(m int64) bool { return !t.Away[m] })
+}
+
+// walks reports whether player p, walking group i, is counted as one of
+// its walkers, among players those playing: not when p is away and the
+// group is anyone's for it — its own group, every one of whose players
+// is away. Those walking it are its walkers, and a role its away
+// holder has is everyone's in it, until one of them is back.
+func (t *Team) walks(p int64, i int, players []int64) bool {
+	return !t.Away[p] || !t.anyones(i, players)
 }
 
 // arrived reports whether a group waits at its join.
@@ -473,9 +648,15 @@ func (t *Team) arrived(i int) bool {
 	return ok && n.Type == graph.Join
 }
 
-// walking is the first of the groups not yet at the join, or else the
-// first of them; -1 for none.
-func (t *Team) walking(groups []int) int {
+// walking is the group of groups slot walks: the one it chose, while
+// that is still on its way, or else the first not yet at the join, or
+// else the first of them; -1 for none.
+func (t *Team) walking(slot int64, groups []int) int {
+	for _, i := range groups {
+		if slices.Contains(t.Strands[i].Chosen, slot) && !t.arrived(i) {
+			return i
+		}
+	}
 	for _, i := range groups {
 		if !t.arrived(i) {
 			return i
@@ -509,9 +690,47 @@ func (t *Team) Focus() {
 	if t.Split == "" {
 		return
 	}
-	if i := t.walking(t.candidates()); i >= 0 {
+	if i := t.walking(t.asking(), t.candidates()); i >= 0 {
 		t.focusOn(i)
 	}
+}
+
+// asking is the slot of the phone asking: 0 for the team as a whole.
+func (t *Team) asking() int64 {
+	if t.Viewer != nil {
+		return t.Viewer.Slot
+	}
+	return 0
+}
+
+// Walk is a phone's choice of which of its groups it walks — any of
+// them still on its way, its own or one no one is left in — from now
+// until the group is at its join: a player in two groups need not finish
+// the first before the second, which may be finding what the first
+// needs. For the team as a whole, any group. A group met at its join,
+// or gone, is stale; another's is not the phone's.
+func (t *Team) Walk(key string) (Result, *walk.Step, error) {
+	if t.Completed {
+		return Result{}, nil, ErrFinished
+	}
+	if t.Split == "" {
+		return Result{}, nil, ErrStale
+	}
+	t.unfocus()
+	i := slices.IndexFunc(t.Strands, func(st Strand) bool { return st.Key() == key })
+	if i < 0 || t.arrived(i) {
+		return Result{}, nil, ErrStale
+	}
+	if !slices.Contains(t.candidates(), i) {
+		return Result{}, nil, ErrNotYours
+	}
+	slot := t.asking()
+	for k := range t.Strands {
+		t.Strands[k].Chosen = slices.DeleteFunc(t.Strands[k].Chosen, func(s int64) bool { return s == slot })
+	}
+	t.Strands[i].Chosen = append(t.Strands[i].Chosen, slot)
+	t.GroupsChanged = true
+	return Result{Accepted: true}, nil, nil
 }
 
 // focusFor puts the team on the group an action on node is for: one of
@@ -519,11 +738,46 @@ func (t *Team) Focus() {
 // on; any other step leaves the default focus, and the action is stale.
 func (t *Team) focusFor(node string) error {
 	t.popped = 0
-	if t.focus > 0 && t.Strands[t.focus-1].Current == node && slices.Contains(t.candidates(), t.focus-1) {
+	if n, ok := t.G.Node(node); ok && n.Type == graph.Split {
+		if t.Viewer != nil {
+			// A phone's press on a split sets off the group it is walking,
+			// and only that: pressed again, after the group set off, it is
+			// a repeat — stale — not a press for its next group, or an
+			// empty one. That group's turn comes when its phones see it.
+			t.Focus()
+			return nil
+		}
+		// The team as a whole sets off the group it chose to walk, while
+		// that still stands on the split; else the first that does. A
+		// group it is already on that stands there — the one an
+		// organiser's rescue names (RescueGroup) — is the one it sets off.
+		if t.focus == 0 || t.Strands[t.focus-1].Current != node {
+			for _, i := range t.candidates() {
+				if slices.Contains(t.Strands[i].Chosen, 0) && t.Strands[i].Current == node && !t.arrived(i) {
+					t.focusOn(i)
+					return nil
+				}
+			}
+		}
+	}
+	// An action on a step of one of the phone's groups is on that group:
+	// a choice of another is spent (actsOn). The join is every group's,
+	// and spends none.
+	own := true
+	if n, ok := t.G.Node(node); ok && n.Type == graph.Join {
+		own = false
+	}
+	if i := t.focus - 1; i >= 0 && t.Strands[i].Current == node && slices.Contains(t.candidates(), i) {
+		if own && t.actsOn(i) {
+			t.focusOn(i)
+		}
 		return nil
 	}
 	for _, i := range t.candidates() {
 		if t.Strands[i].Current == node {
+			if own {
+				t.actsOn(i)
+			}
 			t.focusOn(i)
 			return nil
 		}
@@ -543,7 +797,8 @@ func (t *Team) focusFor(node string) error {
 }
 
 // strandPlayers are the players working on group i now: those whose
-// first group still walking it is. Nil when players are not known.
+// first group still walking it is, but for its own players away while it
+// is anyone's. Nil when players are not known.
 func (t *Team) strandPlayers(i int) []int64 {
 	players := t.everyone()
 	if players == nil {
@@ -551,8 +806,26 @@ func (t *Team) strandPlayers(i int) []int64 {
 	}
 	out := []int64{}
 	for _, p := range players {
-		if t.walking(t.strandsOf(p)) == i {
+		if t.walking(p, t.strandsOf(p)) == i && t.walks(p, i, players) {
 			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// Walkers are the players walking each group now, by its Key: each of
+// players on the first of their groups still walking — their own, or
+// one no one among players is with — but for a group's own players away
+// while it is anyone's. A group no one walks has none.
+func (t *Team) Walkers(players []int64) map[string][]int64 {
+	out := make(map[string][]int64, len(t.Strands))
+	for _, st := range t.Strands {
+		out[st.Key()] = []int64{}
+	}
+	for _, p := range players {
+		if i := t.walking(p, t.strandsAmong(p, players)); i >= 0 && t.walks(p, i, players) {
+			k := t.Strands[i].Key()
+			out[k] = append(out[k], p)
 		}
 	}
 	return out
@@ -565,6 +838,9 @@ func (t *Team) strandPlayers(i int) []int64 {
 // holds every role.
 func (t *Team) focusOn(i int) {
 	t.unfocus()
+	// What the team walked unfocused, the simulator moving it, the group
+	// it is put on walked.
+	unowned := t.WalkedMetres
 	st := t.Strands[i]
 	group := t.strandPlayers(i)
 	t.saved = &focused{players: t.Players, presses: t.Presses, holders: t.RoleHolders, phones: t.Phones, position: t.Position, viewer: t.Viewer}
@@ -572,7 +848,7 @@ func (t *Team) focusOn(i int) {
 		t.saved.viewerRoles = t.Viewer.Roles
 	}
 	t.focus, t.popped = i+1, 0
-	t.Current, t.NodeEnteredAt, t.NodePaused, t.WalkedMetres = st.Current, st.EnteredAt, st.Paused, st.Walked
+	t.Current, t.NodeEnteredAt, t.NodePaused, t.WalkedMetres = st.Current, st.EnteredAt, st.Paused, st.Walked+unowned
 	if w, ok := t.Walks[st.Key()]; ok {
 		t.WalkedMetres = w
 	}
@@ -620,6 +896,21 @@ func (t *Team) focusOn(i int) {
 // phones or roles between one phone's view and the next.
 func (t *Team) Unfocus() { t.unfocus() }
 
+// MarshalJSON writes the team as it is unfocused, for the focus does not
+// travel: the group's cursor and how far it walked go with its strand,
+// and the team's own cursor is the split.
+func (t Team) MarshalJSON() ([]byte, error) {
+	if t.Split != "" {
+		if t.focus > 0 {
+			t.Strands = slices.Clone(t.Strands)
+			t.Strands[t.focus-1].Walked, t.WalkedMetres = t.WalkedMetres, 0
+		}
+		t.Current = t.Split
+	}
+	type plain Team
+	return json.Marshal(plain(t))
+}
+
 func (t *Team) unfocus() {
 	if t.saved != nil {
 		if t.saved.narrowed {
@@ -637,8 +928,9 @@ func (t *Team) unfocus() {
 		t.saved = nil
 	}
 	if t.focus > 0 && t.Split != "" {
-		// How far the group has walked on its step, as the simulator adds it.
-		t.Strands[t.focus-1].Walked = t.WalkedMetres
+		// How far the group has walked on its step, as the simulator adds
+		// it; the team unfocused has walked none of its own since.
+		t.Strands[t.focus-1].Walked, t.WalkedMetres = t.WalkedMetres, 0
 	}
 	if t.Split != "" {
 		// Also for a team decoded as it was sent, focused on a group: the
@@ -684,7 +976,11 @@ func (t *Team) applySplit(step walk.Step) {
 		}
 		if t.Split != "" {
 			if step.Held {
-				// The group waits; its phones go on to any other group of theirs.
+				// The group waits; its phones go on to any other group of
+				// theirs. Those who chose it, at a group's own join, walk on
+				// with a sibling still on its way, if they may — or else are
+				// kept for the group the siblings make (merge).
+				t.Strands[i].Chosen = t.heldChoice(i)
 				t.unfocus()
 				return
 			}
@@ -702,6 +998,24 @@ func (t *Team) applySplit(step walk.Step) {
 	}
 }
 
+// heldChoice is what is left of the choice of group i, held at its
+// join: nothing at the team's own join, where the choice is forgotten;
+// at a group's, those of its choosers no sibling still on its way takes
+// (carry).
+func (t *Team) heldChoice(i int) []int64 {
+	lin := t.lineage(i)
+	if len(lin) == 1 {
+		return nil
+	}
+	var on []int
+	for k := range t.Strands {
+		if k != i && underFork(t.lineage(k), lin[:len(lin)-1]) && !t.arrived(k) {
+			on = append(on, k)
+		}
+	}
+	return t.carry(t.Strands[i].Chosen, on)
+}
+
 // onPath reports whether node is a step of the path of the group the
 // team is focused on.
 func (t *Team) onPath(node string) bool {
@@ -711,6 +1025,49 @@ func (t *Team) onPath(node string) bool {
 	lin := t.lineage(t.focus - 1)
 	f := lin[len(lin)-1]
 	return slices.Contains(t.splitPaths(f.Split).Steps[f.Port], node)
+}
+
+// onAnyPath reports whether node is a step of any split's path.
+func (t *Team) onAnyPath(node string) bool {
+	for _, n := range t.G.Nodes {
+		if n.Type != graph.Split {
+			continue
+		}
+		for _, steps := range t.splitPaths(n.Slug).Steps {
+			if slices.Contains(steps, node) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// RescueGroup is Rescue for one group of a split team — the group with
+// key, which must stand on node: several groups may wait on one split,
+// and the organisers move the one they mean. Without a key it is Rescue;
+// a key for a team no longer split, or for no group of it, is stale. A
+// split team's split names no group, so a rescue there must say which.
+func (t *Team) RescueGroup(node, key string) (Result, *walk.Step, error) {
+	if key == "" && t.Split != "" && !t.Completed {
+		// A group's own step says whose it is; a split does not.
+		if n, ok := t.G.Node(node); ok && n.Type == graph.Split {
+			return Result{}, nil, ErrWhichGroup
+		}
+	}
+	if key != "" && t.Split == "" && !t.Completed {
+		// The groups met, or the team was put elsewhere, since the
+		// organisers looked: the group is gone, not the team to move.
+		return Result{}, nil, ErrStale
+	}
+	if key != "" && t.Split != "" && !t.Completed {
+		i := slices.IndexFunc(t.Strands, func(st Strand) bool { return st.Key() == key })
+		if i < 0 || t.Strands[i].Current != node {
+			// Met its siblings, or moved on, since the organisers looked.
+			return Result{}, nil, ErrStale
+		}
+		t.focusOn(i)
+	}
+	return t.Rescue(node)
 }
 
 // leaveSplit sets the focused group off down its path.
@@ -733,13 +1090,12 @@ func (t *Team) leaveSplit(n graph.Node) (Result, *walk.Step, error) {
 
 // groups is every group of a split team, for its view.
 func (t *Team) groups() []GroupView {
-	var mine []int
-	if t.Viewer != nil {
-		mine = t.strandsOf(t.Viewer.Slot)
-	}
 	out := make([]GroupView, len(t.Strands))
 	for i, st := range t.Strands {
-		g := GroupView{Port: st.Key(), Label: t.groupLabel(i), Node: st.Current, Arrived: t.arrived(i), Mine: slices.Contains(mine, i), Current: t.focus == i+1}
+		g := GroupView{Port: st.Key(), Label: t.groupLabel(i), Node: st.Current, Arrived: t.arrived(i), Open: t.anyones(i, t.everyone()), Current: t.focus == i+1}
+		if t.Viewer != nil {
+			g.Mine = slices.Contains(t.live(i), t.Viewer.Slot)
+		}
 		if at, ok := t.G.Node(st.Current); ok {
 			g.At = t.G.Tr(t.lang(), graph.NodeKey(at.Slug, "title"), at.Title)
 		}

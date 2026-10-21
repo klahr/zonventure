@@ -127,14 +127,17 @@ func (s *Server) registerTeamTools() {
 	}, unwithdrawTeam)
 
 	s.tools.register(ToolDescriptor{
-		Name:        "unlock_team",
-		Scope:       scopeWrite,
-		Description: "Advance a stuck team past its current puzzle to the next one (or to completion if it was on the final puzzle). Used during a live event when a team can't progress and the arranger wants to keep them moving. Records an arranger-assist activity entry.",
+		Name:  "unlock_team",
+		Scope: scopeWrite,
+		Description: "Advance a stuck team past its current puzzle to the next one (or to completion if it was on the final puzzle). Used during a live event when a team can't progress and the arranger wants to keep them moving. " +
+			"A team split up into groups (a split step) is in several places at once: get_event lists each group's step under the team's groups — name the stuck group's step as node, or its key as group, to move that group on, the others left be; a group may be moved on from any step of its path, a story or a choice too. Records an arranger-assist activity entry.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"team_id"},
 			"properties": map[string]any{
 				"team_id": map[string]any{"type": "integer", "description": "Team to advance."},
+				"node":    map[string]any{"type": "string", "description": "The step to move the team past: its current one by default; for a split team, the stuck group's step. Refused if the team (or group) has moved on since."},
+				"group":   map[string]any{"type": "string", "description": "For a split team, the key of the group to move on (get_event lists each group's port as its key): needed where several groups stand on one split, which moving on sets that group off down its path. Given alone, the group's own step is meant."},
 			},
 		},
 	}, unlockTeam)
@@ -371,7 +374,18 @@ func unwithdrawTeam(ctx context.Context, s *Server, raw json.RawMessage) (ToolCa
 }
 
 func unlockTeam(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
-	return runTeamPost(ctx, s, raw, "unlock", func() http.HandlerFunc {
+	var a struct {
+		Node  string `json:"node"`
+		Group string `json:"group"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return errorResult("bad args: " + err.Error()), nil
+	}
+	var body any
+	if a.Node != "" || a.Group != "" {
+		body = map[string]string{"node": a.Node, "group": a.Group}
+	}
+	return runTeamPostBody(ctx, s, raw, "unlock", body, func() http.HandlerFunc {
 		if s.Admin == nil {
 			return nil
 		}
@@ -393,6 +407,11 @@ func letTeamStartAnywhere(ctx context.Context, s *Server, raw json.RawMessage) (
 // Args validate before the nil-Admin check, same invariant as the
 // event-side runTransition.
 func runTeamPost(ctx context.Context, s *Server, raw json.RawMessage, action string, pickHandler func() http.HandlerFunc) (ToolCallResult, error) {
+	return runTeamPostBody(ctx, s, raw, action, nil, pickHandler)
+}
+
+// runTeamPostBody is runTeamPost with a request body: unlock's node.
+func runTeamPostBody(ctx context.Context, s *Server, raw json.RawMessage, action string, reqBody any, pickHandler func() http.HandlerFunc) (ToolCallResult, error) {
 	var a teamIDArgs
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return errorResult("bad args: " + err.Error()), nil
@@ -410,7 +429,7 @@ func runTeamPost(ctx context.Context, s *Server, raw json.RawMessage, action str
 	id := strconv.FormatInt(a.TeamID, 10)
 	status, body, err := callAdmin(ctx, handler,
 		"POST", "/api/admin/teams/"+id+"/"+action,
-		map[string]string{"teamID": id}, nil, nil)
+		map[string]string{"teamID": id}, nil, reqBody)
 	if err != nil {
 		return errorResult("call: " + err.Error()), nil
 	}

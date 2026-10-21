@@ -99,7 +99,7 @@ function routesOf(g: Graph, n: Node): { to: string; ports: string[]; label: stri
     const to = targetOf(g, n.slug, p);
     if (to !== undefined) by.set(to, [...(by.get(to) ?? []), p]);
   }
-  return [...by].map(([to, ports]) => ({ to, ports, label: ports.map((p) => portLabel(n, p)).join(" / ") }));
+  return [...by].map(([to, ports]) => ({ to, ports, label: ports.map((p) => portLabel(n, p, g.roles)).join(" / ") }));
 }
 
 /**

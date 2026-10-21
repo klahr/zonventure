@@ -194,11 +194,16 @@ func TestConsoleRescuesAGroup(t *testing.T) {
 	if tm.Node != "split" || len(tm.Groups) != 2 || tm.Groups[0].Label != "Church" || tm.Groups[0].Node != "split" || tm.Groups[1].Node != "pb" {
 		t.Fatalf("console team = %+v", tm)
 	}
-	// The split itself is no puzzle to move past; the group's step is.
-	if s := arr.do("POST", "/api/admin/teams/"+itoa(team.ID)+"/unlock", map[string]string{"node": "split"}, nil); s != 409 {
-		t.Errorf("rescuing the split = %d, want 409", s)
+	// The split names no group: a rescue there must say which.
+	var refused struct {
+		Code string `json:"code"`
 	}
-	if s := arr.do("POST", "/api/admin/teams/"+itoa(team.ID)+"/unlock", map[string]string{"node": "pb"}, nil); s != 200 {
+	if s := arr.doAny("POST", "/api/admin/teams/"+itoa(team.ID)+"/unlock", map[string]string{"node": "split"}, &refused); s != 409 || refused.Code != "which_group" {
+		t.Errorf("rescuing the split without a group = %d %q, want 409 which_group", s, refused.Code)
+	}
+	// Named by its group alone, the well's group is moved on from its own
+	// step, not the split the team is on meanwhile.
+	if s := arr.do("POST", "/api/admin/teams/"+itoa(team.ID)+"/unlock", map[string]string{"group": "b"}, nil); s != 200 {
 		t.Fatalf("rescuing the well's group = %d", s)
 	}
 	ed = detail{}

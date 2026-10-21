@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  changesBeside,
   gridZones,
   withAnswerKind,
   shuffledDeal,
@@ -23,6 +24,7 @@ import {
   linearSteps,
   moveStep,
   newNode,
+  portLabel,
   portsOf,
   removeNode,
   removeStep,
@@ -489,4 +491,31 @@ describe("withAnswerKind", () => {
     assert.equal(withAnswerKind(quiet, "choice").quiet, true);
     assert.equal(withAnswerKind(quiet, "search").quiet, undefined);
   });
+});
+
+test("removing a split's path drops its translations, and its role names an unlabelled one", () => {
+  const sp = { slug: "sp", type: "split" as const, split: { paths: [{ port: "a", label: "North" }, { port: "b", role: "scout" }, { port: "c", label: "East" }] } };
+  const g: Graph = {
+    nodes: [sp],
+    edges: [],
+    roles: [{ slug: "scout", name: "Scout" }],
+    translations: { sv: { "n:sp:path:c:label": "Öst", "n:sp:path:a:label": "Norr", "n:sp:split-text": "Hej" } },
+    translation_originals: { sv: { "n:sp:path:c:label": "East" } },
+  };
+  assert.equal(portLabel(sp, "b", g.roles), "Scout");
+  assert.equal(portLabel(sp, "b"), "scout");
+  const next = updateNode(g, "sp", (n) => ({ ...n, split: { paths: n.split!.paths!.slice(0, 2) } }));
+  assert.deepEqual(next.translations, { sv: { "n:sp:path:a:label": "Norr", "n:sp:split-text": "Hej" } });
+  assert.deepEqual(next.translation_originals, { sv: {} });
+  // An edit that keeps every port keeps every translation.
+  assert.equal(updateNode(g, "sp", (n) => ({ ...n, title: "x" })).translations, g.translations);
+});
+
+test("changesBeside tells an edit of the step alone from one that changes more", () => {
+  const g = linear3();
+  assert.equal(changesBeside(g, g, "puzzle-1"), false);
+  assert.equal(changesBeside(g, updateNode(g, "puzzle-1", (n) => ({ ...n, title: "x" })), "puzzle-1"), false, "the step itself");
+  assert.equal(changesBeside(g, updateNode(g, "puzzle-1", (n) => ({ ...n, title: "x" })), "end"), true, "another step");
+  assert.equal(changesBeside(g, { ...g, zones: [{ slug: "z", lat: 0, lng: 0, radius_m: 30 }] }, "puzzle-1"), true, "a new place");
+  assert.equal(changesBeside(g, { ...g, edges: g.edges.slice(1) }, "puzzle-1"), true, "a wire taken away");
 });

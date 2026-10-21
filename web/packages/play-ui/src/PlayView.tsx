@@ -245,7 +245,7 @@ export function PlayView(props: PlayViewProps) {
         </button>
       )}
 
-      {view.groups?.length && kind !== "split" && kind !== "join" ? <Groups view={view} t={t} /> : null}
+      {view.groups?.length && kind !== "split" && kind !== "join" ? <Groups view={view} t={t} busy={!!props.busy} onAction={props.onAction} /> : null}
 
       {view.players_min ? (
         <p className="pv-waiting" role="status">
@@ -1086,7 +1086,7 @@ function SplitStep({ view, t, busy, onAction, feedback }: StepProps) {
           {t("You go with: {{group}}", { group: view.group })}
         </p>
       )}
-      <Groups view={view} t={t} />
+      <Groups view={view} t={t} busy={!!busy} onAction={onAction} />
       <div className="pv-dock">
         <FeedbackLine feedback={feedback} />
         <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={!!busy} onClick={() => onAction({ kind: "continue", node })}>
@@ -1102,11 +1102,15 @@ function SplitStep({ view, t, busy, onAction, feedback }: StepProps) {
  * arrive: then the team goes on together — or, a split within a split,
  * the group they split from.
  */
-function JoinStep({ view, t }: StepProps) {
-  const left = view.awaiting ?? (view.groups ?? []).filter((g) => !g.arrived).length;
+function JoinStep({ view, t, busy, onAction }: StepProps) {
+  // awaiting is left out at zero; with no groups either (a preview placed
+  // here), there is no count to give.
+  const left = view.awaiting || (view.groups ?? []).filter((g) => !g.arrived).length;
   const group = view.rejoin;
   let text: string;
-  if (group) {
+  if (left <= 0) {
+    text = group ? t("The groups meet here. {{group}} goes on together once every group is here.", { group }) : t("The groups meet here. The team goes on together once every group is here.");
+  } else if (group) {
     text = left === 1 ? t("Waiting for 1 more group. {{group}} goes on together once it is here.", { group }) : t("Waiting for {{n}} more groups. {{group}} goes on together once they are here.", { n: left, group });
   } else {
     text = left === 1 ? t("Waiting for 1 more group. The team goes on together once it is here.") : t("Waiting for {{n}} more groups. The team goes on together once they are here.", { n: left });
@@ -1117,22 +1121,40 @@ function JoinStep({ view, t }: StepProps) {
       <p className="pv-waiting" role="status">
         {text}
       </p>
-      <Groups view={view} t={t} />
+      <Groups view={view} t={t} busy={!!busy} onAction={onAction} />
     </>
   );
 }
 
-/** Every group of a split team, where it is and whether it has arrived. */
-function Groups({ view, t }: { view: play.View; t: Translate }) {
+/**
+ * Every group of a split team, where it is and whether it has arrived. A
+ * phone in more than one group may switch to another of its own still
+ * on its way, or to one that is anyone's: no one is with it, or they
+ * are all away.
+ */
+function Groups({ view, t, busy, onAction }: { view: play.View; t: Translate; busy: boolean; onAction: (action: play.PlayAction) => void }) {
   return (
     <ul className="pv-groups" aria-label={t("Groups")}>
       {(view.groups ?? []).map((g) => (
         <li key={g.port} className={"pv-groups__group" + (g.current ? " is-current" : "") + (g.arrived ? " is-arrived" : "")}>
           <span className="pv-groups__name">
             {g.label}
-            {g.mine && <span className="pv-groups__mine"> · {t("you")}</span>}
+            {g.mine ? <span className="pv-groups__mine"> · {t("you")}</span> : g.open && <span className="pv-groups__open"> · {t("open to anyone")}</span>}
           </span>
-          <span className="pv-groups__at">{g.arrived ? t("Arrived") : g.at}</span>
+          <span className="pv-groups__at">
+            {g.arrived ? t("Arrived") : g.at}
+            {(g.mine || g.open) && !g.arrived && !g.current && (
+              <button
+                type="button"
+                className="pv-link pv-groups__walk"
+                disabled={busy}
+                aria-label={t("Walk with {{group}}", { group: g.label })}
+                onClick={() => onAction({ kind: "walk", port: g.port })}
+              >
+                {t("Walk this group")}
+              </button>
+            )}
+          </span>
         </li>
       ))}
     </ul>

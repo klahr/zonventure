@@ -351,7 +351,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
         setFeedback(null);
         sayAs(t.t("The draft stopped the team: {{why}}", { why: r.refusal.message }), "warn");
       } else {
-        setFeedback(feedbackForRefusal(r.refusal.code, tr));
+        setFeedback(feedbackForRefusal(r.refusal.code, tr, a.kind === "walk" || !!view?.groups?.length));
       }
       return;
     }
@@ -359,7 +359,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     setFeedback(feedbackForResult(a.kind === "force" ? "answer" : a.kind, r.result, tr, before));
     const after = r.result.view.node;
     const left = before ? nodeBySlug(graph, before) : undefined;
-    const port = r.result.port && left ? portLabel(left, r.result.port) : r.result.port;
+    const port = r.result.port && left ? portLabel(left, r.result.port, graph.roles) : r.result.port;
     if (a.kind === "answer") sayAs(t.t("Answered “{{guess}}”.", { guess: a.guess }));
     if (a.kind === "force") sayAs(t.t("Passed without answering."));
     if (a.kind === "seal") sayAs(t.t("Picked at the mission."));
@@ -643,7 +643,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
               <span className="field__hint">{t.t("Leave by an output without the answer — for a QR code you can't scan, or a place you're not at.")}</span>
               {current.puzzle.outputs.map((o) => (
                 <Button key={o.port} type="button" size="sm" disabled={busy} onClick={() => void act({ kind: "force", node: current.slug, port: o.port })}>
-                  {t.t("Pass: {{port}}", { port: portLabel(current, o.port) })}
+                  {t.t("Pass: {{port}}", { port: portLabel(current, o.port, graph.roles) })}
                 </Button>
               ))}
             </div>

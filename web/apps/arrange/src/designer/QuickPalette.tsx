@@ -80,7 +80,7 @@ export function QuickPalette({ graph, from, choosePort = false, at, bounds, onPi
   const [portQuery, setPortQuery] = useState("");
   const portNeedle = portQuery.trim().toLowerCase();
   const shownPorts = portNeedle
-    ? ports.filter((p) => (from?.side === "output" ? portLabel(from.node, p) : p).toLowerCase().includes(portNeedle))
+    ? ports.filter((p) => (from?.side === "output" ? portLabel(from.node, p, graph.roles) : p).toLowerCase().includes(portNeedle))
     : ports;
   const [active, setActive] = useState(() => (phase === "port" ? Math.max(0, ports.indexOf(port ?? "")) : 0));
   const [preset, setPreset] = useState<Preset | null>(null);
@@ -266,7 +266,7 @@ export function QuickPalette({ graph, from, choosePort = false, at, bounds, onPi
   const where =
     from?.side === "output" && choosePort
       ? ports.length > 1 && shownPort
-        ? t.t("After {{step}} · {{port}}", { step: from.node.title || from.node.slug, port: portLabel(from.node, shownPort) })
+        ? t.t("After {{step}} · {{port}}", { step: from.node.title || from.node.slug, port: portLabel(from.node, shownPort, graph.roles) })
         : t.t("After {{step}}", { step: from.node.title || from.node.slug })
       : "";
   const done = [preset && t.t(preset.label), fill.title?.trim()].filter(Boolean).join(" · ");
@@ -306,7 +306,7 @@ export function QuickPalette({ graph, from, choosePort = false, at, bounds, onPi
               ref={inputRef}
               value={portQuery}
               onChange={(e) => setPortQuery(e.target.value)}
-              placeholder={from?.side === "output" && shownPort ? portLabel(from.node, shownPort) : ""}
+              placeholder={from?.side === "output" && shownPort ? portLabel(from.node, shownPort, graph.roles) : ""}
               spellCheck={false}
               autoComplete="off"
             />
@@ -355,7 +355,7 @@ export function QuickPalette({ graph, from, choosePort = false, at, bounds, onPi
                 }}
               >
                 <span className="qp__text">
-                  <span className="qp__label">{from?.side === "output" ? portLabel(from.node, p) : p}</span>
+                  <span className="qp__label">{from?.side === "output" ? portLabel(from.node, p, graph.roles) : p}</span>
                   <span className="qp__hint">
                     {from && targetOf(graph, from.node.slug, p) ? t.t("Already leads somewhere; the new step goes in between") : t.t("Not connected yet")}
                   </span>

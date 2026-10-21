@@ -75,6 +75,9 @@ var (
 	// ErrUnsealed means a step's mission still waits for players to pick
 	// at its post, so the team cannot move on. Map to 403.
 	ErrUnsealed = errors.New("the mission on this step is not sealed yet")
+	// ErrWhichGroup means an organiser's rescue names a split a team's
+	// groups are waiting on but not which group to set off. Map to 409.
+	ErrWhichGroup = errors.New("say which group to move on: several may wait on this split")
 	// ErrTooFew means fewer players have joined than the adventure needs
 	// (graph.Graph.MinPlayers), so the team cannot move yet. Map to 403.
 	ErrTooFew = errors.New("the team is waiting for more players")
@@ -253,6 +256,9 @@ type Team struct {
 	// for a split team; focusing on a group makes its step's Presses.
 	// Never stored with the team.
 	PressesAt map[string]map[int64]Press `json:"-"`
+	// GroupsChanged says an action changed the groups without moving
+	// any (Walk), for the engine to store them. Never stored.
+	GroupsChanged bool `json:"-"`
 	// focus is the strand Current is, counted from 1, and saved what
 	// focusing on it narrowed.
 	focus int
@@ -261,6 +267,9 @@ type Team struct {
 	// has taken it through (walk.State.Joined), innermost first.
 	popped int
 	shape  *shapes
+	// dealing is who played and held which role as the team was last
+	// dealt into its groups (Deal).
+	dealing dealing
 }
 
 // New returns an empty team on g at time now, not yet placed anywhere.
@@ -1132,8 +1141,9 @@ func (t *Team) backTo() (string, bool) {
 		return "", false
 	}
 	// A group goes back only to a home screen on its own path, never
-	// alone to one the team left together.
-	if t.Split != "" && !t.onPath(hub) {
+	// alone to one the team left together; the team, together, never to
+	// one on a path, which is a group's.
+	if t.Split != "" && !t.onPath(hub) || t.Split == "" && t.onAnyPath(hub) {
 		return "", false
 	}
 	h, _ := t.G.Node(hub)
@@ -1296,6 +1306,22 @@ func (t *Team) Rescue(node string) (Result, *walk.Step, error) {
 	if err != nil {
 		return Result{}, nil, err
 	}
+	if n.Type == graph.Split {
+		// A group no one sets off — its phones gone flat — is set off.
+		return t.leaveSplit(n)
+	}
+	if t.Split != "" && t.focus > 0 {
+		// A group on its path is moved on from any step with a way on: no
+		// one may be left to read its story, or choose at its hub.
+		switch n.Type {
+		case graph.Story:
+			t.Row(n.Slug).Solved = true
+			step, err := t.leave(n, graph.PortOut, 0)
+			return Result{Port: graph.PortOut}, step, err
+		case graph.Hub:
+			return t.rescueHub(n)
+		}
+	}
 	if n.Type != graph.Puzzle || n.PuzzleCfg == nil {
 		return Result{}, nil, ErrWrongNode
 	}
@@ -1311,6 +1337,101 @@ func (t *Team) Rescue(node string) (Result, *walk.Step, error) {
 		return Result{}, nil, err
 	}
 	return Result{Port: o.Port}, step, nil
+}
+
+// rescueHub moves a group on from a hub, toward its join: out, if it
+// has done enough there, or else into a branch it may take — one not yet
+// done that leads on to the join first, then one done (a home hub's)
+// that does, then one not yet done that comes back to the hub. A branch
+// that leads only to an end is never taken: it would finish the
+// adventure for every group, those still on their way too, on one
+// group's rescue — an organiser who means to end it has their own ways.
+// A done branch that only comes back would go round for good, so a hub
+// with nothing else is not rescued. The way is chosen before the walk,
+// which is taken once.
+func (t *Team) rescueHub(n graph.Node) (Result, *walk.Step, error) {
+	cfg := n.HubCfg
+	if cfg == nil {
+		return Result{}, nil, ErrNotAllowed
+	}
+	port := ""
+	if !cfg.Home && t.CompletedBranches(n.Slug) >= cfg.RequiredBranches() {
+		port = graph.PortDone
+	} else {
+		join := t.groupJoin()
+		best := 3
+		for _, b := range cfg.Branches {
+			done := t.BranchDone(n.Slug, b.Port)
+			if done && !cfg.Home || !t.branchOpen(b) {
+				continue
+			}
+			toJoin, back := t.leadsTo(n.Slug, b.Port, join)
+			var rank int
+			switch {
+			case toJoin && !done:
+				rank = 0
+			case toJoin:
+				rank = 1
+			case back && !done:
+				rank = 2
+			default:
+				// Done and only back, or only to an end.
+				continue
+			}
+			if rank < best {
+				best, port = rank, b.Port
+			}
+		}
+	}
+	if port == "" {
+		return Result{}, nil, ErrNotAllowed
+	}
+	step, err := walk.EnterBranch(t.G, t, n.Slug, port)
+	if err != nil {
+		return Result{}, nil, fmt.Errorf("%w: %v", ErrNotAllowed, err)
+	}
+	return Result{Port: port}, &step, nil
+}
+
+// groupJoin is the join the focused group's paths meet at: "" for none.
+func (t *Team) groupJoin() string {
+	if t.focus == 0 {
+		return ""
+	}
+	lin := t.lineage(t.focus - 1)
+	return t.joinOf(lin[len(lin)-1].Split)
+}
+
+// leadsTo reports where hub's branch port can lead, by the graph's
+// edges, without passing the hub again: on to join, and back to the hub.
+func (t *Team) leadsTo(hub, port, join string) (toJoin, back bool) {
+	start, ok := t.G.Target(hub, port)
+	if !ok {
+		return false, false
+	}
+	next := map[string][]string{}
+	for _, e := range t.G.Edges {
+		next[e.From] = append(next[e.From], e.To)
+	}
+	seen := map[string]bool{}
+	queue := []string{start}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		switch {
+		case seen[cur]:
+			continue
+		case cur == hub:
+			back = true
+			continue
+		case join != "" && cur == join:
+			toJoin = true
+			continue
+		}
+		seen[cur] = true
+		queue = append(queue, next[cur]...)
+	}
+	return toJoin, back
 }
 
 // Cheat solves a puzzle for a tester who has the adventure's cheat
@@ -1433,14 +1554,23 @@ func (t *Team) leave(n graph.Node, port string, points float64) (*walk.Step, err
 }
 
 // CanRescue reports whether Rescue can move a team past n: a puzzle
-// with a skip or an answer route.
+// with a skip or an answer route, or a split to set a group off from.
 func CanRescue(n graph.Node) bool {
+	if n.Type == graph.Split {
+		return true
+	}
 	if n.Type != graph.Puzzle || n.PuzzleCfg == nil {
 		return false
 	}
 	_, skip := outputFor(n, graph.OnSkip)
 	_, answer := outputFor(n, graph.OnAnswer)
 	return skip || answer
+}
+
+// CanRescueGroup reports whether Rescue can move a group of a split
+// team, on its path, past n: as CanRescue, and a story or a hub too.
+func CanRescueGroup(n graph.Node) bool {
+	return CanRescue(n) || n.Type == graph.Story || n.Type == graph.Hub
 }
 
 func outputFor(n graph.Node, trig graph.Trigger) (graph.Output, bool) {
@@ -1506,6 +1636,8 @@ func Code(err error) string {
 		return "unsealed"
 	case errors.Is(err, ErrTooFew):
 		return "too_few"
+	case errors.Is(err, ErrWhichGroup):
+		return "which_group"
 	}
 	return ""
 }

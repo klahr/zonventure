@@ -38,3 +38,12 @@
 .dz .cc-team-marker > span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
 .dz .cc-team-marker > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .dz .maplibregl-popup-content { font-size: var(--dz-text-sm); color: #1f3349; }
+/* A group of a team split up: its own marker, its name hung beneath. */
+.dz .cc-team-marker--group { overflow: visible; }
+.dz .cc-team-marker--group > img { border-radius: 50%; }
+.dz .cc-team-marker__group { position: absolute; top: calc(100% + 3px); left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 10px; font-weight: 700; line-height: 1.4; padding: 0 5px; border-radius: 6px; background: var(--team-col); color: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); }
+/* A split team's groups under its progress. */
+.dz .cc-groups { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 1px; }
+.dz .cc-groups__group { display: flex; flex-wrap: wrap; gap: 0 6px; font-size: 12px; }
+.dz .cc-groups__name { font-weight: 600; }
+.dz .cc-groups__group.is-slow, .dz .cc-groups__group.is-slow .cs-sub { color: var(--warning); }

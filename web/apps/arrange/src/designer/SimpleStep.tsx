@@ -1,9 +1,9 @@
-import { useRef } from "react";
+import { useContext, useRef } from "react";
 import { play } from "@zonventure/api";
-import { blocksOf, mediaBlock, textBlock, updateNode, withBlocks, type Block, type Graph, type Matcher, type Node, type Output } from "@zonventure/graph";
+import { blocksOf, mediaBlock, textBlock, withBlocks, type Block, type Graph, type Matcher, type Node, type Output } from "@zonventure/graph";
 import { Camera, Plus, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
-import { Field, ZoneSelect } from "./fields.tsx";
+import { EditingAs, Field, ZoneSelect, type StepEdit } from "./fields.tsx";
 import { useMediaUpload } from "./MediaEditor.tsx";
 import { isTouch } from "./device.ts";
 import { retitle } from "./zones.ts";
@@ -21,15 +21,16 @@ const DEFAULT_TITLES = new Set(["New puzzle", "New story"]);
  * in the full inspector, one tap away under More options, so a step made
  * here is an ordinary step there.
  */
-export function SimpleStep({ node, graph, onChange, onGraphChange, onMore, onDelete }: {
+export function SimpleStep({ node, graph, onChange, onEdit, onMore, onDelete }: {
   node: Node;
   graph: Graph;
   onChange: (n: Node) => void;
-  onGraphChange: (g: Graph) => void;
+  onEdit: StepEdit;
   onMore: () => void;
   onDelete: () => void;
 }) {
   const t = useT();
+  const editingAs = useContext(EditingAs);
   const blocks = blocksOf(node);
   const text = blocks.find((b): b is Extract<Block, { kind: "text" }> => b.kind === "text" && !b.disabled);
   const pictures = blocks.filter((b): b is Picture => b.kind === "image");
@@ -52,7 +53,11 @@ export function SimpleStep({ node, graph, onChange, onGraphChange, onMore, onDel
           className="field__input"
           value={DEFAULT_TITLES.has(node.title ?? "") ? "" : (node.title ?? "")}
           placeholder={node.type === "puzzle" ? t.t("e.g. The big oak") : t.t("e.g. Welcome")}
-          onChange={(e) => onGraphChange(retitle(graph, node, e.target.value, [t.t("Place")]))}
+          onChange={(e) => {
+            const title = e.target.value;
+            // A suggestion is the step alone: its zone keeps its name.
+            onEdit(editingAs.suggesting ? graph : retitle(graph, node, title, [t.t("Place")], editingAs.translating), (n) => ({ ...n, title }));
+          }}
         />
       </Field>
 
@@ -72,11 +77,7 @@ export function SimpleStep({ node, graph, onChange, onGraphChange, onMore, onDel
         here={{
           name: DEFAULT_TITLES.has(node.title ?? "") ? "" : (node.title ?? ""),
           set: (zones, slug) =>
-            onGraphChange(
-              updateNode({ ...graph, zones }, node.slug, (n) =>
-                n.puzzle ? { ...n, puzzle: withZone(n.puzzle, slug) } : { ...n, story: withZone(n.story ?? {}, slug) },
-              ),
-            ),
+            onEdit({ ...graph, zones }, (n) => (n.puzzle ? { ...n, puzzle: withZone(n.puzzle, slug) } : { ...n, story: withZone(n.story ?? {}, slug) })),
         }}
       />
 

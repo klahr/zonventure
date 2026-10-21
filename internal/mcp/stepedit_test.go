@@ -82,3 +82,71 @@ func TestPatchNode(t *testing.T) {
 		}
 	}
 }
+
+// A port and a role are names, like a slug: set_text changes the texts
+// around them and never them, so a wire never comes loose. An output's
+// port "left" survives replacing "left" in the step's words.
+func TestSetTextLeavesPortsAndRoles(t *testing.T) {
+	t.Parallel()
+	g := &graph.Graph{}
+	mustApply(t, g, graphOp{Op: "put_node", Node: json.RawMessage(`{"slug":"door","type":"puzzle","puzzle":{
+		"by":"left",
+		"blocks":[{"id":"b1","kind":"text","text":"Turn left or right?"}],
+		"outputs":[{"port":"left","label":"Go left","trigger":"answer","matchers":[{"id":"m1","kind":"exact","value":"left"}]}]}}`)})
+	mustApply(t, g, graphOp{Op: "set_text", Slug: "door", Find: "left", Replace: "west", All: true})
+	p := g.Nodes[0].PuzzleCfg
+	if p.Outputs[0].Port != "left" || p.By != "left" {
+		t.Errorf("port %q, role %q: names must not change", p.Outputs[0].Port, p.By)
+	}
+	if p.Blocks[0].Text != "Turn west or right?" || p.Outputs[0].Label != "Go west" || p.Outputs[0].Matchers[0].Value != "west" {
+		t.Errorf("the texts should change: %+v", p)
+	}
+}
+
+// A condition, a block's settings and its references are names too:
+// renaming "tower" and "left" in the words leaves the step, port, zones
+// and block a condition reads, a sabotage's role and note, a status's
+// counter and the style and animation alone, while a set answer's
+// members, which are words, change.
+func TestSetTextLeavesReferences(t *testing.T) {
+	t.Parallel()
+	g := &graph.Graph{}
+	mustApply(t, g, graphOp{Op: "put_node", Node: json.RawMessage(`{"slug":"tower","type":"puzzle","puzzle":{
+		"blocks":[
+			{"id":"b1","kind":"text","text":"Climb the tower, check the left gate","style":"tower",
+				"show":{"when":{"op":"any","of":[
+					{"op":"outcome","node":"tower","is":"left"},
+					{"op":"zones_held","members":["tower","left"]},
+					{"op":"drawn","node":"tower","block":"left","is":"1","cmp":"left"}]}},
+				"animation":{"entrance":"left","attention":"tower","repeat":"left"}},
+			{"id":"b2","kind":"sabotage","text":"Jam the left gate","role":"left","journal":"tower"},
+			{"id":"b3","kind":"status","counters":["tower","left"]},
+			{"id":"b4","kind":"cipher","cipher":"left"}],
+		"outputs":[{"port":"left","trigger":"answer","matchers":[{"id":"m1","kind":"set","members":["tower","left"]}]}]}}`)})
+	mustApply(t, g, graphOp{Op: "put_node", Node: json.RawMessage(`{"slug":"plaza","type":"hub","hub":{"policy":"any","text":"Up the tower",
+		"branches":[{"port":"left","label":"The left gate","condition":{"op":"outcome","node":"tower","is":"left"}}]}}`)})
+	before, _ := json.Marshal(g.Nodes)
+	for _, slug := range []string{"tower", "plaza"} {
+		mustApply(t, g, graphOp{Op: "set_text", Slug: slug, Find: "tower", Replace: "spire", All: true})
+		mustApply(t, g, graphOp{Op: "set_text", Slug: slug, Find: "left", Replace: "west", All: true})
+	}
+	p := g.Nodes[0].PuzzleCfg
+	b := p.Blocks
+	if b[0].Text != "Climb the spire, check the west gate" || b[1].Text != "Jam the west gate" {
+		t.Errorf("the texts should change: %q, %q", b[0].Text, b[1].Text)
+	}
+	if m := p.Outputs[0].Matchers[0].Members; m[0] != "spire" || m[1] != "west" {
+		t.Errorf("a set answer's members are words: %v", m)
+	}
+	if h := g.Nodes[1].HubCfg; h.Text != "Up the spire" || h.Branches[0].Label != "The west gate" {
+		t.Errorf("the hub's texts should change: %+v", h)
+	}
+
+	// Put the words back: everything else must be as it was.
+	p.Blocks[0].Text, p.Blocks[1].Text = "Climb the tower, check the left gate", "Jam the left gate"
+	p.Outputs[0].Matchers[0].Members = []string{"tower", "left"}
+	g.Nodes[1].HubCfg.Text, g.Nodes[1].HubCfg.Branches[0].Label = "Up the tower", "The left gate"
+	if after, _ := json.Marshal(g.Nodes); string(after) != string(before) {
+		t.Errorf("references changed:\n%s\n%s", before, after)
+	}
+}

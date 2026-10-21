@@ -45,7 +45,7 @@ func (s *Server) registerDevTools() {
 		Audience: audienceAuthor,
 		Scope:    scopeWrite,
 		Description: "Move the author's dev phone to a step of the draft — back to one already played, or on to one not reached — and play it afresh (its attempts, hints and outcome forgotten). " +
-			"Name a puzzle, story, hub or end by its slug.",
+			"Name a puzzle, story, hub, split or end by its slug; put on a split, the phone's team splits there afresh.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"slug", "node"},

@@ -1,9 +1,10 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { FIXED_KINDS, addMediaBlocks, blocksOf, freshBlockId, isFixed, moveBlock, needsFile, newBlock, updateNode, withBlocks, type Block, type BlockKind, type FileKind, type Graph, type Node, type Zone } from "@zonventure/graph";
+import { FIXED_KINDS, addMediaBlocks, blocksOf, freshBlockId, isFixed, moveBlock, needsFile, newBlock, withBlocks, type Block, type BlockKind, type FileKind, type Graph, type Node } from "@zonventure/graph";
 import { Camera, ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Plus, Power, PowerOff, Sparkles, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { Button, ConfirmModal, DzPortal, ICON, useAnchoredPop, useDismiss } from "./dz/ui.tsx";
 import { useMediaUpload } from "./MediaEditor.tsx";
+import type { StepEdit } from "./fields.tsx";
 import { isNarrow, isTouch } from "./device.ts";
 import { ACCEPT } from "./blocks/Media.tsx";
 import { GROUPS, KINDS } from "./blocks/registry.tsx";
@@ -12,12 +13,12 @@ import { AnimationEditor } from "./blocks/Animation.tsx";
 import { summarize } from "./blocks/summary.ts";
 import type { Editor, T } from "./blocks/types.ts";
 
-function body(b: Block, set: (b: Block) => void, t: T, textLabel: string, graph: Graph, node: Node, onGraphChange?: (g: Graph) => void) {
+function body(b: Block, set: (b: Block) => void, t: T, textLabel: string, graph: Graph, node: Node, onEdit?: StepEdit) {
   const Body = KINDS[b.kind].editor as Editor<BlockKind>;
-  const withZones = onGraphChange
-    ? (zones: Zone[], next: Block) => onGraphChange(updateNode({ ...graph, zones }, node.slug, (n) => withBlocks(n, blocksOf(n).map((x) => (x.id === next.id ? next : x)))))
+  const withGraph = onEdit
+    ? (g: Graph, next: Block) => onEdit(g, (n) => withBlocks(n, blocksOf(n).map((x) => (x.id === next.id ? next : x))))
     : undefined;
-  return <Body block={b as never} set={set} t={t} textLabel={textLabel} graph={graph} node={node} withZones={withZones} />;
+  return <Body block={b as never} set={set} t={t} textLabel={textLabel} graph={graph} node={node} withGraph={withGraph} />;
 }
 
 /**
@@ -27,7 +28,7 @@ function body(b: Block, set: (b: Block) => void, t: T, textLabel: string, graph:
  * kept (the power button), the title and points too. Files are stored when
  * picked, like MediaEditor's.
  */
-export function BlocksEditor({ blocks, node, graph, onChange, onGraphChange, textLabel }: { blocks: Block[] | undefined; node: Node; graph: Graph; onChange: (b: Block[]) => void; onGraphChange?: (g: Graph) => void; textLabel: string }) {
+export function BlocksEditor({ blocks, node, graph, onChange, onEdit, textLabel }: { blocks: Block[] | undefined; node: Node; graph: Graph; onChange: (b: Block[]) => void; onEdit?: StepEdit; textLabel: string }) {
   const t = useT();
   const list = blocks ?? [];
   const root = useRef<HTMLDivElement>(null);
@@ -330,7 +331,7 @@ export function BlocksEditor({ blocks, node, graph, onChange, onGraphChange, tex
                 <Plus size={ICON.sm} aria-hidden="true" />
                 {ACCEPT[b.kind]?.startsWith("audio") ? t.t("Add sound") : ACCEPT[b.kind]?.startsWith("video") ? t.t("Add film") : t.t("Add picture")}
               </button>
-            ) : body(b, (next) => set(i, next), t, label, graph, node, onGraphChange))}
+            ) : body(b, (next) => set(i, next), t, label, graph, node, onEdit))}
             {!isFolded && ruleOpen && <ShowEditor block={b} set={(next) => set(i, next)} graph={graph} t={t} />}
             {!isFolded && animOpen && <AnimationEditor block={b} set={(next) => set(i, next)} t={t} />}
           </div>

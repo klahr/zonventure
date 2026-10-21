@@ -20,7 +20,7 @@ import {
   type Activity, type EventDetail, type EventInfo, type Team, type Track,
 } from "./api.ts";
 import { ControlMap, type MapTeam } from "./ControlMap.tsx";
-import { elapsedSeconds, filters, fmtElapsedShort, mapViews, QUIET_KINDS, runLabel, teamColor, teamProgress, useNow } from "./model.ts";
+import { elapsedSeconds, filters, fmtElapsedShort, groupSeconds, mapViews, QUIET_KINDS, runLabel, stepTitle, teamColor, teamProgress, useNow } from "./model.ts";
 import "./control.css";
 
 // Messages aren't in the pushes; a push re-reads them at most this often.
@@ -288,7 +288,7 @@ export function EventControlPage({ id }: { id: number }) {
 
       <div className="cc-grid">
         <Card title={t.t("Leaderboard")} flush>
-          <Leaderboard detail={d} teams={visibleTeams} colorOf={colorOf} canWithdraw={canWithdraw} onWithdraw={withdraw} onReturn={unwithdraw} onOpen={setOpenTeam} />
+          <Leaderboard detail={d} offset={offset} teams={visibleTeams} colorOf={colorOf} canWithdraw={canWithdraw} onWithdraw={withdraw} onReturn={unwithdraw} onOpen={setOpenTeam} />
         </Card>
         <Card title={t.t("Map")}>
           <ControlMap eventId={id} zones={d.graph?.zones ?? []} teams={mapTeams} tracks={tracks.data ?? []} />
@@ -331,6 +331,36 @@ function LastSeen({ tm, labelled }: { tm: Team; labelled?: boolean }) {
   return labelled ? <>{t.t("Last activity")}{" "}<TickingAgo at={at} /></> : <TickingAgo at={at} />;
 }
 
+/** How long a group may stay on one step before race control flags it. */
+const SLOW_GROUP_SECONDS = 15 * 60;
+
+/**
+ * A split team's groups, each on its own step: where it is, and how long
+ * it has been there — a group long on one step is flagged, however busy
+ * the rest of its team. One waiting at its join is not stuck.
+ */
+function Groups({ detail, tm, offset }: { detail: EventDetail; tm: Team; offset: number }) {
+  const t = useT();
+  const now = useNow();
+  return (
+    <ul className="cc-groups">
+      {(tm.groups ?? []).map((g) => {
+        const secs = groupSeconds(detail.event, g.since, offset, now);
+        const slow = !g.arrived && secs !== undefined && secs >= SLOW_GROUP_SECONDS;
+        return (
+          <li key={g.port} className={"cc-groups__group" + (slow ? " is-slow" : "")} title={slow ? t.t("On this step a long while") : undefined}>
+            <span className="cc-groups__name">{g.label}</span>
+            <span className="cs-sub">
+              {g.arrived ? t.t("waiting at {{step}}", { step: stepTitle(detail, g.node) }) : stepTitle(detail, g.node)}
+              {secs !== undefined && ` · ${fmtElapsedShort(secs)}`}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function TickingAgo({ at }: { at: string }) {
   useNow();
   return <Ago at={at} />;
@@ -338,6 +368,8 @@ function TickingAgo({ at }: { at: string }) {
 
 function Leaderboard(props: {
   detail: EventDetail;
+  /** The server's clock against this device's, for the groups' times on their steps. */
+  offset: number;
   teams: Team[];
   colorOf: Map<number, string>;
   canWithdraw: boolean;
@@ -378,7 +410,7 @@ function Leaderboard(props: {
         return (
           <div className={tm.withdrawn_at ? "cc-withdrawn" : undefined}>
             <div className="cc-mono">{p.main}</div>
-            {p.step && <div className="cs-sub">{p.step}</div>}
+            {p.step && (tm.groups?.length ? <Groups detail={detail} tm={tm} offset={props.offset} /> : <div className="cs-sub">{p.step}</div>)}
           </div>
         );
       },

@@ -223,6 +223,8 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
     const src = graph.nodes.find((x) => x.slug === from);
     return src?.title || from;
   };
+  // A split names its unlabelled paths by role.
+  const rolesFor = (n: Graph["nodes"][number]) => (n.type === "split" ? graph.roles : undefined);
 
   // The card's step, in the translation shown: one object per step, so an
   // unchanged card stays memoised.
@@ -253,6 +255,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           !!existing.data.arrived === !!fx?.arrived.has(n.slug) &&
           existing.data.sourceTitle === sourceTitle(n) &&
           existing.data.zone === startZone(graph, n) &&
+          existing.data.roles === rolesFor(n) &&
           samePosition(existing.position, { x: n.x ?? 0, y: n.y ?? 0 }) &&
           existing.ariaLabel === t.t("{{kind}}: {{title}}", { kind: t.t(TYPE_LABEL[n.type]), title: n.title || n.slug }),
         build: (n, previous) => ({
@@ -262,6 +265,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           data: {
             node: shown(n),
             issues: issuesBySlug.get(n.slug) ?? [],
+            ...(rolesFor(n) ? { roles: rolesFor(n)! } : {}),
             playing: n.slug === playing,
             ...(changed?.has(n.slug) ? { changed: changed.get(n.slug)! } : {}),
             ...(marks?.has(n.slug) ? { marks: marks.get(n.slug)! } : {}),

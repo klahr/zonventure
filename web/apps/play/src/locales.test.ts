@@ -23,7 +23,8 @@ test("every player string has a Swedish translation", () => {
   const missing = new Set<string>();
   for (const file of roots.flatMap(sources)) {
     const src = readFileSync(file, "utf8");
-    for (const m of src.matchAll(/\bt\(\s*"((?:[^"\\]|\\.)*)"/g)) {
+    // t("…"), and tRef.current("…") where a callback reads the latest t.
+    for (const m of src.matchAll(/(?:\bt|\btRef\.current)\(\s*"((?:[^"\\]|\\.)*)"/g)) {
       const key = JSON.parse(`"${m[1]}"`) as string;
       if (!(key in sv) && !IGNORED.has(key)) missing.add(key);
     }

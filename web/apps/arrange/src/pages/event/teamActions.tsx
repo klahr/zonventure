@@ -79,20 +79,35 @@ export function useTeamActions(reload: () => void) {
     }
   };
 
-  /** Moves the team on — or, while it is split up, the group at node. */
-  const unlock = async (team: Team, skipConfirm: boolean, node = team.node): Promise<boolean> => {
+  /** Moves the team on — or, while it is split up, one group: its key, label and step. */
+  const unlock = async (team: Team, skipConfirm: boolean, group?: { port: string; label: string; node: string }): Promise<boolean> => {
+    const node = group?.node ?? team.node;
     if (!skipConfirm) {
-      const ok = await dialogs.confirm({
-        title: t.t("Move {{name}} on?", { name: team.name }),
-        message: t.t("This moves the team past the puzzle they're on, without points: by its skip route if it has one, otherwise as if they had answered. Useful when they're stuck or the location won't register. The action is recorded in the event log."),
-        confirmLabel: t.t("Move team on"),
-      });
+      const ok = await dialogs.confirm(
+        group
+          ? {
+              title: t.t("Move {{group}} of {{name}} on?", { group: group.label, name: team.name }),
+              message: t.t("This moves the group past the step it's on, without points: a puzzle by its skip route if it has one, otherwise as if the group had answered; a story as if read; a hub out, or into the first branch it may still take. The rest of the team stays where it is. Useful when the group is stuck or the location won't register. The action is recorded in the event log."),
+              confirmLabel: t.t("Move group on"),
+            }
+          : {
+              title: t.t("Move {{name}} on?", { name: team.name }),
+              message: t.t("This moves the team past the puzzle they're on, without points: by its skip route if it has one, otherwise as if they had answered. Useful when they're stuck or the location won't register. The action is recorded in the event log."),
+              confirmLabel: t.t("Move team on"),
+            },
+      );
       if (!ok) return false;
     }
     try {
       // The node guards a race: the server refuses if the team has moved meanwhile.
-      const r = await api.unlockTeam(team.id, node);
-      toast.ok(r?.completed ? t.t("{{name}} finished", { name: team.name }) : t.t("{{name}} advanced", { name: team.name }));
+      const r = await api.unlockTeam(team.id, node, group?.port);
+      toast.ok(
+        r?.completed
+          ? t.t("{{name}} finished", { name: team.name })
+          : group
+            ? t.t("{{group}} of {{name}} moved on", { group: group.label, name: team.name })
+            : t.t("{{name}} advanced", { name: team.name }),
+      );
       reload();
       return true;
     } catch (e) {

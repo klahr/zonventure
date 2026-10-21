@@ -72,3 +72,57 @@ func TestHardDeleteUser_RetainsPurchases(t *testing.T) {
 		t.Fatalf("ticket event_id = %v email = %q charge = %q, want NULL / \"\" / ch_1", tEvent, email, charge)
 	}
 }
+
+// When a phone was last seen goes with its pings: cleared once its
+// event is past the location window, kept while the event runs.
+func TestPruneCompletedEventPings_ClearsLastSeen(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+
+	var orgID int64
+	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Seen') RETURNING id`).Scan(&orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO adventures(slug, title, org_id) VALUES ('seen', 'Seen', $1)`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	slot := func(state, completedAt, token string) int64 {
+		t.Helper()
+		var eventID, teamID, slotID int64
+		if err := db.QueryRow(`
+			INSERT INTO events(adventure_slug, org_id, state, live_token, name, completed_at)
+			VALUES ('seen', $1, $2, $3, 'X', NULLIF($4, '')) RETURNING id
+		`, orgID, state, "lt-"+token, completedAt).Scan(&eventID); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRow(`INSERT INTO teams(event_id, name, token) VALUES ($1, 'Crew', $2) RETURNING id`, eventID, "team-"+token).Scan(&teamID); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRow(`
+			INSERT INTO player_slots(team_id, name, token, last_seen_at)
+			VALUES ($1, 'Ann', $2, '2026-01-01 12:00:00') RETURNING id
+		`, teamID, "slot-"+token).Scan(&slotID); err != nil {
+			t.Fatal(err)
+		}
+		return slotID
+	}
+	old := slot("completed", "2020-01-01 00:00:00", "old")
+	running := slot("running", "", "running")
+
+	pruneCompletedEventPings(context.Background(), db, 30)
+
+	seen := func(id int64) sql.NullString {
+		t.Helper()
+		var s sql.NullString
+		if err := db.QueryRow(`SELECT last_seen_at FROM player_slots WHERE id = $1`, id).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	if s := seen(old); s.Valid {
+		t.Errorf("an old event's slot is still last seen at %q", s.String)
+	}
+	if s := seen(running); !s.Valid {
+		t.Error("a running event's slot lost its last seen")
+	}
+}

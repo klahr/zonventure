@@ -29,7 +29,8 @@ export function ControlMap({ eventId, zones, teams, tracks }: { eventId: number;
   const mapRef = useRef<GLMap | null>(null);
   const libRef = useRef<MapLib | null>(null);
   const touched = useRef(false);
-  const teamMarkers = useRef(new Map<number, { marker: Marker; key: string }>());
+  // One marker per track: a team's, or each group's while it is split up.
+  const teamMarkers = useRef(new Map<string, { marker: Marker; key: string }>());
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -116,6 +117,16 @@ export function ControlMap({ eventId, zones, teams, tracks }: { eventId: number;
     if (!ready || !map || !lib) return;
     const byId = new Map(teams.map((tm) => [tm.id, tm]));
     const shown = tracks.filter((tr) => byId.has(tr.team_id) && (tr.points?.length ?? 0) > 0);
+    // Where each team, or each group, is now; a past trail is drawn but not
+    // marked. A team or group may come as several trails (one per stretch
+    // it was out); only one is marked, the newest that is not past.
+    const newest = new Map<string, Track>();
+    for (const tr of shown) {
+      if (tr.past) continue;
+      const had = newest.get(trackId(tr));
+      if (!had || lastSeen(tr) >= lastSeen(had)) newest.set(trackId(tr), tr);
+    }
+    const current = [...newest.values()];
     (map.getSource("tracks") as GeoJSONSource | undefined)?.setData({
       type: "FeatureCollection",
       features: shown.map((tr) => ({
@@ -124,25 +135,27 @@ export function ControlMap({ eventId, zones, teams, tracks }: { eventId: number;
         geometry: { type: "MultiLineString" as const, coordinates: trailRuns(tr.points!) },
       })),
     });
-    const keep = new Set<number>();
-    for (const tr of shown) {
+    const keep = new Set<string>();
+    for (const tr of current) {
       const tm = byId.get(tr.team_id)!;
       const last = tr.points![tr.points!.length - 1]!;
-      keep.add(tm.id);
-      const key = `${tm.name}|${tm.color}|${tr.avatar_url ?? ""}`;
-      let entry = teamMarkers.current.get(tm.id);
+      const id = trackId(tr);
+      keep.add(id);
+      const tag = groupTag(tr);
+      const key = `${tm.name}|${tm.color}|${tr.avatar_url ?? ""}|${tr.group_label ?? ""}|${tag ?? ""}`;
+      let entry = teamMarkers.current.get(id);
       if (entry && entry.key !== key) {
         entry.marker.remove();
         entry = undefined;
       }
       if (!entry) {
-        entry = { marker: new lib.Marker({ element: teamMarker(tm, tr.avatar_url) }).setLngLat([last.lng, last.lat]).setPopup(new lib.Popup({ offset: 18 })).addTo(map), key };
-        teamMarkers.current.set(tm.id, entry);
+        entry = { marker: new lib.Marker({ element: teamMarker(tm, tr.avatar_url, tr.group_label, tag) }).setLngLat([last.lng, last.lat]).setPopup(new lib.Popup({ offset: 18 })).addTo(map), key };
+        teamMarkers.current.set(id, entry);
       }
       entry.marker.setLngLat([last.lng, last.lat]);
       const pop = document.createElement("div");
       const name = document.createElement("strong");
-      name.textContent = tm.name;
+      name.textContent = tr.group_label ? `${tm.name} · ${tr.group_label}` : tm.name;
       const when = document.createElement("small");
       when.textContent = fmtDateTime(last.server_ts, t.current());
       pop.append(name, document.createElement("br"), when);
@@ -157,7 +170,7 @@ export function ControlMap({ eventId, zones, teams, tracks }: { eventId: number;
     if (!mapViews.has(eventId)) {
       const b = new lib.LngLatBounds();
       extendAll(b, zones);
-      for (const tr of shown) for (const p of tr.points!) b.extend([p.lng, p.lat]);
+      for (const tr of current) for (const p of tr.points!) b.extend([p.lng, p.lat]);
       if (!b.isEmpty()) {
         touched.current = false;
         map.fitBounds(b, { padding: 32, animate: false, maxZoom: 17 });
@@ -203,11 +216,21 @@ function trailRuns(points: NonNullable<Track["points"]>): [number, number][][] {
   return runs.filter((r) => r.length > 1);
 }
 
-function teamMarker(tm: MapTeam, avatar: string | undefined): HTMLElement {
+/** When a track's last point was taken, for comparing (the server's timestamps sort as text). */
+const lastSeen = (tr: Track): string => tr.points?.[tr.points.length - 1]?.server_ts ?? "";
+
+/** A track's own key: its team's, and its group's while the team is split up. */
+const trackId = (tr: Track) => (tr.group ? `${tr.team_id}/${tr.group}` : String(tr.team_id));
+
+/** Which group of the team a track is: the innermost path's name. A label's own " › " is only split for a server that sends no parts. */
+const groupTag = (tr: Track): string | undefined =>
+  tr.group_labels?.length ? tr.group_labels[tr.group_labels.length - 1] : tr.group_label ? (tr.group_label.split(" › ").pop() ?? tr.group_label) : undefined;
+
+function teamMarker(tm: MapTeam, avatar: string | undefined, group?: string, tag?: string): HTMLElement {
   const el = document.createElement("div");
   el.className = "cc-team-marker";
   el.style.setProperty("--team-col", tm.color);
-  el.title = tm.name;
+  el.title = group ? `${tm.name} · ${group}` : tm.name;
   const span = document.createElement("span");
   span.textContent = initials(tm.name);
   el.append(span);
@@ -217,6 +240,13 @@ function teamMarker(tm: MapTeam, avatar: string | undefined): HTMLElement {
     img.src = avatar;
     img.alt = "";
     el.append(img);
+  }
+  if (group) {
+    el.classList.add("cc-team-marker--group");
+    const small = document.createElement("small");
+    small.className = "cc-team-marker__group";
+    small.textContent = tag ?? group;
+    el.append(small);
   }
   return el;
 }
