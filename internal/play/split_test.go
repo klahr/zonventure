@@ -648,3 +648,57 @@ func TestSplitAfreshOffASplitIsStored(t *testing.T) {
 		t.Fatalf("split %v strands %+v at %q", split, strands, current)
 	}
 }
+
+// An organiser moving a team onto a split, knowing none of its players,
+// still deals them there and then: the groups are stored as first shown.
+func TestSplitDealtOnOrganiserMove(t *testing.T) {
+	t.Parallel()
+	g := heist(false)
+	g.Nodes = append(g.Nodes, puzzle("intro", "go"))
+	for i, e := range g.Edges {
+		if e.From == "start" {
+			g.Edges[i].To = "intro"
+		}
+	}
+	g.Edges = append(g.Edges, edge("intro", "solved", "split"))
+	f := setup(t, g, 1)
+	team := f.teams[0]
+	p := f.players(team, 2)
+	if _, err := f.eng.Rescue(context.Background(), team, "intro"); err != nil {
+		t.Fatal(err)
+	}
+	_, strands, _ := f.strands(team)
+	if len(strands) != 2 || len(strands[0].Members)+len(strands[1].Members) != len(p) {
+		t.Fatalf("the organisers' move should deal the players: %+v", strands)
+	}
+}
+
+// Stored groups fit only while there is one to each of the split's
+// paths: a path added, or taken out, since splits the team afresh.
+func TestSplitFitsOneGroupPerPath(t *testing.T) {
+	t.Parallel()
+	g := heist(false)
+	at := func(ports ...string) []session.Strand {
+		var out []session.Strand
+		for _, p := range ports {
+			out = append(out, session.Strand{Port: p, Current: "split"})
+		}
+		return out
+	}
+	for _, c := range []struct {
+		strands []session.Strand
+		want    bool
+	}{
+		{at("a", "b"), true},
+		{at("b", "a"), true},
+		{at("a"), false},
+		{at("a", "a"), false},
+		{at("a", "b", "c"), false},
+		{at("a", "gone"), false},
+		{nil, false},
+	} {
+		if got := splitFits(g, "split", c.strands); got != c.want {
+			t.Errorf("%+v: %v, want %v", c.strands, got, c.want)
+		}
+	}
+}

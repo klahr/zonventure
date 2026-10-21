@@ -98,9 +98,7 @@ export interface TeamGroup {
   port: string;
   label: string;
   node: string;
-  /** label's parts, one per split the group came down, outermost first. */
-  labels?: string[];
-  /** When the group reached its step, moved past the event's ended pauses. */
+  /** When the group reached its step, moved past the event's ended pauses: how long it has been on it. */
   since?: string;
   /** Waits at its join for the others of its split. */
   arrived?: boolean;

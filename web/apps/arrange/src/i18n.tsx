@@ -43,10 +43,11 @@ export function contentT(lang: string | undefined): I18n["t"] {
 // Content words that read differently as UI ("Solved": "Lösta", a count) win here.
 const contentCatalogs = { en: {}, sv: { ...catalogs.sv, ...contentSv } };
 
-/** A new step's default route names, in the adventure's language. */
+/** A new step's default route and group names, in the adventure's language. */
 export function routesIn(n: Node, lang: string | undefined): Node {
-  if (!n.puzzle?.outputs) return n;
   const t = contentT(lang);
+  if (n.split?.paths) return { ...n, split: { ...n.split, paths: n.split.paths.map((p) => (p.label ? { ...p, label: t(p.label) } : p)) } };
+  if (!n.puzzle?.outputs) return n;
   return { ...n, puzzle: { ...n.puzzle, outputs: n.puzzle.outputs.map((o) => (o.label ? { ...o, label: t(o.label) } : o)) } };
 }
 const I18nContext = createContext(instance);

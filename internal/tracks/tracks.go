@@ -40,12 +40,9 @@ type Track struct {
 	AvatarURL string  `json:"avatar_url,omitempty"`
 	Points    []Point `json:"points"`
 	// Group and GroupLabel are set on the trail of one group of a team
-	// split up: its key ("a", "a>b" for a group of a group) and its name.
+	// split up: its key (its path's port) and its name.
 	Group      string `json:"group,omitempty"`
 	GroupLabel string `json:"group_label,omitempty"`
-	// GroupLabels are the names GroupLabel is joined from, one for each
-	// split the group came down, outermost first.
-	GroupLabels []string `json:"group_labels,omitempty"`
 	// Past says no one is on the trail now: a group that has met the
 	// others again, the team's own while it is split up, or a stretch of
 	// a trail left and taken up again later — a team or a group has a
@@ -59,65 +56,35 @@ type Track struct {
 // it — if any was taken in it.
 type Group struct {
 	Key, Label, Node string
-	Labels           []string
 	Members          []int64
 	At               *Point
 }
 
-// Labels names each fork a group came down by itself, outermost first:
-// GroupLabel's parts, apart, so a name with " › " in it stays one.
-func Labels(g *graph.Graph, forks []session.Fork) []string {
-	out := make([]string, len(forks))
-	for i, f := range forks {
-		out[i] = session.GroupLabel(g, "", []session.Fork{f})
-	}
-	return out
+// fork is a group as a ping names it: the split and the path it took.
+type fork struct {
+	Split string `json:"split"`
+	Port  string `json:"port"`
 }
 
 // Tag is how a ping names a group it was walking (location_pings.groups):
-// the forks it came down, outermost first, as JSON — [{"split":…,"port":…}]
-// — which no slug or port can make read as another group's, so a trail
-// can be named after its group has gone. Pings stored before named them
-// "split.port" joined by ">", which forks still reads.
-func Tag(forks []session.Fork) string {
-	b, err := json.Marshal(forks)
+// its split and path as JSON — [{"split":…,"port":…}] — which no slug or
+// port can make read as another group's, so a trail can be named after
+// its group has gone.
+func Tag(split, port string) string {
+	b, err := json.Marshal([]fork{{split, port}})
 	if err != nil {
 		return ""
 	}
 	return string(b)
 }
 
-// oldTag is a group's name as pings stored before Tag named it.
-func oldTag(forks []session.Fork) string {
-	parts := make([]string, len(forks))
-	for i, f := range forks {
-		parts[i] = f.Split + "." + f.Port
+// group reads a ping's group back; false for a tag not read.
+func group(tag string) (fork, bool) {
+	var out []fork
+	if json.Unmarshal([]byte(tag), &out) != nil || len(out) != 1 {
+		return fork{}, false
 	}
-	return strings.Join(parts, ">")
-}
-
-// forks reads a ping's group back: the forks, and the group's key.
-func forks(tag string) ([]session.Fork, string) {
-	var out []session.Fork
-	if strings.HasPrefix(tag, "[") {
-		if json.Unmarshal([]byte(tag), &out) != nil {
-			return nil, ""
-		}
-	} else {
-		// "split.port>split.port", as pings were tagged before Tag.
-		for _, p := range strings.Split(tag, ">") {
-			i := strings.LastIndex(p, ".")
-			if i < 0 {
-				continue
-			}
-			out = append(out, session.Fork{Split: p[:i], Port: p[i+1:]})
-		}
-	}
-	ports := make([]string, len(out))
-	for i, f := range out {
-		ports[i] = f.Port
-	}
-	return out, strings.Join(ports, ">")
+	return out[0], true
 }
 
 // awayAfter is how long a phone may stay silent before its player counts
@@ -148,12 +115,9 @@ func PingGroups(ctx context.Context, db *sql.DB, teamID, slot int64, now time.Ti
 	// app — or else its player opened their link (play.away).
 	err := db.QueryRowContext(ctx, `
 		SELECT gs.graph_id, gs.split, gs.strands, COALESCE((
-		  SELECT jsonb_agg(jsonb_build_object('slot', s.id, 'seen',
-		           COALESCE(GREATEST((SELECT max(p.server_ts) FROM location_pings p WHERE p.slot_id = s.id), s.last_seen_at),
-		                    s.last_login_at, ''))
-		         ORDER BY s.id)
+		  SELECT jsonb_agg(jsonb_build_object('slot', s.id, 'seen', `+play.SeenSQL+`) ORDER BY s.id)
 		  FROM player_slots s
-		  WHERE s.team_id = gs.team_id AND (s.last_login_at IS NOT NULL OR s.id = $2) AND s.name <> '(forgotten)'), '[]')
+		  WHERE s.team_id = gs.team_id AND `+play.PlayingSQL+`), '[]')
 		FROM team_graph_state gs
 		WHERE gs.team_id = $1 AND gs.split IS NOT NULL AND jsonb_typeof(gs.strands) = 'array'`,
 		teamID, slot).Scan(&graphID, &split, &rawStrands, &rawPlayers)
@@ -197,7 +161,7 @@ func PingGroups(ctx context.Context, db *sql.DB, teamID, slot int64, now time.Ti
 	for _, p := range seen {
 		players = append(players, p.Slot)
 		// The phone pinging is not away.
-		if at, ok := icscal.ParseTimestamp(p.Seen); p.Slot != slot && (!ok || now.Sub(at) > awayAfter) {
+		if p.Slot != slot && play.Away(p.Seen, now) {
 			t.Away[p.Slot] = true
 		}
 		undealt = undealt || !in(p.Slot)
@@ -221,7 +185,7 @@ func PingGroups(ctx context.Context, db *sql.DB, teamID, slot int64, now time.Ti
 	walkers := t.Walkers(players)
 	for _, st := range strands {
 		if slices.Contains(walkers[st.Key()], slot) {
-			return []string{Tag(st.Lineage(split))}, nil
+			return []string{Tag(split, st.Port)}, nil
 		}
 	}
 	return nil, nil
@@ -369,41 +333,41 @@ func Groups(ctx context.Context, db *sql.DB, eventID int64) (map[int64][]Group, 
 func groups(ctx context.Context, db *sql.DB, ts map[int64]team) (map[int64][]Group, error) {
 	out := map[int64][]Group{}
 	var (
-		teamIDs          []int64
-		tags, old, since []string
+		teamIDs     []int64
+		tags, since []string
 	)
 	for id, t := range ts {
 		if t.split == "" || len(t.strands) == 0 {
 			continue
 		}
+		// A team whose graph can't be read is shown whole, as Query draws
+		// it, rather than failing every other team's place with it.
 		g, err := Graph(ctx, db, t.graphID)
 		if err != nil {
-			return nil, err
+			continue
 		}
 		for _, st := range t.strands {
-			lin := st.Lineage(t.split)
-			out[id] = append(out[id], Group{Key: st.Key(), Label: session.GroupLabel(g, "", lin), Labels: Labels(g, lin), Node: st.Current, Members: st.Members})
-			teamIDs, tags, old = append(teamIDs, id), append(tags, Tag(lin)), append(old, oldTag(lin))
+			out[id] = append(out[id], Group{Key: st.Key(), Label: session.GroupLabel(g, "", t.split, st.Port), Node: st.Current, Members: st.Members})
+			teamIDs, tags = append(teamIDs, id), append(tags, Tag(t.split, st.Port))
 			since = append(since, t.since)
 		}
 	}
 	if len(tags) == 0 {
 		return out, nil
 	}
-	// Each group's latest ping by its tag — or the tag before Tag, for a
-	// group out as the server was updated — this time out (team.since),
+	// Each group's latest ping by its tag this time out (team.since),
 	// read off idx_pings_team_ts newest first: a group no one has pinged
 	// in yet reads the team's pings since the split, not its whole walk,
 	// and has no place from an earlier walk of the split.
 	rows, err := db.QueryContext(ctx, `
 		SELECT q.team, q.tag, p.lat, p.lng, p.server_ts
-		FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[]) AS q(team, tag, old, since)
+		FROM unnest($1::bigint[], $2::text[], $3::text[]) AS q(team, tag, since)
 		JOIN LATERAL (
 			SELECT lat, lng, server_ts FROM location_pings
-			WHERE team_id = q.team AND server_ts >= q.since AND groups && ARRAY[q.tag, q.old]
+			WHERE team_id = q.team AND server_ts >= q.since AND groups && ARRAY[q.tag]
 			ORDER BY server_ts DESC
 			LIMIT 1
-		) p ON true`, teamIDs, tags, old, since)
+		) p ON true`, teamIDs, tags, since)
 	if err != nil {
 		return nil, err
 	}
@@ -419,7 +383,7 @@ func groups(ctx context.Context, db *sql.DB, ts map[int64]team) (map[int64][]Gro
 		}
 		gs := out[id]
 		for i, st := range ts[id].strands {
-			if Tag(st.Lineage(ts[id].split)) == tag {
+			if Tag(ts[id].split, st.Port) == tag {
 				gs[i].At = &p
 			}
 		}
@@ -482,16 +446,10 @@ func Query(ctx context.Context, db *sql.DB, eventID int64) ([]Track, error) {
 			all = append(all, &teamLines{id: id, name: name, avatar: hasAvatar != 0, byTag: map[string]*line{}})
 		}
 		tl := all[len(all)-1]
-		// A group's pings under the tag before Tag and under Tag are one
-		// line; a tag not read is the team's.
+		// A tag not read is the team's.
 		var l line
-		if lin != "" {
-			l.forks, l.key = forks(lin)
-		}
-		if len(l.forks) > 0 {
-			l.tag = Tag(l.forks)
-		} else {
-			l.forks, l.key = nil, ""
+		if f, ok := group(lin); ok {
+			l.group, l.tag = &f, lin
 		}
 		at := tl.byTag[l.tag]
 		if at == nil {
@@ -523,10 +481,10 @@ func Query(ctx context.Context, db *sql.DB, eventID int64) ([]Track, error) {
 			for i, b := range pc.pts {
 				tr.Points[i] = b.Point
 			}
-			if len(pc.forks) > 0 {
-				tr.Group, tr.GroupLabel = pc.key, pc.key
+			if pc.group != nil {
+				tr.Group, tr.GroupLabel = pc.group.Port, pc.group.Port
 				if g != nil {
-					tr.GroupLabel, tr.GroupLabels = session.GroupLabel(g, "", pc.forks), Labels(g, pc.forks)
+					tr.GroupLabel = session.GroupLabel(g, "", pc.group.Split, pc.group.Port)
 				}
 			}
 			out = append(out, tr)
@@ -575,16 +533,14 @@ func (a bucket) newer(b bucket) bool {
 }
 
 // line is all of a team's pings in one group, by time — or in none, the
-// team's own, its forks nil.
+// team's own, its group nil.
 type line struct {
-	forks []session.Fork
-	key   string
+	group *fork
 	tag   string
 	pts   []bucket
 }
 
-// merge orders the line's points by time, one per bucket: two tags of
-// one group give it two of a time.
+// merge orders the line's points by time, one per bucket.
 func (l *line) merge() {
 	slices.SortStableFunc(l.pts, func(a, b bucket) int { return strings.Compare(a.ServerTS, b.ServerTS) })
 	out := l.pts[:0]
@@ -601,10 +557,9 @@ func (l *line) merge() {
 
 func (l *line) last() bucket { return l.pts[len(l.pts)-1] }
 
-// under reports whether the group that came down a holds the one that
-// came down b: the team, every group; a group, the groups it split into.
-func under(a, b []session.Fork) bool {
-	return len(a) < len(b) && slices.Equal(a, b[:len(a)])
+// holds reports whether a's walk holds b's: the team's, every group's.
+func holds(a, b *line) bool {
+	return a.group == nil && b.group != nil
 }
 
 // piece is one trail drawn: a stretch of a line.
@@ -637,13 +592,13 @@ func cut(lines []*line, t team, known bool, width time.Duration) []piece {
 	// stray: a point of the team's own taken while it is split up now, by
 	// a phone in no group.
 	stray := func(l *line, p bucket) bool {
-		return known && l.forks == nil && t.split != "" && t.since != "" && p.ServerTS >= t.since
+		return known && l.group == nil && t.split != "" && t.since != "" && p.ServerTS >= t.since
 	}
 	segs := map[*line][][]bucket{}
 	for _, l := range lines {
 		var others []string
 		for _, o := range lines {
-			if under(l.forks, o.forks) || under(o.forks, l.forks) {
+			if holds(l, o) || holds(o, l) {
 				for _, p := range o.pts {
 					if !stray(o, p) {
 						others = append(others, p.ServerTS)
@@ -681,7 +636,7 @@ func cut(lines []*line, t team, known bool, width time.Duration) []piece {
 	// taken up last — this round's, not one before.
 	fresh := func(l *line) bool {
 		for _, a := range lines {
-			if under(a.forks, l.forks) && l.last().ServerTS < begun(a) {
+			if holds(a, l) && l.last().ServerTS < begun(a) {
 				return false
 			}
 		}
@@ -689,9 +644,8 @@ func cut(lines []*line, t team, known bool, width time.Duration) []piece {
 	}
 
 	live := map[*line]bool{}
-	// together are the lines a whole is on now that its groups may have
-	// met at: the team's, together; a group of groups met again.
-	var together []string
+	// together: the team is together now, and its groups may have met.
+	together := false
 	switch {
 	case !known:
 		for _, l := range lines {
@@ -699,15 +653,13 @@ func cut(lines []*line, t team, known bool, width time.Duration) []piece {
 		}
 	case t.split == "":
 		live[byTag[""]] = true
-		together = append(together, "")
+		together = true
 	default:
 		dealt := false
 		var out []*line
 		for _, st := range t.strands {
 			dealt = dealt || len(st.Members) > 0
-			tag := Tag(st.Lineage(t.split))
-			together = append(together, tag)
-			if l := byTag[tag]; l != nil && fresh(l) {
+			if l := byTag[Tag(t.split, st.Port)]; l != nil && fresh(l) {
 				live[l] = true
 				out = append(out, l)
 			}
@@ -734,7 +686,7 @@ func cut(lines []*line, t team, known bool, width time.Duration) []piece {
 			var at *bucket
 			met := true
 			for _, o := range lines {
-				if !under(l.forks, o.forks) {
+				if !holds(l, o) {
 					continue
 				}
 				in := false
@@ -762,39 +714,25 @@ func cut(lines []*line, t team, known bool, width time.Duration) []piece {
 			out = append(out, piece{line: l, pts: s, past: !live[l] || k < len(segs[l])-1})
 		}
 	}
-	// Met again: the whole is where any of its groups' phones pinged
+	// Met again: the team is where any of its groups' phones pinged
 	// last, until one of its own pings.
-	for _, tag := range together {
-		l := byTag[tag]
-		if l != nil && !live[l] {
-			continue
-		}
-		var fs []session.Fork
-		key := ""
-		if l != nil {
-			fs, key = l.forks, l.key
-		} else if tag != "" {
-			fs, key = forks(tag)
-		}
+	if together {
+		team := byTag[""]
 		var at *bucket
 		for _, o := range lines {
-			if under(fs, o.forks) && (at == nil || o.last().newer(*at)) {
+			if o.group != nil && (at == nil || o.last().newer(*at)) {
 				p := o.last()
 				at = &p
 			}
 		}
-		if at == nil || l != nil && !at.newer(l.last()) {
-			continue
-		}
-		if slices.ContainsFunc(lines, func(a *line) bool { return under(a.forks, fs) && at.ServerTS < begun(a) }) {
-			continue // a round before
-		}
-		for i := range out {
-			if out[i].line == l {
-				out[i].past = true
+		if at != nil && (team == nil || at.newer(team.last())) {
+			for i := range out {
+				if out[i].line == team {
+					out[i].past = true
+				}
 			}
+			out = append(out, piece{line: &line{}, pts: []bucket{*at}})
 		}
-		out = append(out, piece{line: &line{forks: fs, key: key, tag: tag}, pts: []bucket{*at}})
 	}
 	return out
 }

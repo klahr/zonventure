@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Block, BlockKind, Graph, Node } from "@zonventure/graph";
 import type { I18n } from "@zonventure/i18n";
+import type { StepEditOpts } from "../fields.tsx";
 import type { LucideIcon } from "lucide-react";
 
 export type T = I18n;
@@ -19,7 +20,7 @@ export interface EditorProps<K extends BlockKind> {
    * Writes the adventure and this block in one edit, for a block that
    * makes, moves or names its own place. Absent where the editor can't.
    */
-  withGraph?: ((g: Graph, b: Of<K>) => void) | undefined;
+  withGraph?: ((g: Graph, b: Of<K>, opts?: StepEditOpts) => void) | undefined;
 }
 
 /** A block's fields, edited, and a preview where one helps. */

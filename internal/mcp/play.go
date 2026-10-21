@@ -1008,11 +1008,7 @@ func (ps *playSession) input(b *strings.Builder, v session.View) {
 		case graph.Split:
 			b.WriteString("\n→ continue to set off with your group.\n")
 		case graph.Join:
-			goesOn := "the team goes on together"
-			if v.Rejoin != "" {
-				goesOn = v.Rejoin + " goes on together"
-			}
-			fmt.Fprintf(b, "\nWaiting here for %d more group(s); when the last arrives, %s. Nothing to do here meanwhile.\n", v.Awaiting, goesOn)
+			fmt.Fprintf(b, "\nWaiting here for %d more group(s); when the last arrives, the team goes on together. Nothing to do here meanwhile.\n", v.Awaiting)
 		}
 		return
 	}

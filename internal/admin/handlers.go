@@ -1775,15 +1775,12 @@ type positionDTO struct {
 // groupPositionDTO is one group of a split team: its step, and its
 // latest ping — whoever walked it, its own players or others for them.
 type groupPositionDTO struct {
-	Group string `json:"group"`
-	Label string `json:"label"`
-	// Labels are Label's parts, one per split the group came down,
-	// outermost first.
-	Labels   []string `json:"labels,omitempty"`
-	Node     string   `json:"node"`
-	Lat      float64  `json:"lat,omitempty"`
-	Lng      float64  `json:"lng,omitempty"`
-	ServerTS string   `json:"server_ts,omitempty"`
+	Group    string  `json:"group"`
+	Label    string  `json:"label"`
+	Node     string  `json:"node"`
+	Lat      float64 `json:"lat,omitempty"`
+	Lng      float64 `json:"lng,omitempty"`
+	ServerTS string  `json:"server_ts,omitempty"`
 }
 
 // buildPositions is the query-only helper used by both the HTTP ListPositions
@@ -1833,7 +1830,7 @@ func (h *Handlers) groupPositions(ctx context.Context, eventID int64, out []posi
 	}
 	for i := range out {
 		for _, g := range groups[out[i].TeamID] {
-			gp := groupPositionDTO{Group: g.Key, Label: g.Label, Labels: g.Labels, Node: g.Node}
+			gp := groupPositionDTO{Group: g.Key, Label: g.Label, Node: g.Node}
 			if g.At != nil {
 				gp.Lat, gp.Lng, gp.ServerTS = g.At.Lat, g.At.Lng, g.At.ServerTS
 			}

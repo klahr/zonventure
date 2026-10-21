@@ -7,14 +7,18 @@ import (
 	"github.com/klahr/zonventure/internal/graph"
 )
 
+// PlayingSQL is whether player_slots s counts as playing (Players), with
+// $2 the one asking.
+const PlayingSQL = `(s.last_login_at IS NOT NULL OR s.id = $2) AND s.name <> '(forgotten)'`
+
 // Players are the ids of a team's players who count as playing: those
 // who have opened their link, and me — the one asking, if any — in slot
 // order. A forgotten slot is out.
 func Players(ctx context.Context, q Querier, teamID, me int64) ([]int64, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT id FROM player_slots
-		WHERE team_id = $1 AND (last_login_at IS NOT NULL OR id = $2) AND name <> '(forgotten)'
-		ORDER BY id`, teamID, me)
+		SELECT s.id FROM player_slots s
+		WHERE s.team_id = $1 AND `+PlayingSQL+`
+		ORDER BY s.id`, teamID, me)
 	if err != nil {
 		return nil, err
 	}

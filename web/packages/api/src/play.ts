@@ -336,9 +336,8 @@ export interface View {
   /** Every group while the team is split up (a split step), and the name of the one this view is for. */
   groups?: GroupView[];
   group?: string;
-  /** At a join: how many of the groups it waits for are still on their way, and the group they go on as ("" for the whole team). */
+  /** At a join: how many of the groups it waits for are still on their way. */
   awaiting?: number;
-  rejoin?: string;
   /** Languages the adventure plays in, main first, and the view's own. */
   languages?: string[];
   lang?: string;

@@ -222,9 +222,8 @@ const lastSeen = (tr: Track): string => tr.points?.[tr.points.length - 1]?.serve
 /** A track's own key: its team's, and its group's while the team is split up. */
 const trackId = (tr: Track) => (tr.group ? `${tr.team_id}/${tr.group}` : String(tr.team_id));
 
-/** Which group of the team a track is: the innermost path's name. A label's own " › " is only split for a server that sends no parts. */
-const groupTag = (tr: Track): string | undefined =>
-  tr.group_labels?.length ? tr.group_labels[tr.group_labels.length - 1] : tr.group_label ? (tr.group_label.split(" › ").pop() ?? tr.group_label) : undefined;
+/** Which group of the team a track is: its path's name. */
+const groupTag = (tr: Track): string | undefined => tr.group_label;
 
 function teamMarker(tm: MapTeam, avatar: string | undefined, group?: string, tag?: string): HTMLElement {
   const el = document.createElement("div");

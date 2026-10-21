@@ -4,7 +4,7 @@ import { Camera, ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Plus, Pow
 import { useT } from "../i18n.tsx";
 import { Button, ConfirmModal, DzPortal, ICON, useAnchoredPop, useDismiss } from "./dz/ui.tsx";
 import { useMediaUpload } from "./MediaEditor.tsx";
-import type { StepEdit } from "./fields.tsx";
+import type { StepEdit, StepEditOpts } from "./fields.tsx";
 import { isNarrow, isTouch } from "./device.ts";
 import { ACCEPT } from "./blocks/Media.tsx";
 import { GROUPS, KINDS } from "./blocks/registry.tsx";
@@ -16,7 +16,7 @@ import type { Editor, T } from "./blocks/types.ts";
 function body(b: Block, set: (b: Block) => void, t: T, textLabel: string, graph: Graph, node: Node, onEdit?: StepEdit) {
   const Body = KINDS[b.kind].editor as Editor<BlockKind>;
   const withGraph = onEdit
-    ? (g: Graph, next: Block) => onEdit(g, (n) => withBlocks(n, blocksOf(n).map((x) => (x.id === next.id ? next : x))))
+    ? (g: Graph, next: Block, opts?: StepEditOpts) => onEdit(g, (n) => withBlocks(n, blocksOf(n).map((x) => (x.id === next.id ? next : x))), opts)
     : undefined;
   return <Body block={b as never} set={set} t={t} textLabel={textLabel} graph={graph} node={node} withGraph={withGraph} />;
 }

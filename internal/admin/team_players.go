@@ -108,7 +108,7 @@ func (h *Handlers) TeamPlayers(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, st := range groups {
 			if slices.Contains(st.Members, p.ID) {
-				p.Groups = append(p.Groups, session.GroupLabel(g, "", st.Lineage(split.String)))
+				p.Groups = append(p.Groups, session.GroupLabel(g, "", split.String, st.Port))
 			}
 		}
 	}
@@ -137,7 +137,7 @@ func (h *Handlers) rescuedGroup(ctx context.Context, teamID int64, node, key str
 	}
 	for _, s := range strands {
 		if key != "" && s.Key() == key || key == "" && s.Current == node {
-			return session.GroupLabel(st.Graph, "", s.Lineage(split.String))
+			return session.GroupLabel(st.Graph, "", split.String, s.Port)
 		}
 	}
 	return ""

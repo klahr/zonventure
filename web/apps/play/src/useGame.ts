@@ -357,7 +357,17 @@ export function useGame(t: Translate): Game {
             held = e;
             break;
           }
-          if (e instanceof ApiError) showView(refusalView(e));
+          // Refused for good: said, so an answer given offline isn't
+          // taken for one that counted.
+          if (e instanceof ApiError) {
+            showView(refusalView(e));
+            setFeedback({
+              tone: "info",
+              text: tRef.current(
+                "Something you sent while offline couldn't be counted. Here is where you are now.",
+              ),
+            });
+          }
         }
         outbox.ack(id);
         outbox.persist();

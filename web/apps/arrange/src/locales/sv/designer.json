@@ -1417,7 +1417,6 @@
   "going back from here leads onto a path of a split from outside it; only the split leads a group onto its path": "att gå tillbaka härifrån leder in på en väg i en uppdelning utifrån; bara uppdelningen leder en grupp in på sin väg",
   "the time limit cannot send teams onto a split's path or to a join; it brings the groups together, and the whole team would walk one group's steps": "tidsgränsen kan inte skicka lag in på en väg i en uppdelning eller till en mötesplats; den för samman grupperna, och hela laget skulle gå en grupps steg",
   "this leads past the join its group meets the others at, without passing it; the others would wait there forever": "det här leder förbi mötesplatsen där gruppen möter de andra, utan att passera den; de andra skulle vänta där för alltid",
-  "a path's port name cannot contain \">\"; it is kept for naming a group within a group": "en vägs portnamn får inte innehålla ”>”; tecknet används för att namnge en grupp i en grupp",
   "Places are made and moved outside a suggestion.": "Platser skapas och flyttas utanför ett förslag.",
   "Switched on outside a suggestion: it takes away the step's wire onward.": "Slås på utanför ett förslag: det tar bort stegets koppling vidare.",
   "Name of the new item in {{lang}}": "Namn på det nya föremålet på {{lang}}",

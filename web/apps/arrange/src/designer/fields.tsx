@@ -47,6 +47,8 @@ export interface StepEditOpts {
   /**
    * `g`'s new names are in the main language, as asked for by name: in a
    * translation they are kept as they are rather than made translations.
+   * Also for a name field that already made its edit fit for the language
+   * (renameZone): a grouped place's name, not translated, is its main one.
    */
   main?: boolean;
 }

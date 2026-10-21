@@ -10,9 +10,9 @@ import (
 	"github.com/klahr/zonventure/internal/server"
 )
 
-// citadelOps builds a nested split with the assistant's graph tools: the
-// north party splits again into the tower and the crypt, which meet in
-// the hall; north and south meet at the gate.
+// citadelOps builds a split with the assistant's graph tools: the tower
+// party rings the bells, the crypt party counts the tombs and the slits,
+// and they meet at the gate.
 func citadelOps() []any {
 	puzzle := func(slug, answer string) map[string]any {
 		return map[string]any{"op": "put_node", "node": map[string]any{"slug": slug, "type": "puzzle", "title": slug, "puzzle": map[string]any{
@@ -26,24 +26,19 @@ func citadelOps() []any {
 	}
 	return []any{
 		node(map[string]any{"slug": "start", "type": "start"}),
-		node(map[string]any{"slug": "split", "type": "split", "title": "Storm the citadel", "split": map[string]any{"text": "North over the wall, south through the gate.",
-			"paths": []any{map[string]any{"port": "north", "label": "North party"}, map[string]any{"port": "south", "label": "South party"}}}}),
-		node(map[string]any{"slug": "inner", "type": "split", "title": "Inside the walls", "split": map[string]any{
+		node(map[string]any{"slug": "split", "type": "split", "title": "Storm the citadel", "split": map[string]any{"text": "Some up the tower, the rest down to the crypt.",
 			"paths": []any{map[string]any{"port": "tower", "label": "Climb the tower"}, map[string]any{"port": "crypt", "label": "Crypt"}}}}),
-		puzzle("bells", "3"), puzzle("tombs", "7"),
-		node(map[string]any{"slug": "hall", "type": "join", "title": "The hall"}),
-		puzzle("slits", "12"),
+		puzzle("bells", "3"), puzzle("tombs", "7"), puzzle("slits", "12"),
 		node(map[string]any{"slug": "gate", "type": "join", "title": "The gate"}),
 		node(map[string]any{"slug": "end", "type": "end", "end": map[string]any{"outcome": "complete"}}),
-		wire("start", "out", "split"), wire("split", "north", "inner"), wire("split", "south", "slits"),
-		wire("inner", "tower", "bells"), wire("inner", "crypt", "tombs"), wire("bells", "ok", "hall"), wire("tombs", "ok", "hall"),
-		wire("hall", "out", "gate"), wire("slits", "ok", "gate"), wire("gate", "out", "end"),
+		wire("start", "out", "split"), wire("split", "tower", "bells"), wire("split", "crypt", "tombs"),
+		wire("bells", "ok", "gate"), wire("tombs", "ok", "slits"), wire("slits", "ok", "gate"), wire("gate", "out", "end"),
 	}
 }
 
-// The assistant builds, reads, edits and plays a nested split with its
-// own tools, and the dev phone it can move and read shows the split.
-func TestMCPAuthorsANestedSplit(t *testing.T) {
+// The assistant builds, reads, edits and plays a split with its own
+// tools, and the dev phone it can move and read shows the split.
+func TestMCPAuthorsASplit(t *testing.T) {
 	t.Setenv("ZV_MCP_ENABLED", "1")
 	ts, _, cleanup := newTestServerWith(t, server.Config{PublicURL: "http://zv.test"})
 	defer cleanup()
@@ -63,33 +58,33 @@ func TestMCPAuthorsANestedSplit(t *testing.T) {
 
 	out := must("edit_adventure_graph", map[string]any{"slug": "demo", "ops": citadelOps()})
 	if strings.Contains(out, `"severity":"error"`) {
-		t.Fatalf("the nested split should validate:\n%s", out)
+		t.Fatalf("the split should validate:\n%s", out)
 	}
 	if out := must("get_adventure_graph", map[string]any{"slug": "demo"}); strings.Contains(out, `"severity":"error"`) || !strings.Contains(out, `"type":"split"`) {
 		t.Fatalf("the stored draft: %s", out)
 	}
 
 	// Reading a split back: its paths and where each leads.
-	step := must("get_step", map[string]any{"slug": "demo", "node": "inner"})
+	step := must("get_step", map[string]any{"slug": "demo", "node": "split"})
 	for _, want := range []string{`"type":"split"`, `"port":"tower"`, `"tower":"bells"`, `"crypt":"tombs"`} {
 		if !strings.Contains(step, want) {
-			t.Errorf("get_step of the inner split lacks %s:\n%s", want, step)
+			t.Errorf("get_step of the split lacks %s:\n%s", want, step)
 		}
 	}
 	// Changing words never renames a path: "tower" is in the label and is
 	// the port, and only the label changes.
 	must("edit_adventure_graph", map[string]any{"slug": "demo", "ops": []any{
-		map[string]any{"op": "set_text", "slug": "inner", "find": "tower", "replace": "spire", "all": true},
+		map[string]any{"op": "set_text", "slug": "split", "find": "tower", "replace": "spire", "all": true},
 	}})
-	step = must("get_step", map[string]any{"slug": "demo", "node": "inner"})
+	step = must("get_step", map[string]any{"slug": "demo", "node": "split"})
 	if !strings.Contains(step, `"label":"Climb the spire"`) || !strings.Contains(step, `"port":"tower"`) || strings.Contains(step, `"port":"spire"`) {
 		t.Fatalf("set_text on a split: the label changes and the path stays wired:\n%s", step)
 	}
 	// patch_node finds a path by its port, as it does an output.
 	must("edit_adventure_graph", map[string]any{"slug": "demo", "ops": []any{
-		map[string]any{"op": "patch_node", "slug": "inner", "patch": map[string]any{"split": map[string]any{"paths": []any{map[string]any{"port": "crypt", "label": "Down to the crypt"}}}}},
+		map[string]any{"op": "patch_node", "slug": "split", "patch": map[string]any{"split": map[string]any{"paths": []any{map[string]any{"port": "crypt", "label": "Down to the crypt"}}}}},
 	}})
-	step = must("get_step", map[string]any{"slug": "demo", "node": "inner"})
+	step = must("get_step", map[string]any{"slug": "demo", "node": "split"})
 	if !strings.Contains(step, `"label":"Down to the crypt"`) || !strings.Contains(step, `"label":"Climb the spire"`) {
 		t.Fatalf("patch_node of one path should keep the other:\n%s", step)
 	}
@@ -99,11 +94,9 @@ func TestMCPAuthorsANestedSplit(t *testing.T) {
 	sim := must("simulate_adventure", map[string]any{"slug": "demo", "actions": []any{
 		map[string]any{"kind": "start"},
 		map[string]any{"kind": "continue", "node": "split"},
-		map[string]any{"kind": "continue", "node": "inner"},
 		map[string]any{"kind": "answer", "node": "bells", "guess": "3"},
-		map[string]any{"kind": "continue", "node": "inner"},
-		map[string]any{"kind": "answer", "node": "tombs", "guess": "7"},
 		map[string]any{"kind": "continue", "node": "split"},
+		map[string]any{"kind": "answer", "node": "tombs", "guess": "7"},
 		map[string]any{"kind": "answer", "node": "slits", "guess": "12"},
 	}})
 	var res struct {
@@ -123,19 +116,16 @@ func TestMCPAuthorsANestedSplit(t *testing.T) {
 	if err := json.Unmarshal([]byte(sim), &res); err != nil {
 		t.Fatal(err)
 	}
-	if res.NotRun != 0 || len(res.Steps) != 8 {
+	if res.NotRun != 0 || len(res.Steps) != 6 {
 		t.Fatalf("simulation stopped early:\n%s", sim)
 	}
-	if s := res.Steps[1]; s.At != "inner" || s.Group != "North party › Climb the spire" || len(s.Groups) != 3 {
-		t.Errorf("after the north set off: %+v", s)
+	if s := res.Steps[1]; s.At != "bells" || s.Group != "Climb the spire" || len(s.Groups) != 2 {
+		t.Errorf("after the spire set off: %+v", s)
 	}
-	if s := res.Steps[3]; s.At != "inner" || s.Group != "North party › Down to the crypt" || !s.Groups[0].Waiting || s.Groups[0].At != "hall" {
+	if s := res.Steps[2]; s.At != "split" || s.Group != "Down to the crypt" || !s.Groups[0].Waiting || s.Groups[0].At != "gate" {
 		t.Errorf("after the spire answered: %+v", s)
 	}
-	if s := res.Steps[5]; s.At != "split" || s.Group != "South party" || len(s.Groups) != 2 || !s.Groups[0].Waiting {
-		t.Errorf("after the north met in the hall: %+v", s)
-	}
-	if s := res.Steps[7]; !s.Finished || s.Groups != nil {
+	if s := res.Steps[5]; !s.Finished || s.Groups != nil {
 		t.Errorf("the end: %+v", s)
 	}
 	must("publish_adventure_graph", map[string]any{"slug": "demo"})
@@ -159,7 +149,7 @@ func TestMCPAuthorsANestedSplit(t *testing.T) {
 	}
 	must("dev_go_to", map[string]any{"slug": "demo", "node": "split"})
 	screen := must("get_dev_screen", map[string]any{"slug": "demo"})
-	for _, want := range []string{`step "split"`, "you are with North party", "- South party: at Storm the citadel", "continue to set off"} {
+	for _, want := range []string{`step "split"`, "you are with Climb the spire", "- Down to the crypt: at Storm the citadel", "continue to set off"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("the dev screen at the split lacks %q:\n%s", want, screen)
 		}
@@ -168,7 +158,7 @@ func TestMCPAuthorsANestedSplit(t *testing.T) {
 		t.Fatalf("the dev phone sets off = %d", s)
 	}
 	screen = must("get_dev_screen", map[string]any{"slug": "demo"})
-	if !strings.Contains(screen, `step "inner"`) || !strings.Contains(screen, "North party › Climb the spire") {
+	if !strings.Contains(screen, `step "bells"`) || !strings.Contains(screen, "Climb the spire") {
 		t.Errorf("the dev screen after setting off:\n%s", screen)
 	}
 }

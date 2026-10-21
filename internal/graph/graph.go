@@ -390,13 +390,13 @@ func (g *Graph) OwnerHubs() map[string]string {
 	for _, n := range g.Nodes {
 		isHub[n.Slug] = n.Type == Hub
 	}
-	// Each node's innermost path, and the steps of each path: none
-	// without splits, where every hub owns as it always has.
-	var inner map[string]string
-	var steps map[string]map[string]bool
+	// Each node's path, and the steps of each path: none without splits,
+	// where every hub owns as it always has.
+	var on map[string]pathKey
+	var steps map[pathKey]map[string]bool
 	for _, n := range g.Nodes {
 		if n.Type == Split {
-			inner, steps = g.Splits().innerPaths()
+			on, steps = g.Splits().onPaths()
 			break
 		}
 	}
@@ -408,9 +408,8 @@ func (g *Graph) OwnerHubs() map[string]string {
 		}
 		// Everything the hub's branches reach without passing through a
 		// hub; the hub it stops at is reached, not passed. On a path, it
-		// goes no further than the path's steps, and owns only those of
-		// its own path, not of a split nested on it.
-		region := inner[h.Slug]
+		// goes no further than the path's steps.
+		region := on[h.Slug]
 		within := steps[region]
 		seen := map[string]bool{h.Slug: true}
 		var queue []string
@@ -426,10 +425,10 @@ func (g *Graph) OwnerHubs() map[string]string {
 				continue
 			}
 			seen[n] = true
-			if region != "" && !within[n] {
+			if region != (pathKey{}) && !within[n] {
 				continue
 			}
-			if inner[n] != region {
+			if on[n] != region {
 				// A hub on the path is its group's, not this one's: the
 				// team still walks on through it to the join.
 				queue = append(queue, next[n]...)
@@ -466,15 +465,15 @@ func (g *Graph) BranchReturns(hub, port string) []Edge {
 	// A hub on a split's path the hub is not on belongs to its group,
 	// and the branch goes on through it, as OwnerHubs passes through it;
 	// a hub on a path looks no further than the path's steps.
-	var inner map[string]string
-	var steps map[string]map[string]bool
+	var on map[string]pathKey
+	var steps map[pathKey]map[string]bool
 	for _, n := range g.Nodes {
 		if n.Type == Split {
-			inner, steps = g.Splits().innerPaths()
+			on, steps = g.Splits().onPaths()
 			break
 		}
 	}
-	region := inner[hub]
+	region := on[hub]
 	var back []Edge
 	seen := map[string]bool{hub: true}
 	queue := []string{start}
@@ -485,10 +484,10 @@ func (g *Graph) BranchReturns(hub, port string) []Edge {
 			continue
 		}
 		seen[n] = true
-		if region != "" && !steps[region][n] {
+		if region != (pathKey{}) && !steps[region][n] {
 			continue
 		}
-		if node, ok := g.Node(n); !ok || node.Type == Hub && inner[n] == region {
+		if node, ok := g.Node(n); !ok || node.Type == Hub && on[n] == region {
 			continue
 		}
 		for _, e := range next[n] {

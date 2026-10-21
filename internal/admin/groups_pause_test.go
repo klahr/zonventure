@@ -24,7 +24,7 @@ func TestGroupsSinceLeavesPausesOut(t *testing.T) {
 	if len(gs) != 1 || gs[0].Since != "2026-05-01T12:04:00Z" {
 		t.Fatalf("groups %+v, want since 12:04", gs)
 	}
-	if len(gs[0].Labels) != 1 || gs[0].Labels[0] != "North" {
-		t.Errorf("labels %v", gs[0].Labels)
+	if gs[0].Label != "North" {
+		t.Errorf("label %q", gs[0].Label)
 	}
 }

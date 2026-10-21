@@ -109,93 +109,16 @@ func nested() *graph.Graph {
 	return g
 }
 
-// A group may split again, meeting at a join of its own before the outer
-// groups meet.
-func TestNestedSplitValid(t *testing.T) {
-	if r := Check(nested()); len(r.Issues) != 0 {
-		t.Fatalf("issues: %v", r.Issues)
+// A group does not split again: a split on a path is refused, and the
+// path stops there.
+func TestNestedSplitRefused(t *testing.T) {
+	r := Check(nested())
+	if !issueAt(r, "split.nested", "split", "a") {
+		t.Errorf("issues: %v", r.Issues)
 	}
 	paths := nested().SplitPaths("split")
-	for _, s := range []string{"inner", "x1", "y1", "ij", "a2"} {
-		if !slices.Contains(paths.Steps["a"], s) {
-			t.Errorf("%s should be a step of the outer path a: %v", s, paths.Steps["a"])
-		}
-	}
-	if !slices.Equal(paths.Joins["a"], []string{"join"}) || !slices.Equal(paths.Inner["a"], []string{"inner"}) {
-		t.Errorf("joins %v inner %v", paths.Joins, paths.Inner)
-	}
-	if d := nested().SplitDepth("split"); d != 2 {
-		t.Errorf("depth %d, want 2", d)
-	}
-}
-
-// An inner group may not skip its own join for the outer one: its
-// siblings would wait for it at theirs.
-func TestNestedSplitMeetsAtItsOwnJoin(t *testing.T) {
-	g := nested()
-	for i, e := range g.Edges {
-		if e.From == "y1" {
-			g.Edges[i].To = "join"
-		}
-	}
-	assertCode(t, Check(g), "split.joins.many")
-}
-
-// The inner join may not be the outer one.
-func TestNestedSplitSharesNoJoin(t *testing.T) {
-	g := nested()
-	g.Edges = slices.DeleteFunc(g.Edges, func(e graph.Edge) bool { return e.From == "ij" || e.From == "a2" })
-	for i, e := range g.Edges {
-		if e.From == "x1" || e.From == "y1" {
-			g.Edges[i].To = "join"
-		}
-	}
-	g.Nodes = slices.DeleteFunc(g.Nodes, func(n graph.Node) bool { return n.Slug == "ij" || n.Slug == "a2" })
-	assertCode(t, Check(g), "join.splits.many")
-}
-
-// Back into an enclosing split is a group splitting into itself.
-func TestNestedLoopToTheOuterSplit(t *testing.T) {
-	g := nested()
-	for i := range g.Nodes {
-		if g.Nodes[i].Slug == "x1" {
-			g.Nodes[i].PuzzleCfg.Outputs = append(g.Nodes[i].PuzzleCfg.Outputs, graph.Output{Port: "again", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "again"}}})
-		}
-	}
-	g.Edges = append(g.Edges, edge("x1", "again", "split"))
-	assertCode(t, Check(g), "split.loop")
-}
-
-// Five deep is too deep; four is fine.
-func TestSplitDepth(t *testing.T) {
-	g := &graph.Graph{Nodes: []graph.Node{{Slug: "start", Type: graph.Start}, {Slug: "end", Type: graph.End, EndCfg: &graph.EndConfig{Outcome: graph.Complete}}}}
-	prev, port := "start", graph.PortOut
-	const levels = graph.MaxSplitDepth + 1
-	for l := range levels {
-		sp, jn, side := fmt.Sprintf("s%d", l), fmt.Sprintf("j%d", l), fmt.Sprintf("side%d", l)
-		g.Nodes = append(g.Nodes, graph.Node{Slug: sp, Type: graph.Split, SplitCfg: &graph.SplitConfig{Paths: []graph.SplitPath{{Port: "in"}, {Port: "out"}}}},
-			graph.Node{Slug: jn, Type: graph.Join}, puzzle(side))
-		g.Edges = append(g.Edges, edge(prev, port, sp), edge(sp, "out", side), edge(side, "solved", jn))
-		prev, port = sp, "in"
-	}
-	g.Nodes = append(g.Nodes, puzzle("core"))
-	g.Edges = append(g.Edges, edge(prev, port, "core"))
-	last, lastPort := "core", "solved"
-	for l := levels - 1; l >= 0; l-- {
-		jn := fmt.Sprintf("j%d", l)
-		g.Edges = append(g.Edges, edge(last, lastPort, jn))
-		last, lastPort = jn, graph.PortOut
-	}
-	g.Edges = append(g.Edges, edge(last, lastPort, "end"))
-	r := Check(g)
-	assertCode(t, r, "split.depth")
-	for _, i := range r.Issues {
-		if i.Code == "split.depth" && i.Node != "s0" {
-			t.Errorf("only the five-deep split is too deep, not %s", i.Node)
-		}
-	}
-	if d := g.SplitDepth("s1"); d != graph.MaxSplitDepth {
-		t.Errorf("s1 depth %d", d)
+	if !slices.Equal(paths.Nested["a"], []string{"inner"}) || len(paths.Steps["a"]) != 0 {
+		t.Errorf("steps %v nested %v", paths.Steps["a"], paths.Nested)
 	}
 }
 
@@ -290,9 +213,8 @@ func TestSplitPathsShareAnEnding(t *testing.T) {
 	}
 }
 
-// A chain of splits, each path of one leading into the next, is worked
-// out once per split, not once per way through: twenty deep took the
-// old analysis minutes.
+// A chain of splits, each path of one leading into the next, is checked
+// in seconds: each split once, its paths stopping at the next.
 func TestSplitChainChecksFast(t *testing.T) {
 	if raceOn {
 		t.Skip("timed without the race detector")
@@ -313,39 +235,9 @@ func TestSplitChainChecksFast(t *testing.T) {
 	if took := time.Since(began); took > 5*time.Second {
 		t.Errorf("checking a chain of %d splits took %v", k, took)
 	}
-	if inner := g.SplitPaths("s0").Inner["a"]; len(inner) != k-1 {
-		t.Errorf("s0 nests %v", inner)
+	if nested := g.SplitPaths("s0").Nested["a"]; !slices.Equal(nested, []string{"s1"}) {
+		t.Errorf("s0 nests %v", nested)
 	}
-}
-
-// What a path covers does not hang on how far its edges go: a path
-// meeting an inner split's join head on, before the split itself, still
-// goes on past that join to its own.
-func TestSplitPathsIgnoreEdgeLengths(t *testing.T) {
-	g := nested()
-	g.Nodes = append(g.Nodes, puzzle("a0", "near", "far"), puzzle("a1"))
-	for i, e := range g.Edges {
-		if e.From == "split" && e.FromPort == "a" {
-			g.Edges[i].To = "a0"
-		}
-	}
-	g.Edges = append(g.Edges, edge("a0", "near", "x1"), edge("a0", "far", "a1"), edge("a1", "solved", "inner"))
-	paths := g.SplitPaths("split")
-	if !slices.Equal(paths.Joins["a"], []string{"join"}) {
-		t.Errorf("joins of a %v, want only the split's own", paths.Joins["a"])
-	}
-	for _, s := range []string{"ij", "a2"} {
-		if !slices.Contains(paths.Steps["a"], s) {
-			t.Errorf("%s should be a step of a: %v", s, paths.Steps["a"])
-		}
-	}
-	if j, _ := g.JoinOf("split"); j != "join" {
-		t.Errorf("join of split %q", j)
-	}
-	// Onto the inner path, but not from its split.
-	r := Check(g)
-	assertCode(t, r, "split.entry.outside")
-	assertNoCode(t, r, "split.joins.many")
 }
 
 // Onto a path only from its split: not from after the join, nor from a
@@ -554,69 +446,6 @@ func alone(t *testing.T, r Report, node, port string) {
 	}
 }
 
-// A group within a group is named by its ports joined with ">".
-func TestSplitPortSeparator(t *testing.T) {
-	g := splitValid()
-	splitNode(g).Paths[0].Port = "a>b"
-	for i, e := range g.Edges {
-		if e.From == "split" && e.FromPort == "a" {
-			g.Edges[i].FromPort = "a>b"
-		}
-	}
-	assertCode(t, Check(g), "split.port.char")
-}
-
-// The depth of a split in a loop is the same each time it is asked: a
-// depth cut short where the loop closes is not kept for another split.
-func TestSplitDepthSteady(t *testing.T) {
-	g := nested()
-	for i := range g.Nodes {
-		if g.Nodes[i].Slug == "x1" {
-			g.Nodes[i] = puzzle("x1", "solved", "again")
-		}
-	}
-	g.Edges = append(g.Edges, edge("x1", "again", "split"))
-	want := map[string]int{"split": g.SplitDepth("split"), "inner": g.SplitDepth("inner")}
-	for range 50 {
-		for _, s := range []string{"inner", "split"} {
-			if d := g.SplitDepth(s); d != want[s] {
-				t.Fatalf("%s depth %d, then %d", s, want[s], d)
-			}
-		}
-	}
-}
-
-// An inner split whose paths reach different joins, one of them the
-// outer split's own, is told so; the outer path stops at its own join
-// rather than taking what lies past it for its steps.
-func TestNestedSplitReachingTheOuterJoin(t *testing.T) {
-	g := nested()
-	g.Nodes = append(g.Nodes, puzzle("post"))
-	g.Edges = slices.DeleteFunc(g.Edges, func(e graph.Edge) bool { return e.From == "join" })
-	g.Edges = append(g.Edges, edge("join", graph.PortOut, "post"), edge("post", "solved", "end"))
-	for i, e := range g.Edges {
-		if e.From == "y1" {
-			g.Edges[i].To = "join"
-		}
-	}
-	r := Check(g)
-	for _, i := range r.Issues {
-		switch {
-		case i.Code == "split.joins.many" && i.Node == "inner":
-		case i.Severity == Error || i.Code == "split.path.nojoin":
-			t.Errorf("only the inner split's joins are amiss: %v", i)
-		}
-	}
-	assertCode(t, r, "split.joins.many")
-	paths := g.SplitPaths("split")
-	if slices.Contains(paths.Steps["a"], "join") || slices.Contains(paths.Steps["a"], "post") {
-		t.Errorf("path a walks past its join: %v", paths.Steps["a"])
-	}
-	if !slices.Equal(paths.Joins["a"], []string{"join"}) {
-		t.Errorf("joins of a %v", paths.Joins["a"])
-	}
-}
-
 // Splits sharing joins are told so once a join, and each way into one
 // from outside once, not once for every split and join they share.
 func TestSplitsSharingJoinsReportOnce(t *testing.T) {
@@ -654,8 +483,8 @@ func TestSplitsSharingJoinsReportOnce(t *testing.T) {
 	}
 }
 
-// A long chain of splits, one after another, and a long nest of them,
-// check in seconds at most, not the ages an exponential walk would take.
+// A long chain of splits, one after another, and a long run of them each
+// on the last's paths, check in seconds at most, not the ages an exponential walk would take.
 func TestManySplitsCheckFast(t *testing.T) {
 	if raceOn {
 		t.Skip("timed without the race detector")
@@ -694,9 +523,9 @@ func TestManySplitsCheckFast(t *testing.T) {
 	}
 }
 
-// A split looping back into one it is nested in is refused the same
-// however its nodes and edges are ordered: s.a → t, t.y → ty → back to s.
-func TestSplitLoopVerdictSteady(t *testing.T) {
+// A split on a path is refused the same however its nodes and edges are
+// ordered: s.a → t, t.y → ty → back to s.
+func TestSplitNestedVerdictSteady(t *testing.T) {
 	g := &graph.Graph{
 		Nodes: []graph.Node{
 			{Slug: "start", Type: graph.Start},
@@ -724,8 +553,8 @@ func TestSplitLoopVerdictSteady(t *testing.T) {
 		return out
 	}
 	want := verdict(g)
-	if !slices.ContainsFunc(want, func(s string) bool { return strings.HasPrefix(s, "split.loop ") }) {
-		t.Fatalf("no loop found: %v", want)
+	if !slices.ContainsFunc(want, func(s string) bool { return strings.HasPrefix(s, "split.nested ") }) {
+		t.Fatalf("no nesting found: %v", want)
 	}
 	rng := rand.New(rand.NewPCG(1, 2))
 	for range 200 {
@@ -851,10 +680,6 @@ func TestTimeLimitIntoASplit(t *testing.T) {
 			t.Errorf("to %s: reported %v, want %v", to, got, bad)
 		}
 	}
-	// A step of a split nested on a path is on the outer path too.
-	g := nested()
-	g.TimeLimit = &graph.TimeLimit{Seconds: 60, To: "x1"}
-	assertCode(t, Check(g), "time_limit.to")
 }
 
 // A gate, an effect or a crossroads holds no group: two paths falling

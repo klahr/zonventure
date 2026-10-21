@@ -32,7 +32,7 @@ import type {
 } from "@zonventure/graph";
 import { ANSWER_KINDS, MAX_PATHS, MIN_PATHS, MAX_CARDS, MAX_SLOTS, MIN_CARDS, shuffledDeal, usesMatchers, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer } from "@zonventure/graph";
 import { THEMES } from "@zonventure/play-ui";
-import { useT } from "../i18n.tsx";
+import { contentT, useT } from "../i18n.tsx";
 import { emails, siteName } from "@zonventure/api";
 import { useSession } from "../session.tsx";
 import { Dialog } from "../ui/dialogs.tsx";
@@ -515,7 +515,7 @@ function StartForm({ node, graph, onEdit }: { node: Node; graph: Graph; onEdit: 
         <>
           {/* A suggestion is the step alone: the place is renamed and moved outside one. */}
           <Field label={t.t("Name of the place")} hint={suggesting ? t.t("Places are made and moved outside a suggestion.") : t.t("Teams see this when they choose where to start.")}>
-            <input className="field__input" value={shownZoneName(zone, translating)} placeholder={zone.slug} disabled={suggesting} onChange={(e) => onEdit(renameZone(graph, zone, e.target.value, translating), (n) => n)} />
+            <input className="field__input" value={shownZoneName(zone, translating)} placeholder={zone.slug} disabled={suggesting} onChange={(e) => onEdit(renameZone(graph, zone, e.target.value, translating), (n) => n, { main: true })} />
           </Field>
           {!suggesting && <ZoneMap key={zone.slug} zone={zone} onChange={editZone} />}
         </>
@@ -1769,7 +1769,7 @@ function splitParts(node: Node, onChange: (n: Node) => void, graph: Graph, t: T)
               className="add-btn"
               onClick={() => {
                 const port = nextBranchPort(paths.map((p) => p.port));
-                setPaths([...paths, { port, label: t.t("Group {{n}}", { n: port.toUpperCase() }) }]);
+                setPaths([...paths, { port, label: contentT(graph.language)("Group {{n}}", { n: port.toUpperCase() }) }]);
               }}
             >
               <Plus size={ICON.sm} aria-hidden="true" />

@@ -20,8 +20,7 @@ import (
 
 // randomSplitGraph is start → [split → paths → join]×1–2 → end, each
 // path a chain of 0–3 puzzles answered "x", maybe a role's, now and then
-// a path whose last puzzle can also end the adventure, and now and then
-// a whole split nested on a path, down to graph.MaxSplitDepth.
+// and now and then a path whose last puzzle can also end the adventure.
 func randomSplitGraph(r *rand.Rand) *graph.Graph {
 	g := &graph.Graph{
 		Roles: []graph.Role{{Slug: "r1", Name: "R1"}, {Slug: "r2", Name: "R2"}, {Slug: "crew", Name: "Crew", Default: true}},
@@ -36,8 +35,7 @@ func randomSplitGraph(r *rand.Rand) *graph.Graph {
 	right := graph.Output{Port: "ok", Trigger: graph.OnAnswer, Points: 1, Matchers: []match.Matcher{{Kind: match.Exact, Value: "x"}}}
 	// block wires a split from (at, out), its paths and its join, and
 	// returns the join's way on.
-	var block func(name string, depth int, at, out string) (string, string)
-	block = func(name string, depth int, at, out string) (string, string) {
+	block := func(name string, at, out string) (string, string) {
 		sp, jn := "s"+name, "j"+name
 		cfg := &graph.SplitConfig{}
 		roles := []string{"r1", "r2", "crew", "", ""}
@@ -56,10 +54,6 @@ func randomSplitGraph(r *rand.Rand) *graph.Graph {
 		for _, path := range cfg.Paths {
 			a, o := sp, path.Port
 			for n := range r.IntN(4) {
-				if depth < graph.MaxSplitDepth && r.IntN(4) == 0 {
-					a, o = block(fmt.Sprintf("%s-%s-%d", name, path.Port, n), depth+1, a, o)
-					continue
-				}
 				slug := fmt.Sprintf("%s-%s-%d", sp, path.Port, n)
 				if r.IntN(12) == 0 {
 					// A way out that ends the adventure for everyone.
@@ -84,16 +78,15 @@ func randomSplitGraph(r *rand.Rand) *graph.Graph {
 			wire(prev, port, slug)
 			prev, port = slug, "ok"
 		}
-		prev, port = block(fmt.Sprint(si), 1, prev, port)
+		prev, port = block(fmt.Sprint(si), prev, port)
 	}
 	wire(prev, port, "end")
 	return g
 }
 
-// splitInvariants are what a split team keeps between actions: every
-// group came down real forks, the groups of each split cover its paths
-// once each, and each group stands on its own path, its split or its
-// join.
+// splitInvariants are what a split team keeps between actions: its
+// groups cover the split's paths once each, and each group stands on
+// its own path, the split or the join.
 func splitInvariants(tm *Team) error {
 	tm.Unfocus()
 	if tm.Split == "" {
@@ -105,49 +98,25 @@ func splitInvariants(tm *Team) error {
 	if tm.Current != tm.Split || tm.Whole() != tm.Split {
 		return fmt.Errorf("unfocused, the team is at %q / %q, not its split %q", tm.Current, tm.Whole(), tm.Split)
 	}
-	if len(tm.Strands) == 0 {
-		return fmt.Errorf("split %q with no groups", tm.Split)
+	n, ok := tm.G.Node(tm.Split)
+	if !ok || n.Type != graph.Split {
+		return fmt.Errorf("split %q is not a split", tm.Split)
 	}
-	// covers: a parent group (its forks so far) → the ports of the split
-	// it divided at, as its groups came down them.
-	covers := map[string]map[string]bool{}
-	splitOf := map[string]string{}
+	if len(tm.Strands) != len(n.SplitCfg.Paths) {
+		return fmt.Errorf("%d groups for the %d paths of %s", len(tm.Strands), len(n.SplitCfg.Paths), n.Slug)
+	}
+	join := tm.joinOf(tm.Split)
 	keys := map[string]bool{}
 	for _, st := range tm.Strands {
 		if keys[st.Key()] {
 			return fmt.Errorf("two groups %q", st.Key())
 		}
 		keys[st.Key()] = true
-		lin := st.Lineage(tm.Split)
-		parent := ""
-		for _, f := range lin {
-			n, ok := tm.G.Node(f.Split)
-			if !ok || n.Type != graph.Split {
-				return fmt.Errorf("group %s came to %q, not a split", st.Key(), f.Split)
-			}
-			if _, ok := n.Path(f.Port); !ok {
-				return fmt.Errorf("group %s took %q, not a path of %s", st.Key(), f.Port, f.Split)
-			}
-			if s, ok := splitOf[parent]; ok && s != f.Split {
-				return fmt.Errorf("group %s: the groups of %q split at both %s and %s", st.Key(), parent, s, f.Split)
-			}
-			splitOf[parent] = f.Split
-			if covers[parent] == nil {
-				covers[parent] = map[string]bool{}
-			}
-			covers[parent][f.Port] = true
-			parent += ">" + f.Port
+		if _, ok := n.Path(st.Port); !ok {
+			return fmt.Errorf("group %s took %q, not a path of %s", st.Key(), st.Port, n.Slug)
 		}
-		in := lin[len(lin)-1]
-		join := tm.joinOf(in.Split)
-		if st.Current != in.Split && st.Current != join && !slices.Contains(tm.splitPaths(in.Split).Steps[in.Port], st.Current) {
+		if st.Current != tm.Split && st.Current != join && !slices.Contains(tm.splitPaths(tm.Split).Steps[st.Port], st.Current) {
 			return fmt.Errorf("group %s at %q, off its path", st.Key(), st.Current)
-		}
-	}
-	for parent, ports := range covers {
-		n, _ := tm.G.Node(splitOf[parent])
-		if len(ports) != len(n.SplitCfg.Paths) {
-			return fmt.Errorf("the groups of %q cover %d of the %d paths of %s", parent, len(ports), len(n.SplitCfg.Paths), n.Slug)
 		}
 	}
 	return nil

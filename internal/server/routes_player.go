@@ -30,9 +30,10 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 	// stay open since they're idempotent and can't damage state.
 	r.Route("/api/player", func(r chi.Router) {
 		r.Use(auth.RequireSlot)
-		// The phone is heard from: its player is not away (play.away).
-		r.Use(auth.SeenSlot(env.playerH.DB))
 		r.Use(auth.RequireCSRF())
+		// The phone is heard from: its player is not away (play.away). Past
+		// CSRF, so only the phone's own requests count.
+		r.Use(auth.SeenSlot(env.playerH.DB))
 		r.Use(player.ForPhone)
 		// The React player app.
 		r.Get("/play", playerH.GetPlay)

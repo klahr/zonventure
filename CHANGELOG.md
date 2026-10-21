@@ -40,10 +40,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   pauses aside, flagged after a quarter of an hour; and in a team's
   dialog each player's roles and group, and a button to move one stuck
   group on from any step of its path — at a split too, setting it off.
-  Splits nest: a group that reaches a split on its
-  path divides again among its own players, and its groups meet at a
-  join of their own before going on — "North › Tower" — up to four
-  deep.
+  Splits do not nest: the groups meet at the join before the team can
+  split again.
 - AI assistant: splits throughout. `simulate_adventure` says which
   group plays next and where every group is; `get_event_state_summary`
   lists a split team's groups; `unlock_team` takes a group (`group`)

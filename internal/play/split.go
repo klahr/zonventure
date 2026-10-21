@@ -11,24 +11,23 @@ import (
 )
 
 // splitFits reports whether a team's stored groups still fit its graph:
-// every split each group came to is there, with the path it took.
+// the split is there, and each group is on a step of it, one group to
+// each of its paths. A path added since has no group, and no one would
+// be dealt into it: the team splits afresh.
 func splitFits(g *graph.Graph, split string, strands []session.Strand) bool {
-	if len(strands) == 0 {
+	n, ok := g.Node(split)
+	if !ok || n.Type != graph.Split || n.SplitCfg == nil || len(strands) != len(n.SplitCfg.Paths) {
 		return false
 	}
+	ports := map[string]bool{}
 	for _, st := range strands {
 		if _, ok := g.Node(st.Current); !ok {
 			return false
 		}
-		for _, f := range st.Lineage(split) {
-			n, ok := g.Node(f.Split)
-			if !ok || n.Type != graph.Split {
-				return false
-			}
-			if _, ok := n.Path(f.Port); !ok {
-				return false
-			}
+		if _, ok := n.Path(st.Port); !ok || ports[st.Port] {
+			return false
 		}
+		ports[st.Port] = true
 	}
 	return true
 }

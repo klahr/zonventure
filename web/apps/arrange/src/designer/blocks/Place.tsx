@@ -3,13 +3,13 @@ import { MAP_ZOOM, type Graph, type Marker, type Zone } from "@zonventure/graph"
 import { CompassFace, FitMap } from "@zonventure/play-ui";
 import { X } from "lucide-react";
 import { contentT } from "../../i18n.tsx";
-import { EditingAs, Field, ZoneSelect } from "../fields.tsx";
+import { EditingAs, Field, ZoneSelect, type StepEditOpts } from "../fields.tsx";
 import { ZoneMap } from "../ZoneMap.tsx";
 import { nearLastZone, renameZone, shownZoneName, zoneAt } from "../zones.ts";
 import { Button, ICON } from "../dz/ui.tsx";
 import { withField, type Editor, type Of, type T } from "./types.ts";
 
-function PlaceSelect<B extends Of<"compass" | "map" | "radar">>({ block, set, t, graph, withGraph }: { block: B; set: (b: B) => void; t: T; graph: Graph; withGraph?: ((g: Graph, b: B) => void) | undefined }) {
+function PlaceSelect<B extends Of<"compass" | "map" | "radar">>({ block, set, t, graph, withGraph }: { block: B; set: (b: B) => void; t: T; graph: Graph; withGraph?: ((g: Graph, b: B, opts?: StepEditOpts) => void) | undefined }) {
   const [editing, setEditing] = useState(false);
   // A suggestion is the step alone: its places are made, moved and named outside one.
   const { suggesting, translating } = useContext(EditingAs);
@@ -59,7 +59,7 @@ function PlaceSelect<B extends Of<"compass" | "map" | "radar">>({ block, set, t,
       {editing && !suggesting && (
         <div className="blk__zone">
           <Field label={t.t("Name of the place")} hint={t.t("The team sees this name.")}>
-            <input className="field__input" value={shownZoneName(zone, translating)} placeholder={zone.slug} onChange={(e) => withGraph(renameZone(graph, zone, e.target.value, translating), block)} />
+            <input className="field__input" value={shownZoneName(zone, translating)} placeholder={zone.slug} onChange={(e) => withGraph(renameZone(graph, zone, e.target.value, translating), block, { main: true })} />
           </Field>
           <ZoneMap key={zone.slug} zone={zone} onChange={editZone} />
         </div>

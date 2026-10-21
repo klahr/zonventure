@@ -23,8 +23,7 @@ func at(m int) bucket {
 func mk(port string, ms ...int) *line {
 	l := &line{}
 	if port != "" {
-		l.forks = []session.Fork{{Split: "s", Port: port}}
-		l.key, l.tag = port, Tag(l.forks)
+		l.group, l.tag = &fork{Split: "s", Port: port}, Tag("s", port)
 	}
 	for _, m := range ms {
 		l.pts = append(l.pts, at(m))
@@ -36,7 +35,10 @@ func mk(port string, ms ...int) *line {
 func drawn(ps []piece) []string {
 	var out []string
 	for _, p := range ps {
-		s := p.key + ":"
+		s := ":"
+		if p.group != nil {
+			s = p.group.Port + ":"
+		}
 		for i, b := range p.pts {
 			if i > 0 {
 				s += ","
@@ -147,17 +149,13 @@ func TestCut(t *testing.T) {
 	}
 }
 
-// A group's name in a ping reads back whatever its slugs and ports hold,
-// and one named as before Tag still reads.
+// A group's name in a ping reads back whatever its slug and port hold.
 func TestTag(t *testing.T) {
-	fs := []session.Fork{{Split: "s.1", Port: "a.b"}, {Split: "t>", Port: "c"}}
-	got, key := forks(Tag(fs))
-	if !slices.Equal(got, fs) || key != "a.b>c" {
-		t.Errorf("forks(Tag) = %+v %q", got, key)
+	if got, ok := group(Tag("s.1", "a.b>")); !ok || got != (fork{Split: "s.1", Port: "a.b>"}) {
+		t.Errorf("group(Tag) = %+v %v", got, ok)
 	}
-	got, key = forks("s.a>t.c")
-	if !slices.Equal(got, []session.Fork{{Split: "s", Port: "a"}, {Split: "t", Port: "c"}}) || key != "a>c" {
-		t.Errorf("an old tag = %+v %q", got, key)
+	if _, ok := group("s.a"); ok {
+		t.Error("a tag not JSON read as a group")
 	}
 }
 
@@ -235,7 +233,7 @@ func TestPingGroups(t *testing.T) {
 	ctx := context.Background()
 	_, teamID, p := seedTeam(t, db, "Ann", "Bo", "Cy")
 	ann, bo, cy := p["Ann"], p["Bo"], p["Cy"]
-	a, b := Tag([]session.Fork{{Split: "s", Port: "a"}}), Tag([]session.Fork{{Split: "s", Port: "b"}})
+	a, b := Tag("s", "a"), Tag("s", "b")
 	tagOf := func(slot int64) string {
 		t.Helper()
 		gs, err := PingGroups(ctx, db, teamID, slot, time.Now().UTC())
@@ -312,7 +310,7 @@ func TestGroupsAt(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	a, b := Tag([]session.Fork{{Split: "s", Port: "a"}}), Tag([]session.Fork{{Split: "s", Port: "b"}})
+	a, b := Tag("s", "a"), Tag("s", "b")
 	ping(ann, 1, "2026-10-21 10:00:00", a)
 	ping(bo, 2, "2026-10-21 10:00:00", b)
 	// Ann walks Bo's group for him, then back to her own church party
@@ -326,12 +324,6 @@ func TestGroupsAt(t *testing.T) {
 	g := gs[teamID]
 	if len(g) != 2 || g[0].At == nil || g[0].At.Lat != 1 || g[1].At == nil || g[1].At.Lat != 3 {
 		t.Fatalf("groups %+v", g)
-	}
-	// Ann's group, tagged as before Tag.
-	ping(ann, 5, "2026-10-21 10:03:00", "s.a")
-	gs, _ = Groups(ctx, db, eventID)
-	if at := gs[teamID][0].At; at == nil || at.Lat != 5 {
-		t.Errorf("a ping tagged as before Tag: %+v", at)
 	}
 
 	// Split again at 10:30: no group has a place from the walk before

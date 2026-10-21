@@ -367,6 +367,16 @@ func (e *Engine) act(ctx context.Context, teamID int64, a action, fn func(*sessi
 	}
 	if step != nil {
 		err = e.commit(ctx, tx, s, *step)
+		if err == nil && s.Split != "" {
+			// A team moved onto a split by a move that knew none of its
+			// players — an organiser's, the AI's — is dealt now, so its
+			// groups are stored as first shown rather than dealt again
+			// on every view until someone acts.
+			var fresh bool
+			if fresh, err = e.divide(ctx, tx, s); err == nil && fresh {
+				err = saveSplit(ctx, tx, s)
+			}
+		}
 	} else {
 		err = e.stay(ctx, tx, s)
 	}

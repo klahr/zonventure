@@ -140,28 +140,13 @@ func TestOwnerHubsAcrossASplit(t *testing.T) {
 	if got := g.OwnerHubs(); !maps.Equal(got, want) {
 		t.Errorf("%v, want %v", got, want)
 	}
-	if s, p, ok := g.Splits().InnerPath("lv"); !ok || s != "split" || p != "a" {
+	if s, p, ok := g.Splits().OnPath("lv"); !ok || s != "split" || p != "a" {
 		t.Errorf("lv on %s.%s %v", s, p, ok)
 	}
-	if _, _, ok := g.Splits().InnerPath("post"); ok {
+	if _, _, ok := g.Splits().OnPath("post"); ok {
 		t.Error("post on a path")
 	}
 
-	// Nested: home on path a sends a group into an inner split, whose
-	// groups meet at ij and walk on as a's group, home's again.
-	inner := Node{Slug: "in", Type: Split, SplitCfg: &SplitConfig{Paths: []SplitPath{{Port: "c"}, {Port: "d"}}}}
-	g = &Graph{
-		Nodes: []Node{{Slug: "start", Type: Start}, split, ownHub("home", "x"), inner, ownStep("pc"), ownStep("pd"),
-			{Slug: "ij", Type: Join}, ownStep("after"), ownStep("pb"), {Slug: "join", Type: Join}, ownStep("post"), {Slug: "end", Type: End}},
-		Edges: []Edge{ownEdge("start", PortOut, "split"), ownEdge("split", "a", "home"), ownEdge("home", "x", "in"),
-			ownEdge("in", "c", "pc"), ownEdge("in", "d", "pd"), ownEdge("pc", PortOut, "ij"), ownEdge("pd", PortOut, "ij"),
-			ownEdge("ij", PortOut, "after"), ownEdge("after", PortOut, "home"), ownEdge("home", PortDone, "join"),
-			ownEdge("split", "b", "pb"), ownEdge("pb", PortOut, "join"), ownEdge("join", PortOut, "post"), ownEdge("post", PortOut, "end")},
-	}
-	want = map[string]string{"in": "home", "ij": "home", "after": "home"}
-	if got := g.OwnerHubs(); !maps.Equal(got, want) {
-		t.Errorf("nested: %v, want %v", got, want)
-	}
 	// Every path holding a home hub of its own: pre still owns what the
 	// team walks after the join, through them, and its branch still
 	// comes back to it.

@@ -124,12 +124,11 @@ func TestRaceControlSplitTeam(t *testing.T) {
 
 	var tr struct {
 		Tracks []struct {
-			TeamID      int64    `json:"team_id"`
-			Group       string   `json:"group"`
-			GroupLabel  string   `json:"group_label"`
-			GroupLabels []string `json:"group_labels"`
-			Past        bool     `json:"past"`
-			Points      []struct {
+			TeamID     int64  `json:"team_id"`
+			Group      string `json:"group"`
+			GroupLabel string `json:"group_label"`
+			Past       bool   `json:"past"`
+			Points     []struct {
 				Lat float64 `json:"lat"`
 				Lng float64 `json:"lng"`
 			} `json:"points"`
@@ -152,7 +151,7 @@ func TestRaceControlSplitTeam(t *testing.T) {
 				}
 				continue
 			}
-			if x.Past || len(x.GroupLabels) != 1 || x.GroupLabels[0] != x.GroupLabel {
+			if x.Past || x.GroupLabel == "" {
 				t.Errorf("a group out now: %+v", x)
 			}
 			at[x.GroupLabel] = [2]float64{last.Lat, last.Lng}

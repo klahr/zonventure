@@ -263,13 +263,10 @@ type Team struct {
 	// focusing on it narrowed.
 	focus int
 	saved *focused
-	// popped is how many of the focused group's joins the walk under way
-	// has taken it through (walk.State.Joined), innermost first.
-	popped int
+	// joined says the walk under way has taken the focused group through
+	// its join (walk.State.Joined).
+	joined bool
 	shape  *shapes
-	// dealing is who played and held which role as the team was last
-	// dealt into its groups (Deal).
-	dealing dealing
 }
 
 // New returns an empty team on g at time now, not yet placed anywhere.
@@ -1398,8 +1395,7 @@ func (t *Team) groupJoin() string {
 	if t.focus == 0 {
 		return ""
 	}
-	lin := t.lineage(t.focus - 1)
-	return t.joinOf(lin[len(lin)-1].Split)
+	return t.joinOf(t.Split)
 }
 
 // leadsTo reports where hub's branch port can lead, by the graph's

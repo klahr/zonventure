@@ -215,10 +215,7 @@ const AwayAfter = 180 * time.Second
 // is not away yet. A phone with its app open is heard from though it
 // sends no location.
 func away(ctx context.Context, q Querier, teamID int64, now time.Time) (map[int64]bool, error) {
-	rows, err := q.QueryContext(ctx, `
-		SELECT s.id, COALESCE(GREATEST((SELECT max(p.server_ts) FROM location_pings p WHERE p.slot_id = s.id), s.last_seen_at),
-		                      s.last_login_at, '')
-		FROM player_slots s WHERE s.team_id = $1`, teamID)
+	rows, err := q.QueryContext(ctx, `SELECT s.id, `+SeenSQL+` FROM player_slots s WHERE s.team_id = $1`, teamID)
 	if err != nil {
 		return nil, err
 	}
@@ -230,11 +227,22 @@ func away(ctx context.Context, q Querier, teamID int64, now time.Time) (map[int6
 		if err := rows.Scan(&slot, &ts); err != nil {
 			return nil, err
 		}
-		if at, ok := icscal.ParseTimestamp(ts); !ok || now.Sub(at) > AwayAfter {
+		if Away(ts, now) {
 			out[slot] = true
 		}
 	}
 	return out, rows.Err()
+}
+
+// SeenSQL is when the phone of player_slots s was last heard from, as
+// away reads it: UTC text, or empty for never.
+const SeenSQL = `COALESCE(GREATEST((SELECT max(p.server_ts) FROM location_pings p WHERE p.slot_id = s.id), s.last_seen_at), s.last_login_at, '')`
+
+// Away reports whether a player whose phone was last heard from at seen
+// (SeenSQL) is away at now.
+func Away(seen string, now time.Time) bool {
+	at, ok := icscal.ParseTimestamp(seen)
+	return !ok || now.Sub(at) > AwayAfter
 }
 
 // hasRolePosts reports whether g has a two-key launch with a role's post,

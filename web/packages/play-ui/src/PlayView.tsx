@@ -1099,19 +1099,14 @@ function SplitStep({ view, t, busy, onAction, feedback }: StepProps) {
 
 /**
  * A group waiting where its groups meet, for the others of its split to
- * arrive: then the team goes on together — or, a split within a split,
- * the group they split from.
+ * arrive: then the team goes on together.
  */
 function JoinStep({ view, t, busy, onAction }: StepProps) {
-  // awaiting is left out at zero; with no groups either (a preview placed
-  // here), there is no count to give.
-  const left = view.awaiting || (view.groups ?? []).filter((g) => !g.arrived).length;
-  const group = view.rejoin;
+  // awaiting is left out at zero.
+  const left = view.awaiting ?? 0;
   let text: string;
   if (left <= 0) {
-    text = group ? t("The groups meet here. {{group}} goes on together once every group is here.", { group }) : t("The groups meet here. The team goes on together once every group is here.");
-  } else if (group) {
-    text = left === 1 ? t("Waiting for 1 more group. {{group}} goes on together once it is here.", { group }) : t("Waiting for {{n}} more groups. {{group}} goes on together once they are here.", { n: left, group });
+    text = t("The groups meet here. The team goes on together once every group is here.");
   } else {
     text = left === 1 ? t("Waiting for 1 more group. The team goes on together once it is here.") : t("Waiting for {{n}} more groups. The team goes on together once they are here.", { n: left });
   }

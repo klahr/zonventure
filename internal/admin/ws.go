@@ -435,14 +435,11 @@ type eventDetailTeamDTO struct {
 // its name, its step, since when it has been on it, and whether it waits
 // at its join for the others.
 type teamGroupDTO struct {
-	Port  string `json:"port"`
-	Label string `json:"label"`
-	// Labels are Label's parts, one per split the group came down,
-	// outermost first.
-	Labels  []string `json:"labels,omitempty"`
-	Node    string   `json:"node"`
-	Since   string   `json:"since,omitempty"`
-	Arrived bool     `json:"arrived,omitempty"`
+	Port    string `json:"port"`
+	Label   string `json:"label"`
+	Node    string `json:"node"`
+	Since   string `json:"since,omitempty"`
+	Arrived bool   `json:"arrived,omitempty"`
 }
 
 type eventDetailMemberDTO struct {
@@ -472,8 +469,7 @@ func groupsOf(g *graph.Graph, split string, raw []byte, paused int) []teamGroupD
 	}
 	out := make([]teamGroupDTO, 0, len(strands))
 	for _, st := range strands {
-		lin := st.Lineage(split)
-		gr := teamGroupDTO{Port: st.Key(), Label: session.GroupLabel(g, "", lin), Labels: tracks.Labels(g, lin), Node: st.Current}
+		gr := teamGroupDTO{Port: st.Key(), Label: session.GroupLabel(g, "", split, st.Port), Node: st.Current}
 		if !st.EnteredAt.IsZero() {
 			gr.Since = st.EnteredAt.Add(time.Duration(paused-st.Paused) * time.Second).UTC().Format(time.RFC3339)
 		}
