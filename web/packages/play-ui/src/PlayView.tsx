@@ -282,7 +282,7 @@ export function PlayView(props: PlayViewProps) {
       {hintsOpen && <HintSheet {...step} onClose={() => setHintsOpen(false)} />}
       {bagOpen && (
         <Sheet title={t("Items")} t={t} onClose={() => setBagOpen(false)}>
-          <Bag view={view} t={t} give={props.giveItem} receive={props.receiveItem} />
+          <Bag view={view} t={t} give={props.giveItem} receive={props.receiveItem} content={(bs) => <Blocks blocks={bs} {...blockContext(step)} />} />
         </Sheet>
       )}
       {view.timed_out && !upSeen && (
@@ -1120,7 +1120,9 @@ function JoinStep({ view, t, busy, onAction }: StepProps) {
   // awaiting is left out at zero.
   const left = view.awaiting ?? 0;
   let text: string;
-  if (left <= 0) {
+  if (view.groups?.length && view.groups.every((g) => g.arrived)) {
+    text = t("Every group is here. The team goes on together.");
+  } else if (left <= 0) {
     text = t("The groups meet here. The team goes on together once every group is here.");
   } else {
     text = left === 1 ? t("Waiting for 1 more group. The team goes on together once it is here.") : t("Waiting for {{n}} more groups. The team goes on together once they are here.", { n: left });
@@ -1456,7 +1458,8 @@ function EndStep(props: StepProps) {
           {finish.provisional && held && <p className="pv-summary__note">{t("It opens when the game is finished.")}</p>}
         </div>
       )}
-      <Bag view={view} t={t} />
+      <Bag view={view} t={t} titled content={(bs) => <Blocks blocks={bs} {...blockContext(props)} />} />
+      {!props.preview && <p className="pv-summary__note">{t("You can close this window now.")}</p>}
     </div>
   );
 }
@@ -1466,10 +1469,12 @@ function EndStep(props: StepProps) {
  * handed on: tapping Give shows a code for a teammate to scan from their
  * backpack, with receive. Nothing when the backpack is empty.
  */
-function Bag({ view, t, give, receive }: { view: play.View; t: Translate; give?: ((item: string) => Promise<play.ItemGift>) | undefined; receive?: ((code: string) => Promise<{ name?: string; item: string }>) | undefined }) {
+function Bag({ view, t, give, receive, titled, content }: { view: play.View; t: Translate; titled?: boolean; content?: (blocks: play.PlayBlock[]) => ReactNode; give?: ((item: string) => Promise<play.ItemGift>) | undefined; receive?: ((code: string) => Promise<{ name?: string; item: string }>) | undefined }) {
   const items = view.items ?? [];
   const [gift, setGift] = useState<{ item: play.ItemView; gift: play.ItemGift } | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // The item opened to look at, by slug: it follows the item as the view changes.
+  const [opened, setOpened] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!gift) return;
@@ -1504,22 +1509,51 @@ function Bag({ view, t, give, receive }: { view: play.View; t: Translate; give?:
       </section>
     );
   }
+  const open = content && items.find((i) => i.slug === opened && i.blocks?.length);
+  if (open) {
+    return (
+      <section className="pv-item">
+        <button type="button" className="pv-back" onClick={() => setOpened(null)}>
+          <span aria-hidden>←</span> {t("All items")}
+        </button>
+        <header className="pv-item__head">
+          <span className="pv-bag__icon" aria-hidden>
+            {open.icon || [...(open.name || open.slug).trim()][0]?.toUpperCase()}
+          </span>
+          <h3>{open.name || open.slug}</h3>
+        </header>
+        <div className="pv-item__body">{content(open.blocks ?? [])}</div>
+      </section>
+    );
+  }
   return (
     <>
       {items.length > 0 && (
-        <section className="pv-bag">
-          <h3>{t("Items ({{n}})", { n: items.length })}</h3>
-          <ul>
+        <section className="pv-bag" aria-label={t("Items ({{n}})", { n: items.length })}>
+          {titled && <h3>{t("Items ({{n}})", { n: items.length })}</h3>}
+          <ul className="pv-bag__grid">
             {items.map((it) => (
-              <li key={it.slug} className="pv-bag__item">
-                <span>
-                  {it.icon && <span aria-hidden>{it.icon} </span>}
-                  {it.name || it.slug}
-                  {it.qty > 1 && ` ×${it.qty}`}
-                  {it.holder
-                    ? <span className="pv-bag__role"> · {it.not_mine ? t("with {{name}}", { name: it.holder }) : t("yours to use")}</span>
-                    : it.role && <span className="pv-bag__role"> · {t("belongs to the {{role}}", { role: it.role })}</span>}
-                </span>
+              <li key={it.slug} className={"pv-bag__item" + (it.not_mine ? " is-away" : "")}>
+                {content && it.blocks?.length ? (
+                  <button type="button" className="pv-bag__open" onClick={() => setOpened(it.slug)} aria-label={t("Examine the {{item}}", { item: it.name || it.slug })}>
+                    <span className="pv-bag__icon" aria-hidden>
+                      {it.icon || [...(it.name || it.slug).trim()][0]?.toUpperCase()}
+                    </span>
+                    <span className="pv-bag__name">{it.name || it.slug}</span>
+                    <span className="pv-bag__hint" aria-hidden>{t("Tap to examine")}</span>
+                  </button>
+                ) : (
+                  <>
+                    <span className="pv-bag__icon" aria-hidden>
+                      {it.icon || [...(it.name || it.slug).trim()][0]?.toUpperCase()}
+                    </span>
+                    <span className="pv-bag__name">{it.name || it.slug}</span>
+                  </>
+                )}
+                {it.qty > 1 && <span className="pv-bag__qty">×{it.qty}</span>}
+                {it.holder
+                  ? <span className="pv-bag__role">{it.not_mine ? t("with {{name}}", { name: it.holder }) : t("yours to use")}</span>
+                  : it.role && <span className="pv-bag__role">{t("belongs to the {{role}}", { role: it.role })}</span>}
                 {give && it.give && (
                   <button
                     type="button"

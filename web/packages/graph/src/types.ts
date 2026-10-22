@@ -682,7 +682,12 @@ export interface Item {
   name?: string;
   icon?: string;
   description?: string;
+  /** What a player sees opening the item: a letter to read, a map to look at. Only ITEM_BLOCK_KINDS. */
+  blocks?: Block[];
 }
+
+/** graph.ItemBlockKinds: the blocks an item may hold. */
+export const ITEM_BLOCK_KINDS = ["text", "note", "image", "audio", "video"] as const satisfies readonly BlockKind[];
 
 export interface Counter {
   slug: string;

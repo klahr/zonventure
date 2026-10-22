@@ -35,6 +35,7 @@ func (s *Server) registerGraphEditTools() {
 			"(lat/lng are taken from there, radius_m defaults from the fix's accuracy; refused if the fix is older than two minutes); delete_zone {slug}; " +
 			"connect {from, from_port, to} points an output port at a node, replacing where it pointed before; disconnect {from, from_port}; " +
 			"put_theme {theme, main?} adds or replaces a saved theme {slug, name, look} (look: accent, accent_secondary, background, text, submit_bg as #rrggbb, font, heading_font, corners, cards, card_outline, backdrop, style); main: true makes it the main theme, the look players see wherever no step changes it, which reaches players and the store on publish; delete_theme {slug}, refused while a theme effect names it or it is the main theme. " +
+			"put_item {item} adds or replaces an item {slug, name, icon, blocks?}: blocks are what a player sees opening it from the bag — text, note (a letter), image, audio and video blocks, as on a step, with no rule for when they show; an effect grant_item gives it. " +
 			"set_option {options} turns adventure-wide settings on or off: hide_score keeps the running score off the team's phone (points still count at the end), journal_by_unlock lists the journal in the order the team found its notes, quiz_puzzles adds every typed-answer puzzle to the end screen's quiz walk, tour makes it a walk rather than a game (the phone speaks of the walk and of \"you\", not of a game and its players, and the end has no trophy), min_players and max_players bound a team (it waits until the least have joined, no one beyond the most joins; 0 is no bound); send only the ones to change. " +
 			"set_text {slug?, find, replace, all?} changes a text of one step by quoting it exactly — the fastest way to change words; it fails, listing the step's texts, if find is not there, and asks for more of the text if it appears more than once (or all: true to change every one); " +
 			"patch_node {slug?, patch} merges a JSON merge patch into one step (null removes a field; lists of items with ids — blocks, matchers — merge by id, and outputs by port: a known one is patched, a new one added, {id or port, _delete: true} removed; other lists, like hints, are replaced whole) — e.g. add an accepted answer with {\"puzzle\":{\"outputs\":[{\"port\":\"right\",\"matchers\":[{\"id\":\"seven\",\"kind\":\"exact\",\"value\":\"seven\"}]}]}}, without resending the step. " +
@@ -53,9 +54,10 @@ func (s *Server) registerGraphEditTools() {
 						"type":     "object",
 						"required": []string{"op"},
 						"properties": map[string]any{
-							"op":             map[string]any{"type": "string", "enum": []string{"put_node", "delete_node", "set_text", "patch_node", "put_zone", "delete_zone", "put_theme", "delete_theme", "put_print_material", "delete_print_material", "connect", "disconnect", "set_option"}},
+							"op":             map[string]any{"type": "string", "enum": []string{"put_node", "delete_node", "set_text", "patch_node", "put_zone", "delete_zone", "put_item", "put_theme", "delete_theme", "put_print_material", "delete_print_material", "connect", "disconnect", "set_option"}},
 							"node":           map[string]any{"type": "object", "description": "put_node: the full node."},
 							"zone":           map[string]any{"type": "object", "description": "put_zone: {slug, name, lat, lng, radius_m, polygon?, group?}."},
+							"item":           map[string]any{"type": "object", "description": "put_item: {slug, name, icon, blocks?}."},
 							"theme":          map[string]any{"type": "object", "description": "put_theme: {slug, name, look}."},
 							"print_material": map[string]any{"type": "object", "description": `put_print_material: {id, name, delivery: "posted"|"emailed"|"organiser", files: {<language>: <pdf media id>}}, a PDF per language the adventure is played in.`},
 							"slug":           map[string]any{"type": "string", "description": "delete_node / delete_zone / delete_theme / delete_print_material: what to delete; set_text / patch_node: the step (omit for the dev phone's)."},
@@ -137,6 +139,7 @@ type graphOp struct {
 	Op       string          `json:"op"`
 	Node     json.RawMessage `json:"node,omitempty"`
 	Zone     json.RawMessage `json:"zone,omitempty"`
+	Item     json.RawMessage `json:"item,omitempty"`
 	Theme    json.RawMessage `json:"theme,omitempty"`
 	Print    json.RawMessage `json:"print_material,omitempty"`
 	Slug     string          `json:"slug,omitempty"`
@@ -413,6 +416,21 @@ func applyGraphOp(g *graph.Graph, op graphOp, here *position) error {
 			}
 		}
 		g.Zones = append(g.Zones, z)
+	case "put_item":
+		var it graph.Item
+		if err := decodeStrict(op.Item, &it); err != nil {
+			return fmt.Errorf("item: %w", err)
+		}
+		if it.Slug == "" {
+			return fmt.Errorf("item needs a slug")
+		}
+		for i := range g.Items {
+			if g.Items[i].Slug == it.Slug {
+				g.Items[i] = it
+				return nil
+			}
+		}
+		g.Items = append(g.Items, it)
 	case "delete_zone":
 		for i := range g.Zones {
 			if g.Zones[i].Slug == op.Slug {

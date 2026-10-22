@@ -207,6 +207,8 @@ Anything else — HTML, tables, images — shows as plain text. Use Markdown to 
 
 Common: text, image (media id + alt), audio, video, note, map, compass (points at a zone), cipher, countdown.
 
+Items can be opened from the team's bag: give an item blocks with put_item — a note block for a letter, an image for a map, audio for a recording — and a team that has it can look at it any time. Text in them is Markdown and translated like a step's.
+
 Pictures and sounds: call get_upload_link and give the user the link to tap and pick the file (or, with a shell, curl -sS -F file=@path '<link>' and read the id from the reply); list_adventure_media lists what was uploaded, newest first. The id goes in the block's media field. upload_adventure_media takes base64, which only works for small files.
 
 ## Checking

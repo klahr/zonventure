@@ -1441,7 +1441,16 @@ type Item struct {
 	Name        string `json:"name,omitempty"`
 	Icon        string `json:"icon,omitempty"`
 	Description string `json:"description,omitempty"`
+	// Blocks are what a player sees opening the item: a letter to read,
+	// a map to look at. Only ItemBlockKinds, shown as they are.
+	Blocks []Block `json:"blocks,omitempty"`
 }
+
+// ItemBlockKinds are the blocks an item may hold.
+var ItemBlockKinds = []BlockKind{BlockText, BlockNote, BlockImage, BlockAudio, BlockVideo}
+
+// ItemBlockKey is the translation key of an item block's text.
+func ItemBlockKey(slug, id string) string { return ItemKey(slug, "block:"+id) }
 
 // Counter is event-scoped shared state — one value all teams can see
 // and change. This is the one piece of state that is genuinely not

@@ -130,6 +130,7 @@ func Check(g *graph.Graph) Report {
 	checkTimeoutKeys(r, g)
 	checkResources(r, g)
 	checkBlocks(r, g)
+	checkItemBlocks(r, g)
 	checkMedia(r, g)
 	checkTimeLimit(r, g)
 	checkPlayers(r, g)
@@ -1789,6 +1790,31 @@ var blockNames = map[graph.BlockKind]string{
 // checkBlocks checks the shape of a step's content: every block's
 // required fields, per kind. A block's file and its show condition are
 // checkMedia's and checkReferences'.
+// checkItemBlocks: what opening an item shows is a few plain blocks,
+// always there — no rules, nothing to answer.
+func checkItemBlocks(r *reporter, g *graph.Graph) {
+	for _, it := range g.Items {
+		seen := map[string]bool{}
+		for _, b := range it.Blocks {
+			switch {
+			case b.ID == "":
+				r.err("item.block.id.empty", "", "", "a content block of item %q has no id", it.Slug)
+			case seen[b.ID]:
+				r.err("item.block.id.duplicate", "", "", "two content blocks of item %q share the id %q", it.Slug, b.ID)
+			}
+			seen[b.ID] = true
+			switch {
+			case !slices.Contains(graph.ItemBlockKinds, b.Kind):
+				r.err("item.block.kind", "", "", "item %q holds a %s block; an item holds only text, note, image, audio and video", it.Slug, b.Kind)
+			case b.Show != nil:
+				r.err("item.block.show", "", "", "a content block of item %q has a rule for when it shows; an item's content always shows", it.Slug)
+			case b.Kind == graph.BlockNote && b.Style != "" && !slices.Contains(graph.NoteStyles, b.Style):
+				r.err("item.block.style", "", "", "the note of item %q has style %q; it must be one of %s", it.Slug, b.Style, strings.Join(graph.NoteStyles, ", "))
+			}
+		}
+	}
+}
+
 func checkBlocks(r *reporter, g *graph.Graph) {
 	zones := slugSet(len(g.Zones), func(i int) string { return g.Zones[i].Slug })
 	counters := slugSet(len(g.Counters), func(i int) string { return g.Counters[i].Slug })

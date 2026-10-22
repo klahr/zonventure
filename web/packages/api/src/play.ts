@@ -229,6 +229,8 @@ export interface ItemView {
   /** The player it was handed to, by name, if it was; give: this player may hand it on. */
   holder?: string;
   give?: boolean;
+  /** What opening the item shows. */
+  blocks?: PlayBlock[];
 }
 
 /** A code that hands an item to whichever teammate scans it, and its picture, until expires_at. */
@@ -699,6 +701,8 @@ export interface PartyEnd {
 }
 
 export const getPartyEnd = () => get<PartyEnd>("/api/player/party-end");
+/** A finished team's game once its event has ended: the end screen, read-only. */
+export const getFinal = () => get<PlayState>("/api/player/final");
 
 /** Send the team's picture for a photo block. It waits for the organisers' review. */
 export function uploadPhoto(node: string, block: string, file: Blob) {

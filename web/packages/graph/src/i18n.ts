@@ -19,6 +19,8 @@ export const sectionKey = (section: string) => `js:${section}`;
 export const metaKey = (field: "title" | "intro" | "outro" | "start_label" | "area" | "buyer_note") => `meta:${field}`;
 export const TIME_UP_KEY = "time-up";
 export const itemKey = (slug: string, field: "name") => `i:${slug}:${field}`;
+/** graph.ItemBlockKey: an item block's text. */
+export const itemBlockKey = (slug: string, id: string) => `i:${slug}:block:${id}`;
 export const counterKey = (slug: string, field: "name") => `c:${slug}:${field}`;
 /** A saved theme's own words for a right and a wrong answer. */
 export const themeKey = (slug: string, field: "cheer_text" | "miss_text") => `t:${slug}:${field}`;
@@ -451,7 +453,14 @@ export function adventureTexts(g: Graph, meta: AdventureMeta = {}): Translatable
     });
   }
   if (g.time_limit?.text?.trim()) out.push({ key: TIME_UP_KEY, label: "Time is up: message", main: g.time_limit.text, multiline: true });
-  for (const it of g.items ?? []) if (it.name?.trim()) out.push({ key: itemKey(it.slug, "name"), label: "Item", main: it.name });
+  for (const it of g.items ?? []) {
+    if (it.name?.trim()) out.push({ key: itemKey(it.slug, "name"), label: "Item", main: it.name });
+    for (const b of it.blocks ?? []) {
+      const vars = { name: it.name || it.slug };
+      if ((b.kind === "text" || b.kind === "note") && b.text?.trim()) out.push({ key: itemBlockKey(it.slug, b.id), label: "Item: {{name}}", vars, main: b.text, multiline: true });
+      if ("alt" in b && b.alt?.trim()) out.push({ key: altKey(itemBlockKey(it.slug, b.id)), label: "Item: {{name}}: description of the picture or sound", vars, main: b.alt });
+    }
+  }
   for (const c of g.counters ?? []) if (c.name?.trim()) out.push({ key: counterKey(c.slug, "name"), label: "Counter", main: c.name });
   for (const th of g.themes ?? []) {
     const st = th.look.style;

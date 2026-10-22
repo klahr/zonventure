@@ -1,16 +1,17 @@
 import type { Counter, Graph, HostValue, Item, JournalEntry, Role, Zone } from "@zonventure/graph";
-import { gridZones } from "@zonventure/graph";
+import { ITEM_BLOCK_KINDS, gridZones } from "@zonventure/graph";
 import { StaticMap } from "@zonventure/play-ui";
 import { useState } from "react";
 import { useT } from "../i18n.tsx";
 import { ZoneMap } from "./ZoneMap.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
-import { Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { Button, ICON } from "./dz/ui.tsx";
 import { nearLastZone, zoneGroups } from "./zones.ts";
 import { MarkdownArea } from "./MarkdownArea.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
+import { BlocksEditor } from "./BlocksEditor.tsx";
 
 /** A copy without one key, for clearing an optional field under exactOptionalPropertyTypes. */
 function withoutKey<T extends object, K extends keyof T>(obj: T, key: K): T {
@@ -38,6 +39,8 @@ export function Resources({ graph, onChange, section }: { graph: Graph; onChange
   const shows = (s: ResourceSection) => !section || section === s;
   const [open, setOpen] = useState<string | null>(null);
   // A grid being laid out; only one map editor is open at a time.
+  // The item whose content is open.
+  const [openItem, setOpenItem] = useState<string | null>(null);
   const [grid, setGrid] = useState<{ group: string; rows: number; cols: number; area: Zone } | null>(null);
 
   const slugFor = (prefix: string, taken: { slug: string }[]) => {
@@ -210,15 +213,41 @@ export function Resources({ graph, onChange, section }: { graph: Graph; onChange
             {t.t("Items")}
           </h3>
           <p className="field__hint">{t.t("Things the team collects and can look at. To send teams different ways, a gate can check “Has an item”.")}</p>
-          {items.map((it, i) => (
-            <div key={it.slug} className="box__row">
-              <input className="field__input" value={it.name ?? ""} placeholder={it.slug} aria-label={t.t("Name")}
-                onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...it, name: e.target.value } : x)))} />
-              <Button variant="ghost" size="icon" className="danger" onClick={() => setItems(items.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
-                <Trash2 size={ICON.sm} />
-              </Button>
-            </div>
-          ))}
+          {items.map((it, i) => {
+            const set = (next: Item) => setItems(items.map((x, j) => (j === i ? next : x)));
+            const open = openItem === it.slug;
+            const n = it.blocks?.length ?? 0;
+            return (
+              <div key={it.slug} className="item-res">
+                <div className="box__row">
+                  <input className="field__input item-res__icon" value={it.icon ?? ""} placeholder="🎁" aria-label={t.t("Icon")} title={t.t("Icon: an emoji")}
+                    onChange={(e) => set(e.target.value ? { ...it, icon: e.target.value } : withoutKey(it, "icon"))} />
+                  <input className="field__input" value={it.name ?? ""} placeholder={it.slug} aria-label={t.t("Name")}
+                    onChange={(e) => set({ ...it, name: e.target.value })} />
+                  <Button variant="ghost" size="sm" aria-expanded={open} onClick={() => setOpenItem(open ? null : it.slug)}>
+                    {open ? <ChevronDown size={ICON.sm} aria-hidden="true" /> : <ChevronRight size={ICON.sm} aria-hidden="true" />}
+                    {n ? t.t("Content ({{n}})", { n }) : t.t("Content")}
+                  </Button>
+                  <Button variant="ghost" size="icon" className="danger" onClick={() => setItems(items.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
+                    <Trash2 size={ICON.sm} />
+                  </Button>
+                </div>
+                {open && (
+                  <div className="item-res__content">
+                    <p className="field__hint">{t.t("What players see when they open the item: a letter to read, a map to look at, a sound to play.")}</p>
+                    <BlocksEditor
+                      blocks={it.blocks}
+                      node={{ slug: it.slug, type: "story" }}
+                      graph={graph}
+                      textLabel={t.t("Text")}
+                      only={ITEM_BLOCK_KINDS}
+                      onChange={(b) => set(b.length ? { ...it, blocks: b } : withoutKey(it, "blocks"))}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
           <button type="button" className="add-btn" onClick={() => setItems([...items, { slug: slugFor("item", items), name: "" }])}>
             <Plus size={ICON.sm} aria-hidden="true" />
             {t.t("Add item")}

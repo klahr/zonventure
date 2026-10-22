@@ -425,6 +425,8 @@ type ItemView struct {
 	HolderSlot int64  `json:"-"`
 	Holder     string `json:"holder,omitempty"`
 	Give       bool   `json:"give,omitempty"`
+	// Blocks are what opening the item shows.
+	Blocks []BlockView `json:"blocks,omitempty"`
 }
 
 // JournalView is one unlocked journal entry.
@@ -879,8 +881,21 @@ func (t *Team) translate(v *View) {
 	}
 	v.Items = append([]ItemView(nil), v.Items...)
 	for i := range v.Items {
-		if it := &v.Items[i]; it.Name != "" {
+		it := &v.Items[i]
+		if it.Name != "" {
 			it.Name = tr(graph.ItemKey(it.Slug, "name"), it.Name)
+		}
+		if it.Blocks != nil {
+			it.Blocks = append([]BlockView(nil), it.Blocks...)
+			for j := range it.Blocks {
+				b := &it.Blocks[j]
+				if b.Text != "" {
+					b.Text = t.fill(tr(graph.ItemBlockKey(it.Slug, b.ID), b.Text))
+				}
+				if b.Alt != "" {
+					b.Alt = tr(graph.AltKey(graph.ItemBlockKey(it.Slug, b.ID)), b.Alt)
+				}
+			}
 		}
 	}
 	if th := t.lookTheme(); th != nil && v.ThemeLook != nil && v.ThemeLook.Style != nil {
@@ -1097,6 +1112,12 @@ func (t *Team) view() View {
 			for _, it := range t.G.Items {
 				if it.Slug == slug {
 					iv.Name, iv.Icon = it.Name, it.Icon
+					for _, b := range it.Blocks {
+						if !b.Disabled {
+							b.Text = t.fill(b.Text)
+							iv.Blocks = append(iv.Blocks, BlockView{Block: b})
+						}
+					}
 				}
 			}
 			if role, ok := t.G.ItemRole(slug); ok {
@@ -1326,6 +1347,13 @@ func (t *Team) PrefetchMedia(strict bool) []int64 {
 			}
 		}
 	}
+	for _, it := range t.G.Items {
+		for _, m := range graph.MediaOf(it.Blocks) {
+			if m.Kind == graph.MediaVideo {
+				videos[m.ID] = true
+			}
+		}
+	}
 	var out []int64
 	for _, id := range t.VisibleMedia(strict) {
 		if !videos[id] {
@@ -1369,6 +1397,19 @@ func (t *Team) VisibleMedia(strict bool) []int64 {
 			continue
 		}
 		for _, m := range je.Media {
+			if !seen[m.ID] {
+				seen[m.ID] = true
+				out = append(out, m.ID)
+			}
+		}
+	}
+	// An item's pictures and sounds come with the item, for as long as
+	// the team has it.
+	for _, it := range t.G.Items {
+		if t.Items[it.Slug] <= 0 {
+			continue
+		}
+		for _, m := range graph.MediaOf(it.Blocks) {
 			if !seen[m.ID] {
 				seen[m.ID] = true
 				out = append(out, m.ID)

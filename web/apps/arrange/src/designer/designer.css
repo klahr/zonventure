@@ -1468,3 +1468,8 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .tuts__blurb { color: var(--dz-ink-soft); line-height: 1.4; }
 .tuts__meta { color: var(--dz-ink-soft); font-size: var(--dz-text-xs); }
 .tuts__item.is-going .tuts__meta { color: var(--dz-accent); font-weight: 600; }
+
+/* An item: its icon, name and what opening it shows. */
+.item-res + .item-res { margin-top: var(--sp-2); }
+.box__row > .item-res__icon { flex: 0 0 3.25rem; text-align: center; font-size: 1.15rem; }
+.item-res__content { margin: var(--sp-2) 0 var(--sp-3) var(--sp-3); padding-left: var(--sp-3); border-left: 2px solid var(--border-soft); }

@@ -2,7 +2,7 @@ import type { Editor } from "./types.ts";
 import { withField } from "./types.ts";
 import { MarkdownArea } from "../MarkdownArea.tsx";
 
-export const TextEditor: Editor<"text"> = ({ block, set, t, textLabel, graph }) => (
+export const TextEditor: Editor<"text"> = ({ block, set, t, textLabel, graph, node }) => (
   <>
     <MarkdownArea
       className="field__input"
@@ -33,10 +33,13 @@ export const TextEditor: Editor<"text"> = ({ block, set, t, textLabel, graph }) 
         ))}
       </select>
     )}
-    <label className="check" title={t.t("At a children's party, the host can put their own words here. Everyone else reads yours.")}>
-      <input type="checkbox" checked={!!block.host_edit} onChange={(e) => set(withField(block, "host_edit", e.target.checked || undefined))} />
-      {t.t("A party host may rewrite it")}
-    </label>
+    {/* A party host rewrites a step's words; an item's (not a step) are the author's. */}
+    {graph.nodes.some((n) => n.slug === node.slug) && (
+      <label className="check" title={t.t("At a children's party, the host can put their own words here. Everyone else reads yours.")}>
+        <input type="checkbox" checked={!!block.host_edit} onChange={(e) => set(withField(block, "host_edit", e.target.checked || undefined))} />
+        {t.t("A party host may rewrite it")}
+      </label>
+    )}
   </>
 );
 

@@ -1136,6 +1136,8 @@
   "Email subject": "E-postens ämne",
   "Email text": "E-postens text",
   "Journal: {{name}}: picture description": "Dagbok: {{name}}: bildbeskrivning",
+  "Item: {{name}}": "Föremål: {{name}}",
+  "Item: {{name}}: description of the picture or sound": "Föremål: {{name}}: beskrivning av bild eller ljud",
   "Role: {{name}}: picture description": "Roll: {{name}}: bildbeskrivning",
   "Look “{{name}}”: right answer": "Utseende ”{{name}}”: rätt svar",
   "Look “{{name}}”: wrong answer": "Utseende ”{{name}}”: fel svar",
@@ -1422,5 +1424,10 @@
   "Switched on outside a suggestion: it takes away the step's wire onward.": "Slås på utanför ett förslag: det tar bort stegets koppling vidare.",
   "Name of the new item in {{lang}}": "Namn på det nya föremålet på {{lang}}",
   "Its main name. Translate it with the adventure's other texts.": "Dess huvudnamn. Översätt det med äventyrets övriga texter.",
-  "This changes more than the step, so it can't be part of a suggestion.": "Det här ändrar mer än steget, så det kan inte ingå i ett förslag."
+  "This changes more than the step, so it can't be part of a suggestion.": "Det här ändrar mer än steget, så det kan inte ingå i ett förslag.",
+  "Icon": "Ikon",
+  "Icon: an emoji": "Ikon: en emoji",
+  "Content ({{n}})": "Innehåll ({{n}})",
+  "Text": "Text",
+  "What players see when they open the item: a letter to read, a map to look at, a sound to play.": "Det spelarna ser när de öppnar föremålet: ett brev att läsa, en karta att titta på, ett ljud att spela upp."
 }

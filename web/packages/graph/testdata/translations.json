@@ -712,7 +712,20 @@
     "items": [
       {
         "slug": "key",
-        "name": "MAIN i:key:name"
+        "name": "MAIN i:key:name",
+        "blocks": [
+          {
+            "id": "b1",
+            "kind": "note",
+            "text": "MAIN i:key:block:b1"
+          },
+          {
+            "id": "b2",
+            "kind": "image",
+            "media": 1,
+            "alt": "MAIN i:key:block:b2:alt"
+          }
+        ]
       },
       {
         "slug": "lamp",
@@ -747,6 +760,8 @@
   },
   "keys": [
     "c:coins:name",
+    "i:key:block:b1",
+    "i:key:block:b2:alt",
     "i:key:name",
     "i:lamp:name",
     "j:note:body",

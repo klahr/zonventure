@@ -13,6 +13,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ### Added
 
+- Items can be opened. In Adventure settings → Items an author gives an
+  item an icon and content — text, a note or letter, a picture, a sound
+  or a video — and a team that has the item taps it in its bag to read
+  the letter or look at the map, any time. Item texts are translated
+  like a step's, and the AI assistant sets them with `put_item`. The
+  bag is now a grid of cards with large icons.
 - Designer: parallel paths. A "Split up" step divides the team into
   groups, one per path, each walking its own steps on its own phones
   until they meet again at a "Meet again" step, where each group waits

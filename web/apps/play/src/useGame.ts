@@ -250,6 +250,23 @@ export function useGame(t: Translate): Game {
         if (over) last.event = { ...last.event, state: over };
         setState(last);
         setStatus("ended");
+        // The team's last answer ended the event before this phone saw
+        // the end: read it, after what a teammate did here.
+        if (over === "completed" && !last.view?.finished) {
+          const prev = last.view;
+          play
+            .getFinal()
+            .then((s) => {
+              if (!s.view?.finished) return;
+              if (prev && finishedByTeam(prev, s.view))
+                setHeld({ view: prev, feedback: { tone: "info", text: tRef.current("A teammate answered correctly. Continue when you're ready.") } });
+              setState(s);
+              saveLast(s);
+            })
+            .catch(() => {
+              /* no end to show: the event-over screen stays */
+            });
+        }
         return true;
       }
       saveLast(null);
@@ -277,10 +294,20 @@ export function useGame(t: Translate): Game {
       // dropped once the step or its arrival state changes.
       const prev = viewRef.current;
       const who = whoMoved(prev, s.view);
-      if (prev && (who === "team" || (who === "organisers" && !s.view?.moved_on))) {
+      // A join the others have all come to waits for the player too.
+      const met = prev?.type === "join" && !!s.view?.node && s.view.node !== prev.node && !s.view.finished;
+      if (prev && met) {
+        setHeld((h) => h ?? { view: { ...prev, awaiting: 0, groups: prev.groups?.map((g) => ({ ...g, arrived: true })) ?? [] }, feedback: { tone: "good", text: "" } });
+        setFeedback(null);
+      } else if (prev && (who === "team" || (who === "organisers" && !s.view?.moved_on) || finishedByTeam(prev, s.view))) {
         // Keep the step on screen and say so, or it just swaps under the
         // player (and whatever they were typing is gone).
-        const text = who === "team" ? tRef.current("Your team has moved on. Continue when you're ready.") : tRef.current("The organisers moved your team on.");
+        const text =
+          who === "organisers"
+            ? tRef.current("The organisers moved your team on.")
+            : prev.type === "puzzle"
+              ? tRef.current("A teammate answered correctly. Continue when you're ready.")
+              : tRef.current("Your team has moved on. Continue when you're ready.");
         setHeld((h) => h ?? { view: prev, feedback: { tone: "info", text } });
         setFeedback(null);
       } else if (prev?.node !== s.view?.node || prev?.here !== s.view?.here) {
@@ -500,20 +527,16 @@ export function useGame(t: Translate): Game {
         return;
       }
       try {
-        const prev = viewRef.current;
         const r = await play.sendAction(action, id);
-        const fb = feedbackForResult(
-          action.kind,
-          r,
-          tRef.current,
-          "node" in action ? action.node : undefined,
-        );
-        // A solved puzzle stays on screen with its result until the
-        // player continues; the end shows itself.
-        if (prev?.type === "puzzle" && r.view?.node && r.view.node !== prev.node && !r.view.finished)
-          setHeld({ view: prev, feedback: feedbackForResult(action.kind, r, tRef.current) ?? { tone: "info", text: "" } });
         showView(r.view);
-        setFeedback(fb);
+        setFeedback(
+          feedbackForResult(
+            action.kind,
+            r,
+            tRef.current,
+            "node" in action ? action.node : undefined,
+          ),
+        );
         setOnline(true);
         // The adventure's title and intro come with the state, not the view.
         if (action.kind === "language") void refresh();
@@ -660,6 +683,15 @@ export function useGame(t: Translate): Game {
       setFeedback(null);
     },
   };
+}
+
+/**
+ * A teammate's answer ended the adventure while this phone still showed
+ * the puzzle (whoMoved leaves the end to say so itself): this phone's own
+ * answer has already put the end on screen, and a time limit says so.
+ */
+function finishedByTeam(prev: play.View, next: play.View | undefined): boolean {
+  return prev.type === "puzzle" && !prev.finished && !!next?.finished && !next.timed_out;
 }
 
 /** The current view carried by a refusal body, if any. */

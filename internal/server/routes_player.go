@@ -27,6 +27,8 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 	r.With(auth.RequireSlotOrEnded, auth.RequireCSRF()).Post("/api/player/forget", playerH.Forget)
 	// Why the host ended a party team's session, and its result.
 	r.With(auth.RequireSlotOrEnded).Get("/api/player/party-end", playerH.GetPartyEnd)
+	// A finished team's game once its event has ended, read-only.
+	r.With(auth.RequireSlotOrEnded).Get("/api/player/final", playerH.GetFinal)
 
 	// Player (slot-authenticated). Mutations under CSRF; the GET reads
 	// stay open since they're idempotent and can't damage state.

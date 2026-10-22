@@ -540,5 +540,11 @@
   "Walk with {{group}}": "Gå med {{group}}",
   "open to anyone": "öppen för alla",
   "Your team has moved on. Continue when you're ready.": "Ditt lag har gått vidare. Fortsätt när du är redo.",
+  "Every group is here. The team goes on together.": "Alla grupper är här. Laget går vidare tillsammans.",
+  "A teammate answered correctly. Continue when you're ready.": "En lagkamrat svarade rätt. Fortsätt när du är redo.",
+  "All items": "Alla föremål",
+  "Examine the {{item}}": "Undersök {{item}}",
+  "Tap to examine": "Tryck för att undersöka",
+  "You can close this window now.": "Du kan stänga det här fönstret nu.",
   "The organisers moved your team on.": "Arrangörerna flyttade fram ditt lag."
 }

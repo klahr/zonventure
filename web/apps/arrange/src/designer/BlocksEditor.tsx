@@ -28,7 +28,8 @@ function body(b: Block, set: (b: Block) => void, t: T, textLabel: string, graph:
  * kept (the power button), the title and points too. Files are stored when
  * picked, like MediaEditor's.
  */
-export function BlocksEditor({ blocks, node, graph, onChange, onEdit, textLabel }: { blocks: Block[] | undefined; node: Node; graph: Graph; onChange: (b: Block[]) => void; onEdit?: StepEdit; textLabel: string }) {
+/** only: the kinds that may be added, for blocks that are not a step's — an item's — which have no rules for when they show. */
+export function BlocksEditor({ blocks, node, graph, onChange, onEdit, textLabel, only }: { blocks: Block[] | undefined; node: Node; graph: Graph; onChange: (b: Block[]) => void; onEdit?: StepEdit; textLabel: string; only?: readonly BlockKind[] }) {
   const t = useT();
   const list = blocks ?? [];
   const root = useRef<HTMLDivElement>(null);
@@ -82,7 +83,7 @@ export function BlocksEditor({ blocks, node, graph, onChange, onEdit, textLabel 
   const move = (from: number, to: number) => onChange(moveBlock(list, from, to));
 
   // The title and points the step may have but its author removed.
-  const missing = (FIXED_KINDS[node.type] ?? []).filter((k) => !list.some((b) => b.kind === k));
+  const missing = only ? [] : (FIXED_KINDS[node.type] ?? []).filter((k) => !list.some((b) => b.kind === k));
   const add = (kind: BlockKind, fromCamera = false) => {
     // A title comes back where a title shows: at the top.
     if (kind === "title") return onChange([newBlock(list, kind), ...list]);
@@ -272,7 +273,7 @@ export function BlocksEditor({ blocks, node, graph, onChange, onEdit, textLabel 
                 <span className="blk__label">{label}</span>
                 {isFolded && <span className="blk__summary">{summarize(b, graph, t, node)}</span>}
               </button>
-              <button
+              {!only && <button
                 type="button"
                 className={"blk__rule" + (b.show ? " is-on" : "")}
                 aria-pressed={ruleOpen}
@@ -290,7 +291,7 @@ export function BlocksEditor({ blocks, node, graph, onChange, onEdit, textLabel 
                 }}
               >
                 {b.show ? <EyeOff size={ICON.sm} /> : <Eye size={ICON.sm} />}
-              </button>
+              </button>}
               <button
                 type="button"
                 className={"blk__rule" + (b.animation ? " is-on" : "")}
@@ -332,7 +333,7 @@ export function BlocksEditor({ blocks, node, graph, onChange, onEdit, textLabel 
                 {ACCEPT[b.kind]?.startsWith("audio") ? t.t("Add sound") : ACCEPT[b.kind]?.startsWith("video") ? t.t("Add film") : t.t("Add picture")}
               </button>
             ) : body(b, (next) => set(i, next), t, label, graph, node, onEdit))}
-            {!isFolded && ruleOpen && <ShowEditor block={b} set={(next) => set(i, next)} graph={graph} t={t} />}
+            {!isFolded && ruleOpen && !only && <ShowEditor block={b} set={(next) => set(i, next)} graph={graph} t={t} />}
             {!isFolded && animOpen && <AnimationEditor block={b} set={(next) => set(i, next)} t={t} />}
           </div>
         );
@@ -351,7 +352,7 @@ export function BlocksEditor({ blocks, node, graph, onChange, onEdit, textLabel 
           onCancel={() => setRemoving(null)}
         />
       )}
-      <AddBlock onAdd={add} missing={missing} busy={busy} canUpload={ready} t={t} />
+      <AddBlock onAdd={add} missing={missing} busy={busy} canUpload={ready} t={t} {...(only ? { only } : {})} />
       {error && <div className="alert alert--danger">{error}</div>}
     </div>
   );
@@ -361,7 +362,7 @@ export function BlocksEditor({ blocks, node, graph, onChange, onEdit, textLabel 
 const COMMON = new Set<BlockKind>(["text", "image", "audio", "quiz", "compass", "map"]);
 
 /** "Add block": every kind, grouped, with what each is for. */
-function AddBlock({ onAdd, missing, busy, canUpload, t }: { onAdd: (k: BlockKind, fromCamera?: boolean) => void; missing: BlockKind[]; busy: boolean; canUpload: boolean; t: T }) {
+function AddBlock({ onAdd, missing, busy, canUpload, t, only }: { onAdd: (k: BlockKind, fromCamera?: boolean) => void; missing: BlockKind[]; busy: boolean; canUpload: boolean; t: T; only?: readonly BlockKind[] }) {
   const [open, setOpen] = useState(false);
   // On a phone the menu opens on the common kinds, a screen's worth.
   const [everything, setEverything] = useState(false);
@@ -369,7 +370,7 @@ function AddBlock({ onAdd, missing, busy, canUpload, t }: { onAdd: (k: BlockKind
   const close = useCallback(() => setOpen(false), []);
   const { trigger, pop, style } = useAnchoredPop<HTMLButtonElement, HTMLDivElement>(open, "left");
   useDismiss(open, close, trigger, pop);
-  const kinds = (Object.entries(KINDS) as [BlockKind, (typeof KINDS)[BlockKind]][]).filter(([k]) => !short || COMMON.has(k) || missing.includes(k));
+  const kinds = (Object.entries(KINDS) as [BlockKind, (typeof KINDS)[BlockKind]][]).filter(([k]) => (only ? only.includes(k) : !short || COMMON.has(k) || missing.includes(k)));
   return (
     <>
       <button ref={trigger} type="button" className="add-btn concept--content" aria-expanded={open} disabled={busy} onClick={() => {
@@ -428,7 +429,7 @@ function AddBlock({ onAdd, missing, busy, canUpload, t }: { onAdd: (k: BlockKind
                   })}
               </div>
             ))}
-            {short && (
+            {short && !only && (
               <button type="button" role="menuitem" className="blk-menu__item blk-menu__more" onClick={() => setEverything(true)}>
                 <ChevronDown size={ICON.md} aria-hidden="true" />
                 <span className="blk-menu__name">{t.t("More blocks")}</span>

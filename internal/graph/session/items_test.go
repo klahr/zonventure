@@ -1,6 +1,7 @@
 package session
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/klahr/zonventure/internal/graph"
@@ -329,5 +330,25 @@ func TestItemSlotsLeaveFromHubBranch(t *testing.T) {
 	}
 	if has(build(true), "slots.leave.oneway") {
 		t.Error("a home screen's branch does not")
+	}
+}
+
+// An item's picture is the team's to fetch once it has the item, and
+// opening it shows its blocks.
+func TestItemContent(t *testing.T) {
+	g := altar(true)
+	g.Items[0].Blocks = []graph.Block{{ID: "b1", Kind: graph.BlockImage, Media: 7}, {ID: "b2", Kind: graph.BlockText, Text: "Warm to the touch"}}
+	g.Items[1].Blocks = []graph.Block{{ID: "b1", Kind: graph.BlockImage, Media: 8}}
+	tm := atAltar(t, true)
+	tm.G = g
+	delete(tm.Items, "blue")
+	media := tm.VisibleMedia(true)
+	if !slices.Contains(media, 7) || slices.Contains(media, 8) {
+		t.Errorf("media = %v, want the red gem's picture and not the blue one's", media)
+	}
+	for _, it := range tm.View().Items {
+		if it.Slug == "red" && (len(it.Blocks) != 2 || it.Blocks[1].Text != "Warm to the touch") {
+			t.Errorf("red gem's content = %+v", it.Blocks)
+		}
 	}
 }

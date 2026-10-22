@@ -826,6 +826,32 @@ type PartyEnd struct {
 	Held   bool     `json:"held,omitempty"`
 }
 
+// GetFinal is GetPlay for a team that finished before its event ended:
+// its end screen, for a phone the event's end signed out before it was
+// shown — a teammate's answer finishing the last team ends the event at
+// once. Nothing can be done from it. Only for such a session: it runs
+// under auth.RequireSlotOrEnded.
+//
+// GET /api/player/final
+func (h *Handlers) GetFinal(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	slot, _ := auth.SlotFromContext(ctx)
+	if !slot.Ended || slot.Cancelled || slot.Party || slot.Replaced {
+		httpx.Error(w, http.StatusNotFound, "no final screen")
+		return
+	}
+	var finished bool
+	if err := h.DB.QueryRowContext(ctx, `SELECT completed_at IS NOT NULL FROM teams WHERE id = $1`, slot.TeamID).Scan(&finished); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading team failed", err)
+		return
+	}
+	if !finished {
+		httpx.Error(w, http.StatusNotFound, "no final screen")
+		return
+	}
+	h.GetPlay(w, r.WithContext(play.ForPhone(ctx, slot.ID)))
+}
+
 // GetPartyEnd tells a party team whose session the host ended why, and
 // its result. Only for such a session: it runs under
 // auth.RequireSlotOrEnded.
