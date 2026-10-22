@@ -71,7 +71,7 @@
 
 <header class="topbar" role="banner">
   <div class="wrap topbar-row">
-    <label for="nav-toggle" class="hamburger" aria-hidden="true">
+    <label for="nav-toggle" class="hamburger">
       <span></span><span></span><span></span>
     </label>
     <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">{{SITE_WORDMARK}}</a>
@@ -128,7 +128,7 @@
           <p class="hint" id="partner-hint"></p>
 
           <label for="product">{{REDEEM_PRODUCT_LABEL}}</label>
-          <select id="product" required></select>
+          <select id="product" required><option value="">—</option></select>
 
           <h2 id="address-heading">{{REDEEM_ADDRESS_HEADING}}</h2>
           <p class="hint" id="address-hint">{{REDEEM_ADDRESS_HINT}}</p>

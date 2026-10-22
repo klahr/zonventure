@@ -1,4 +1,6 @@
 <!doctype html>
+<html lang="{{LANG_CODE}}"><head>
+<meta charset="utf-8">
 <!--
   Brand-neutral upstream per-event detail page. Rendered by
   renderStoreEventPage in internal/server/store_event.go: the
@@ -22,8 +24,6 @@
     {{EVENT_ID}} {{ADVENTURE_SLUG}} {{CANONICAL_URL}}
   Plus every topbar substitution (LANG_CODE, NAV_*, FOOTER_*, …).
 -->
-<html lang="{{LANG_CODE}}"><head>
-<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- connect-src https: and worker-src blob: let the starting point's map reach
      its style and tile hosts and decode tiles; the server's
@@ -185,7 +185,7 @@
 
 <header class="topbar" role="banner">
   <div class="wrap topbar-row">
-    <label for="nav-toggle" class="hamburger" aria-hidden="true">
+    <label for="nav-toggle" class="hamburger">
       <span></span><span></span><span></span>
     </label>
     <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">{{SITE_WORDMARK}}</a>

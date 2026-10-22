@@ -11,6 +11,14 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed
+
+- Public pages pass the W3C HTML validator: the store event page
+  declares its character set within its first 1024 bytes, the menu
+  button's label is no longer hidden from screen readers, the landing
+  page's benefit titles no longer skip a heading level, and the gift
+  code page's product list has a placeholder until it loads.
+
 ## [0.35.0] - 2026-10-22
 
 ### Added
