@@ -234,6 +234,8 @@ type landingStrings struct {
 	StoreCardCTA        string
 	StorePerTicket      string
 	StorePerTeam        string
+	// StorePriceFree is a free event's price (a free trial).
+	StorePriceFree string
 	// A listing is a game or a walk (graph.Tour): each card says which,
 	// and a store with both lets the buyer show just one kind.
 	StoreKindGame    string
@@ -269,6 +271,7 @@ type landingStrings struct {
 	StoreEventLetterLangHint   string
 	StoreEventEmailPlaceholder string
 	StoreEventBuyCTA           string // {{PRICE_DISPLAY}} placeholder is substituted per-event
+	StoreEventFreeCTA          string // the buy button of a free event
 	StoreEventTermsHTML        string // contains <a href="/terms">…</a>
 	StoreEventPaymentByStripe  string // before the terms when Stripe takes the payment
 	StoreEventFeature1         string
@@ -296,6 +299,8 @@ type landingStrings struct {
 	StoreEventBadEmail   string
 	StoreEventGenericErr string
 	StoreEventNotForSale string
+	// StoreEventAlreadyHave: a free ticket was given to this email already.
+	StoreEventAlreadyHave string
 	// StoreEventOffSaleHeading heads the page of a listing that is
 	// paused or has stopped selling, over StoreEventNotForSale.
 	StoreEventOffSaleHeading string
@@ -474,6 +479,7 @@ func storeI18nJSON(s landingStrings) string {
 		"cardCTA":              s.StoreCardCTA,
 		"perTicket":            s.StorePerTicket,
 		"perTeam":              s.StorePerTeam,
+		"free":                 s.StorePriceFree,
 		"kindGame":             s.StoreKindGame,
 		"kindWalk":             s.StoreKindWalk,
 		"kindHome":             s.StoreKindHome,
@@ -510,6 +516,7 @@ func storeEventI18nJSON(s landingStrings) string {
 		"badEmail":       s.StoreEventBadEmail,
 		"genericErr":     s.StoreEventGenericErr,
 		"notForSale":     s.StoreEventNotForSale,
+		"alreadyHave":    s.StoreEventAlreadyHave,
 	})
 }
 
@@ -522,6 +529,7 @@ func orgLandingI18nJSON(s landingStrings) string {
 		"teamSizePlural": s.StoreTeamSizePlural,
 		"perTicket":      s.StorePerTicket,
 		"perTeam":        s.StorePerTeam,
+		"free":           s.StorePriceFree,
 		"emptyHeading":   s.LandingFeaturedEmpty,
 		"errorHeading":   s.StoreErrorHeading,
 	})

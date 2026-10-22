@@ -213,7 +213,10 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	// shared landingLocales table so a translator updates one place
 	// and every store surface follows.
 	s := landingLocales[lang]
-	if !simulated {
+	free := priceCents.Valid && priceCents.Int64 == 0
+	if free {
+		priceDisplay, s.StorePerTicket, s.StoreEventBuyCTA = s.StorePriceFree, "", s.StoreEventFreeCTA
+	} else if !simulated {
 		s.StoreEventTermsHTML = s.StoreEventPaymentByStripe + " " + s.StoreEventTermsHTML
 	}
 	kindKey, kind := "game", s.StoreKindGame

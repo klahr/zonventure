@@ -13,6 +13,13 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ### Added
 
+- Free trial adventures. The site's own organisation can make a
+  self-guided event free (Make tickets free on the event's page in the
+  console, or `billing: free` on update_event): the store
+  shows it as Free, a visitor gets a ticket for their email address —
+  one per address — and goes straight to their team, and nobody is
+  charged for the team, the organisation included. Free events are
+  listed even on a server without a payment provider.
 - Items can be opened. In Adventure settings → Items an author gives an
   item an icon and content — text, a note or letter, a picture, a sound
   or a video — and a team that has the item taps it in its bag to read

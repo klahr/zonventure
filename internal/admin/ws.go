@@ -508,6 +508,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		secretRoles bool
 		graphID     int64
 		connect     bool
+		orgSlug     string
 		listingTr   []byte
 		mainLang    string
 		translated  []byte
@@ -531,7 +532,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		       COALESCE(ar.listing_review, ''), ar.listing_reject_reason,
 		       l.event_id IS NOT NULL, COALESCE(l.price_cents, 0), COALESCE(l.currency, ''),
 		       COALESCE(o.stripe_connect_charges_enabled, FALSE),
-		       ar.sales_stopped,
+		       ar.sales_stopped, ar.billing, COALESCE(o.slug, ''),
 		       COALESCE(adv.cheat_password, ''), ar.meeting_place,
 		       ar.translations, `+listing.VersionLanguages("gv", "adv")+`
 		FROM events ar
@@ -548,7 +549,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		&d.PublicForSale, &priceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.PublicBlurb,
 		&d.HasCoverImage, &d.PausedSeconds, &d.PausedAt, &secretRoles, &graphID, &d.Party,
 		&d.ListingReview, &d.ListingRejectReason, &d.Listed, &d.ListedPriceCents, &d.ListedCurrency, &connect,
-		&d.SalesStopped, &d.CheatPassword, &d.MeetingPlace,
+		&d.SalesStopped, &d.Billing, &orgSlug, &d.CheatPassword, &d.MeetingPlace,
 		&listingTr, &mainLang, &translated); err != nil {
 		return eventDetailDTO{}, err
 	}
@@ -561,8 +562,9 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 	}
 	d.Languages = listing.Languages(mainLang, langs)
 	if d.PublicForSale && d.Listed {
-		d.StoreBlocked = h.storeBlocked(connect)
+		d.StoreBlocked = h.storeBlocked(connect, d.Billing == "free" && d.ListedPriceCents == 0)
 	}
+	d.HomeOrg = h.HomeOrg != "" && orgSlug == h.HomeOrg
 	if d.PublicForSale {
 		d.EmbedBase = domains.BaseForEvent(ctx, h.DB, d.ID, h.PublicURL)
 	}

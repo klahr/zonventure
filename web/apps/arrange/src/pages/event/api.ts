@@ -54,6 +54,10 @@ export interface EventInfo {
   embed_base?: string;
   /** A self-guided event its organiser stopped selling: out of the store, while teams with a ticket play on. */
   sales_stopped?: boolean;
+  /** "free": a free trial, its tickets given away and nobody charged; "prepaid": a party paid at checkout; else "teams". */
+  billing?: "teams" | "prepaid" | "free";
+  /** The site's own organisation's event, which its admins may make free. Detail only. */
+  home_org?: boolean;
   /** A hosted event: run from its host page, whose views the event page shows too. */
   party?: boolean;
   /** The adventure's cheat password, for testing on a phone. Detail only. */

@@ -131,7 +131,7 @@ export function ResultsCard({ event, teams }: { event: EventInfo; teams: Team[] 
  */
 export function ConnectBanner({ event, status, user }: { event: EventInfo; status: ConnectStatus | null; user: Whoami }) {
   const t = useT();
-  if (!event.public_for_sale || !status || !status.platform_fee_enabled || status.charges_enabled) return null;
+  if (!event.public_for_sale || event.billing === "free" || !status || !status.platform_fee_enabled || status.charges_enabled) return null;
   const owner = user.role === "org_admin" && user.org_id === event.org_id;
   return (
     <Callout variant="warning">
@@ -314,6 +314,21 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
   const version = useLoad((s) => api.getEventVersion(event.id, s), [event.id, event.listing_review]);
   const [moving, setMoving] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const free = event.billing === "free";
+  const toggleFree = async () => {
+    setSwitching(true);
+    try {
+      await api.patchEvent(event.id, { billing: free ? "teams" : "free" });
+      toast.ok(free ? t.t("Tickets are sold again: set a price") : t.t("Tickets are free"));
+      if (free) setPrice("");
+      onSaved();
+    } catch (e) {
+      toast.err(e);
+    } finally {
+      setSwitching(false);
+    }
+  };
   const toggleSales = async () => {
     setStopping(true);
     try {
@@ -342,6 +357,8 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
   const v = version.data;
   // What the org keeps of a ticket once the platform's price for its team is taken.
   const { state: session } = useSession();
+  // Only the site's own organisation gives tickets away, and its admins decide it.
+  const canFree = !!event.home_org && session.status === "authenticated" && session.user.role === "org_admin" && session.user.org_id === event.org_id;
   const typed = Math.round(Number.parseFloat(price) * 100);
   const sizeN = Number.parseInt(size, 10) || 1;
   const fee = session.status === "authenticated" && typed > 0 ? pricing(session.user).cost(1, sizeN) : 0;
@@ -360,7 +377,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
     if (!Number.isFinite(n) || n < 1 || n > 50) return toast.err(t.t("Team size must be between 1 and 50"));
     setBusy(true);
     try {
-      await api.patchEvent(event.id, { ticket_price_cents: cents, ticket_team_size: n, public_blurb: blurb.trim() });
+      await api.patchEvent(event.id, free ? { ticket_team_size: n, public_blurb: blurb.trim() } : { ticket_price_cents: cents, ticket_team_size: n, public_blurb: blurb.trim() });
       toast.ok(t.t("Saved"));
       onSaved();
     } catch (e) {
@@ -392,7 +409,9 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
   const perTicket = (cents: number, cur?: string) => t.t("{{price}} per ticket", { price: fmtMoney(cents, cur, t.current()) });
   // The store sells at the approved price until a changed one is approved.
   const live = event.listed && event.listed_price_cents ? event.listed_price_cents : 0;
-  const subtitle = live
+  const subtitle = free
+    ? t.t("Free: anyone gets a ticket for their email address, one per address, and nobody is charged.")
+    : live
     ? perTicket(live, event.listed_currency) +
       (event.ticket_price_cents && event.ticket_price_cents !== live ? " · " + t.t("{{price}} after review", { price: perTicket(event.ticket_price_cents, event.ticket_currency) }) : "")
     : saved ? perTicket(event.ticket_price_cents ?? 0, event.ticket_currency) : t.t("No ticket price set yet — players can't buy until you save one.");
@@ -415,6 +434,16 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
         <Button size="sm" loading={stopping} onClick={() => void toggleSales()}>{event.sales_stopped ? t.t("Resume selling") : t.t("Stop selling")}</Button>
         {!event.sales_stopped && <span className="cs-muted">{t.t("Takes it out of the store without pausing the teams that are playing.")}</span>}
       </Row>
+      {canFree && (
+        <Row>
+          <Button size="sm" loading={switching} onClick={() => void toggleFree()}>{free ? t.t("Sell tickets instead") : t.t("Make tickets free")}</Button>
+          <span className="cs-muted">
+            {free
+              ? t.t("Back to a paid listing: set a price and submit it for review.")
+              : t.t("A free trial: the store gives a ticket for an email address, and the teams cost nothing. The change is reviewed like any listing change.")}
+          </span>
+        </Row>
+      )}
       {v?.can_update && (
         <Callout variant="info">
           <Row>
@@ -457,9 +486,11 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
         </div>
       </Row>
       <Row>
-        <Field label={t.t("Ticket price ({{cur}})", { cur: currencySymbol(t.current()) })} hint={receive}>
-          <input type="number" step="0.01" min="0" placeholder="199" className="ev-w8" value={price} onChange={(e) => setPrice(e.target.value)} />
-        </Field>
+        {!free && (
+          <Field label={t.t("Ticket price ({{cur}})", { cur: currencySymbol(t.current()) })} hint={receive}>
+            <input type="number" step="0.01" min="0" placeholder="199" className="ev-w8" value={price} onChange={(e) => setPrice(e.target.value)} />
+          </Field>
+        )}
         <Field label={t.t("Players per ticket")}>
           <input type="number" min="1" max="50" className="ev-w5" value={size} onChange={(e) => setSize(e.target.value)} />
         </Field>

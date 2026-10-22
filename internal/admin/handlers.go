@@ -369,6 +369,12 @@ type eventDTO struct {
 	TicketCurrency   string `json:"ticket_currency,omitempty"`
 	TicketTeamSize   int    `json:"ticket_team_size,omitempty"`
 	PublicBlurb      string `json:"public_blurb,omitempty"`
+	// Billing is 'free' for a free trial in the store, 'prepaid' for a
+	// party paid at checkout, else 'teams': each team charged as it starts.
+	Billing string `json:"billing,omitempty"`
+	// HomeOrg: the event is the site's own organisation's (ZV_HOME_ORG),
+	// whose admins may make it free. Set on its detail.
+	HomeOrg bool `json:"home_org,omitempty"`
 	// Translations are the event's name, store blurb and meeting place
 	// in the other languages the adventure is played in, and Languages those
 	// languages, the adventure's own first (the version the event plays
@@ -411,9 +417,12 @@ type eventDTO struct {
 // storeBlocked is why the store keeps an approved listing out
 // (public/store.go storeItemRowFilter): "no_payments" when this server
 // has no payment provider, "connect_required" in a marketplace when the
-// org's own Stripe account can't take charges (connect false).
-func (h *Handlers) storeBlocked(connect bool) string {
+// org's own Stripe account can't take charges (connect false). A free
+// listing (free) takes no payment, so nothing blocks it.
+func (h *Handlers) storeBlocked(connect, free bool) string {
 	switch {
+	case free:
+		return ""
 	case !h.paymentsEnabled():
 		return "no_payments"
 	case h.marketplace() && !connect:
@@ -690,7 +699,7 @@ func (h *Handlers) writeOrgEvents(w http.ResponseWriter, r *http.Request, orgID 
 		       ar.party, ` + lookCoverSQL("adv") + `,
 		       COALESCE(ar.listing_review, ''),
 		       l.event_id IS NOT NULL, COALESCE(l.price_cents, 0), COALESCE(l.currency, ''),
-		       o.stripe_connect_charges_enabled, ar.sales_stopped
+		       o.stripe_connect_charges_enabled, ar.sales_stopped, ar.billing
 		FROM events ar
 		JOIN organizations o ON o.id = ar.org_id
 		LEFT JOIN event_listings l ON l.event_id = ar.id
@@ -735,12 +744,12 @@ func (h *Handlers) writeOrgEvents(w http.ResponseWriter, r *http.Request, orgID 
 			&d.LiveToken, &showMap, &hasAvatar, &d.TeamsCount, &d.PlayerSlotsCount,
 			&d.PublicForSale, &d.TicketPriceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.HasCoverImage, &d.Party,
 			&d.AdventureTheme, &d.AdventureCover, &d.ListingReview, &d.Listed,
-			&d.ListedPriceCents, &d.ListedCurrency, &connect, &d.SalesStopped); err != nil {
+			&d.ListedPriceCents, &d.ListedCurrency, &connect, &d.SalesStopped, &d.Billing); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
 		if d.PublicForSale && d.Listed {
-			d.StoreBlocked = h.storeBlocked(connect)
+			d.StoreBlocked = h.storeBlocked(connect, d.Billing == "free" && d.ListedPriceCents == 0)
 		}
 		d.ShowMap = showMap != 0
 		if hasAvatar != 0 {
@@ -1117,6 +1126,10 @@ type updateEventRequest struct {
 	// MeetingPlace is where teams meet, in the organiser's words; ""
 	// clears it.
 	MeetingPlace *string `json:"meeting_place,omitempty"`
+	// Billing 'free' makes a self-guided event a free trial: price 0,
+	// a ticket for an email address, nothing charged to anyone. 'teams'
+	// turns it back, without a price. The site's own organisation only.
+	Billing *string `json:"billing,omitempty"`
 }
 
 // UpdateEvent amends mutable run settings. scheduled_at is only editable
@@ -1137,8 +1150,11 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ScheduledAt == nil && req.ShowMap == nil && req.Name == nil &&
 		req.PublicForSale == nil && req.TicketPriceCents == nil &&
-		req.TicketCurrency == nil && req.TicketTeamSize == nil && req.PublicBlurb == nil && req.Translations == nil && req.SecretRoles == nil && req.SalesStopped == nil && req.MeetingPlace == nil {
+		req.TicketCurrency == nil && req.TicketTeamSize == nil && req.PublicBlurb == nil && req.Translations == nil && req.SecretRoles == nil && req.SalesStopped == nil && req.MeetingPlace == nil && req.Billing == nil {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
+		return
+	}
+	if !h.updateEventBilling(w, r, eventID, req.Billing, req.TicketPriceCents != nil) {
 		return
 	}
 	// Tickets are sold in the platform's currency only: the one value
@@ -1318,7 +1334,7 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// What the store shows changed: a draft until it is submitted for review.
-	if req.Name != nil || req.TicketPriceCents != nil || req.TicketTeamSize != nil || req.PublicBlurb != nil || req.Translations != nil {
+	if req.Name != nil || req.TicketPriceCents != nil || req.TicketTeamSize != nil || req.PublicBlurb != nil || req.Translations != nil || req.Billing != nil {
 		if err := h.settleEventListing(r.Context(), eventID); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
 			return

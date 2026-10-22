@@ -47,6 +47,7 @@ func (h *Handlers) unconnectedSellers(ctx context.Context) ([]unconnectedSeller,
 		WHERE e.public_for_sale
 		  AND e.ticket_price_cents IS NOT NULL
 		  AND e.state = 'running'
+		  AND e.billing <> 'free'
 		  AND NOT o.stripe_connect_charges_enabled
 		GROUP BY o.id, o.name
 		ORDER BY o.name, o.id

@@ -523,8 +523,10 @@
           (item.languages && item.languages.length ? '<span class="chip" title="' + escapeHTML(t('playedIn')) + '">' + ICON_LANG +
             escapeHTML(languagesLabel(item.languages)) + '</span>' : '') + '</div>' +
         '<div class="foot">' +
-          '<div class="price">' + escapeHTML(formatPrice(item.price_cents, item.currency)) +
-            '<small>' + escapeHTML(t(item.team_size > 1 ? 'perTeam' : 'perTicket')) + '</small></div>' +
+          (item.price_cents === 0
+            ? '<div class="price">' + escapeHTML(t('free')) + '</div>'
+            : '<div class="price">' + escapeHTML(formatPrice(item.price_cents, item.currency)) +
+              '<small>' + escapeHTML(t(item.team_size > 1 ? 'perTeam' : 'perTicket')) + '</small></div>') +
           '<span class="go">' + escapeHTML(t('cardCTA')) + '</span>' +
         '</div>' +
       '</div>';

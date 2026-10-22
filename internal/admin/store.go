@@ -96,10 +96,6 @@ type BuyTicketResponse struct {
 //     session id on the row for redelivery dedupe.
 //  4. Return the hosted URL; the browser redirects.
 func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
-	if !h.paymentsEnabled() {
-		httpx.Error(w, http.StatusServiceUnavailable, "ticket sales not configured on this server")
-		return
-	}
 	var req BuyTicketRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -126,6 +122,7 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 		currency   string
 		teamSize   int
 		state      string
+		billing    string
 	)
 	if err := h.DB.QueryRowContext(r.Context(), `
 		SELECT e.adventure_slug,
@@ -134,7 +131,8 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 		       l.price_cents,
 		       l.currency,
 		       l.team_size,
-		       e.state
+		       e.state,
+		       e.billing
 		FROM events e
 		JOIN event_listings l ON l.event_id = e.id
 		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
@@ -142,7 +140,7 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 		  AND e.public_for_sale
 		  AND e.ticket_price_cents IS NOT NULL
 		  AND NOT e.sales_stopped
-	`, req.EventID).Scan(&advSlug, &eventName, &advTitle, &priceCents, &currency, &teamSize, &state); err != nil {
+	`, req.EventID).Scan(&advSlug, &eventName, &advTitle, &priceCents, &currency, &teamSize, &state, &billing); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "event not for sale")
 			return
@@ -155,6 +153,14 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 		// surfaces as "not for sale right now" rather than a more
 		// specific error, since the buyer can't act on the distinction.
 		httpx.Error(w, http.StatusConflict, "event not for sale")
+		return
+	}
+	if billing == "free" && priceCents.Valid && priceCents.Int64 == 0 {
+		h.giveStoreFreeTicket(w, r, req.EventID, email, teamSize)
+		return
+	}
+	if !h.paymentsEnabled() {
+		httpx.Error(w, http.StatusServiceUnavailable, "ticket sales not configured on this server")
 		return
 	}
 	if !priceCents.Valid || priceCents.Int64 <= 0 {
@@ -225,10 +231,6 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 // rather than the global /store, so the post-payment confirmation
 // stays on the company's branded URL.
 func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
-	if !h.paymentsEnabled() {
-		httpx.Error(w, http.StatusServiceUnavailable, "ticket sales not configured on this server")
-		return
-	}
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
 	if slug == "" {
 		httpx.Error(w, http.StatusBadRequest, "missing org slug")
@@ -270,6 +272,7 @@ func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
 		currency   string
 		teamSize   int
 		state      string
+		billing    string
 	)
 	if err := h.DB.QueryRowContext(r.Context(), `
 		SELECT e.adventure_slug,
@@ -278,7 +281,8 @@ func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
 		       l.price_cents,
 		       l.currency,
 		       l.team_size,
-		       e.state
+		       e.state,
+		       e.billing
 		FROM events e
 		JOIN event_listings l ON l.event_id = e.id
 		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
@@ -287,7 +291,7 @@ func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
 		  AND e.public_for_sale
 		  AND e.ticket_price_cents IS NOT NULL
 		  AND NOT e.sales_stopped
-	`, req.EventID, orgID).Scan(&advSlug, &eventName, &advTitle, &priceCents, &currency, &teamSize, &state); err != nil {
+	`, req.EventID, orgID).Scan(&advSlug, &eventName, &advTitle, &priceCents, &currency, &teamSize, &state, &billing); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "event not for sale")
 			return
@@ -297,6 +301,14 @@ func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	if state != "running" {
 		httpx.Error(w, http.StatusConflict, "event not for sale")
+		return
+	}
+	if billing == "free" && priceCents.Valid && priceCents.Int64 == 0 {
+		h.giveStoreFreeTicket(w, r, req.EventID, email, teamSize)
+		return
+	}
+	if !h.paymentsEnabled() {
+		httpx.Error(w, http.StatusServiceUnavailable, "ticket sales not configured on this server")
 		return
 	}
 	if !priceCents.Valid || priceCents.Int64 <= 0 {

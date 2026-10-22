@@ -104,6 +104,10 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 	if teamSize > 1 {
 		per = s.StorePerTeam
 	}
+	price := formatStorePrice(int64(priceCents), currency)
+	if onSale && priceCents == 0 {
+		price, per = s.StorePriceFree, ""
+	}
 	teamLabel := s.StoreTeamSizeSolo
 	if teamSize > 1 {
 		teamLabel = strings.ReplaceAll(s.StoreTeamSizePlural, "{n}", strconv.Itoa(teamSize))
@@ -128,7 +132,7 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		{"{{SUBTITLE}}", html.EscapeString(subtitle)},
 		{"{{ORG_NAME}}", html.EscapeString(orgName)},
 		{"{{BLURB}}", html.EscapeString(strings.TrimSpace(blurb))},
-		{"{{PRICE_DISPLAY}}", html.EscapeString(formatStorePrice(int64(priceCents), currency))},
+		{"{{PRICE_DISPLAY}}", html.EscapeString(price)},
 		{"{{PER_LABEL}}", html.EscapeString(per)},
 		{"{{TEAM_LABEL}}", html.EscapeString(teamLabel)},
 		{"{{KIND_LABEL}}", html.EscapeString(kind)},

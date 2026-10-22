@@ -295,22 +295,26 @@ const storeItemRowFilterBase = `
 	  AND NOT e.sales_stopped
 `
 
+// storeFreeItem is a free event (billing 'free') listed at no price:
+// its tickets are given away, with no payment to take.
+const storeFreeItem = `(e.billing = 'free' AND l.price_cents = 0)`
+
 // storeItemRowFilter returns the WHERE clause to use given the
 // platform-fee config. When a platform fee is configured (= the
 // hosted instance's marketplace mode), the listing also requires
 // the org to have completed Stripe Connect onboarding so the
 // purchase flow can actually take a payment. Self-host (no fee,
 // no marketplace) renders the base filter only. A server with no
-// payment provider lists nothing: no ticket could be bought.
+// payment provider lists only free events: no ticket could be bought.
 func (h *Handlers) storeItemRowFilter() string {
 	if !h.Payments {
 		return storeItemRowFilterBase + `
-		  AND FALSE
+		  AND ` + storeFreeItem + `
 		`
 	}
 	if h.Marketplace != nil && h.Marketplace() {
 		return storeItemRowFilterBase + `
-		  AND o.stripe_connect_charges_enabled
+		  AND (o.stripe_connect_charges_enabled OR ` + storeFreeItem + `)
 		`
 	}
 	return storeItemRowFilterBase

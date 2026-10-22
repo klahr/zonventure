@@ -421,7 +421,8 @@
         submit.disabled = false;
         submit.textContent = originalSubmitText;
         var msg = e && e.message;
-        err.textContent = msg === 'event not for sale' ? t('notForSale') : (msg || t('genericErr'));
+        err.textContent = msg === 'event not for sale' ? t('notForSale')
+          : msg === 'this email address already has a ticket' ? t('alreadyHave') : (msg || t('genericErr'));
       });
   });
 })();
