@@ -952,7 +952,9 @@ func renderLandingPage(w http.ResponseWriter, r *http.Request, publicURL, compan
 	if landingURL == "" {
 		landingURL = "/"
 	}
-	out := cachedRender(lang, "web/landing.html", landingURL+"\x00"+companyName+"\x00"+homeOrg, func() []byte {
+	// The prices are part of the key, as on /pricing: the landing's
+	// party adventure states its free teams.
+	out := cachedRender(lang, "web/landing.html", landingURL+"\x00"+companyName+"\x00"+homeOrg+"\x00"+pricingKey(), func() []byte {
 		return buildLandingBody(lang, landingURL, companyName, homeOrg)
 	})
 	if out == nil {
@@ -1046,6 +1048,7 @@ func buildLandingBody(lang, landingURL, companyName, homeOrg string) []byte {
 		[2]string{"{{CTA_GET_STARTED}}", s.CTAGetStarted},
 		[2]string{"{{CTA_READ_MANUAL}}", s.CTAReadManual},
 	)
+	subs = append(subs, pricingSubs()...)
 	for _, sub := range subs {
 		out = strings.ReplaceAll(out, sub[0], sub[1])
 	}
