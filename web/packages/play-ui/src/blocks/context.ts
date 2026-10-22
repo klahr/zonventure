@@ -30,8 +30,9 @@ export interface BlockContext {
   /** Says a block that plays out over time has finished, so what follows it shows. */
   played?: (id: string) => void;
   /**
-   * A simulated device, from the designer's simulator: the compass and
-   * the level read it instead of the phone's sensors, and work fully.
+   * A simulated device, from the designer's simulator: the compass, the
+   * level, the noise meter and the shake meter read it instead of the
+   * phone's sensors, and work fully.
    */
   motion?: Motion | undefined;
   /**
@@ -60,6 +61,10 @@ export interface Motion {
   beta: number;
   /** Left-right tilt, -90 to 90. */
   gamma: number;
+  /** How loud the room is, 0 to 100 as a noise meter reads it. */
+  loudness?: number;
+  /** How hard the phone is shaken, 0 (still) to 100 on a shake block's threshold scale. */
+  shake?: number;
 }
 
 export type Of<K extends play.PlayBlock["kind"]> = play.PlayBlock & { kind: K };

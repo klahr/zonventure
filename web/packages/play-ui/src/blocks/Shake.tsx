@@ -27,8 +27,22 @@ export const ShakeBlock: Renderer<"shake"> = ({ block, ctx }) => {
   const [force, setForce] = useState(0);
   const hold = useRef<Hold>(HOLD_START);
 
+  // A simulated phone needs no start and no permission; its shake is
+  // checked on a timer, as the level checks a simulated pose.
+  const simulated = ctx.motion?.shake === undefined ? undefined : ctx.motion.shake > 0 ? shakeTarget(ctx.motion.shake) : 0;
+  const simRef = useRef(simulated);
+  simRef.current = simulated;
   useEffect(() => {
-    if (phase !== "on") return;
+    if (simulated === undefined || phase === "done") return;
+    const id = setInterval(() => {
+      hold.current = holdStep(hold.current, (simRef.current ?? 0) >= target, performance.now(), HOLD_MS);
+      if (hold.current.done) setPhase("done");
+    }, 100);
+    return () => clearInterval(id);
+  }, [simulated !== undefined, phase, target]);
+
+  useEffect(() => {
+    if (phase !== "on" || simulated !== undefined) return;
     let heard = false;
     let shown = 0;
     const onMotion = (e: DeviceMotionEvent) => {
@@ -55,7 +69,7 @@ export const ShakeBlock: Renderer<"shake"> = ({ block, ctx }) => {
       clearTimeout(silent);
       window.removeEventListener("devicemotion", onMotion);
     };
-  }, [phase, target]);
+  }, [phase, target, simulated !== undefined]);
 
   const start = () => {
     const Motion = typeof DeviceMotionEvent === "undefined" ? undefined : (DeviceMotionEvent as IOSMotion);
@@ -69,7 +83,7 @@ export const ShakeBlock: Renderer<"shake"> = ({ block, ctx }) => {
   };
 
   // The designer's preview: shaking, not yet hard enough.
-  const shown = ctx.preview ? target * 0.6 : force;
+  const shown = simulated ?? (ctx.preview ? target * 0.6 : force);
   const level = Math.min(100, (shown / full) * 100);
   const line = (target / full) * 100;
   const done = phase === "done";
@@ -95,7 +109,7 @@ export const ShakeBlock: Renderer<"shake"> = ({ block, ctx }) => {
           <span className="pv-gadget__note">{t("Motion access was turned down. Allow it in the browser's settings and try again.")}</span>
         ) : phase === "none" ? (
           <span className="pv-gadget__note">{t("This phone has no motion sensor, so this one can't be done here.")}</span>
-        ) : phase === "on" ? (
+        ) : phase === "on" || simulated !== undefined ? (
           <span className="pv-gadget__hint">{shown >= target ? t("Keep going!") : t("Harder!")}</span>
         ) : (
           <span className="pv-gadget__hint">{t("Hold the phone tight and shake it, past the line.")}</span>

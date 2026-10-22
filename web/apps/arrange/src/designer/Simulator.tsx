@@ -153,8 +153,9 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   }, [phoneLang, graph.tour]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [busy, setBusy] = useState(false);
-  // The simulated phone, flat and facing north until the author turns it.
-  const [motion, setMotion] = useState<Motion>({ heading: 0, beta: 0, gamma: 0 });
+  // The simulated phone, flat, still and facing north in a quiet room
+  // until the author turns it, shakes it or makes some noise.
+  const [motion, setMotion] = useState<Motion>({ heading: 0, beta: 0, gamma: 0, loudness: 0, shake: 0 });
   const [zone, setZone] = useState("");
   const [log, setLog] = useState<LogLine[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -476,6 +477,8 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     return m < 1000 ? tr("About {{m}} m away", { m: Math.max(1, Math.round(m)) }) : tr("About {{km}} km away", { km: Math.round(m / 100) / 10 });
   };
   const focus = view?.zone && !view.here ? view.zone : view?.starts?.find((o) => o.zone && !o.here)?.zone;
+  // Whether the step shows a block of these kinds, which reads the simulated device.
+  const sensed = (...kinds: play.PlayBlock["kind"][]) => !!view?.blocks?.some((b) => !b.locked && kinds.includes(b.kind));
   // The puzzle the team is on, for passing it without the answer.
   const current = view?.type === "puzzle" && view.node && !view.finished ? nodeBySlug(graph, view.node) : undefined;
 
@@ -635,7 +638,9 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
 
           <SpoofMap zones={places} position={pos ?? null} focus={focus} onPick={moveTo} disabled={!team || busy || follow} others={others} />
 
-          {view?.blocks?.some((b) => !b.locked && (b.kind === "compass" || b.kind === "level" || b.kind === "bearing")) && <DevicePanel motion={motion} onChange={setMotion} />}
+          {sensed("compass", "level", "bearing", "noise", "shake") && (
+            <DevicePanel motion={motion} onChange={setMotion} held={sensed("compass", "level", "bearing")} heard={sensed("noise")} shaken={sensed("shake")} />
+          )}
 
           {current?.puzzle?.outputs?.length ? (
             <div className="sim__pass">

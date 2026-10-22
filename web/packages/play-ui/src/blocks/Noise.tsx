@@ -23,6 +23,22 @@ export const NoiseBlock: Renderer<"noise"> = ({ block, ctx }) => {
 
   useEffect(() => () => stop.current?.(), []);
 
+  // A simulated room needs no microphone; its loudness is checked on a
+  // timer, as the level checks a simulated pose.
+  const simulated = ctx.motion?.loudness;
+  const simRef = useRef(simulated);
+  simRef.current = simulated;
+  useEffect(() => {
+    if (simulated === undefined || phase === "done") return;
+    let hold: Hold = HOLD_START;
+    const id = setInterval(() => {
+      const now = simRef.current ?? 0;
+      hold = holdStep(hold, now >= threshold, performance.now(), HOLD_MS);
+      if (hold.done) setPhase("done");
+    }, 100);
+    return () => clearInterval(id);
+  }, [simulated !== undefined, phase, threshold]);
+
   const start = () => {
     if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === "undefined") return setPhase("none");
     setPhase("asking");
@@ -77,7 +93,7 @@ export const NoiseBlock: Renderer<"noise"> = ({ block, ctx }) => {
   };
 
   // The designer's preview: talking, not yet loud enough.
-  const shown = ctx.preview ? Math.max(5, threshold - 20) : level;
+  const shown = simulated ?? (ctx.preview ? Math.max(5, threshold - 20) : level);
   const done = phase === "done";
 
   return (
@@ -101,7 +117,7 @@ export const NoiseBlock: Renderer<"noise"> = ({ block, ctx }) => {
           <span className="pv-noise__note">{t("Microphone access was turned down. Allow it in the browser's settings and try again.")}</span>
         ) : phase === "none" ? (
           <span className="pv-noise__note">{t("This phone's microphone can't be used here.")}</span>
-        ) : phase === "on" ? (
+        ) : phase === "on" || simulated !== undefined ? (
           <span className="pv-noise__hint">{shown >= threshold ? t("Keep it up!") : t("Louder!")}</span>
         ) : (
           <span className="pv-noise__hint">{t("Make some noise, past the line.")}</span>
