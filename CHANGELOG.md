@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-10-22
+
 ### Fixed
 
 - Public pages pass the W3C HTML validator: the store event page
