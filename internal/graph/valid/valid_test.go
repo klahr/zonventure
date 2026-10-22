@@ -1217,3 +1217,25 @@ func TestTimeoutKeyUnearnable(t *testing.T) {
 		assertNoCode(t, Check(g), "output.timeout.unearnable")
 	})
 }
+
+func TestTranslatedMedia(t *testing.T) {
+	g := valid3()
+	g.Nodes[1].PuzzleCfg.Blocks = []graph.Block{{ID: "b1", Kind: graph.BlockAudio, Media: 10}, {ID: "b2", Kind: graph.BlockText, Text: "Hi"}}
+	g.Translations = map[string]map[string]string{"sv": {graph.MediaKey(graph.BlockKey("p1", "b1")): "11"}}
+	if r := Check(g); slices.ContainsFunc(r.Issues, func(i Issue) bool { return strings.HasPrefix(i.Code, "media.") }) {
+		t.Fatalf("a Swedish recording is reported: %v", codes(r))
+	}
+	g.Translations["sv"][graph.MediaKey(graph.BlockKey("p1", "b1"))] = "tape"
+	r := Check(g)
+	assertCode(t, r, "media.translation")
+	if !r.HasErrors() {
+		t.Error("a file id that is no number is not an error")
+	}
+	// A text block has no file for a translation to stand in for.
+	g.Translations["sv"] = map[string]string{graph.MediaKey(graph.BlockKey("p1", "b2")): "11"}
+	r = Check(g)
+	assertCode(t, r, "media.translation.orphan")
+	if r.HasErrors() {
+		t.Errorf("a file left behind is an error: %v", codes(r))
+	}
+}

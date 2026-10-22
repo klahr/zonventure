@@ -2025,17 +2025,19 @@ export function Designer({ slug }: { slug: string }) {
         />
       )}
       {translating !== null && graph && (
-        <TranslatorModal
-          graph={graph}
-          main={mainLang}
-          meta={meta}
-          onChange={change}
-          onMainChange={saveMainLang}
-          onRemove={(l) => void removeLanguage(l)}
-          initial={translating}
-          onClose={() => setTranslating(null)}
-          {...(readOnly ? { readOnly } : {})}
-        />
+        <AdventureSlug.Provider value={slug}>
+          <TranslatorModal
+            graph={graph}
+            main={mainLang}
+            meta={meta}
+            onChange={change}
+            onMainChange={saveMainLang}
+            onRemove={(l) => void removeLanguage(l)}
+            initial={translating}
+            onClose={() => setTranslating(null)}
+            {...(readOnly ? { readOnly } : {})}
+          />
+        </AdventureSlug.Provider>
       )}
       {settingsOpen && (
         <Modal title={t.t("Adventure settings")} icon={<Settings size={ICON.md} />} size="xl" flush className="settings-modal" onClose={() => setSettingsOpen(false)}>

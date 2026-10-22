@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/klahr/zonventure/internal/graph"
@@ -2125,6 +2126,53 @@ func checkMedia(r *reporter, g *graph.Graph) {
 				if m.Kind != graph.MediaImage && m.Kind != graph.MediaAudio && m.Kind != graph.MediaVideo {
 					r.err("media.kind", n.Slug, "", "media %d is %q; it must be an image, audio or video", m.ID, m.Kind)
 				}
+			}
+		}
+	}
+	checkTranslatedMedia(r, g)
+}
+
+// checkTranslatedMedia checks the files translations give blocks
+// (graph.MediaKey): each is a file's id, for a block that has a file of
+// its own to stand in for. One left behind by a block since removed, or
+// emptied, is only reported: the engine never shows it.
+func checkTranslatedMedia(r *reporter, g *graph.Graph) {
+	owners := map[string]string{} // block key → its step, "" for an item's
+	for _, n := range g.Nodes {
+		for _, b := range n.Blocks() {
+			if m, ok := b.AsMedia(); ok && m.ID > 0 {
+				owners[graph.BlockKey(n.Slug, b.ID)] = n.Slug
+			}
+		}
+	}
+	for _, it := range g.Items {
+		for _, b := range it.Blocks {
+			if m, ok := b.AsMedia(); ok && m.ID > 0 {
+				owners[graph.ItemBlockKey(it.Slug, b.ID)] = ""
+			}
+		}
+	}
+	langs := make([]string, 0, len(g.Translations))
+	for l := range g.Translations {
+		langs = append(langs, l)
+	}
+	sort.Strings(langs)
+	for _, l := range langs {
+		keys := make([]string, 0, len(g.Translations[l]))
+		for k := range g.Translations[l] {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			owner, ok := graph.IsMediaKey(k)
+			if !ok || strings.TrimSpace(g.Translations[l][k]) == "" {
+				continue
+			}
+			node, known := owners[owner]
+			if id, err := strconv.ParseInt(strings.TrimSpace(g.Translations[l][k]), 10, 64); err != nil || id <= 0 {
+				r.err("media.translation", node, "", "the %s file of %s is %q, not a file", l, owner, g.Translations[l][k])
+			} else if !known {
+				r.warn("media.translation.orphan", "", "", "the %s file of %s belongs to no picture, sound or film", l, owner)
 			}
 		}
 	}

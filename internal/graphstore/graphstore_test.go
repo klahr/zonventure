@@ -236,3 +236,35 @@ func TestSaveDraftIfRefusesStaleBase(t *testing.T) {
 		t.Fatalf("the refused save changed the draft: %v %v", d.UpdatedAt, err)
 	}
 }
+
+// A translation's file is checked like a step's: one of the adventure's
+// own, never another's, which a player could otherwise fetch through it.
+func TestSaveRefusesAForeignTranslatedFile(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	t.Cleanup(cleanup)
+	ctx := context.Background()
+	org := dbtest.PublisherOrg(t, db)
+	adventure := func(slug string) (adv, media int64) {
+		if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author, org_id) VALUES ($1, $1, '', '', $2) RETURNING id`, slug, org).Scan(&adv); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRow(`INSERT INTO adventure_media(adventure_id, kind, mime_type, size_bytes, sha256, content) VALUES ($1, 'audio', 'audio/mpeg', 1, $2, '\x00') RETURNING id`, adv, slug).Scan(&media); err != nil {
+			t.Fatal(err)
+		}
+		return adv, media
+	}
+	mine, recording := adventure("own")
+	_, theirs := adventure("other")
+
+	g := linear("a")
+	g.Nodes[2].PuzzleCfg.Blocks = []graph.Block{{ID: "b1", Kind: graph.BlockAudio, Media: recording}}
+	key := graph.MediaKey(graph.BlockKey("p1", "b1"))
+	g.Translations = map[string]map[string]string{"sv": {key: fmt.Sprint(theirs)}}
+	if _, _, err := graphstore.Save(ctx, db, mine, 0, g); !errors.Is(err, graphstore.ErrForeignMedia) {
+		t.Errorf("saving another adventure's file as a translation: got %v, want ErrForeignMedia", err)
+	}
+	g.Translations["sv"][key] = fmt.Sprint(recording)
+	if _, _, err := graphstore.Save(ctx, db, mine, 0, g); err != nil {
+		t.Errorf("saving its own file as a translation: %v", err)
+	}
+}

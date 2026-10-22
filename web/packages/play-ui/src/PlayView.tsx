@@ -1529,8 +1529,8 @@ function Bag({ view, t, give, receive, titled, content }: { view: play.View; t: 
   return (
     <>
       {items.length > 0 && (
-        <section className="pv-bag" aria-label={t("Items ({{n}})", { n: items.length })}>
-          {titled && <h3>{t("Items ({{n}})", { n: items.length })}</h3>}
+        <section className="pv-bag" aria-label={t("Items")}>
+          {titled && <h3>{t("Items")}</h3>}
           <ul className="pv-bag__grid">
             {items.map((it) => (
               <li key={it.slug} className={"pv-bag__item" + (it.not_mine ? " is-away" : "")}>

@@ -895,6 +895,7 @@ func (t *Team) translate(v *View) {
 				if b.Alt != "" {
 					b.Alt = tr(graph.AltKey(graph.ItemBlockKey(it.Slug, b.ID)), b.Alt)
 				}
+				b.Media = g.TrFile(l, graph.ItemBlockKey(it.Slug, b.ID), b.Media)
 			}
 		}
 	}
@@ -975,6 +976,7 @@ func (t *Team) translate(v *View) {
 			if b.Alt != "" {
 				b.Alt = tr(graph.AltKey(graph.BlockKey(v.Node, b.ID)), b.Alt)
 			}
+			b.Media = g.TrFile(l, graph.BlockKey(v.Node, b.ID), b.Media)
 			if b.CounterValues != nil {
 				b.CounterValues = append([]CounterView(nil), b.CounterValues...)
 				for j := range b.CounterValues {
@@ -1314,15 +1316,15 @@ func (t *Team) view() View {
 }
 
 // ownMedia is a step's own media the team may see: its answer's, a
-// hub's branch pictures, and its blocks' unless a block is still hidden.
+// hub's branch pictures, and its blocks' unless a block is still hidden,
+// each block's in every language it has a file of its own in.
 func (t *Team) ownMedia(n graph.Node) []graph.Media {
-	var shown []graph.Block
+	var out []graph.Media
 	for _, b := range n.Blocks() {
 		if t.blockShown(n.Slug, b) {
-			shown = append(shown, b)
+			out = append(out, t.G.BlockFiles(graph.BlockKey(n.Slug, b.ID), b)...)
 		}
 	}
-	out := graph.MediaOf(shown)
 	if n.PuzzleCfg != nil && n.PuzzleCfg.Answer != nil {
 		out = append(out, n.PuzzleCfg.Answer.Media()...)
 	}
@@ -1341,16 +1343,20 @@ func (t *Team) ownMedia(n graph.Node) []graph.Media {
 func (t *Team) PrefetchMedia(strict bool) []int64 {
 	videos := map[int64]bool{}
 	for _, n := range t.G.Nodes {
-		for _, m := range graph.MediaOf(n.Blocks()) {
-			if m.Kind == graph.MediaVideo {
-				videos[m.ID] = true
+		for _, b := range n.Blocks() {
+			for _, m := range t.G.BlockFiles(graph.BlockKey(n.Slug, b.ID), b) {
+				if m.Kind == graph.MediaVideo {
+					videos[m.ID] = true
+				}
 			}
 		}
 	}
 	for _, it := range t.G.Items {
-		for _, m := range graph.MediaOf(it.Blocks) {
-			if m.Kind == graph.MediaVideo {
-				videos[m.ID] = true
+		for _, b := range it.Blocks {
+			for _, m := range t.G.BlockFiles(graph.ItemBlockKey(it.Slug, b.ID), b) {
+				if m.Kind == graph.MediaVideo {
+					videos[m.ID] = true
+				}
 			}
 		}
 	}
@@ -1409,10 +1415,12 @@ func (t *Team) VisibleMedia(strict bool) []int64 {
 		if t.Items[it.Slug] <= 0 {
 			continue
 		}
-		for _, m := range graph.MediaOf(it.Blocks) {
-			if !seen[m.ID] {
-				seen[m.ID] = true
-				out = append(out, m.ID)
+		for _, b := range it.Blocks {
+			for _, m := range t.G.BlockFiles(graph.ItemBlockKey(it.Slug, b.ID), b) {
+				if !seen[m.ID] {
+					seen[m.ID] = true
+					out = append(out, m.ID)
+				}
 			}
 		}
 	}

@@ -67,6 +67,10 @@ func remapGraphMedia(g *graph.Graph, ids map[int64]int64) {
 			}
 		}
 	}
+	for i := range g.Items {
+		blocks(g.Items[i].Blocks)
+	}
+	g.RemapTranslatedMedia(id)
 	for i := range g.Journal {
 		list(g.Journal[i].Media)
 	}

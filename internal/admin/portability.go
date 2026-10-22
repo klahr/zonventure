@@ -765,6 +765,18 @@ func importGraph(ctx context.Context, tx *sql.Tx, advID, userID int64, env *grap
 		}
 		ids[m.ID] = id
 	}
+	// An archive from before items' files were exported (0.35) names them
+	// without supplying them: those blocks wait for a file instead, as a
+	// new one does, rather than the whole archive being refused.
+	for i := range g.Items {
+		for j := range g.Items[i].Blocks {
+			if b := &g.Items[i].Blocks[j]; b.Media != 0 {
+				if _, ok := ids[b.Media]; !ok {
+					b.Media = 0
+				}
+			}
+		}
+	}
 	// Every id must be one the archive supplied: an unmapped one could
 	// happen to name a row just inserted, and show the wrong file.
 	for _, id := range g.MediaIDs() {

@@ -5,6 +5,7 @@
 // JournalKey, RoleKey, SectionKey, MetaKey, ItemKey, CounterKey, ThemeKey and
 // AltKey in Go). A missing translation falls back to the main text.
 
+import { blocksOf } from "./blocks.ts";
 import type { Block, Graph, Node } from "./types.ts";
 
 export const nodeKey = (slug: string, field: string) => `n:${slug}:${field}`;
@@ -26,6 +27,12 @@ export const counterKey = (slug: string, field: "name") => `c:${slug}:${field}`;
 export const themeKey = (slug: string, field: "cheer_text" | "miss_text") => `t:${slug}:${field}`;
 /** A picture's or a sound's description, beside the key of what it belongs to: graph.AltKey. */
 export const altKey = (owner: string) => `${owner}:alt`;
+/**
+ * A block's own file in a translation — a recording, picture or film in
+ * that language — beside the block's key: graph.MediaKey. The translation
+ * holds the file's id, written out.
+ */
+export const mediaKey = (owner: string) => `${owner}:media`;
 
 /** The adventure's own texts, from its settings rather than its graph. */
 export interface AdventureMeta {
@@ -54,6 +61,63 @@ export interface Translatable {
   answers?: boolean;
   /** Worth translating, but not counted in how far a translation has come: a route's name. */
   optional?: boolean;
+}
+
+/** A block's file an author can give each language a version of. */
+export interface TranslatableFile {
+  key: string;
+  /** What the file is, for the form: an English key, filled from vars. */
+  label: string;
+  vars?: Record<string, string | number>;
+  /** What a file in its place must be. */
+  kind: "image" | "audio" | "video";
+  /** The main language's file. */
+  main: number;
+}
+
+/** The blocks whose file stands for words — said, written or filmed — and what each one's is. */
+const FILE_OF: Partial<Record<Block["kind"], { kind: TranslatableFile["kind"]; label: string; item: string }>> = {
+  image: { kind: "image", label: "Picture", item: "Item: {{name}}: picture" },
+  audio: { kind: "audio", label: "Sound", item: "Item: {{name}}: sound" },
+  video: { kind: "video", label: "Film", item: "Item: {{name}}: film" },
+  call: { kind: "audio", label: "Phone call: sound", item: "Item: {{name}}: sound" },
+};
+
+/** A block's file as a translatable one; an item's names its item. */
+function blockFile(owner: string, b: Block, item?: string): TranslatableFile | undefined {
+  const of = FILE_OF[b.kind];
+  if (!of || !("media" in b) || !b.media) return undefined;
+  return { key: mediaKey(owner), kind: of.kind, main: b.media, ...(item === undefined ? { label: of.label } : { label: of.item, vars: { name: item } }) };
+}
+
+/** Every file of a step's blocks a translation may replace, in order. */
+export function nodeFiles(n: Node): TranslatableFile[] {
+  return blocksOf(n).flatMap((b) => blockFile(blockKey(n.slug, b.id), b) ?? []);
+}
+
+/** Every file of the items' blocks a translation may replace. */
+export function adventureFiles(g: Graph): TranslatableFile[] {
+  return (g.items ?? []).flatMap((it) =>
+    (it.blocks ?? []).flatMap((b) => blockFile(itemBlockKey(it.slug, b.id), b, it.name || it.slug) ?? []),
+  );
+}
+
+/** The file f shows in lang: its own, or undefined where it plays the original. */
+export function translatedFile(g: Graph, lang: string, f: TranslatableFile): number | undefined {
+  const id = Number(g.translations?.[lang]?.[f.key]);
+  return Number.isInteger(id) && id > 0 ? id : undefined;
+}
+
+/** Whether lang's file was given for an original since replaced. */
+export function isFileOutdated(g: Graph, lang: string, f: TranslatableFile): boolean {
+  if (translatedFile(g, lang, f) === undefined) return false;
+  const was = translationOriginal(g, lang, f.key);
+  return was !== undefined && was !== String(f.main);
+}
+
+/** The graph with lang's own file for f, or back to the original when id is undefined. */
+export function setTranslatedFile(g: Graph, lang: string, f: TranslatableFile, id: number | undefined): Graph {
+  return setTranslation(g, lang, f.key, id ? String(id) : "", String(f.main));
 }
 
 /** Every translatable text of a step, in the order the inspector shows them. */

@@ -215,6 +215,10 @@ func (g *Graph) PrintMediaIDs() []int64 {
 // card:<i>:alt, sym:<value>:alt, branch:<port>:alt; a role's alt and a
 // journal note's media:<i>:alt.
 //
+// A block's own file in another language is its key and ":media", holding
+// that language's adventure_media id: block:<id>:media on a step, and an
+// item block's ItemBlockKey and ":media". See MediaKey.
+//
 // Items and counters have name, and a saved theme cheer_text and
 // miss_text: its own words for a right and a wrong answer.
 func NodeKey(slug, field string) string    { return "n:" + slug + ":" + field }
@@ -228,6 +232,14 @@ func ThemeKey(slug, field string) string   { return "t:" + slug + ":" + field }
 // AltKey is the key of a description of a picture or a sound, beside
 // the key of what it belongs to.
 func AltKey(owner string) string { return owner + ":alt" }
+
+// MediaKey is the key of a block's own file in a translation, beside the
+// key of the block: a recording, picture or film in that language, as an
+// adventure_media id written in decimal.
+func MediaKey(owner string) string { return owner + ":media" }
+
+// mediaSuffix ends every MediaKey.
+const mediaSuffix = ":media"
 
 // SectionKey is a journal section's heading: one per section, however
 // many notes share it.
@@ -260,6 +272,96 @@ func (g *Graph) TrMedia(lang, owner string, m Media) Media {
 		m.Alt = g.Tr(lang, AltKey(owner), m.Alt)
 	}
 	return m
+}
+
+// TrFile is the file a block shows in lang: its translation's, under
+// MediaKey(owner), or id when lang has none. A block with no file of its
+// own (id 0, or withheld from the team) has none to swap.
+func (g *Graph) TrFile(lang, owner string, id int64) int64 {
+	if id == 0 || lang == "" || lang == g.Language {
+		return id
+	}
+	if n := parseMediaID(g.Translations[lang][MediaKey(owner)]); n > 0 {
+		return n
+	}
+	return id
+}
+
+// BlockFiles are the block's files (Files) and its own file in every
+// language that has one of its own (MediaKey(owner)), of the same kind:
+// what a team may fetch for a block it can see, whatever its language.
+func (g *Graph) BlockFiles(owner string, b Block) []Media {
+	out := b.Files()
+	m, ok := b.AsMedia()
+	if !ok || m.ID == 0 {
+		return out
+	}
+	langs := make([]string, 0, len(g.Translations))
+	for l := range g.Translations {
+		langs = append(langs, l)
+	}
+	sort.Strings(langs)
+	for _, l := range langs {
+		if id := parseMediaID(g.Translations[l][MediaKey(owner)]); id > 0 && id != m.ID {
+			out = append(out, Media{ID: id, Kind: m.Kind, Alt: m.Alt})
+		}
+	}
+	return out
+}
+
+// translatedMediaIDs are the files the translations name (MediaKey), in
+// language and key order.
+func (g *Graph) translatedMediaIDs() []int64 {
+	langs := make([]string, 0, len(g.Translations))
+	for l := range g.Translations {
+		langs = append(langs, l)
+	}
+	sort.Strings(langs)
+	var out []int64
+	for _, l := range langs {
+		keys := make([]string, 0, len(g.Translations[l]))
+		for k := range g.Translations[l] {
+			if strings.HasSuffix(k, mediaSuffix) {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if id := parseMediaID(g.Translations[l][k]); id > 0 {
+				out = append(out, id)
+			}
+		}
+	}
+	return out
+}
+
+// RemapTranslatedMedia rewrites the files the translations name through
+// id, and the originals they were made from with them.
+func (g *Graph) RemapTranslatedMedia(id func(int64) int64) {
+	for _, all := range []map[string]map[string]string{g.Translations, g.TranslationOriginals} {
+		for _, tr := range all {
+			for k, v := range tr {
+				if n := parseMediaID(v); n > 0 && strings.HasSuffix(k, mediaSuffix) {
+					tr[k] = strconv.FormatInt(id(n), 10)
+				}
+			}
+		}
+	}
+}
+
+// IsMediaKey reports whether a translation key holds a file (MediaKey)
+// rather than text, and the key of the block it belongs to.
+func IsMediaKey(key string) (owner string, ok bool) {
+	return strings.CutSuffix(key, mediaSuffix)
+}
+
+// parseMediaID reads a MediaKey's value: an id, or 0 when it is none.
+func parseMediaID(s string) int64 {
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 // Email is an email effect's subject and body, and the title of the
@@ -1791,6 +1893,12 @@ func (g *Graph) MediaIDs() []int64 {
 		if ro.Image != nil {
 			add([]Media{*ro.Image})
 		}
+	}
+	for _, it := range g.Items {
+		add(MediaOf(it.Blocks))
+	}
+	for _, id := range g.translatedMediaIDs() {
+		add([]Media{{ID: id}})
 	}
 	for _, th := range g.Themes {
 		for _, id := range th.Look.MediaIDs() {

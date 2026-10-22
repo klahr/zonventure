@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { adventureTexts, allTexts, coverage, blockKey, isOutdated, isPortKey, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey, sourceFingerprint, trackTranslations, translatedNode, translateSideEdit, translationOriginal, withTexts, zoneKey, itemKey } from "./i18n.ts";
+import { adventureTexts, allTexts, coverage, blockKey, isOutdated, isPortKey, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey, sourceFingerprint, trackTranslations, translatedNode, translateSideEdit, translationOriginal, withTexts, zoneKey, itemKey, itemBlockKey, mediaKey, nodeFiles, adventureFiles, translatedFile, isFileOutdated, setTranslatedFile } from "./i18n.ts";
 import { translateEdit, updateNode } from "./model.ts";
 import type { Graph } from "./types.ts";
 
@@ -323,4 +323,49 @@ test("in a translation, an item renamed gets a translated name, and one without 
   assert.deepEqual(out.items, [{ slug: "key", name: "Nyckel" }, { slug: "item-1", name: "Lykta" }]);
   assert.deepEqual(out.translations!.en, { [itemKey("key", "name")]: "Key" });
   assert.equal(translateSideEdit(before, before, "en", step, step), before, "nothing beside the step changed, nothing to do");
+});
+
+test("a step's and an item's pictures, sounds and films can each have a file per language", () => {
+  const g: Graph = {
+    nodes: [
+      {
+        slug: "msg",
+        type: "story",
+        story: {
+          blocks: [
+            { id: "b1", kind: "audio", media: 10 },
+            { id: "b2", kind: "text", text: "Hello" },
+            { id: "b3", kind: "call", media: 11, who: "Chief" },
+            { id: "b4", kind: "image", media: 0 },
+          ],
+        },
+      },
+    ],
+    edges: [],
+    items: [{ slug: "tape", name: "Tape", blocks: [{ id: "b1", kind: "video", media: 30 }] }],
+  };
+  assert.deepEqual(
+    nodeFiles(g.nodes[0]!).map((f) => [f.key, f.kind, f.main]),
+    [
+      [mediaKey(blockKey("msg", "b1")), "audio", 10],
+      [mediaKey(blockKey("msg", "b3")), "audio", 11],
+    ],
+  );
+  const [film] = adventureFiles(g);
+  assert.deepEqual([film!.key, film!.kind, film!.vars], [mediaKey(itemBlockKey("tape", "b1")), "video", { name: "Tape" }]);
+
+  // Not a text: no shared vector, no share of how far a translation has come.
+  assert.ok(!allTexts(g).some((x) => x.key.endsWith(":media")));
+
+  const [sound] = nodeFiles(g.nodes[0]!);
+  let sv = setTranslatedFile(g, "sv", sound!, 12);
+  assert.equal(translatedFile(sv, "sv", sound!), 12);
+  assert.equal(sv.translations?.sv?.[sound!.key], "12");
+  assert.equal(isFileOutdated(sv, "sv", sound!), false);
+  // The original recording replaced: the Swedish one may no longer match it.
+  const replaced = nodeFiles({ ...g.nodes[0]!, story: { blocks: [{ id: "b1", kind: "audio", media: 13 }] } })[0]!;
+  assert.equal(isFileOutdated(sv, "sv", replaced), true);
+  sv = setTranslatedFile(sv, "sv", sound!, undefined);
+  assert.equal(translatedFile(sv, "sv", sound!), undefined);
+  assert.equal(sv.translations?.sv?.[sound!.key], undefined);
 });

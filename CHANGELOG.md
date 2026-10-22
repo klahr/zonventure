@@ -11,6 +11,31 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- Pictures, sounds and films in other languages. In the designer's
+  Translations, each picture, sound, film and phone call — on a step or
+  in an item — can have a file of its own in a translation, such as a
+  recording read in Swedish; a team playing in that language sees and
+  hears it, and one without plays the original's. Replacing the original
+  marks the translation's file outdated, as with text. In the graph it is
+  the block's translation key and `:media` (`n:<step>:block:<id>:media`),
+  holding the file's id.
+- The designer's simulator can try sound meters and shake meters: a
+  slider beside the phone sets how loud the room is and how hard the
+  phone is shaken, as it already set the heading and tilt.
+
+### Changed
+
+- The bag's heading says "Items", without the count.
+
+### Fixed
+
+- An item's pictures, sounds and films are checked to belong to the
+  adventure when it is saved, and go with it when it is duplicated or
+  exported. An archive exported before this keeps its items, with their
+  files left to add again.
+
 ## [0.35.1] - 2026-10-22
 
 ### Fixed

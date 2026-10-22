@@ -1,7 +1,9 @@
 import { useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import type { AdventureMeta, Graph, Translatable } from "@zonventure/graph";
-import { adventureTexts, allTexts, coverage, isOutdated, nodeBySlug, nodeTexts, outline, setTranslation, translationOriginal, wordDiff } from "@zonventure/graph";
-import { BookMarked, Check, CheckCircle2, ChevronRight, ClipboardCopy, Languages, Plus, Search, Trash2, X } from "lucide-react";
+import { play } from "@zonventure/api";
+import type { AdventureMeta, Graph, Translatable, TranslatableFile } from "@zonventure/graph";
+import { adventureFiles, adventureTexts, allTexts, coverage, isFileOutdated, isOutdated, nodeBySlug, nodeFiles, nodeTexts, outline, setTranslatedFile, setTranslation, translatedFile, translationOriginal, wordDiff } from "@zonventure/graph";
+import { BookMarked, Check, CheckCircle2, ChevronRight, ClipboardCopy, Languages, Plus, Search, Trash2, Undo2, Upload, X } from "lucide-react";
+import { useMediaUpload } from "./MediaEditor.tsx";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { useT } from "../i18n.tsx";
 import { Button, ICON, Modal } from "./dz/ui.tsx";
@@ -15,7 +17,9 @@ import { LANGUAGE_NAMES, languageName } from "../languages.ts";
  * a box for the translation, in the side-by-side way translation tools
  * do; the adventure settings show how far each language has come; the
  * toolbar's switch shows the steps in a translation. Anything left empty
- * plays in the main language.
+ * plays in the main language. A picture, sound or film may have a file of
+ * its own in a language too, such as a recording in that language; one
+ * without plays the original's.
  *
  * The main language is the adventure's own setting, not the graph's: the
  * designer passes it in as `main`, and the server writes it into the
@@ -215,9 +219,12 @@ export function TranslatorModal({ graph, main, meta, onChange, onMainChange, onR
   const tr = (lang && graph.translations?.[lang]) || {};
   const shown = (texts: Translatable[]) =>
     texts.filter((x) => (!kept || kept.has(x.key)) && (!q || x.main.toLowerCase().includes(q) || (tr[x.key] ?? "").toLowerCase().includes(q) || t.t(x.label, x.vars).toLowerCase().includes(q)));
+  // A file is never to do — it plays the original — but may be outdated.
+  const shownFiles = (files: TranslatableFile[]) =>
+    files.filter((f) => (filter === "all" || (filter === "outdated" && lang && isFileOutdated(graph, lang, f))) && (!q || t.t(f.label, f.vars).toLowerCase().includes(q)));
 
-  const groups: { key: string; title: ReactNode; icon: ReactNode; texts: Translatable[] }[] = [
-    { key: "adventure", title: t.t("Title, journal, places, items and messages"), icon: <BookMarked size={ICON.sm} />, texts: shown(adventureTexts(graph, meta)) },
+  const groups: { key: string; title: ReactNode; icon: ReactNode; texts: Translatable[]; files: TranslatableFile[] }[] = [
+    { key: "adventure", title: t.t("Title, journal, places, items and messages"), icon: <BookMarked size={ICON.sm} />, texts: shown(adventureTexts(graph, meta)), files: shownFiles(adventureFiles(graph)) },
     ...outline(graph).flatMap((r) => {
       if (r.kind !== "step") return [];
       const n = nodeBySlug(graph, r.slug)!;
@@ -227,9 +234,10 @@ export function TranslatorModal({ graph, main, meta, onChange, onMainChange, onR
         title: n.title || t.t(STEP[n.type].label),
         icon: <span className={`dz-step-icon dz-step-icon--${n.type}`}><Icon size={ICON.xs} /></span>,
         texts: shown(nodeTexts(n)),
+        files: shownFiles(nodeFiles(n)),
       }];
     }),
-  ].filter((g) => g.texts.length);
+  ].filter((g) => g.texts.length || g.files.length);
 
   const p = lang ? progress(graph, lang, meta) : null;
 
@@ -386,6 +394,9 @@ export function TranslatorModal({ graph, main, meta, onChange, onMainChange, onR
                     {g.texts.map((x) => (
                       <TextRow key={x.key} x={x} graph={graph} lang={lang} main={main} onChange={onChange} onKeyDown={next} {...(readOnly ? { readOnly } : {})} />
                     ))}
+                    {g.files.map((f) => (
+                      <FileRow key={f.key} f={f} graph={graph} lang={lang} onChange={onChange} {...(readOnly ? { readOnly } : {})} />
+                    ))}
                   </section>
                 ))
               )}
@@ -485,6 +496,81 @@ function TextRow({ x, graph, lang, main, onChange, onKeyDown, readOnly }: {
         {x.multiline ? <textarea rows={Math.min(8, Math.max(2, x.main.split("\n").length))} {...field} /> : <input {...field} />}
         {status === "outdated" && <span className="tr-row__note">{t.t("Outdated: the original has changed since this was translated.")}</span>}
         {x.answers && <span className="tr-row__note">{t.t("A team answering in this language may give these too; the original answers still count.")}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** A picture, sound or film, as the row shows it. */
+function FilePreview({ id, kind }: { id: number; kind: TranslatableFile["kind"] }) {
+  const src = play.mediaURL(id);
+  if (kind === "image") return <img className="tr-file__img" src={src} alt="" />;
+  if (kind === "audio") return <audio className="tr-file__audio" controls preload="none" src={src} />;
+  return <video className="tr-file__video" controls preload="metadata" src={src} />;
+}
+
+/** One file: the original's, and the one this language plays instead, if any. */
+function FileRow({ f, graph, lang, onChange, readOnly }: { f: TranslatableFile; graph: Graph; lang: string; onChange: (g: Graph) => void; readOnly?: boolean }) {
+  const t = useT();
+  const input = useRef<HTMLInputElement>(null);
+  const { busy, error, upload, ready } = useMediaUpload();
+  const [wrong, setWrong] = useState(false);
+  const own = translatedFile(graph, lang, f);
+  const outdated = isFileOutdated(graph, lang, f);
+  // An upload outlives the render that started it: set it on the graph as it is when it lands.
+  const latest = useRef({ graph, onChange });
+  latest.current = { graph, onChange };
+  const set = (id: number | undefined) => onChange(setTranslatedFile(graph, lang, f, id));
+  const WHAT = { image: t.t("Pick a picture."), audio: t.t("Pick a sound."), video: t.t("Pick a film.") };
+
+  const pick = async (files: FileList | null) => {
+    setWrong(false);
+    const [added] = await upload(files);
+    if (input.current) input.current.value = "";
+    if (!added) return;
+    if (added.kind !== f.kind) return setWrong(true);
+    const now = latest.current;
+    now.onChange(setTranslatedFile(now.graph, lang, f, added.id));
+  };
+
+  return (
+    <div className={"tr-row tr-file" + (outdated ? " is-outdated" : " is-extra") + (own ? " is-filled" : "")}>
+      <div className="tr-row__meta">
+        <span className="tr-status" role="img" aria-label={own ? t.t("Own file") : t.t("Plays the original")} title={own ? t.t("Own file") : t.t("Plays the original")}>
+          {own ? <Check size={ICON.xs} strokeWidth={3} aria-hidden="true" /> : null}
+        </span>
+        <span>{t.t(f.label, f.vars)}</span>
+        {outdated ? <span className="tr-tag tr-tag--warn">{t.t("Outdated")}</span> : <span className="tr-tag">{t.t("Optional")}</span>}
+        {!readOnly && (
+          <div className="tr-row__tools">
+            {outdated && (
+              <Button variant="ghost" size="sm" icon={<Check size={ICON.sm} />} title={t.t("The original file has been replaced since this one was added.")} onClick={() => set(own)}>
+                {t.t("Still right")}
+              </Button>
+            )}
+            {own !== undefined && (
+              <Button variant="ghost" size="sm" className="tr-tool--quiet" icon={<Undo2 size={ICON.sm} />} onClick={() => set(undefined)}>
+                {t.t("Play the original")}
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="tr-row__src">
+        <FilePreview id={f.main} kind={f.kind} />
+      </div>
+      <div className="tr-row__dst">
+        {own !== undefined ? <FilePreview id={own} kind={f.kind} /> : <span className="tr-row__note">{t.t("Plays the original.")}</span>}
+        {!readOnly && (
+          <div>
+            <input ref={input} type="file" hidden accept={`${f.kind}/*`} onChange={(e) => void pick(e.target.files)} />
+            <Button size="sm" icon={<Upload size={ICON.sm} />} disabled={busy || !ready} onClick={() => input.current?.click()}>
+              {busy ? t.t("Uploading…") : own !== undefined ? t.t("Replace the file") : t.t("Add a file in this language")}
+            </Button>
+          </div>
+        )}
+        {(error || wrong) && <div className="alert alert--danger">{wrong ? WHAT[f.kind] : error}</div>}
+        {outdated && <span className="tr-row__note">{t.t("Outdated: the original file has been replaced since this one was added.")}</span>}
       </div>
     </div>
   );

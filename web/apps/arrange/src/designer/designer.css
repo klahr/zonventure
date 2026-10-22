@@ -957,6 +957,10 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .dz .tr-row__tools button { padding: var(--dz-space-0) var(--dz-space-2); font-size: var(--dz-text-xs); color: var(--dz-muted); }
 .dz .tr-row__tools button:hover:not(:disabled) { color: var(--dz-ink); }
 .tr-row__note { font-size: var(--dz-text-xs); color: var(--dz-muted); }
+/* A file and its version in a language, side by side. */
+.tr-file__img { display: block; max-width: 100%; max-height: 9rem; border-radius: var(--dz-r-2); border: 1px solid var(--dz-border); }
+.tr-file__audio { width: 100%; max-width: 20rem; }
+.tr-file__video { display: block; width: 100%; max-height: 10rem; border-radius: var(--dz-r-2); background: #000; }
 .tr-row.is-outdated .tr-row__note { color: color-mix(in srgb, var(--warning) 75%, var(--ink)); }
 .tr-none { margin: 0; padding: var(--sp-6) var(--sp-5); text-align: center; color: var(--dz-muted); }
 .tr-none--done { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding-top: 4rem; }

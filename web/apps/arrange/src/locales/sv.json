@@ -563,5 +563,21 @@
   "picture": "bild",
   "Add card": "Lägg till kort",
   "Drag cards into the right order": "Dra kort till rätt ordning",
-  "Not in that order.": "Inte i den ordningen."
+  "Not in that order.": "Inte i den ordningen.",
+  "Film": "Film",
+  "Phone call: sound": "Telefonsamtal: ljud",
+  "Item: {{name}}: picture": "Föremål: {{name}}: bild",
+  "Item: {{name}}: sound": "Föremål: {{name}}: ljud",
+  "Item: {{name}}: film": "Föremål: {{name}}: film",
+  "Own file": "Egen fil",
+  "Plays the original": "Spelar originalet",
+  "Plays the original.": "Spelar originalet.",
+  "Play the original": "Använd originalet",
+  "Pick a picture.": "Välj en bild.",
+  "Pick a sound.": "Välj ett ljud.",
+  "Pick a film.": "Välj en film.",
+  "Replace the file": "Byt fil",
+  "Add a file in this language": "Lägg till en fil på det här språket",
+  "The original file has been replaced since this one was added.": "Originalfilen har bytts ut sedan den här lades till.",
+  "Outdated: the original file has been replaced since this one was added.": "Inaktuell: originalfilen har bytts ut sedan den här lades till."
 }
