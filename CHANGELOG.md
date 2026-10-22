@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-10-22
+
 ### Added
 
 - Free trial adventures. The site's own organisation can make a
