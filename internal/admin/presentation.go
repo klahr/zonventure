@@ -49,7 +49,7 @@ const presentationRevision = `md5(row(p.fields, p.image_mime_type, md5(p.image_c
 var (
 	orgProposalFields       = map[string]bool{"name": true, "tagline": true, "public_website": true}
 	adventureProposalFields = map[string]bool{"title": true, "description": true, "author": true, "intro_text": true,
-		"outro_text": true, "start_label": true, "area": true, "buyer_note": true, "look_cover": true}
+		"outro_text": true, "start_label": true, "area": true, "access_note": true, "buyer_note": true, "look_cover": true}
 )
 
 // querier reads through the pool or a transaction.
@@ -440,7 +440,7 @@ var presentationLabels = map[string]string{
 	"name": "Organisation: name", "tagline": "Organisation: tagline", "public_website": "Organisation: website",
 	"title": "Adventure: title", "description": "Adventure: description", "author": "Adventure: author",
 	"intro_text": "Adventure: intro", "outro_text": "Adventure: outro", "start_label": "Adventure: meeting point",
-	"area": "Adventure: area", "buyer_note": "Adventure: note to buyers",
+	"area": "Adventure: area", "access_note": "Adventure: access note", "buyer_note": "Adventure: note to buyers",
 }
 
 // proposalContent is an organisation page or adventure presentation as
@@ -528,17 +528,17 @@ func (h *Handlers) proposalContent(ctx context.Context, kind string, id int64) (
 	}
 
 	var (
-		description, author, area, buyerNote string
-		intro, outro, startLabel             sql.NullString
-		icon                                 bool
-		cover                                sql.NullInt64
+		description, author, area, accessNote, buyerNote string
+		intro, outro, startLabel                         sql.NullString
+		icon                                             bool
+		cover                                            sql.NullInt64
 	)
 	if err := h.DB.QueryRowContext(ctx, `
 		SELECT slug, COALESCE(title, ''), COALESCE(description, ''), COALESCE(author, ''), intro_text, outro_text,
-		       start_label, COALESCE(area, ''), COALESCE(buyer_note, ''), avatar_mime_type IS NOT NULL,
+		       start_label, COALESCE(area, ''), access_note, COALESCE(buyer_note, ''), avatar_mime_type IS NOT NULL,
 		       NULLIF(look_style->>'cover', '')::bigint
 		FROM adventures WHERE id = $1`, target).Scan(&c.AdventureSlug, &c.AdventureTitle, &description, &author,
-		&intro, &outro, &startLabel, &area, &buyerNote, &icon, &cover); err != nil {
+		&intro, &outro, &startLabel, &area, &accessNote, &buyerNote, &icon, &cover); err != nil {
 		return c, err
 	}
 	field("title", c.AdventureTitle)
@@ -551,6 +551,7 @@ func (h *Handlers) proposalContent(ctx context.Context, kind string, id int64) (
 	field("outro_text", outro.String)
 	field("start_label", startLabel.String)
 	field("area", area)
+	field("access_note", accessNote)
 	field("buyer_note", buyerNote)
 	picture("adventure-icon", "Adventure: icon", hasImage, icon)
 	// The cover is one of the adventure's own media.
@@ -668,12 +669,12 @@ func presentationGate(ctx context.Context, db *sql.DB, slug string) (*metaGate, 
 	}
 	g.on, g.advID, g.orgID = true, advID, orgID
 	var cover sql.NullInt64
-	vals := make([]sql.NullString, 8)
-	cols := []string{"title", "description", "author", "intro_text", "outro_text", "start_label", "area", "buyer_note"}
+	vals := make([]sql.NullString, 9)
+	cols := []string{"title", "description", "author", "intro_text", "outro_text", "start_label", "area", "access_note", "buyer_note"}
 	if err := db.QueryRowContext(ctx, `
-		SELECT title, description, author, intro_text, outro_text, start_label, area, buyer_note,
+		SELECT title, description, author, intro_text, outro_text, start_label, area, access_note, buyer_note,
 		       NULLIF(look_style->>'cover', '')::bigint
-		FROM adventures WHERE id = $1`, advID).Scan(&vals[0], &vals[1], &vals[2], &vals[3], &vals[4], &vals[5], &vals[6], &vals[7], &cover); err != nil {
+		FROM adventures WHERE id = $1`, advID).Scan(&vals[0], &vals[1], &vals[2], &vals[3], &vals[4], &vals[5], &vals[6], &vals[7], &vals[8], &cover); err != nil {
 		return nil, err
 	}
 	for i, c := range cols {

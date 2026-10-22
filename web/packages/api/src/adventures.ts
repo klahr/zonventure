@@ -120,6 +120,7 @@ interface AdventureEdit {
   outro_text: string;
   start_label?: string;
   area?: string;
+  access_note?: string;
   buyer_note?: string;
   language: string;
   accent_color: string;
@@ -156,7 +157,7 @@ export async function getLook(slug: string, signal?: AbortSignal): Promise<Look>
   if (a.card_outline) b.card_outline = true;
   if (a.backdrop) b.backdrop = a.backdrop;
   if (a.style) b.style = a.style;
-  return { title: a.title, intro: a.intro_text, outro: a.outro_text, start_label: a.start_label ?? "", area: a.area ?? "", buyer_note: a.buyer_note ?? "", language: a.language, brand: b };
+  return { title: a.title, intro: a.intro_text, outro: a.outro_text, start_label: a.start_label ?? "", area: a.area ?? "", access_note: a.access_note ?? "", buyer_note: a.buyer_note ?? "", language: a.language, brand: b };
 }
 
 /** The adventure's own settings the designer shows beside its graph. */
@@ -167,6 +168,8 @@ export interface Look {
   /** Where teams meet, and where it is played: the store's words, and the start screen's. */
   start_label: string;
   area: string;
+  /** What its access fact leaves unsaid, in the store. */
+  access_note: string;
   /** The adventure's word to its buyers, in their ticket email. */
   buyer_note: string;
   /** The language the adventure is written in — its graph's main language. */

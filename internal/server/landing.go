@@ -245,6 +245,20 @@ type landingStrings struct {
 	StoreFilterGames string
 	StoreFilterWalks string
 	StoreFilterHome  string
+	// An adventure's facts (adventure.Facts), on its card and ticket
+	// page: number templates with `{n}`, and the words for the rest.
+	StoreFactMinutes     string
+	StoreFactHours       string
+	StoreFactMetres      string
+	StoreFactKm          string
+	StoreFactAge         string
+	StoreFactAgeLong     string
+	StoreFactEasy        string
+	StoreFactMedium      string
+	StoreFactHard        string
+	StoreFactStepFree    string
+	StoreFactSomeSteps   string
+	StoreFactNotStepFree string
 
 	// An event's embed (embed-event.html), on another site.
 	EmbedBuyCTA  string
@@ -265,6 +279,11 @@ type landingStrings struct {
 	StoreEventMetaWhen         string
 	StoreEventMetaWhenValue    string
 	StoreEventMetaMeetingPoint string
+	StoreEventMetaDuration     string
+	StoreEventMetaDistance     string
+	StoreEventMetaAge          string
+	StoreEventMetaDifficulty   string
+	StoreEventMetaAccess       string
 	StoreEventBuyHeading       string
 	StoreEventEmailLabel       string
 	StoreEventLetterLangLabel  string
@@ -487,6 +506,11 @@ func storeI18nJSON(s landingStrings) string {
 		"filterGames":          s.StoreFilterGames,
 		"filterWalks":          s.StoreFilterWalks,
 		"filterHome":           s.StoreFilterHome,
+		"factMinutes":          s.StoreFactMinutes,
+		"factHours":            s.StoreFactHours,
+		"factMetres":           s.StoreFactMetres,
+		"factKm":               s.StoreFactKm,
+		"factAge":              s.StoreFactAge,
 		"emptyHeading":         s.StoreEmptyHeading,
 		"emptyBody":            s.StoreEmptyBody,
 		"errorHeading":         s.StoreErrorHeading,
@@ -627,6 +651,11 @@ func storeSubs(s landingStrings) [][2]string {
 		{"{{STORE_EVENT_META_WHEN}}", s.StoreEventMetaWhen},
 		{"{{STORE_EVENT_META_WHEN_VALUE}}", s.StoreEventMetaWhenValue},
 		{"{{STORE_EVENT_META_MEETING_POINT}}", s.StoreEventMetaMeetingPoint},
+		{"{{STORE_EVENT_META_DURATION}}", s.StoreEventMetaDuration},
+		{"{{STORE_EVENT_META_DISTANCE}}", s.StoreEventMetaDistance},
+		{"{{STORE_EVENT_META_AGE}}", s.StoreEventMetaAge},
+		{"{{STORE_EVENT_META_DIFFICULTY}}", s.StoreEventMetaDifficulty},
+		{"{{STORE_EVENT_META_ACCESS}}", s.StoreEventMetaAccess},
 		{"{{STORE_EVENT_BUY_HEADING}}", s.StoreEventBuyHeading},
 		{"{{STORE_EVENT_EMAIL_LABEL}}", s.StoreEventEmailLabel},
 		{"{{STORE_EVENT_LETTER_LANG_LABEL}}", s.StoreEventLetterLangLabel},

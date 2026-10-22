@@ -163,7 +163,7 @@ func (h *Handlers) contentOf(ctx context.Context, kind string, id int64, served 
 		hasLogo, hasOrgCover, hasIcon bool
 		description, author           string
 		intro, outro, startLabel      sql.NullString
-		area, buyerNote               string
+		area, accessNote, buyerNote   string
 		lookCover                     sql.NullInt64
 		draftCover, liveCover         bool
 		isLive                        bool
@@ -192,7 +192,7 @@ func (h *Handlers) contentOf(ctx context.Context, kind string, id int64, served 
 		       (g.logo_content IS NOT NULL AND length(g.logo_content) > 0),
 		       (g.cover_image_content IS NOT NULL AND length(g.cover_image_content) > 0),
 		       a.id, a.slug, COALESCE(a.title, ''), COALESCE(a.description, ''), COALESCE(a.author, ''),
-		       a.intro_text, a.outro_text, a.start_label, COALESCE(a.area, ''), COALESCE(a.buyer_note, ''),
+		       a.intro_text, a.outro_text, a.start_label, COALESCE(a.area, ''), a.access_note, COALESCE(a.buyer_note, ''),
 		       a.avatar_mime_type IS NOT NULL, NULLIF(a.look_style->>'cover', '')::bigint,
 		       `+t.graph+`, `+draftCols+`
 		FROM `+t.from+` `+joins+`
@@ -202,7 +202,7 @@ func (h *Handlers) contentOf(ctx context.Context, kind string, id int64, served 
 		&c.State, &c.Revision, &submitted, &attested, &c.AttestedBy, &c.RejectReason,
 		&c.OrgID, &c.OrgName, &c.OrgSlug, &c.OrgVerified, &tagline, &website, &hasLogo, &hasOrgCover,
 		&advID, &c.AdventureSlug, &c.AdventureTitle, &description, &author,
-		&intro, &outro, &startLabel, &area, &buyerNote, &hasIcon, &lookCover,
+		&intro, &outro, &startLabel, &area, &accessNote, &buyerNote, &hasIcon, &lookCover,
 		&graphID,
 		&c.Draft.Name, &c.Draft.Blurb, &c.Draft.PriceCents, &c.Draft.PerKidCents, &c.Draft.Currency, &c.Draft.TeamSize, &c.Draft.MaxKids,
 		&draftCover,
@@ -282,6 +282,7 @@ func (h *Handlers) contentOf(ctx context.Context, kind string, id int64, served 
 	text("Adventure: outro", outro.String)
 	text("Adventure: meeting point", startLabel.String)
 	text("Adventure: area", area)
+	text("Adventure: access note", accessNote)
 	text("Adventure: note to buyers", buyerNote)
 	if hasIcon {
 		media("adventure-icon", "image", "", "Adventure: icon", 0)

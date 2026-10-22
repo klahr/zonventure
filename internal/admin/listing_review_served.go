@@ -51,7 +51,7 @@ type servedReport struct {
 var presentationTexts = map[string]bool{
 	"Adventure: title": true, "Adventure: description": true, "Adventure: author": true,
 	"Adventure: intro": true, "Adventure: outro": true, "Adventure: meeting point": true,
-	"Adventure: area": true, "Adventure: note to buyers": true,
+	"Adventure: area": true, "Adventure: access note": true, "Adventure: note to buyers": true,
 }
 
 // servedSnapshot fingerprints what a listing's approved copy serves.

@@ -174,8 +174,10 @@ func TestStorePages(t *testing.T) {
 	// cover.
 	t.Run("shows adventure icon", func(t *testing.T) {
 		if _, err := db.Exec(`
-			INSERT INTO adventures(slug, title, org_id, avatar_mime_type, avatar_size_bytes, avatar_content, area)
-			VALUES ('iconic', 'Iconic', $1, 'image/png', 1, '\x89'::bytea, 'Göteborg · Slottsskogen'), ('plain', 'Plain', $1, NULL, NULL, NULL, '')
+			INSERT INTO adventures(slug, title, org_id, avatar_mime_type, avatar_size_bytes, avatar_content, area, facts, access_note)
+			VALUES ('iconic', 'Iconic', $1, 'image/png', 1, '\x89'::bytea, 'Göteborg · Slottsskogen',
+			        '{"minutes": 90, "distance_m": 2400, "min_age": 10, "difficulty": "easy", "access": "some_steps"}', 'Stairs at the fourth stop'),
+			       ('plain', 'Plain', $1, NULL, NULL, NULL, '', '{}', '')
 		`, orgID); err != nil {
 			t.Fatal(err)
 		}
@@ -208,8 +210,17 @@ func TestStorePages(t *testing.T) {
 			!strings.Contains(body, `content="https://zv.example.com/adventure-assets/avatar/iconic"`) {
 			t.Errorf("the icon is missing from the event page or its preview")
 		}
+		en := landingLocales["en"]
+		if body := page("iconic"); !strings.Contains(body, ">1.5 h<") || !strings.Contains(body, ">2.4 km<") ||
+			!strings.Contains(body, ">"+en.StoreFactEasy+"<") || !strings.Contains(body, ">"+en.StoreFactSomeSteps+"<") ||
+			!strings.Contains(body, ">Stairs at the fourth stop<") {
+			t.Errorf("the event page is missing the adventure's facts")
+		}
 		if body := page("plain"); !strings.Contains(body, `data-has="false"`) || strings.Contains(body, "/adventure-assets/avatar/") {
 			t.Errorf("an adventure without an icon shows none")
+		}
+		if body := page("plain"); strings.Contains(body, "{{") || strings.Count(body, `class="meta-tile" hidden`) < 5 {
+			t.Errorf("an adventure without facts shows their tiles")
 		}
 
 		rec := httptest.NewRecorder()
@@ -223,9 +234,14 @@ func TestStorePages(t *testing.T) {
 			t.Fatal(err)
 		}
 		icons, areas := map[string]string{}, map[string]string{}
+		facts := map[string]adventure.Facts{}
 		for _, it := range list.Items {
 			icons[it.AdventureSlug] = it.AdventureIconURL
 			areas[it.AdventureSlug] = it.Area
+			facts[it.AdventureSlug] = it.Facts
+		}
+		if facts["iconic"].Minutes != 90 || facts["iconic"].Access != "some_steps" || facts["plain"] != (adventure.Facts{}) {
+			t.Errorf("store items' facts = %v", facts)
 		}
 		if icons["iconic"] != "/adventure-assets/avatar/iconic" || icons["plain"] != "" {
 			t.Errorf("store items' icons = %v", icons)

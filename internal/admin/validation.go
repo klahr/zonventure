@@ -23,6 +23,7 @@ const (
 	MaxNameLen     = 200    // team / org / adventure title / event name
 	MaxAuthorLen   = 200    // adventure author byline
 	MaxAreaLen     = 80     // where an adventure is played, for store cards
+	MaxAccessLen   = 200    // what an adventure's access fact leaves unsaid
 	MaxBlurbLen    = 4_000  // descriptions, intro/outro
 	MaxPromptLen   = 16_000 // puzzle prompt markdown
 	MaxHintTextLen = 4_000  // single hint body markdown
@@ -78,7 +79,7 @@ func cleanEventTranslations(in listing.Translations) (listing.Translations, erro
 		if !validLanguageTag(lang) {
 			return nil, fmt.Errorf("%q is not a language tag", lang)
 		}
-		if t.Title != "" || t.StartLabel != "" || t.Area != "" || t.BuyerNote != "" {
+		if t.Title != "" || t.StartLabel != "" || t.Area != "" || t.AccessNote != "" || t.BuyerNote != "" {
 			return nil, fmt.Errorf("%s: only name, blurb and meeting_place are the event's to translate", lang)
 		}
 		t.Name, t.Blurb, t.MeetingPlace = strings.TrimSpace(t.Name), strings.TrimSpace(t.Blurb), strings.TrimSpace(t.MeetingPlace)

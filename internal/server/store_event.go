@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/listing"
 	"github.com/klahr/zonventure/internal/printmat"
 	"github.com/klahr/zonventure/internal/public"
@@ -75,6 +76,10 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		// tour is a walk, not a game, and home one played where the
 		// buyer is (see public.StoreItemDTO): the page says which.
 		tour, home bool
+		// facts and accessNote are what the adventure tells a buyer
+		// about its playing time, walk, age, difficulty and access.
+		facts      []byte
+		accessNote string
 	)
 	var (
 		brandAccent          sql.NullString
@@ -97,6 +102,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		       l.currency,
 		       l.team_size,
 		       a.start_label, a.start_lat, a.start_lng,
+		       COALESCE(a.facts, '{}'), COALESCE(a.access_note, ''),
 		       (l.cover_mime_type IS NOT NULL) AS has_cover,
 		       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,
 		       COALESCE((g.graph->>'tour')::boolean, FALSE) AS tour,
@@ -114,7 +120,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		  AND e.state = 'running'
 		  AND NOT e.sales_stopped
 	`, id).Scan(&eventName, &advSlug, &advTitle, &orgName, &orgSlug, &orgVerified, &blurb, &priceCents,
-		&currency, &teamSize, &startLabel, &startLat, &startLng, &hasCover, &hasIcon, &tour, &home,
+		&currency, &teamSize, &startLabel, &startLat, &startLng, &facts, &accessNote, &hasCover, &hasIcon, &tour, &home,
 		&brandAccent, &brandAccentSecondary, &brandBackground, &brandText, &brandFont,
 		&mainLang, &advTexts, &ownTexts)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -133,8 +139,13 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 
 	// The listing in the page's language, where it is translated.
 	lang := resolveLang(w, r)
-	tr := texts.In(lang, listing.Texts{Name: eventName.String, Blurb: blurb, Title: advTitle.String, StartLabel: startLabel.String})
-	eventName.String, blurb, advTitle.String, startLabel.String = tr.Name, tr.Blurb, tr.Title, tr.StartLabel
+	tr := texts.In(lang, listing.Texts{Name: eventName.String, Blurb: blurb, Title: advTitle.String, StartLabel: startLabel.String, AccessNote: accessNote})
+	eventName.String, blurb, advTitle.String, startLabel.String, accessNote = tr.Name, tr.Blurb, tr.Title, tr.StartLabel, strings.TrimSpace(tr.AccessNote)
+	var f adventure.Facts
+	if err := json.Unmarshal(facts, &f); err != nil {
+		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		return
+	}
 
 	// Cross-org tunnelling guard: if the page was reached via
 	// /o/{slug}/store/event/{id} but the event belongs to a
@@ -238,6 +249,11 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	if teamSize > 1 {
 		teamLabel = strings.ReplaceAll(s.StoreTeamSizePlural, "{n}", teamSizeStr)
 	}
+	ft := formatFacts(lang, s, f)
+	if ft.Access == "" {
+		// A note alone is the tile's value.
+		ft.Access, accessNote = accessNote, ""
+	}
 
 	// Canonical path always points at the org-scoped URL — the
 	// legacy /store/event/{id} surface 301s here, so search engines
@@ -258,6 +274,19 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{TEAM_LABEL}}", html.EscapeString(teamLabel)},
 		[2]string{"{{START_LABEL}}", html.EscapeString(strings.TrimSpace(startLabel.String))},
 		[2]string{"{{START_LABEL_HIDDEN}}", hiddenIf(strings.TrimSpace(startLabel.String) == "")},
+		// The adventure's facts, each tile hidden when its author
+		// hasn't said; access is the access fact, its note or both.
+		[2]string{"{{DURATION}}", html.EscapeString(ft.Duration)},
+		[2]string{"{{DURATION_HIDDEN}}", hiddenIf(ft.Duration == "")},
+		[2]string{"{{DISTANCE}}", html.EscapeString(ft.Distance)},
+		[2]string{"{{DISTANCE_HIDDEN}}", hiddenIf(ft.Distance == "")},
+		[2]string{"{{AGE}}", html.EscapeString(ft.Age)},
+		[2]string{"{{AGE_HIDDEN}}", hiddenIf(ft.Age == "")},
+		[2]string{"{{DIFFICULTY}}", html.EscapeString(ft.Difficulty)},
+		[2]string{"{{DIFFICULTY_HIDDEN}}", hiddenIf(ft.Difficulty == "")},
+		[2]string{"{{ACCESS}}", html.EscapeString(ft.Access)},
+		[2]string{"{{ACCESS_NOTE}}", html.EscapeString(accessNote)},
+		[2]string{"{{ACCESS_HIDDEN}}", hiddenIf(ft.Access == "")},
 		[2]string{"{{LANGUAGES}}", html.EscapeString(strings.Join(texts.Languages(), ", "))},
 		[2]string{"{{LANGUAGES_HIDDEN}}", hiddenIf(len(texts.Languages()) == 0)},
 		// Where it starts, on a map under the ticket's details; hidden

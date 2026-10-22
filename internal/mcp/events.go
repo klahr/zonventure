@@ -90,7 +90,7 @@ func (s *Server) registerEventTools() {
 				"billing":            map[string]any{"type": "string", "enum": []string{"free", "teams"}, "description": "The site's own organisation's admins, self-guided: free gives tickets away in the store and charges nobody (its price becomes 0); teams sells them again, its price to be set."},
 				"translations": map[string]any{
 					"type":        "object",
-					"description": "The event's name, store blurb and meeting place in the other languages the adventure is played in (get_event's languages), by language tag: {\"en\": {\"name\": \"…\", \"blurb\": \"…\", \"meeting_place\": \"…\"}}. Teams get their invitations, calendar entries and messages in the language they play in, the store shows the page's. Replaces them all; {} removes them. A self-guided event's are reviewed with its listing. The adventure's own title, meeting point (meta:start_label), area (meta:area) and note to buyers (meta:buyer_note) are translated in the adventure's graph.",
+					"description": "The event's name, store blurb and meeting place in the other languages the adventure is played in (get_event's languages), by language tag: {\"en\": {\"name\": \"…\", \"blurb\": \"…\", \"meeting_place\": \"…\"}}. Teams get their invitations, calendar entries and messages in the language they play in, the store shows the page's. Replaces them all; {} removes them. A self-guided event's are reviewed with its listing. The adventure's own title, meeting point (meta:start_label), area (meta:area), access note (meta:access_note) and note to buyers (meta:buyer_note) are translated in the adventure's graph.",
 					"additionalProperties": map[string]any{
 						"type": "object",
 						"properties": map[string]any{

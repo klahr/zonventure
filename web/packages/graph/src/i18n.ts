@@ -15,8 +15,8 @@ export const journalKey = (slug: string, field: string) => `j:${slug}:${field}`;
 export const roleKey = (slug: string, field: "name" | "text" | "cover") => `r:${slug}:${field}`;
 /** A journal section's heading: one per section, however many notes share it. */
 export const sectionKey = (section: string) => `js:${section}`;
-/** The adventure's own title, intro, outro, meeting point and area, which live outside the graph. */
-export const metaKey = (field: "title" | "intro" | "outro" | "start_label" | "area" | "buyer_note") => `meta:${field}`;
+/** The adventure's own title, intro, outro, meeting point, area and access note, which live outside the graph. */
+export const metaKey = (field: "title" | "intro" | "outro" | "start_label" | "area" | "access_note" | "buyer_note") => `meta:${field}`;
 export const TIME_UP_KEY = "time-up";
 export const itemKey = (slug: string, field: "name") => `i:${slug}:${field}`;
 /** graph.ItemBlockKey: an item block's text. */
@@ -35,6 +35,8 @@ export interface AdventureMeta {
   /** Where teams meet and where it is played: the store's, and the start screen's. */
   start_label?: string;
   area?: string;
+  /** What its access fact leaves unsaid, in the store. */
+  access_note?: string;
   /** The adventure's word to its buyers, in their ticket email. */
   buyer_note?: string;
 }
@@ -431,6 +433,7 @@ export function adventureTexts(g: Graph, meta: AdventureMeta = {}): Translatable
   if (meta.outro?.trim()) out.push({ key: metaKey("outro"), label: "Closing words", main: meta.outro, multiline: true });
   if (meta.start_label?.trim()) out.push({ key: metaKey("start_label"), label: "Meeting point", main: meta.start_label });
   if (meta.area?.trim()) out.push({ key: metaKey("area"), label: "Where it is played", main: meta.area });
+  if (meta.access_note?.trim()) out.push({ key: metaKey("access_note"), label: "Access note", main: meta.access_note });
   if (meta.buyer_note?.trim()) out.push({ key: metaKey("buyer_note"), label: "Note to buyers", main: meta.buyer_note, multiline: true });
   for (const j of g.journal ?? []) {
     if (j.title?.trim()) out.push({ key: journalKey(j.slug, "title"), label: "Journal: {{name}}", vars: { name: j.title }, main: j.title });

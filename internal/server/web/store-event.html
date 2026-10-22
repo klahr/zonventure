@@ -19,6 +19,9 @@
     {{PRICE_DISPLAY}} {{PRICE_MAJOR}} {{CURRENCY}}
     {{TEAM_SIZE}} {{TEAM_LABEL}} {{START_LABEL}}
     {{LANGUAGES}} {{LANGUAGES_HIDDEN}} {{STORE_PLAYED_IN}} (the languages it is played in, as tags)
+    {{DURATION}} {{DISTANCE}} {{AGE}} {{DIFFICULTY}} {{ACCESS}} {{ACCESS_NOTE}} (the adventure's
+      facts, when its author gave them), each with its own _HIDDEN placeholder
+      (ACCESS_HIDDEN covers both access ones) and a STORE_EVENT_META_ label
     {{COVER_URL}} {{HAS_COVER}} (the event's cover, else its look's)
     {{LOOK_FONT}} (the look's title typeface: a stylesheet and a rule)
     {{EVENT_ID}} {{ADVENTURE_SLUG}} {{CANONICAL_URL}}
@@ -143,6 +146,8 @@
   }
   .meta-tile .k { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; }
   .meta-tile .v { font-weight: 700; margin-top: .25rem; }
+  .meta-tile .note { color: var(--muted); font-size: .88rem; margin-top: .25rem; }
+  .meta-tile .note:empty { display: none; }
 
   .buy-card {
     background: var(--surface);
@@ -252,6 +257,27 @@
         <div class="meta-tile"{{START_LABEL_HIDDEN}}>
           <div class="k">{{STORE_EVENT_META_MEETING_POINT}}</div>
           <div class="v">{{START_LABEL}}</div>
+        </div>
+        <div class="meta-tile"{{DURATION_HIDDEN}}>
+          <div class="k">{{STORE_EVENT_META_DURATION}}</div>
+          <div class="v">{{DURATION}}</div>
+        </div>
+        <div class="meta-tile"{{DISTANCE_HIDDEN}}>
+          <div class="k">{{STORE_EVENT_META_DISTANCE}}</div>
+          <div class="v">{{DISTANCE}}</div>
+        </div>
+        <div class="meta-tile"{{AGE_HIDDEN}}>
+          <div class="k">{{STORE_EVENT_META_AGE}}</div>
+          <div class="v">{{AGE}}</div>
+        </div>
+        <div class="meta-tile"{{DIFFICULTY_HIDDEN}}>
+          <div class="k">{{STORE_EVENT_META_DIFFICULTY}}</div>
+          <div class="v">{{DIFFICULTY}}</div>
+        </div>
+        <div class="meta-tile"{{ACCESS_HIDDEN}}>
+          <div class="k">{{STORE_EVENT_META_ACCESS}}</div>
+          <div class="v">{{ACCESS}}</div>
+          <div class="note">{{ACCESS_NOTE}}</div>
         </div>
         <div class="meta-tile"{{LANGUAGES_HIDDEN}}>
           <div class="k">{{STORE_PLAYED_IN}}</div>

@@ -309,6 +309,19 @@
     if (n <= 1) return t('teamSizeSolo');
     return t('teamSizePlural').replace('{n}', String(n));
   }
+  // An adventure's playing time, walk and age, as its ticket page says
+  // them (formatFacts in store_facts.go): minutes under an hour, half
+  // hours above; metres under a kilometre, tenths above.
+  function factLabels(f) {
+    var out = [];
+    if (!f) return out;
+    var sv = document.documentElement.lang === 'sv';
+    function num(v) { return sv ? String(v).replace('.', ',') : String(v); }
+    if (f.minutes > 0) out.push(f.minutes < 60 ? t('factMinutes').replace('{n}', f.minutes) : t('factHours').replace('{n}', num(Math.floor((f.minutes + 15) / 30) / 2)));
+    if (f.distance_m > 0) out.push(f.distance_m < 1000 ? t('factMetres').replace('{n}', f.distance_m) : t('factKm').replace('{n}', num(Math.floor((f.distance_m + 50) / 100) / 10)));
+    if (f.min_age > 0) out.push(t('factAge').replace('{n}', f.min_age));
+    return out;
+  }
 
   // The /store success / cancel redirects from Stripe carry a
   // ?paid=<id>[&session_id=cs_...] or ?cancelled=<id> query
@@ -520,6 +533,7 @@
         (item.start_label ? '<div class="where" title="' + escapeHTML(t('meetsAt') + ' ' + item.start_label) + '">' + ICON_PIN +
           '<span>' + escapeHTML(item.start_label) + '</span></div>' : '') +
         '<div class="meta"><span class="chip">' + ICON_PEOPLE + escapeHTML(teamSizeLabel(item.team_size)) + '</span>' +
+          factLabels(item.facts).map(function (l) { return '<span class="chip">' + escapeHTML(l) + '</span>'; }).join('') +
           (item.languages && item.languages.length ? '<span class="chip" title="' + escapeHTML(t('playedIn')) + '">' + ICON_LANG +
             escapeHTML(languagesLabel(item.languages)) + '</span>' : '') + '</div>' +
         '<div class="foot">' +

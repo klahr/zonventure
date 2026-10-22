@@ -235,9 +235,10 @@ func SectionKey(section string) string { return "js:" + section }
 
 // TimeUpKey and MetaKey address the time limit's message and the
 // adventure's own title, intro, outro, start_label (where teams meet),
-// area (where it is played) and buyer_note (its word to buyers, in their
-// ticket email): the last three are the store's and the emails'
-// (internal/listing), and the start label the start screen's too.
+// area (where it is played), access_note (what its access fact leaves
+// unsaid) and buyer_note (its word to buyers, in their ticket email):
+// the last four are the store's and the emails' (internal/listing), and
+// the start label the start screen's too.
 const TimeUpKey = "time-up"
 
 func MetaKey(field string) string { return "meta:" + field }

@@ -31,11 +31,12 @@ type Texts struct {
 	Blurb        string `json:"blurb,omitempty"`
 	MeetingPlace string `json:"meeting_place,omitempty"`
 
-	// The adventure's: graph.MetaKey title, start_label, area and
-	// buyer_note.
+	// The adventure's: graph.MetaKey title, start_label, area,
+	// access_note and buyer_note.
 	Title      string `json:"title,omitempty"`
 	StartLabel string `json:"start_label,omitempty"`
 	Area       string `json:"area,omitempty"`
+	AccessNote string `json:"access_note,omitempty"`
 	BuyerNote  string `json:"buyer_note,omitempty"`
 }
 
@@ -50,7 +51,7 @@ type Translations map[string]Texts
 const Columns = `COALESCE(NULLIF(g.graph->>'language', ''), a.language, ''),
 	COALESCE((SELECT jsonb_object_agg(t.key, jsonb_build_object(
 	    'title', t.value->>'meta:title', 'start_label', t.value->>'meta:start_label', 'area', t.value->>'meta:area',
-	    'buyer_note', t.value->>'meta:buyer_note'))
+	    'access_note', t.value->>'meta:access_note', 'buyer_note', t.value->>'meta:buyer_note'))
 	  FROM jsonb_each(CASE WHEN jsonb_typeof(g.graph->'translations') = 'object' THEN g.graph->'translations' ELSE '{}' END) t), '{}'),
 	COALESCE(l.translations, '{}')`
 
@@ -129,6 +130,7 @@ func (l Listing) In(lang string, main Texts) Texts {
 		Title:        or(a.Title, main.Title),
 		StartLabel:   or(a.StartLabel, main.StartLabel),
 		Area:         or(a.Area, main.Area),
+		AccessNote:   or(a.AccessNote, main.AccessNote),
 		BuyerNote:    or(a.BuyerNote, main.BuyerNote),
 	}
 }

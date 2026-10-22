@@ -3,6 +3,7 @@ package public
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/listing"
 )
@@ -33,16 +35,21 @@ type StoreItemDTO struct {
 	// Home is played where the buyer is — at home, at school: the
 	// version the event plays has no places and the adventure no
 	// starting point. The store labels it so, beside games and walks.
-	Home           bool    `json:"home"`
-	Blurb          string  `json:"blurb,omitempty"`
-	PriceCents     int     `json:"price_cents"`
-	Currency       string  `json:"currency"`
-	TeamSize       int     `json:"team_size"`
-	StartLabel     string  `json:"start_label,omitempty"`
-	Area           string  `json:"area,omitempty"`
-	StartLat       float64 `json:"start_lat,omitempty"`
-	StartLng       float64 `json:"start_lng,omitempty"`
-	HasStartLatLng bool    `json:"has_start_latlng"`
+	Home       bool   `json:"home"`
+	Blurb      string `json:"blurb,omitempty"`
+	PriceCents int    `json:"price_cents"`
+	Currency   string `json:"currency"`
+	TeamSize   int    `json:"team_size"`
+	StartLabel string `json:"start_label,omitempty"`
+	Area       string `json:"area,omitempty"`
+	// Facts are the adventure's playing time, walk, age, difficulty
+	// and access, each left out when its author hasn't said;
+	// AccessNote says what access alone can't.
+	Facts          adventure.Facts `json:"facts"`
+	AccessNote     string          `json:"access_note,omitempty"`
+	StartLat       float64         `json:"start_lat,omitempty"`
+	StartLng       float64         `json:"start_lng,omitempty"`
+	HasStartLatLng bool            `json:"has_start_latlng"`
 	// CoverImageURL is the event's uploaded hero image, else its look's cover.
 	// Empty means the store card renders text-only — the JS template
 	// already has a fallback layout.
@@ -63,10 +70,10 @@ type StoreItemDTO struct {
 
 // In puts the item's words into lang where they are translated:
 // the listing's name and blurb, and the adventure's title, meeting
-// point and area.
+// point, area and access note.
 func (it *StoreItemDTO) In(lang string) {
-	t := it.texts.In(lang, listing.Texts{Name: it.EventName, Blurb: it.Blurb, Title: it.AdventureTitle, StartLabel: it.StartLabel, Area: it.Area})
-	it.EventName, it.Blurb, it.AdventureTitle, it.StartLabel, it.Area = t.Name, t.Blurb, t.Title, t.StartLabel, t.Area
+	t := it.texts.In(lang, listing.Texts{Name: it.EventName, Blurb: it.Blurb, Title: it.AdventureTitle, StartLabel: it.StartLabel, Area: it.Area, AccessNote: it.AccessNote})
+	it.EventName, it.Blurb, it.AdventureTitle, it.StartLabel, it.Area, it.AccessNote = t.Name, t.Blurb, t.Title, t.StartLabel, t.Area, t.AccessNote
 }
 
 // TicketTeamTokenDTO is the response shape for the post-purchase
@@ -266,6 +273,7 @@ const storeItemSelect = `
 	       l.currency,
 	       l.team_size,
 	       a.start_label, a.start_lat, a.start_lng, COALESCE(a.area, ''),
+	       COALESCE(a.facts, '{}'), COALESCE(a.access_note, ''),
 	       (l.cover_mime_type IS NOT NULL) AS has_cover,
 	       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,
 	       COALESCE((g.graph->>'tour')::boolean, FALSE) AS tour,
@@ -391,11 +399,12 @@ func (h *Handlers) scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 		mainLang   string
 		advTexts   []byte
 		ownTexts   []byte
+		facts      []byte
 	)
 	if err := s.Scan(
 		&item.EventID, &eventName, &item.AdventureSlug, &item.AdventureTitle,
 		&item.OrgName, &item.OrgVerified, &blurb, &priceCents, &item.Currency, &item.TeamSize,
-		&startLabel, &startLat, &startLng, &item.Area, &hasCover, &hasIcon, &item.Tour, &item.Home,
+		&startLabel, &startLat, &startLng, &item.Area, &facts, &item.AccessNote, &hasCover, &hasIcon, &item.Tour, &item.Home,
 		&lookFont, &lookTheme, &ownCover, &mainLang, &advTexts, &ownTexts,
 	); err != nil {
 		return StoreItemDTO{}, err
@@ -405,6 +414,9 @@ func (h *Handlers) scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 		return StoreItemDTO{}, err
 	}
 	item.texts, item.Languages = texts, texts.Languages()
+	if err := json.Unmarshal(facts, &item.Facts); err != nil {
+		return StoreItemDTO{}, err
+	}
 	item.Look = h.Looks.pageLook(item.AdventureSlug, lookFont, lookTheme, ownCover)
 	if hasCover {
 		item.CoverImageURL = "/store-cover/event/" + strconv.FormatInt(item.EventID, 10)

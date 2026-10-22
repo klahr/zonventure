@@ -85,6 +85,15 @@ export interface AdventureDetail {
   graph?: GraphSummary;
 }
 
+/** internal/adventure/facts.go: Facts, what the store tells a buyer before buying. */
+export interface AdventureFacts {
+  minutes?: number;
+  distance_m?: number;
+  min_age?: number;
+  difficulty?: "easy" | "medium" | "hard";
+  access?: "step_free" | "some_steps" | "not_step_free";
+}
+
 /** internal/admin/authoring.go: adventureEditDTO, the fields the details dialog edits. */
 export interface AdventureEdit {
   slug: string;
@@ -97,6 +106,10 @@ export interface AdventureEdit {
   outro_text: string;
   buyer_note: string;
   area: string;
+  /** What the store tells a buyer; each fact absent when unknown. */
+  facts: AdventureFacts;
+  /** What the access fact leaves unsaid; translated and reviewed as area is. */
+  access_note: string;
   language: string;
   avatar_url?: string;
   strict_assets: boolean;

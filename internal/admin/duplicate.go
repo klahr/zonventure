@@ -173,14 +173,14 @@ func (h *Handlers) cloneAdventure(ctx context.Context, sourceSlug, newSlug strin
 	// renamed or deleted, this column stays put.
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO adventures(
-			slug, title, description, author, intro_text, outro_text, buyer_note, area,
+			slug, title, description, author, intro_text, outro_text, buyer_note, area, facts, access_note,
 			accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 			font, heading_font, corners, cards, card_outline, backdrop, look_style, brief,
 			org_id, created_by_user_id, published, language,
 			forked_from_slug,
 			avatar_mime_type, avatar_size_bytes, avatar_content)
 		SELECT
-			$1, $2, description, author, intro_text, outro_text, buyer_note, area,
+			$1, $2, description, author, intro_text, outro_text, buyer_note, area, facts, access_note,
 			accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 			font, heading_font, corners, cards, card_outline, backdrop, look_style, brief,
 			$3, $4, 0, language,

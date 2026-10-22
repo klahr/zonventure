@@ -81,32 +81,34 @@ type exportGraphMedia struct {
 }
 
 type exportAdventureDTO struct {
-	Slug                 string          `json:"slug"`
-	Title                string          `json:"title"`
-	Description          string          `json:"description"`
-	Author               string          `json:"author,omitempty"`
-	OriginalAuthor       string          `json:"original_author,omitempty"`
-	IntroText            string          `json:"intro_text,omitempty"`
-	OutroText            string          `json:"outro_text,omitempty"`
-	BuyerNote            string          `json:"buyer_note,omitempty"`
-	Area                 string          `json:"area,omitempty"`
-	Language             string          `json:"language,omitempty"`
-	StrictAssets         bool            `json:"strict_assets,omitempty"`
-	StartLat             *float64        `json:"start_lat,omitempty"`
-	StartLng             *float64        `json:"start_lng,omitempty"`
-	StartLabel           string          `json:"start_label,omitempty"`
-	StartRadiusM         *float64        `json:"start_radius_m,omitempty"`
-	AccentColor          string          `json:"accent_color,omitempty"`
-	AccentSecondaryColor string          `json:"accent_secondary_color,omitempty"`
-	BackgroundColor      string          `json:"background_color,omitempty"`
-	TextColor            string          `json:"text_color,omitempty"`
-	SubmitBgColor        string          `json:"submit_bg_color,omitempty"`
-	Font                 string          `json:"font,omitempty"`
-	HeadingFont          string          `json:"heading_font,omitempty"`
-	Corners              string          `json:"corners,omitempty"`
-	Cards                string          `json:"cards,omitempty"`
-	CardOutline          bool            `json:"card_outline,omitempty"`
-	Avatar               *exportAssetRef `json:"avatar,omitempty"`
+	Slug                 string           `json:"slug"`
+	Title                string           `json:"title"`
+	Description          string           `json:"description"`
+	Author               string           `json:"author,omitempty"`
+	OriginalAuthor       string           `json:"original_author,omitempty"`
+	IntroText            string           `json:"intro_text,omitempty"`
+	OutroText            string           `json:"outro_text,omitempty"`
+	BuyerNote            string           `json:"buyer_note,omitempty"`
+	Area                 string           `json:"area,omitempty"`
+	Facts                *adventure.Facts `json:"facts,omitempty"`
+	AccessNote           string           `json:"access_note,omitempty"`
+	Language             string           `json:"language,omitempty"`
+	StrictAssets         bool             `json:"strict_assets,omitempty"`
+	StartLat             *float64         `json:"start_lat,omitempty"`
+	StartLng             *float64         `json:"start_lng,omitempty"`
+	StartLabel           string           `json:"start_label,omitempty"`
+	StartRadiusM         *float64         `json:"start_radius_m,omitempty"`
+	AccentColor          string           `json:"accent_color,omitempty"`
+	AccentSecondaryColor string           `json:"accent_secondary_color,omitempty"`
+	BackgroundColor      string           `json:"background_color,omitempty"`
+	TextColor            string           `json:"text_color,omitempty"`
+	SubmitBgColor        string           `json:"submit_bg_color,omitempty"`
+	Font                 string           `json:"font,omitempty"`
+	HeadingFont          string           `json:"heading_font,omitempty"`
+	Corners              string           `json:"corners,omitempty"`
+	Cards                string           `json:"cards,omitempty"`
+	CardOutline          bool             `json:"card_outline,omitempty"`
+	Avatar               *exportAssetRef  `json:"avatar,omitempty"`
 	// Backdrop and Style name media by the exporting instance's ids, in
 	// GraphMedia with the graph's.
 	Backdrop *adventure.Backdrop `json:"backdrop,omitempty"`
@@ -198,10 +200,10 @@ func (h *Handlers) buildExport(ctx context.Context, advID int64) (exportEnvelope
 		startLat, startLng, startRadius    sql.NullFloat64
 		avatarMime                         sql.NullString
 		avatarContent                      []byte
-		backdrop, style                    []byte
+		backdrop, style, facts             []byte
 	)
 	err := h.DB.QueryRowContext(ctx, `
-		SELECT slug, title, description, author, original_author, intro_text, outro_text, buyer_note, area,
+		SELECT slug, title, description, author, original_author, intro_text, outro_text, buyer_note, area, facts, access_note,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		       font, heading_font, corners, cards, card_outline, backdrop, look_style,
 		       language, strict_assets,
@@ -209,7 +211,7 @@ func (h *Handlers) buildExport(ctx context.Context, advID int64) (exportEnvelope
 		       avatar_mime_type, avatar_content
 		FROM adventures WHERE id = $1
 	`, advID).Scan(&adv.Slug, &adv.Title, &adv.Description, &adv.Author, &adv.OriginalAuthor,
-		&adv.IntroText, &adv.OutroText, &adv.BuyerNote, &adv.Area,
+		&adv.IntroText, &adv.OutroText, &adv.BuyerNote, &adv.Area, &facts, &adv.AccessNote,
 		&accent, &accent2, &bg, &ink, &submitBG,
 		&adv.Font, &adv.HeadingFont, &adv.Corners, &adv.Cards, &adv.CardOutline, &backdrop, &style,
 		&adv.Language, &adv.StrictAssets,
@@ -232,6 +234,13 @@ func (h *Handlers) buildExport(ctx context.Context, advID int64) (exportEnvelope
 		if err := json.Unmarshal(style, &adv.Style); err != nil {
 			return env, nil, fmt.Errorf("decoding look_style: %w", err)
 		}
+	}
+	var f adventure.Facts
+	if err := json.Unmarshal(facts, &f); err != nil {
+		return env, nil, fmt.Errorf("decoding facts: %w", err)
+	}
+	if f != (adventure.Facts{}) {
+		adv.Facts = &f
 	}
 	if startLat.Valid {
 		v := startLat.Float64
@@ -626,20 +635,30 @@ func importAdventureRow(ctx context.Context, tx *sql.Tx, slug string, adv export
 		                       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		                       language, strict_assets,
 		                       start_lat, start_lng, start_label, start_radius_m,
-		                       org_id, created_by_user_id, buyer_note, area,
+		                       org_id, created_by_user_id, buyer_note, area, facts, access_note,
 		                       font, heading_font, corners, cards, card_outline)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
-		        $22, $23, $24, $25, $26, $27)
+		        $22, $23, $24, $25, $26, $27, $28, $29)
 		RETURNING id
 	`, slug, adv.Title, adv.Description, adv.Author, adv.OriginalAuthor, adv.IntroText, adv.OutroText,
 		nullIfEmpty(adv.AccentColor), nullIfEmpty(adv.AccentSecondaryColor),
 		nullIfEmpty(adv.BackgroundColor), nullIfEmpty(adv.TextColor), nullIfEmpty(adv.SubmitBgColor),
 		lang, adv.StrictAssets,
 		startLat, startLng, adv.StartLabel, startRadius,
-		orgArg, userID, adv.BuyerNote, adv.Area,
+		orgArg, userID, adv.BuyerNote, adv.Area, importFacts(adv.Facts), adv.AccessNote,
 		known(adv.Font, fontOK), known(adv.HeadingFont, headingOK),
 		known(adv.Corners, adventure.Corners[adv.Corners]), known(adv.Cards, adventure.Cards[adv.Cards]), adv.CardOutline).Scan(&id)
 	return id, err
+}
+
+// importFacts is a bundle's facts as stored: none when it has none or
+// they are out of bounds, as a hand-edited bundle's may be.
+func importFacts(f *adventure.Facts) string {
+	if f == nil || f.Validate() != nil {
+		return "{}"
+	}
+	b, _ := json.Marshal(f)
+	return string(b)
 }
 
 // importLook writes the adventure's backdrop and style, their media ids

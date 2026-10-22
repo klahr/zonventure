@@ -4,7 +4,7 @@ import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
 import { Button, Dialog, Field, HelpPopover, ICON, ImageDrop, MarkdownArea, ProposalPanel, RailLayout, Row, fmtDateTime, getProposal, proposedText, useDialogs, useLoad, useToast, type Proposal } from "../../ui/index.ts";
-import { downscaleImage, firstPlaceOf, getEdit, getGraphState, importAdventure, removeCover, updateAdventure, uploadCover, type AdventurePatch, type AdventureEdit, type Assignment } from "./api.ts";
+import { downscaleImage, firstPlaceOf, getEdit, getGraphState, importAdventure, removeCover, updateAdventure, uploadCover, type AdventureFacts, type AdventurePatch, type AdventureEdit, type Assignment } from "./api.ts";
 import { PointMap } from "../../designer/PointMap.tsx";
 
 const SLUG = /^[a-z0-9-]+$/;
@@ -124,10 +124,10 @@ export function PickPassDialog({ title, passes, onPick, onClose }: { title: stri
   );
 }
 
-type Form = { slug: string; title: string; description: string; author: string; intro_text: string; outro_text: string; buyer_note: string; area: string; strict_assets: boolean; lat: string; lng: string; start_label: string; require_start: boolean; radius: string; cheat_password: string };
+type Form = { slug: string; title: string; description: string; author: string; intro_text: string; outro_text: string; buyer_note: string; area: string; minutes: string; distance_km: string; min_age: string; difficulty: string; access: string; access_note: string; strict_assets: boolean; lat: string; lng: string; start_label: string; require_start: boolean; radius: string; cheat_password: string };
 
 /** The presentation fields review may hold back (internal/admin/presentation.go). */
-const HELD = ["title", "description", "author", "intro_text", "outro_text", "buyer_note", "area", "start_label"] as const;
+const HELD = ["title", "description", "author", "intro_text", "outro_text", "buyer_note", "area", "access_note", "start_label"] as const;
 
 /** The adventure as its held-back changes would leave it. */
 function withProposal(a: AdventureEdit, p: Proposal | null | undefined): AdventureEdit {
@@ -149,6 +149,12 @@ function formOf(a: AdventureEdit): Form {
     outro_text: a.outro_text || "",
     buyer_note: a.buyer_note || "",
     area: a.area || "",
+    minutes: a.facts?.minutes ? String(a.facts.minutes) : "",
+    distance_km: a.facts?.distance_m ? String(a.facts.distance_m / 1000) : "",
+    min_age: a.facts?.min_age ? String(a.facts.min_age) : "",
+    difficulty: a.facts?.difficulty ?? "",
+    access: a.facts?.access ?? "",
+    access_note: a.access_note || "",
     strict_assets: !!a.strict_assets,
     lat: a.start_lat == null ? "" : String(a.start_lat),
     lng: a.start_lng == null ? "" : String(a.start_lng),
@@ -157,6 +163,28 @@ function formOf(a: AdventureEdit): Form {
     radius: a.start_radius_m == null ? "50" : String(a.start_radius_m),
     cheat_password: a.cheat_password || "",
   };
+}
+
+/** A whole number in [1, max], null when empty, NaN when not one. */
+const whole = (s: string, max: number) => {
+  const v = s.trim();
+  if (v === "") return null;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 1 && n <= max ? n : Number.NaN;
+};
+
+/** The facts a form states, as the server takes them (adventure.Facts). */
+function factsOf(x: Form): AdventureFacts {
+  const out: AdventureFacts = {};
+  const minutes = whole(x.minutes, 1440);
+  const km = x.distance_km.trim() === "" ? null : Number(x.distance_km.replace(",", "."));
+  const age = whole(x.min_age, 99);
+  if (minutes) out.minutes = minutes;
+  if (km) out.distance_m = Math.round(km * 1000);
+  if (age) out.min_age = age;
+  if (x.difficulty) out.difficulty = x.difficulty as NonNullable<AdventureFacts["difficulty"]>;
+  if (x.access) out.access = x.access as NonNullable<AdventureFacts["access"]>;
+  return out;
 }
 
 const coord = (s: string) => {
@@ -191,7 +219,7 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
   const load = { error: edit.error, data: merged };
   const heldLabels: Record<string, string> = {
     title: t.t("Title"), description: t.t("Description"), author: t.t("Author"), intro_text: t.t("Intro"),
-    outro_text: t.t("Outro"), buyer_note: t.t("Buyer note"), area: t.t("Area"), start_label: t.t("Meeting point"), look_cover: t.t("Cover picture in the theme"),
+    outro_text: t.t("Outro"), buyer_note: t.t("Buyer note"), area: t.t("Area"), access_note: t.t("Access note"), start_label: t.t("Meeting point"), look_cover: t.t("Cover picture in the theme"),
   };
   // Nothing published to copy a start from: the draft's first place instead.
   const draft = useLoad((signal) => (firstPlace ? Promise.resolve(null) : getGraphState(slug, signal).catch(() => null)), [slug, !!firstPlace]);
@@ -226,10 +254,15 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
   // so Save sends and checks every section, shown or not.
   const [section, setSection] = useState("basics");
   const basicsBad = !!f && (badSlug || !f.title.trim());
+  const km = f ? Number(f.distance_km.replace(",", ".")) : 0;
+  const minutesBad = !!f && Number.isNaN(whole(f.minutes, 1440));
+  const distanceBad = !!f && f.distance_km.trim() !== "" && !(km > 0 && km <= 100);
+  const ageBad = !!f && Number.isNaN(whole(f.min_age, 99));
+  const factsBad = minutesBad || distanceBad || ageBad;
   const startBad = latBad || lngBad || halfStart || radiusBad || requireWithoutPoint;
 
   const save = async () => {
-    if (!f || !initial || badSlug || !f.title.trim() || latBad || lngBad || halfStart || radiusBad || requireWithoutPoint) return;
+    if (!f || !initial || badSlug || !f.title.trim() || factsBad || latBad || lngBad || halfStart || radiusBad || requireWithoutPoint) return;
     const p: AdventurePatch = {};
     if (f.slug.trim() !== initial.slug) p.slug = f.slug.trim();
     if (f.title.trim() !== initial.title) p.title = f.title.trim();
@@ -239,6 +272,8 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
     if (f.outro_text !== initial.outro_text) p.outro_text = f.outro_text;
     if (f.buyer_note !== initial.buyer_note) p.buyer_note = f.buyer_note;
     if (f.area.trim() !== initial.area) p.area = f.area.trim();
+    if (JSON.stringify(factsOf(f)) !== JSON.stringify(factsOf(initial))) p.facts = factsOf(f);
+    if (f.access_note.trim() !== initial.access_note) p.access_note = f.access_note.trim();
     if (f.strict_assets !== initial.strict_assets) p.strict_assets = f.strict_assets;
     if (coord(f.lat) !== coord(initial.lat)) p.start_lat = coord(f.lat);
     if (coord(f.lng) !== coord(initial.lng)) p.start_lng = coord(f.lng);
@@ -302,7 +337,7 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
       footer={
         <>
           <Button onClick={close}>{t.t("Cancel")}</Button>
-          <Button type="submit" variant="primary" filled loading={busy} disabled={!f || badSlug || !f.title.trim() || latBad || lngBad || halfStart || radiusBad || requireWithoutPoint}>{t.t("Save")}</Button>
+          <Button type="submit" variant="primary" filled loading={busy} disabled={!f || badSlug || !f.title.trim() || factsBad || latBad || lngBad || halfStart || radiusBad || requireWithoutPoint}>{t.t("Save")}</Button>
         </>
       }
     >
@@ -319,6 +354,7 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
               entries: [
                 { id: "basics", label: t.t("Basics"), alert: basicsBad },
                 { id: "texts", label: t.t("Texts") },
+                { id: "facts", label: t.t("For buyers"), alert: factsBad },
                 { id: "start", label: t.t("Starting location"), alert: startBad },
                 { id: "advanced", label: t.t("Advanced") },
               ],
@@ -378,6 +414,41 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
               </Field>
               <Field label={t.t("Buyer note — added to the purchase email")} hint={t.t("Markdown. Sent to whoever buys the adventure, never shown to players. Use it for instructions or printables the players must not see.")}>
                 <MarkdownArea rows={3} value={f.buyer_note} onChange={(e) => set("buyer_note", e.target.value)} />
+              </Field>
+            </div>
+          )}
+          {section === "facts" && (
+            <div className="details-section">
+              <p className="cs-field__hint">{t.t("Shown on the store card and the ticket page, so buyers know what they are signing up for. Leave a field empty when you don't know.")}</p>
+              <div className="adv-form-grid">
+                <Field label={t.t("Playing time (minutes)")} hint={t.t("For a typical team.")} error={minutesBad ? t.t("A whole number of minutes, at most 1440.") : undefined}>
+                  <input type="number" min={1} max={1440} step={5} inputMode="numeric" value={f.minutes} onChange={(e) => set("minutes", e.target.value)} />
+                </Field>
+                <Field label={t.t("Walk (km)")} hint={t.t("Empty when it is played in one spot.")} error={distanceBad ? t.t("Between 0 and 100 km.") : undefined}>
+                  <input type="number" min={0.1} max={100} step={0.1} inputMode="decimal" value={f.distance_km} onChange={(e) => set("distance_km", e.target.value)} />
+                </Field>
+                <Field label={t.t("Youngest age")} hint={t.t("To play in a team of their own; younger can join an adult.")} error={ageBad ? t.t("A whole number of years.") : undefined}>
+                  <input type="number" min={1} max={99} step={1} inputMode="numeric" value={f.min_age} onChange={(e) => set("min_age", e.target.value)} />
+                </Field>
+                <Field label={t.t("Difficulty")}>
+                  <select value={f.difficulty} onChange={(e) => set("difficulty", e.target.value)}>
+                    <option value="">{t.t("Not stated")}</option>
+                    <option value="easy">{t.t("Easy")}</option>
+                    <option value="medium">{t.t("Medium")}</option>
+                    <option value="hard">{t.t("Hard")}</option>
+                  </select>
+                </Field>
+              </div>
+              <Field label={t.t("Access")} hint={t.t("Can a wheelchair or a pram follow the whole route?")}>
+                <select value={f.access} onChange={(e) => set("access", e.target.value)}>
+                  <option value="">{t.t("Not stated")}</option>
+                  <option value="step_free">{t.t("Step-free: fine for wheelchairs and prams")}</option>
+                  <option value="some_steps">{t.t("Some steps or rough ground")}</option>
+                  <option value="not_step_free">{t.t("Not step-free")}</option>
+                </select>
+              </Field>
+              <Field label={t.t("Access note")} hint={t.t("What the choice above leaves unsaid, such as “Stairs at the fourth stop; a step-free way round is signposted”.")}>
+                <input value={f.access_note} maxLength={200} onChange={(e) => set("access_note", e.target.value)} />
               </Field>
             </div>
           )}
