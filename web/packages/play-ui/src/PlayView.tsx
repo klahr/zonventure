@@ -77,6 +77,11 @@ export interface PlayViewProps {
   crew?: boolean;
   /** The adventure's palette. */
   brand?: play.Brand | null;
+  /**
+   * The team has moved on from the step shown: it stays, read-only, with
+   * what happened there, until the player continues.
+   */
+  hold?: { feedback: Feedback; onContinue: () => void };
   /** The adventure's farewell, shown under the end step's own text. */
   outro?: string;
   /**
@@ -245,7 +250,7 @@ export function PlayView(props: PlayViewProps) {
         </button>
       )}
 
-      {!!view.groups?.length && kind !== "split" && kind !== "join" ? <Groups view={view} t={t} busy={!!props.busy} onAction={props.onAction} /> : null}
+      {!!view.groups?.length && kind !== "split" && kind !== "join" ? <GroupStrip view={view} t={t} busy={!!props.busy} onAction={props.onAction} /> : null}
 
       {view.players_min ? (
         <p className="pv-waiting" role="status">
@@ -260,9 +265,18 @@ export function PlayView(props: PlayViewProps) {
         ref={stepRef}
         className={"pv-step" + (burst?.kind === "celebrate" ? "" : " is-entered")}
         {...(transition ? { "data-transition": transition } : {})}
+        inert={!!props.hold}
       >
         {body}
       </div>
+      {props.hold && (
+        <div className="pv-dock pv-dock--hold">
+          <FeedbackLine feedback={props.hold.feedback} />
+          <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" onClick={props.hold.onContinue}>
+            {t("Continue")}
+          </button>
+        </div>
+      )}
       {leaving && transition && <Leaving key={leaving.id} page={leaving.page} top={leaving.top} transition={transition} />}
 
       {hintsOpen && <HintSheet {...step} onClose={() => setHintsOpen(false)} />}
@@ -1083,7 +1097,8 @@ function SplitStep({ view, t, busy, onAction, feedback }: StepProps) {
       {view.text && <Markdown text={view.text} className="pv-text" />}
       {view.group && (
         <p className="pv-group-me" role="status">
-          {t("You go with: {{group}}", { group: view.group })}
+          <span className="pv-group-me__label">{t("Your group")}</span>
+          <span className="pv-group-me__name">{view.group}</span>
         </p>
       )}
       <Groups view={view} t={t} busy={!!busy} onAction={onAction} />
@@ -1128,30 +1143,82 @@ function JoinStep({ view, t, busy, onAction }: StepProps) {
  * are all away.
  */
 function Groups({ view, t, busy, onAction }: { view: play.View; t: Translate; busy: boolean; onAction: (action: play.PlayAction) => void }) {
+  const groups = view.groups ?? [];
+  const arrived = groups.filter((g) => g.arrived).length;
   return (
-    <ul className="pv-groups" aria-label={t("Groups")}>
-      {(view.groups ?? []).map((g) => (
-        <li key={g.port} className={"pv-groups__group" + (g.current ? " is-current" : "") + (g.arrived ? " is-arrived" : "")}>
-          <span className="pv-groups__name">
-            {g.label}
-            {g.mine ? <span className="pv-groups__mine"> · {t("you")}</span> : g.open && <span className="pv-groups__open"> · {t("open to anyone")}</span>}
-          </span>
-          <span className="pv-groups__at">
-            {g.arrived ? t("Arrived") : g.at}
+    <section className="pv-groups" aria-label={t("Groups")}>
+      <header className="pv-groups__head">
+        <span>{t("Groups")}</span>
+        {(arrived > 0 || view.type === "join") && <span>{t("{{n}} of {{m}} arrived", { n: arrived, m: groups.length })}</span>}
+      </header>
+      <ul className="pv-groups__list">
+        {groups.map((g, i) => (
+          <li key={g.port} className={"pv-groups__group" + (g.current ? " is-current" : "") + (g.arrived ? " is-arrived" : "")}>
+            <span className="pv-groups__mark" aria-hidden="true">
+              {g.arrived ? "✓" : i + 1}
+            </span>
+            <span className="pv-groups__body">
+              <span className="pv-groups__name">
+                {g.label}
+                {g.mine ? <span className="pv-groups__tag">{t("you")}</span> : g.open && <span className="pv-groups__tag pv-groups__tag--open">{t("open to anyone")}</span>}
+              </span>
+              <span className="pv-groups__at">{g.arrived ? t("Arrived") : g.at}</span>
+            </span>
             {(g.mine || g.open) && !g.arrived && !g.current && (
               <button
                 type="button"
-                className="pv-link pv-groups__walk"
+                className="pv-groups__walk"
                 disabled={busy}
                 aria-label={t("Walk with {{group}}", { group: g.label })}
                 onClick={() => onAction({ kind: "walk", port: g.port })}
               >
-                {t("Walk this group")}
+                {t("Switch")}
               </button>
             )}
-          </span>
-        </li>
-      ))}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * The groups in one line above a split team's other steps: this view's
+ * group first, then a tap on another of its own or an open one to walk
+ * with that instead.
+ */
+function GroupStrip({ view, t, busy, onAction }: { view: play.View; t: Translate; busy: boolean; onAction: (action: play.PlayAction) => void }) {
+  return (
+    <ul className="pv-group-strip" aria-label={t("Groups")}>
+      {(view.groups ?? []).map((g) => {
+        const cls = "pv-group-strip__chip" + (g.current ? " is-current" : "") + (g.arrived ? " is-arrived" : "");
+        const label = (
+          <>
+            {g.arrived && <span aria-hidden="true">✓</span>}
+            {g.label}
+          </>
+        );
+        return (
+          <li key={g.port}>
+            {(g.mine || g.open) && !g.arrived && !g.current ? (
+              <button
+                type="button"
+                className={cls + " is-walkable"}
+                disabled={busy}
+                title={g.at}
+                aria-label={t("Walk with {{group}}", { group: g.label })}
+                onClick={() => onAction({ kind: "walk", port: g.port })}
+              >
+                {label}
+              </button>
+            ) : (
+              <span className={cls} title={g.arrived ? t("Arrived") : g.at}>
+                {label}
+              </span>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

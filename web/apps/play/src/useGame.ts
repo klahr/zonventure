@@ -75,6 +75,18 @@ export interface Game {
   leave: (erase: boolean) => Promise<void>;
   /** This phone erased the player's play data: the signed-out screen says so. */
   erased: boolean;
+  /**
+   * The step the team just left, still shown with what happened there
+   * until the player continues: the team has moved on, the phone waits.
+   */
+  held: Held | null;
+  /** Go on to the step the team is at. */
+  release: () => void;
+}
+
+export interface Held {
+  view: play.View;
+  feedback: Feedback;
 }
 
 /** How often to retry the outbox while something is queued. */
@@ -186,6 +198,7 @@ export function useGame(t: Translate): Game {
   const [online, setOnline] = useState(() => navigator.onLine);
   const [over, setOver] = useState<Over>(null);
   const [erased, setErased] = useState(false);
+  const [held, setHeld] = useState<Held | null>(null);
   const tRef = useRef(t);
   tRef.current = t;
   const viewRef = useRef(state?.view);
@@ -264,13 +277,12 @@ export function useGame(t: Translate): Game {
       // dropped once the step or its arrival state changes.
       const prev = viewRef.current;
       const who = whoMoved(prev, s.view);
-      if (who === "team" || (who === "organisers" && !s.view?.moved_on)) {
-        // Say so, or the step just swaps under the player (and whatever
-        // they were typing is gone).
-        setFeedback({
-          tone: "info",
-          text: who === "team" ? tRef.current("Your team moved on. Here's the next step.") : tRef.current("The organisers moved your team on."),
-        });
+      if (prev && (who === "team" || (who === "organisers" && !s.view?.moved_on))) {
+        // Keep the step on screen and say so, or it just swaps under the
+        // player (and whatever they were typing is gone).
+        const text = who === "team" ? tRef.current("Your team has moved on. Continue when you're ready.") : tRef.current("The organisers moved your team on.");
+        setHeld((h) => h ?? { view: prev, feedback: { tone: "info", text } });
+        setFeedback(null);
       } else if (prev?.node !== s.view?.node || prev?.here !== s.view?.here) {
         setFeedback(null);
       }
@@ -488,16 +500,20 @@ export function useGame(t: Translate): Game {
         return;
       }
       try {
+        const prev = viewRef.current;
         const r = await play.sendAction(action, id);
-        showView(r.view);
-        setFeedback(
-          feedbackForResult(
-            action.kind,
-            r,
-            tRef.current,
-            "node" in action ? action.node : undefined,
-          ),
+        const fb = feedbackForResult(
+          action.kind,
+          r,
+          tRef.current,
+          "node" in action ? action.node : undefined,
         );
+        // A solved puzzle stays on screen with its result until the
+        // player continues; the end shows itself.
+        if (prev?.type === "puzzle" && r.view?.node && r.view.node !== prev.node && !r.view.finished)
+          setHeld({ view: prev, feedback: feedbackForResult(action.kind, r, tRef.current) ?? { tone: "info", text: "" } });
+        showView(r.view);
+        setFeedback(fb);
         setOnline(true);
         // The adventure's title and intro come with the state, not the view.
         if (action.kind === "language") void refresh();
@@ -638,6 +654,11 @@ export function useGame(t: Translate): Game {
     retry: () => void flush().then(refresh),
     leave,
     erased,
+    held,
+    release: () => {
+      setHeld(null);
+      setFeedback(null);
+    },
   };
 }
 

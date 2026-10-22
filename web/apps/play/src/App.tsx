@@ -305,7 +305,9 @@ export function App() {
           />
         ) : view ? (
           <PlayView
-            view={view}
+            // A held step shows the team's score and bag as they are now.
+            view={game.held ? { ...game.held.view, ...(view.score !== undefined ? { score: view.score } : {}), ...(view.items ? { items: view.items } : {}), ...(view.journal ? { journal: view.journal } : {}) } : view}
+            {...(game.held ? { hold: { feedback: game.held.feedback, onContinue: game.release } } : {})}
             onAction={game.act}
             busy={game.busy || !running}
             feedback={game.feedback}
