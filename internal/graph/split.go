@@ -21,19 +21,22 @@ type Paths struct {
 	Loops []string
 }
 
-// SplitPaths works out where a split's paths go. It reads only the
-// edges, so it serves a graph mid-edit as well as a valid one.
-func (g *Graph) SplitPaths(split string) Paths {
-	return g.Splits().Paths(split)
-}
-
 // Splits works out the graph's splits' paths, each once. It is a
 // snapshot of the graph as it was when made.
 type Splits struct {
 	g     *Graph
 	nodes map[string]Node
+	// next are where each node's edges lead, in order of slug, and edges
+	// the edges from each, as drawn.
 	next  map[string][]string
+	edges map[string][]Edge
 	paths map[string]Paths
+	// slugs are the splits, in order of slug.
+	slugs []string
+	// on and steps are onPaths, and owners OwnerHubs, once worked out.
+	on     map[string]pathKey
+	steps  map[pathKey]map[string]bool
+	owners map[string]string
 }
 
 // Splits starts working out the graph's splits; each is worked out when
@@ -43,13 +46,19 @@ func (g *Graph) Splits() *Splits {
 		g:     g,
 		nodes: make(map[string]Node, len(g.Nodes)),
 		next:  make(map[string][]string, len(g.Edges)),
+		edges: make(map[string][]Edge, len(g.Edges)),
 		paths: map[string]Paths{},
 	}
 	for _, n := range g.Nodes {
 		s.nodes[n.Slug] = n
+		if n.Type == Split && n.SplitCfg != nil {
+			s.slugs = append(s.slugs, n.Slug)
+		}
 	}
+	slices.Sort(s.slugs)
 	for _, e := range g.Edges {
 		s.next[e.From] = append(s.next[e.From], e.To)
+		s.edges[e.From] = append(s.edges[e.From], e)
 	}
 	// In order of slug, not of edge: what a path covers, and which join
 	// it finds first, do not hang on the order the edges were drawn in.
@@ -59,7 +68,8 @@ func (g *Graph) Splits() *Splits {
 	return s
 }
 
-// Paths is where a split's paths go: SplitPaths, sharing the work.
+// Paths is where a split's paths go. It reads only the edges, so it
+// serves a graph mid-edit as well as a valid one.
 func (s *Splits) Paths(split string) Paths {
 	if p, ok := s.paths[split]; ok {
 		return p
@@ -82,15 +92,7 @@ func (s *Splits) Paths(split string) Paths {
 // all it can reach without passing a join or a split, so it does not
 // hang on which way round, or how far, the edges go.
 func (s *Splits) walk(out *Paths, split, port, start string) {
-	seen := map[string]bool{}
-	queue := []string{start}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		if seen[cur] {
-			continue
-		}
-		seen[cur] = true
+	s.Reach([]string{start}, func(cur string) bool {
 		switch s.nodes[cur].Type {
 		case Join:
 			out.Joins[port] = append(out.Joins[port], cur)
@@ -102,20 +104,59 @@ func (s *Splits) walk(out *Paths, split, port, start string) {
 			}
 		default:
 			out.Steps[port] = append(out.Steps[port], cur)
+			return true
+		}
+		return false
+	})
+}
+
+// Reach walks the edges breadth first from the nodes from, nearest
+// first and in order of slug, visiting each node reached once: visit
+// says whether to go on past it.
+func (s *Splits) Reach(from []string, visit func(slug string) bool) {
+	seen := map[string]bool{}
+	queue := slices.Clone(from)
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		if seen[cur] {
+			continue
+		}
+		seen[cur] = true
+		if visit(cur) {
 			queue = append(queue, s.next[cur]...)
 		}
 	}
 }
 
-// PathOf is the path of the split whose steps include node, if one does:
-// the group a step belongs to.
-func (p Paths) PathOf(node string) (string, bool) {
-	for port, steps := range p.Steps {
-		if slices.Contains(steps, node) {
-			return port, true
-		}
+// Slugs are the graph's splits, in order of slug.
+func (s *Splits) Slugs() []string { return s.slugs }
+
+// Graph is the graph the splits are of.
+func (s *Splits) Graph() *Graph { return s.g }
+
+// Warm works out everything Splits works out on demand, so that from
+// then on it only reads: one Splits may then serve any number of
+// readers at once, for a graph no one changes.
+func (s *Splits) Warm() *Splits {
+	for _, slug := range s.slugs {
+		s.Paths(slug)
 	}
-	return "", false
+	s.onPaths()
+	s.OwnerHubs()
+	return s
+}
+
+// Node is the node slug, found without a scan of the graph's nodes.
+func (s *Splits) Node(slug string) (Node, bool) {
+	n, ok := s.nodes[slug]
+	return n, ok
+}
+
+// OnAnyPath reports whether node is a step of any split's path.
+func (s *Splits) OnAnyPath(node string) bool {
+	_, _, ok := s.OnPath(node)
+	return ok
 }
 
 // OnPath is the split path whose steps include node — the path of the
@@ -130,40 +171,30 @@ func (s *Splits) OnPath(node string) (split, port string, ok bool) {
 type pathKey struct{ split, port string }
 
 // onPaths are each node's path, leaving out nodes on none, and the steps
-// of each path. A node on two paths, which valid refuses, is the first
-// split's in order of slug, and its first port.
+// of each path, worked out once. A node on two paths, which valid
+// refuses, is the first split's in order of slug, and its first port.
 func (s *Splits) onPaths() (map[string]pathKey, map[pathKey]map[string]bool) {
-	var splits []string
-	for slug, n := range s.nodes {
-		if n.Type == Split && n.SplitCfg != nil {
-			splits = append(splits, slug)
-		}
+	if s.on != nil {
+		return s.on, s.steps
 	}
-	slices.Sort(splits)
-	on := map[string]pathKey{}
-	steps := map[pathKey]map[string]bool{}
-	for _, split := range splits {
+	s.on, s.steps = map[string]pathKey{}, map[pathKey]map[string]bool{}
+	for _, split := range s.slugs {
 		paths := s.Paths(split)
 		for _, port := range s.nodes[split].Ports() {
 			k := pathKey{split, port}
-			steps[k] = make(map[string]bool, len(paths.Steps[port]))
+			s.steps[k] = make(map[string]bool, len(paths.Steps[port]))
 			for _, x := range paths.Steps[port] {
-				steps[k][x] = true
-				if _, ok := on[x]; !ok {
-					on[x] = k
+				s.steps[k][x] = true
+				if _, ok := s.on[x]; !ok {
+					s.on[x] = k
 				}
 			}
 		}
 	}
-	return on, steps
+	return s.on, s.steps
 }
 
 // JoinOf is the join a split's paths meet at: the first any path reaches.
-func (g *Graph) JoinOf(split string) (string, bool) {
-	return g.Splits().JoinOf(split)
-}
-
-// JoinOf is Graph.JoinOf, sharing the work.
 func (s *Splits) JoinOf(split string) (string, bool) {
 	n, ok := s.nodes[split]
 	if !ok || n.SplitCfg == nil {

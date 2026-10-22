@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Compass, PartyPopper, Pencil } from "lucide-react";
 import { siteName } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
@@ -24,7 +24,7 @@ import { StatisticsCard } from "./Statistics.tsx";
 import { ResultsRecordCard } from "./ResultsRecord.tsx";
 import { VoucherCodesCard } from "./Vouchers.tsx";
 import { EmbedCard } from "./Embed.tsx";
-import { isQuest, isTerminal, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
+import { clockOffset, isQuest, isTerminal, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
 import "./event.css";
 
 type Open = null | { kind: "rename" } | { kind: "new-team" } | { kind: "team"; id: number } | { kind: "edit-team"; id: number };
@@ -39,6 +39,8 @@ export function EventPage({ id }: { id: number }) {
   const t = useT();
   const { state } = useSession();
   const detail = useLoad((s) => api.getDetail(id, s), [id]);
+  // The server's clock, against this device's, taken as the detail arrived.
+  const offset = useMemo(() => clockOffset(detail.data?.server_now), [detail.data]);
   const activity = useLoad((s) => api.getActivity(id, undefined, s), [id]);
   const messages = useLoad((s) => api.getMessages(id, s), [id]);
   const files = useLoad((s) => api.getFiles(id, s), [id]);
@@ -210,6 +212,7 @@ export function EventPage({ id }: { id: number }) {
       {open?.kind === "team" && openTeam && (
         <TeamDetailDialog
           event={event}
+          offset={offset}
           graph={graph}
           team={openTeam}
           color={teamColor(index.get(openTeam.id) ?? 0)}

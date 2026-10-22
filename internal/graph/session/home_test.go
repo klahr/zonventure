@@ -267,13 +267,13 @@ func TestHomeScreenValidates(t *testing.T) {
 // A step two hubs both reach has no single owner, so no back.
 func TestOwnerHubIsUnique(t *testing.T) {
 	g := mystery()
-	if h, ok := g.OwnerHub("carl-murder-q"); !ok || h != "carl-hub" {
+	if h, ok := ownerHub(g, "carl-murder-q"); !ok || h != "carl-hub" {
 		t.Errorf("a topic belongs to Carl's hub, got %q %v", h, ok)
 	}
-	if h, ok := g.OwnerHub("carl-hub"); !ok || h != "home" {
+	if h, ok := ownerHub(g, "carl-hub"); !ok || h != "home" {
 		t.Errorf("Carl's hub belongs to the home screen, got %q %v", h, ok)
 	}
-	if _, ok := g.OwnerHub("home"); ok {
+	if _, ok := ownerHub(g, "home"); ok {
 		t.Error("the home screen has no owner")
 	}
 	// Let the home screen also lead straight to Carl's answer page.
@@ -283,7 +283,7 @@ func TestOwnerHubIsUnique(t *testing.T) {
 		}
 	}
 	g.Edges = append(g.Edges, graph.Edge{From: "home", FromPort: "shortcut", To: "carl-murder-a"})
-	if _, ok := g.OwnerHub("carl-murder-a"); ok {
+	if _, ok := ownerHub(g, "carl-murder-a"); ok {
 		t.Error("a page both hubs reach has no single owner")
 	}
 }
@@ -708,4 +708,10 @@ func TestHidePlaces(t *testing.T) {
 	if z := v.Starts[0].Zone; z.Name != "The square" || z.Lat != 59.2 {
 		t.Errorf("a zone not hidden stays whole: %+v", z)
 	}
+}
+
+// ownerHub is g's owner hub of slug.
+func ownerHub(g *graph.Graph, slug string) (string, bool) {
+	h, ok := g.Splits().OwnerHubs()[slug]
+	return h, ok
 }

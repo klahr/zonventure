@@ -89,7 +89,19 @@ func (r Report) Errors() []Issue {
 	return out
 }
 
-type reporter struct{ issues []Issue }
+type reporter struct {
+	issues []Issue
+	g      *graph.Graph
+	sp     *graph.Splits
+}
+
+// splits are the graph's splits, worked out once for every check.
+func (r *reporter) splits() *graph.Splits {
+	if r.sp == nil {
+		r.sp = r.g.Splits()
+	}
+	return r.sp
+}
 
 func (r *reporter) err(code, node, port, format string, a ...any) {
 	r.issues = append(r.issues, Issue{Error, code, node, port, fmt.Sprintf(format, a...)})
@@ -104,7 +116,7 @@ func (r *reporter) warn(code, node, port, format string, a ...any) {
 // time, with a round trip each, is a miserable way to write an
 // adventure.
 func Check(g *graph.Graph) Report {
-	r := &reporter{}
+	r := &reporter{g: g}
 
 	checkSlugs(r, g)
 	checkNodeConfigs(r, g)
@@ -187,7 +199,7 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 			}
 			if n.PuzzleCfg.Answer != nil {
 				if owners == nil {
-					owners = g.OwnerHubs()
+					owners = r.splits().OwnerHubs()
 				}
 				checkAnswer(r, g, n, owners)
 			}
@@ -364,23 +376,18 @@ func checkSplit(r *reporter, g *graph.Graph, n graph.Node) {
 func checkSplits(r *reporter, g *graph.Graph) {
 	sc := splitCheck{r: r, g: g, types: map[string]graph.Type{}, next: map[string][]string{}, prev: map[string][]string{},
 		in: map[string][]graph.Edge{}, backIn: map[string][]string{}, team: map[string][]string{}, ends: map[string]ending{}, reported: map[string]bool{}}
-	var slugs []string
 	for _, n := range g.Nodes {
 		sc.types[n.Slug] = n.Type
-		if n.Type == graph.Split && n.SplitCfg != nil {
-			slugs = append(slugs, n.Slug)
-		}
 	}
 	for _, e := range g.Edges {
 		sc.next[e.From] = append(sc.next[e.From], e.To)
 		sc.prev[e.To] = append(sc.prev[e.To], e.From)
 		sc.in[e.To] = append(sc.in[e.To], e)
 	}
-	// In order of slug: a split in a loop covers what it does by which
-	// split was asked first, and the verdict should not hang on the
-	// order the nodes were drawn in.
-	slices.Sort(slugs)
-	splits := g.Splits()
+	// In order of slug: the verdict should not hang on the order the
+	// nodes were drawn in.
+	splits := r.splits()
+	slugs := splits.Slugs()
 	// Back leads on as an edge would, though none is drawn.
 	for slug, hub := range backs(g, splits) {
 		sc.next[slug] = append(sc.next[slug], hub)
@@ -686,7 +693,10 @@ func (sc *splitCheck) pathEdges(split graph.Node, paths graph.Paths, joins []str
 }
 
 // spread is what can be reached from the nodes from along adj, not going
-// on through stop. Given want, it stops once it has found them all.
+// on through stop. Given want, it stops once it has found them all. It
+// walks the check's own adjacencies — back as an edge, edges reversed,
+// the team's way past its splits — where graph.Splits.Reach walks the
+// edges as drawn.
 func spread(from []string, adj map[string][]string, stop string, want map[string]bool) map[string]bool {
 	seen := map[string]bool{}
 	left := len(want)
@@ -1147,7 +1157,7 @@ func checkReachability(r *reporter, g *graph.Graph) {
 	if _, ok := g.StartNode(); !ok {
 		return // already reported
 	}
-	seen := reachableFromStarts(g)
+	seen := reachableFromStarts(r.splits())
 	for _, n := range g.Nodes {
 		if !seen[n.Slug] {
 			r.warn("node.unreachable", n.Slug, "", "nothing leads here yet, so no team will reach this step")
@@ -1169,7 +1179,7 @@ func checkTermination(r *reporter, g *graph.Graph) {
 	}
 	// Back is a way out too: a step inside a home screen's branch can
 	// return to it, with no edge drawn.
-	for slug, hub := range backs(g, nil) {
+	for slug, hub := range backs(g, r.splits()) {
 		rev[hub] = append(rev[hub], slug)
 	}
 	canEnd := map[string]bool{}
@@ -1191,7 +1201,7 @@ func checkTermination(r *reporter, g *graph.Graph) {
 		}
 	}
 
-	reachable := reachableFromStarts(g)
+	reachable := reachableFromStarts(r.splits())
 	for _, n := range g.Nodes {
 		if reachable[n.Slug] && !canEnd[n.Slug] {
 			r.err("node.nodeadend", n.Slug, "", "no route from here reaches an end, so a team arriving here could never finish")
@@ -1206,14 +1216,14 @@ func checkTermination(r *reporter, g *graph.Graph) {
 // together, never to one on a path, which is a group's. A join holds a
 // group and a split parks one, neither on the path it goes back from.
 // OwnerHubs keeps to this already; it is checked again here, as the
-// runtime does. Given no splits, it works them out if it needs them.
+// runtime does: Back stays on its path, or off every path.
 func backs(g *graph.Graph, splits *graph.Splits) map[string]string {
 	nodes := make(map[string]graph.Node, len(g.Nodes))
 	for _, n := range g.Nodes {
 		nodes[n.Slug] = n
 	}
 	out := map[string]string{}
-	for slug, hub := range g.OwnerHubs() {
+	for slug, hub := range splits.OwnerHubs() {
 		if h := nodes[hub]; h.HubCfg == nil || !h.HubCfg.Home {
 			continue
 		}
@@ -1222,31 +1232,11 @@ func backs(g *graph.Graph, splits *graph.Splits) map[string]string {
 			out[slug] = hub
 		}
 	}
-	if len(out) == 0 {
-		return out
-	}
-	if splits == nil {
-		splits = g.Splits()
-	}
-	var slugs []string
-	for _, n := range g.Nodes {
-		if n.Type == graph.Split && n.SplitCfg != nil {
-			slugs = append(slugs, n.Slug)
-		}
-	}
-	slices.Sort(slugs)
-	for _, s := range slugs {
-		for _, steps := range splits.Paths(s).Steps {
-			for _, x := range steps {
-				if hub, ok := out[x]; ok && !slices.Contains(steps, hub) {
-					delete(out, x)
-				}
-			}
-			for x, hub := range out {
-				if slices.Contains(steps, hub) && !slices.Contains(steps, x) {
-					delete(out, x)
-				}
-			}
+	for x, hub := range out {
+		xs, xp, _ := splits.OnPath(x)
+		hs, hp, _ := splits.OnPath(hub)
+		if xs != hs || xp != hp {
+			delete(out, x)
 		}
 	}
 	return out
@@ -1358,7 +1348,7 @@ func checkTimeoutKeys(r *reporter, g *graph.Graph) {
 		}
 	}
 	kit := g.Kit()
-	reachable := reachableFromStarts(g)
+	reachable := reachableFromStarts(r.splits())
 	for _, n := range g.Nodes {
 		if n.PuzzleCfg == nil || !reachable[n.Slug] {
 			continue
@@ -1373,7 +1363,7 @@ func checkTimeoutKeys(r *reporter, g *graph.Graph) {
 		timedOut.Edges = slices.DeleteFunc(slices.Clone(g.Edges), func(e graph.Edge) bool {
 			return e.From == n.Slug && e.FromPort != o.Port
 		})
-		after := reachableFromStarts(&timedOut)
+		after := reachableFromStarts(timedOut.Splits())
 		for _, it := range slices.Sorted(maps.Keys(grants)) {
 			if !needed[it] || kit[it] > 0 {
 				continue
@@ -1764,27 +1754,12 @@ func checkTimeLimit(r *reporter, g *graph.Graph) {
 		r.err("time_limit.to", "", "", "the adventure's time limit sends teams to %q, which is not a step", tl.To)
 	case n.Type == graph.Start:
 		r.err("time_limit.to", tl.To, "", "the time limit cannot send teams back to a start")
-	case n.Type == graph.Join || onSplitPath(g, tl.To):
+	case n.Type == graph.Join || n.Type != graph.End && r.splits().OnAnyPath(tl.To):
 		// Time up ends any split: the whole team would walk one group's
-		// steps, or wait at a join for groups that are gone.
+		// steps, or wait at a join for groups that are gone. An ending a
+		// path also reaches is the whole team's, as it is every path's.
 		r.err("time_limit.to", tl.To, "", "the time limit cannot send teams onto a split's path or to a join; it brings the groups together, and the whole team would walk one group's steps")
 	}
-}
-
-// onSplitPath reports whether a node is a step of any split's path.
-func onSplitPath(g *graph.Graph, slug string) bool {
-	splits := g.Splits()
-	for _, n := range g.Nodes {
-		if n.Type != graph.Split || n.SplitCfg == nil {
-			continue
-		}
-		for _, steps := range splits.Paths(n.Slug).Steps {
-			if slices.Contains(steps, slug) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // blockNames are the kinds of block in the designer's words, where the
@@ -2188,26 +2163,6 @@ func checkUnique(r *reporter, kind string, n int, slugAt func(int) string) {
 	}
 }
 
-func reachableFrom(g *graph.Graph, start string) map[string]bool {
-	adj := map[string][]string{}
-	for _, e := range g.Edges {
-		adj[e.From] = append(adj[e.From], e.To)
-	}
-	seen := map[string]bool{start: true}
-	stack := []string{start}
-	for len(stack) > 0 {
-		cur := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		for _, next := range adj[cur] {
-			if !seen[next] {
-				seen[next] = true
-				stack = append(stack, next)
-			}
-		}
-	}
-	return seen
-}
-
 func slugSet(n int, at func(int) string) map[string]bool {
 	out := make(map[string]bool, n)
 	for i := range n {
@@ -2216,14 +2171,18 @@ func slugSet(n int, at func(int) string) map[string]bool {
 	return out
 }
 
-// reachableFromStarts is every node some start leads to, starts included.
-func reachableFromStarts(g *graph.Graph) map[string]bool {
-	seen := map[string]bool{}
-	for _, st := range g.Starts() {
-		for k := range reachableFrom(g, st.Slug) {
-			seen[k] = true
-		}
+// reachableFromStarts is every node some start of splits' graph leads
+// to, starts included.
+func reachableFromStarts(splits *graph.Splits) map[string]bool {
+	var starts []string
+	for _, st := range splits.Graph().Starts() {
+		starts = append(starts, st.Slug)
 	}
+	seen := map[string]bool{}
+	splits.Reach(starts, func(n string) bool {
+		seen[n] = true
+		return true
+	})
 	return seen
 }
 

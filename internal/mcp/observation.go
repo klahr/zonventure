@@ -16,7 +16,7 @@ func (s *Server) registerObservationTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "list_positions",
 		Scope:       scopeRead,
-		Description: "Latest known location ping per team for an event. One row per team that has ever pinged: team_id, team_name, node (their current step), lat, lng, server_ts — and, for a team split up into groups (a split step), groups: each group's step and its own players' latest fix. Poll every 10–30 seconds during a live event; the data refreshes per ping the players' phones send (every 5–15 seconds typically).",
+		Description: "Latest known location ping per team for an event. One row per team that has ever pinged: team_id, team_name, node (their current step), lat, lng, server_ts — and, for a team split up into groups (a split step), groups: each group's step and its latest fix — from the phones walking it, which may be a teammate's walking it for players who have gone. Poll every 10–30 seconds during a live event; the data refreshes per ping the players' phones send (every 5–15 seconds typically).",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},
@@ -43,7 +43,7 @@ func (s *Server) registerObservationTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "list_tracks",
 		Scope:       scopeRead,
-		Description: "Full ping history per team, smoothed into 10s buckets with accuracy-weighted centroids — same data the live audience map renders. A team split up into groups (a split step) has a track per group, of its own players' phones, with group and group_label set. Poll sparingly; the payload grows linearly with event duration. Most observation use cases want list_positions instead.",
+		Description: "Full ping history per team, smoothed into 10s buckets with accuracy-weighted centroids — same data the live audience map renders. A team split up into groups (a split step) has a track per group, of the pings taken in it by whoever walked it, with group and group_label set. Poll sparingly; the payload grows linearly with event duration. Most observation use cases want list_positions instead.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},

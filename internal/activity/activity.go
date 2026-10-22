@@ -46,6 +46,10 @@ const (
 	TeamWithdrawn  = "team.withdrawn"
 	TeamReturned   = "team.returned"
 	TeamUnlocked   = "team.unlocked"
+	// TeamTimedOut is a team's time limit run out: by a phone's countdown,
+	// by the organisers, or met by an action past the deadline, which the
+	// limit then took the place of.
+	TeamTimedOut = "team.timed_out"
 	// TeamStartAnywhere is an arranger letting a team begin away from
 	// the adventure's required starting point.
 	TeamStartAnywhere = "team.start_anywhere"

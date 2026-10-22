@@ -71,9 +71,9 @@ type State interface {
 	// not split up is never held, and passes straight through.
 	JoinWaits(join string) bool
 	// Joined tells the state the walk has taken the group on through a
-	// join it was not held at, and reports whether that brought the
-	// groups together: from there the walk is the team's.
-	Joined(join string) bool
+	// join it was not held at: from there the walk is the whole team's,
+	// every gate after it judged on all its players.
+	Joined(join string)
 }
 
 // Step is one movement through the graph.
@@ -107,10 +107,8 @@ type Step struct {
 	// possible, so the choice belongs to the player.
 	CanFinish bool
 	// Held is set when a join is holding the group the walk moved, to
-	// wait for the others: To is the join. Joined is set when the walk
-	// took the groups on through their join, the team together again.
-	Held   bool
-	Joined bool
+	// wait for the others: To is the join.
+	Held bool
 	// GateFailed is set when the walk left a gate by PortFail.
 	GateFailed bool
 	// Finished is set when the team reached an End.
@@ -285,9 +283,7 @@ func walkTo(g *graph.Graph, s State, step Step, next string) (Step, error) {
 				step.Held = true
 				return step, nil
 			}
-			if s.Joined(node.Slug) {
-				step.Joined = true
-			}
+			s.Joined(node.Slug)
 			next, ok = g.Target(node.Slug, graph.PortOut)
 			if !ok {
 				return step, fmt.Errorf("%w: %s.%s", ErrDanglingPort, node.Slug, graph.PortOut)

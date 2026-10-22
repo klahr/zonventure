@@ -141,15 +141,14 @@ export function ControlMap({ eventId, zones, teams, tracks }: { eventId: number;
       const last = tr.points![tr.points!.length - 1]!;
       const id = trackId(tr);
       keep.add(id);
-      const tag = groupTag(tr);
-      const key = `${tm.name}|${tm.color}|${tr.avatar_url ?? ""}|${tr.group_label ?? ""}|${tag ?? ""}`;
+      const key = `${tm.name}|${tm.color}|${tr.avatar_url ?? ""}|${tr.group_label ?? ""}`;
       let entry = teamMarkers.current.get(id);
       if (entry && entry.key !== key) {
         entry.marker.remove();
         entry = undefined;
       }
       if (!entry) {
-        entry = { marker: new lib.Marker({ element: teamMarker(tm, tr.avatar_url, tr.group_label, tag) }).setLngLat([last.lng, last.lat]).setPopup(new lib.Popup({ offset: 18 })).addTo(map), key };
+        entry = { marker: new lib.Marker({ element: teamMarker(tm, tr.avatar_url, tr.group_label) }).setLngLat([last.lng, last.lat]).setPopup(new lib.Popup({ offset: 18 })).addTo(map), key };
         teamMarkers.current.set(id, entry);
       }
       entry.marker.setLngLat([last.lng, last.lat]);
@@ -222,10 +221,7 @@ const lastSeen = (tr: Track): string => tr.points?.[tr.points.length - 1]?.serve
 /** A track's own key: its team's, and its group's while the team is split up. */
 const trackId = (tr: Track) => (tr.group ? `${tr.team_id}/${tr.group}` : String(tr.team_id));
 
-/** Which group of the team a track is: its path's name. */
-const groupTag = (tr: Track): string | undefined => tr.group_label;
-
-function teamMarker(tm: MapTeam, avatar: string | undefined, group?: string, tag?: string): HTMLElement {
+function teamMarker(tm: MapTeam, avatar: string | undefined, group?: string): HTMLElement {
   const el = document.createElement("div");
   el.className = "cc-team-marker";
   el.style.setProperty("--team-col", tm.color);
@@ -244,7 +240,7 @@ function teamMarker(tm: MapTeam, avatar: string | undefined, group?: string, tag
     el.classList.add("cc-team-marker--group");
     const small = document.createElement("small");
     small.className = "cc-team-marker__group";
-    small.textContent = tag ?? group;
+    small.textContent = group;
     el.append(small);
   }
   return el;

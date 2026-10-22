@@ -363,43 +363,35 @@ type Node struct {
 	Unlocks []string `json:"unlocks,omitempty"`
 }
 
-// OwnerHub is the hub whose branches lead to a node without passing
-// through another hub — where "back" takes a team. It is found from the
-// graph's shape, not remembered per team: the innermost hub in front of
-// a step is the same for every team that stands on it. A node that two
-// hubs both reach that way has no single owner, and reports false.
+// OwnerHubs maps each node to its owner hub, leaving out nodes with
+// none: the hub whose branches lead to the node without passing through
+// another hub — where "back" takes a team. It is found from the graph's
+// shape, not remembered per team: the innermost hub in front of a step
+// is the same for every team that stands on it. A node that two hubs
+// both reach that way has no single owner.
 //
 // Ownership does not cross a split's edge: a hub owns only steps walked
 // by whoever stands on it — on the same split's path as it, or, off any
 // path, steps off every path. A hub on a path stops at the path's join;
 // one before a split owns none of its paths' steps, but passes through
 // them to what the team, together again, walks after the join.
-func (g *Graph) OwnerHub(slug string) (string, bool) {
-	h, ok := g.OwnerHubs()[slug]
-	return h, ok
+// Worked out once: not for changing.
+func (s *Splits) OwnerHubs() map[string]string {
+	if s.owners == nil {
+		s.owners = s.ownerHubs()
+	}
+	return s.owners
 }
 
-// OwnerHubs is OwnerHub for every node at once, for a caller that needs
-// many: node → its owner hub, leaving out nodes with none.
-func (g *Graph) OwnerHubs() map[string]string {
-	next := make(map[string][]string, len(g.Edges))
-	for _, e := range g.Edges {
-		next[e.From] = append(next[e.From], e.To)
-	}
+func (s *Splits) ownerHubs() map[string]string {
+	g := s.g
 	isHub := map[string]bool{}
 	for _, n := range g.Nodes {
 		isHub[n.Slug] = n.Type == Hub
 	}
 	// Each node's path, and the steps of each path: none without splits,
 	// where every hub owns as it always has.
-	var on map[string]pathKey
-	var steps map[pathKey]map[string]bool
-	for _, n := range g.Nodes {
-		if n.Type == Split {
-			on, steps = g.Splits().onPaths()
-			break
-		}
-	}
+	on, steps := s.onPaths()
 	owner := map[string]string{}
 	shared := map[string]bool{}
 	for _, h := range g.Nodes {
@@ -411,37 +403,27 @@ func (g *Graph) OwnerHubs() map[string]string {
 		// goes no further than the path's steps.
 		region := on[h.Slug]
 		within := steps[region]
-		seen := map[string]bool{h.Slug: true}
-		var queue []string
+		var from []string
 		for _, b := range h.HubCfg.Branches {
 			if to, ok := g.Target(h.Slug, b.Port); ok {
-				queue = append(queue, to)
+				from = append(from, to)
 			}
 		}
-		for len(queue) > 0 {
-			n := queue[0]
-			queue = queue[1:]
-			if seen[n] {
-				continue
-			}
-			seen[n] = true
-			if region != (pathKey{}) && !within[n] {
-				continue
+		s.Reach(from, func(n string) bool {
+			if n == h.Slug || region != (pathKey{}) && !within[n] {
+				return false
 			}
 			if on[n] != region {
 				// A hub on the path is its group's, not this one's: the
 				// team still walks on through it to the join.
-				queue = append(queue, next[n]...)
-				continue
+				return true
 			}
 			if o, ok := owner[n]; ok && o != h.Slug {
 				shared[n] = true
 			}
 			owner[n] = h.Slug
-			if !isHub[n] {
-				queue = append(queue, next[n]...)
-			}
-		}
+			return !isHub[n]
+		})
 	}
 	for n := range shared {
 		delete(owner, n)
@@ -453,51 +435,31 @@ func (g *Graph) OwnerHubs() map[string]string {
 // hub: from the steps the branch reaches without passing through a hub.
 // Taking one is finishing the branch, which on a home screen is not the
 // same as having entered it — a team may go back from halfway.
-func (g *Graph) BranchReturns(hub, port string) []Edge {
-	next := make(map[string][]Edge, len(g.Edges))
-	for _, e := range g.Edges {
-		next[e.From] = append(next[e.From], e)
-	}
-	start, ok := g.Target(hub, port)
+func (s *Splits) BranchReturns(hub, port string) []Edge {
+	start, ok := s.g.Target(hub, port)
 	if !ok {
 		return nil
 	}
 	// A hub on a split's path the hub is not on belongs to its group,
 	// and the branch goes on through it, as OwnerHubs passes through it;
 	// a hub on a path looks no further than the path's steps.
-	var on map[string]pathKey
-	var steps map[pathKey]map[string]bool
-	for _, n := range g.Nodes {
-		if n.Type == Split {
-			on, steps = g.Splits().onPaths()
-			break
-		}
-	}
+	on, steps := s.onPaths()
 	region := on[hub]
 	var back []Edge
-	seen := map[string]bool{hub: true}
-	queue := []string{start}
-	for len(queue) > 0 {
-		n := queue[0]
-		queue = queue[1:]
-		if seen[n] {
-			continue
+	s.Reach([]string{start}, func(n string) bool {
+		if n == hub || region != (pathKey{}) && !steps[region][n] {
+			return false
 		}
-		seen[n] = true
-		if region != (pathKey{}) && !steps[region][n] {
-			continue
+		if node, ok := s.nodes[n]; !ok || node.Type == Hub && on[n] == region {
+			return false
 		}
-		if node, ok := g.Node(n); !ok || node.Type == Hub && on[n] == region {
-			continue
-		}
-		for _, e := range next[n] {
+		for _, e := range s.edges[n] {
 			if e.To == hub {
 				back = append(back, e)
-			} else {
-				queue = append(queue, e.To)
 			}
 		}
-	}
+		return true
+	})
 	return back
 }
 

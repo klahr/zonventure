@@ -1454,13 +1454,24 @@ func TestTwoKeyLaunchRolePosts(t *testing.T) {
 		t.Errorf("the mech's post with the mech not playing: %+v", res)
 	}
 
-	// The mech plays, but their phone has gone quiet: their post is anyone's.
+	// The mech plays, but their phone sends no location — gone quiet, or
+	// open with no fix: their post is anyone's.
 	quiet := together(t, cfg, zones, 1, 2, 3)
 	quiet.RoleHolders = map[string]int64{"smith": 1, "mech": 2}
-	quiet.Away = map[int64]bool{2: true}
+	quiet.NoFix = map[int64]bool{2: true}
 	quiet.as(1, &east).Turn("p")
 	if res, _, _ := quiet.as(3, &west).Turn("p"); !res.Accepted {
-		t.Errorf("the mech's post with the mech away: %+v", res)
+		t.Errorf("the mech's post with the mech sending no location: %+v", res)
+	}
+	// An open app, though, is no reason: a phone only heard from, not
+	// placed, would hold the post for good (Away is a group's matter).
+	open := together(t, cfg, zones, 1, 2, 3)
+	open.RoleHolders = map[string]int64{"smith": 1, "mech": 2}
+	open.Away = map[int64]bool{}
+	open.NoFix = map[int64]bool{2: true}
+	open.as(1, &east).Turn("p")
+	if res, _, _ := open.as(3, &west).Turn("p"); !res.Accepted {
+		t.Errorf("the mech's post with the mech's app open but unplaced: %+v", res)
 	}
 
 	// A phone that has not found itself is told so, not sent to its post.
@@ -2134,5 +2145,27 @@ func TestSecretRoleCover(t *testing.T) {
 	}
 	if got := names(2, "saboteur"); !slices.Equal(got, []string{"Saboteur"}) {
 		t.Errorf("the saboteur is told %v", got)
+	}
+}
+
+// A clone shares nothing an action changes with its team.
+func TestCloneSharesNothing(t *testing.T) {
+	tm := New(expedition(), t0)
+	tm.Nodes["pa"] = &NodeState{Attempts: 1}
+	tm.Items["key"], tm.Counters["c"], tm.Journal["j"] = 1, 1, true
+	tm.Entered["h"] = map[string]bool{"b1": true}
+	tm.Presses = map[string]map[int64]Press{"pa": {1: {}}}
+	tm.Strands = []Strand{{Port: "a", Members: []int64{1}}}
+	tm.Viewer = &Viewer{Slot: 1, Roles: []string{"scout"}}
+	c := tm.Clone()
+	c.Nodes["pa"].Attempts = 9
+	c.Items["key"], c.Counters["c"], c.Journal["j"] = 9, 9, false
+	c.Entered["h"]["b2"] = true
+	c.Presses["pa"][2] = Press{}
+	c.Strands[0].Members[0], c.Strands[0].Current = 9, "x"
+	c.Viewer.Roles[0] = "medic"
+	if tm.Nodes["pa"].Attempts != 1 || tm.Items["key"] != 1 || tm.Counters["c"] != 1 || !tm.Journal["j"] || len(tm.Entered["h"]) != 1 ||
+		len(tm.Presses["pa"]) != 1 || tm.Strands[0].Members[0] != 1 || tm.Strands[0].Current != "" || tm.Viewer.Roles[0] != "scout" {
+		t.Fatalf("the clone's play reached the team: %+v", tm)
 	}
 }

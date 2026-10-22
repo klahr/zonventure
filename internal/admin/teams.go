@@ -1,14 +1,12 @@
 package admin
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -19,6 +17,7 @@ import (
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/results"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/webhooks"
@@ -419,12 +418,14 @@ func (h *Handlers) rescueGraphTeam(w http.ResponseWriter, r *http.Request, event
 		return
 	}
 	var (
-		current   sql.NullString
 		completed sql.NullTime
+		graphID   int64
+		split     string
 		strands   []byte
 	)
 	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT current_node, completed_at, strands FROM team_graph_state WHERE team_id = $1`, teamID).Scan(&current, &completed, &strands)
+		`SELECT completed_at, graph_id, COALESCE(split, ''), strands FROM team_graph_state WHERE team_id = $1`, teamID).
+		Scan(&completed, &graphID, &split, &strands)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "this team hasn't started yet", "code": "team_not_started"})
 		return
@@ -437,29 +438,10 @@ func (h *Handlers) rescueGraphTeam(w http.ResponseWriter, r *http.Request, event
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "team already finished", "code": "team_finished"})
 		return
 	}
+	// Neither step nor group named is the team's own step: a split team's
+	// names no group, though a time limit due moves the team regardless.
 	node := req.Node
-	if req.Group != "" {
-		// A group named is on its own step, not the split the team is on
-		// meanwhile. One gone since — met the others, or the team together
-		// again — is stale: never the team's step instead, which would
-		// move the whole team.
-		var ss []session.Strand
-		_ = json.Unmarshal(strands, &ss)
-		i := slices.IndexFunc(ss, func(s session.Strand) bool { return s.Key() == req.Group })
-		if i < 0 {
-			httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team has moved on since you looked; refresh and try again", "code": "team_moved"})
-			return
-		}
-		if node == "" {
-			node = ss[i].Current
-		}
-	}
-	if node == "" {
-		node = current.String
-	}
-	// The group moved on, named as the console names it, for the log.
-	group := h.rescuedGroup(r.Context(), teamID, node, req.Group)
-	res, err := h.Engine.RescueGroup(r.Context(), teamID, node, req.Group)
+	res, err := h.engine().RescueGroup(r.Context(), teamID, node, req.Group)
 	switch {
 	case errors.Is(err, session.ErrFinished):
 		// Finished since the check above.
@@ -475,27 +457,107 @@ func (h *Handlers) rescueGraphTeam(w http.ResponseWriter, r *http.Request, event
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team isn't on a puzzle it can be moved past", "code": "not_rescuable"})
 		return
 	case errors.Is(err, session.ErrTooFew):
+		// No organiser's rescue counts players today (none are loaded
+		// without a phone): kept so a change there refuses, not fails.
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team is waiting for more players", "code": "too_few"})
 		return
 	case err != nil:
 		httpx.ServerErr(w, http.StatusInternalServerError, "move failed", err)
 		return
 	}
-	me, _ := auth.FromContext(r.Context())
-	payload := map[string]any{"node": node, "port": res.Port, "to": res.View.Node, "by_arranger": true}
-	if group != "" {
-		payload["group"] = group
+	// Where the move took the team — or, split, the group moved — rather
+	// than whichever group the team's view shows.
+	to := cmp.Or(res.To, res.View.Node)
+	// A group named alone was moved from its own step (Result.From).
+	payload := map[string]any{"node": cmp.Or(node, res.From), "port": res.Port, "to": to, "by_arranger": true}
+	if res.Moved != "" {
+		// The group moved on, named as the console names it.
+		payload["group"] = res.Moved
 	}
-	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamUnlocked, payload)
+	if res.TimeUp {
+		// The time limit took the move's place: what was asked for — the
+		// group named as the console names it, on the step it was on as
+		// read before the move; else, together, the team's own step. A
+		// split team's own step names no move.
+		from := res.From
+		if split != "" {
+			from = ""
+		}
+		payload = map[string]any{"node": cmp.Or(node, from)}
+		if req.Group != "" {
+			payload["group"] = req.Group
+			if splits, err := h.engine().Splits(r.Context(), graphID); err == nil {
+				payload["group"] = session.GroupLabel(splits.Graph(), "", split, req.Group)
+				if node == "" {
+					for _, st := range play.StoredGroups(splits, split, strands) {
+						if st.Port == req.Group {
+							payload["node"] = st.Current
+						}
+					}
+				}
+			}
+		}
+	}
+	h.organiserMoved(w, r, eventID, teamID, res, to, payload)
+}
+
+// organiserMoved records and announces a move the organisers made: a
+// rescue's (payload), or the time limit's where it ran out first and
+// took the move's place — logged as that, not as the organisers moving
+// the team (which the phones say), and the reply's time_up.
+func (h *Handlers) organiserMoved(w http.ResponseWriter, r *http.Request, eventID, teamID int64, res play.Result, to string, payload map[string]any) {
+	ctx := r.Context()
+	me, _ := auth.FromContext(ctx)
+	kind := activity.TeamUnlocked
+	if res.TimeUp {
+		// What was asked for, the step and group, kept: the limit took its
+		// place.
+		kind = activity.TeamTimedOut
+		if payload == nil {
+			payload = map[string]any{}
+		}
+		payload["to"], payload["by_arranger"] = to, true
+	}
+	activity.Record(ctx, h.DB, eventID, &teamID, activity.UserActor(me.ID), kind, payload)
 	if res.View.Finished {
-		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamCompleted,
+		activity.Record(ctx, h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamCompleted,
 			map[string]any{"outcome": res.View.Outcome, "by_arranger": true})
-		if done, _ := activity.MaybeCompleteEvent(r.Context(), h.DB, eventID); done {
-			h.publishEventCompleted(r.Context(), eventID)
+		if done, _ := activity.MaybeCompleteEvent(ctx, h.DB, eventID); done {
+			h.publishEventCompleted(ctx, eventID)
 		}
 	}
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
-	httpx.JSON(w, http.StatusOK, map[string]any{"node": res.View.Node, "completed": res.View.Finished})
+	httpx.JSON(w, http.StatusOK, map[string]any{"node": to, "completed": res.View.Finished, "time_up": res.TimeUp})
+}
+
+// RunOutTime serves POST /api/admin/teams/{teamID}/time-up: the team's
+// time limit, due but not yet run out — no phone of the team has asked
+// since — run out, sending the whole team on as the limit says. Refused
+// (409 not_due) where it is not due, run out already, say, by a phone.
+func (h *Handlers) RunOutTime(w http.ResponseWriter, r *http.Request) {
+	teamID, eventID, ok := h.teamFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if !h.requireEventOp(w, r.Context(), eventID, OpUnlockTeam) {
+		return
+	}
+	res, err := h.engine().TimeUp(r.Context(), teamID)
+	switch {
+	case errors.Is(err, play.ErrNoGraph):
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "this team hasn't started yet", "code": "team_not_started"})
+		return
+	case errors.Is(err, session.ErrFinished):
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "team already finished", "code": "team_finished"})
+		return
+	case errors.Is(err, session.ErrNotAllowed):
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team's time limit isn't due", "code": "not_due"})
+		return
+	case err != nil:
+		httpx.ServerErr(w, http.StatusInternalServerError, "running out the time failed", err)
+		return
+	}
+	h.organiserMoved(w, r, eventID, teamID, res, cmp.Or(res.To, res.View.Node), nil)
 }
 
 // WithdrawTeam soft-flags a team as withdrawn (stamps withdrawn_at).
@@ -687,7 +749,7 @@ func (h *Handlers) SetTeamAvatar(w http.ResponseWriter, r *http.Request) {
 		h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
-		"url":  teamAvatarURL(teamID),
+		"url":  play.TeamAvatarURL(teamID),
 		"mime": mime,
 		"size": int64(len(data)),
 	})
@@ -735,11 +797,4 @@ func (h *Handlers) ServeTeamAvatar(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(content)))
 	w.Header().Set("Cache-Control", "private, max-age=60")
 	_, _ = w.Write(content)
-}
-
-// teamAvatarURL is the canonical path for a team's profile picture.
-// Returns the empty string for teams without one; callers pair that
-// with a client-side initials fallback.
-func teamAvatarURL(teamID int64) string {
-	return fmt.Sprintf("/adventure-assets/team-avatar/%d", teamID)
 }

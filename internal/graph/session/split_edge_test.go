@@ -329,7 +329,7 @@ func TestKeysWithinAGroup(t *testing.T) {
 		wire("start", "out", "s").wire("s", "a", "launch").wire("s", "b", "b1").
 		wire("launch", "go", "j").wire("b1", "solved", "j").wire("j", "out", "end")
 	tm := begin(t, b.valid(t))
-	tm.Unfocus()
+	tm.unfocus()
 	tm.Players, tm.Size = []int64{1, 2, 3, 4}, 4 // a: 1, 3
 	tm.Deal(tm.Players, nil)
 	moved(t, tm, "a")(asPlayer(tm, 1, nil).Continue("s"))
@@ -361,7 +361,7 @@ func TestTasksOnAPath(t *testing.T) {
 	b.g.Nodes[1].SplitCfg.Paths[0].Role = "scout"
 	b.g.Nodes[1].SplitCfg.Paths[1].Role = "medic"
 	tm := begin(t, b.valid(t))
-	tm.Unfocus()
+	tm.unfocus()
 	tm.Players, tm.Size = []int64{1, 2, 3}, 3
 	tm.RoleHolders = map[string]int64{"scout": 1, "medic": 2} // a: 1, 3; b: 2
 	tm.Deal(tm.Players, tm.RoleHolders)
@@ -447,7 +447,7 @@ func TestThreeWaysAnyOrder(t *testing.T) {
 			tm.Strands[i].Current = "s" // set off in the order given
 		}
 		for k, i := range order {
-			tm.Unfocus()
+			tm.unfocus()
 			tm.focusOn(i)
 			moved(t, tm, "set off")(tm.Continue("s"))
 			moved(t, tm, steps[i])(tm.Answer(steps[i], "x"))

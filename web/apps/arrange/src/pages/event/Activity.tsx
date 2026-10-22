@@ -88,6 +88,16 @@ function ActivityLine({ e, event, graph }: { e: Activity; event: Info; graph: Ev
       msg = <>{team}{p.group ? ` · ${str(p.group)}` : ""}{p.node ? t.t(" was moved past {{step}}", { step }) : t.t(" skipped past puzzle {{n}}", { n: num(p.from_page_index) + 1 })}</>;
       if (p.by_arranger && !e.actor) meta = t.t("by arranger");
       break;
+    case "team.timed_out":
+      // A phone's countdown, the organisers, or an action past the
+      // deadline — which the limit took the place of — ran out the time.
+      badge = "brand"; symbol = "⌛";
+      msg = <>{team}{t.t(" ran out of time")}</>;
+      // A move of the organisers' the limit took the place of: as asked.
+      if (p.group) meta = p.node ? t.t("before {{group}} was moved past {{step}}", { group: str(p.group), step }) : t.t("before {{group}} was moved on", { group: str(p.group) });
+      else if (p.node) meta = t.t("before the move asked for: past {{step}}", { step });
+      else if (p.by_arranger && !e.actor) meta = t.t("by arranger");
+      break;
     case "team.start_anywhere":
       badge = "brand"; symbol = "⌖";
       msg = <>{team}{t.t(" may start away from the starting point")}</>;

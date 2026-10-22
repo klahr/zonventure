@@ -9,7 +9,7 @@ import * as api from "./api.ts";
 import type { ConnectStatus, EventInfo, Team } from "./api.ts";
 import { pricing } from "../events/api.ts";
 import { languageName } from "../../languages.ts";
-import { copyText, fmtElapsedShort, fmtPoints, joinedCount, members, recapURL, teamStuck } from "./util.ts";
+import { copyText, fmtElapsedShort, fmtPoints, joinedCount, members, playEnd, recapURL, teamStuck } from "./util.ts";
 
 /**
  * The three numbers that matter in this phase. Before the start: teams,
@@ -48,11 +48,7 @@ export function QuickStats({ event, teams, now }: { event: EventInfo; teams: Tea
       </Stats>
     );
   }
-  let end = now;
-  for (const ts of [event.completed_at, event.cancelled_at, event.paused_at]) {
-    const ms = toDate(ts)?.getTime();
-    if (ms && ms < end) end = ms;
-  }
+  const end = playEnd(event, now);
   const elapsed = fmtElapsedShort(Math.max(0, Math.floor((end - start) / 1000) - (event.paused_seconds || 0)));
   if (event.state === "completed" || event.state === "cancelled") {
     return (

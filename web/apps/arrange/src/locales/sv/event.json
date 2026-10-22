@@ -264,5 +264,14 @@
   "Move group on": "Flytta gruppen vidare",
   "Move {{group}} of {{name}} on?": "Flytta {{group}} i {{name}} vidare?",
   "This moves the group past the step it's on, without points: a puzzle by its skip route if it has one, otherwise as if the group had answered; a story as if read; a hub out, or into the first branch it may still take. The rest of the team stays where it is. Useful when the group is stuck or the location won't register. The action is recorded in the event log.": "Det här flyttar gruppen förbi steget den står på, utan poäng: ett pussel via dess överhoppningsväg om det finns en, annars som om gruppen hade svarat; en berättelse som om den var läst; ett nav ut, eller in i den första gren den fortfarande får ta. Resten av laget blir kvar där det är. Bra när gruppen har kört fast eller platsen inte registreras. Åtgärden loggas i eventloggen.",
-  "{{group}} of {{name}} moved on": "{{group}} i {{name}} gick vidare"
+  "{{group}} of {{name}} moved on": "{{group}} i {{name}} gick vidare",
+  "Couldn't read the team's players and groups.": "Kunde inte läsa lagets spelare och grupper.",
+  " ran out of time": " fick slut på tid",
+  "{{name}} ran out of time": "{{name}} fick slut på tid",
+  "Run out {{name}}'s time?": "Låt tiden ta slut för {{name}}?",
+  "The team's time limit has passed, but none of its phones has said so yet. This sends the whole team — every group, if it is split up — on as the time limit says. The action is recorded in the event log.": "Lagets tidsgräns har passerat, men ingen av dess telefoner har sagt till ännu. Det här skickar hela laget — varje grupp, om det är uppdelat — vidare som tidsgränsen säger. Åtgärden sparas i eventloggen.",
+  "Run out the time": "Låt tiden ta slut",
+  "before the move asked for: past {{step}}": "före flytten som begärdes: förbi {{step}}",
+  "before {{group}} was moved past {{step}}": "innan {{group}} flyttades förbi {{step}}",
+  "before {{group}} was moved on": "innan {{group}} flyttades vidare"
 }

@@ -28,6 +28,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -50,6 +51,9 @@ var (
 	// ErrNotYours means the action is another role's: a puzzle only the
 	// Locksmith answers, an item in the Locksmith's kit. Map to 403.
 	ErrNotYours = errors.New("that is another role's to do")
+	// ErrOtherGroup means the action is on a step of another group of a
+	// split team, or a group the phone may not walk. Map to 403.
+	ErrOtherGroup = errors.New("that is another group's to do")
 	// ErrLocked means answering is blocked after a wrong guess. Map to
 	// 429 with Retry-After from Result.BlockedUntil.
 	ErrLocked = errors.New("answering is temporarily locked")
@@ -130,20 +134,20 @@ type Team struct {
 	// from StartPlace: it still sees the start screen, its start open.
 	StartAnywhere bool `json:"-"`
 
-	Current       string        `json:"current,omitempty"`
-	NodeEnteredAt time.Time     `json:"node_entered_at"`
-	StartedAt     time.Time     `json:"started_at"`
-	Completed     bool          `json:"completed,omitempty"`
-	Ending        graph.Outcome `json:"outcome,omitempty"`
-	// StartPaused and NodePaused are what the event's pause clock read
-	// when the team started and when it entered its node. Paused is
+	// Cursor is where the team is: Current, NodeEnteredAt, NodePaused and
+	// WalkedMetres. While it is split, each group has its own (Strand).
+	Cursor
+	StartedAt time.Time     `json:"started_at"`
+	Completed bool          `json:"completed,omitempty"`
+	Ending    graph.Outcome `json:"outcome,omitempty"`
+	// StartPaused is what the event's pause clock read when the team
+	// started, as NodePaused is when it entered its node. Paused is
 	// what it reads at Now: the seconds the event has been paused in
 	// all, the open pause included. Every clock measured from the start
 	// or the node leaves out the pauses since, so a pause freezes the
 	// time limit, hint delays and the rest. Paused is the event's, read
 	// fresh for every action like Occ; a simulated team never pauses.
 	StartPaused int `json:"start_paused,omitempty"`
-	NodePaused  int `json:"node_paused,omitempty"`
 	Paused      int `json:"-"`
 
 	Points         float64 `json:"points"`
@@ -205,13 +209,14 @@ type Team struct {
 	// one of its players is. Never stored.
 	Viewer *Viewer `json:"-"`
 	// Players are the slots of the players who are playing, for steps
-	// done together (see together.go), and Presses what each did on the
-	// current step; PressChanged is the press an action recorded or
-	// withdrew, for the engine to persist. Players is nil for the team as
-	// a whole. None is stored with the team.
-	Players      []int64         `json:"-"`
-	Presses      map[int64]Press `json:"-"`
-	PressChanged *PressChange    `json:"-"`
+	// done together (see together.go), and Presses what each did on each
+	// step the team, or a group of it, is on, by step; PressChanged is the
+	// press an action recorded or withdrew, for the engine to persist.
+	// Players is nil for the team as a whole. None is stored with the
+	// team.
+	Players      []int64                    `json:"-"`
+	Presses      map[string]map[int64]Press `json:"-"`
+	PressChanged *PressChange               `json:"-"`
 	// Secrets are who holds each secret role, by slot (0: no one), and
 	// Accused whom most of the team named at each accusation block, by
 	// PickKey; see secret.go. NewJournal are notes an action unlocked
@@ -233,45 +238,62 @@ type Team struct {
 	// team as a whole, every role its own. Not stored with the team.
 	RoleHolders map[string]int64 `json:"-"`
 	// Away are the players whose phones have been silent a while — put
-	// away, out of battery, gone home — so a post of their role is
-	// anyone's rather than a wait for them. PhoneAt is where each phone
-	// that reported lately is, by slot. Neither is stored with the team.
+	// away, out of battery, gone home — so a group of theirs is anyone's
+	// rather than a wait for them. NoFix are those whose phones have sent
+	// no location a while, so a post of their role, which they would have
+	// to be seen at, is anyone's. PhoneAt is where each phone that
+	// reported lately is, by slot. None is stored with the team.
 	Away    map[int64]bool     `json:"-"`
+	NoFix   map[int64]bool     `json:"-"`
 	PhoneAt map[int64]Position `json:"-"`
-	// WalkedMetres is how far the team has walked on its current node:
-	// read from its phones' positions by the live engine, added up from
-	// the moves the simulator makes.
-	WalkedMetres float64 `json:"walked,omitempty"`
 
 	// Split is the split the team is divided at, and Strands where each
 	// of its groups is, while it is: see split.go. Current is then the
-	// cursor of the group a view or action is for (Focus), and the split
+	// cursor of the group a view or action is for (focusView), and the split
 	// when it is for none.
 	Split   string   `json:"split,omitempty"`
 	Strands []Strand `json:"strands,omitempty"`
 	// Walks is how far each group has walked on its step, by path, as the
 	// live engine reads it from the group's phones. Never stored.
 	Walks map[string]float64 `json:"-"`
-	// PressesAt are what each player did on each group's step, by node,
-	// for a split team; focusing on a group makes its step's Presses.
-	// Never stored with the team.
-	PressesAt map[string]map[int64]Press `json:"-"`
-	// GroupsChanged says an action changed the groups without moving
-	// any (Walk), for the engine to store them. Never stored.
-	GroupsChanged bool `json:"-"`
 	// focus is the strand Current is, counted from 1, and saved what
 	// focusing on it narrowed.
 	focus int
 	saved *focused
-	// joined says the walk under way has taken the focused group through
-	// its join (walk.State.Joined).
-	joined bool
-	shape  *shapes
+	// rescuing says the action running is the organisers' rescue
+	// (RescueGroup), and marking where Apply is to mark it took the team
+	// (MarkMoved): the group's key, "" for the team.
+	rescuing bool
+	marking  *string
+	// unchosen says the action running moves the team by no phone's choice
+	// — a timer run out — so Apply credits it to no phone (MovedBy).
+	unchosen bool
+	// splitsCache are splitsOf's splits (splits).
+	splitsCache *graph.Splits
+	splitsOf    *graph.Graph
+}
+
+// Cursor is where a team, or one group of it, is on the graph.
+type Cursor struct {
+	Current       string    `json:"current,omitempty"`
+	NodeEnteredAt time.Time `json:"node_entered_at"`
+	// NodePaused is what the event's pause clock read when the node was
+	// entered (Team.Paused).
+	NodePaused int `json:"node_paused,omitempty"`
+	// WalkedMetres is how far it has walked on its current node: read
+	// from its phones' positions by the live engine, added up from the
+	// moves the simulator makes.
+	WalkedMetres float64 `json:"walked,omitempty"`
+	// Moved says the organisers' rescue put it here (MarkMoved), and
+	// MovedBy is the phone (slot) whose action did, 0 for none — the
+	// organisers, the team as a whole: both as the last move left them.
+	Moved   bool  `json:"moved,omitempty"`
+	MovedBy int64 `json:"moved_by,omitempty"`
 }
 
 // New returns an empty team on g at time now, not yet placed anywhere.
 func New(g *graph.Graph, now time.Time) *Team {
-	t := &Team{G: g, Now: now, StartedAt: now, NodeEnteredAt: now, Size: 1}
+	t := &Team{G: g, Now: now, StartedAt: now, Cursor: Cursor{NodeEnteredAt: now}, Size: 1}
 	t.Init()
 	for slug, q := range g.Kit() {
 		t.Items[slug] += q
@@ -299,6 +321,58 @@ func (t *Team) Init() {
 	if t.Occ == nil {
 		t.Occ = map[string]int{}
 	}
+}
+
+// Clone is a copy of the team to play on without touching it: its
+// state copied deep, its graph and splits shared. The team is unfocused
+// first, so the copy is the team's own: clone between actions, never
+// between Act and Apply, which moves the group Act left focused.
+func (t *Team) Clone() *Team {
+	t.unfocus()
+	c := *t
+	c.Nodes = make(map[string]*NodeState, len(t.Nodes))
+	for k, v := range t.Nodes {
+		row := *v
+		c.Nodes[k] = &row
+	}
+	c.Items, c.Journal, c.Counters, c.Picks, c.Occ = maps.Clone(t.Items), maps.Clone(t.Journal), maps.Clone(t.Counters), maps.Clone(t.Picks), maps.Clone(t.Occ)
+	c.JournalOrder, c.NewJournal = slices.Clone(t.JournalOrder), slices.Clone(t.NewJournal)
+	c.Entered = cloneNested(t.Entered)
+	if t.Position != nil {
+		p := *t.Position
+		c.Position = &p
+	}
+	if t.Viewer != nil {
+		v := *t.Viewer
+		v.Roles = slices.Clone(v.Roles)
+		c.Viewer = &v
+	}
+	c.Phones, c.Players = slices.Clone(t.Phones), slices.Clone(t.Players)
+	c.Secrets, c.Accused = maps.Clone(t.Secrets), maps.Clone(t.Accused)
+	c.Holders, c.RoleHolders = maps.Clone(t.Holders), maps.Clone(t.RoleHolders)
+	c.Away, c.NoFix, c.PhoneAt, c.Walks = maps.Clone(t.Away), maps.Clone(t.NoFix), maps.Clone(t.PhoneAt), maps.Clone(t.Walks)
+	c.Presses, c.Seals = cloneNested(t.Presses), cloneNested(t.Seals)
+	// A group's members, choices and cursor change in place.
+	if t.Strands != nil {
+		c.Strands = make([]Strand, len(t.Strands))
+		for i, st := range t.Strands {
+			st.Members, st.Chosen = slices.Clone(st.Members), slices.Clone(st.Chosen)
+			c.Strands[i] = st
+		}
+	}
+	return &c
+}
+
+// cloneNested copies a map of maps, each inner map too.
+func cloneNested[K, K2 comparable, V any](m map[K]map[K2]V) map[K]map[K2]V {
+	if m == nil {
+		return nil
+	}
+	out := make(map[K]map[K2]V, len(m))
+	for k, v := range m {
+		out[k] = maps.Clone(v)
+	}
+	return out
 }
 
 // Start places a new team on the graph's first stop — or, when the
@@ -334,10 +408,57 @@ func Place(g *graph.Graph, node string, now time.Time) (*Team, error) {
 		return nil, fmt.Errorf("no node %q", node)
 	}
 	t := New(g, now)
-	t.Current = node
+	t.PutOn(node, 0)
 	t.Row(node)
-	t.applySplit(walk.Step{To: node})
 	return t, nil
+}
+
+// PutOn puts the team on node afresh, as if it had just arrived there —
+// the designer's preview, a dev team moved about — split there, on a
+// split; on a step of a split's path, on that split, the path's group on
+// the step and the others on the split still, not the whole team on it
+// as if the split were not there — the group the team walks, so its view
+// shows the step. An ending is every group's: the team's. Its clocks,
+// like its groups', start now; moved there by the phone by (Cursor), 0
+// for none.
+func (t *Team) PutOn(node string, by int64) {
+	at := node
+	split, port, onPath := t.Splits().OnPath(node)
+	if n, _ := t.G.Node(node); onPath && n.Type != graph.End {
+		at = split
+	}
+	t.splitAfreshAt(Cursor{Current: at, NodeEnteredAt: t.Now, NodePaused: t.Paused, MovedBy: by})
+	if at == node {
+		return
+	}
+	// Its group came by the split, as one walking there would have.
+	t.Row(split)
+	for i := range t.Strands {
+		if t.Strands[i].Port == port {
+			t.Strands[i].Current, t.Strands[i].Chosen = node, []int64{0}
+		}
+	}
+}
+
+// WalkPlaced puts slots in the group standing on node, a step of the
+// team's split's path (PutOn), and out of any other: for a host placing
+// the team for players — a dev phone, the designer's preview as a crew's
+// phone — who are to play the step placed, not a group dealt them on the
+// split.
+func (t *Team) WalkPlaced(node string, slots []int64) {
+	t.unfocus()
+	i := slices.IndexFunc(t.Strands, func(st Strand) bool { return st.Current == node && node != t.Split })
+	if i < 0 {
+		return
+	}
+	for k := range t.Strands {
+		t.Strands[k].Members = slices.DeleteFunc(t.Strands[k].Members, func(p int64) bool { return slices.Contains(slots, p) })
+	}
+	for _, p := range slots {
+		if !slices.Contains(t.Strands[i].Members, p) {
+			t.Strands[i].Members = append(t.Strands[i].Members, p)
+		}
+	}
 }
 
 // Row returns the team's record for a node, creating it — which is what
@@ -385,7 +506,42 @@ func (t *Team) Apply(step walk.Step) {
 	t.NodeEnteredAt = t.Now
 	t.NodePaused = t.Paused
 	t.WalkedMetres = 0
+	t.Moved, t.MovedBy = false, 0
+	if t.Viewer != nil && !t.unchosen {
+		t.MovedBy = t.Viewer.Slot
+	}
+	if t.focus > 0 {
+		// The group's walk, as its phones were read, was on the step it
+		// left: on the one it comes to it has walked nothing yet.
+		delete(t.Walks, t.Strands[t.focus-1].Port)
+	}
 	t.applySplit(step)
+	t.unfocus()
+	if t.marking != nil {
+		key := *t.marking
+		t.marking = nil
+		t.MarkMoved(key)
+	}
+	// Done together or not, a step left is behind the team, or its group:
+	// what each player did there starts again on a later visit.
+	here := t.Standing()
+	for node := range t.Presses {
+		if !slices.Contains(here, node) {
+			delete(t.Presses, node)
+		}
+	}
+}
+
+// Standing are the steps the team stands on: its own, and, split, each
+// of its groups'. Presses are kept only there.
+func (t *Team) Standing() []string {
+	out := []string{}
+	for _, slug := range append([]string{t.Current}, t.groupSteps()...) {
+		if slug != "" && !slices.Contains(out, slug) {
+			out = append(out, slug)
+		}
+	}
+	return out
 }
 
 // FinishPoints are what the team scores as it finishes: its quiz walk
@@ -673,7 +829,7 @@ func (t *Team) BranchFinished(hub, port string) bool {
 	if !t.BranchDone(hub, port) {
 		return false
 	}
-	back := t.G.BranchReturns(hub, port)
+	back := t.Splits().BranchReturns(hub, port)
 	if len(back) == 0 {
 		return true
 	}
@@ -764,6 +920,18 @@ type Result struct {
 	// NotYet is set when a gate turned the team back to a hub to choose
 	// again: with nothing new on screen, the phone says why.
 	NotYet bool `json:"not_yet,omitempty"`
+
+	// From and To are the steps the action's walk left and ended on (Act):
+	// a split team's, the group's that moved, the join for one held there
+	// — From the one a rescue naming no step was from; and MovedKey the key
+	// (path) of the group that moved, unless it walked on past its join
+	// with the others, the team again, and Moved its name in the
+	// adventure's main language, by the split it walked, for a rescue.
+	// Never sent.
+	From     string `json:"-"`
+	To       string `json:"-"`
+	MovedKey string `json:"-"`
+	Moved    string `json:"-"`
 
 	// Shared is set when the action changed what other teams' phones
 	// show; Scored when it changed the team's score. Set by the engine.
@@ -1064,7 +1232,38 @@ func (t *Team) TimeUpDue() bool {
 // the limit moves the team instead, and the action is not run. Every
 // caller goes through here, so a phone that was asleep at the deadline
 // cannot slip past it, and a new action cannot forget to check.
+//
+// A split team is left unfocused, unless the action moves it: then it
+// stays on the group that moved until Apply has moved it.
 func (t *Team) Act(action func() (Result, *walk.Step, error)) (Result, *walk.Step, error) {
+	t.rescuing, t.marking, t.unchosen = false, nil, false
+	res, step, err := t.act(action)
+	if step == nil {
+		t.unfocus()
+	} else {
+		res.From, res.To = step.From, step.To
+		if t.focus > 0 {
+			// A group that walked on past its join with the others is the
+			// whole team again, not a group moved.
+			if join := t.groupJoin(); join == "" || step.To == join || !slices.Contains(step.Passed, join) {
+				res.MovedKey = t.Strands[t.focus-1].Port
+				if t.rescuing {
+					// Named for the organisers' log, the one reader.
+					res.Moved = GroupLabel(t.G, "", t.Split, res.MovedKey)
+				}
+			}
+		}
+		if t.rescuing && !res.TimeUp {
+			// The organisers' rescue: Apply marks where it took the team.
+			key := res.MovedKey
+			t.marking = &key
+		}
+	}
+	t.rescuing = false
+	return res, step, err
+}
+
+func (t *Team) act(action func() (Result, *walk.Step, error)) (Result, *walk.Step, error) {
 	if t.tooFew() {
 		return Result{}, nil, ErrTooFew
 	}
@@ -1090,6 +1289,9 @@ func (t *Team) tooFew() bool {
 // time rather than trusting it. Through Act, a due limit has already
 // fired; alone, it refuses when there is nothing to do.
 func (t *Team) TimeUp() (Result, *walk.Step, error) {
+	if t.Completed {
+		return Result{}, nil, ErrFinished
+	}
 	if !t.TimeUpDue() {
 		return Result{}, nil, ErrNotAllowed
 	}
@@ -1097,7 +1299,7 @@ func (t *Team) TimeUp() (Result, *walk.Step, error) {
 }
 
 func (t *Team) fireTimeUp() (Result, *walk.Step, error) {
-	t.TimedOut = true
+	t.TimedOut, t.unchosen = true, true
 	// Wherever its groups are, the team is sent on together.
 	t.endSplit()
 	step, err := walk.Jump(t.G, t, t.Current, t.G.TimeLimit.To)
@@ -1133,14 +1335,14 @@ func (t *Team) backTo() (string, bool) {
 	if t.Current == "" || t.TimedOut {
 		return "", false
 	}
-	hub, ok := t.G.OwnerHub(t.Current)
+	hub, ok := t.Splits().OwnerHubs()[t.Current]
 	if !ok {
 		return "", false
 	}
 	// A group goes back only to a home screen on its own path, never
 	// alone to one the team left together; the team, together, never to
 	// one on a path, which is a group's.
-	if t.Split != "" && !t.onPath(hub) || t.Split == "" && t.onAnyPath(hub) {
+	if t.Split != "" && !t.onPath(hub) || t.Split == "" && t.Splits().OnAnyPath(hub) {
 		return "", false
 	}
 	h, _ := t.G.Node(hub)
@@ -1167,7 +1369,11 @@ func (t *Team) Continue(node string) (Result, *walk.Step, error) {
 		return Result{}, nil, err
 	}
 	if n.Type == graph.Split {
-		return t.leaveSplit(n)
+		port, err := t.splitPort(n)
+		if err != nil {
+			return Result{}, nil, err
+		}
+		return t.leaveSplit(n, port)
 	}
 	if n.Type != graph.Story {
 		return Result{}, nil, ErrWrongNode
@@ -1303,56 +1509,139 @@ func (t *Team) Rescue(node string) (Result, *walk.Step, error) {
 	if err != nil {
 		return Result{}, nil, err
 	}
-	if n.Type == graph.Split {
-		// A group no one sets off — its phones gone flat — is set off.
-		return t.leaveSplit(n)
-	}
-	if t.Split != "" && t.focus > 0 {
-		// A group on its path is moved on from any step with a way on: no
-		// one may be left to read its story, or choose at its hub.
-		switch n.Type {
-		case graph.Story:
-			t.Row(n.Slug).Solved = true
-			step, err := t.leave(n, graph.PortOut, 0)
-			return Result{Port: graph.PortOut}, step, err
-		case graph.Hub:
-			return t.rescueHub(n)
+	way, err := t.rescueOf(n)
+	switch {
+	case err != nil:
+		return Result{}, nil, err
+	case n.Type == graph.Split:
+		return t.leaveSplit(n, way.port)
+	case way.branch:
+		step, err := walk.EnterBranch(t.G, t, n.Slug, way.port)
+		if err != nil {
+			return Result{}, nil, fmt.Errorf("%w: %v", ErrNotAllowed, err)
 		}
+		return Result{Port: way.port}, &step, nil
 	}
-	if n.Type != graph.Puzzle || n.PuzzleCfg == nil {
-		return Result{}, nil, ErrWrongNode
-	}
-	o, ok := outputFor(n, graph.OnSkip)
-	if !ok {
-		if o, ok = outputFor(n, graph.OnAnswer); !ok {
-			return Result{}, nil, ErrNotAllowed
-		}
+	if way.solve {
 		t.Row(n.Slug).Solved = true
 	}
-	step, err := t.leave(n, o.Port, 0)
+	step, err := t.leave(n, way.port, 0)
 	if err != nil {
 		return Result{}, nil, err
 	}
-	return Result{Port: o.Port}, step, nil
+	return Result{Port: way.port}, step, nil
+}
+
+// rescueWay is the way Rescue moves the team on from a step: by port,
+// into a hub's branch (or out of the hub) where branch, and the step
+// solved where solve.
+type rescueWay struct {
+	port          string
+	branch, solve bool
+}
+
+// rescueOf is the way Rescue moves the team on from n, which it stands
+// on: ErrNotAllowed or ErrWrongNode where it has none.
+func (t *Team) rescueOf(n graph.Node) (rescueWay, error) {
+	if n.Type == graph.Split {
+		// A group no one sets off — its phones gone flat — is set off.
+		port, err := t.splitPort(n)
+		return rescueWay{port: port}, err
+	}
+	if t.Split != "" && t.focus > 0 {
+		// A group on its path is moved on from any step with a way on: no
+		// one may be left to read its story, or choose at its hub. Only
+		// toward its join, though (towardJoin).
+		switch n.Type {
+		case graph.Story:
+			if !t.towardJoin(n.Slug, graph.PortOut) {
+				return rescueWay{}, ErrNotAllowed
+			}
+			return rescueWay{port: graph.PortOut, solve: true}, nil
+		case graph.Hub:
+			port := t.rescueHub(n)
+			if port == "" {
+				return rescueWay{}, ErrNotAllowed
+			}
+			return rescueWay{port: port, branch: true}, nil
+		}
+	}
+	if n.Type != graph.Puzzle || n.PuzzleCfg == nil {
+		return rescueWay{}, ErrWrongNode
+	}
+	// Its skip route, or else its first answer route: on a path, the
+	// first that leads toward the join.
+	for _, trig := range []graph.Trigger{graph.OnSkip, graph.OnAnswer} {
+		for _, o := range n.PuzzleCfg.Outputs {
+			if o.Trigger == trig && t.towardJoin(n.Slug, o.Port) {
+				return rescueWay{port: o.Port, solve: o.Trigger == graph.OnAnswer}, nil
+			}
+		}
+	}
+	return rescueWay{}, ErrNotAllowed
+}
+
+// MarkMoved marks where the organisers' rescue just took the team, the
+// move applied (Cursor.Moved): the group with key, or else the team — and
+// each of its groups, where the move split it up.
+func (t *Team) MarkMoved(key string) {
+	t.unfocus()
+	if key == "" && t.Split == "" {
+		// The team's own cursor, while it is split up, stays on the split
+		// as its groups walk on: the mark is theirs.
+		t.Moved = true
+	}
+	for i := range t.Strands {
+		if key == "" || t.Strands[i].Port == key {
+			t.Strands[i].Moved = true
+		}
+	}
+}
+
+// Rescuable reports, group by group, whether the organisers' rescue
+// (Act with RescueGroup, with no viewer) would move each of a split
+// team's groups on from its own step, as the team stands: tried on a
+// copy of the team (Clone), so it is the rescue itself that answers — a
+// walk that cannot be taken refused. With a time limit due, which Act
+// runs out instead, no group's: the team is the limit's to move
+// (TimeUpDue). None for a team together or finished.
+func (t *Team) Rescuable() []bool {
+	if t.Split == "" || t.Completed {
+		return nil
+	}
+	t.unfocus()
+	out := make([]bool, len(t.Strands))
+	if t.TimeUpDue() {
+		return out
+	}
+	for i, st := range t.Strands {
+		trial := t.Clone()
+		_, _, err := trial.Act(func() (Result, *walk.Step, error) { return trial.RescueGroup(st.Current, st.Port) })
+		out[i] = err == nil
+	}
+	return out
 }
 
 // rescueHub moves a group on from a hub, toward its join: out, if it
-// has done enough there, or else into a branch it may take — one not yet
-// done that leads on to the join first, then one done (a home hub's)
-// that does, then one not yet done that comes back to the hub. A branch
-// that leads only to an end is never taken: it would finish the
-// adventure for every group, those still on their way too, on one
-// group's rescue — an organiser who means to end it has their own ways.
+// has done enough there and out leads on to the join, or else into a
+// branch it may take — one not yet done that leads on to the join first,
+// then one done (a home hub's) that does, then one not yet done that
+// comes back to the hub. A way that leads only to an end is not taken
+// on a path meeting at a join: it would finish the adventure for every
+// group, those still on their way too, on one group's rescue — an
+// organiser who means to end it has their own ways. A path meeting at
+// no join has only its end to go on to, as its players would (valid
+// warns of it: split.path.nojoin).
 // A done branch that only comes back would go round for good, so a hub
 // with nothing else is not rescued. The way is chosen before the walk,
-// which is taken once.
-func (t *Team) rescueHub(n graph.Node) (Result, *walk.Step, error) {
+// which is taken once. It is the port, or "" for none.
+func (t *Team) rescueHub(n graph.Node) string {
 	cfg := n.HubCfg
 	if cfg == nil {
-		return Result{}, nil, ErrNotAllowed
+		return ""
 	}
 	port := ""
-	if !cfg.Home && t.CompletedBranches(n.Slug) >= cfg.RequiredBranches() {
+	if !cfg.Home && t.CompletedBranches(n.Slug) >= cfg.RequiredBranches() && t.towardJoin(n.Slug, graph.PortDone) {
 		port = graph.PortDone
 	} else {
 		join := t.groupJoin()
@@ -1362,7 +1651,9 @@ func (t *Team) rescueHub(n graph.Node) (Result, *walk.Step, error) {
 			if done && !cfg.Home || !t.branchOpen(b) {
 				continue
 			}
-			toJoin, back := t.leadsTo(n.Slug, b.Port, join)
+			toJoin, back := leadsTo(t.Splits(), n.Slug, b.Port, join)
+			// A path meeting at no join goes on toward its end.
+			toJoin = toJoin || !t.pathMeets() && !back
 			var rank int
 			switch {
 			case toJoin && !done:
@@ -1380,14 +1671,7 @@ func (t *Team) rescueHub(n graph.Node) (Result, *walk.Step, error) {
 			}
 		}
 	}
-	if port == "" {
-		return Result{}, nil, ErrNotAllowed
-	}
-	step, err := walk.EnterBranch(t.G, t, n.Slug, port)
-	if err != nil {
-		return Result{}, nil, fmt.Errorf("%w: %v", ErrNotAllowed, err)
-	}
-	return Result{Port: port}, &step, nil
+	return port
 }
 
 // groupJoin is the join the focused group's paths meet at: "" for none.
@@ -1398,35 +1682,43 @@ func (t *Team) groupJoin() string {
 	return t.joinOf(t.Split)
 }
 
-// leadsTo reports where hub's branch port can lead, by the graph's
-// edges, without passing the hub again: on to join, and back to the hub.
-func (t *Team) leadsTo(hub, port, join string) (toJoin, back bool) {
-	start, ok := t.G.Target(hub, port)
+// towardJoin reports whether leaving node by port can lead on to the
+// focused group's join: always, for a team not split, or a group whose
+// path meets the others at no join — its way out is an end, every
+// group's anyway (valid warns of it: split.path.nojoin).
+func (t *Team) towardJoin(node, port string) bool {
+	join := t.groupJoin()
+	if join == "" || !t.pathMeets() {
+		return true
+	}
+	toJoin, _ := leadsTo(t.Splits(), node, port, join)
+	return toJoin
+}
+
+// pathMeets reports whether the focused group's path leads to a join.
+func (t *Team) pathMeets() bool {
+	return t.focus > 0 && len(t.Splits().Paths(t.Split).Joins[t.Strands[t.focus-1].Port]) > 0
+}
+
+// leadsTo reports where hub's branch port can lead, by the edges of
+// splits' graph, without passing the hub again: on to join, and back to
+// the hub.
+func leadsTo(splits *graph.Splits, hub, port, join string) (toJoin, back bool) {
+	start, ok := splits.Graph().Target(hub, port)
 	if !ok {
 		return false, false
 	}
-	next := map[string][]string{}
-	for _, e := range t.G.Edges {
-		next[e.From] = append(next[e.From], e.To)
-	}
-	seen := map[string]bool{}
-	queue := []string{start}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
+	splits.Reach([]string{start}, func(cur string) bool {
 		switch {
-		case seen[cur]:
-			continue
 		case cur == hub:
 			back = true
-			continue
 		case join != "" && cur == join:
 			toJoin = true
-			continue
+		default:
+			return true
 		}
-		seen[cur] = true
-		queue = append(queue, next[cur]...)
-	}
+		return false
+	})
 	return toJoin, back
 }
 
@@ -1475,6 +1767,8 @@ func (t *Team) Cheat(node string) (Result, *walk.Step, error) {
 // The client calls it when its countdown reaches zero; this re-checks
 // the time rather than trusting the client.
 func (t *Team) Timeout(node string) (Result, *walk.Step, error) {
+	// The step's timer moves the team, whichever phone asks first.
+	t.unchosen = true
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
@@ -1550,23 +1844,14 @@ func (t *Team) leave(n graph.Node, port string, points float64) (*walk.Step, err
 }
 
 // CanRescue reports whether Rescue can move a team past n: a puzzle
-// with a skip or an answer route, or a split to set a group off from.
+// with a skip or an answer route.
 func CanRescue(n graph.Node) bool {
-	if n.Type == graph.Split {
-		return true
-	}
 	if n.Type != graph.Puzzle || n.PuzzleCfg == nil {
 		return false
 	}
 	_, skip := outputFor(n, graph.OnSkip)
 	_, answer := outputFor(n, graph.OnAnswer)
 	return skip || answer
-}
-
-// CanRescueGroup reports whether Rescue can move a group of a split
-// team, on its path, past n: as CanRescue, and a story or a hub too.
-func CanRescueGroup(n graph.Node) bool {
-	return CanRescue(n) || n.Type == graph.Story || n.Type == graph.Hub
 }
 
 func outputFor(n graph.Node, trig graph.Trigger) (graph.Output, bool) {
@@ -1614,6 +1899,8 @@ func Code(err error) string {
 		return "no_fix"
 	case errors.Is(err, ErrNotYours):
 		return "not_yours"
+	case errors.Is(err, ErrOtherGroup):
+		return "other_group"
 	case errors.Is(err, ErrLocked):
 		return "locked"
 	case errors.Is(err, ErrTimeUp):

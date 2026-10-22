@@ -382,11 +382,7 @@ func (h *Handlers) recapGraph(ctx context.Context, eventID, teamID int64, resp *
 		resp.OutroText = ""
 	}
 
-	e := h.Engine
-	if e == nil {
-		e = play.New(h.DB)
-	}
-	ranked, err := e.EventRanking(ctx, eventID)
+	ranked, err := h.engine().EventRanking(ctx, eventID)
 	if err != nil {
 		return err
 	}

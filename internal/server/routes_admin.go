@@ -398,6 +398,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Delete("/teams/{teamID}/slots/{slotID}", adminH.RemoveSlot)
 			r.Post("/teams/{teamID}/slots/{slotID}/rotate", adminH.RotateSlotToken)
 			r.Post("/teams/{teamID}/unlock", adminH.UnlockTeam)
+			r.Post("/teams/{teamID}/time-up", adminH.RunOutTime)
 			r.Post("/teams/{teamID}/start-anywhere", adminH.LetTeamStartAnywhere)
 			// Withdraw / unwithdraw soft-flag a team that gave up mid-event
 			// without deleting them — they stay in the recap as

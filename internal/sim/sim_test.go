@@ -161,6 +161,15 @@ func TestUnwiredOutputStallsTheTeam(t *testing.T) {
 			t.Errorf("%s not stalled", tm.Name)
 		}
 	}
+	// Stalled, the teams wait on the step they are stuck on: the report
+	// says where.
+	waiting := 0
+	for _, st := range res.Steps {
+		waiting += st.Waiting
+	}
+	if waiting != 3 {
+		t.Errorf("%d teams waiting at the end, want the 3 stalled", waiting)
+	}
 }
 
 func TestTimeLimitEndsTheRun(t *testing.T) {
@@ -501,9 +510,10 @@ func TestBotsDoTasks(t *testing.T) {
 func TestTeamsWalkEveryPathOfASplit(t *testing.T) {
 	g := course()
 	g.Nodes = append(g.Nodes,
-		graph.Node{Slug: "split", Type: graph.Split, SplitCfg: &graph.SplitConfig{Paths: []graph.SplitPath{{Port: "a"}, {Port: "b"}}}},
+		graph.Node{Slug: "split", Type: graph.Split, SplitCfg: &graph.SplitConfig{Paths: []graph.SplitPath{{Port: "a"}, {Port: "b"}, {Port: "c"}}}},
 		graph.Node{Slug: "to-church", Type: graph.Story, StoryCfg: &graph.StoryConfig{Zone: "church", Blocks: graph.LegacyBlocks("Church.", nil)}},
 		graph.Node{Slug: "to-harbour", Type: graph.Story, StoryCfg: &graph.StoryConfig{Zone: "harbour", Blocks: graph.LegacyBlocks("Harbour.", nil)}},
+		graph.Node{Slug: "to-square", Type: graph.Story, StoryCfg: &graph.StoryConfig{Zone: "square", Blocks: graph.LegacyBlocks("Square.", nil)}},
 		graph.Node{Slug: "join", Type: graph.Join},
 	)
 	for i, e := range g.Edges {
@@ -514,6 +524,8 @@ func TestTeamsWalkEveryPathOfASplit(t *testing.T) {
 	g.Edges = append(g.Edges,
 		graph.Edge{From: "split", FromPort: "a", To: "to-church"},
 		graph.Edge{From: "split", FromPort: "b", To: "to-harbour"},
+		graph.Edge{From: "split", FromPort: "c", To: "to-square"},
+		graph.Edge{From: "to-square", FromPort: "out", To: "join"},
 		graph.Edge{From: "to-church", FromPort: "out", To: "join"},
 		graph.Edge{From: "to-harbour", FromPort: "out", To: "join"},
 		graph.Edge{From: "join", FromPort: "out", To: "end"},
@@ -529,9 +541,23 @@ func TestTeamsWalkEveryPathOfASplit(t *testing.T) {
 			t.Fatalf("%s did not finish", tm.Name)
 		}
 	}
+	reached, left, median := map[string]int{}, map[string]int{}, map[string]float64{}
 	for _, s := range res.Steps {
-		if (s.Node == "to-church" || s.Node == "to-harbour") && s.Reached != 5 {
-			t.Errorf("%s reached by %d teams, want 5", s.Node, s.Reached)
+		reached[s.Node], left[s.Node], median[s.Node] = s.Reached, s.Left, s.Median
+	}
+	// The split is stood on until its last group sets off — after the
+	// groups before it have walked their paths — as a join is until the
+	// last group goes on through it.
+	if median["split"] <= median["to-church"] {
+		t.Errorf("the split held the team %v s, a path's step %v s: the split's time should run to its last group's setting off", median["split"], median["to-church"])
+	}
+	// Each once a team: a group's step by that group, the split by the
+	// team, though the bot goes back to a group still on it, and the join
+	// by the team, reached as one group waits and left as the last goes
+	// on.
+	for _, n := range []string{"to-church", "to-harbour", "to-square", "split", "join"} {
+		if reached[n] != 5 || left[n] != 5 {
+			t.Errorf("%s reached %d times and left %d, want 5 and 5", n, reached[n], left[n])
 		}
 	}
 }

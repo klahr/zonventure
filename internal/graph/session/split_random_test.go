@@ -88,7 +88,7 @@ func randomSplitGraph(r *rand.Rand) *graph.Graph {
 // groups cover the split's paths once each, and each group stands on
 // its own path, the split or the join.
 func splitInvariants(tm *Team) error {
-	tm.Unfocus()
+	tm.unfocus()
 	if tm.Split == "" {
 		if tm.Strands != nil {
 			return fmt.Errorf("strands %+v without a split", tm.Strands)
@@ -108,15 +108,15 @@ func splitInvariants(tm *Team) error {
 	join := tm.joinOf(tm.Split)
 	keys := map[string]bool{}
 	for _, st := range tm.Strands {
-		if keys[st.Key()] {
-			return fmt.Errorf("two groups %q", st.Key())
+		if keys[st.Port] {
+			return fmt.Errorf("two groups %q", st.Port)
 		}
-		keys[st.Key()] = true
+		keys[st.Port] = true
 		if _, ok := n.Path(st.Port); !ok {
-			return fmt.Errorf("group %s took %q, not a path of %s", st.Key(), st.Port, n.Slug)
+			return fmt.Errorf("group %s took %q, not a path of %s", st.Port, st.Port, n.Slug)
 		}
-		if st.Current != tm.Split && st.Current != join && !slices.Contains(tm.splitPaths(tm.Split).Steps[st.Port], st.Current) {
-			return fmt.Errorf("group %s at %q, off its path", st.Key(), st.Current)
+		if st.Current != tm.Split && st.Current != join && !slices.Contains(tm.Splits().Paths(tm.Split).Steps[st.Port], st.Current) {
+			return fmt.Errorf("group %s at %q, off its path", st.Port, st.Current)
 		}
 	}
 	return nil
@@ -148,7 +148,7 @@ func TestSplitRandomPlay(t *testing.T) {
 			}
 			next := int64(n + 1)
 			seat := func() {
-				tm.Unfocus()
+				tm.unfocus()
 				if len(players) == 0 {
 					tm.Players, tm.RoleHolders, tm.Viewer = nil, nil, nil
 					return
@@ -219,7 +219,7 @@ func TestSplitRandomPlay(t *testing.T) {
 				}
 				acted := false
 				for _, slot := range who {
-					tm.Unfocus()
+					tm.unfocus()
 					tm.Viewer = viewerOf(slot)
 					v := tm.View()
 					var res Result
@@ -260,7 +260,7 @@ func TestSplitRandomPlay(t *testing.T) {
 					break
 				}
 				if !acted {
-					tm.Unfocus()
+					tm.unfocus()
 					t.Fatalf("round %d: no one can act — every phone waits at a join. split %q strands %+v players %v", round, tm.Split, tm.Strands, players)
 				}
 				if tm.Viewer != nil && !slices.Contains(tm.Viewer.Roles, "crew") && len(tm.Viewer.Roles) == 0 {

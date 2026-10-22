@@ -133,11 +133,7 @@ type resultsRow struct {
 func (h *Handlers) eventResults(ctx context.Context, eventID int64) (resultsExport, error) {
 	var res resultsExport
 	res.Teams = []resultsRow{}
-	e := h.Engine
-	if e == nil {
-		e = play.New(h.DB)
-	}
-	ranked, err := e.EventRanking(ctx, eventID)
+	ranked, err := h.engine().EventRanking(ctx, eventID)
 	if err != nil {
 		return res, err
 	}

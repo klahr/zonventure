@@ -34,12 +34,7 @@ type TeamPhoto struct {
 	ReviewedAt *time.Time `json:"reviewed_at,omitempty"`
 }
 
-func (h *Handlers) engine() *play.Engine {
-	if h.Engine != nil {
-		return h.Engine
-	}
-	return play.New(h.DB)
-}
+func (h *Handlers) engine() *play.Engine { return play.Or(h.Engine, h.DB) }
 
 // ListEventPhotos lists the pictures the event's teams took, those
 // waiting for review first, then newest first. Challenges is how many

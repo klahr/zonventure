@@ -47,6 +47,7 @@ func TestStationsProblems(t *testing.T) {
 		"search": {Nodes: []Node{{Slug: "s", Type: Puzzle, PuzzleCfg: &PuzzleConfig{Answer: &Answer{Kind: AnswerSearch}}}}},
 		"posts":  {Nodes: []Node{{Slug: "k", Type: Puzzle, PuzzleCfg: &PuzzleConfig{Answer: &Answer{Kind: AnswerKeys, Posts: []string{"a", "b"}}}}}},
 		"walked": {Nodes: []Node{{Slug: "g", Type: Gate, GateCfg: &GateConfig{Condition: cond.Predicate{Op: cond.OpWalked, N: 100}}}}},
+		"split":  {Nodes: []Node{{Slug: "s", Type: Split, SplitCfg: &SplitConfig{Paths: []SplitPath{{Port: "a"}, {Port: "b"}}}}}},
 	} {
 		p := g.StationsProblems()
 		if len(p) == 0 {

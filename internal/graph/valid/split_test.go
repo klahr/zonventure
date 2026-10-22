@@ -116,7 +116,7 @@ func TestNestedSplitRefused(t *testing.T) {
 	if !issueAt(r, "split.nested", "split", "a") {
 		t.Errorf("issues: %v", r.Issues)
 	}
-	paths := nested().SplitPaths("split")
+	paths := nested().Splits().Paths("split")
 	if !slices.Equal(paths.Nested["a"], []string{"inner"}) || len(paths.Steps["a"]) != 0 {
 		t.Errorf("steps %v nested %v", paths.Steps["a"], paths.Nested)
 	}
@@ -235,7 +235,7 @@ func TestSplitChainChecksFast(t *testing.T) {
 	if took := time.Since(began); took > 5*time.Second {
 		t.Errorf("checking a chain of %d splits took %v", k, took)
 	}
-	if nested := g.SplitPaths("s0").Nested["a"]; !slices.Equal(nested, []string{"s1"}) {
+	if nested := g.Splits().Paths("s0").Nested["a"]; !slices.Equal(nested, []string{"s1"}) {
 		t.Errorf("s0 nests %v", nested)
 	}
 }
@@ -610,13 +610,13 @@ func TestSplitBackOntoAPath(t *testing.T) {
 	if r := Check(g); r.HasErrors() {
 		t.Errorf("errors: %v", r.Errors())
 	}
-	if h, ok := g.OwnerHub("post"); ok {
+	if h, ok := ownerHub(g, "post"); ok {
 		t.Errorf("post is owned by %s", h)
 	}
-	if _, ok := backs(g, nil)["post"]; ok {
+	if _, ok := backs(g, g.Splits())["post"]; ok {
 		t.Error("Back from post")
 	}
-	if h, _ := g.OwnerHub("look1"); h != "home" {
+	if h, _ := ownerHub(g, "look1"); h != "home" {
 		t.Errorf("look1 owned by %q, want home", h)
 	}
 
@@ -671,10 +671,12 @@ func TestSplitBackOffThePath(t *testing.T) {
 // one group's path, or to a join, the whole team walks what is a
 // group's.
 func TestTimeLimitIntoASplit(t *testing.T) {
-	for to, bad := range map[string]bool{"pa": true, "join": true, "end": false, "late": false, "split": false} {
+	for to, bad := range map[string]bool{"pa": true, "join": true, "end": false, "late": false, "split": false, "lend": false} {
 		g := splitValid()
 		g.Nodes = append(g.Nodes, puzzle("late"))
 		g.Edges = append(g.Edges, edge("late", "solved", "end"))
+		// An ending a path's step also fails into: the whole team's too.
+		withLose(g, "pa")
 		g.TimeLimit = &graph.TimeLimit{Seconds: 60, To: to}
 		if got := issueAt(Check(g), "time_limit.to", to, ""); got != bad {
 			t.Errorf("to %s: reported %v, want %v", to, got, bad)
@@ -743,4 +745,10 @@ func TestSplitPathsSharePassingStep(t *testing.T) {
 	g.Edges = slices.DeleteFunc(g.Edges, func(e graph.Edge) bool { return e.From == "fx" })
 	g.Edges = append(g.Edges, edge("fx", graph.PortOut, "last"), edge("last", "solved", "lend"))
 	assertCode(t, Check(g), "split.paths.cross")
+}
+
+// ownerHub is g's owner hub of slug.
+func ownerHub(g *graph.Graph, slug string) (string, bool) {
+	h, ok := g.Splits().OwnerHubs()[slug]
+	return h, ok
 }

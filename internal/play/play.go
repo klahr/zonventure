@@ -29,12 +29,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"sync"
+	"fmt"
 	"time"
 
-	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/session"
-	"github.com/klahr/zonventure/internal/graphstore"
 )
 
 // The refusals a player action can meet. They are the session
@@ -100,6 +98,12 @@ func phoneOf(ctx context.Context) (int64, bool) {
 	return id, ok
 }
 
+// TeamAvatarURL is where a team's picture is served
+// (server routes_assets), for every page and map that shows it.
+func TeamAvatarURL(teamID int64) string {
+	return fmt.Sprintf("/adventure-assets/team-avatar/%d", teamID)
+}
+
 // Querier is the subset of *sql.DB and *sql.Tx this package needs.
 type Querier interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
@@ -116,9 +120,17 @@ type Engine struct {
 	// Locator reports team positions. Defaults to PingLocator.
 	Locator Locator
 
-	// graphs caches decoded graph versions. Safe to cache forever:
-	// versions are append-only, so a given id never changes.
-	graphs sync.Map // int64 -> *graph.Graph
+	// graphs caches decoded graphs (graphCache).
+	graphs graphCache
+}
+
+// Or is e, or, for a handler made without one (a test's), a new Engine
+// on db: one with a cache of its own, for that call.
+func Or(e *Engine, db *sql.DB) *Engine {
+	if e != nil {
+		return e
+	}
+	return New(db)
 }
 
 // New returns an Engine with the default clock and locator.
@@ -138,26 +150,6 @@ func (e *Engine) locator() Locator {
 		return PingLocator{}
 	}
 	return e.Locator
-}
-
-func (e *Engine) graph(ctx context.Context, q Querier, id int64) (*graph.Graph, error) {
-	if g, ok := e.graphs.Load(id); ok {
-		return g.(*graph.Graph), nil
-	}
-	s, err := graphstore.ByID(ctx, q, id)
-	if err != nil {
-		if errors.Is(err, graphstore.ErrNotFound) {
-			return nil, ErrNoGraph
-		}
-		return nil, err
-	}
-	// A release never changes, nor does a party's own copy (a negative
-	// version), so both are kept; a dev row (version 0) follows the
-	// draft, so it is read afresh every time.
-	if s.Version != 0 {
-		e.graphs.Store(id, s.Graph)
-	}
-	return s.Graph, nil
 }
 
 // Result, View and OfferEntry are the session package's: the live

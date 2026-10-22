@@ -108,7 +108,7 @@ func (h *Handlers) CreateDevTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Placed on its first step, or at the start screen, like any team.
-	if err := h.Engine.StartEvent(ctx, eventID); err != nil {
+	if err := h.engine().StartEvent(ctx, eventID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "placing the dev team failed", err)
 		return
 	}
@@ -187,7 +187,7 @@ func (h *Handlers) DevScreen(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	v, err := h.Engine.Snapshot(r.Context(), teamID)
+	v, err := h.engine().Snapshot(r.Context(), teamID)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "reading the dev screen failed", err)
 		return
@@ -208,7 +208,7 @@ func (h *Handlers) DevGoTo(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	h.devMove(w, r.Context(), eventID, func() error { return h.Engine.DevMoveTo(r.Context(), teamID, req.Node) })
+	h.devMove(w, r.Context(), eventID, func() error { return h.engine().DevMoveTo(r.Context(), teamID, req.Node) })
 }
 
 // DevReset serves POST /api/admin/adventures/{slug}/dev-reset: the dev
@@ -218,13 +218,13 @@ func (h *Handlers) DevReset(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	h.devMove(w, r.Context(), eventID, func() error { return h.Engine.DevReset(r.Context(), teamID) })
+	h.devMove(w, r.Context(), eventID, func() error { return h.engine().DevReset(r.Context(), teamID) })
 }
 
 func (h *Handlers) devMove(w http.ResponseWriter, ctx context.Context, eventID int64, move func() error) {
 	switch err := move(); {
 	case errors.Is(err, play.ErrNoSuchStep):
-		httpx.Error(w, http.StatusBadRequest, "no such step to show: name a puzzle, story, hub or end of the draft by its slug")
+		httpx.Error(w, http.StatusBadRequest, "no such step to show: name a puzzle, story, hub, split or end of the draft by its slug")
 		return
 	case errors.Is(err, play.ErrNoGraph):
 		httpx.Error(w, http.StatusConflict, "the dev team has not been placed yet")

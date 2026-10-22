@@ -319,3 +319,64 @@ func TestSimulateCrewSplitPresses(t *testing.T) {
 		t.Fatalf("Cy agrees after the other group moved: %+v, waiting %+v, split %q", r.Result, r.Result.Waiting, team.Split)
 	}
 }
+
+// A path taken out of the split the preview team stands on: its groups
+// are dealt afresh to the paths left, not one left for the path gone,
+// which the others would wait for at the join for good.
+func TestSimulateSplitEditedUnderIt(t *testing.T) {
+	t.Parallel()
+	build := func(ports ...string) *graph.Graph {
+		g := &graph.Graph{Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "split", Type: graph.Split, SplitCfg: &graph.SplitConfig{}},
+			{Slug: "join", Type: graph.Join},
+			{Slug: "end", Type: graph.End},
+		}, Edges: []graph.Edge{{From: "start", FromPort: "out", To: "split"}, {From: "join", FromPort: "out", To: "end"}}}
+		for _, p := range ports {
+			g.Nodes[1].SplitCfg.Paths = append(g.Nodes[1].SplitCfg.Paths, graph.SplitPath{Port: p})
+			g.Nodes = append(g.Nodes, graph.Node{Slug: "p" + p, Type: graph.Story})
+			g.Edges = append(g.Edges, graph.Edge{From: "split", FromPort: p, To: "p" + p}, graph.Edge{From: "p" + p, FromPort: "out", To: "join"})
+		}
+		return g
+	}
+	r, status, msg := simulate(build("a", "b", "c"), nil, nil, simulateAction{Kind: "start"}, simT0)
+	if status != http.StatusOK || len(r.Team.Strands) != 3 {
+		t.Fatalf("start: %d %s %+v", status, msg, r.Team)
+	}
+	edited := build("a", "b")
+	r, status, msg = simulate(edited, nil, roundTrip(t, r.Team), simulateAction{Kind: "continue", Node: "split"}, simT0)
+	if status != http.StatusOK || r.Refuse != nil || len(r.Team.Strands) != 2 {
+		t.Fatalf("after the edit: %d %s %+v %+v", status, msg, r.Refuse, r.Team.Strands)
+	}
+}
+
+// Placed on a step of a split's path as one of a crew's phones, the
+// designer's preview shows that phone the step, its group the path's.
+func TestSimulateCrewPlacedOnAPath(t *testing.T) {
+	t.Parallel()
+	right := []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "x"}}}}
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "split", Type: graph.Split, SplitCfg: &graph.SplitConfig{Paths: []graph.SplitPath{{Port: "a"}, {Port: "b"}}}},
+			{Slug: "pa", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Outputs: right}},
+			{Slug: "pb", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Outputs: right}},
+			{Slug: "join", Type: graph.Join},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "split"},
+			{From: "split", FromPort: "a", To: "pa"}, {From: "split", FromPort: "b", To: "pb"},
+			{From: "pa", FromPort: "solved", To: "join"}, {From: "pb", FromPort: "solved", To: "join"},
+			{From: "join", FromPort: "out", To: "end"},
+		},
+	}
+	crew := &simCrew{Players: []simPlayer{{Slot: 1, Name: "Ann"}, {Slot: 2, Name: "Bo"}}, As: 1}
+	r, status, msg := simulateCrew(g, nil, nil, crew, simulateAction{Kind: "place", Node: "pb"}, simT0)
+	if status != http.StatusOK {
+		t.Fatalf("place: %d %s", status, msg)
+	}
+	if r.Result.View.Node != "pb" {
+		t.Fatalf("Ann placed on pb sees %q", r.Result.View.Node)
+	}
+}

@@ -7,9 +7,9 @@ import (
 	"github.com/klahr/zonventure/internal/graph"
 )
 
-// PlayingSQL is whether player_slots s counts as playing (Players), with
-// $2 the one asking.
-const PlayingSQL = `(s.last_login_at IS NOT NULL OR s.id = $2) AND s.name <> '(forgotten)'`
+// playingSQL is whether player_slots s counts as playing (Players), $2
+// the one asking.
+const playingSQL = `(s.last_login_at IS NOT NULL OR s.id = $2) AND s.name <> '(forgotten)'`
 
 // Players are the ids of a team's players who count as playing: those
 // who have opened their link, and me — the one asking, if any — in slot
@@ -17,7 +17,7 @@ const PlayingSQL = `(s.last_login_at IS NOT NULL OR s.id = $2) AND s.name <> '(f
 func Players(ctx context.Context, q Querier, teamID, me int64) ([]int64, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT s.id FROM player_slots s
-		WHERE s.team_id = $1 AND `+PlayingSQL+`
+		WHERE s.team_id = $1 AND `+playingSQL+`
 		ORDER BY s.id`, teamID, me)
 	if err != nil {
 		return nil, err
@@ -59,11 +59,11 @@ func DealRoles(ctx context.Context, q Querier, teamID, me int64, roles []string)
 	if err != nil {
 		return nil, err
 	}
-	return dealRoles(ctx, q, teamID, players, roles)
+	return DealRolesAmong(ctx, q, teamID, players, roles)
 }
 
-// dealRoles is DealRoles among players already found.
-func dealRoles(ctx context.Context, q Querier, teamID int64, players []int64, roles []string) (map[string]Holding, error) {
+// DealRolesAmong is DealRoles among players already found (Players).
+func DealRolesAmong(ctx context.Context, q Querier, teamID int64, players []int64, roles []string) (map[string]Holding, error) {
 	out := map[string]Holding{}
 	if len(roles) == 0 {
 		return out, nil
@@ -133,6 +133,32 @@ func DealAmong(players []int64, claims map[string]int64, roles []string) map[str
 	return out
 }
 
+// Holders is who holds each role of holdings, by slot.
+func Holders(holdings map[string]Holding) map[string]int64 {
+	out := make(map[string]int64, len(holdings))
+	for role, h := range holdings {
+		out[role] = h.Slot
+	}
+	return out
+}
+
+// PlayerRoles are the public roles slot holds, in the author's order,
+// among players playing: the dealt roles it holds (holders: who holds
+// each), and the default role — everyone's who holds no other, and a
+// player alone's.
+func PlayerRoles(g *graph.Graph, holders map[string]int64, slot int64, players int) []string {
+	var out []string
+	for _, r := range g.DealtRoles() {
+		if h, ok := holders[r]; ok && h == slot {
+			out = append(out, r)
+		}
+	}
+	if d := g.DefaultRole(); d != "" && (len(out) == 0 || players <= 1) {
+		out = append(out, d)
+	}
+	return out
+}
+
 // RolesOf are the roles slot holds, in the author's order.
 func RolesOf(holdings map[string]Holding, roles []string, slot int64) []string {
 	var out []string
@@ -152,7 +178,7 @@ func LockRoles(ctx context.Context, q Querier, teamID int64, players []int64, ro
 	if err := q.QueryRowContext(ctx, `SELECT roles_locked FROM teams WHERE id = $1`, teamID).Scan(&locked); err != nil || locked {
 		return err
 	}
-	holdings, err := dealRoles(ctx, q, teamID, players, roles)
+	holdings, err := DealRolesAmong(ctx, q, teamID, players, roles)
 	if err != nil {
 		return err
 	}

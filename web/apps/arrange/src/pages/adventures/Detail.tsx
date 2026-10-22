@@ -353,6 +353,7 @@ function stepKind(t: ReturnType<typeof useT>, type: string): string {
     case "puzzle": return t.t("Puzzle");
     case "story": return t.t("Story");
     case "hub": return t.t("Choice");
+    case "split": return t.t("Split up");
     case "end": return t.t("End");
     default: return type;
   }

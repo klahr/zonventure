@@ -66,6 +66,8 @@ export function textLabel(where: string, stepTitles: readonly string[] | undefin
     start: t.t("start"),
     effect: t.t("effect"),
     switch: t.t("switch"),
+    split: t.t("split"),
+    paths: t.t("group"),
     title: t.t("title"),
     text: t.t("text"),
     label: t.t("label"),
@@ -78,7 +80,7 @@ export function textLabel(where: string, stepTitles: readonly string[] | undefin
     caption: t.t("caption"),
     prompt: t.t("question"),
   };
-  const kinds = new Set(["story", "puzzle", "end", "hub", "gate", "start", "effect", "switch"]);
+  const kinds = new Set(["story", "puzzle", "end", "hub", "gate", "start", "effect", "switch", "split"]);
   const field: string[] = [];
   const rest = path.slice(1).map((s) => seg(s).name);
   let named = false;

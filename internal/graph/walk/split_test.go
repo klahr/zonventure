@@ -36,7 +36,6 @@ func TestSplitParksTheTeam(t *testing.T) {
 
 func TestEachPathIsItsOwnAdvance(t *testing.T) {
 	s := newState()
-	s.divided = true
 	for port, want := range map[string]string{"a": "pa", "b": "pb"} {
 		step, err := Advance(splitGraph(), s, "split", port)
 		if err != nil {
@@ -50,7 +49,6 @@ func TestEachPathIsItsOwnAdvance(t *testing.T) {
 
 func TestJoinHoldsAGroupWhileAnotherWalks(t *testing.T) {
 	s := newState()
-	s.divided = true
 	s.waits = map[string]bool{"join": true}
 	step, err := Advance(splitGraph(), s, "pa", "solved")
 	if err != nil {
@@ -63,7 +61,6 @@ func TestJoinHoldsAGroupWhileAnotherWalks(t *testing.T) {
 
 func TestLastGroupTakesTheTeamOn(t *testing.T) {
 	s := newState()
-	s.divided = true
 	step, err := Advance(splitGraph(), s, "pb", "solved")
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +77,7 @@ func TestLastGroupTakesTheTeamOn(t *testing.T) {
 // walks through a join as if it were not there.
 func TestJoinPassesATeamThatIsNotSplit(t *testing.T) {
 	s := newState()
-	s.waits = map[string]bool{} // not divided, so never asked
+	s.waits = map[string]bool{} // none waits
 	step, err := Jump(splitGraph(), s, "pa", "join")
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +99,6 @@ func TestJoinWithEffectsBehindIt(t *testing.T) {
 	}
 	g.Edges = append(g.Edges, edge("fx", graph.PortOut, "after"))
 	s := newState()
-	s.divided = true
 	step, err := Advance(g, s, "pb", "solved")
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +111,6 @@ func TestJoinWithEffectsBehindIt(t *testing.T) {
 func TestAGroupSplitsAgain(t *testing.T) {
 	g := splitGraph()
 	s := newState()
-	s.divided = true
 	step, err := Jump(g, s, "pa", "split")
 	if err != nil || step.To != "split" || step.Held {
 		t.Fatalf("a group reaching a split parks there to split again: %+v %v", step, err)
@@ -135,23 +130,21 @@ func TestThroughAJoinIntoAnotherSplit(t *testing.T) {
 		}
 	}
 	s := newState()
-	s.divided = true
 	step, err := Advance(g, s, "pb", "solved")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if step.To != "split2" || !step.Joined || step.Held {
-		t.Fatalf("step = %+v, want joined and parked at split2", step)
+	if step.To != "split2" || !slices.Contains(step.Passed, "join") || step.Held {
+		t.Fatalf("step = %+v, want through the join and parked at split2", step)
 	}
 }
 
-// A group held at its join has not joined.
-func TestHeldIsNotJoined(t *testing.T) {
+// A group held at its join parks there.
+func TestHeldAtTheJoin(t *testing.T) {
 	s := newState()
-	s.divided = true
 	s.waits = map[string]bool{"join": true}
 	step, err := Advance(splitGraph(), s, "pa", "solved")
-	if err != nil || step.Joined {
+	if err != nil || !step.Held || step.To != "join" {
 		t.Fatalf("step = %+v, err %v", step, err)
 	}
 }

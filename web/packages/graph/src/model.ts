@@ -7,7 +7,7 @@
 // silently rewrite history.
 
 import { newBlock, withFixed } from "./blocks.ts";
-import { dropTranslations, isPortKey } from "./i18n.ts";
+import { dropTranslations, isPortKey, nodeTexts, setTranslation, withTexts } from "./i18n.ts";
 import {
   PORT_DONE,
   PORT_ELSE,
@@ -328,10 +328,13 @@ export function updateNode(g: Graph, slug: string, fn: (n: Node) => Node): Graph
   const ports = new Set(portsOf(updated));
   const edges = g.edges.filter((e) => e.from !== slug || ports.has(e.from_port));
   // Its translated texts go with it too, or a port given the same name
-  // later would take on the old one's words.
+  // later would take on the old one's words — but not one a port kept
+  // claims as well: port "x" gone, port "x:y"'s picture (branch:x:y) is
+  // not x's field "y".
   const gone = portsOf(g.nodes.find((n) => n.slug === slug)!).filter((p) => !ports.has(p));
   const out = { ...g, nodes, edges };
-  return gone.length ? dropTranslations(out, (k) => gone.some((p) => isPortKey(slug, p, k))) : out;
+  const own = (k: string) => gone.some((p) => isPortKey(slug, p, k)) && ![...ports].some((p) => isPortKey(slug, p, k));
+  return gone.length ? dropTranslations(out, own) : out;
 }
 
 /**
@@ -824,6 +827,30 @@ export function gridZones(
       const [lat, lng] = at((c + 0.5) / cols, (r + 0.5) / rows);
       out.push({ slug, name, group, lat, lng, radius_m: 0, polygon });
     }
+  }
+  return out;
+}
+
+/**
+ * An edit made to a step shown in a translation (translatedNode): the
+ * texts changed become that language's translations, and anything else
+ * changes the step itself, whose own texts stay as they were. Null when
+ * the edit adds or removes texts — a block, a chat line, a hint — which
+ * is the main language's to do: keys counted by position would land on
+ * the wrong text.
+ */
+export function translateEdit(g: Graph, lang: string, main: Node, shown: Node, edited: Node): Graph | null {
+  const texts = (n: Node) => new Map(nodeTexts(n).filter((t) => !t.answers).map((t) => [t.key, t.main]));
+  const before = texts(shown);
+  const after = texts(edited);
+  const own = texts(main);
+  if (before.size !== after.size || [...before.keys()].some((key) => !after.has(key))) return null;
+  const step = withTexts(edited, (key) => (after.get(key) !== own.get(key) ? own.get(key) : undefined));
+  // As updateNode, so a port the edit removed takes its wire and its
+  // translations with it here too.
+  let out = updateNode(g, main.slug, () => step);
+  for (const [key, text] of after) {
+    if (text !== before.get(key)) out = setTranslation(out, lang, key, text, own.get(key));
   }
   return out;
 }

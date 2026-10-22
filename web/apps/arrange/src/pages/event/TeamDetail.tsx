@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { FastForward, LogOut, Mail, MapPinOff, Pencil, Trash2, Undo2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { FastForward, Hourglass, LogOut, Mail, MapPinOff, Pencil, Trash2, Undo2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { Button, Dialog, ErrorBox, ICON, Loading, Pill, useLoad } from "../../ui/index.ts";
 import * as api from "./api.ts";
@@ -7,7 +7,8 @@ import type { EventGraph, EventInfo, Team } from "./api.ts";
 import { ActivityFeed, Ago } from "./Activity.tsx";
 import { MoreMenu, type MenuItem } from "./Menu.tsx";
 import { TeamAvatar, useTeamActions } from "./teamActions.tsx";
-import { canDo, fmtPoints, isTerminal, members, stepTitle, teamProgress } from "./util.ts";
+import { useNow } from "../control/model.ts";
+import { canDo, fmtElapsedShort, fmtPoints, groupSeconds, isTerminal, members, stepTitle, teamProgress } from "./util.ts";
 
 /**
  * One team: where it is, who is in it, what it has done, and what the
@@ -18,6 +19,8 @@ export function TeamDetailDialog(props: {
   event: EventInfo;
   graph: EventGraph | null | undefined;
   team: Team;
+  /** The server's clock less this device's, taken as the detail the team came with arrived (clockOffset). */
+  offset: number;
   color: string;
   /** Changes whenever the event's activity does, to re-read this team's. */
   activityKey: number;
@@ -27,18 +30,45 @@ export function TeamDetailDialog(props: {
 }) {
   const { event, team } = props;
   const t = useT();
+  const [tick, setTick] = useState(0);
   const actions = useTeamActions(props.reload);
   // What is being moved on — "" for the team, else a group's port — so a
   // second click, or an alt-click's double, is not a second request.
   const [moving, setMoving] = useState<string | null>(null);
   const log = useLoad((s) => api.getActivity(event.id, team.id, s), [event.id, team.id, props.activityKey]);
-  // Who holds which role, and which group each is in while the team is
-  // split up: re-read as the team moves.
-  const players = useLoad((s) => api.getTeamPlayers(team.id, s), [team.id, props.activityKey, team.node, JSON.stringify(team.groups ?? [])]);
-  const playerOf = new Map((players.data ?? []).map((p) => [p.id, p]));
+  // Who holds which role, which group each is in while the team is split
+  // up, and the groups as the organisers' rescue finds them: read again
+  // as the team moves, finishes or its players change — not for every
+  // change in the event, its score or rank. A read for where the team
+  // stood before (at) is out of date, though it shows until the next.
+  const at = `${team.id} ${team.node ?? ""} ${JSON.stringify((team.groups ?? []).map((g) => [g.port, g.node]))}`;
+  const who = JSON.stringify([team.members, team.completed_at ?? ""]);
+  const roster = useLoad((s) => api.getTeamRoster(team.id, s).then((r) => ({ ...r, at })), [team.id, at, who, tick]);
+  // The last read for the team as it now stands — kept through a failed
+  // read again, which only says so; none, as the event has the groups:
+  // none to move on.
+  const current = roster.data?.at === at ? roster.data : null;
+  const playerOf = new Map((roster.data?.players ?? []).map((p) => [p.id, p]));
+  const groups = current?.groups || team.groups || [];
+  // The roster could not be read as the rescue finds the team: say so,
+  // rather than leave the organiser wondering where a button went.
+  const unread = (!!roster.error && !current) || current?.groups === null;
+  // Until the team finishes, read the roster again now and then where
+  // what the organisers may do changes with time alone: a group's branch
+  // opening after a while, the time limit running out.
   const finished = teamProgress(t, props.graph, team).done;
+  const ticking = !finished && (groups.length > 0 || !!props.graph?.time_limit);
+  useEffect(() => {
+    if (!ticking) return;
+    const id = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(id);
+  }, [ticking]);
+  // A time limit due and not yet run out — the team's phones gone — is the
+  // organisers' to run out: the team goes where the limit says, so no move
+  // of theirs is anything else meanwhile.
+  const timeUp = !finished && !!current?.time_up && canDo(event, "unlock_team");
   // A team split up is moved on a group at a time, below.
-  const canUnlock = !finished && !!team.node && !team.groups?.length && !!props.graph?.rescuable?.includes(team.node) && canDo(event, "unlock_team");
+  const canUnlock = !finished && !timeUp && !!team.node && !groups.length && !!props.graph?.rescuable?.includes(team.node) && canDo(event, "unlock_team");
   // A strict check: the server grants withdraw_team only while the event runs.
   const canWithdraw = (event.allowed_ops ?? []).includes("withdraw_team") && !team.completed_at;
 
@@ -83,34 +113,57 @@ export function TeamDetailDialog(props: {
             loading={moving === ""}
             onClick={async (e) => {
               setMoving("");
-              let moved = false;
+              let moved: boolean | null = false;
               try {
                 moved = await actions.unlock(team, e.altKey);
               } finally {
                 setMoving(null);
               }
               if (moved) props.onClose();
+              // Refused: read again as the team now stands.
+              else if (moved === false) roster.reload();
             }}
           >
             {t.t("Move team on")}
           </Button>
         )}
+        {timeUp && (
+          <Button
+            variant="primary"
+            icon={<Hourglass size={ICON.md} aria-hidden />}
+            title={t.t("Alt-click to skip the confirmation")}
+            disabled={moving !== null}
+            loading={moving === ""}
+            onClick={async (e) => {
+              setMoving("");
+              try {
+                if ((await actions.runOutTime(team, e.altKey)) === false) roster.reload();
+              } finally {
+                setMoving(null);
+              }
+            }}
+          >
+            {t.t("Run out the time")}
+          </Button>
+        )}
         <Button icon={<Pencil size={ICON.md} aria-hidden />} onClick={props.onEdit}>{t.t("Edit members")}</Button>
         {more.length > 0 && <MoreMenu label={t.t("More")} items={more} />}
       </div>
-      {!finished && team.groups?.length ? (
+      {!finished && unread && <ErrorBox message={t.t("Couldn't read the team's players and groups.")} retry={roster.reload} retryLabel={t.t("Retry")} />}
+      {!finished && groups.length ? (
         <>
           <h3 className="ev-h3">{t.t("Groups")}</h3>
           <ul className="ev-td__members">
-            {team.groups.map((g) => (
+            {groups.map((g) => (
               <li key={g.port} className="ev-td__group">
                 <span>{g.label}</span>
                 <span className="ev-td__group-at">
                   <span className="cs-sub">
                     {g.arrived ? t.t("waiting at {{step}}", { step: stepTitle(props.graph, g.node) }) : stepTitle(props.graph, g.node)}
-                    {g.since && <> · <Ago at={g.since} /></>}
+                    {/* Play time on the step: since is moved past the event's ended pauses, and an open one stops the clock. */}
+                    {g.since && <> · <GroupClock event={event} since={g.since} offset={props.offset} /></>}
                   </span>
-                  {(props.graph?.rescuable_on_path ?? props.graph?.rescuable)?.includes(g.node) && canDo(event, "unlock_team") && (
+                  {g.rescuable && canDo(event, "unlock_team") && (
                     <Button
                       size="sm"
                       icon={<FastForward size={ICON.sm} aria-hidden />}
@@ -120,7 +173,9 @@ export function TeamDetailDialog(props: {
                       onClick={async (e) => {
                         setMoving(g.port);
                         try {
-                          await actions.unlock(team, e.altKey, g);
+                          // Moved, the team's new step reads the roster
+                          // again; refused, it is read again as it stands.
+                          if ((await actions.unlock(team, e.altKey, g)) === false) roster.reload();
                         } finally {
                           setMoving(null);
                         }
@@ -161,4 +216,10 @@ export function TeamDetailDialog(props: {
       {log.error ? <ErrorBox message={log.error} retry={log.reload} retryLabel={t.t("Retry")} /> : !log.data ? <Loading label={t.t("Loading…")} /> : <ActivityFeed items={log.data} event={event} graph={props.graph} />}
     </Dialog>
   );
+}
+
+/** How long a group has been on its step, ticking on the server's time (offset): alone, so the dialog around it does not tick too. */
+function GroupClock(props: { event: EventInfo; since: string; offset: number }) {
+  const now = useNow();
+  return <>{fmtElapsedShort(groupSeconds(props.event, props.since, props.offset, now) ?? 0)}</>;
 }

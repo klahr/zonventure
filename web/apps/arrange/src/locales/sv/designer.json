@@ -1398,6 +1398,7 @@
   "Groups": "Grupper",
   "Each phone is told its group. A group's role takes its player; everyone else is shared out evenly among the groups. A player in two groups walks them one after the other, and a group no one is in is walked by whoever finishes first.": "Varje telefon får veta sin grupp. En grupps roll tar med sig sin spelare; alla andra fördelas jämnt mellan grupperna. En spelare i två grupper går dem en i taget, och en grupp som ingen är med i går den som blir klar först.",
   "the {{role}} and a share of everyone else": "{{role}} och en del av alla andra",
+  "everyone holding no other role": "alla som inte har någon annan roll",
   "a share of everyone": "en del av alla",
   "Group name": "Gruppens namn",
   "None: a share of everyone": "Ingen: en del av alla",

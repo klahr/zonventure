@@ -14,6 +14,8 @@ import (
 // registerPlayerRoutes wires the slot-authenticated REST endpoints
 // and the WS push channel that replaces the 5 s state poll.
 func registerPlayerRoutes(r chi.Router, env *routesEnv) {
+	// One stamper for the phone's requests and its socket alike.
+	seen := auth.SeenSlot(env.playerH.DB)
 	playerH := env.playerH
 
 	// Signing out, and erasing the player's data (GDPR right to
@@ -33,7 +35,7 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 		r.Use(auth.RequireCSRF())
 		// The phone is heard from: its player is not away (play.away). Past
 		// CSRF, so only the phone's own requests count.
-		r.Use(auth.SeenSlot(env.playerH.DB))
+		r.Use(seen)
 		r.Use(player.ForPhone)
 		// The React player app.
 		r.Get("/play", playerH.GetPlay)
@@ -77,7 +79,7 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 		r.Use(auth.RequireSlot)
 		// Stamped while the socket is open, too: an app on screen with no
 		// one tapping still polls, but a pocketed one may only listen.
-		r.Use(auth.SeenSlot(env.playerH.DB))
+		r.Use(seen)
 		r.Get("/ws/play", playerH.WSPlay)
 	})
 }

@@ -79,12 +79,10 @@ type simCrew struct {
 	// Secrets are who holds each secret role, 0 for no one. One missing
 	// is dealt at random once there are players enough to hide among.
 	Secrets map[string]int64 `json:"secrets,omitempty"`
-	// Seals are the picks at missions, and Presses each player's part in
-	// a step done together, until the team leaves it.
-	Seals   map[string]map[int64]string `json:"seals,omitempty"`
-	Presses map[int64]session.Press     `json:"presses,omitempty"`
-	// PressesAt are the presses by step while the team is split up: each
-	// group has a step of its own, done together by its players.
+	// Seals are the picks at missions, and PressesAt each player's part
+	// in a step done together, by step, until the team — or the group on
+	// it — leaves it.
+	Seals     map[string]map[int64]string        `json:"seals,omitempty"`
 	PressesAt map[string]map[int64]session.Press `json:"presses_at,omitempty"`
 }
 
@@ -192,6 +190,11 @@ func simulateCrew(g *graph.Graph, place *graph.Zone, team *session.Team, crew *s
 		return resp, status, msg
 	}
 	crew.deal(g)
+	if a.Kind == "place" {
+		// The step placed is the acting phone's to play, not a group
+		// dealt it on the split.
+		resp.Team.WalkPlaced(a.Node, []int64{crew.As})
+	}
 	resp.Crew = crew
 	resp.Phones = crew.phones(resp.Team)
 	for _, ph := range resp.Phones {
@@ -235,6 +238,9 @@ func simulateAs(g *graph.Graph, place *graph.Zone, team *session.Team, crew *sim
 	// the state the client sends back, so it is set again on every action.
 	team.StartPlace = place
 	team.Init()
+	// The author may have edited the split the team stands on since: its
+	// groups are dealt afresh where they no longer fit, as a live team's.
+	team.Refit()
 	var crewBefore *simCrew
 	if crew != nil {
 		crew.deal(g)
@@ -246,10 +252,7 @@ func simulateAs(g *graph.Graph, place *graph.Zone, team *session.Team, crew *sim
 	// a right answer marks the puzzle solved before the walk finds its
 	// output unconnected. The live engine rolls that back with the
 	// transaction; the simulator keeps a copy to do the same.
-	before, err := cloneTeam(team)
-	if err != nil {
-		return simulateResponse{}, http.StatusInternalServerError, "copying team failed"
-	}
+	before := team.Clone()
 
 	// The team's own actions go through Act, which applies a time limit
 	// that has passed before anything else, as the live engine does.
@@ -325,9 +328,14 @@ func simulateAs(g *graph.Graph, place *graph.Zone, team *session.Team, crew *sim
 				return simulateResponse{}, http.StatusBadRequest, "no zone " + a.Zone
 			}
 		}
-		// The simulated team walks straight from where it was.
+		// The simulated team walks straight from where it was: split up,
+		// the group the crew's phone walks.
 		if from != nil && team.Position != nil {
-			team.WalkedMetres += session.HaversineMeters(from.Lat, from.Lng, team.Position.Lat, team.Position.Lng)
+			var as int64
+			if crew != nil {
+				as = crew.As
+			}
+			team.AddWalk(as, session.HaversineMeters(from.Lat, from.Lng, team.Position.Lat, team.Position.Lng))
 		}
 		if crew != nil {
 			crew.player(crew.As).Position = team.Position
@@ -346,53 +354,16 @@ func simulateAs(g *graph.Graph, place *graph.Zone, team *session.Team, crew *sim
 		out.Result.View = before.View()
 		return out, http.StatusOK, ""
 	}
-	// The step the action was on: a split team's group's.
-	acted, split := team.Current, team.Split != ""
 	var passed []string
 	if step != nil {
 		team.Apply(*step)
 		passed = step.Passed
 	}
 	if crew != nil {
-		crew.Seals = team.Seals
-		switch {
-		case split:
-			// Kept by step, so one group moving on leaves another's be.
-			if crew.PressesAt == nil {
-				crew.PressesAt = map[string]map[int64]session.Press{}
-			}
-			crew.PressesAt[acted] = team.Presses
-			if step != nil {
-				delete(crew.PressesAt, acted)
-			}
-			if team.Split == "" {
-				crew.PressesAt = nil
-			}
-			crew.Presses = nil
-		default:
-			crew.Presses = team.Presses
-			// A step done together starts afresh at the next one.
-			if step != nil {
-				crew.Presses, team.Presses = nil, nil
-			}
-		}
+		crew.Seals, crew.PressesAt = team.Seals, team.Presses
 	}
 	res.View = team.View()
 	return simulateResponse{Team: team, Result: res, Passed: passed}, http.StatusOK, ""
-}
-
-func cloneTeam(t *session.Team) (*session.Team, error) {
-	b, err := json.Marshal(t)
-	if err != nil {
-		return nil, err
-	}
-	var c session.Team
-	if err := json.Unmarshal(b, &c); err != nil {
-		return nil, err
-	}
-	c.G = t.G
-	c.Init()
-	return &c, nil
 }
 
 func refused(team *session.Team, err error) simulateResponse {
@@ -484,8 +455,6 @@ func (c *simCrew) deal(g *graph.Graph) {
 // holds which role — with the acting player's phone asking, and returns
 // the team.
 func (c *simCrew) seat(t *session.Team) *session.Team {
-	// A split team's group narrows all of the below: put it back first.
-	t.Unfocus()
 	slots := c.slots()
 	t.Players, t.Size = slots, len(slots)
 	t.Phones, t.PhoneAt = []session.Position{}, map[int64]session.Position{}
@@ -495,19 +464,8 @@ func (c *simCrew) seat(t *session.Team) *session.Team {
 			t.PhoneAt[p.Slot] = *p.Position
 		}
 	}
-	t.Secrets, t.Seals, t.Presses = c.Secrets, c.Seals, c.Presses
-	t.PressesAt = nil
-	if t.Split != "" {
-		// One map, the crew's and the team's alike.
-		if c.PressesAt == nil {
-			c.PressesAt = map[string]map[int64]session.Press{}
-		}
-		t.PressesAt = c.PressesAt
-	}
-	t.RoleHolders = map[string]int64{}
-	for role, h := range play.DealAmong(slots, c.Roles, t.G.DealtRoles()) {
-		t.RoleHolders[role] = h.Slot
-	}
+	t.Secrets, t.Seals, t.Presses = c.Secrets, c.Seals, c.PressesAt
+	t.RoleHolders = play.Holders(play.DealAmong(slots, c.Roles, t.G.DealtRoles()))
 	// Into the groups of a split, as the live engine deals them.
 	t.Deal(slots, t.RoleHolders)
 	t.Viewer = c.viewer(t, c.As)
@@ -520,14 +478,7 @@ func (c *simCrew) viewer(t *session.Team, slot int64) *session.Viewer {
 	if p := c.player(slot); p != nil {
 		v.Position = p.Position
 	}
-	for _, role := range t.G.DealtRoles() {
-		if t.RoleHolders[role] == slot {
-			v.Roles = append(v.Roles, role)
-		}
-	}
-	if d := t.G.DefaultRole(); d != "" && (len(v.Roles) == 0 || len(c.Players) <= 1) {
-		v.Roles = append(v.Roles, d)
-	}
+	v.Roles = play.PlayerRoles(t.G, t.RoleHolders, slot, len(c.Players))
 	for _, role := range t.G.SecretRoles() {
 		if c.Secrets[role] == slot {
 			v.Roles = append(v.Roles, role)
@@ -542,10 +493,9 @@ func (c *simCrew) phones(t *session.Team) []simPhone {
 	out := make([]simPhone, 0, len(c.Players))
 	for i, p := range c.Players {
 		t.Viewer = c.viewer(t, p.Slot)
-		// Its own roles: not those a group lends it (session.Team.Focus).
-		own := slices.Clone(t.Viewer.Roles)
+		// Its own roles: not those a group lends it (session.Team.View).
+		own := t.Viewer.Roles
 		v := t.View()
-		t.Unfocus()
 		// Each phone its roles marked, and who holds the others, as the
 		// player endpoints tell them.
 		v.Roles = slices.Clone(v.Roles)

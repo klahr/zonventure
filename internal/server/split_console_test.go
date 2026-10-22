@@ -63,7 +63,8 @@ func TestRaceControlSplitTeam(t *testing.T) {
 		t.Fatalf("start = %d", s)
 	}
 
-	// The team players before the split: Ann the scout, the rest crew.
+	// The team players at the split, before anyone sets off: Ann the
+	// scout, the rest crew — each already in the group they will keep.
 	type player struct {
 		ID      int64    `json:"id"`
 		Name    string   `json:"name"`
@@ -77,8 +78,8 @@ func TestRaceControlSplitTeam(t *testing.T) {
 	if s := arr.do("GET", "/api/admin/teams/"+itoa(crew.ID)+"/players", nil, &pl); s != 200 || len(pl.Players) != 4 {
 		t.Fatalf("players = %d %+v", s, pl)
 	}
-	if p := pl.Players[0]; p.Name != "Ann" || len(p.Roles) != 1 || p.Roles[0] != "Scout" || len(p.Groups) != 0 || !p.Playing {
-		t.Errorf("Ann before the split: %+v", p)
+	if p := pl.Players[0]; p.Name != "Ann" || len(p.Roles) != 1 || p.Roles[0] != "Scout" || len(p.Groups) != 1 || p.Groups[0] != "Church" || !p.Playing {
+		t.Errorf("Ann at the split: %+v", p)
 	}
 
 	// Ann at home before the split: the team's trail, none of a group's.

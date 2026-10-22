@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { adventureTexts, allTexts, coverage, blockKey, isOutdated, isPortKey, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey, sourceFingerprint, trackTranslations, translatedNode, translateEdit, translateSideEdit, translationOriginal, withTexts, zoneKey, itemKey } from "./i18n.ts";
+import { adventureTexts, allTexts, coverage, blockKey, isOutdated, isPortKey, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey, sourceFingerprint, trackTranslations, translatedNode, translateSideEdit, translationOriginal, withTexts, zoneKey, itemKey } from "./i18n.ts";
+import { translateEdit, updateNode } from "./model.ts";
 import type { Graph } from "./types.ts";
 
 const g: Graph = {
@@ -200,6 +201,17 @@ test("a port's keys are its own, not those of a port its name begins", () => {
   assert.ok(isPortKey("s", "x:y", nodeKey("s", "path:x:y:label")));
   assert.ok(!isPortKey("s", "x", nodeKey("s", "path:xy:label")));
   assert.ok(!isPortKey("t", "x", nodeKey("s", "path:x:label")));
+  // A branch's picture, keyed by its port alone.
+  assert.ok(isPortKey("s", "x", nodeKey("s", "branch:x")));
+  assert.ok(!isPortKey("s", "x", nodeKey("s", "branch:xy")));
+});
+
+test("a branch removed keeps the picture of a branch still there whose port its name begins", () => {
+  const hub = { slug: "h", type: "hub", hub: { branches: [{ port: "x" }, { port: "x:y" }] } } as Graph["nodes"][number];
+  const graph: Graph = { ...g, nodes: [...g.nodes, hub], translations: { en: { [nodeKey("h", "branch:x:y")]: "picture", [nodeKey("h", "branch:x:label")]: "X" } } };
+  const out = updateNode(graph, "h", (n) => ({ ...n, hub: { ...n.hub!, branches: [{ port: "x:y" }] } }));
+  assert.equal(out.translations!.en![nodeKey("h", "branch:x:y")], "picture", "x:y's picture stays");
+  assert.equal(out.translations!.en![nodeKey("h", "branch:x:label")], undefined, "x's label goes with it");
 });
 
 // The shared vectors the engine's tests read too (internal/graph/session):

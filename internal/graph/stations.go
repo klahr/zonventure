@@ -15,6 +15,12 @@ import (
 func (g *Graph) StationsProblems() []string {
 	var out []string
 	for _, n := range g.Nodes {
+		if n.Type == Split {
+			// A team scans one station at a time: its groups, each at a
+			// station of its own, would scan each other's away.
+			out = append(out, fmt.Sprintf("step %q splits the team up", n.Slug))
+			continue
+		}
 		if n.PuzzleCfg == nil || n.PuzzleCfg.Answer == nil {
 			continue
 		}

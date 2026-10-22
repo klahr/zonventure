@@ -15,6 +15,7 @@ package player
 // replayed verbatim on retry, so the offline outbox can re-send safely.
 
 import (
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"database/sql"
@@ -55,12 +56,7 @@ func ForPhone(next http.Handler) http.Handler {
 	})
 }
 
-func (h *Handlers) engine() *play.Engine {
-	if h.Engine != nil {
-		return h.Engine
-	}
-	return play.New(h.DB)
-}
+func (h *Handlers) engine() *play.Engine { return play.Or(h.Engine, h.DB) }
 
 // PlayTeam is the team as the player app shows it. Locked says the team
 // has begun (play.TeamBegun), so its players can no longer change their
@@ -165,8 +161,10 @@ type PlayState struct {
 	Messages []eventmsg.Message `json:"messages"`
 	// Dev is set for a dev ticket, playing the draft as it is edited.
 	Dev *PlayDev `json:"dev,omitempty"`
-	// MovedOn says the organisers moved the team onto the step it is on,
-	// for the app to say so rather than swap the step silently.
+	// MovedOn says the organisers moved the team onto the step it is on —
+	// split up, the group the phone is shown — for the app to say so
+	// rather than swap the step silently: the view's (Cursor.Moved), which
+	// the app reads, kept here for a bundle from before it.
 	MovedOn bool `json:"moved_on,omitempty"`
 }
 
@@ -258,13 +256,14 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	view, err := h.engine().Snapshot(ctx, tc.TeamID)
+	// The view, and the media worth fetching ahead for it, off one load.
+	view, prefetch, err := h.engine().Look(ctx, tc.TeamID)
 	if errors.Is(err, play.ErrNoGraph) && tc.RunState == "running" {
 		// A team added after the start — a ticket bought for a running
 		// quest — has no state yet. Placing it is StartEvent's job, and
 		// StartEvent leaves teams that already have state alone.
 		if err = play.Start(ctx, h.DB, tc.EventID); err == nil {
-			view, err = h.engine().Snapshot(ctx, tc.TeamID)
+			view, prefetch, err = h.engine().Look(ctx, tc.TeamID)
 		}
 	}
 	if err != nil && !errors.Is(err, play.ErrNoGraph) {
@@ -299,22 +298,8 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 			httpx.ServerErr(w, http.StatusInternalServerError, "loading files failed", err)
 			return
 		}
-		if out.Prefetch, err = h.engine().Media(ctx, tc.TeamID); err != nil {
-			httpx.ServerErr(w, http.StatusInternalServerError, "loading media failed", err)
-			return
-		}
-		if !view.Finished && view.Node != "" {
-			var to sql.NullString
-			err = h.DB.QueryRowContext(ctx, `
-				SELECT payload::jsonb->>'to' FROM event_activity
-				WHERE team_id = $1 AND kind = $2
-				ORDER BY created_at DESC, id DESC LIMIT 1`, tc.TeamID, activity.TeamUnlocked).Scan(&to)
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				httpx.ServerErr(w, http.StatusInternalServerError, "loading game failed", err)
-				return
-			}
-			out.MovedOn = to.String == view.Node
-		}
+		out.Prefetch = prefetch
+		out.MovedOn = view.MovedOn && !view.Finished
 		if view.Finished {
 			if out.Finish, err = h.finishOf(ctx, tc.EventID, tc.TeamID); err != nil {
 				httpx.ServerErr(w, http.StatusInternalServerError, "loading result failed", err)
@@ -728,6 +713,7 @@ func (h *Handlers) refusePlay(w http.ResponseWriter, res play.Result, err error)
 		"unsealed":       http.StatusForbidden,
 		"too_few":        http.StatusForbidden,
 		"not_yours":      http.StatusForbidden,
+		"other_group":    http.StatusForbidden,
 	}[code]
 	if status == 0 {
 		httpx.ServerErr(w, http.StatusInternalServerError, "action failed", err)
@@ -747,16 +733,20 @@ func (h *Handlers) refusePlay(w http.ResponseWriter, res play.Result, err error)
 func (h *Handlers) recordPlay(ctx context.Context, tc teamContext, slotID int64, action string, req PlayActionRequest, res play.Result) {
 	teamID := tc.TeamID
 	actor := activity.SlotActor(slotID)
-	if action == "cheat" {
+	switch {
+	case res.TimeUp:
+		// The time limit ran out — the phone's countdown, or an action of
+		// its past the deadline, which the limit took the place of: no
+		// answer was judged.
+		activity.Record(ctx, h.DB, tc.EventID, &teamID, actor, activity.TeamTimedOut, map[string]any{"to": cmp.Or(res.To, res.View.Node)})
+	case action == "cheat":
 		activity.Record(ctx, h.DB, tc.EventID, &teamID, actor, activity.AnswerRight,
 			map[string]any{"node": req.Node, "port": res.Port, "points": 0, "cheat": true})
-	}
-	if action == "turn" && res.Accepted {
+	case action == "turn" && res.Accepted:
 		activity.Record(ctx, h.DB, tc.EventID, &teamID, actor, activity.AnswerRight,
 			map[string]any{"node": req.Node, "port": res.Port, "points": res.Points})
-	}
-	// A right answer waiting for teammates to agree is neither yet.
-	if action == "answer" && res.Waiting == nil {
+	case action == "answer" && res.Waiting == nil:
+		// A right answer waiting for teammates to agree is neither yet.
 		if res.Accepted {
 			activity.Record(ctx, h.DB, tc.EventID, &teamID, actor, activity.AnswerRight,
 				map[string]any{"node": req.Node, "port": res.Port, "points": res.Points})

@@ -95,12 +95,8 @@ function resultFeedback(kind: play.PlayAction["kind"], r: play.Result, t: Transl
   }
 }
 
-/**
- * Feedback for a refused action, by its stable code. `split`: the team is
- * split into groups, or the action was a walk to one, so not_yours is
- * about a group, not a role.
- */
-export function feedbackForRefusal(code: string | undefined, t: Translate, split = false): Feedback {
+/** Feedback for a refused action, by its stable code. */
+export function feedbackForRefusal(code: string | undefined, t: Translate): Feedback {
   switch (code) {
     case "stale":
       return { tone: "info", text: t("Your team has already moved on. Here is where you are now.") };
@@ -109,9 +105,9 @@ export function feedbackForRefusal(code: string | undefined, t: Translate, split
     case "no_fix":
       return { tone: "info", text: t("Finding where you are… Hold the phone up for a moment, then try again.") };
     case "not_yours":
-      return split
-        ? { tone: "bad", text: t("That's for another group of your team to do.") }
-        : { tone: "bad", text: t("That's for another role on your team to do.") };
+      return { tone: "bad", text: t("That's for another role on your team to do.") };
+    case "other_group":
+      return { tone: "bad", text: t("That's for another group of your team to do.") };
     case "locked":
       return { tone: "bad", text: t("Wait a moment before trying again.") };
     case "time_up":

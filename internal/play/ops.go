@@ -285,30 +285,52 @@ func (e *Engine) RevealHint(ctx context.Context, teamID int64, node string, inde
 
 // Snapshot returns the team's current view without changing anything.
 func (e *Engine) Snapshot(ctx context.Context, teamID int64) (View, error) {
+	v, _, err := e.snapshot(ctx, teamID, false)
+	return v, err
+}
+
+// Look is Snapshot with the media worth fetching ahead for the view —
+// the look's, and the steps' (PrefetchMedia) — read off the one load:
+// the look's alone for a team not started (ErrNoGraph).
+func (e *Engine) Look(ctx context.Context, teamID int64) (View, []int64, error) {
+	return e.snapshot(ctx, teamID, true)
+}
+
+func (e *Engine) snapshot(ctx context.Context, teamID int64, prefetch bool) (View, []int64, error) {
 	tx, err := e.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return View{}, err
+		return View{}, nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var (
+		ids    []int64
+		strict bool
+	)
+	if prefetch {
+		if ids, strict, err = lookMedia(ctx, tx, teamID); err != nil {
+			return View{}, nil, err
+		}
+	}
 
-	// A read-only transaction cannot take FOR UPDATE, so load without
-	// it. Occupancy is irrelevant to a read; position is not — the view
-	// says whether the team is inside its zone.
-	s, err := e.loadCore(ctx, tx, teamID, false)
+	s, err := e.seen(ctx, tx, teamID)
+	if errors.Is(err, ErrNoGraph) {
+		return View{}, ids, err
+	}
 	if err != nil {
-		return View{}, err
-	}
-	if err := e.locate(ctx, tx, s); err != nil {
-		return View{}, err
-	}
-	if _, err := e.divide(ctx, tx, s); err != nil {
-		return View{}, err
+		return View{}, nil, err
 	}
 	v := s.View()
 	if err := e.decorate(ctx, tx, s.G, s.eventID, teamID, &v); err != nil {
-		return View{}, err
+		return View{}, nil, err
 	}
-	return v, nil
+	if prefetch {
+		ids = withMedia(ids, s, strict, true)
+	}
+	// Once the read is done: storing what it dealt takes a connection of
+	// its own, which a read still open would wait on.
+	_ = tx.Rollback()
+	e.keepDeal(ctx, s)
+	return v, ids, nil
 }
 
 // --- the shared action skeleton ---------------------------------------
@@ -344,16 +366,26 @@ func (e *Engine) act(ctx context.Context, teamID int64, a action, fn func(*sessi
 	}
 
 	// A split team's players are dealt into its groups as they come.
-	dealt, err := e.divide(ctx, tx, s)
-	if err != nil {
+	if _, err := e.divide(ctx, tx, s); err != nil {
 		return Result{}, err
 	}
 
 	score := s.Score()
+	before := rowsAt(s)
+	chosen := make([][]int64, len(s.Strands))
+	for i, st := range s.Strands {
+		chosen[i] = slices.Clone(st.Chosen)
+	}
 	res, step, err := s.Act(func() (Result, *walk.Step, error) { return fn(s.Team) })
 	if err != nil {
 		// Some refusals (a lockout) still carry information worth
-		// returning, but nothing is persisted.
+		// returning, but nothing is persisted: the groups the phones walk
+		// are as stored still — a choice the action spent is not.
+		for i := range s.Strands {
+			if i < len(chosen) {
+				s.Strands[i].Chosen = chosen[i]
+			}
+		}
 		res.View = s.View()
 		if derr := e.decorate(ctx, tx, s.G, s.eventID, teamID, &res.View); derr != nil {
 			return Result{}, derr
@@ -367,27 +399,31 @@ func (e *Engine) act(ctx context.Context, teamID int64, a action, fn func(*sessi
 	}
 	if step != nil {
 		err = e.commit(ctx, tx, s, *step)
-		if err == nil && s.Split != "" {
-			// A team moved onto a split by a move that knew none of its
-			// players — an organiser's, the AI's — is dealt now, so its
-			// groups are stored as first shown rather than dealt again
-			// on every view until someone acts.
-			var fresh bool
-			if fresh, err = e.divide(ctx, tx, s); err == nil && fresh {
-				err = saveSplit(ctx, tx, s)
-			}
-		}
 	} else {
-		err = e.stay(ctx, tx, s)
-	}
-	if err == nil && step == nil && (dealt || s.GroupsChanged || s.afresh) {
-		err = saveSplit(ctx, tx, s)
+		err = e.stay(ctx, tx, s, before)
 	}
 	if err != nil {
 		return Result{}, err
 	}
-	if err := recordAction(ctx, tx, s, a, step); err != nil {
-		return Result{}, err
+	switch {
+	case a.name == "walk" && !res.TimeUp:
+		// Choosing a group to walk moves no one and scores nothing: the
+		// result chain, the record of play, is not told of it — however
+		// often a phone changes its mind.
+		a.name = ""
+	case res.TimeUp:
+		// The time limit ran out first and took the action's place: it is
+		// recorded as the limit's, as every time up is.
+		a = action{"time_up", "", ""}
+	case a.name == "rescue" && a.node == "":
+		// A group's rescue by its key alone is recorded on the step it
+		// moved the group from (Result.From).
+		a.node = res.From
+	}
+	if a.name != "" {
+		if err := recordAction(ctx, tx, s, a, step); err != nil {
+			return Result{}, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return Result{}, err
@@ -452,13 +488,13 @@ func savePress(ctx context.Context, tx *sql.Tx, s *teamState) error {
 		return nil
 	}
 	if c.Press == nil {
-		_, err := tx.ExecContext(ctx, `DELETE FROM team_presses WHERE team_id = $1 AND node = $2 AND slot_id = $3`, s.teamID, s.Current, c.Slot)
+		_, err := tx.ExecContext(ctx, `DELETE FROM team_presses WHERE team_id = $1 AND node = $2 AND slot_id = $3`, s.teamID, c.Node, c.Slot)
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO team_presses(team_id, node, slot_id, value, pressed_at) VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (team_id, node, slot_id) DO UPDATE SET value = EXCLUDED.value, pressed_at = EXCLUDED.pressed_at
-	`, s.teamID, s.Current, c.Slot, c.Press.Value, c.Press.At)
+	`, s.teamID, c.Node, c.Slot, c.Press.Value, c.Press.At)
 	return err
 }
 
@@ -487,37 +523,65 @@ func (e *Engine) Turn(ctx context.Context, teamID int64, node string) (Result, e
 }
 
 // stay persists an action that left the team where it was: a wrong
-// guess counted, a lockout set, a hint bought.
-func (e *Engine) stay(ctx context.Context, tx *sql.Tx, s *teamState) error {
-	if err := saveNodeRow(ctx, tx, s, s.Current); err != nil {
-		return err
+// guess counted, a lockout set, a hint bought — the records it changed
+// of the steps the team stands on (before, as they were) — and its
+// groups, one chosen to walk, say.
+func (e *Engine) stay(ctx context.Context, tx *sql.Tx, s *teamState, before map[string]session.NodeState) error {
+	// The records the action changed of the steps the team stands on —
+	// each group's, while it is split up — whichever step it named.
+	for _, node := range s.Standing() {
+		if r, ok := s.Nodes[node]; !ok || before[node] == *r {
+			continue
+		}
+		if err := saveNodeRow(ctx, tx, s, node); err != nil {
+			return err
+		}
 	}
 	if err := savePicks(ctx, tx, s); err != nil {
 		return err
 	}
-	_, err := tx.ExecContext(ctx, `
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE team_graph_state SET penalty_score = $1, lang = $4, updated_at = $2 WHERE team_id = $3
-	`, s.PenaltyScore, s.Now, s.teamID, s.Lang)
-	return err
+	`, s.PenaltyScore, s.Now, s.teamID, s.Lang); err != nil {
+		return err
+	}
+	// The groups as the action left them — dealt, or a group chosen to
+	// walk — as commit stores them for a move.
+	return saveSplit(ctx, tx, s)
+}
+
+// rowsAt are copies of the team's records of the steps it stands on, for
+// stay to save only those an action changed.
+func rowsAt(s *teamState) map[string]session.NodeState {
+	out := map[string]session.NodeState{}
+	for _, node := range s.Standing() {
+		if r, ok := s.Nodes[node]; ok {
+			out[node] = *r
+		}
+	}
+	return out
 }
 
 // commit persists a step: the node left, every node passed, hub branch
 // bookkeeping, effects, and finally the cursor. For a split team the
-// cursor stored is the split's (session.Team.Whole); where each group is
-// goes with the groups, in act.
+// cursor stored is the split's (session.Team.Whole), and where each group
+// is is stored with it (saveSplit).
 func (e *Engine) commit(ctx context.Context, tx *sql.Tx, s *teamState, step walk.Step) error {
 	now := s.Now
 	old := s.Current
 	s.Apply(step)
-	if s.Current != old {
-		// Done together or not, the step is behind the team: what each
-		// player did there starts again on a later visit.
-		if _, err := tx.ExecContext(ctx, `DELETE FROM team_presses WHERE team_id = $1 AND node = $2`, s.teamID, old); err != nil {
-			return err
-		}
+	if step.To != old {
 		if err := lockRolesLeaving(ctx, tx, s, old); err != nil {
 			return fmt.Errorf("locking roles: %w", err)
 		}
+	}
+	// Presses are kept only where someone stands (Team.Standing), as
+	// Apply keeps them, however a step was left: moved on, met at the
+	// join, or the split ended for every group at once. Only those are
+	// loaded, so the table is what says where else some are left: every
+	// move asks it, with one statement.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM team_presses WHERE team_id = $1 AND node <> ALL($2)`, s.teamID, s.Standing()); err != nil {
+		return err
 	}
 
 	if step.From != "" && s.Nodes[step.From] != nil {
@@ -587,28 +651,30 @@ func (e *Engine) commit(ctx context.Context, tx *sql.Tx, s *teamState, step walk
 	// the invariant true if that lock is ever loosened.
 	res, err := tx.ExecContext(ctx, `
 		UPDATE team_graph_state
-		SET current_node = $1, node_entered_at = $2, score = $3, penalty_score = $4,
+		SET current_node = $1, node_entered_at = $18, score = $3, penalty_score = $4,
 		    penalty_seconds = $5, theme = $6, completed_at = COALESCE(completed_at, $7),
 		    outcome = COALESCE(outcome, $8), last_answer = $11, started_at = $12, timed_out = $13, lang = $14, cheated = $15, updated_at = $2,
-		    start_paused = $16, node_paused = $17
+		    start_paused = $16, node_paused = $17, moved = $19, moved_by = $20
 		WHERE team_id = $9 AND current_node IS NOT DISTINCT FROM $10
 	`, nullIfEmpty(s.Whole()), now, s.Points, s.PenaltyScore, s.PenaltySeconds, s.Theme,
 		completedAt, outcome, s.teamID, nullIfEmpty(s.whole), s.LatestAnswer, s.StartedAt, s.TimedOut, s.Lang, s.Cheated,
-		s.StartPaused, s.Paused)
+		// The team's own clock: now, as it moved — or, split, since it
+		// came to the split, however its groups move.
+		s.StartPaused, s.NodePaused, s.NodeEnteredAt, s.Moved, s.MovedBy)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n != 1 {
 		return ErrStale
 	}
-	// Where each group is, or that the team is one again.
-	if s.Split != "" || s.wasSplit {
-		if err := saveSplit(ctx, tx, s); err != nil {
-			return err
-		}
+	s.whole = s.Whole()
+	// Where each group is, with the cursor, so the two never part — dealt
+	// already, for a team come to a split by a move that knew none of its
+	// players: stored once, as first shown.
+	if err := e.dealArrived(ctx, tx, s); err != nil {
+		return err
 	}
-	s.whole, s.wasSplit = s.Whole(), s.Split != ""
-	return nil
+	return saveSplit(ctx, tx, s)
 }
 
 // applyEffects persists the effects a step passed. Their in-memory
@@ -701,24 +767,53 @@ func nullIfEmpty(s string) any {
 	return s
 }
 
-// Media returns the media ids a team's phone should download ahead (see
-// session.Team.PrefetchMedia). A team with no graph state sees nothing.
-func (e *Engine) Media(ctx context.Context, teamID int64) ([]int64, error) {
-	return e.media(ctx, teamID, true)
-}
-
 // media returns the media ids a team may fetch now (see
 // session.Team.VisibleMedia), honouring the adventure's strict-assets
 // setting, or with prefetch only those worth downloading ahead.
 func (e *Engine) media(ctx context.Context, teamID int64, prefetch bool) ([]int64, error) {
+	ids, strict, err := lookMedia(ctx, e.DB, teamID)
+	if err != nil {
+		return nil, err
+	}
+	s, err := e.seen(ctx, e.DB, teamID)
+	if errors.Is(err, ErrNoGraph) {
+		return ids, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return withMedia(ids, s, strict, prefetch), nil
+}
+
+// seen loads the team as its phone sees it, moving no one: without the
+// row lock a read-only transaction cannot take, located — whether it is
+// inside its zone decides what it sees, and the pictures it may fetch —
+// and, split up, dealt, each phone seeing its own group's step.
+// Occupancy is irrelevant to a read.
+func (e *Engine) seen(ctx context.Context, q Querier, teamID int64) (*teamState, error) {
+	s, err := e.loadCore(ctx, q, teamID, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := e.locate(ctx, q, s); err != nil {
+		return nil, err
+	}
+	if _, err := e.divide(ctx, q, s); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// lookMedia are the media of the adventure's own look — a picture,
+// sounds and a cover — which every team may fetch, an adventure with a
+// graph or without; and whether its assets are strict.
+func lookMedia(ctx context.Context, q Querier, teamID int64) ([]int64, bool, error) {
 	var (
 		strict              bool
 		picture, right, bad int64
 		cover               int64
 	)
-	// The adventure's own look may have a picture, sounds and a cover:
-	// every team may fetch them, an adventure with a graph or without.
-	if err := e.DB.QueryRowContext(ctx, `
+	if err := q.QueryRowContext(ctx, `
 		SELECT a.strict_assets,
 		       COALESCE(CASE WHEN a.backdrop->>'kind' = 'picture' THEN (a.backdrop->>'media')::bigint END, 0),
 		       COALESCE((a.look_style->>'sound_right')::bigint, 0),
@@ -727,7 +822,7 @@ func (e *Engine) media(ctx context.Context, teamID int64, prefetch bool) ([]int6
 		FROM teams t JOIN events ev ON ev.id = t.event_id JOIN adventures a ON a.slug = ev.adventure_slug
 		WHERE t.id = $1
 	`, teamID).Scan(&strict, &picture, &right, &bad, &cover); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return nil, err
+		return nil, false, err
 	}
 	var ids []int64
 	for _, id := range []int64{picture, right, bad, cover} {
@@ -735,34 +830,25 @@ func (e *Engine) media(ctx context.Context, teamID int64, prefetch bool) ([]int6
 			ids = append(ids, id)
 		}
 	}
-	s, err := e.loadCore(ctx, e.DB, teamID, false)
-	if errors.Is(err, ErrNoGraph) {
-		return ids, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	// A block shown inside a zone, or only to the player standing there,
-	// brings its picture with it: where the team is decides what it may
-	// fetch, as it decides what it sees.
-	if err := e.locate(ctx, e.DB, s); err != nil {
-		return nil, err
-	}
-	// A split team's phone sees its own group's step.
-	if _, err := e.divide(ctx, e.DB, s); err != nil {
-		return nil, err
-	}
-	s.Focus()
-	seen := s.VisibleMedia(strict)
+	return ids, strict, nil
+}
+
+// withMedia adds to ids the media the team may fetch now
+// (session.Team.VisibleMedia), or with prefetch only those worth
+// downloading ahead (PrefetchMedia).
+func withMedia(ids []int64, s *teamState, strict, prefetch bool) []int64 {
+	var seen []int64
 	if prefetch {
 		seen = s.PrefetchMedia(strict)
+	} else {
+		seen = s.VisibleMedia(strict)
 	}
 	for _, id := range seen {
 		if !slices.Contains(ids, id) {
 			ids = append(ids, id)
 		}
 	}
-	return ids, nil
+	return ids
 }
 
 // CanSeeMedia reports whether a team may fetch one media file.

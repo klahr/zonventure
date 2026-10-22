@@ -3,27 +3,24 @@
 // step), for race control and the live board alike.
 //
 // Each ping remembers the group its phone was walking as it was taken
-// (location_pings.groups, PingGroups), so a group's trail is the walk of
-// whoever walked it while it was out — its own players, or others for
-// players gone — nothing from before the split, and stays apart after
-// the groups meet again. A ping in no group is the team's.
+// (location_pings.groups: the Tag of play.Engine.WalkingGroup), so a
+// group's trail is the walk of whoever walked it while it was out — its
+// own players, or others for players gone — nothing from before the
+// split, and stays apart after the groups meet again. A ping in no group
+// is the team's.
 package tracks
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/session"
-	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/icscal"
 	"github.com/klahr/zonventure/internal/play"
 )
@@ -60,295 +57,108 @@ type Group struct {
 	At               *Point
 }
 
-// fork is a group as a ping names it: the split and the path it took.
-type fork struct {
-	Split string `json:"split"`
-	Port  string `json:"port"`
-}
-
-// Tag is how a ping names a group it was walking (location_pings.groups):
-// its split and path as JSON — [{"split":…,"port":…}] — which no slug or
-// port can make read as another group's, so a trail can be named after
-// its group has gone.
-func Tag(split, port string) string {
-	b, err := json.Marshal([]fork{{split, port}})
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
-
-// group reads a ping's group back; false for a tag not read.
-func group(tag string) (fork, bool) {
-	var out []fork
-	if json.Unmarshal([]byte(tag), &out) != nil || len(out) != 1 {
-		return fork{}, false
-	}
-	return out[0], true
-}
+// fork is a group as a ping names it (play.GroupTag): the split and the
+// path it took.
+type fork struct{ Split, Port string }
 
 // awayAfter is how long a phone may stay silent before its player counts
-// as away, as the engine counts it: a group whose players all are is
-// anyone's to walk.
+// as away, as the engine counts it.
 const awayAfter = play.AwayAfter
-
-// PingGroups are the groups the phone slot of the team teamID walks as it
-// pings, as Tags, for the ping's groups column: the one it chose, while
-// that is on its way, or else its first own group not yet at the join,
-// or one no one playing is left in — as the engine has it
-// (session.Team.Walkers). A phone joining mid-split, not yet stored in a
-// group, is dealt into the one the engine deals it on the team's next
-// view or action (session.Team.Deal, as play deals it), so its pings are
-// that group's from the first. Nil for a team together, or at its split
-// with no one dealt yet — not set off: its pings are the team's. One
-// query, for a team split up only, and the graph from the cache — and
-// the roles read where someone is still to be dealt.
-func PingGroups(ctx context.Context, db *sql.DB, teamID, slot int64, now time.Time) ([]string, error) {
-	var (
-		graphID    int64
-		split      string
-		rawStrands []byte
-		rawPlayers []byte
-	)
-	// The players as the engine reads them (play.Players), each with when
-	// its phone was last heard from — a ping, or a request of the player
-	// app — or else its player opened their link (play.away).
-	err := db.QueryRowContext(ctx, `
-		SELECT gs.graph_id, gs.split, gs.strands, COALESCE((
-		  SELECT jsonb_agg(jsonb_build_object('slot', s.id, 'seen', `+play.SeenSQL+`) ORDER BY s.id)
-		  FROM player_slots s
-		  WHERE s.team_id = gs.team_id AND `+play.PlayingSQL+`), '[]')
-		FROM team_graph_state gs
-		WHERE gs.team_id = $1 AND gs.split IS NOT NULL AND jsonb_typeof(gs.strands) = 'array'`,
-		teamID, slot).Scan(&graphID, &split, &rawStrands, &rawPlayers)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var strands []session.Strand
-	if err := json.Unmarshal(rawStrands, &strands); err != nil {
-		return nil, err
-	}
-	in := func(slot int64) bool {
-		return slices.ContainsFunc(strands, func(st session.Strand) bool { return slices.Contains(st.Members, slot) })
-	}
-	if !slices.ContainsFunc(strands, func(st session.Strand) bool { return len(st.Members) > 0 }) {
-		// No one is dealt until the team sets off: its pings are its own.
-		return nil, nil
-	}
-	type heard struct {
-		Slot int64  `json:"slot"`
-		Seen string `json:"seen"`
-	}
-	var seen []heard
-	if err := json.Unmarshal(rawPlayers, &seen); err != nil {
-		return nil, err
-	}
-	// As play.Players: the phone pinging plays even where the query left
-	// it out — forgotten as it pinged — last.
-	if slot != 0 && !slices.ContainsFunc(seen, func(p heard) bool { return p.Slot == slot }) {
-		seen = append(seen, heard{Slot: slot})
-	}
-	g, err := Graph(ctx, db, graphID)
-	if err != nil {
-		return nil, err
-	}
-	t := &session.Team{G: g, Split: split, Strands: strands, Away: map[int64]bool{}}
-	players := make([]int64, 0, len(seen))
-	undealt := false
-	for _, p := range seen {
-		players = append(players, p.Slot)
-		// The phone pinging is not away.
-		if p.Slot != slot && play.Away(p.Seen, now) {
-			t.Away[p.Slot] = true
-		}
-		undealt = undealt || !in(p.Slot)
-	}
-	if undealt {
-		// Dealt as the engine deals anyone playing in no group yet, with
-		// the roles as it reads them; stored by the team's next action.
-		var holders map[string]int64
-		if roles := g.DealtRoles(); len(roles) > 0 {
-			dealt, err := play.DealRoles(ctx, db, teamID, slot, roles)
-			if err != nil {
-				return nil, err
-			}
-			holders = make(map[string]int64, len(dealt))
-			for role, h := range dealt {
-				holders[role] = h.Slot
-			}
-		}
-		t.Deal(players, holders)
-	}
-	walkers := t.Walkers(players)
-	for _, st := range strands {
-		if slices.Contains(walkers[st.Key()], slot) {
-			return []string{Tag(split, st.Port)}, nil
-		}
-	}
-	return nil, nil
-}
-
-// graphs keeps the graphs groups are named from, by id, as every ping
-// and push asks again: a release or a party's own copy never changes; a
-// dev row (version 0) follows the draft, saved over in place, so it is
-// kept with its row's version (xmin) and read again once that moves.
-var graphs = struct {
-	mu   sync.Mutex
-	m    map[int64]*cachedGraph
-	tick uint64
-}{m: map[int64]*cachedGraph{}}
-
-type cachedGraph struct {
-	g *graph.Graph
-	// mark is a dev row's version as it was read; "" for one that never
-	// changes.
-	mark string
-	used uint64
-}
-
-// maxGraphs bounds the cache; past it, the graph used longest ago goes.
-const maxGraphs = 64
-
-// Graph is the stored graph id, from the cache while it is as stored.
-func Graph(ctx context.Context, db *sql.DB, id int64) (*graph.Graph, error) {
-	graphs.mu.Lock()
-	c := graphs.m[id]
-	if c != nil && c.mark == "" {
-		graphs.tick++
-		c.used = graphs.tick
-		graphs.mu.Unlock()
-		return c.g, nil
-	}
-	graphs.mu.Unlock()
-	// A dev row, or a graph not read yet: its version first, so a draft
-	// saved while it is read is read again next time.
-	var (
-		version int
-		mark    string
-	)
-	if err := db.QueryRowContext(ctx, `SELECT version, xmin::text FROM adventure_graphs WHERE id = $1`, id).Scan(&version, &mark); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, graphstore.ErrNotFound
-		}
-		return nil, err
-	}
-	if version != 0 {
-		mark = ""
-	}
-	if c != nil && c.mark == mark {
-		graphs.mu.Lock()
-		graphs.tick++
-		c.used = graphs.tick
-		graphs.mu.Unlock()
-		return c.g, nil
-	}
-	st, err := graphstore.ByID(ctx, db, id)
-	if err != nil {
-		return nil, err
-	}
-	graphs.mu.Lock()
-	defer graphs.mu.Unlock()
-	if _, ok := graphs.m[id]; !ok && len(graphs.m) >= maxGraphs {
-		oldest, least := int64(0), uint64(0)
-		for k, e := range graphs.m {
-			if least == 0 || e.used < least {
-				oldest, least = k, e.used
-			}
-		}
-		delete(graphs.m, oldest)
-	}
-	graphs.tick++
-	graphs.m[id] = &cachedGraph{g: st.Graph, mark: mark, used: graphs.tick}
-	return st.Graph, nil
-}
 
 // team is a team's graph state, as tracks read it.
 type team struct {
 	graphID int64
 	split   string
+	// raw are the stored groups as stored, and strands those of them the
+	// engine plays (play.StoredGroups), as Query reads them.
+	raw     []byte
 	strands []session.Strand
 	// since bounds the pings of the team's groups this time out, as
-	// server_ts: none of them is older than the step any group is on
-	// now was entered. It is the split's start while any group is on its
-	// first step, and never older: a group's pings of an earlier walk of
-	// the split, or the team's before it, are older. "" where not known.
+	// server_ts: when the team came to its split. A group's pings of an
+	// earlier walk of the split, or the team's before it, are older. ""
+	// for a team together, or where not known.
 	since string
-}
-
-// sinceOf is team.since for strands: the earliest a group entered its
-// step, in server_ts's form.
-func sinceOf(strands []session.Strand) string {
-	var at time.Time
-	for _, st := range strands {
-		if st.EnteredAt.IsZero() {
-			return ""
-		}
-		if at.IsZero() || st.EnteredAt.Before(at) {
-			at = st.EnteredAt
-		}
-	}
-	if at.IsZero() {
-		return ""
-	}
-	return at.UTC().Format(time.DateTime)
 }
 
 func teams(ctx context.Context, db *sql.DB, eventID int64) (map[int64]team, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT team_id, graph_id, COALESCE(split, ''), strands FROM team_graph_state WHERE event_id = $1`, eventID)
+		SELECT team_id, graph_id, COALESCE(split, ''), strands, node_entered_at FROM team_graph_state WHERE event_id = $1`, eventID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := map[int64]team{}
 	for rows.Next() {
-		var id int64
-		var t team
-		var raw []byte
-		if err := rows.Scan(&id, &t.graphID, &t.split, &raw); err != nil {
+		var (
+			id int64
+			st Stored
+		)
+		if err := rows.Scan(&id, &st.GraphID, &st.Split, &st.Strands, &st.Entered); err != nil {
 			return nil, err
 		}
-		if t.split != "" && len(raw) > 0 && json.Unmarshal(raw, &t.strands) != nil {
-			t.strands = nil
-		}
-		t.since = sinceOf(t.strands)
-		out[id] = t
+		out[id] = st.team()
 	}
 	return out, rows.Err()
 }
 
-// Groups are the groups of each of the event's teams that is split up
-// now, by team.
-func Groups(ctx context.Context, db *sql.DB, eventID int64) (map[int64][]Group, error) {
-	ts, err := teams(ctx, db, eventID)
-	if err != nil {
-		return nil, err
-	}
-	return groups(ctx, db, ts)
+// Stored is a team's graph state as team_graph_state has it: the graph
+// it plays, its split and groups, and when it came to its step.
+type Stored struct {
+	GraphID int64
+	Split   string
+	Strands []byte
+	Entered sql.NullTime
 }
 
-func groups(ctx context.Context, db *sql.DB, ts map[int64]team) (map[int64][]Group, error) {
+func (st Stored) team() team {
+	t := team{graphID: st.GraphID, split: st.Split, raw: st.Strands}
+	if t.split != "" && st.Entered.Valid {
+		// Split, the team's own clock is when it came to the split.
+		t.since = st.Entered.Time.UTC().Format(time.DateTime)
+	}
+	return t
+}
+
+// Groups are the groups of each of the teams that is split up now, by
+// team, from their stored state as the caller read it, named from the
+// graphs in e's cache.
+func Groups(ctx context.Context, e *play.Engine, stored map[int64]Stored) (map[int64][]Group, error) {
+	ts := make(map[int64]team, len(stored))
+	for id, st := range stored {
+		ts[id] = st.team()
+	}
+	return groups(ctx, e, ts)
+}
+
+func groups(ctx context.Context, e *play.Engine, ts map[int64]team) (map[int64][]Group, error) {
 	out := map[int64][]Group{}
 	var (
 		teamIDs     []int64
 		tags, since []string
 	)
+	// Where each team's group, by its tag, is in out.
+	type at struct {
+		team int64
+		tag  string
+	}
+	index := map[at]int{}
 	for id, t := range ts {
-		if t.split == "" || len(t.strands) == 0 {
+		if t.split == "" {
 			continue
 		}
 		// A team whose graph can't be read is shown whole, as Query draws
-		// it, rather than failing every other team's place with it.
-		g, err := Graph(ctx, db, t.graphID)
+		// it, rather than failing every other team's place with it; so is
+		// one whose groups no longer fit it, dealt afresh on its next view.
+		splits, err := e.Splits(ctx, t.graphID)
 		if err != nil {
 			continue
 		}
-		for _, st := range t.strands {
-			out[id] = append(out[id], Group{Key: st.Key(), Label: session.GroupLabel(g, "", t.split, st.Port), Node: st.Current, Members: st.Members})
-			teamIDs, tags = append(teamIDs, id), append(tags, Tag(t.split, st.Port))
+		g := splits.Graph()
+		for _, st := range play.StoredGroups(splits, t.split, t.raw) {
+			tag := play.GroupTag(t.split, st.Port)
+			index[at{id, tag}] = len(out[id])
+			out[id] = append(out[id], Group{Key: st.Port, Label: session.GroupLabel(g, "", t.split, st.Port), Node: st.Current, Members: st.Members})
+			teamIDs, tags = append(teamIDs, id), append(tags, tag)
 			since = append(since, t.since)
 		}
 	}
@@ -357,9 +167,9 @@ func groups(ctx context.Context, db *sql.DB, ts map[int64]team) (map[int64][]Gro
 	}
 	// Each group's latest ping by its tag this time out (team.since),
 	// read off idx_pings_team_ts newest first: a group no one has pinged
-	// in yet reads the team's pings since the split, not its whole walk,
-	// and has no place from an earlier walk of the split.
-	rows, err := db.QueryContext(ctx, `
+	// in yet has no place — none from an earlier walk of the split, nor
+	// the team's.
+	rows, err := e.DB.QueryContext(ctx, `
 		SELECT q.team, q.tag, p.lat, p.lng, p.server_ts
 		FROM unnest($1::bigint[], $2::text[], $3::text[]) AS q(team, tag, since)
 		JOIN LATERAL (
@@ -381,11 +191,8 @@ func groups(ctx context.Context, db *sql.DB, ts map[int64]team) (map[int64][]Gro
 		if err := rows.Scan(&id, &tag, &p.Lat, &p.Lng, &p.ServerTS); err != nil {
 			return nil, err
 		}
-		gs := out[id]
-		for i, st := range ts[id].strands {
-			if Tag(ts[id].split, st.Port) == tag {
-				gs[i].At = &p
-			}
+		if i, ok := index[at{id, tag}]; ok {
+			out[id][i].At = &p
 		}
 	}
 	return out, rows.Err()
@@ -396,7 +203,8 @@ func groups(ctx context.Context, db *sql.DB, ts map[int64]team) (map[int64][]Gro
 // it was left and taken up again (cut), so the team's walk before a split
 // and after the join, or a group's in one round and the next, are two
 // trails rather than one line across the map.
-func Query(ctx context.Context, db *sql.DB, eventID int64) ([]Track, error) {
+func Query(ctx context.Context, e *play.Engine, eventID int64) ([]Track, error) {
+	db := e.DB
 	ts, err := teams(ctx, db, eventID)
 	if err != nil {
 		return nil, err
@@ -411,7 +219,7 @@ func Query(ctx context.Context, db *sql.DB, eventID int64) ([]Track, error) {
 	// inverse-variance weighted mean: pings with smaller `accuracy` (in
 	// metres) dominate, with a 1m floor to bound the weight and a 50m
 	// fallback when accuracy is null. The newest ping's id orders buckets
-	// of one time. A ping names one group (PingGroups); one stored naming
+	// of one time. A ping names one group (Tag); one stored naming
 	// more counts for the first. Read as groups[1], not unnested, the
 	// planner sizes the aggregate right; the span reads idx_pings_run_ts'
 	// two ends, and the teams are joined once bucketed — hours of pings
@@ -438,7 +246,7 @@ func Query(ctx context.Context, db *sql.DB, eventID int64) ([]Track, error) {
 			hasAvatar int
 			b         bucket
 		)
-		if err := rows.Scan(&id, &name, &hasAvatar, &lin, &b.Lat, &b.Lng, &b.ServerTS, &b.id, &width); err != nil {
+		if err := rows.Scan(&id, &name, &hasAvatar, &lin, &b.Lat, &b.Lng, &b.ServerTS, &b.id, &b.weight, &width); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -448,8 +256,8 @@ func Query(ctx context.Context, db *sql.DB, eventID int64) ([]Track, error) {
 		tl := all[len(all)-1]
 		// A tag not read is the team's.
 		var l line
-		if f, ok := group(lin); ok {
-			l.group, l.tag = &f, lin
+		if split, port, ok := play.ParseGroupTag(lin); ok {
+			l.group, l.tag = &fork{split, port}, lin
 		}
 		at := tl.byTag[l.tag]
 		if at == nil {
@@ -459,31 +267,46 @@ func Query(ctx context.Context, db *sql.DB, eventID int64) ([]Track, error) {
 		}
 		at.pts = append(at.pts, b)
 	}
-	if err := rows.Close(); err != nil {
+	// A read cut short is an error, not fewer trails.
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return nil, err
 	}
 
 	var out []Track
 	for _, tl := range all {
 		t, known := ts[tl.id]
+		// The team's graph, to name its groups' trails: read only for a
+		// team with one.
 		var g *graph.Graph
-		if known {
-			g, _ = Graph(ctx, db, t.graphID)
+		graphOf := func() *graph.Graph {
+			if g == nil && known {
+				g, _ = e.Graph(ctx, t.graphID)
+			}
+			return g
 		}
 		for _, l := range tl.lines {
 			l.merge()
 		}
+		if known && t.split != "" {
+			// The groups as the engine plays them: none that no longer fit
+			// the graph — the team's pings meanwhile (play.WalkingGroup) —
+			// so no group of them is drawn live.
+			t.strands = nil
+			if splits, err := e.Splits(ctx, t.graphID); err == nil {
+				t.strands = play.StoredGroups(splits, t.split, t.raw)
+			}
+		}
 		for _, pc := range cut(tl.lines, t, known, time.Duration(width)*time.Second) {
 			tr := Track{TeamID: tl.id, TeamName: tl.name, Points: make([]Point, len(pc.pts)), Past: pc.past}
 			if tl.avatar {
-				tr.AvatarURL = fmt.Sprintf("/adventure-assets/team-avatar/%d", tl.id)
+				tr.AvatarURL = play.TeamAvatarURL(tl.id)
 			}
 			for i, b := range pc.pts {
 				tr.Points[i] = b.Point
 			}
 			if pc.group != nil {
 				tr.Group, tr.GroupLabel = pc.group.Port, pc.group.Port
-				if g != nil {
+				if g := graphOf(); g != nil {
 					tr.GroupLabel = session.GroupLabel(g, "", pc.group.Split, pc.group.Port)
 				}
 			}
@@ -508,13 +331,13 @@ const trailsSQL = `
 		  FROM location_pings p CROSS JOIN span s
 		  WHERE p.event_id = $1
 		), buckets AS (
-		  SELECT team_id, lin, k, SUM(lat * wt) / SUM(wt) AS lat, SUM(lng * wt) / SUM(wt) AS lng, MAX(id) AS id
+		  SELECT team_id, lin, k, SUM(lat * wt) / SUM(wt) AS lat, SUM(lng * wt) / SUM(wt) AS lng, MAX(id) AS id, SUM(wt) AS wt
 		  FROM pts
 		  GROUP BY team_id, lin, k
 		)
 		SELECT b.team_id, t.name, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar, b.lin, b.lat, b.lng,
 		       to_char(to_timestamp(b.k * s.w) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') AS server_ts,
-		       b.id, s.w
+		       b.id, b.wt, s.w
 		FROM buckets b JOIN teams t ON t.id = b.team_id CROSS JOIN span s
 		ORDER BY b.team_id, b.lin, b.k
 	`
@@ -524,6 +347,9 @@ const trailsSQL = `
 type bucket struct {
 	Point
 	id int64
+	// weight is its pings' accuracy weights summed, as the centroid took
+	// them.
+	weight float64
 }
 
 // newer reports whether a was walked after b: a later bucket, or of one
@@ -546,8 +372,13 @@ func (l *line) merge() {
 	out := l.pts[:0]
 	for _, b := range l.pts {
 		if n := len(out); n > 0 && out[n-1].ServerTS == b.ServerTS {
+			// One centroid of both, as the SQL weighs a bucket's pings.
 			p := &out[n-1]
-			p.Lat, p.Lng, p.id = (p.Lat+b.Lat)/2, (p.Lng+b.Lng)/2, max(p.id, b.id)
+			w := p.weight + b.weight
+			if w > 0 {
+				p.Lat, p.Lng = (p.Lat*p.weight+b.Lat*b.weight)/w, (p.Lng*p.weight+b.Lng*b.weight)/w
+			}
+			p.id, p.weight = max(p.id, b.id), w
 			continue
 		}
 		out = append(out, b)
@@ -557,11 +388,6 @@ func (l *line) merge() {
 
 func (l *line) last() bucket { return l.pts[len(l.pts)-1] }
 
-// holds reports whether a's walk holds b's: the team's, every group's.
-func holds(a, b *line) bool {
-	return a.group == nil && b.group != nil
-}
-
 // piece is one trail drawn: a stretch of a line.
 type piece struct {
 	*line
@@ -570,9 +396,9 @@ type piece struct {
 }
 
 // cut draws a team's lines as trails. A line is cut where its walk was
-// left for another's and taken up again: where a point of a line holding
-// it or held by it — the team's, before a split or after the join, and a
-// group's — falls between two of its own. The team's line taken up after
+// left for another's and taken up again: a group's where a point of the
+// team's own — before the split or after the join — falls between two of
+// its own, and the team's where a group's does. The team's line taken up after
 // a join starts where the groups were last; a group's taken up again,
 // for a second round, is another trail.
 //
@@ -585,24 +411,40 @@ type piece struct {
 // Only the newest trail of a line anyone is on now has no past: a group
 // out now whose trail is of this round (fresh); the team's while it is
 // together — ending at its newest ping, a group's at the join until a
-// phone pings for the team — and, split up, while no one is dealt into a
-// group, no group has walked since the split, or a phone in none (one
-// joining late) still pings for it. A team not known keeps its every line.
+// phone pings for the team — and, split up, while no group has set off
+// (session.SetOff), no group has walked since the split, or a phone in
+// none (one joining late) still pings for it. A team not known keeps its every line.
 func cut(lines []*line, t team, known bool, width time.Duration) []piece {
 	// stray: a point of the team's own taken while it is split up now, by
 	// a phone in no group.
 	stray := func(l *line, p bucket) bool {
 		return known && l.group == nil && t.split != "" && t.since != "" && p.ServerTS >= t.since
 	}
+	byTag := map[string]*line{}
+	var groups []*line
+	for _, l := range lines {
+		byTag[l.tag] = l
+		if l.group != nil {
+			groups = append(groups, l)
+		}
+	}
+	team := byTag[""]
 	segs := map[*line][][]bucket{}
 	for _, l := range lines {
+		// The lines whose walk parts l's: every group's, of the team's;
+		// the team's, of a group's.
+		parting := groups
+		if l.group != nil {
+			parting = nil
+			if team != nil {
+				parting = []*line{team}
+			}
+		}
 		var others []string
-		for _, o := range lines {
-			if holds(l, o) || holds(o, l) {
-				for _, p := range o.pts {
-					if !stray(o, p) {
-						others = append(others, p.ServerTS)
-					}
+		for _, o := range parting {
+			for _, p := range o.pts {
+				if !stray(o, p) {
+					others = append(others, p.ServerTS)
 				}
 			}
 		}
@@ -617,10 +459,6 @@ func cut(lines []*line, t team, known bool, width time.Duration) []piece {
 		}
 		segs[l] = append(segs[l], cur)
 	}
-	byTag := map[string]*line{}
-	for _, l := range lines {
-		byTag[l.tag] = l
-	}
 	// begun is where the newest trail of l starts — of the team's, the
 	// newest not of strays; "" if it has none.
 	begun := func(l *line) string {
@@ -632,15 +470,10 @@ func cut(lines []*line, t team, known bool, width time.Duration) []piece {
 		}
 		return ""
 	}
-	// fresh: l's newest trail was walked since every line holding it was
-	// taken up last — this round's, not one before.
+	// fresh: group l's newest trail was walked since the team's was taken
+	// up last — this round's, not one before.
 	fresh := func(l *line) bool {
-		for _, a := range lines {
-			if holds(a, l) && l.last().ServerTS < begun(a) {
-				return false
-			}
-		}
-		return true
+		return team == nil || l.last().ServerTS >= begun(team)
 	}
 
 	live := map[*line]bool{}
@@ -652,43 +485,38 @@ func cut(lines []*line, t team, known bool, width time.Duration) []piece {
 			live[l] = true
 		}
 	case t.split == "":
-		live[byTag[""]] = true
+		live[team] = true
 		together = true
 	default:
-		dealt := false
 		var out []*line
 		for _, st := range t.strands {
-			dealt = dealt || len(st.Members) > 0
-			if l := byTag[Tag(t.split, st.Port)]; l != nil && fresh(l) {
+			if l := byTag[play.GroupTag(t.split, st.Port)]; l != nil && fresh(l) {
 				live[l] = true
 				out = append(out, l)
 			}
 		}
-		if own := byTag[""]; own != nil {
-			live[own] = !dealt || len(out) == 0 || stillWalked(own, out, begun, width)
+		if team != nil {
+			live[team] = !session.SetOff(t.split, t.strands) || len(out) == 0 || stillWalked(team, out, begun, width)
 		}
 	}
 	delete(live, nil)
 
-	// Joins: a line taken up after the lines it holds have met starts
+	// Joins: the team's line taken up after its groups have met starts
 	// where they were last.
-	for _, l := range lines {
-		s := segs[l]
+	if team != nil {
+		s := segs[team]
 		for k := range s {
 			lower := ""
 			if k > 0 {
 				lower = s[k-1][len(s[k-1])-1].ServerTS
 			}
-			if stray(l, s[k][0]) {
+			if stray(team, s[k][0]) {
 				continue // the groups are out still
 			}
 			from, to := s[k][0].ServerTS, s[k][len(s[k])-1].ServerTS
 			var at *bucket
 			met := true
-			for _, o := range lines {
-				if !holds(l, o) {
-					continue
-				}
+			for _, o := range groups {
 				in := false
 				for i, p := range o.pts {
 					if p.ServerTS > lower && s[k][0].newer(p) {
@@ -717,10 +545,9 @@ func cut(lines []*line, t team, known bool, width time.Duration) []piece {
 	// Met again: the team is where any of its groups' phones pinged
 	// last, until one of its own pings.
 	if together {
-		team := byTag[""]
 		var at *bucket
-		for _, o := range lines {
-			if o.group != nil && (at == nil || o.last().newer(*at)) {
+		for _, o := range groups {
+			if at == nil || o.last().newer(*at) {
 				p := o.last()
 				at = &p
 			}

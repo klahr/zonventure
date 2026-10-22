@@ -153,7 +153,7 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 	// else (a scheduled, arranger-run event) is hosted.
 	view.SelfGuided = forSale || (view.State == "running" && strings.TrimSpace(schedAt.String) == "")
 	if hasAvatar != 0 {
-		view.AvatarURL = fmt.Sprintf("/adventure-assets/team-avatar/%d", teamID)
+		view.AvatarURL = play.TeamAvatarURL(teamID)
 	}
 
 	rows, err := h.DB.QueryContext(r.Context(), `
@@ -350,7 +350,7 @@ func (h *Handlers) SetTeamAvatarByToken(w http.ResponseWriter, r *http.Request) 
 	// picture changed so they re-fetch and re-render.
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusOK, map[string]any{
-		"url":  fmt.Sprintf("/adventure-assets/team-avatar/%d", teamID),
+		"url":  play.TeamAvatarURL(teamID),
 		"mime": mime,
 		"size": int64(len(data)),
 	})

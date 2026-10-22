@@ -10,7 +10,7 @@ import type { Message, Photo } from "../event/api.ts";
 import { ActivityFeed, Ago } from "../event/Activity.tsx";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
 import { MessagesCard, PhotosCard } from "../event/Messages.tsx";
-import { stateText, stateTone } from "../event/util.ts";
+import { clockOffset, groupSeconds, stateText, stateTone } from "../event/util.ts";
 import { getDetail as getEventDetail } from "../event/api.ts";
 import { TeamDetailDialog } from "../event/TeamDetail.tsx";
 import { TeamEditDialog } from "../event/TeamEdit.tsx";
@@ -20,7 +20,7 @@ import {
   type Activity, type EventDetail, type EventInfo, type Team, type Track,
 } from "./api.ts";
 import { ControlMap, type MapTeam } from "./ControlMap.tsx";
-import { elapsedSeconds, filters, fmtElapsedShort, groupSeconds, mapViews, QUIET_KINDS, runLabel, stepTitle, teamColor, teamProgress, useNow } from "./model.ts";
+import { elapsedSeconds, filters, fmtElapsedShort, mapViews, QUIET_KINDS, runLabel, stepTitle, teamColor, teamProgress, useNow } from "./model.ts";
 import "./control.css";
 
 // Messages aren't in the pushes; a push re-reads them at most this often.
@@ -78,10 +78,7 @@ export function EventControlPage({ id }: { id: number }) {
   });
 
   // The server's clock, against this device's, taken when the detail arrived.
-  const offset = useMemo(() => {
-    const s = toDate(d?.server_now)?.getTime();
-    return s === undefined ? 0 : s - Date.now();
-  }, [d]);
+  const offset = useMemo(() => clockOffset(d?.server_now), [d]);
 
   useTopBarTitle(ev ? runLabel(ev, t) : null);
 
@@ -446,6 +443,8 @@ function Leaderboard(props: {
  */
 function TeamDialog({ eventId, teamId, color, onClose }: { eventId: number; teamId: number; color: string; onClose: () => void }) {
   const full = useLoad((s) => getEventDetail(eventId, s), [eventId]);
+  // The server's clock, against this device's, taken as the detail arrived.
+  const offset = useMemo(() => clockOffset(full.data?.server_now), [full.data]);
   const [editing, setEditing] = useState(false);
   const team = full.data?.teams?.find((tm) => tm.id === teamId);
   if (!full.data || !team) return null;
@@ -453,6 +452,7 @@ function TeamDialog({ eventId, teamId, color, onClose }: { eventId: number; team
   return (
     <TeamDetailDialog
       event={full.data.event}
+      offset={offset}
       graph={full.data.graph}
       team={team}
       color={color}

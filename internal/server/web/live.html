@@ -1087,8 +1087,10 @@ async function renderLiveMap(inner, hint, data) {
     const colour = teamColourByID.get(track.team_id) || '#e24080';
     const last = track.points[track.points.length - 1];
     // A team split up into groups has a track per group, and a marker
-    // for each: one marker for both would glide between them.
-    const key = track.group ? `${track.team_id}/${track.group}` : track.team_id;
+    // for each: one marker for both would glide between them. Its name is
+    // in the key, as race control's is: a later split reusing a path's
+    // port gets a marker of its own, named afresh.
+    const key = track.group ? `${track.team_id}/${track.group}/${track.group_label || ''}` : track.team_id;
     if (track.points.length >= 2) {
       lines.push({ type: 'Feature', properties: { colour }, geometry: { type: 'LineString', coordinates: track.points.map((p) => [p.lng, p.lat]) } });
     }
@@ -1120,9 +1122,9 @@ async function renderLiveMap(inner, hint, data) {
       const holder = document.createElement('div');
       holder.innerHTML = html;
       const el = holder.firstElementChild;
-      // A group's marker says which group it is, by its path's name —
-      // the innermost split's — hung beneath, as race control's does.
-      const tag = track.group_labels?.length ? track.group_labels[track.group_labels.length - 1] : track.group_label;
+      // A group's marker says which group it is, by its path's name,
+      // hung beneath, as race control's does.
+      const tag = track.group_label;
       if (track.group && tag) {
         el.classList.add('team-marker-lv--group');
         const small = document.createElement('small');

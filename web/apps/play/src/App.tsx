@@ -290,7 +290,7 @@ export function App() {
       <main className="app-main" ref={mainRef} tabIndex={-1}>
         {s.event.state === "paused" && <p className="app-banner">{t("The game is paused. Hold on.")}</p>}
         {game.status === "ended" && s.event.state !== "cancelled" && view?.finished && <p className="app-banner">{t("This event has ended. Thanks for playing!")}</p>}
-        {s.moved_on && view && !view.finished && <p className="app-banner">{t("The organisers moved your team on to this step.")}</p>}
+        {view?.moved_on && !view.finished && <p className="app-banner">{t("The organisers moved your team on.")}</p>}
 
         {/* A team that had not finished when the event ended keeps no step to act on. */}
         {s.event.state === "cancelled" || (game.status === "ended" && !view?.finished) ? (

@@ -99,7 +99,7 @@ func (h *Handlers) DevGoTo(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	h.devMove(w, slot.EventID, h.Engine.DevMoveTo(r.Context(), slot.TeamID, req.Node))
+	h.devMove(w, slot.EventID, h.engine().DevMoveTo(r.Context(), slot.TeamID, req.Node))
 }
 
 // DevReset serves POST /api/player/dev/reset: a dev team starts over.
@@ -109,7 +109,7 @@ func (h *Handlers) DevReset(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "not signed in")
 		return
 	}
-	h.devMove(w, slot.EventID, h.Engine.DevReset(r.Context(), slot.TeamID))
+	h.devMove(w, slot.EventID, h.engine().DevReset(r.Context(), slot.TeamID))
 }
 
 func (h *Handlers) devMove(w http.ResponseWriter, eventID int64, err error) {

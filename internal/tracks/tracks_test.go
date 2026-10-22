@@ -13,6 +13,7 @@ import (
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/graphstore"
+	"github.com/klahr/zonventure/internal/play"
 )
 
 // at is a bucket at minute m past ten, the m-th ping, at latitude m.
@@ -23,7 +24,7 @@ func at(m int) bucket {
 func mk(port string, ms ...int) *line {
 	l := &line{}
 	if port != "" {
-		l.group, l.tag = &fork{Split: "s", Port: port}, Tag("s", port)
+		l.group, l.tag = &fork{Split: "s", Port: port}, play.GroupTag("s", port)
 	}
 	for _, m := range ms {
 		l.pts = append(l.pts, at(m))
@@ -56,11 +57,19 @@ func drawn(ps []piece) []string {
 func split(members bool, ports ...string) team {
 	t := team{split: "s"}
 	for i, p := range ports {
-		st := session.Strand{Port: p, Current: "p" + p}
+		st := session.Strand{Port: p, Cursor: session.Cursor{Current: "p" + p}}
 		if members {
 			st.Members = []int64{int64(i + 1)}
 		}
 		t.strands = append(t.strands, st)
+	}
+	return t
+}
+
+// atSplit is t with every group still at the split.
+func atSplit(t team) team {
+	for i := range t.strands {
+		t.strands[i].Current = t.split
 	}
 	return t
 }
@@ -120,10 +129,19 @@ func TestCut(t *testing.T) {
 		team:  split(true, "a", "b"), known: true,
 		want: []string{":0,1", "a:1,2*", "b:2,3*"},
 	}, {
-		name:  "no one dealt",
+		// Dealt into groups, but none set off from the split: the team's
+		// trail is where it is.
+		name:  "not set off",
 		lines: []*line{mk("", 0, 1, 3), mk("a", 2)},
-		team:  split(false, "a", "b"), known: true,
+		team:  atSplit(split(true, "a", "b")), known: true,
 		want: []string{":0,1", ":2,3*", "a:2"},
+	}, {
+		// Split afresh at the split, no group set off since: the team is
+		// where it last was, though a group's trail is newer.
+		name:  "split afresh, none out",
+		lines: []*line{mk("", 0, 1), mk("a", 2, 3)},
+		team:  atSplit(split(true, "a", "b")), known: true,
+		want: []string{":0,1*", "a:2,3*"},
 	}, {
 		// Split since minute 2, a phone in no group pings at 4: a's trail
 		// is not cut there, and b, quiet since 3, keeps its marker.
@@ -146,16 +164,6 @@ func TestCut(t *testing.T) {
 				t.Errorf("got %q, want %q", got, c.want)
 			}
 		})
-	}
-}
-
-// A group's name in a ping reads back whatever its slug and port hold.
-func TestTag(t *testing.T) {
-	if got, ok := group(Tag("s.1", "a.b>")); !ok || got != (fork{Split: "s.1", Port: "a.b>"}) {
-		t.Errorf("group(Tag) = %+v %v", got, ok)
-	}
-	if _, ok := group("s.a"); ok {
-		t.Error("a tag not JSON read as a group")
 	}
 }
 
@@ -216,49 +224,61 @@ func seedTeam(t *testing.T, db *sql.DB, names ...string) (int64, int64, map[stri
 	return eventID, teamID, slots
 }
 
+// setStrands stores the team's groups at split s, each since now unless
+// it says when.
 func setStrands(t *testing.T, db *sql.DB, teamID int64, strands []session.Strand) {
 	t.Helper()
+	for i := range strands {
+		if strands[i].NodeEnteredAt.IsZero() {
+			strands[i].NodeEnteredAt = time.Now()
+		}
+	}
 	doc, _ := json.Marshal(strands)
 	if _, err := db.Exec(`UPDATE team_graph_state SET split = 's', strands = $1 WHERE team_id = $2`, doc, teamID); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// A ping is the group its phone walks: one of two it is in, the one it
-// chose, one whose players are all away once its own met the others —
-// and none for a phone dealt into no group, or a team together.
+// A ping is the group its phone walks (play.Engine.WalkingGroup): one
+// of two it is in, the one it chose, one whose players are all away
+// once its own met the others — and none for a team together.
 func TestPingGroups(t *testing.T) {
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 	ctx := context.Background()
 	_, teamID, p := seedTeam(t, db, "Ann", "Bo", "Cy")
 	ann, bo, cy := p["Ann"], p["Bo"], p["Cy"]
-	a, b := Tag("s", "a"), Tag("s", "b")
+	a, b := play.GroupTag("s", "a"), play.GroupTag("s", "b")
+	eng := play.New(db)
 	tagOf := func(slot int64) string {
 		t.Helper()
-		gs, err := PingGroups(ctx, db, teamID, slot, time.Now().UTC())
+		split, port, err := eng.WalkingGroup(ctx, teamID, slot)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(gs) > 1 {
-			t.Fatalf("a ping in %d groups", len(gs))
-		}
-		if len(gs) == 0 {
+		if port == "" {
 			return ""
 		}
-		return gs[0]
+		return play.GroupTag(split, port)
 	}
 	if got := tagOf(ann); got != "" {
 		t.Errorf("a team together: %q", got)
 	}
 
 	// Ann in both groups: the first of them.
-	setStrands(t, db, teamID, []session.Strand{{Port: "a", Current: "pa", Members: []int64{ann}}, {Port: "b", Current: "pb", Members: []int64{ann, bo}}})
+	setStrands(t, db, teamID, []session.Strand{{Port: "a", Cursor: session.Cursor{Current: "pa"}, Members: []int64{ann}}, {Port: "b", Cursor: session.Cursor{Current: "pb"}, Members: []int64{ann, bo}}})
 	if got := tagOf(ann); got != a {
 		t.Errorf("Ann in two groups walks %q, want the first", got)
 	}
+	// Groups that no longer fit the graph — the church party on a step
+	// past the join — are split afresh by the team's next action, not
+	// walked meanwhile: the ping is the team's.
+	setStrands(t, db, teamID, []session.Strand{{Port: "a", Cursor: session.Cursor{Current: "end", NodeEnteredAt: time.Now()}, Members: []int64{ann}}, {Port: "b", Cursor: session.Cursor{Current: "pb", NodeEnteredAt: time.Now()}, Members: []int64{ann, bo}}})
+	if got := tagOf(ann); got != "" {
+		t.Errorf("Ann in groups that no longer fit walks %q", got)
+	}
 	// Ann chose the well's.
-	setStrands(t, db, teamID, []session.Strand{{Port: "a", Current: "pa", Members: []int64{ann}}, {Port: "b", Current: "pb", Members: []int64{ann, bo}, Chosen: []int64{ann}}})
+	setStrands(t, db, teamID, []session.Strand{{Port: "a", Cursor: session.Cursor{Current: "pa"}, Members: []int64{ann}}, {Port: "b", Cursor: session.Cursor{Current: "pb"}, Members: []int64{ann, bo}, Chosen: []int64{ann}}})
 	if got := tagOf(ann); got != b {
 		t.Errorf("Ann chose the well's group, walks %q", got)
 	}
@@ -278,7 +298,7 @@ func TestPingGroups(t *testing.T) {
 
 	// Bo's phone silent a while: once Ann's church party is at the
 	// join, she walks his.
-	setStrands(t, db, teamID, []session.Strand{{Port: "a", Current: "join", Members: []int64{ann}}, {Port: "b", Current: "pb", Members: []int64{bo}}})
+	setStrands(t, db, teamID, []session.Strand{{Port: "a", Cursor: session.Cursor{Current: "join"}, Members: []int64{ann}}, {Port: "b", Cursor: session.Cursor{Current: "pb"}, Members: []int64{bo}}})
 	if got := tagOf(ann); got != a {
 		t.Errorf("Bo still here: Ann walks %q", got)
 	}
@@ -298,7 +318,7 @@ func TestGroupsAt(t *testing.T) {
 	ctx := context.Background()
 	eventID, teamID, p := seedTeam(t, db, "Ann", "Bo")
 	ann, bo := p["Ann"], p["Bo"]
-	setStrands(t, db, teamID, []session.Strand{{Port: "a", Current: "pa", Members: []int64{ann}}, {Port: "b", Current: "pb", Members: []int64{bo}}})
+	setStrands(t, db, teamID, []session.Strand{{Port: "a", Cursor: session.Cursor{Current: "pa"}, Members: []int64{ann}}, {Port: "b", Cursor: session.Cursor{Current: "pb"}, Members: []int64{bo}}})
 	ping := func(slot int64, lat float64, ts string, tag string) {
 		t.Helper()
 		var groups []string
@@ -310,14 +330,14 @@ func TestGroupsAt(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	a, b := Tag("s", "a"), Tag("s", "b")
+	a, b := play.GroupTag("s", "a"), play.GroupTag("s", "b")
 	ping(ann, 1, "2026-10-21 10:00:00", a)
 	ping(bo, 2, "2026-10-21 10:00:00", b)
 	// Ann walks Bo's group for him, then back to her own church party
 	// with a fix of her own in no group.
 	ping(ann, 3, "2026-10-21 10:01:00", b)
 	ping(ann, 4, "2026-10-21 10:02:00", "")
-	gs, err := Groups(ctx, db, eventID)
+	gs, err := eventGroups(ctx, db, eventID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,15 +349,26 @@ func TestGroupsAt(t *testing.T) {
 	// Split again at 10:30: no group has a place from the walk before
 	// until it pings; then its own.
 	split := time.Date(2026, 10, 21, 10, 30, 0, 0, time.UTC)
-	setStrands(t, db, teamID, []session.Strand{{Port: "a", Current: "pa", EnteredAt: split, Members: []int64{ann}}, {Port: "b", Current: "pb", EnteredAt: split.Add(time.Minute), Members: []int64{bo}}})
-	gs, _ = Groups(ctx, db, eventID)
+	if _, err := db.Exec(`UPDATE team_graph_state SET node_entered_at = $2 WHERE team_id = $1`, teamID, split); err != nil {
+		t.Fatal(err)
+	}
+	setStrands(t, db, teamID, []session.Strand{{Port: "a", Cursor: session.Cursor{Current: "pa", NodeEnteredAt: split}, Members: []int64{ann}}, {Port: "b", Cursor: session.Cursor{Current: "pb", NodeEnteredAt: split.Add(time.Minute)}, Members: []int64{bo}}})
+	gs, _ = eventGroups(ctx, db, eventID)
 	if g := gs[teamID]; g[0].At != nil || g[1].At != nil {
 		t.Errorf("split again, a place from before: %+v %+v", g[0].At, g[1].At)
 	}
 	ping(bo, 6, "2026-10-21 10:31:00", b)
-	gs, _ = Groups(ctx, db, eventID)
+	gs, _ = eventGroups(ctx, db, eventID)
 	if g := gs[teamID]; g[0].At != nil || g[1].At == nil || g[1].At.Lat != 6 {
 		t.Errorf("split again, b pinged: %+v %+v", g[0].At, g[1].At)
+	}
+	// A group that has moved on since keeps its place from before it
+	// did: its phone pinged on its last step, not yet on this one.
+	ping(ann, 7, "2026-10-21 10:32:00", a)
+	setStrands(t, db, teamID, []session.Strand{{Port: "a", Cursor: session.Cursor{Current: "pa", NodeEnteredAt: split.Add(5 * time.Minute)}, Members: []int64{ann}}, {Port: "b", Cursor: session.Cursor{Current: "pb", NodeEnteredAt: split.Add(10 * time.Minute)}, Members: []int64{bo}}})
+	gs, _ = eventGroups(ctx, db, eventID)
+	if g := gs[teamID]; g[0].At == nil || g[0].At.Lat != 7 {
+		t.Errorf("a, moved on since its last ping, lost its place: %+v", g[0].At)
 	}
 }
 
@@ -355,11 +386,12 @@ func TestGraphDraft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g1, err := Graph(ctx, db, id)
+	eng := play.New(db)
+	g1, err := eng.Graph(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g2, _ := Graph(ctx, db, id); g2 != g1 {
+	if g2, _ := eng.Graph(ctx, id); g2 != g1 {
 		t.Error("a dev graph not saved over is read again")
 	}
 	edited := splitGraph()
@@ -368,11 +400,53 @@ func TestGraphDraft(t *testing.T) {
 	if _, err := db.Exec(`UPDATE adventure_graphs SET graph = $1 WHERE id = $2`, doc, id); err != nil {
 		t.Fatal(err)
 	}
-	g3, err := Graph(ctx, db, id)
+	g3, err := eng.Graph(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if g3 == g1 || g3.Nodes[1].SplitCfg.Paths[0].Label != "Chapel" {
 		t.Error("a dev graph saved over is not read again")
 	}
+	// A draft stored without a language takes its adventure's: changing
+	// that is read again too.
+	edited.Language = ""
+	doc, _ = json.Marshal(edited)
+	if _, err := db.Exec(`UPDATE adventure_graphs SET graph = $1 WHERE id = $2`, doc, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE adventures SET language = 'sv' WHERE id = $1`, advID); err != nil {
+		t.Fatal(err)
+	}
+	if g4, err := eng.Graph(ctx, id); err != nil || g4.Language != "sv" {
+		t.Errorf("the adventure's language changed, the draft reads %q (%v)", g4.Language, err)
+	}
+	if _, err := db.Exec(`UPDATE adventures SET language = 'en' WHERE id = $1`, advID); err != nil {
+		t.Fatal(err)
+	}
+	if g5, _ := eng.Graph(ctx, id); g5.Language != "en" {
+		t.Errorf("the adventure's language changed back, the draft reads %q", g5.Language)
+	}
+}
+
+// Two buckets of one time on a line are one centroid, each weighed as
+// the SQL weighed its pings: the precise fix counts for more.
+func TestMergeWeighs(t *testing.T) {
+	l := &line{pts: []bucket{
+		{Point: Point{Lat: 10, ServerTS: "2026-10-21 10:00:00"}, id: 1, weight: 1},
+		{Point: Point{Lat: 20, ServerTS: "2026-10-21 10:00:00"}, id: 2, weight: 3},
+	}}
+	l.merge()
+	if len(l.pts) != 1 || l.pts[0].Lat != 17.5 || l.pts[0].id != 2 || l.pts[0].weight != 4 {
+		t.Fatalf("merged %+v", l.pts)
+	}
+}
+
+// eventGroups are the groups of the event's split teams, as the console
+// reads them (Groups, from the teams as stored).
+func eventGroups(ctx context.Context, db *sql.DB, eventID int64) (map[int64][]Group, error) {
+	ts, err := teams(ctx, db, eventID)
+	if err != nil {
+		return nil, err
+	}
+	return groups(ctx, play.New(db), ts)
 }

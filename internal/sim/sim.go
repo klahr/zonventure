@@ -280,9 +280,10 @@ func (r *runner) addTeam(i int) error {
 		return clamp(mid+(r.rng.Float64()*2-1)*width*spread, 0.02, 0.98)
 	}
 	b := &bot{
-		r:     r,
-		id:    i,
-		skill: vary(0.5, 0.45),
+		r:       r,
+		id:      i,
+		entered: map[string]float64{},
+		skill:   vary(0.5, 0.45),
 		// Metres per second: a stroll is 1, a brisk walk 1.5, a jog 2.5.
 		pace:    clamp(1.3*math.Exp((r.rng.Float64()*2-1)*0.55*spread), 0.7, 2.8),
 		patient: vary(0.5, 0.45),
@@ -305,7 +306,10 @@ func (r *runner) addTeam(i int) error {
 	}
 	r.bots = append(r.bots, b)
 	b.applied(step)
-	b.enterT = b.wake
+	if b.node != "" {
+		// Its time there counts from when the team begins.
+		b.entered[b.node] = b.wake
+	}
 	return nil
 }
 
@@ -355,26 +359,31 @@ func (r *runner) message() {
 		r.emit(-1, "message", "", "A note to every team")
 		return
 	}
-	var worst *bot
+	var (
+		worst   *bot
+		worstAt session.Cursor
+	)
 	for _, b := range r.bots {
-		if b.done || b.t.Completed || b.nudged || b.t.Current == "" {
+		if b.done || b.t.Completed || b.nudged {
 			continue
 		}
-		if n, _ := r.g.Node(b.t.Current); n.Type != graph.Puzzle {
+		// A split team's: the group it plays next.
+		at := b.t.Step()
+		if n, ok := r.g.Node(at.Current); !ok || n.Type != graph.Puzzle {
 			continue
 		}
-		if worst == nil || b.t.NodeEnteredAt.Before(worst.t.NodeEnteredAt) {
-			worst = b
+		if worst == nil || at.NodeEnteredAt.Before(worstAt.NodeEnteredAt) {
+			worst, worstAt = b, at
 		}
 	}
 	// Five minutes on a step is not stuck; leave them be.
-	if worst == nil || r.at(r.now).Sub(worst.t.NodeEnteredAt) < 5*time.Minute {
+	if worst == nil || r.at(r.now).Sub(worstAt.NodeEnteredAt) < 5*time.Minute {
 		return
 	}
 	worst.nudged = true
 	worst.out.Nudges++
-	r.stat(worst.t.Current).Nudges++
-	r.emit(worst.id, "message", worst.t.Current, "A nudge from the arranger")
+	r.stat(worstAt.Current).Nudges++
+	r.emit(worst.id, "message", worstAt.Current, "A nudge from the arranger")
 	// The team reads it on its next look at the phone, soon.
 	worst.wake = math.Min(worst.wake, r.now+30+r.rng.Float64()*90)
 }
@@ -387,10 +396,15 @@ func (r *runner) result() *Result {
 		b.out.Score = b.t.Score()
 		if b.t.Completed {
 			finished++
-		} else if b.out.Stalled {
-			stalled++
-		} else if b.t.Current != "" {
-			r.stat(b.t.Current).Waiting++
+		} else {
+			// Stalled or not, a team on a step when the run ended waits
+			// there — split up, each of its groups on its own.
+			if b.out.Stalled {
+				stalled++
+			}
+			for _, at := range b.waitingOn() {
+				r.stat(at).Waiting++
+			}
 		}
 		b.out.Walked = math.Round(b.out.Walked)
 		res.Teams = append(res.Teams, b.out)
@@ -433,11 +447,11 @@ type bot struct {
 	// nudged is a message from the arranger not yet acted on.
 	nudged bool
 
-	// On the current step: when the team began working on it (after
-	// walking there), how far it has got, and where it has been sent
-	// astray to.
+	// On the current step — a split team's, the group's it plays next —
+	// how far it has got, and where it has been sent astray to; and when
+	// each step stood on was reached, for its time there.
 	node    string
-	enterT  float64
+	entered map[string]float64
 	working float64
 	chance  float64
 	astray  bool
@@ -510,7 +524,7 @@ func (b *bot) act() {
 		b.hub(v)
 	case v.Type == graph.Split:
 		// A simulated team is all of its players: it walks each group's
-		// path in turn (session.Team.Focus), setting each off from here.
+		// path in turn (session.Team.View), setting each off from here.
 		if _, ok := b.do("continue", func() (session.Result, *walk.Step, error) { return b.t.Continue(v.Node) }); ok {
 			b.later(5 + b.rng().Float64()*10)
 		}
@@ -525,8 +539,9 @@ func (b *bot) later(s float64) { b.wake = b.r.now + math.Max(1, s) }
 // do runs one session action and applies its walk; it reports whether
 // the action went through.
 func (b *bot) do(kind string, action func() (session.Result, *walk.Step, error)) (session.Result, bool) {
-	node := b.t.Current
-	before := cloneTeam(b.t)
+	// The step acted on: a split team's, the group's its view shows.
+	node := b.t.Step().Current
+	before := b.t.Clone()
 	res, step, err := b.t.Act(action)
 	if err != nil {
 		*b.t = *before
@@ -587,29 +602,79 @@ func (b *bot) applied(step walk.Step) {
 	for _, e := range step.Entered {
 		b.open[e.Hub+"\x00"+e.Port] = true
 	}
+	// The step left and the one reached are the move's, whichever group
+	// made it: a split team's groups each count their own steps once, and
+	// a split and a join once for the team — reached as the first group
+	// comes to it, left as the last leaves it, sets off from the split or
+	// takes the team on through the join.
+	if step.To != step.From {
+		if !b.stands(step.From) {
+			b.left(step.From)
+		}
+		for _, slug := range step.Passed {
+			// Passed through, not held at: a held walk ends on its join.
+			if n, ok := b.r.g.Node(slug); ok && n.Type == graph.Join && !(step.Held && slug == step.To) {
+				b.left(slug)
+			}
+		}
+		if _, there := b.entered[step.To]; !there && !b.t.Completed && step.To != "" {
+			b.r.stat(step.To).Reached++
+			b.entered[step.To] = b.r.now
+		}
+	}
+	// A split ended for every group at once leaves their steps behind
+	// uncounted.
+	here := b.t.Standing()
+	for node := range b.entered {
+		if !slices.Contains(here, node) {
+			delete(b.entered, node)
+		}
+	}
 	if b.t.Completed {
 		b.open = nil
 		b.finish()
 		return
 	}
-	if b.t.Current != b.node {
+	// A split team plays on with the group its view shows next.
+	if at := b.t.Step().Current; at != b.node {
 		b.gather()
-		b.leftStep()
-		b.node = b.t.Current
-		b.enterT, b.working, b.chance, b.astray = b.r.now, -1, 0, false
-		if b.node != "" {
-			b.r.stat(b.node).Reached++
-		}
+		b.node = at
+		b.working, b.chance, b.astray = -1, 0, false
 	}
 }
 
-func (b *bot) leftStep() {
-	if b.node == "" {
+// waitingOn are the steps anyone stands on: its groups', while the team
+// is split up — its own cursor waits on the split meanwhile — each once,
+// as Reached counts them; or the team's own.
+func (b *bot) waitingOn() []string {
+	if b.t.Split == "" {
+		if b.t.Current == "" {
+			return nil
+		}
+		return []string{b.t.Current}
+	}
+	var out []string
+	for _, st := range b.t.Strands {
+		if !slices.Contains(out, st.Current) {
+			out = append(out, st.Current)
+		}
+	}
+	return out
+}
+
+// stands reports whether anyone still stands on node (waitingOn).
+func (b *bot) stands(node string) bool { return slices.Contains(b.waitingOn(), node) }
+
+// left counts a step stood on as left: its time there, and a step done.
+func (b *bot) left(node string) {
+	at, ok := b.entered[node]
+	if !ok {
 		return
 	}
-	s := b.r.stat(b.node)
+	delete(b.entered, node)
+	s := b.r.stat(node)
 	s.Left++
-	s.times = append(s.times, b.r.now-b.enterT)
+	s.times = append(s.times, b.r.now-at)
 	b.out.Steps++
 	b.out.Progress = append(b.out.Progress, Mark{T: b.r.now, Score: b.t.Score(), Steps: b.out.Steps})
 }
@@ -618,7 +683,6 @@ func (b *bot) finish() {
 	if b.done {
 		return
 	}
-	b.leftStep()
 	b.node = ""
 	b.done = true
 	t := b.r.now
@@ -630,7 +694,7 @@ func (b *bot) finish() {
 func (b *bot) stall(why string) {
 	b.done = true
 	b.out.Stalled = true
-	b.r.emit(b.id, "stalled", b.t.Current, why)
+	b.r.emit(b.id, "stalled", b.t.Step().Current, why)
 }
 
 // waitFor is a step the team can do nothing on: a gate waiting for a
@@ -722,12 +786,12 @@ func (b *bot) goTo(z *graph.Zone) bool {
 		from := *b.t.Position
 		d := session.HaversineMeters(from.Lat, from.Lng, target.Lat, target.Lng)
 		wrong := offset(target, 60+b.rng().Float64()*math.Max(80, d*0.4), b.rng().Float64()*2*math.Pi)
-		b.r.emit(b.id, "astray", b.t.Current, z.Name)
+		b.r.emit(b.id, "astray", b.t.Step().Current, z.Name)
 		b.walk(wrong)
 		return false
 	}
 	b.walk(target)
-	b.r.emitAt(b.wake, b.id, "arrive", b.t.Current, z.Name)
+	b.r.emitAt(b.wake, b.id, "arrive", b.t.Step().Current, z.Name)
 	return false
 }
 
@@ -759,7 +823,7 @@ func (b *bot) walk(p session.Position) {
 		t += leg / (b.pace * (0.75 + b.rng().Float64()*0.5))
 		b.out.Path = append(b.out.Path, Waypoint{T: round(t, 1), Lat: q.Lat, Lng: q.Lng})
 		b.out.Walked += leg
-		b.t.WalkedMetres += leg
+		b.t.AddWalk(0, leg)
 		at = q
 	}
 	b.t.Position = &p
@@ -1131,7 +1195,7 @@ func (b *bot) gather() {
 // branchZone is where a hub branch would first send the team, found by
 // trying it on a copy.
 func (b *bot) branchZone(hub, port string) *graph.Zone {
-	c := cloneTeam(b.t)
+	c := b.t.Clone()
 	_, step, err := c.Choose(hub, port)
 	if err != nil || step == nil {
 		return nil
@@ -1675,42 +1739,4 @@ func clamp(v, lo, hi float64) float64 { return math.Min(hi, math.Max(lo, v)) }
 func round(v float64, places int) float64 {
 	k := math.Pow(10, float64(places))
 	return math.Round(v*k) / k
-}
-
-// cloneTeam is a deep copy, so a refused action leaves the team as it was
-// and a branch can be tried without taking it.
-func cloneTeam(t *session.Team) *session.Team {
-	c := *t
-	c.Nodes = make(map[string]*session.NodeState, len(t.Nodes))
-	for k, v := range t.Nodes {
-		row := *v
-		c.Nodes[k] = &row
-	}
-	c.Items = copyMap(t.Items)
-	c.Journal = copyMap(t.Journal)
-	c.Counters = copyMap(t.Counters)
-	c.Picks = copyMap(t.Picks)
-	c.Occ = copyMap(t.Occ)
-	c.JournalOrder = append([]string(nil), t.JournalOrder...)
-	c.Entered = make(map[string]map[string]bool, len(t.Entered))
-	for k, v := range t.Entered {
-		c.Entered[k] = copyMap(v)
-	}
-	if t.Position != nil {
-		p := *t.Position
-		c.Position = &p
-	}
-	if t.Phones != nil {
-		c.Phones = slices.Clone(t.Phones)
-	}
-	return &c
-}
-
-func copyMap[K comparable, V any](m map[K]V) map[K]V {
-	if m == nil {
-		return nil
-	}
-	out := make(map[K]V, len(m))
-	maps.Copy(out, m)
-	return out
 }

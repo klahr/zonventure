@@ -7,10 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
@@ -156,51 +154,97 @@ const walkStep = 15.0
 // of at least walkStep. Phones are counted apart, as two teammates a
 // street apart are not one person zig-zagging across it.
 func walkedSince(ctx context.Context, q Querier, teamID int64, since time.Time) (float64, error) {
-	return walkedBy(ctx, q, teamID, since, nil)
-}
-
-// walkedBy is walkedSince counting only the phones of slots — a group's,
-// for a team split up — or every phone, for nil.
-func walkedBy(ctx context.Context, q Querier, teamID int64, since time.Time, slots []int64) (float64, error) {
-	rows, err := q.QueryContext(ctx, `
-		SELECT slot_id, lat, lng FROM location_pings
-		WHERE team_id = $1 AND server_ts >= $2 AND (accuracy IS NULL OR accuracy <= $3)
-		ORDER BY slot_id, server_ts, id`, teamID, since.UTC().Format("2006-01-02 15:04:05"), maxFixAccuracy)
+	w, err := walkedEach(ctx, q, teamID, []walkers{{since: since}})
 	if err != nil {
 		return 0, err
+	}
+	return w[0], nil
+}
+
+// walkers are the pings a walk is counted from: those taken in a group
+// (its GroupTag), for a team split up, or every ping, for no tag — and
+// since when.
+type walkers struct {
+	since time.Time
+	tag   string
+}
+
+// walkedEach is walkedSince for each of groups, counting only its pings
+// since its time: one read of the pings for them all.
+func walkedEach(ctx context.Context, q Querier, teamID int64, groups []walkers) ([]float64, error) {
+	out := make([]float64, len(groups))
+	if len(groups) == 0 {
+		return out, nil
+	}
+	const layout = "2006-01-02 15:04:05"
+	from, since := groups[0].since, make([]string, len(groups))
+	for i, g := range groups {
+		// From the whole second after the group came to its step: a ping
+		// in that same second may be from the step it left.
+		at := g.since.UTC()
+		if t := at.Truncate(time.Second); !t.Equal(at) {
+			at = t.Add(time.Second)
+		}
+		since[i] = at.Format(layout)
+		if g.since.Before(from) {
+			from = g.since
+		}
+	}
+	rows, err := q.QueryContext(ctx, `
+		SELECT slot_id, server_ts, lat, lng, COALESCE(groups[1], '') FROM location_pings
+		WHERE team_id = $1 AND server_ts >= $2 AND (accuracy IS NULL OR accuracy <= $3)
+		ORDER BY slot_id, server_ts, id`, teamID, from.UTC().Format(layout), maxFixAccuracy)
+	if err != nil {
+		return nil, err
 	}
 	defer rows.Close()
 	type path struct {
 		lat, lng, walked float64
+		// gone: the phone walked another group, or none, since its last
+		// ping of this one — where it comes back to starts a new leg, not
+		// a walk from where it left.
+		gone bool
 	}
-	paths := map[int64]*path{}
-	best := 0.0
+	// Each group's phones' paths, by group and slot.
+	paths := map[[2]int64]*path{}
 	for rows.Next() {
-		var slot int64
-		var lat, lng float64
-		if err := rows.Scan(&slot, &lat, &lng); err != nil {
-			return 0, err
+		var (
+			slot     int64
+			ts, tag  string
+			lat, lng float64
+		)
+		if err := rows.Scan(&slot, &ts, &lat, &lng, &tag); err != nil {
+			return nil, err
 		}
-		if slots != nil && !slices.Contains(slots, slot) {
-			continue
-		}
-		p := paths[slot]
-		if p == nil {
-			paths[slot] = &path{lat: lat, lng: lng}
-			continue
-		}
-		if d := HaversineMeters(p.lat, p.lng, lat, lng); d >= walkStep {
-			p.walked += d
-			p.lat, p.lng = lat, lng
-			best = max(best, p.walked)
+		for i, g := range groups {
+			if ts < since[i] {
+				continue
+			}
+			k := [2]int64{int64(i), slot}
+			p := paths[k]
+			if g.tag != "" && tag != g.tag {
+				if p != nil {
+					p.gone = true
+				}
+				continue
+			}
+			if p == nil {
+				paths[k] = &path{lat: lat, lng: lng}
+				continue
+			}
+			if p.gone {
+				p.lat, p.lng, p.gone = lat, lng, false
+				continue
+			}
+			if d := HaversineMeters(p.lat, p.lng, lat, lng); d >= walkStep {
+				p.walked += d
+				p.lat, p.lng = lat, lng
+				out[i] = max(out[i], p.walked)
+			}
 		}
 	}
-	return best, rows.Err()
+	return out, rows.Err()
 }
-
-// walkedGraphs remembers which graphs ask how far a team walked, so the
-// pings are read only for those.
-var walkedGraphs sync.Map // *graph.Graph -> bool
 
 // AwayAfter is how long a phone may stay silent before its player
 // counts as away: long enough to pocket it on the walk to a post, short
@@ -213,9 +257,24 @@ const AwayAfter = 180 * time.Second
 // ping, whichever came last — counted, for a phone that has done
 // neither, from when its player opened their link, so one just joining
 // is not away yet. A phone with its app open is heard from though it
-// sends no location.
+// sends no location: its group is not anyone's.
 func away(ctx context.Context, q Querier, teamID int64, now time.Time) (map[int64]bool, error) {
-	rows, err := q.QueryContext(ctx, `SELECT s.id, `+SeenSQL+` FROM player_slots s WHERE s.team_id = $1`, teamID)
+	return quiet(ctx, q, teamID, now, seenSQL)
+}
+
+// noFix are the team's players whose phones have sent no location for
+// AwayAfter — counted, for one that never has, from when its player
+// opened their link. A post of their role, which they would have to be
+// seen standing at, is anyone's: an open app with no location turns no
+// key.
+func noFix(ctx context.Context, q Querier, teamID int64, now time.Time) (map[int64]bool, error) {
+	return quiet(ctx, q, teamID, now, fixSQL)
+}
+
+// quiet are the team's players whose phones were last heard from (the
+// SQL heard, of player_slots s) longer than AwayAfter ago.
+func quiet(ctx context.Context, q Querier, teamID int64, now time.Time, heard string) (map[int64]bool, error) {
+	rows, err := q.QueryContext(ctx, `SELECT s.id, `+heard+` FROM player_slots s WHERE s.team_id = $1`, teamID)
 	if err != nil {
 		return nil, err
 	}
@@ -227,26 +286,30 @@ func away(ctx context.Context, q Querier, teamID int64, now time.Time) (map[int6
 		if err := rows.Scan(&slot, &ts); err != nil {
 			return nil, err
 		}
-		if Away(ts, now) {
+		if isAway(ts, now) {
 			out[slot] = true
 		}
 	}
 	return out, rows.Err()
 }
 
-// SeenSQL is when the phone of player_slots s was last heard from, as
-// away reads it: UTC text, or empty for never.
-const SeenSQL = `COALESCE(GREATEST((SELECT max(p.server_ts) FROM location_pings p WHERE p.slot_id = s.id), s.last_seen_at), s.last_login_at, '')`
+// seenSQL is when the phone of player_slots s was last heard from, as
+// away reads it: UTC text, "" for never.
+const seenSQL = `COALESCE(GREATEST((SELECT max(p.server_ts) FROM location_pings p WHERE p.slot_id = s.id), s.last_seen_at), s.last_login_at, '')`
 
-// Away reports whether a player whose phone was last heard from at seen
-// (SeenSQL) is away at now.
-func Away(seen string, now time.Time) bool {
+// fixSQL is when the phone of player_slots s last sent its location, as
+// noFix reads it.
+const fixSQL = `COALESCE((SELECT max(p.server_ts) FROM location_pings p WHERE p.slot_id = s.id), s.last_login_at, '')`
+
+// isAway reports whether a phone last heard from at seen (seenSQL) is
+// away at now.
+func isAway(seen string, now time.Time) bool {
 	at, ok := icscal.ParseTimestamp(seen)
 	return !ok || now.Sub(at) > AwayAfter
 }
 
 // hasRolePosts reports whether g has a two-key launch with a role's post,
-// the one thing that asks who is away.
+// the one thing that asks who sends no location (noFix).
 func hasRolePosts(g *graph.Graph) bool {
 	for _, n := range g.Nodes {
 		if n.PuzzleCfg != nil && n.PuzzleCfg.Answer != nil && len(n.PuzzleCfg.Answer.PostRoles) > 0 {
@@ -260,13 +323,8 @@ func hasRolePosts(g *graph.Graph) bool {
 // walked. Conditions sit in many places — gates, switches, hub branches,
 // blocks — so the encoded graph is searched rather than each walked.
 func usesWalked(g *graph.Graph) bool {
-	if v, ok := walkedGraphs.Load(g); ok {
-		return v.(bool)
-	}
 	raw, err := json.Marshal(g)
-	uses := err == nil && strings.Contains(string(raw), `"op":"walked"`)
-	walkedGraphs.Store(g, uses)
-	return uses
+	return err == nil && strings.Contains(string(raw), `"op":"walked"`)
 }
 
 // locate gives the team its position, each phone's where the locator
@@ -322,23 +380,16 @@ func (e *Engine) locate(ctx context.Context, q Querier, s *teamState) error {
 	}
 	if forPhone && s.G != nil && len(s.G.Roles) > 0 {
 		roles := s.G.DealtRoles()
-		holdings, err := dealRoles(ctx, q, s.teamID, players, roles)
+		holdings, err := DealRolesAmong(ctx, q, s.teamID, players, roles)
 		if err != nil {
 			return fmt.Errorf("dealing roles: %w", err)
 		}
-		s.Viewer.Roles = RolesOf(holdings, roles, me)
-		s.RoleHolders = make(map[string]int64, len(holdings))
-		for role, h := range holdings {
-			s.RoleHolders[role] = h.Slot
-		}
+		s.RoleHolders = Holders(holdings)
+		s.Viewer.Roles = PlayerRoles(s.G, s.RoleHolders, me, len(players))
 		if hasRolePosts(s.G) {
-			if s.Away, err = away(ctx, q, s.teamID, s.Now); err != nil {
-				return fmt.Errorf("reading who is away: %w", err)
+			if s.NoFix, err = noFix(ctx, q, s.teamID, s.Now); err != nil {
+				return fmt.Errorf("reading who sends no location: %w", err)
 			}
-		}
-		// The default role is everyone else's — and a player alone's.
-		if d := s.G.DefaultRole(); d != "" && (len(s.Viewer.Roles) == 0 || len(players) <= 1) {
-			s.Viewer.Roles = append(s.Viewer.Roles, d)
 		}
 		// A secret role is its player's alone, dealt once (dealSecrets).
 		for _, role := range s.G.SecretRoles() {
@@ -347,7 +398,8 @@ func (e *Engine) locate(ctx context.Context, q Querier, s *teamState) error {
 			}
 		}
 	}
-	if s.G != nil && usesWalked(s.G) {
+	// A split team's walk is each group's, read by divide.
+	if s.G != nil && s.Split == "" && s.walked {
 		if s.WalkedMetres, err = walkedSince(ctx, q, s.teamID, s.NodeEnteredAt); err != nil {
 			return fmt.Errorf("reading walked distance: %w", err)
 		}
@@ -367,12 +419,19 @@ type teamState struct {
 	teamID, eventID, graphID int64
 	// whole is the team's node as loaded, which the cursor's
 	// compare-and-swap compares against: the split, while it is split.
-	// wasSplit is whether it was split as loaded.
-	whole    string
-	wasSplit bool
-	// afresh says the team's stored groups no longer fit its graph and
-	// it was split afresh as loaded (SplitAfresh): an action stores that.
-	afresh bool
+	whole string
+	// walked says the graph asks how far the team walked (usesWalked).
+	walked bool
+	// storedSplit and storedStrands are the team's groups as stored
+	// (splitDoc), for saveSplit to store only what changed; storedRaw the
+	// strands exactly as read, for keepDeal to store over only those.
+	storedSplit   string
+	storedStrands []byte
+	storedRaw     []byte
+	// storedMoved and storedMovedBy are the team's mover as read
+	// (Cursor.Moved, MovedBy), for keepDeal to store over only those.
+	storedMoved   bool
+	storedMovedBy int64
 }
 
 // newTeamState returns an empty state for teamID at now.
@@ -393,7 +452,7 @@ func (e *Engine) loadTeam(ctx context.Context, tx *sql.Tx, teamID int64) (*teamS
 
 	// Capacity occupancy is read last, under the advisory locks, so it
 	// reflects every team that committed before us.
-	if err := s.lockAndCountOccupancy(ctx, tx); err != nil {
+	if err := s.countOccupancy(ctx, tx, true); err != nil {
 		return nil, err
 	}
 	if err := s.lockCounters(ctx, tx); err != nil {
@@ -432,7 +491,7 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 		       tgs.theme, tgs.last_answer, tgs.timed_out, tgs.lang, tgs.cheated,
 		       COALESCE(adv.start_code, ''), tgs.start_paused, tgs.node_paused, ev.paused_seconds, ev.paused_at,
 		       adv.start_lat, adv.start_lng, adv.start_radius_m, adv.start_label, tm.start_anywhere,
-		       tm.station_zone, tgs.split, tgs.strands
+		       tm.station_zone, tgs.split, tgs.strands, tgs.moved, tgs.moved_by
 		FROM team_graph_state tgs
 		JOIN teams tm ON tm.id = tgs.team_id
 		JOIN adventure_graphs g ON g.id = tgs.graph_id
@@ -445,7 +504,7 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	err := q.QueryRowContext(ctx, query, teamID).Scan(&s.eventID, &s.graphID, &current, &entered, &s.StartedAt,
 		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme, &s.LatestAnswer, &s.TimedOut, &s.Lang, &s.Cheated,
 		&s.StartCode, &s.StartPaused, &s.NodePaused, &s.Paused, &pausedAt,
-		&startLat, &startLng, &startRad, &startName, &anywhere, &station, &split, &strands)
+		&startLat, &startLng, &startRad, &startName, &anywhere, &station, &split, &strands, &s.Moved, &s.MovedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoGraph
 	}
@@ -455,12 +514,16 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	s.Current = current.String
 	s.whole = s.Current
 	s.Split = split.String
-	s.wasSplit = s.Split != ""
 	if s.Split != "" && len(strands) > 0 {
 		if err := json.Unmarshal(strands, &s.Strands); err != nil {
 			return nil, fmt.Errorf("reading the team's groups: %w", err)
 		}
 	}
+	if s.storedSplit, s.storedStrands, err = splitDoc(s); err != nil {
+		return nil, err
+	}
+	s.storedRaw = strands
+	s.storedMoved, s.storedMovedBy = s.Moved, s.MovedBy
 	if entered.Valid {
 		s.NodeEnteredAt = entered.Time
 	}
@@ -473,9 +536,13 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	s.StartAnywhere = anywhere
 	s.Station = station.String
 
-	if s.G, err = e.graph(ctx, q, s.graphID); err != nil {
+	loaded, err := e.loadGraph(ctx, q, s.graphID)
+	if err != nil {
 		return nil, err
 	}
+	s.G, s.walked = loaded.g, loaded.walked
+	splits := loaded.splits
+	s.ShareSplits(splits)
 	// Only a dev team's graph changes under it: a step taken out while
 	// the team stands on it leaves the team at the start screen, to begin
 	// the edited adventure again.
@@ -484,13 +551,9 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 			s.Current = ""
 		}
 	}
-	if s.Split != "" && !splitFits(s.G, s.Split, s.Strands) {
-		// Only a dev team's graph changes under it: a split edited away
-		// while the team is split leaves it where it split — split there
-		// afresh, if that is a split still.
-		s.SplitAfresh()
-		s.afresh = true
-	}
+	// Only a dev team's graph changes under it: groups that no longer fit
+	// it are split afresh (Team.Refit). An action stores that.
+	s.Refit()
 	return s, s.loadRest(ctx, q)
 }
 
@@ -591,12 +654,8 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 	// What each player did on the current step, for one done together —
 	// on each group's, for a team split up.
 	if s.Current != "" {
-		nodes := []string{s.Current}
-		for _, st := range s.Strands {
-			nodes = append(nodes, st.Current)
-		}
 		rows, err := q.QueryContext(ctx, `SELECT node, slot_id, value, pressed_at FROM team_presses WHERE team_id = $1 AND node = ANY($2)`,
-			s.teamID, nodes)
+			s.teamID, s.Standing())
 		if err != nil {
 			return err
 		}
@@ -608,20 +667,13 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 				rows.Close()
 				return err
 			}
-			if s.Split != "" {
-				if s.PressesAt == nil {
-					s.PressesAt = map[string]map[int64]session.Press{}
-				}
-				if s.PressesAt[node] == nil {
-					s.PressesAt[node] = map[int64]session.Press{}
-				}
-				s.PressesAt[node][slot] = p
-				continue
-			}
 			if s.Presses == nil {
-				s.Presses = map[int64]session.Press{}
+				s.Presses = map[string]map[int64]session.Press{}
 			}
-			s.Presses[slot] = p
+			if s.Presses[node] == nil {
+				s.Presses[node] = map[int64]session.Press{}
+			}
+			s.Presses[node][slot] = p
 		}
 		if err := closeRows(rows); err != nil {
 			return err
@@ -654,15 +706,17 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 	return q.QueryRowContext(ctx, `SELECT COUNT(*) FROM player_slots WHERE team_id = $1`, s.teamID).Scan(&s.Size)
 }
 
-// lockAndCountOccupancy takes one transaction-scoped advisory lock per
-// capacity hub, in a fixed order so two transactions can never deadlock,
-// then counts the other teams currently inside each branch.
+// countOccupancy counts the other teams currently inside each branch of
+// a capacity or spread hub — where lock, first taking one transaction-
+// scoped advisory lock per such hub, in a fixed order so two
+// transactions can never deadlock.
 //
-// The lock is what makes the count honest: without it, two teams
-// arriving at the last free slot both read "one space left" and both
-// go in. Only capacity hubs are locked — other policies do not read
-// occupancy, and serialising them would slow every event for nothing.
-func (s *teamState) lockAndCountOccupancy(ctx context.Context, tx *sql.Tx) error {
+// The lock is what makes the count honest for an action: without it,
+// two teams arriving at the last free slot both read "one space left"
+// and both go in. A read that moves no one does without. Only these hubs
+// are locked — other policies do not read occupancy, and serialising
+// them would slow every event for nothing.
+func (s *teamState) countOccupancy(ctx context.Context, q Querier, lock bool) error {
 	var hubs []string
 	for _, n := range s.G.Nodes {
 		if n.Type == graph.Hub && n.HubCfg != nil &&
@@ -673,14 +727,16 @@ func (s *teamState) lockAndCountOccupancy(ctx context.Context, tx *sql.Tx) error
 	if len(hubs) == 0 {
 		return nil
 	}
-	sort.Strings(hubs)
-	for _, hub := range hubs {
-		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, lockKey(s.eventID, hub)); err != nil {
-			return fmt.Errorf("locking hub %s: %w", hub, err)
+	if lock {
+		sort.Strings(hubs)
+		for _, hub := range hubs {
+			if _, err := q.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, lockKey(s.eventID, hub)); err != nil {
+				return fmt.Errorf("locking hub %s: %w", hub, err)
+			}
 		}
 	}
 
-	rows, err := tx.QueryContext(ctx, `
+	rows, err := q.QueryContext(ctx, `
 		SELECT hub, port, COUNT(*) FROM team_hub_branches
 		WHERE event_id = $1 AND returned_at IS NULL AND team_id <> $2
 		GROUP BY hub, port

@@ -13,6 +13,7 @@ import {
   type Translate,
 } from "@zonventure/play-ui";
 import { downscalePhoto } from "./downscale.ts";
+import { whoMoved } from "./moved.ts";
 
 /**
  * The game loop: load the team's state, send actions, and keep going
@@ -255,35 +256,28 @@ export function useGame(t: Translate): Game {
       currentTeam = s.team.id;
       if (seq.current.applied > mine) return;
       seq.current.applied = mine;
-      // A pushed move (a teammate's answer, arriving at the place) makes
-      // the last answer's "Correct!" stale; drop it once the step or its
-      // arrival state changes.
+      // A move under the player is said (whoMoved, as the server says who
+      // moved it): a teammate's — not the phone's own, a dev jump, nor the
+      // phone merely shown another of its groups — or the organisers', whose
+      // banner says so where it is the step shown. Else a pushed move — an
+      // arrival at the place — makes the last answer's "Correct!" stale:
+      // dropped once the step or its arrival state changes.
       const prev = viewRef.current;
-      // Only from a step the player could act on: leaving a start or a
-      // place the team was walking to is the team's own arrival.
-      const working =
-        !!prev &&
-        (prev.type === "puzzle" || prev.type === "story") &&
-        !(prev.zone && !prev.here);
-      // The organisers moving the team on says so in its own banner.
-      if (
-        working &&
-        prev?.node &&
-        s.view?.node &&
-        prev.node !== s.view.node &&
-        !s.view.finished &&
-        !s.moved_on
-      ) {
-        // A teammate answered: say so, or the step just swaps under the
-        // player (and whatever they were typing is gone).
+      const who = whoMoved(prev, s.view);
+      if (who === "team" || (who === "organisers" && !s.view?.moved_on)) {
+        // Say so, or the step just swaps under the player (and whatever
+        // they were typing is gone).
         setFeedback({
           tone: "info",
-          text: tRef.current("Your team moved on. Here's the next step."),
+          text: who === "team" ? tRef.current("Your team moved on. Here's the next step.") : tRef.current("The organisers moved your team on."),
         });
       } else if (prev?.node !== s.view?.node || prev?.here !== s.view?.here) {
         setFeedback(null);
       }
       setState(s);
+      // As showView does: a read coming in before the render compares
+      // with this one.
+      viewRef.current = s.view;
       saveLast(s);
       if (s.prefetch?.length)
         toWorker({
@@ -384,7 +378,9 @@ export function useGame(t: Translate): Game {
     async (behind = false): Promise<Flushed> => {
       if (flushing.current) {
         const held = await flushing.current;
-        if (!behind) return held;
+        // Held — a refusal, signed out — what is behind it waits for the
+        // next flush, not one at once to be refused again.
+        if (!behind || held !== null) return held;
         if (flushing.current) return flushing.current;
       }
       const run = sendQueued().finally(() => {
@@ -447,7 +443,7 @@ export function useGame(t: Translate): Game {
           // Held by the server (a paused game, slow down) is said as such.
           setFeedback(
             held
-              ? feedbackForRefusal(held.code, tRef.current, true)
+              ? feedbackForRefusal(held.code, tRef.current)
               : {
                   tone: "bad",
                   text: tRef.current(
@@ -530,18 +526,13 @@ export function useGame(t: Translate): Game {
           }
           setOnline(false);
         } else if (e instanceof ApiError) {
-          // Refused as it stood: a not_yours then is a group's, or a role's —
-          // as the refusal's own view tells, else the one on screen.
-          const fresh = refusalView(e);
-          const split =
-            action.kind === "walk" ||
-            !!(fresh ?? viewRef.current)?.groups?.length;
-          showView(fresh);
+          // Refused as it stood: the refusal's own view, where it brings one.
+          showView(refusalView(e));
           // A group that went on meanwhile just leaves the list: the view
           // shown is the news, with no word about it.
           if (action.kind === "walk" && e.code === "stale") {
             if (!refusalView(e)) void refresh();
-          } else setFeedback(feedbackForRefusal(e.code, tRef.current, split));
+          } else setFeedback(feedbackForRefusal(e.code, tRef.current));
         } else {
           setFeedback(feedbackForRefusal(undefined, tRef.current));
         }

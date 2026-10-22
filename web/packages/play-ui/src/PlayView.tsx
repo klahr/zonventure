@@ -245,7 +245,7 @@ export function PlayView(props: PlayViewProps) {
         </button>
       )}
 
-      {view.groups?.length && kind !== "split" && kind !== "join" ? <Groups view={view} t={t} busy={!!props.busy} onAction={props.onAction} /> : null}
+      {!!view.groups?.length && kind !== "split" && kind !== "join" ? <Groups view={view} t={t} busy={!!props.busy} onAction={props.onAction} /> : null}
 
       {view.players_min ? (
         <p className="pv-waiting" role="status">

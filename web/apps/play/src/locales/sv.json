@@ -478,7 +478,6 @@
   "A": "1",
   "B": "X",
   "C": "2",
-  "The organisers moved your team on to this step.": "Arrangörerna flyttade fram ditt lag till det här steget.",
   "Hide": "Dölj",
   "You've been taken out of the game": "Du har tagits bort ur rundan",
   "Talk to the host if this was a mistake.": "Prata med värden om det blev fel.",
@@ -539,5 +538,6 @@
   "The groups meet here. The team goes on together once every group is here.": "Grupperna möts här. Laget går vidare tillsammans när alla grupper är här.",
   "Walk this group": "Gå med den här gruppen",
   "Walk with {{group}}": "Gå med {{group}}",
-  "open to anyone": "öppen för alla"
+  "open to anyone": "öppen för alla",
+  "The organisers moved your team on.": "Arrangörerna flyttade fram ditt lag."
 }

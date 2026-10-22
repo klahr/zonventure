@@ -134,7 +134,7 @@ func TestSplitTeamAsWhole(t *testing.T) {
 
 // players deals a team: slots 1..n playing, 1 the scout and 2 the medic.
 func players(tm *Team, n int) {
-	tm.Unfocus()
+	tm.unfocus()
 	tm.Players = nil
 	for i := 1; i <= n; i++ {
 		tm.Players = append(tm.Players, int64(i))
@@ -146,7 +146,7 @@ func players(tm *Team, n int) {
 // asPlayer makes the next view or action player slot's, holding the
 // roles dealt to them.
 func asPlayer(tm *Team, slot int64, pos *Position) *Team {
-	tm.Unfocus()
+	tm.unfocus()
 	v := &Viewer{Slot: slot, Position: pos}
 	for role, holder := range tm.RoleHolders {
 		if holder == slot {
@@ -167,14 +167,13 @@ func asPlayer(tm *Team, slot int64, pos *Position) *Team {
 func TestDealSharesOutTheCrew(t *testing.T) {
 	tm, _, _ := Start(expedition(), t0)
 	players(tm, 100)
-	if !tm.Deal(tm.Players, tm.RoleHolders) {
-		t.Fatal("dealing a fresh split should deal everyone")
-	}
+	tm.Deal(tm.Players, tm.RoleHolders)
 	a, b := tm.Strands[0].Members, tm.Strands[1].Members
 	if len(a) != 50 || len(b) != 50 || a[0] != 1 || b[0] != 2 {
 		t.Fatalf("groups of %d and %d, led by %v and %v", len(a), len(b), a[:1], b[:1])
 	}
-	if tm.Deal(tm.Players, tm.RoleHolders) {
+	tm.Deal(tm.Players, tm.RoleHolders)
+	if !slices.Equal(tm.Strands[0].Members, a) || !slices.Equal(tm.Strands[1].Members, b) {
 		t.Error("dealing again should change nothing")
 	}
 }
@@ -232,8 +231,8 @@ func TestEachPhoneWalksItsGroup(t *testing.T) {
 		t.Fatalf("player 2 is with player 4 at the well: %+v", v)
 	}
 	// Not theirs: the well is the medic's group's.
-	if _, _, err := asPlayer(tm, 3, atWell).Answer("pb", "water"); !errors.Is(err, ErrNotYours) {
-		t.Fatalf("player 3 answering at the well: %v, want ErrNotYours", err)
+	if _, _, err := asPlayer(tm, 3, atWell).Answer("pb", "water"); !errors.Is(err, ErrOtherGroup) {
+		t.Fatalf("player 3 answering at the well: %v, want ErrOtherGroup", err)
 	}
 	// A step no group is on is stale, as ever.
 	if _, _, err := asPlayer(tm, 3, atChurch).Answer("door", "open"); !errors.Is(err, ErrStale) {
@@ -271,14 +270,14 @@ func TestGroupZonesAreTheGroups(t *testing.T) {
 	}
 	stand(tm, map[int64]*Position{1: atWell, 2: atWell})
 	moved(t, tm, "2 at the well")(asPlayer(tm, 2, atWell).Answer("pb", "water"))
-	if tm.Unfocus(); len(tm.Phones) != 2 {
+	if tm.unfocus(); len(tm.Phones) != 2 {
 		t.Errorf("focusing should put the team's phones back after: %v", tm.Phones)
 	}
 }
 
 // stand puts each player's phone where the live engine would say it is.
 func stand(tm *Team, at map[int64]*Position) {
-	tm.Unfocus()
+	tm.unfocus()
 	tm.PhoneAt, tm.Phones = map[int64]Position{}, []Position{}
 	for _, slot := range tm.Players {
 		if p := at[slot]; p != nil {
@@ -390,9 +389,7 @@ func TestLateJoinerChangesNoOnesGroup(t *testing.T) {
 	players(tm, 3) // a: 1, 3; b: 2
 	tm.Deal(tm.Players, tm.RoleHolders)
 	players(tm, 5)
-	if !tm.Deal(tm.Players, tm.RoleHolders) {
-		t.Fatal("the newcomers should be dealt")
-	}
+	tm.Deal(tm.Players, tm.RoleHolders)
 	if a, b := tm.Strands[0].Members, tm.Strands[1].Members; !slices.Equal(a, []int64{1, 3, 5}) || !slices.Equal(b, []int64{2, 4}) {
 		t.Fatalf("groups %v and %v", a, b)
 	}
@@ -518,13 +515,18 @@ func TestFocusKeepsTheSimulatorsMoves(t *testing.T) {
 	moved(t, tm, "a")(tm.Continue("split"))
 	tm.View()
 	tm.Position = atChurch
-	tm.WalkedMetres = 120
+	tm.AddWalk(0, 120)
 	tm.View()
 	if tm.Position != atChurch {
 		t.Fatalf("position %v, want the church", tm.Position)
 	}
-	if tm.Unfocus(); tm.Strands[0].Walked != 120 {
-		t.Errorf("the group's walk %v, want 120", tm.Strands[0].Walked)
+	// The walk is the group's the team's view is for, a view or not.
+	if tm.unfocus(); tm.WalkedMetres != 0 || tm.Strands[0].WalkedMetres != 120 {
+		t.Errorf("after a view: the team's walk %v, the group's %v; want 0 and 120", tm.WalkedMetres, tm.Strands[0].WalkedMetres)
+	}
+	moved(t, tm, "a wrong answer")(tm.Answer("pa", "nope"))
+	if tm.unfocus(); tm.Strands[0].WalkedMetres != 120 {
+		t.Errorf("the group's walk %v, want 120", tm.Strands[0].WalkedMetres)
 	}
 	moved(t, tm, "pa")(tm.Answer("pa", "bell"))
 }
@@ -543,7 +545,7 @@ func TestFocusDoesNotTravelInJSON(t *testing.T) {
 	}
 	back.G = tm.G
 	back.Init()
-	if back.Unfocus(); back.Current != "split" {
+	if back.unfocus(); back.Current != "split" {
 		t.Fatalf("unfocused, the decoded team is at %q", back.Current)
 	}
 }
@@ -562,8 +564,8 @@ func TestLateSetOffIsStale(t *testing.T) {
 	}
 	// Another group's step on its path is still not theirs.
 	moved(t, tm, "2 sets off")(asPlayer(tm, 2, nil).Continue("split"))
-	if _, _, err := asPlayer(tm, 3, nil).Answer("pb", "water"); !errors.Is(err, ErrNotYours) {
-		t.Fatalf("3 at the well's step: %v, want ErrNotYours", err)
+	if _, _, err := asPlayer(tm, 3, nil).Answer("pb", "water"); !errors.Is(err, ErrOtherGroup) {
+		t.Fatalf("3 at the well's step: %v, want ErrOtherGroup", err)
 	}
 }
 
@@ -609,9 +611,8 @@ func TestGroupPressesShowInItsView(t *testing.T) {
 		wire("start", "out", "s").wire("s", "a", "launch").wire("s", "b", "b1").
 		wire("launch", "go", "j").wire("b1", "solved", "j").wire("j", "out", "end")
 	tm := begin(t, b.valid(t))
-	tm.Unfocus()
+	tm.unfocus()
 	tm.Players, tm.Size = []int64{1, 2, 3, 4}, 4 // a: 1, 3
-	tm.PressesAt = map[string]map[int64]Press{}
 	tm.Deal(tm.Players, nil)
 	moved(t, tm, "a")(asPlayer(tm, 1, nil).Continue("s"))
 	moved(t, tm, "1 turns")(asPlayer(tm, 1, nil).Turn("launch"))
@@ -624,14 +625,13 @@ func TestGroupPressesShowInItsView(t *testing.T) {
 }
 
 // How far a group walks counts, though the team was sent through JSON
-// focused on it and moved unfocused, as the designer's simulator does:
-// the walk is the group's. Regression: it was lost, every time.
+// and moved, as the designer's simulator does (AddWalk): the walk is the
+// group's. Regression: it was lost, every time.
 func TestWalkedThroughJSONIsTheGroups(t *testing.T) {
 	tm := startedSplit(t)
 	moved(t, tm, "a")(tm.Continue("split"))
 	trip := func(tm *Team) *Team {
 		t.Helper()
-		tm.View() // focused on the church party
 		raw, err := json.Marshal(tm)
 		if err != nil {
 			t.Fatal(err)
@@ -645,14 +645,27 @@ func TestWalkedThroughJSONIsTheGroups(t *testing.T) {
 		return &back
 	}
 	tm = trip(tm)
-	tm.WalkedMetres += 1100
+	tm.AddWalk(0, 1100)
 	tm = trip(tm)
-	tm.WalkedMetres += 1100
-	if tm.View(); tm.Walked() != 2200 {
-		t.Fatalf("the church party walked %v, want 2200", tm.Walked())
+	tm.AddWalk(0, 1100)
+	// The next action on the church party's step is the walk's.
+	tm.Position = atChurch
+	moved(t, tm, "a wrong answer")(tm.Answer("pa", "nope"))
+	if tm.unfocus(); tm.Strands[0].WalkedMetres != 2200 || tm.Strands[1].WalkedMetres != 0 || tm.WalkedMetres != 0 {
+		t.Fatalf("team %v, strands %+v", tm.WalkedMetres, tm.Strands)
 	}
-	if tm.Unfocus(); tm.Strands[0].Walked != 2200 || tm.Strands[1].Walked != 0 {
-		t.Fatalf("strands %+v", tm.Strands)
+}
+
+// Looking at the team credits no group the simulator's moves: Step, as
+// the crowd simulator follows each team, leaves them the team's.
+func TestStepCreditsNoGroup(t *testing.T) {
+	tm := startedSplit(t)
+	moved(t, tm, "a")(tm.Continue("split"))
+	tm.WalkedMetres = 300
+	tm.Step()
+	tm.View()
+	if tm.WalkedMetres != 300 || tm.Strands[0].WalkedMetres != 0 || tm.Strands[1].WalkedMetres != 0 {
+		t.Fatalf("a look moved the walk: team %v, strands %+v", tm.WalkedMetres, tm.Strands)
 	}
 }
 
@@ -661,7 +674,7 @@ func TestWalkedThroughJSONIsTheGroups(t *testing.T) {
 func TestSplitAfresh(t *testing.T) {
 	tm := startedSplit(t)
 	moved(t, tm, "a")(tm.Continue("split"))
-	tm.Unfocus()
+	tm.unfocus()
 	tm.Strands[0].Port = "gone"
 	tm.SplitAfresh()
 	if tm.Split != "split" || len(tm.Strands) != 2 || tm.Strands[0].Current != "split" || tm.Strands[0].Port != "a" {
@@ -700,7 +713,7 @@ func vaultAndKey(t *testing.T) *graph.Graph {
 // Regression: a player alone stood at the vault for good.
 func TestWalkAnotherOfMyGroups(t *testing.T) {
 	tm := begin(t, vaultAndKey(t))
-	tm.Unfocus()
+	tm.unfocus()
 	tm.Players, tm.Size = []int64{7}, 1
 	tm.Deal(tm.Players, nil)
 	moved(t, tm, "a")(asNobody(tm, 7).Continue("s"))
@@ -737,7 +750,7 @@ func TestWalkNotMyGroup(t *testing.T) {
 	tm := startedSplit(t)
 	players(tm, 4) // a: 1, 3; b: 2, 4
 	tm.Deal(tm.Players, tm.RoleHolders)
-	if _, _, err := asPlayer(tm, 1, nil).Walk("b"); !errors.Is(err, ErrNotYours) {
+	if _, _, err := asPlayer(tm, 1, nil).Walk("b"); !errors.Is(err, ErrOtherGroup) {
 		t.Fatalf("1 walking b: %v", err)
 	}
 	if _, _, err := asPlayer(tm, 1, nil).Walk("nowhere"); !errors.Is(err, ErrStale) {
@@ -769,8 +782,8 @@ func TestRescueAGroupsStory(t *testing.T) {
 	if got := keys(tm); !slices.Equal(got, []string{"a@s", "b@j"}) {
 		t.Fatalf("groups %v", got)
 	}
-	if !CanRescueGroup(graph.Node{Type: graph.Story}) || CanRescue(graph.Node{Type: graph.Story}) || CanRescueGroup(graph.Node{Type: graph.Join}) {
-		t.Error("a group's story is rescuable; the team's, and a join, are not")
+	if CanRescue(graph.Node{Type: graph.Story}) {
+		t.Error("a team's story is rescuable")
 	}
 }
 
@@ -966,7 +979,7 @@ func TestRescueAGroupsHomeHub(t *testing.T) {
 func TestSplitAfreshOnASplitTakenOut(t *testing.T) {
 	tm := startedSplit(t)
 	moved(t, tm, "a")(tm.Continue("split"))
-	tm.Unfocus()
+	tm.unfocus()
 	g := expedition()
 	g.Nodes = slices.DeleteFunc(g.Nodes, func(n graph.Node) bool { return n.Slug == "split" })
 	tm.G, tm.Current = g, ""
@@ -1004,9 +1017,7 @@ func TestChoiceOfAQuietGroupIsSpent(t *testing.T) {
 	}
 	// 2 back: the engine deals the team afresh on the next request.
 	tm.Away = map[int64]bool{4: true}
-	if !tm.Deal(tm.Everyone(), tm.RoleHolders) {
-		t.Fatal("dropping the choice should be stored")
-	}
+	tm.Deal(tm.Everyone(), tm.RoleHolders)
 	if slices.Contains(tm.Strands[1].Chosen, 1) {
 		t.Fatalf("1's choice of b kept with 2 back: %+v", tm.Strands[1].Chosen)
 	}
@@ -1020,13 +1031,12 @@ func TestChoiceOfAQuietGroupIsSpent(t *testing.T) {
 	// Acting on a's step spends 1's choice of b.
 	moved(t, tm, "1 walks b again")(asPlayer(tm, 1, nil).Walk("b"))
 	moved(t, tm, "3 sets a off")(asPlayer(tm, 3, nil).Continue("split"))
-	tm.GroupsChanged = false
 	stand(tm, map[int64]*Position{1: atChurch})
 	if res := moved(t, tm, "1 answers at a")(asPlayer(tm, 1, atChurch).Answer("pa", "nope")); res.Accepted {
 		t.Fatal("a wrong answer accepted")
 	}
-	if slices.Contains(tm.Strands[1].Chosen, 1) || !tm.GroupsChanged {
-		t.Fatalf("1's choice of b kept after acting on a: %+v (changed %v)", tm.Strands[1].Chosen, tm.GroupsChanged)
+	if slices.Contains(tm.Strands[1].Chosen, 1) {
+		t.Fatalf("1's choice of b kept after acting on a: %+v", tm.Strands[1].Chosen)
 	}
 	if v := asPlayer(tm, 1, nil).View(); v.Group != "Church party" {
 		t.Fatalf("1 after acting on a: %q", v.Group)
@@ -1048,7 +1058,7 @@ func TestActingOnAnotherOfMyGroups(t *testing.T) {
 	if res := moved(t, tm, "1 answers at the well")(asPlayer(tm, 1, atWell).Answer("pb", "water")); !res.Accepted {
 		t.Fatalf("1 at the well, acting on b: %+v", res)
 	}
-	tm.Unfocus()
+	tm.unfocus()
 	if tm.Strands[1].Current != "join" || slices.Contains(tm.Strands[0].Chosen, 1) {
 		t.Fatalf("strands %+v", tm.Strands)
 	}
@@ -1102,14 +1112,14 @@ func forked(t *testing.T) *graph.Graph {
 func keys(tm *Team) []string {
 	var out []string
 	for _, st := range tm.Strands {
-		out = append(out, st.Key()+"@"+st.Current)
+		out = append(out, st.Port+"@"+st.Current)
 	}
 	return out
 }
 
 // asNobody makes the next action player slot's, holding no role.
 func asNobody(tm *Team, slot int64) *Team {
-	tm.Unfocus()
+	tm.unfocus()
 	tm.Viewer = &Viewer{Slot: slot}
 	tm.PressChanged = nil
 	return tm
@@ -1120,7 +1130,7 @@ func asNobody(tm *Team, slot int64) *Team {
 // group has moved or met its siblings since they looked.
 func TestRescueAGroupFromItsSplit(t *testing.T) {
 	tm := begin(t, forked(t))
-	tm.Unfocus()
+	tm.unfocus()
 	tm.Viewer = nil
 	moved(t, tm, "set the south off")(tm.RescueGroup("split", "b"))
 	if got := keys(tm); !slices.Equal(got, []string{"a@split", "b@b1"}) {
@@ -1139,8 +1149,8 @@ func TestRescueAGroupFromItsSplit(t *testing.T) {
 	if _, _, err := tm.RescueGroup("b1", "b"); !errors.Is(err, ErrStale) {
 		t.Fatalf("a group that has met its siblings: %v", err)
 	}
-	if !CanRescue(graph.Node{Type: graph.Split}) {
-		t.Error("a split is somewhere a group can be moved on from")
+	if CanRescue(graph.Node{Type: graph.Split}) {
+		t.Error("a team is moved on at a split")
 	}
 }
 
@@ -1153,4 +1163,634 @@ func TestRescueAtASplitNamesTheGroup(t *testing.T) {
 	moved(t, tm, "a")(tm.RescueGroup("split", "a"))
 	// A group's own step needs no name.
 	moved(t, tm, "a1")(tm.RescueGroup("a1", ""))
+}
+
+// A view lends the phone its group's roles on a copy: the caller's own
+// Viewer keeps the roles it came with.
+func TestFocusLeavesTheCallersViewer(t *testing.T) {
+	tm := startedSplit(t)
+	players(tm, 2)
+	tm.Deal(tm.Players, tm.RoleHolders)
+	v := &Viewer{Slot: 1, Roles: []string{"scout"}}
+	tm.Viewer = v
+	if got := tm.View(); got.Group == "" {
+		t.Fatalf("no group in the view: %+v", got)
+	}
+	tm.focusView()
+	if lent := tm.Viewer.Roles; len(lent) <= 1 {
+		t.Fatalf("the group lends the phone no roles: %v", lent)
+	}
+	tm.unfocus()
+	if tm.Viewer != v || !slices.Equal(v.Roles, []string{"scout"}) {
+		t.Fatalf("the caller's viewer changed: %+v", v)
+	}
+}
+
+// A group's walk read from its phones (Walks) is read again each time,
+// so it is not written into the group's stored cursor.
+func TestReadWalkIsNotStored(t *testing.T) {
+	tm := startedSplit(t)
+	tm.Walks = map[string]float64{"a": 500}
+	tm.focusOn(0)
+	if tm.Walked() != 500 {
+		t.Fatalf("walked %v, want the read 500", tm.Walked())
+	}
+	tm.unfocus()
+	if tm.Strands[0].WalkedMetres != 0 {
+		t.Fatalf("the read walk stored: %v", tm.Strands[0].WalkedMetres)
+	}
+}
+
+// Past the join the team walks on together: a gate there counts every
+// phone, not only those of the group that arrived last. Regression: a
+// teammate waiting in the church was not counted, and the team fell to
+// the failure ending.
+func TestPastTheJoinTheTeamIsWhole(t *testing.T) {
+	g := expedition()
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "church?", Type: graph.Gate, GateCfg: &graph.GateConfig{Condition: cond.Predicate{Op: cond.OpInZone, Zone: "church"}}})
+	for i, e := range g.Edges {
+		if e.From == "join" {
+			g.Edges[i].To = "church?"
+		}
+	}
+	g.Edges = append(g.Edges, graph.Edge{From: "church?", FromPort: graph.PortPass, To: "door"}, graph.Edge{From: "church?", FromPort: graph.PortFail, To: "dead"})
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	players(tm, 2)
+	tm.Deal(tm.Players, tm.RoleHolders) // a: 1 (scout), b: 2 (medic)
+	stand(tm, map[int64]*Position{1: atChurch, 2: atWell})
+	moved(t, tm, "1 sets off")(asPlayer(tm, 1, atChurch).Continue("split"))
+	moved(t, tm, "1 answers")(asPlayer(tm, 1, atChurch).Answer("pa", "bell"))
+	moved(t, tm, "2 sets off")(asPlayer(tm, 2, atWell).Continue("split"))
+	moved(t, tm, "2 answers last")(asPlayer(tm, 2, atWell).Answer("pb", "water"))
+	if tm.Split != "" || tm.Current != "door" || tm.Completed {
+		t.Fatalf("the team should be at the door, together: split %q at %q, completed %v", tm.Split, tm.Current, tm.Completed)
+	}
+}
+
+// Moving one group on never ends the adventure for every group: a
+// rescue takes a route toward the group's join, and a step with none is
+// not moved on.
+func TestRescueAGroupNeverEndsItForAll(t *testing.T) {
+	g := expedition()
+	for i := range g.Nodes {
+		if n := &g.Nodes[i]; n.Slug == "pa" {
+			// Its first answer route falls to the failure ending.
+			outs := n.PuzzleCfg.Outputs
+			n.PuzzleCfg.Outputs = []graph.Output{outs[1], outs[0]}
+		}
+	}
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved(t, tm, "a")(tm.RescueGroup("split", "a"))
+	moved(t, tm, "rescue a")(tm.RescueGroup("pa", "a"))
+	if tm.Completed || tm.Split == "" {
+		t.Fatalf("one group's rescue ended the adventure: %q", tm.Ending)
+	}
+	if got := keys(tm); !slices.Equal(got, []string{"a@join", "b@split"}) {
+		t.Fatalf("groups %v", got)
+	}
+
+	// A story on a path that meets the others, but whose own way on is an
+	// ending, is not moved on.
+	g = expedition()
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "cliff", Type: graph.Story, Title: "The cliff"})
+	for i := range g.Nodes {
+		if n := &g.Nodes[i]; n.Slug == "pb" {
+			n.PuzzleCfg.Outputs = append(n.PuzzleCfg.Outputs, graph.Output{Port: "climb", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "climb"}}})
+		}
+	}
+	g.Edges = append(g.Edges, graph.Edge{From: "pb", FromPort: "climb", To: "cliff"}, graph.Edge{From: "cliff", FromPort: graph.PortOut, To: "dead"})
+	tm, _, err = Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stand(tm, nil)
+	moved(t, tm, "b")(tm.RescueGroup("split", "b"))
+	tm.Position = atWell
+	moved(t, tm, "b climbs")(tm.Answer("pb", "climb"))
+	if _, _, err := tm.RescueGroup("cliff", "b"); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("rescuing b off the cliff: %v, want ErrNotAllowed", err)
+	}
+}
+
+// Presses are kept only where someone stands: a group moving on drops
+// those of the step it left, not the other group's; the time limit,
+// ending the split, drops every group's.
+func TestPressesOnlyWhereSomeoneStands(t *testing.T) {
+	g := expedition()
+	g.TimeLimit = &graph.TimeLimit{Seconds: 600, To: "door"}
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved(t, tm, "a")(tm.RescueGroup("split", "a"))
+	moved(t, tm, "b")(tm.RescueGroup("split", "b"))
+	press := map[int64]Press{1: {Value: "x", At: t0}}
+	tm.Presses = map[string]map[int64]Press{"pa": press, "pb": press}
+	moved(t, tm, "a moved on")(tm.RescueGroup("pa", "a"))
+	if _, ok := tm.Presses["pa"]; ok || tm.Presses["pb"] == nil {
+		t.Fatalf("after a moved on: %v", tm.Presses)
+	}
+	tm.Presses["pb"] = press
+	tm.Now = t0.Add(11 * time.Minute)
+	moved(t, tm, "time up")(tm.TimeUp())
+	if len(tm.Presses) != 0 {
+		t.Fatalf("after time up: %v", tm.Presses)
+	}
+}
+
+// A group's hub that has done enough, but whose way out ends the
+// adventure, is moved on by a branch toward the join instead.
+// Regression: the rescue was refused, though such a branch was there.
+func TestRescueAGroupsHubPastADeadEndDone(t *testing.T) {
+	b := newGB().split("split", "a", "b").
+		add(graph.Node{Slug: "h", Type: graph.Hub, Title: "h", HubCfg: &graph.HubConfig{Policy: graph.PolicyChoice, Required: 1, Branches: []graph.Branch{{Port: "x"}, {Port: "y"}}}}).
+		puzzle("hx", "x").puzzle("hy", "y").puzzle("pb", "b").join("join").end("end").end("dead").
+		wire("start", "out", "split").wire("split", "a", "h").wire("split", "b", "pb").
+		wire("h", "x", "hx").wire("hx", "solved", "h").wire("h", "y", "hy").wire("hy", "solved", "join").
+		wire("h", graph.PortDone, "dead").wire("pb", "solved", "join").wire("join", "out", "end")
+	b.valid(t)
+	tm := begin(t, b.g)
+	moved(t, tm, "a")(tm.RescueGroup("split", "a"))
+	moved(t, tm, "x")(tm.Choose("h", "x"))
+	moved(t, tm, "hx")(tm.Answer("hx", "x"))
+	moved(t, tm, "rescue a")(tm.RescueGroup("h", "a"))
+	if got := keys(tm); tm.Completed || !slices.Equal(got, []string{"a@hy", "b@split"}) {
+		t.Fatalf("groups %v, completed %v", got, tm.Completed)
+	}
+}
+
+// A player joining while one group waits at the join goes to a group
+// still on its way, not to wait idle with the one there.
+func TestLateJoinerGoesToAGroupStillOut(t *testing.T) {
+	tm := startedSplit(t)
+	tm.unfocus()
+	tm.Players, tm.Size = []int64{1, 2}, 2
+	tm.Deal(tm.Players, nil) // a: 1, b: 2
+	moved(t, tm, "a")(tm.RescueGroup("split", "a"))
+	moved(t, tm, "a at the join")(tm.RescueGroup("pa", "a"))
+	tm.unfocus()
+	tm.Players = []int64{1, 2, 3}
+	tm.Deal(tm.Players, nil)
+	if !slices.Contains(tm.Strands[1].Members, 3) {
+		t.Fatalf("the newcomer should join b, still out: %+v", tm.Strands)
+	}
+}
+
+// A group is where its own phones are, not where another group's phone
+// last was.
+func TestGroupPositionIsItsOwn(t *testing.T) {
+	tm := startedSplit(t)
+	players(tm, 2)
+	tm.Deal(tm.Players, tm.RoleHolders) // a: 1, b: 2
+	stand(tm, map[int64]*Position{1: atChurch, 2: atWell})
+	tm.Position = atWell // the team's latest fix: b's phone
+	tm.focusOn(0)
+	if tm.Position == nil || *tm.Position != *atChurch {
+		t.Fatalf("group a at %+v, want the church", tm.Position)
+	}
+	tm.unfocus()
+	if tm.Position != atWell {
+		t.Fatalf("the team's own fix not put back: %+v", tm.Position)
+	}
+}
+
+// A group whose path meets the others at no join — it ends the adventure
+// instead, as valid warns — is moved on toward that end all the same: it
+// has no other way.
+func TestRescueAGroupOnAPathWithNoJoin(t *testing.T) {
+	g := expedition()
+	for i, e := range g.Edges {
+		if e.From == "pb" {
+			g.Edges[i].To = "dead"
+		}
+	}
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved(t, tm, "b")(tm.RescueGroup("split", "b"))
+	moved(t, tm, "rescue b")(tm.RescueGroup("pb", "b"))
+	if !tm.Completed {
+		t.Fatalf("b's way out is the end, every group's: groups %v", keys(tm))
+	}
+}
+
+// Standing on nothing is an empty list, not nil: the engine clears
+// presses where no one stands with it, and NULL would clear none.
+func TestStandingOnNothing(t *testing.T) {
+	tm := New(expedition(), t0)
+	if got := tm.Standing(); got == nil || len(got) != 0 {
+		t.Fatalf("standing %#v, want an empty list", got)
+	}
+}
+
+// A newcomer holding a path's role, while that path's group waits at the
+// join and another is out, joins the one out: there is nothing left to
+// do in the group waiting.
+func TestLateRoleHolderGoesToAGroupStillOut(t *testing.T) {
+	tm := startedSplit(t)
+	tm.unfocus()
+	tm.Players, tm.Size = []int64{1, 2}, 2
+	tm.Deal(tm.Players, map[string]int64{"scout": 1, "medic": 2}) // a: 1, b: 2
+	moved(t, tm, "a")(tm.RescueGroup("split", "a"))
+	moved(t, tm, "a at the join")(tm.RescueGroup("pa", "a"))
+	tm.unfocus()
+	tm.Players = []int64{1, 2, 3}
+	tm.Deal(tm.Players, map[string]int64{"scout": 3, "medic": 2})
+	if !slices.Contains(tm.Strands[1].Members, 3) || slices.Contains(tm.Strands[0].Members, 3) {
+		t.Fatalf("the scout come late should join b, still out: %+v", tm.Strands)
+	}
+}
+
+// Rescuable says of each group what RescueGroup does: a group back at a
+// hub from its one branch coming back, the others leading only to ends
+// and out not yet open, cannot be moved on — though by the graph alone
+// it might.
+func TestRescuableIsWhatRescueDoes(t *testing.T) {
+	g := expedition()
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "bonus", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.GrantItem, Item: "key"}})
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "h", Type: graph.Hub, HubCfg: &graph.HubConfig{Policy: graph.PolicyChoice, Required: 2, Branches: []graph.Branch{{Port: "b1"}, {Port: "b2"}, {Port: "b3"}}}})
+	for i, e := range g.Edges {
+		switch {
+		case e.From == "split" && e.FromPort == "b":
+			g.Edges[i].To = "h"
+		case e.From == "pb":
+			g.Edges[i].To = "h"
+		}
+	}
+	g.Edges = append(g.Edges,
+		graph.Edge{From: "h", FromPort: "b1", To: "bonus"},
+		graph.Edge{From: "bonus", FromPort: graph.PortOut, To: "pb"},
+		graph.Edge{From: "h", FromPort: "b2", To: "dead"},
+		graph.Edge{From: "h", FromPort: "b3", To: "dead"},
+		graph.Edge{From: "h", FromPort: graph.PortDone, To: "join"})
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agrees := func(want []bool) {
+		t.Helper()
+		if got := tm.Rescuable(); !slices.Equal(got, want) {
+			t.Fatalf("rescuable %v at %v, want %v", got, keys(tm), want)
+		}
+	}
+	agrees([]bool{true, true})
+	moved(t, tm, "b off")(tm.RescueGroup("split", "b"))
+	agrees([]bool{true, true})
+	// Asking walks nothing: b1's key is not the team's for it.
+	if tm.Items["key"] != 0 {
+		t.Fatalf("asking granted the key: %v", tm.Items)
+	}
+	moved(t, tm, "into b1")(tm.RescueGroup("h", "b"))
+	moved(t, tm, "past pb")(tm.RescueGroup("pb", "b"))
+	agrees([]bool{true, false})
+	if _, _, err := tm.RescueGroup("h", "b"); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("b at its hub with nowhere toward the join: %v", err)
+	}
+	tm.unfocus()
+	agrees([]bool{true, false})
+}
+
+// Groups that no longer fit are split afresh on the team's split as of
+// when the team came to it, not as of now: read again and again before
+// it is stored, the team has the same groups, their clocks running on.
+func TestRefitKeepsTheTeamsArrival(t *testing.T) {
+	tm, _, err := Start(expedition(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tm.Split != "split" {
+		t.Fatalf("not at the split: %q", tm.Split)
+	}
+	arrived := tm.NodeEnteredAt
+	tm.Strands = tm.Strands[:1]
+	tm.Now = t0.Add(time.Hour)
+	if !tm.Refit() || len(tm.Strands) != 2 {
+		t.Fatalf("not split afresh: %v", keys(tm))
+	}
+	for _, st := range tm.Strands {
+		if !st.NodeEnteredAt.Equal(arrived) {
+			t.Fatalf("group %s on the split since %v, want the team's %v", st.Port, st.NodeEnteredAt, arrived)
+		}
+	}
+	if !Refits(tm.Splits(), "split", "", nil) || Refits(tm.Splits(), "pa", "", nil) || Refits(tm.Splits(), "split", "split", tm.Strands) {
+		t.Error("Refits: a team together on a split is split, not one on a puzzle, nor groups that fit")
+	}
+}
+
+// A group whose way on, by the graph, reaches its join, but whose walk
+// there goes round for good, cannot be moved on: Rescuable walks the
+// way, as Rescue would, and keeps the team as it is.
+func TestRescuableWalksTheWay(t *testing.T) {
+	g := expedition()
+	g.Nodes = append(g.Nodes,
+		graph.Node{Slug: "e1", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.GrantItem, Item: "key"}},
+		graph.Node{Slug: "round", Type: graph.Gate, GateCfg: &graph.GateConfig{}})
+	for i, e := range g.Edges {
+		if e.From == "split" && e.FromPort == "b" {
+			g.Edges[i].To = "lost"
+		}
+	}
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "lost", Type: graph.Story})
+	g.Edges = append(g.Edges,
+		graph.Edge{From: "lost", FromPort: graph.PortOut, To: "e1"},
+		graph.Edge{From: "e1", FromPort: graph.PortOut, To: "round"},
+		graph.Edge{From: "round", FromPort: graph.PortPass, To: "e1"},
+		graph.Edge{From: "round", FromPort: graph.PortFail, To: "join"})
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved(t, tm, "b off")(tm.RescueGroup("split", "b"))
+	if got := tm.Rescuable(); !slices.Equal(got, []bool{true, false}) || tm.Items["key"] != 0 {
+		t.Fatalf("rescuable %v at %v, items %v", got, keys(tm), tm.Items)
+	}
+	if _, _, err := tm.RescueGroup("lost", "b"); err == nil {
+		t.Fatal("the rescue walked round for good")
+	}
+}
+
+// Rescuable asks the rescue itself, on a copy of the team: a way on that
+// opens only by what it passes — a key granted, then a gate asking for
+// it — is one, as Rescue finds; and with a time limit due, which Act runs
+// out instead, no group's: the team is the limit's to move (TimeUpDue).
+func TestRescuableIsTheRescueTried(t *testing.T) {
+	g := expedition()
+	g.Nodes = append(g.Nodes,
+		graph.Node{Slug: "grant", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.GrantItem, Item: "key"}},
+		graph.Node{Slug: "door2", Type: graph.Gate, GateCfg: &graph.GateConfig{Condition: cond.Predicate{Op: cond.OpItem, Item: "key"}}},
+		graph.Node{Slug: "lost", Type: graph.Story})
+	for i, e := range g.Edges {
+		if e.From == "split" && e.FromPort == "b" {
+			g.Edges[i].To = "lost"
+		}
+	}
+	// The gate's fail way is not drawn: only the key gets past it.
+	g.Edges = append(g.Edges,
+		graph.Edge{From: "lost", FromPort: graph.PortOut, To: "grant"},
+		graph.Edge{From: "grant", FromPort: graph.PortOut, To: "door2"},
+		graph.Edge{From: "door2", FromPort: graph.PortPass, To: "join"})
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved(t, tm, "b off")(tm.RescueGroup("split", "b"))
+	if got := tm.Rescuable(); !slices.Equal(got, []bool{true, true}) || tm.Items["key"] != 0 {
+		t.Fatalf("rescuable %v at %v, items %v", got, keys(tm), tm.Items)
+	}
+	g.TimeLimit = &graph.TimeLimit{Seconds: 60, To: "end"}
+	tm.Now = t0.Add(time.Hour)
+	if got := tm.Rescuable(); !slices.Equal(got, []bool{false, false}) || !tm.TimeUpDue() {
+		t.Fatalf("rescuable %v with the time limit due", got)
+	}
+	// Asked for all the same, the limit runs out instead: no group moved,
+	// so the host logs no group's rescue (play.act, admin's unlock).
+	res, step, err := tm.Act(func() (Result, *walk.Step, error) { return tm.RescueGroup("", "b") })
+	if err != nil || step == nil || res.MovedKey != "" || step.To != "end" {
+		t.Fatalf("rescue with the limit due: %+v %+v %v", res, step, err)
+	}
+}
+
+// A rescue on a split names its group only where more than one is left
+// on it: with one, it is that one's.
+func TestRescueTheOneGroupLeftOnTheSplit(t *testing.T) {
+	tm, _, err := Start(expedition(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := tm.RescueGroup("split", ""); !errors.Is(err, ErrWhichGroup) {
+		t.Fatalf("both groups on the split: %v", err)
+	}
+	if _, _, err := tm.RescueGroup("", ""); !errors.Is(err, ErrWhichGroup) {
+		t.Fatalf("naming neither step nor group of a split team: %v", err)
+	}
+	moved(t, tm, "a off")(tm.RescueGroup("split", "a"))
+	res := moved(t, tm, "the one left")(tm.Act(func() (Result, *walk.Step, error) { return tm.RescueGroup("split", "") }))
+	if got := keys(tm); got[1] == "b@split" || res.From != "split" || res.MovedKey == "" {
+		t.Fatalf("groups %v, result %+v", got, res)
+	}
+	// None left on it: still which, the team's own step the split.
+	if _, _, err := tm.RescueGroup("split", ""); !errors.Is(err, ErrWhichGroup) {
+		t.Fatalf("no group left on the split: %v", err)
+	}
+}
+
+// A walk in the simulator is the group's whose phone walked it; with no
+// phone to say, the group's the team's own view is for.
+func TestAddWalkIsTheWalkersGroups(t *testing.T) {
+	tm := startedSplit(t)
+	tm.unfocus()
+	tm.Players, tm.Size = []int64{1, 2}, 2
+	tm.Strands[0].Members, tm.Strands[1].Members = []int64{1}, []int64{2}
+	tm.AddWalk(1, 500)
+	if tm.Strands[0].WalkedMetres != 500 || tm.Strands[1].WalkedMetres != 0 || tm.WalkedMetres != 0 {
+		t.Fatalf("walked %v %v, team %v", tm.Strands[0].WalkedMetres, tm.Strands[1].WalkedMetres, tm.WalkedMetres)
+	}
+	tm.AddWalk(0, 100)
+	if tm.WalkedMetres != 0 || tm.Strands[0].WalkedMetres != 600 || tm.Strands[1].WalkedMetres != 0 {
+		t.Fatalf("a walk no phone said whose: team %v, groups %v %v", tm.WalkedMetres, tm.Strands[0].WalkedMetres, tm.Strands[1].WalkedMetres)
+	}
+	// The team walking the well's group (Walk): the walk is the well's.
+	tm.Strands[1].Chosen = []int64{0}
+	tm.AddWalk(0, 50)
+	if tm.Strands[1].WalkedMetres != 50 {
+		t.Fatalf("the well's group chosen, walked %v", tm.Strands[1].WalkedMetres)
+	}
+}
+
+// The last group moved on through its join walks on as the team: the
+// result names no group moved, though it says the step it left.
+func TestLastGroupThroughTheJoinIsTheTeam(t *testing.T) {
+	tm, _, err := Start(expedition(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved(t, tm, "a off")(tm.RescueGroup("split", "a"))
+	moved(t, tm, "b off")(tm.RescueGroup("split", "b"))
+	res := moved(t, tm, "b to the join")(tm.Act(func() (Result, *walk.Step, error) { return tm.RescueGroup("pb", "b") }))
+	if res.MovedKey == "" || res.To != "join" {
+		t.Fatalf("b held at the join: %+v", res)
+	}
+	res = moved(t, tm, "a through")(tm.Act(func() (Result, *walk.Step, error) { return tm.RescueGroup("pa", "a") }))
+	if res.MovedKey != "" || res.From != "pa" || tm.Split != "" {
+		t.Fatalf("a through the join: %+v, split %q at %q", res, tm.Split, tm.Current)
+	}
+}
+
+// A draft's split on a path — valid refuses it — holds the group that
+// reaches it, the others' progress kept: the groups still fit.
+func TestGroupOnASplitOnItsPathStillFits(t *testing.T) {
+	g := expedition()
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "inner", Type: graph.Split, SplitCfg: &graph.SplitConfig{Paths: []graph.SplitPath{{Port: "x"}}}})
+	for i, e := range g.Edges {
+		if e.From == "split" && e.FromPort == "b" {
+			g.Edges[i].To = "inner"
+		}
+	}
+	g.Edges = append(g.Edges, graph.Edge{From: "inner", FromPort: "x", To: "pb"})
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved(t, tm, "a")(tm.RescueGroup("split", "a"))
+	moved(t, tm, "b")(tm.RescueGroup("split", "b"))
+	if got := keys(tm); !slices.Equal(got, []string{"a@pa", "b@inner"}) {
+		t.Fatalf("groups %v", got)
+	}
+	if tm.Refit() || !slices.Equal(keys(tm), []string{"a@pa", "b@inner"}) {
+		t.Fatalf("refit, groups %v", keys(tm))
+	}
+}
+
+// Where the organisers' rescue put the team, or a group, is marked for
+// its phones, until it moves on; a team moved into a split, each group.
+func TestMarkMovedUntilItMovesOn(t *testing.T) {
+	tm, _, err := Start(expedition(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.MarkMoved("")
+	if v := tm.View(); !v.MovedOn || !v.Groups[0].Moved || !v.Groups[1].Moved || tm.Moved {
+		t.Fatalf("a team moved into its split — its groups, not its own cursor on the split: %+v", v)
+	}
+	moved(t, tm, "a off")(tm.RescueGroup("split", "a"))
+	tm.MarkMoved("a")
+	if tm.unfocus(); !tm.Strands[0].Moved || !tm.Strands[1].Moved {
+		t.Fatalf("a moved, b still where it was put: %+v", tm.Strands)
+	}
+	tm.Position = atChurch
+	moved(t, tm, "a's answer")(tm.Answer("pa", "bell"))
+	if tm.unfocus(); tm.Strands[0].Moved || !tm.Strands[1].Moved {
+		t.Fatalf("a moved on by itself, b still put: %+v", tm.Strands)
+	}
+}
+
+// The organisers' rescue marks where it takes the team as it is applied,
+// whoever hosts the team; a player's own move marks nothing.
+func TestRescueMarksItsMove(t *testing.T) {
+	tm, _, err := Start(expedition(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := moved(t, tm, "b off")(tm.Act(func() (Result, *walk.Step, error) { return tm.RescueGroup("split", "b") }))
+	if tm.unfocus(); !tm.Strands[1].Moved || tm.Strands[0].Moved || res.MovedKey != "b" || res.Moved == "" {
+		t.Fatalf("b rescued off the split: %+v, result %+v", tm.Strands, res)
+	}
+	moved(t, tm, "a off")(tm.Act(func() (Result, *walk.Step, error) { return tm.Continue("split") }))
+	if tm.unfocus(); tm.Strands[0].Moved || !tm.Strands[1].Moved {
+		t.Fatalf("a set off by its own: %+v", tm.Strands)
+	}
+}
+
+// A rescue naming a split the team is not on is stale, not a question of
+// which group; one naming nothing for a team at its start screen has no
+// step to move past.
+func TestRescueAskedOfNoStep(t *testing.T) {
+	g := expedition()
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "other", Type: graph.Split, SplitCfg: &graph.SplitConfig{Paths: []graph.SplitPath{{Port: "x"}}}})
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := tm.RescueGroup("other", ""); !errors.Is(err, ErrStale) {
+		t.Fatalf("another split: %v", err)
+	}
+	fresh := New(expedition(), t0)
+	if _, _, err := fresh.RescueGroup("", ""); !errors.Is(err, ErrWrongNode) {
+		t.Fatalf("at the start screen: %v", err)
+	}
+}
+
+// A group's walk read from its phones was on the step it left: on the one
+// it comes to, it has walked nothing yet, whatever the view says next.
+func TestGroupsWalkStaysWithTheStepLeft(t *testing.T) {
+	tm, _, err := Start(expedition(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved(t, tm, "a off")(tm.RescueGroup("split", "a"))
+	moved(t, tm, "b off")(tm.RescueGroup("split", "b"))
+	tm.Walks = map[string]float64{"a": 800, "b": 300}
+	tm.Position = atChurch
+	moved(t, tm, "a's answer")(tm.Answer("pa", "bell"))
+	tm.focusOn(0)
+	if tm.WalkedMetres != 0 {
+		t.Fatalf("a on %s walked %v, want none yet", tm.Current, tm.WalkedMetres)
+	}
+	tm.focusOn(1)
+	if tm.WalkedMetres != 300 {
+		t.Fatalf("b, unmoved, walked %v, want its 300", tm.WalkedMetres)
+	}
+	tm.unfocus()
+}
+
+// The designer's preview placed on a step of a split's path shows it as
+// the path's group plays it: split up, the group on the step, waiting at
+// the join for the others.
+func TestPlaceOnAPathStepIsTheGroups(t *testing.T) {
+	tm, err := Place(expedition(), "pb", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := keys(tm); tm.Split != "split" || !slices.Equal(got, []string{"a@split", "b@pb"}) {
+		t.Fatalf("placed on pb: split %q, groups %v", tm.Split, got)
+	}
+	if v := tm.View(); v.Node != "pb" || !tm.Visited("split") {
+		t.Fatalf("the preview shows %q, split visited %v: want pb, come by the split", v.Node, tm.Visited("split"))
+	}
+	tm.Position = atWell
+	moved(t, tm, "b's answer")(tm.Answer("pb", "water"))
+	if got := keys(tm); !slices.Equal(got, []string{"a@split", "b@join"}) {
+		t.Fatalf("b's answer: groups %v, want b waiting at the join", got)
+	}
+}
+
+// A phone's own move into a split is its own on its group too: the groups
+// come to the split by the move the team came by.
+func TestOwnMoveIntoASplit(t *testing.T) {
+	g := expedition()
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "intro", Type: graph.Story})
+	for i, e := range g.Edges {
+		if e.From == "start" {
+			g.Edges[i].To = "intro"
+		}
+	}
+	g.Edges = append(g.Edges, graph.Edge{From: "intro", FromPort: graph.PortOut, To: "split"})
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Viewer = &Viewer{Slot: 1}
+	tm.Now = t0.Add(1500 * time.Millisecond)
+	moved(t, tm, "into the split")(tm.Continue("intro"))
+	if v := tm.View(); v.Node != "split" || v.MovedByOther || v.SplitAt == nil || v.SplitAt.Nanosecond() != 0 {
+		t.Fatalf("slot 1's own move into the split: %+v — split at the second it came, as stored", v)
+	}
+	tm.Viewer = &Viewer{Slot: 2}
+	if v := tm.View(); !v.MovedByOther {
+		t.Fatalf("slot 2 not told another phone moved the team: %+v", v)
+	}
+}
+
+// A timer run out moves the team by no phone's choice: none is credited
+// with it, though one phone's request ran it.
+func TestTimerMovesByNoOne(t *testing.T) {
+	g := expedition()
+	g.TimeLimit = &graph.TimeLimit{Seconds: 60, To: "end"}
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Viewer = &Viewer{Slot: 1}
+	tm.Now = t0.Add(time.Hour)
+	moved(t, tm, "time up")(tm.Act(tm.TimeUp))
+	if tm.MovedBy != 0 || tm.View().MovedByOther {
+		t.Fatalf("the time limit credited to phone %d", tm.MovedBy)
+	}
 }

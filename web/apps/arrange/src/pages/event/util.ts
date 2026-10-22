@@ -86,6 +86,34 @@ export function teamProgress(t: I18n, graph: EventGraph | null | undefined, tm: 
   return { main: t.t("{{n}} points", { n: fmtPoints(tm.score) }), step: done ? "" : stepTitle(graph, tm.node), done };
 }
 
+/** When the event's clock stands: now, or when it was paused, completed or cancelled, whichever came first. Race control's clock too (control/model elapsedSeconds), and a group's on its step (groupSeconds). */
+export function playEnd(event: { completed_at?: string | null; cancelled_at?: string | null; paused_at?: string | null }, now = Date.now()): number {
+  let end = now;
+  for (const ts of [event.completed_at, event.cancelled_at, event.paused_at]) {
+    const ms = toDate(ts)?.getTime();
+    if (ms !== undefined && ms < end) end = ms;
+  }
+  return end;
+}
+
+/** The server's clock less this device's, from the server_now a detail came with: 0 for none. */
+export function clockOffset(serverNow: string | null | undefined, now = Date.now()): number {
+  const s = toDate(serverNow)?.getTime();
+  return s === undefined ? 0 : s - now;
+}
+
+/**
+ * How long a split team's group has been on its step, in play time. The
+ * server moves since past the pauses that ended since the group got
+ * there (internal/admin.groupsOf), so only a pause still on, the end and
+ * the clock offset (clockOffset) are left to take in here.
+ */
+export function groupSeconds(event: Parameters<typeof playEnd>[0], since: string | undefined, offsetMs: number, now = Date.now()): number | undefined {
+  const at = toDate(since)?.getTime();
+  if (at === undefined) return undefined;
+  return Math.max(0, Math.floor((playEnd(event, now + offsetMs) - at) / 1000));
+}
+
 /** "1h 12m", "5m", "40s" — short enough for a stat tile. */
 export function fmtElapsedShort(sec: number): string {
   if (sec <= 0) return "0m";

@@ -5,7 +5,6 @@
 // JournalKey, RoleKey, SectionKey, MetaKey, ItemKey, CounterKey, ThemeKey and
 // AltKey in Go). A missing translation falls back to the main text.
 
-import { updateNode } from "./model.ts";
 import type { Block, Graph, Node } from "./types.ts";
 
 export const nodeKey = (slug: string, field: string) => `n:${slug}:${field}`;
@@ -364,30 +363,6 @@ export function translatedNode(n: Node, tr: Record<string, string>): Node {
 }
 
 /**
- * An edit made to a step shown in a translation (translatedNode): the
- * texts changed become that language's translations, and anything else
- * changes the step itself, whose own texts stay as they were. Null when
- * the edit adds or removes texts — a block, a chat line, a hint — which
- * is the main language's to do: keys counted by position would land on
- * the wrong text.
- */
-export function translateEdit(g: Graph, lang: string, main: Node, shown: Node, edited: Node): Graph | null {
-  const texts = (n: Node) => new Map(nodeTexts(n).filter((t) => !t.answers).map((t) => [t.key, t.main]));
-  const before = texts(shown);
-  const after = texts(edited);
-  const own = texts(main);
-  if (before.size !== after.size || [...before.keys()].some((key) => !after.has(key))) return null;
-  const step = withTexts(edited, (key) => (after.get(key) !== own.get(key) ? own.get(key) : undefined));
-  // As updateNode, so a port the edit removed takes its wire and its
-  // translations with it here too.
-  let out = updateNode(g, main.slug, () => step);
-  for (const [key, text] of after) {
-    if (text !== before.get(key)) out = setTranslation(out, lang, key, text, own.get(key));
-  }
-  return out;
-}
-
-/**
  * What a step edit made in a translation changes beside the step (`before`
  * the live graph, `after` the edit's), made fit for that language: a place
  * or an item renamed there gets the name as its translation and keeps its
@@ -623,10 +598,14 @@ export function dropTranslations(g: Graph, gone: (key: string) => boolean): Grap
 /**
  * The node keys of a port's texts (a route's, a branch's, a group's):
  * nodeTexts' `out:`, `branch:` and `path:` fields. The port is followed by
- * exactly one field, so port "x" does not claim port "x:y"'s texts.
+ * exactly one field, or none (a branch's picture), so port "x" does not
+ * claim port "x:y"'s texts — though "x"'s field "y" and "x:y"'s picture
+ * are one key, which updateNode leaves to a port still there.
  */
 export function isPortKey(slug: string, port: string, key: string): boolean {
   return ["out", "branch", "path"].some((kind) => {
+    // A branch's picture is keyed by the port alone (nodeTexts' media).
+    if (key === nodeKey(slug, `${kind}:${port}`)) return true;
     const head = nodeKey(slug, `${kind}:${port}:`);
     return key.startsWith(head) && key.length > head.length && !key.slice(head.length).includes(":");
   });

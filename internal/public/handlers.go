@@ -10,7 +10,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"math"
 	"net/http"
 	"sort"
@@ -30,8 +29,9 @@ type Handlers struct {
 	DB  *sql.DB
 	Lib *adventure.Library
 	Hub *ws.Hub
-	// Engine ranks a graph event's teams. The server shares the player's,
-	// so decoded graphs are cached once; nil makes one per call.
+	// Engine ranks a graph event's teams and names its groups. The server
+	// shares the player's, so decoded graphs are cached once; nil makes
+	// one per call.
 	Engine *play.Engine
 	// Storage backs the token-authed team-avatar upload/delete on the
 	// share page. Always non-nil: server.New defaults to dbblob when
@@ -194,7 +194,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 			return LiveDTO{}, id, http.StatusInternalServerError, "scan failed"
 		}
 		if hasAvatar != 0 {
-			t.AvatarURL = fmt.Sprintf("/adventure-assets/team-avatar/%d", t.ID)
+			t.AvatarURL = play.TeamAvatarURL(t.ID)
 		}
 		t.Withdrawn = withdrawn != 0
 		teams = append(teams, t)
@@ -327,11 +327,13 @@ type TracksResponse struct {
 	Tracks []trackDTO `json:"tracks"`
 }
 
+func (h *Handlers) engine() *play.Engine { return play.Or(h.Engine, h.DB) }
+
 // queryTracks fetches the event's trails. Returns (resp, status, errMsg).
 // Caller is responsible for authorising by token. Callers go through
 // buildTracks, which caches the result.
 func (h *Handlers) queryTracks(ctx context.Context, eventID int64) (TracksResponse, int, string) {
-	tr, err := tracks.Query(ctx, h.DB, eventID)
+	tr, err := tracks.Query(ctx, h.engine(), eventID)
 	if err != nil {
 		return TracksResponse{}, http.StatusInternalServerError, "query failed"
 	}
@@ -372,11 +374,7 @@ func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
 // each its points. Teams not yet started, or withdrawn, follow the
 // ranked ones in the order they had.
 func (h *Handlers) rankGraph(ctx context.Context, eventID int64, state string, teams []teamDTO) error {
-	e := h.Engine
-	if e == nil {
-		e = play.New(h.DB)
-	}
-	ranked, err := e.EventRanking(ctx, eventID)
+	ranked, err := h.engine().EventRanking(ctx, eventID)
 	if err != nil {
 		return err
 	}

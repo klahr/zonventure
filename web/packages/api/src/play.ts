@@ -290,6 +290,9 @@ export interface GroupView {
   /** The group is anyone's to walk: no one playing is with it, or every one of them is away. */
   open?: boolean;
   current?: boolean;
+  /** The organisers moved the group onto its step, or another phone than this did. */
+  moved?: boolean;
+  moved_by_other?: boolean;
   players?: number;
 }
 
@@ -345,6 +348,12 @@ export interface View {
   ends_at?: string;
   /** The adventure's time limit has moved the team. */
   timed_out?: boolean;
+  /** The split a split team's groups took (its slug), and when the team came to it. */
+  split?: string;
+  split_at?: string;
+  /** The organisers moved the team onto the step shown — a split team's group the view is for — or another phone than this did. */
+  moved_on?: boolean;
+  moved_by_other?: boolean;
   /** The author's message for that; empty for the player's own default. */
   time_up_text?: string;
   /** The home screen a team may go back to from here, and its title. */
@@ -452,8 +461,8 @@ export type PlayAction =
   | { kind: "task"; node: string; block: string; guess: string }
   /**
    * Walk another of this phone's groups while the team is split up: the
-   * group's key (GroupView.port, "a>x" within a group). Refused stale
-   * once it has gone on, not_yours for a group the phone is not in.
+   * group's path (GroupView.port). Refused stale
+   * once it has gone on, other_group for a group the phone is not in.
    */
   | { kind: "walk"; port: string };
 
@@ -473,6 +482,7 @@ export type RefusalCode =
   | "unsealed"
   | "too_few"
   | "not_yours"
+  | "other_group"
   | "which_group"
   | "paused"
   | "not_running"
@@ -634,7 +644,7 @@ export interface PlayState {
   messages: EventMessage[];
   /** Set for a dev ticket, playing the draft as it is edited: the draft's steps to jump to. */
   dev?: { steps: { slug: string; title?: string; type: string }[] };
-  /** The organisers moved the team onto the step it is on. */
+  /** The organisers moved the team onto the step it is on (view.moved_on). */
   moved_on?: boolean;
 }
 
@@ -751,7 +761,8 @@ export interface SimCrew {
   /** Who holds each secret role, 0 for no one; one missing is dealt at random from three players. */
   secrets?: Record<string, number>;
   seals?: Record<string, Record<string, string>>;
-  presses?: Record<string, unknown>;
+  /** Each player's part in a step done together, by step. */
+  presses_at?: Record<string, Record<string, unknown>>;
 }
 
 /** What one of a crew's phones shows. */

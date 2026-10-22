@@ -26,9 +26,10 @@ type Press struct {
 	At    time.Time
 }
 
-// PressChange is the press an action records for Slot, or with a nil
-// Press withdraws.
+// PressChange is the press an action records for Slot on Node, or with
+// a nil Press withdraws: a split team's on its group's step.
 type PressChange struct {
+	Node  string
 	Slot  int64
 	Press *Press
 }
@@ -93,11 +94,12 @@ func (t *Team) mayTurnAt(a *graph.Answer, i int, slot int64) bool {
 }
 
 // postHolder is the player who alone turns the key at post i: the
-// holder of its role, while they play. A role held by someone who has
-// stopped playing would shut the team out, so the post is anyone's.
+// holder of its role, while they play and their phone says where it is.
+// A role held by someone who has stopped playing, or whose phone sends
+// no location (NoFix), would shut the team out, so the post is anyone's.
 func (t *Team) postHolder(a *graph.Answer, i int) (int64, bool) {
 	holder, ok := t.RoleHolders[a.PostRole(i)]
-	if !ok || t.Away[holder] || (t.Players != nil && !slices.Contains(t.Players, holder)) {
+	if !ok || t.NoFix[holder] || (t.Players != nil && !slices.Contains(t.Players, holder)) {
 		return 0, false
 	}
 	return holder, true
@@ -140,7 +142,7 @@ func (t *Team) keysTurned(a *graph.Answer) (int, *time.Time) {
 	var at [][]bool // at[i][j]: key i was turned at post j
 	var until *time.Time
 	for _, slot := range t.Players {
-		p, ok := t.Presses[slot]
+		p, ok := t.pressesHere()[slot]
 		if !ok || p.At.Before(since) {
 			continue
 		}
@@ -247,7 +249,7 @@ func (t *Team) disagree() {
 	if t.Viewer == nil {
 		return
 	}
-	if _, ok := t.Presses[t.Viewer.Slot]; ok {
+	if _, ok := t.pressesHere()[t.Viewer.Slot]; ok {
 		t.setPress(t.Viewer.Slot, nil)
 	}
 }
@@ -256,27 +258,29 @@ func (t *Team) disagree() {
 func (t *Team) agreeing(port string) int {
 	n := 0
 	for _, slot := range t.Players {
-		if p, ok := t.Presses[slot]; ok && p.Value == port {
+		if p, ok := t.pressesHere()[slot]; ok && p.Value == port {
 			n++
 		}
 	}
 	return n
 }
 
+// pressesHere are what each player did on the current step: a split
+// team's group's, focused.
+func (t *Team) pressesHere() map[int64]Press { return t.Presses[t.Current] }
+
 func (t *Team) setPress(slot int64, p *Press) {
-	if t.Presses == nil {
-		t.Presses = map[int64]Press{}
+	switch {
+	case p == nil:
+		delete(t.Presses[t.Current], slot)
+	case t.Presses == nil:
+		t.Presses = map[string]map[int64]Press{t.Current: {slot: *p}}
+	case t.Presses[t.Current] == nil:
+		t.Presses[t.Current] = map[int64]Press{slot: *p}
+	default:
+		t.Presses[t.Current][slot] = *p
 	}
-	if p == nil {
-		delete(t.Presses, slot)
-	} else {
-		t.Presses[slot] = *p
-	}
-	if t.focus > 0 && t.PressesAt != nil {
-		// A group's presses are kept by its step, for its next view.
-		t.PressesAt[t.Current] = t.Presses
-	}
-	t.PressChanged = &PressChange{Slot: slot, Press: p}
+	t.PressChanged = &PressChange{Node: t.Current, Slot: slot, Press: p}
 }
 
 // together is how far the players are on puzzle n, for its view: nil
@@ -290,7 +294,7 @@ func (t *Team) together(n graph.Node) *Together {
 		if t.Viewer == nil {
 			return false
 		}
-		p, has := t.Presses[t.Viewer.Slot]
+		p, has := t.pressesHere()[t.Viewer.Slot]
 		return has && ok(p)
 	}
 	switch {

@@ -209,20 +209,22 @@ func TestMCPRescuesAGroup(t *testing.T) {
 	if s := arr.do("POST", "/api/admin/events/"+itoa(ev.ID)+"/start", nil, nil); s != 204 {
 		t.Fatalf("start = %d", s)
 	}
+	call := mcpTool(t, ts, arr)
+	// Both groups on the split: unlocking it must say which.
+	if text, isErr := call("unlock_team", map[string]any{"team_id": team.ID}); !isErr || !strings.Contains(text, "which_group") {
+		t.Errorf("unlocking a split team at its split without naming a group should be refused: %v %s", isErr, text)
+	}
 	if s := phones[1].doAny("POST", "/api/player/play/continue", map[string]string{"node": "split"}, nil); s != 200 {
 		t.Fatalf("the well's group sets off = %d", s)
 	}
-
-	call := mcpTool(t, ts, arr)
 	summary, isErr := call("get_event_state_summary", map[string]any{"event_id": ev.ID})
 	if isErr || !strings.Contains(summary, `"step":"split"`) || !strings.Contains(summary, `{"label":"Church","node":"split"}`) || !strings.Contains(summary, `{"label":"Well","node":"pb"}`) {
 		t.Fatalf("the summary should list the groups: %v %s", isErr, summary)
 	}
-	if text, isErr := call("unlock_team", map[string]any{"team_id": team.ID}); !isErr || !strings.Contains(text, "which_group") {
-		t.Errorf("unlocking a split team at its split without naming a group should be refused: %v %s", isErr, text)
-	}
-	if text, isErr := call("unlock_team", map[string]any{"team_id": team.ID, "node": "pb"}); isErr {
-		t.Fatalf("unlocking the well's group: %s", text)
+	// The reply says where the well's group went — the join — not where
+	// the church's group, the one the team's own view shows, stands.
+	if text, isErr := call("unlock_team", map[string]any{"team_id": team.ID, "node": "pb"}); isErr || !strings.Contains(text, `"node":"join"`) {
+		t.Fatalf("unlocking the well's group: %v %s", isErr, text)
 	}
 	summary, _ = call("get_event_state_summary", map[string]any{"event_id": ev.ID})
 	if !strings.Contains(summary, `{"label":"Well","node":"join"}`) || !strings.Contains(summary, `{"label":"Church","node":"split"}`) {
@@ -237,5 +239,10 @@ func TestMCPRescuesAGroup(t *testing.T) {
 	}
 	if summary, _ = call("get_event_state_summary", map[string]any{"event_id": ev.ID}); !strings.Contains(summary, `{"label":"Church","node":"pa"}`) {
 		t.Errorf("the church's group should be on its puzzle: %s", summary)
+	}
+	// Every group off the split, a rescue naming none must still say
+	// which: nothing moved since the caller looked.
+	if text, isErr := call("unlock_team", map[string]any{"team_id": team.ID}); !isErr || !strings.Contains(text, "which_group") {
+		t.Errorf("unlocking a split team naming no group or step: %v %s", isErr, text)
 	}
 }

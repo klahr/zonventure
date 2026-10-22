@@ -137,7 +137,7 @@ func (s *Server) registerTeamTools() {
 			"properties": map[string]any{
 				"team_id": map[string]any{"type": "integer", "description": "Team to advance."},
 				"node":    map[string]any{"type": "string", "description": "The step to move the team past: its current one by default; for a split team, the stuck group's step. Refused if the team (or group) has moved on since."},
-				"group":   map[string]any{"type": "string", "description": "For a split team, the key of the group to move on (get_event lists each group's port as its key): needed where several groups stand on one split, which moving on sets that group off down its path. Given alone, the group's own step is meant."},
+				"group":   map[string]any{"type": "string", "description": "For a split team, the key of the group to move on (get_event lists each group's port as its key): needed unless node names a step only one group stands on. On the split, moving a group on sets it off down its path. Given alone, the group's own step is meant."},
 			},
 		},
 	}, unlockTeam)

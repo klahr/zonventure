@@ -255,11 +255,7 @@ func (h *Handlers) collectGraphRecap(ctx context.Context, d *recapPDFData, event
 			}
 		}
 	}
-	e := h.Engine
-	if e == nil {
-		e = play.New(h.DB)
-	}
-	ranked, err := e.EventRanking(ctx, eventID)
+	ranked, err := h.engine().EventRanking(ctx, eventID)
 	if err != nil {
 		return err
 	}

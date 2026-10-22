@@ -27,7 +27,6 @@ import (
 	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/results"
 	"github.com/klahr/zonventure/internal/storage"
-	"github.com/klahr/zonventure/internal/tracks"
 	"github.com/klahr/zonventure/internal/webhooks"
 	"github.com/klahr/zonventure/internal/ws"
 )
@@ -520,10 +519,11 @@ func (h *Handlers) recordLocation(ctx context.Context, slot auth.Slot, req Locat
 	// The ping remembers the group its phone walks, for the group's trail.
 	// Not known, it is the team's: a trail drawn wrong is no reason to
 	// lose where the phone is.
-	groups, err := tracks.PingGroups(ctx, h.DB, slot.TeamID, slot.ID, time.Now().UTC())
-	if err != nil {
+	var groups []string
+	if split, port, err := h.engine().WalkingGroup(ctx, slot.TeamID, slot.ID); err != nil {
 		logx.Warn("player.ping_groups_failed", "slot", slot.ID, "err", err.Error())
-		groups = nil
+	} else if port != "" {
+		groups = []string{play.GroupTag(split, port)}
 	}
 	if _, err := h.DB.ExecContext(ctx, `
 		INSERT INTO location_pings(slot_id, team_id, event_id, lat, lng, accuracy, speed, heading, client_ts, groups)

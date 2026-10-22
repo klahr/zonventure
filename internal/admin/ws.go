@@ -19,7 +19,6 @@ import (
 	"github.com/klahr/zonventure/internal/domains"
 	"github.com/klahr/zonventure/internal/listing"
 	"github.com/klahr/zonventure/internal/logx"
-	"github.com/klahr/zonventure/internal/tracks"
 	"github.com/klahr/zonventure/internal/ws"
 )
 
@@ -390,9 +389,9 @@ type eventGraphDTO struct {
 	Titles      map[string]string `json:"titles"`
 	Zones       []graph.Zone      `json:"zones"`
 	Rescuable   []string          `json:"rescuable"`
-	// RescuableOnPath are the steps a group of a split team can be moved
-	// on from: Rescuable's, and a story or hub on its path too.
-	RescuableOnPath []string `json:"rescuable_on_path"`
+	// TimeLimit says the adventure has one (graph.TimeLimit): what the
+	// organisers may do for a team then changes with time alone.
+	TimeLimit bool `json:"time_limit,omitempty"`
 }
 
 type eventDetailTeamDTO struct {
@@ -440,6 +439,11 @@ type teamGroupDTO struct {
 	Node    string `json:"node"`
 	Since   string `json:"since,omitempty"`
 	Arrived bool   `json:"arrived,omitempty"`
+	// Rescuable says the organisers can move the group on from its step,
+	// as the team stands (play.Engine.Groups): told by the team's players
+	// (TeamPlayers), not the event's detail, which shows the groups as
+	// stored.
+	Rescuable bool `json:"rescuable,omitempty"`
 }
 
 type eventDetailMemberDTO struct {
@@ -450,33 +454,27 @@ type eventDetailMemberDTO struct {
 	ExpiresAt   string `json:"expires_at,omitempty"`
 }
 
-// groupsOf is where each group of a team split at split is, from its
-// stored strands; none for a team that is not split. paused is the
-// event's ended pauses in seconds (its paused_seconds): a group's since
-// is shifted past the pauses since it reached its step, so that the time
-// from it to now, or to paused_at while paused, is time played there.
-func groupsOf(g *graph.Graph, split string, raw []byte, paused int) []teamGroupDTO {
-	n, ok := g.Node(split)
-	if !ok || len(raw) == 0 {
+// groupsOf is where each group of a team split at split into strands
+// is, each with whether it can be moved on where rescuable says (nil for
+// unsaid); none for a team together. paused is the event's ended pauses
+// in seconds (its paused_seconds): a group's since is shifted past the
+// pauses since it reached its step, so that the time from it to now, or
+// to paused_at while paused, is time played there.
+func groupsOf(splits *graph.Splits, split string, strands []session.Strand, rescuable []bool, paused int) []teamGroupDTO {
+	if len(strands) == 0 {
 		return nil
 	}
-	var strands []session.Strand
-	if json.Unmarshal(raw, &strands) != nil {
-		return nil
-	}
-	if n.Type != graph.Split {
-		return nil
-	}
+	g := splits.Graph()
+	// Waiting at the split's own join, as the engine has it.
+	join, _ := splits.JoinOf(split)
 	out := make([]teamGroupDTO, 0, len(strands))
-	for _, st := range strands {
-		gr := teamGroupDTO{Port: st.Key(), Label: session.GroupLabel(g, "", split, st.Port), Node: st.Current}
-		if !st.EnteredAt.IsZero() {
-			gr.Since = st.EnteredAt.Add(time.Duration(paused-st.Paused) * time.Second).UTC().Format(time.RFC3339)
-		}
-		if at, ok := g.Node(st.Current); ok && at.Type == graph.Join {
-			gr.Arrived = true
-		}
-		out = append(out, gr)
+	for i, st := range strands {
+		out = append(out, teamGroupDTO{
+			Port: st.Port, Label: session.GroupLabel(g, "", split, st.Port), Node: st.Current,
+			Since:     st.NodeEnteredAt.Add(time.Duration(paused-st.NodePaused) * time.Second).UTC().Format(time.RFC3339),
+			Arrived:   join != "" && st.Current == join,
+			Rescuable: i < len(rescuable) && rescuable[i],
+		})
 	}
 	return out
 }
@@ -598,7 +596,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 			return eventDetailDTO{}, err
 		}
 		if hasAvatar != 0 {
-			t.AvatarURL = teamAvatarURL(t.ID)
+			t.AvatarURL = play.TeamAvatarURL(t.ID)
 		}
 		teams = append(teams, t)
 	}
@@ -666,16 +664,18 @@ func (h *Handlers) addGraphDetail(ctx context.Context, d *eventDetailDTO) error 
 	`, d.Event.ID).Scan(&graphID); err != nil {
 		return err
 	}
-	gd := &eventGraphDTO{Titles: map[string]string{}, Zones: []graph.Zone{}, Rescuable: []string{}, RescuableOnPath: []string{}}
+	gd := &eventGraphDTO{Titles: map[string]string{}, Zones: []graph.Zone{}, Rescuable: []string{}}
 	d.Graph = gd
 	if !graphID.Valid {
 		return nil
 	}
-	st, err := graphstore.ByID(ctx, h.DB, graphID.Int64)
+	// One engine for the whole build: its graph cache too.
+	eng := h.engine()
+	g, err := eng.Graph(ctx, graphID.Int64)
 	if err != nil {
 		return err
 	}
-	for _, n := range st.Graph.Nodes {
+	for _, n := range g.Nodes {
 		title := n.Title
 		if title == "" {
 			title = n.Slug
@@ -687,19 +687,13 @@ func (h *Handlers) addGraphDetail(ctx context.Context, d *eventDetailDTO) error 
 		if session.CanRescue(n) {
 			gd.Rescuable = append(gd.Rescuable, n.Slug)
 		}
-		if session.CanRescueGroup(n) {
-			gd.RescuableOnPath = append(gd.RescuableOnPath, n.Slug)
-		}
 	}
-	if st.Graph.Zones != nil {
-		gd.Zones = st.Graph.Zones
+	if g.Zones != nil {
+		gd.Zones = g.Zones
 	}
+	gd.TimeLimit = g.TimeLimit != nil
 
-	e := h.Engine
-	if e == nil {
-		e = play.New(h.DB)
-	}
-	ranked, err := e.EventRanking(ctx, d.Event.ID)
+	ranked, err := eng.EventRanking(ctx, d.Event.ID)
 	if err != nil {
 		return err
 	}
@@ -715,44 +709,43 @@ func (h *Handlers) addGraphDetail(ctx context.Context, d *eventDetailDTO) error 
 	}
 	defer rows.Close()
 	type where struct {
-		node, outcome string
-		cheated       bool
-		groups        []teamGroupDTO
-		graph         int64
-		split         string
-		strands       []byte
+		node, outcome, split string
+		cheated              bool
+		groups               []teamGroupDTO
+		graph                int64
+		strands              []byte
 	}
 	at := map[int64]where{}
-	// A team plays the graph it started on, which a republish since may
-	// have left behind: its groups are named from that one, each loaded
-	// once.
-	graphs := map[int64]*graph.Graph{graphID.Int64: st.Graph}
 	for rows.Next() {
-		var id, teamGraph int64
+		var id int64
 		var w where
-		var split string
-		var strands []byte
-		if err := rows.Scan(&id, &w.node, &w.outcome, &w.cheated, &split, &strands, &teamGraph); err != nil {
+		if err := rows.Scan(&id, &w.node, &w.outcome, &w.cheated, &w.split, &w.strands, &w.graph); err != nil {
 			return err
 		}
-		w.graph, w.split, w.strands = teamGraph, split, strands
 		at[id] = w
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
 	rows.Close()
+	// A split team's groups as stored, by the graph it started on, which
+	// a republish since may have left behind, each graph's splits loaded
+	// once: one read for every team, for every push. Groups no longer
+	// fitting it — a dev team's, its graph edited — are none until the
+	// team's next view stores them afresh; the team's own dialog shows
+	// them meanwhile (TeamPlayers).
+	splits := map[int64]*graph.Splits{}
 	for id, w := range at {
 		if w.split == "" {
 			continue
 		}
-		g, ok := graphs[w.graph]
+		sp, ok := splits[w.graph]
 		if !ok {
-			g, _ = tracks.Graph(ctx, h.DB, w.graph)
-			graphs[w.graph] = g
+			sp, _ = eng.Splits(ctx, w.graph)
+			splits[w.graph] = sp
 		}
-		if g != nil {
-			w.groups = groupsOf(g, w.split, w.strands, d.Event.PausedSeconds)
+		if sp != nil {
+			w.groups = groupsOf(sp, w.split, play.StoredGroups(sp, w.split, w.strands), nil, d.Event.PausedSeconds)
 			at[id] = w
 		}
 	}

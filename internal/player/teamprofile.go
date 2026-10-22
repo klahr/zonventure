@@ -1,7 +1,6 @@
 package player
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -48,7 +47,7 @@ func teamAvatarURL(tc teamContext) string {
 	if !tc.HasAvatar {
 		return ""
 	}
-	return fmt.Sprintf("/adventure-assets/team-avatar/%d", tc.TeamID)
+	return play.TeamAvatarURL(tc.TeamID)
 }
 
 // SetMyTeamAvatar stores a picture for the calling player's team: a
@@ -92,7 +91,7 @@ func (h *Handlers) SetMyTeamAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.Hub.Publish(ws.EventTopic(slot.EventID), "changed", nil)
-	httpx.JSON(w, http.StatusOK, map[string]string{"url": fmt.Sprintf("/adventure-assets/team-avatar/%d", slot.TeamID)})
+	httpx.JSON(w, http.StatusOK, map[string]string{"url": play.TeamAvatarURL(slot.TeamID)})
 }
 
 // DeleteMyTeamAvatar removes the calling player's team picture.

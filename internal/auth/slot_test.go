@@ -43,42 +43,59 @@ func TestParseSlotTimestamp(t *testing.T) {
 	}
 }
 
-// Each request of a signed-in phone stamps it as seen, at most every
-// seenEvery: a stamp seconds old stands, an old one is renewed.
-func TestSeenSlot(t *testing.T) {
+// seenFixture is a slot of a running event's team, never seen.
+func seenFixture(t *testing.T, db *sql.DB, name string) int64 {
+	t.Helper()
+	var orgID, eventID, teamID, slotID int64
+	mustRow(t, db.QueryRow(`INSERT INTO organizations(name) VALUES ($1) RETURNING id`, name+" Org"), &orgID)
+	mustRow(t, db.QueryRow(`INSERT INTO adventures(slug, title, description, author, language, org_id) VALUES ($1, $1, '', '', 'en', $2) RETURNING id`, name, orgID), new(int64))
+	mustRow(t, db.QueryRow(`INSERT INTO events(adventure_slug, org_id, state, live_token, name, show_map) VALUES ($1, $2, 'running', 'tok-' || $1, $1, 0) RETURNING id`, name, orgID), &eventID)
+	mustRow(t, db.QueryRow(`INSERT INTO teams(event_id, name, token) VALUES ($1, 'Crew', 'tok-crew-' || $2) RETURNING id`, eventID, name), &teamID)
+	mustRow(t, db.QueryRow(`INSERT INTO player_slots(team_id, name, token) VALUES ($1, 'Ann', 'tok-ann-' || $2) RETURNING id`, teamID, name), &slotID)
+	return slotID
+}
+
+// seenAt is the slot's stamp, "" for none.
+func seenAt(t *testing.T, db *sql.DB, slotID int64) string {
+	t.Helper()
+	var seen sql.NullString
+	mustRow(t, db.QueryRow(`SELECT last_seen_at FROM player_slots WHERE id = $1`, slotID), &seen)
+	return seen.String
+}
+
+// A slot is stamped as seen at most every seenEvery: a stamp seconds old
+// stands, an old one is renewed.
+func TestTouchSlot(t *testing.T) {
 	t.Parallel()
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
-	var orgID, eventID, teamID, slotID int64
-	mustRow(t, db.QueryRow(`INSERT INTO organizations(name) VALUES ('Seen Org') RETURNING id`), &orgID)
-	mustRow(t, db.QueryRow(`INSERT INTO adventures(slug, title, description, author, language, org_id) VALUES ('seen', 'seen', '', '', 'en', $1) RETURNING id`, orgID), new(int64))
-	mustRow(t, db.QueryRow(`INSERT INTO events(adventure_slug, org_id, state, live_token, name, show_map) VALUES ('seen', $1, 'running', 'tok-seen', 'seen', 0) RETURNING id`, orgID), &eventID)
-	mustRow(t, db.QueryRow(`INSERT INTO teams(event_id, name, token) VALUES ($1, 'Crew', 'tok-crew') RETURNING id`, eventID), &teamID)
-	mustRow(t, db.QueryRow(`INSERT INTO player_slots(team_id, name, token) VALUES ($1, 'Ann', 'tok-ann') RETURNING id`, teamID), &slotID)
-
-	h := SeenSlot(db)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
-	request := func() string {
+	slotID := seenFixture(t, db, "touch")
+	touch := func() string {
 		t.Helper()
-		r := httptest.NewRequest(http.MethodGet, "/api/player/play", nil)
-		h.ServeHTTP(httptest.NewRecorder(), r.WithContext(WithSlot(r.Context(), Slot{ID: slotID})))
-		var seen sql.NullString
-		mustRow(t, db.QueryRow(`SELECT last_seen_at FROM player_slots WHERE id = $1`, slotID), &seen)
-		return seen.String
+		age, ok, err := TouchSlot(context.Background(), db, slotID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		after := seenAt(t, db, slotID)
+		if ok != (after != "") || ok && age < 0 {
+			t.Fatalf("returned an age %v (%v) for the stamp %q", age, ok, after)
+		}
+		return after
 	}
-	if seen := request(); seen == "" {
-		t.Fatal("the first request should stamp the phone as seen")
+	if seen := touch(); seen == "" {
+		t.Fatal("the first touch should stamp the phone as seen")
 	}
 	recent := time.Now().UTC().Add(-10 * time.Second).Format(time.DateTime)
 	if _, err := db.Exec(`UPDATE player_slots SET last_seen_at = $2 WHERE id = $1`, slotID, recent); err != nil {
 		t.Fatal(err)
 	}
-	if seen := request(); seen != recent {
+	if seen := touch(); seen != recent {
 		t.Fatalf("seen %q, want the stamp ten seconds old, %q, kept", seen, recent)
 	}
 	if _, err := db.Exec(`UPDATE player_slots SET last_seen_at = '2026-01-01 00:00:00' WHERE id = $1`, slotID); err != nil {
 		t.Fatal(err)
 	}
-	if seen := request(); seen <= recent {
+	if seen := touch(); seen <= recent {
 		t.Fatalf("seen %q, want renewed", seen)
 	}
 	// A stamp seenEvery old to the second — the socket's last tick — is
@@ -87,16 +104,97 @@ func TestSeenSlot(t *testing.T) {
 	if _, err := db.Exec(`UPDATE player_slots SET last_seen_at = $2 WHERE id = $1`, slotID, due); err != nil {
 		t.Fatal(err)
 	}
-	if seen := request(); seen <= due {
+	if seen := touch(); seen <= due {
 		t.Fatalf("seen %q, want the stamp seenEvery old, %q, renewed", seen, due)
 	}
-	// Forgotten — its stamp cleared — after the request found its
-	// session: the request leaves it unstamped.
+	// Forgotten — its stamp cleared — after a request found its session:
+	// it stays unstamped.
 	if _, err := db.Exec(`UPDATE player_slots SET name = '(forgotten)', last_seen_at = NULL WHERE id = $1`, slotID); err != nil {
 		t.Fatal(err)
 	}
-	if seen := request(); seen != "" {
+	if seen := touch(); seen != "" {
 		t.Fatalf("a forgotten slot stamped as seen at %q", seen)
+	}
+}
+
+// Each request of a signed-in phone stamps it as seen (TouchSlot), but a
+// phone stamped by this middleware within seenEvery is not asked about
+// again: its requests between stamps cost no round trip.
+func TestSeenSlot(t *testing.T) {
+	t.Parallel()
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+	slotID := seenFixture(t, db, "seen")
+	now := time.Now()
+	h := seenSlot(db, func() time.Time { return now })(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	request := func() string {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodGet, "/api/player/play", nil)
+		h.ServeHTTP(httptest.NewRecorder(), r.WithContext(WithSlot(r.Context(), Slot{ID: slotID})))
+		return seenAt(t, db, slotID)
+	}
+	if seen := request(); seen == "" {
+		t.Fatal("the first request should stamp the phone as seen")
+	}
+	// The stamp cleared behind its back: within seenEvery the middleware
+	// does not look, and once seenEvery is up it stamps again.
+	if _, err := db.Exec(`UPDATE player_slots SET last_seen_at = NULL WHERE id = $1`, slotID); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(10 * time.Second)
+	if seen := request(); seen != "" {
+		t.Fatalf("stamped again %q within seenEvery", seen)
+	}
+	now = now.Add(seenEvery)
+	if seen := request(); seen == "" {
+		t.Fatal("not stamped again after seenEvery")
+	}
+	// A request that finds the stamp fresh — another server's — keeps it,
+	// and asks again only once that stamp may be renewed: not on each
+	// request meanwhile, nor a whole seenEvery past its own request.
+	// The stamp is five seconds old by the database's clock, whatever
+	// the server's says (this test's runs ahead).
+	now = now.Add(seenEvery)
+	fresh := time.Now().UTC().Add(-5 * time.Second).Format(time.DateTime)
+	if _, err := db.Exec(`UPDATE player_slots SET last_seen_at = $2 WHERE id = $1`, slotID, fresh); err != nil {
+		t.Fatal(err)
+	}
+	asked := now
+	if seen := request(); seen != fresh {
+		t.Fatalf("seen %q, want the fresh stamp %q kept", seen, fresh)
+	}
+	if _, err := db.Exec(`UPDATE player_slots SET last_seen_at = NULL WHERE id = $1`, slotID); err != nil {
+		t.Fatal(err)
+	}
+	now = asked.Add(2 * time.Second)
+	if seen := request(); seen != "" {
+		t.Fatalf("asked again %q while the fresh stamp held", seen)
+	}
+	now = asked.Add(seenEvery - 3*time.Second)
+	if seen := request(); seen == "" {
+		t.Fatal("not asked again once the fresh stamp could be renewed")
+	}
+}
+
+// Pruning stays rare however many phones are about: past its bar, it
+// forgets the stale stamps, and the bar rises past what is left.
+func TestSeenSlotsPrune(t *testing.T) {
+	var s seenSlots
+	now := time.Now()
+	for i := range int64(minSeenPrune) {
+		s.mark(i, now)
+	}
+	s.mark(minSeenPrune, now)
+	if s.prune != 2*minSeenPrune || len(s.at) != minSeenPrune+1 {
+		t.Fatalf("prune at %d with %d kept", s.prune, len(s.at))
+	}
+	later := now.Add(seenEvery)
+	for i := int64(minSeenPrune + 1); i < 2*minSeenPrune; i++ {
+		s.mark(i, later)
+	}
+	s.mark(2*minSeenPrune, later)
+	if len(s.at) != minSeenPrune {
+		t.Fatalf("%d kept, want the %d fresh", len(s.at), minSeenPrune)
 	}
 }
 

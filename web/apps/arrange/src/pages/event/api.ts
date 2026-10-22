@@ -102,6 +102,8 @@ export interface TeamGroup {
   since?: string;
   /** Waits at its join for the others of its split. */
   arrived?: boolean;
+  /** The organisers can move the group on from its step, as the team stands: told by the team's roster (getTeamRoster), not the event's detail. */
+  rescuable?: boolean;
 }
 
 /** internal/admin/team_players.go: teamPlayerDTO — a player's public roles and groups. */
@@ -120,8 +122,8 @@ export interface EventGraph {
   titles: Record<string, string>;
   /** The steps "Move team on" can move a team past. */
   rescuable?: string[];
-  /** The steps "Move group on" can move a group of a split team on from: rescuable's, and a story or hub on its path. */
-  rescuable_on_path?: string[];
+  /** The adventure has a time limit: what the organisers may do for a team changes with time alone. */
+  time_limit?: boolean;
 }
 
 /** internal/admin/ws.go: eventDetailDTO — GET /events/{id} and the watch push alike. */
@@ -336,8 +338,9 @@ export const photoSrc = (id: number, photoId: number) => `${E(id)}/photos/${phot
 export const reviewPhoto = (id: number, photoId: number, status: string) => post<void>(`${E(id)}/photos/${photoId}/review`, { status });
 
 const T = (id: number) => `/api/admin/teams/${id}`;
-export const getTeamPlayers = (id: number, signal?: AbortSignal) =>
-  get<{ players: TeamPlayer[] }>(T(id) + "/players", signal ? { signal } : {}).then((r) => r.players);
+/** A team's players, while it is split up its groups as the organisers' rescue finds them (null where they could not be read), and whether its time limit is due to run out. */
+export const getTeamRoster = (id: number, signal?: AbortSignal) =>
+  get<{ players: TeamPlayer[]; groups: TeamGroup[] | null; time_up?: boolean }>(T(id) + "/players", signal ? { signal } : {});
 export const createTeam = (eventId: number, body: RosterTeam) => post<unknown>(E(eventId) + "/teams", body);
 export const bulkTeams = (eventId: number, teams: RosterTeam[]) => post<BulkResult>(E(eventId) + "/teams/bulk", { teams });
 export const importTeams = (eventId: number, file: File) => {
@@ -350,7 +353,9 @@ export const deleteTeam = (id: number, password: string) => request<void>(T(id),
 /** Let a team begin away from the adventure's required starting point. */
 export const letTeamStartAnywhere = (id: number) => post<{ start_anywhere: boolean }>(T(id) + "/start-anywhere");
 export const unlockTeam = (id: number, node?: string, group?: string) =>
-  post<{ completed?: boolean }>(T(id) + "/unlock", node ? { node, ...(group ? { group } : {}) } : undefined);
+  post<{ completed?: boolean; time_up?: boolean }>(T(id) + "/unlock", node ? { node, ...(group ? { group } : {}) } : undefined);
+/** Runs out a team's time limit, due but not yet run out: refused (not_due) where it is not. */
+export const runOutTime = (id: number) => post<{ completed?: boolean }>(T(id) + "/time-up");
 export const withdrawTeam = (id: number) => post<unknown>(T(id) + "/withdraw");
 export const unwithdrawTeam = (id: number) => post<unknown>(T(id) + "/unwithdraw");
 export const sendTeamInvitation = (id: number) => post<unknown>(T(id) + "/invitations/send", {});

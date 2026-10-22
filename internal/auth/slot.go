@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/klahr/zonventure/internal/billing"
@@ -316,14 +318,33 @@ var seenJitter = func(d time.Duration) time.Duration { return rand.N(d) }
 // the socket's last tick, seenEvery ago to the second, is renewed by
 // this one rather than the next. A forgotten slot is never stamped: a
 // tick or request that found its session just before Forget cleared
-// the stamp would otherwise put it back.
-func TouchSlot(ctx context.Context, db *sql.DB, slotID int64) error {
-	_, err := db.ExecContext(ctx, `
-		UPDATE player_slots SET last_seen_at = now_text()
-		WHERE id = $1 AND name <> '(forgotten)' AND (last_seen_at IS NULL OR
-		      last_seen_at < to_char((now() - make_interval(secs => $2)) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS'))
-	`, slotID, (seenEvery - time.Second).Seconds())
-	return err
+// the stamp would otherwise put it back. It returns how old the slot's
+// stamp is as it leaves it — the one it set, or one too fresh to renew —
+// by the database's own clock, which stamps it; false for a forgotten
+// slot.
+func TouchSlot(ctx context.Context, db *sql.DB, slotID int64) (time.Duration, bool, error) {
+	var (
+		seen sql.NullString
+		now  time.Time
+	)
+	err := db.QueryRowContext(ctx, `
+		WITH stamped AS (
+		  UPDATE player_slots SET last_seen_at = now_text()
+		  WHERE id = $1 AND name <> '(forgotten)' AND (last_seen_at IS NULL OR
+		        last_seen_at < to_char((now() - make_interval(secs => $2)) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS'))
+		  RETURNING last_seen_at)
+		SELECT COALESCE((SELECT last_seen_at FROM stamped),
+		                (SELECT last_seen_at FROM player_slots WHERE id = $1 AND name <> '(forgotten)')),
+		       now()
+	`, slotID, (seenEvery-time.Second).Seconds()).Scan(&seen, &now)
+	if err != nil || !seen.Valid {
+		return 0, false, err
+	}
+	at, err := time.ParseInLocation(time.DateTime, seen.String, time.UTC)
+	if err != nil {
+		return 0, false, fmt.Errorf("reading last_seen_at %q: %w", seen.String, err)
+	}
+	return now.Sub(at), true, nil
 }
 
 // SeenSlot stamps the signed-in slot as seen (TouchSlot) on each request
@@ -335,8 +356,16 @@ func TouchSlot(ctx context.Context, db *sql.DB, slotID int64) error {
 // request's context is cancelled, which closes the socket, and the
 // phone's reconnect is refused as any request of that session would
 // be. A failed stamp is logged, and never fails the request. Compose
-// after RequireSlot.
+// after RequireSlot, one middleware for every route a phone's requests
+// take: it keeps when it last stamped each slot, so a busy phone's
+// requests between stamps cost no round trip.
 func SeenSlot(db *sql.DB) func(http.Handler) http.Handler {
+	return seenSlot(db, time.Now)
+}
+
+// seenSlot is SeenSlot on the clock now.
+func seenSlot(db *sql.DB, now func() time.Time) func(http.Handler) http.Handler {
+	stamped := &seenSlots{}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			s, ok := SlotFromContext(r.Context())
@@ -345,9 +374,25 @@ func SeenSlot(db *sql.DB) func(http.Handler) http.Handler {
 				return
 			}
 			touch := func(ctx context.Context) {
-				if err := TouchSlot(ctx, db, s.ID); err != nil && ctx.Err() == nil {
-					logx.Warn("auth.slot.seen_failed", "slot", s.ID, "err", err.Error())
+				at := now()
+				if !stamped.due(s.ID, at) {
+					return
 				}
+				age, ok, err := TouchSlot(ctx, db, s.ID)
+				if err != nil {
+					if ctx.Err() == nil {
+						logx.Warn("auth.slot.seen_failed", "slot", s.ID, "err", err.Error())
+					}
+					return
+				}
+				// Asked again once the stamp — this one, or a fresh one
+				// another server left — may be renewed: a whole second
+				// past it, as stamps are whole seconds. Its age is the
+				// database's, so the two clocks need not agree.
+				if ok {
+					at = at.Add(time.Second - age)
+				}
+				stamped.mark(s.ID, at)
 			}
 			touch(r.Context())
 			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
@@ -380,6 +425,47 @@ func SeenSlot(db *sql.DB) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// seenSlots are when SeenSlot last stamped each slot: within seenEvery
+// of that, TouchSlot would stamp nothing, so it is not asked.
+type seenSlots struct {
+	mu sync.Mutex
+	at map[int64]time.Time
+	// prune is how many stamps it keeps before it forgets those too old
+	// to hold a stamp back: twice what pruning last left, so pruning
+	// stays rare however many phones are about.
+	prune int
+}
+
+// minSeenPrune is the least seenSlots.prune.
+const minSeenPrune = 4096
+
+// due reports whether slot may be stamped again at now: the bar is
+// TouchSlot's.
+func (s *seenSlots) due(slot int64, now time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at, ok := s.at[slot]
+	return !ok || now.Sub(at) >= seenEvery-time.Second
+}
+
+// mark notes slot stamped at now.
+func (s *seenSlots) mark(slot int64, now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.at == nil {
+		s.at, s.prune = map[int64]time.Time{}, minSeenPrune
+	}
+	if len(s.at) >= s.prune {
+		for k, at := range s.at {
+			if now.Sub(at) >= seenEvery {
+				delete(s.at, k)
+			}
+		}
+		s.prune = max(minSeenPrune, 2*len(s.at))
+	}
+	s.at[slot] = now
 }
 
 // sessionLive reports whether a slot session still lets its phone play,

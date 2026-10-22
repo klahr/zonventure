@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/klahr/zonventure/internal/graph"
-	"github.com/klahr/zonventure/internal/graph/session"
 )
 
 // A dev team plays the adventure's draft as it is edited (graphstore's
@@ -59,28 +58,69 @@ func (e *Engine) DevMoveTo(ctx context.Context, teamID int64, node string) error
 	if !ok || !Visible(n.Type) {
 		return ErrNoSuchStep
 	}
+	// Put on the step afresh (session.Team.PutOn): on a split, or a step
+	// of its path, split there; its clocks on the event's pause clock.
 	now := e.now()
+	s.Now, s.TimedOut = now, false
+	// Moved by the dev phone that asked, for its view to know its own —
+	// or from the console, by the organisers (Cursor.Moved).
+	me, byPhone := phoneOf(ctx)
+	s.PutOn(node, me)
+	if !byPhone {
+		s.MarkMoved("")
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM team_node_state WHERE team_id = $1 AND node = $2`, teamID, node); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE team_graph_state
-		SET current_node = $2, node_entered_at = $3, completed_at = NULL, outcome = NULL, theme = $4, updated_at = $3
+		SET current_node = $2, node_entered_at = $3, node_paused = $5, completed_at = NULL, outcome = NULL, theme = $4, updated_at = $3, moved = $7, moved_by = $6, timed_out = false
 		WHERE team_id = $1
-	`, teamID, node, now, themeBefore(s.G, node)); err != nil {
+	`, teamID, s.Current, now, themeBefore(s.G, node), s.Paused, me, s.Moved); err != nil {
 		return err
 	}
-	// The team is one, wherever it is put — or, put on a split, splits
-	// there afresh, as on arriving.
-	placed, err := session.Place(s.G, node, now)
-	if err != nil {
+	// The step put on plays afresh: its record goes, here as in the table.
+	delete(s.Nodes, node)
+	if err := e.dealArrived(ctx, tx, s); err != nil {
 		return err
 	}
-	s.Split, s.Strands = placed.Split, placed.Strands
+	if err := devWalk(ctx, tx, s, node); err != nil {
+		return err
+	}
 	if err := saveSplit(ctx, tx, s); err != nil {
 		return err
 	}
+	if s.Split != "" && node != s.Split {
+		// Its group came by the split (PutOn).
+		if err := saveNodeRow(ctx, tx, s, s.Split); err != nil {
+			return err
+		}
+	}
+	// The step put on plays afresh, and the ones left are behind it:
+	// what each player did together on them is gone.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM team_presses WHERE team_id = $1`, teamID); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+// devWalk puts the dev phone moving the team — or, moved from the
+// console, every one of its players (Players) — in the group put on node
+// (session.Team.WalkPlaced), so it plays the step it asked for.
+func devWalk(ctx context.Context, q Querier, s *teamState, node string) error {
+	if s.Split == "" || node == s.Split {
+		return nil
+	}
+	if me, ok := phoneOf(ctx); ok {
+		s.WalkPlaced(node, []int64{me})
+		return nil
+	}
+	players, err := Players(ctx, q, s.teamID, 0)
+	if err != nil {
+		return err
+	}
+	s.WalkPlaced(node, players)
+	return nil
 }
 
 // themeBefore is the theme a team reaches a step with: that of the theme

@@ -1788,7 +1788,8 @@ type groupPositionDTO struct {
 func (h *Handlers) buildPositions(ctx context.Context, eventID int64) ([]positionDTO, error) {
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name, COALESCE(gs.current_node, ''),
-		       COALESCE(p.lat, 0), COALESCE(p.lng, 0), COALESCE(p.server_ts, '')
+		       COALESCE(p.lat, 0), COALESCE(p.lng, 0), COALESCE(p.server_ts, ''),
+		       COALESCE(gs.graph_id, 0), COALESCE(gs.split, ''), gs.strands, gs.node_entered_at
 		FROM teams t
 		LEFT JOIN team_graph_state gs ON gs.team_id = t.id
 		-- Each team's latest ping, read off idx_pings_team_ts rather than
@@ -1808,23 +1809,38 @@ func (h *Handlers) buildPositions(ctx context.Context, eventID int64) ([]positio
 	}
 	defer rows.Close()
 	out := []positionDTO{}
+	// The split teams' state as read here, for where their groups are.
+	split := map[int64]tracks.Stored{}
 	for rows.Next() {
-		var d positionDTO
-		if err := rows.Scan(&d.TeamID, &d.TeamName, &d.Node, &d.Lat, &d.Lng, &d.ServerTS); err != nil {
+		var (
+			d  positionDTO
+			st tracks.Stored
+		)
+		if err := rows.Scan(&d.TeamID, &d.TeamName, &d.Node, &d.Lat, &d.Lng, &d.ServerTS, &st.GraphID, &st.Split, &st.Strands, &st.Entered); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
+		if st.Split != "" {
+			split[d.TeamID] = st
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return out, h.groupPositions(ctx, eventID, out)
+	if len(split) > 0 {
+		// Where each group is, beside its team: a failure there leaves
+		// the groups out, not every team's place.
+		if err := h.groupPositions(ctx, split, out); err != nil {
+			logx.Warn("admin.group_positions_failed", "event", eventID, "err", err.Error())
+		}
+	}
+	return out, nil
 }
 
 // groupPositions adds where each group of a split team is: its step and
 // its latest ping, whoever walked it.
-func (h *Handlers) groupPositions(ctx context.Context, eventID int64, out []positionDTO) error {
-	groups, err := tracks.Groups(ctx, h.DB, eventID)
+func (h *Handlers) groupPositions(ctx context.Context, split map[int64]tracks.Stored, out []positionDTO) error {
+	groups, err := tracks.Groups(ctx, h.engine(), split)
 	if err != nil || len(groups) == 0 {
 		return err
 	}
@@ -1934,7 +1950,7 @@ func (h *Handlers) buildTracks(ctx context.Context, eventID int64) ([]trackDTO, 
 
 // queryTracks aggregates an event's ping history into its trails.
 func (h *Handlers) queryTracks(ctx context.Context, eventID int64) ([]trackDTO, error) {
-	return tracks.Query(ctx, h.DB, eventID)
+	return tracks.Query(ctx, h.engine(), eventID)
 }
 
 // ListTracks returns the full ping history per team for an event.

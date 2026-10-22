@@ -79,8 +79,8 @@ export function useTeamActions(reload: () => void) {
     }
   };
 
-  /** Moves the team on — or, while it is split up, one group: its key, label and step. */
-  const unlock = async (team: Team, skipConfirm: boolean, group?: { port: string; label: string; node: string }): Promise<boolean> => {
+  /** Moves the team on — or, while it is split up, one group: its key, label and step. True for moved, false for refused, null for called off at the confirmation. */
+  const unlock = async (team: Team, skipConfirm: boolean, group?: { port: string; label: string; node: string }): Promise<boolean | null> => {
     const node = group?.node ?? team.node;
     if (!skipConfirm) {
       const ok = await dialogs.confirm(
@@ -96,7 +96,7 @@ export function useTeamActions(reload: () => void) {
               confirmLabel: t.t("Move team on"),
             },
       );
-      if (!ok) return false;
+      if (!ok) return null;
     }
     try {
       // The node guards a race: the server refuses if the team has moved meanwhile.
@@ -104,10 +104,33 @@ export function useTeamActions(reload: () => void) {
       toast.ok(
         r?.completed
           ? t.t("{{name}} finished", { name: team.name })
-          : group
-            ? t.t("{{group}} of {{name}} moved on", { group: group.label, name: team.name })
-            : t.t("{{name}} advanced", { name: team.name }),
+          : r?.time_up
+            ? t.t("{{name}} ran out of time", { name: team.name })
+            : group
+              ? t.t("{{group}} of {{name}} moved on", { group: group.label, name: team.name })
+              : t.t("{{name}} advanced", { name: team.name }),
       );
+      reload();
+      return true;
+    } catch (e) {
+      toast.err(e);
+      return false;
+    }
+  };
+
+  /** Runs out a team's time limit, due but not yet run out — no phone of the team has asked since — sending the whole team on as the limit says. True for done, false for refused, null for called off at the confirmation. */
+  const runOutTime = async (team: Team, skipConfirm: boolean): Promise<boolean | null> => {
+    if (!skipConfirm) {
+      const ok = await dialogs.confirm({
+        title: t.t("Run out {{name}}'s time?", { name: team.name }),
+        message: t.t("The team's time limit has passed, but none of its phones has said so yet. This sends the whole team — every group, if it is split up — on as the time limit says. The action is recorded in the event log."),
+        confirmLabel: t.t("Run out the time"),
+      });
+      if (!ok) return null;
+    }
+    try {
+      const r = await api.runOutTime(team.id);
+      toast.ok(r?.completed ? t.t("{{name}} finished", { name: team.name }) : t.t("{{name}} ran out of time", { name: team.name }));
       reload();
       return true;
     } catch (e) {
@@ -158,5 +181,5 @@ export function useTeamActions(reload: () => void) {
     }
   };
 
-  return { remove, invite, unlock, startAnywhere, withdraw, unwithdraw };
+  return { remove, invite, unlock, runOutTime, startAnywhere, withdraw, unwithdraw };
 }

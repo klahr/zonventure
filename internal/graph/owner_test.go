@@ -3,6 +3,7 @@ package graph
 import (
 	"maps"
 	"math/rand/v2"
+	"sync"
 	"testing"
 )
 
@@ -90,7 +91,7 @@ func TestOwnerHubsWithoutSplits(t *testing.T) {
 		},
 	}
 	for name, g := range shapes {
-		if got, want := g.OwnerHubs(), ownerHubsNoSplits(g); !maps.Equal(got, want) {
+		if got, want := g.Splits().OwnerHubs(), ownerHubsNoSplits(g); !maps.Equal(got, want) {
 			t.Errorf("%s: %v, want %v", name, got, want)
 		}
 	}
@@ -115,7 +116,7 @@ func TestOwnerHubsWithoutSplits(t *testing.T) {
 				}
 			}
 		}
-		if got, want := g.OwnerHubs(), ownerHubsNoSplits(g); !maps.Equal(got, want) {
+		if got, want := g.Splits().OwnerHubs(), ownerHubsNoSplits(g); !maps.Equal(got, want) {
 			t.Fatalf("%v: %v, want %v", g.Edges, got, want)
 		}
 	}
@@ -137,7 +138,7 @@ func TestOwnerHubsAcrossASplit(t *testing.T) {
 			ownEdge("pb", PortOut, "join"), ownEdge("join", PortOut, "post"), ownEdge("post", PortOut, "pre")},
 	}
 	want := map[string]string{"l": "home", "lv": "home", "split": "pre", "join": "pre", "post": "pre"}
-	if got := g.OwnerHubs(); !maps.Equal(got, want) {
+	if got := g.Splits().OwnerHubs(); !maps.Equal(got, want) {
 		t.Errorf("%v, want %v", got, want)
 	}
 	if s, p, ok := g.Splits().OnPath("lv"); !ok || s != "split" || p != "a" {
@@ -162,18 +163,49 @@ func TestOwnerHubsAcrossASplit(t *testing.T) {
 			ownEdge("join", PortOut, "post"), ownEdge("post", PortOut, "pre")},
 	}
 	want = map[string]string{"split": "pre", "ax": "ha", "al": "ha", "bx": "hb", "bl": "hb", "join": "pre", "post": "pre"}
-	if got := g.OwnerHubs(); !maps.Equal(got, want) {
+	if got := g.Splits().OwnerHubs(); !maps.Equal(got, want) {
 		t.Errorf("hubs on every path: %v, want %v", got, want)
 	}
-	if back := g.BranchReturns("pre", "go"); len(back) != 1 || back[0].From != "post" {
+	if back := g.Splits().BranchReturns("pre", "go"); len(back) != 1 || back[0].From != "post" {
 		t.Errorf("pre's branch comes back by %v, want post", back)
 	}
 	// A hub on a path looks no further than its path: past the join, the
 	// way round to the split again is not ha's branch coming back.
-	if back := g.BranchReturns("ha", "leave"); len(back) != 0 {
+	if back := g.Splits().BranchReturns("ha", "leave"); len(back) != 0 {
 		t.Errorf("ha's leave comes back by %v, want none", back)
 	}
-	if back := g.BranchReturns("ha", "x"); len(back) != 1 || back[0].From != "ax" {
+	if back := g.Splits().BranchReturns("ha", "x"); len(back) != 1 || back[0].From != "ax" {
 		t.Errorf("ha's x comes back by %v, want ax", back)
 	}
+}
+
+// A warmed Splits only reads, so one serves many readers at once (run
+// with -race).
+func TestWarmSplitsIsShared(t *testing.T) {
+	split := Node{Slug: "split", Type: Split, SplitCfg: &SplitConfig{Paths: []SplitPath{{Port: "a"}, {Port: "b"}}}}
+	g := &Graph{
+		Nodes: []Node{{Slug: "start", Type: Start}, ownHub("pre", "go"), split, ownHub("home", "look", "leave"),
+			ownStep("l"), ownStep("lv"), ownStep("pb"), {Slug: "join", Type: Join}, ownStep("post"), {Slug: "end", Type: End}},
+		Edges: []Edge{ownEdge("start", PortOut, "pre"), ownEdge("pre", "go", "split"), ownEdge("pre", PortDone, "end"),
+			ownEdge("split", "a", "home"), ownEdge("home", "look", "l"), ownEdge("l", PortOut, "home"),
+			ownEdge("home", "leave", "lv"), ownEdge("lv", PortOut, "join"), ownEdge("split", "b", "pb"),
+			ownEdge("pb", PortOut, "join"), ownEdge("join", PortOut, "post"), ownEdge("post", PortOut, "pre")},
+	}
+	s := g.Splits().Warm()
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 100 {
+				s.Paths("split")
+				s.JoinOf("split")
+				s.OnPath("lv")
+				s.OwnerHubs()
+				s.BranchReturns("home", "look")
+				s.Reach([]string{"pre"}, func(string) bool { return true })
+			}
+		}()
+	}
+	wg.Wait()
 }

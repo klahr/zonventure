@@ -1710,7 +1710,12 @@ function splitParts(node: Node, onChange: (n: Node) => void, graph: Graph, t: T)
         <>
           {paths.map((p) => (
             <SumRow key={p.port} label={p.label || (p.role ? roleName(p.role) : p.port)}>
-              {p.role ? t.t("the {{role}} and a share of everyone else", { role: roleName(p.role) }) : t.t("a share of everyone")}
+              {/* A default role's path takes everyone holding no other role, leaving no one to share out. */}
+              {!p.role
+                ? t.t("a share of everyone")
+                : graph.roles?.some((r) => r.slug === p.role && r.default)
+                  ? t.t("everyone holding no other role")
+                  : t.t("the {{role}} and a share of everyone else", { role: roleName(p.role) })}
             </SumRow>
           ))}
         </>

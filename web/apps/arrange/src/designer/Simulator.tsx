@@ -351,7 +351,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
         setFeedback(null);
         sayAs(t.t("The draft stopped the team: {{why}}", { why: r.refusal.message }), "warn");
       } else {
-        setFeedback(feedbackForRefusal(r.refusal.code, tr, a.kind === "walk" || !!view?.groups?.length));
+        setFeedback(feedbackForRefusal(r.refusal.code, tr));
       }
       return;
     }

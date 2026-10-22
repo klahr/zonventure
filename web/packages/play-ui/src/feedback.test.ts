@@ -65,5 +65,5 @@ test("english interpolates and leaves unknown names alone", () => {
 
 test("not yours is about a group while the team is split, else a role", () => {
   assert.equal(feedbackForRefusal("not_yours", english).text, "That's for another role on your team to do.");
-  assert.equal(feedbackForRefusal("not_yours", english, true).text, "That's for another group of your team to do.");
+  assert.equal(feedbackForRefusal("other_group", english).text, "That's for another group of your team to do.");
 });

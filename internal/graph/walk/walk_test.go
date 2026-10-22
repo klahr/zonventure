@@ -23,7 +23,6 @@ type fakeState struct {
 	size      int
 	score     float64
 	now       time.Time
-	divided   bool
 	waits     map[string]bool // join -> another group is still on its way
 }
 
@@ -62,8 +61,8 @@ func (f *fakeState) LocalTime() time.Time         { return f.now }
 func (f *fakeState) Slot() int                    { return f.slot }
 func (f *fakeState) BranchDone(h, p string) bool  { return f.branches[h][p] }
 func (f *fakeState) Occupancy(h, p string) int    { return f.occupancy[h+"/"+p] }
-func (f *fakeState) Joined(string) bool           { return f.divided }
 func (f *fakeState) JoinWaits(j string) bool      { return f.waits[j] }
+func (f *fakeState) Joined(string)                {}
 func (f *fakeState) CompletedBranches(h string) int {
 	n := 0
 	for _, done := range f.branches[h] {

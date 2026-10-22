@@ -83,6 +83,11 @@ type View struct {
 	// phone goes with.
 	Groups []GroupView `json:"groups,omitempty"`
 	Group  string      `json:"group,omitempty"`
+	// Split is the split the groups took (its slug), and SplitAt when the
+	// team came to it: a group of another split, or of another time at
+	// this one, though its path be named the same, is not one of these.
+	Split   string     `json:"split,omitempty"`
+	SplitAt *time.Time `json:"split_at,omitempty"`
 	// Awaiting is, at a join, how many of the groups it waits for are
 	// still on their way.
 	Awaiting int `json:"awaiting,omitempty"`
@@ -118,6 +123,13 @@ type View struct {
 	EndsAt     *time.Time `json:"ends_at,omitempty"`
 	TimedOut   bool       `json:"timed_out,omitempty"`
 	TimeUpText string     `json:"time_up_text,omitempty"`
+
+	// MovedOn says the organisers moved the team onto the step shown — a
+	// split team's group the view is for (Cursor.Moved) — and
+	// MovedByOther another phone than the one the view is for did
+	// (Cursor.MovedBy): whose is no one's to know, a saboteur's say.
+	MovedOn      bool `json:"moved_on,omitempty"`
+	MovedByOther bool `json:"moved_by_other,omitempty"`
 
 	// BackTo is the home hub a team may go back to from here, and
 	// BackLabel its title, for the button. Empty when there is none.
@@ -749,9 +761,12 @@ func (t *Team) fill(s string) string {
 func number(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 
 // View renders the team's state for the player. A split team's view is
-// that of the group the phone asking is walking (Focus).
+// that of the group the phone asking is walking (focusView).
 func (t *Team) View() View {
-	t.Focus()
+	// A split team is shown as the group the view is for, and left
+	// unfocused: the focus is the view's, not the caller's.
+	t.focusView()
+	defer t.unfocus()
 	v := t.view()
 	v.Stations = t.G.Stations
 	for _, r := range t.G.Roles {
@@ -1129,7 +1144,15 @@ func (t *Team) view() View {
 	}
 
 	if t.Split != "" {
-		v.Groups = t.groups()
+		v.Groups, v.Split = t.groups(), t.Split
+		// The team's own cursor, on the split since it came there — to the
+		// second, as it reads back from the table as it was in memory.
+		at := t.Cursor.NodeEnteredAt
+		if t.saved != nil {
+			at = t.saved.home.NodeEnteredAt
+		}
+		at = at.Truncate(time.Second)
+		v.SplitAt = &at
 		for _, g := range v.Groups {
 			if g.Current {
 				v.Group = g.Label
@@ -1142,6 +1165,8 @@ func (t *Team) view() View {
 		return v
 	}
 	v.Type, v.Title = n.Type, n.Title
+	v.MovedOn = t.Moved
+	v.MovedByOther = t.movedByOther(t.MovedBy)
 	if t.TimedOut {
 		v.TimedOut = true
 		if t.G.TimeLimit != nil {
@@ -1236,7 +1261,7 @@ func (t *Team) view() View {
 			v.Text = t.G.Tr(t.lang(), graph.NodeKey(n.Slug, "split-text"), n.SplitCfg.Text)
 		}
 	case graph.Join:
-		v.Awaiting = len(t.awaited(n.Slug))
+		v.Awaiting = t.awaited(n.Slug)
 	case graph.Hub:
 		// Recompute the offer: it is a function of state, not stored.
 		if n.HubCfg != nil {
@@ -1329,8 +1354,13 @@ func (t *Team) CanSeeMedia(id int64, strict bool) bool {
 }
 
 // VisibleMedia lists every media id the team may fetch now, once each,
-// in graph order. The player app downloads these ahead of need.
+// in graph order. The player app downloads these ahead of need. A split
+// team's are those of the group a view is for, as View shows it.
 func (t *Team) VisibleMedia(strict bool) []int64 {
+	if t.Split != "" && t.focus == 0 {
+		t.focusView()
+		defer t.unfocus()
+	}
 	seen := map[int64]bool{}
 	var out []int64
 	// A journal note's pictures come with the note, never before it.
