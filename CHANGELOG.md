@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-10-23
+
 ### Added
 
 - The new-event and new self-guided adventure dialogs take the event's
