@@ -232,6 +232,7 @@ type landingStrings struct {
 	StoreMapZoomHint    string
 	StoreMapPanHint     string
 	StoreCardCTA        string
+	StoreCardFreeCTA    string // a free event's
 	StorePerTicket      string
 	StorePerTeam        string
 	// StorePriceFree is a free event's price (a free trial).
@@ -497,6 +498,7 @@ func storeI18nJSON(s landingStrings) string {
 		"mapZoomHint":          s.StoreMapZoomHint,
 		"mapPanHint":           s.StoreMapPanHint,
 		"cardCTA":              s.StoreCardCTA,
+		"cardFreeCTA":          s.StoreCardFreeCTA,
 		"perTicket":            s.StorePerTicket,
 		"perTeam":              s.StorePerTeam,
 		"free":                 s.StorePriceFree,

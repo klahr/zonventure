@@ -541,7 +541,7 @@
             ? '<div class="price">' + escapeHTML(t('free')) + '</div>'
             : '<div class="price">' + escapeHTML(formatPrice(item.price_cents, item.currency)) +
               '<small>' + escapeHTML(t(item.team_size > 1 ? 'perTeam' : 'perTicket')) + '</small></div>') +
-          '<span class="go">' + escapeHTML(t('cardCTA')) + '</span>' +
+          '<span class="go">' + escapeHTML(t(item.price_cents === 0 ? 'cardFreeCTA' : 'cardCTA')) + '</span>' +
         '</div>' +
       '</div>';
     // Pictures go in through style and src, never through innerHTML;
