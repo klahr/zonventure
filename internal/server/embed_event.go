@@ -44,19 +44,19 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 	}
 
 	var (
-		name, blurb, currency, advTitle, orgName, orgSlug string
-		priceCents, teamSize                              int
-		hasCover, tour, home                              bool
-		accent, accent2, bg, ink                          sql.NullString
-		brandFont                                         string
-		mainLang                                          string
-		advTexts, ownTexts                                []byte
+		name, blurb, currency, advTitle, orgName, orgSlug, advSlug string
+		priceCents, teamSize                                       int
+		hasCover, hasIcon, tour, home                              bool
+		accent, accent2, bg, ink                                   sql.NullString
+		brandFont                                                  string
+		mainLang                                                   string
+		advTexts, ownTexts                                         []byte
 	)
 	err = db.QueryRowContext(r.Context(), `
 		SELECT COALESCE(l.name, e.name), COALESCE(l.blurb, ''), COALESCE(l.currency, ''),
-		       COALESCE(a.title, e.adventure_slug), o.name, o.slug,
+		       COALESCE(a.title, e.adventure_slug), e.adventure_slug, o.name, o.slug,
 		       COALESCE(l.price_cents, 0), COALESCE(l.team_size, 0),
-		       COALESCE(l.cover_mime_type IS NOT NULL, FALSE),
+		       COALESCE(l.cover_mime_type IS NOT NULL, FALSE), COALESCE(a.avatar_mime_type IS NOT NULL, FALSE),
 		       COALESCE((g.graph->>'tour')::boolean, FALSE),
 		       (a.start_lat IS NULL AND NOT COALESCE(jsonb_typeof(g.graph->'zones') = 'array' AND jsonb_array_length(g.graph->'zones') > 0, FALSE)),
 		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color, o.brand_font,
@@ -67,8 +67,8 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
 		LEFT JOIN adventure_graphs g ON g.id = e.graph_id
 		WHERE e.id = $1 AND e.public_for_sale
-	`, id).Scan(&name, &blurb, &currency, &advTitle, &orgName, &orgSlug, &priceCents, &teamSize,
-		&hasCover, &tour, &home, &accent, &accent2, &bg, &ink, &brandFont, &mainLang, &advTexts, &ownTexts)
+	`, id).Scan(&name, &blurb, &currency, &advTitle, &advSlug, &orgName, &orgSlug, &priceCents, &teamSize,
+		&hasCover, &hasIcon, &tour, &home, &accent, &accent2, &bg, &ink, &brandFont, &mainLang, &advTexts, &ownTexts)
 	found := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "lookup failed", http.StatusInternalServerError)
@@ -105,8 +105,9 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		per = s.StorePerTeam
 	}
 	price := formatStorePrice(int64(priceCents), currency)
+	buy := s.EmbedBuyCTA
 	if onSale && priceCents == 0 {
-		price, per = s.StorePriceFree, ""
+		price, per, buy = s.StorePriceFree, "", s.EmbedFreeCTA
 	}
 	teamLabel := s.StoreTeamSizeSolo
 	if teamSize > 1 {
@@ -122,6 +123,11 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 	coverURL := ""
 	if hasCover {
 		coverURL = "/store-cover/event/" + strconv.FormatInt(id, 10)
+	}
+	// The adventure's icon, beside the title of a button.
+	iconURL := ""
+	if hasIcon {
+		iconURL = "/adventure-assets/avatar/" + url.PathEscape(advSlug)
 	}
 
 	subs := [][2]string{
@@ -140,9 +146,11 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		{"{{IS_TOUR}}", boolAttr(tour)},
 		{"{{COVER_URL}}", html.EscapeString(cssURLQuote(coverURL))},
 		{"{{HAS_COVER}}", boolAttr(hasCover)},
+		{"{{ICON_URL}}", html.EscapeString(iconURL)},
+		{"{{HAS_ICON}}", boolAttr(hasIcon)},
 		{"{{BUY_URL}}", html.EscapeString(buyURL)},
 		{"{{ORG_URL}}", html.EscapeString(orgURL)},
-		{"{{BUY_LABEL}}", html.EscapeString(s.EmbedBuyCTA)},
+		{"{{BUY_LABEL}}", html.EscapeString(buy)},
 		{"{{OFF_SALE}}", html.EscapeString(s.EmbedOffSale)},
 		{"{{SEE_MORE}}", html.EscapeString(s.EmbedSeeMore)},
 		{"{{ORG_BRAND_OVERRIDES}}", orgBrandStyleBlock(accent.String, accent2.String, bg.String, ink.String) + orgFontBlock(brandFont)},

@@ -5,9 +5,9 @@ import { useSession } from "../../session.tsx";
 import { CATALOG_ENABLED, navigate } from "../../router.ts";
 import { Button, Callout, Dialog, Empty, ErrorBox, Field, Loading, fmtMoney, useLoad, useToast, errorText } from "../../ui/index.ts";
 import { SPOTS } from "@zonventure/ui";
-import { createEvent, createTeam, listAdventures, listAssignments, pricing, type AdventureRow, type Assignment } from "./api.ts";
+import { createEvent, createTeam, listAdventures, listAssignments, pricing, updateEvent, type AdventureRow, type Assignment } from "./api.ts";
 import { iconOrCover } from "../adventures/parts.tsx";
-import { AdventureCover } from "./parts.tsx";
+import { AdventureCover, OtherLanguages, eventTranslations, type EventTexts } from "./parts.tsx";
 import "./events.css";
 
 /**
@@ -90,6 +90,7 @@ function NewEventForm({ slug, assignmentId, onClose }: NewEventProps) {
   const [picked, setPicked] = useState<string | null>(slug ?? null);
   const [filter, setFilter] = useState("");
   const [name, setName] = useState("");
+  const [texts, setTexts] = useState<EventTexts>({});
   const [later, setLater] = useState(false);
   const [when, setWhen] = useState("");
   const [teamsOpen, setTeamsOpen] = useState(false);
@@ -210,6 +211,17 @@ function NewEventForm({ slug, assignmentId, onClose }: NewEventProps) {
       setError(e instanceof ApiError && e.code === "verification_required" ? t.t("Verify your email before scheduling events — check your inbox for the link.") : errorText(e));
       setBusy(false);
       return;
+    }
+
+    // Best-effort, as the teams below: what fails is finished on the
+    // event page.
+    const translations = name.trim() ? eventTranslations(chosenAdv?.languages, texts) : undefined;
+    if (translations) {
+      try {
+        await updateEvent(id, { translations });
+      } catch {
+        toast.err(t.t("Event created, but its names in other languages were not saved"));
+      }
     }
 
     // Best-effort: a team that fails leaves the event in place, and
@@ -340,6 +352,7 @@ function NewEventForm({ slug, assignmentId, onClose }: NewEventProps) {
       <Field label={t.t("Name (optional)")}>
         <input value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder={t.t("e.g. “Spring outing”")} />
       </Field>
+      {name.trim() && <OtherLanguages languages={chosenAdv?.languages} texts={texts} onChange={setTexts} name={name} />}
 
       <fieldset className="evs-fieldset">
         <legend className="cs-field__label">{t.t("When")}</legend>

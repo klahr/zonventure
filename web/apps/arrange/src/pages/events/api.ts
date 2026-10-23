@@ -50,6 +50,8 @@ export interface AdventureRow {
   shared: boolean;
   playable: boolean;
   language?: string;
+  /** Its published version's languages, the main one first; none untranslated. */
+  languages?: string[];
 }
 
 /** internal/admin/organizations.go: assignmentDTO — an event pass. */

@@ -42,7 +42,7 @@ func (h *Handlers) eventWords(ctx context.Context, eventID int64) eventWords {
 		FROM events e
 		CROSS JOIN LATERAL (SELECT e.translations) AS l (translations)
 		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
-		LEFT JOIN adventure_graphs g ON g.id = e.graph_id
+		LEFT JOIN adventure_graphs g ON g.id = COALESCE(e.graph_id, a.published_graph_id)
 		WHERE e.id = $1`, eventID).Scan(&mainTexts.Name, &mainTexts.Title, &mainTexts.MeetingPlace,
 		&mainTexts.StartLabel, &mainTexts.BuyerNote, &w.lang, &adv, &own); err != nil {
 		return eventWords{}

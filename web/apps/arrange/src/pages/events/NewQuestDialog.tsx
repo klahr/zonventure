@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { post } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
+import { useSession } from "../../session.tsx";
 import { CATALOG_ENABLED, navigate } from "../../router.ts";
 import { Button, Dialog, ErrorBox, Field, ImageDrop, Loading, currencySymbol, errorText, useLoad, useToast } from "../../ui/index.ts";
 import { createEvent, listAdventures, startEvent, updateEvent, uploadEventCover } from "./api.ts";
 import { submitListingURL } from "../event/api.ts";
 import { iconOrCover } from "../adventures/parts.tsx";
-import { AdventureCover } from "./parts.tsx";
+import { AdventureCover, OtherLanguages, eventTranslations, type EventTexts } from "./parts.tsx";
 
 
 /**
@@ -19,11 +20,16 @@ import { AdventureCover } from "./parts.tsx";
 export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; onClose: () => void; onCreated: (id: number) => void }) {
   const t = useT();
   const toast = useToast();
+  const { state: session } = useSession();
+  // Only the site's own organisation's admins give tickets away.
+  const canFree = session.status === "authenticated" && session.user.role === "org_admin" && !!session.user.memberships.find((m) => m.org_id === session.user.org_id)?.home_org;
   const advs = useLoad((signal) => listAdventures(signal).then((l) => l.filter((a) => (a.mine_to_edit || a.shared) && (!slug || a.slug === slug))), [slug]);
   const [picked, setPicked] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [blurb, setBlurb] = useState("");
+  const [texts, setTexts] = useState<EventTexts>({});
   const [price, setPrice] = useState("199");
+  const [free, setFree] = useState(false);
   const [teamSize, setTeamSize] = useState("4");
   const [cover, setCover] = useState<File | null>(null);
   const [coverSrc, setCoverSrc] = useState<string | undefined>(undefined);
@@ -53,12 +59,13 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
     setError(null);
     if (!name.trim()) return setError(t.t("A name is required"));
     const priceN = parseInt(price, 10);
-    if (!priceN || priceN <= 0) return setError(t.t("Ticket price must be greater than zero"));
+    if (!free && (!priceN || priceN <= 0)) return setError(t.t("Ticket price must be greater than zero"));
     const teamN = parseInt(teamSize, 10);
     if (!teamN || teamN < 1) return setError(t.t("Players per ticket must be at least 1"));
     // A self-guided adventure goes on sale at once, and only a published
     // one can start: say so before creating anything.
-    if (!advs.data?.find((a) => a.slug === picked)?.playable) return setError(t.t("Publish the adventure before selling it in your store."));
+    const adv = advs.data?.find((a) => a.slug === picked);
+    if (!adv?.playable) return setError(t.t("Publish the adventure before selling it in your store."));
     if (!attest) return setError(t.t("Confirm the content follows the terms to submit it."));
 
     setBusy(true);
@@ -73,7 +80,10 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
     // A failure from here on leaves a quest to finish on its own page,
     // rather than one to clean up.
     try {
-      await updateEvent(id, { public_blurb: blurb.trim(), ticket_price_cents: priceN * 100, ticket_team_size: teamN });
+      // Free first, on its own: an event takes its billing or its price, not both at once.
+      if (free) await updateEvent(id, { billing: "free" });
+      const translations = eventTranslations(adv.languages, texts);
+      await updateEvent(id, { public_blurb: blurb.trim(), ...(free ? {} : { ticket_price_cents: priceN * 100 }), ticket_team_size: teamN, ...(translations ? { translations } : {}) });
     } catch {
       toast.err(t.t("Self-guided adventure created, but its ticket details were not saved"));
       onClose();
@@ -161,14 +171,24 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
       <Field label={t.t("Public description")}>
         <textarea rows={4} maxLength={1000} value={blurb} onChange={(e) => setBlurb(e.target.value)} placeholder={t.t("Short description shown in your store.")} />
       </Field>
+      <OtherLanguages languages={advs.data.find((a) => a.slug === picked)?.languages} texts={texts} onChange={setTexts} name={name} blurb={blurb} />
       <div className="evs-grid3">
         <Field label={t.t("Ticket price ({{cur}})", { cur: currencySymbol(t.current()) })}>
-          <input type="number" min={1} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />
+          {free ? <input disabled value={t.t("Free")} aria-label={t.t("Free")} /> : <input type="number" min={1} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />}
         </Field>
         <Field label={t.t("Players per ticket")}>
           <input type="number" min={1} max={20} value={teamSize} onChange={(e) => setTeamSize(e.target.value)} />
         </Field>
       </div>
+      {canFree && (
+        <label className="evs-check">
+          <input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />
+          <span>
+            {t.t("Make tickets free")}
+            <span className="cs-field__hint"> {t.t("A free trial: the store gives a ticket for an email address, and the teams cost nothing.")}</span>
+          </span>
+        </label>
+      )}
       <div className="cs-field">
         <span className="cs-field__label">{t.t("Cover image (optional)")}</span>
         <ImageDrop

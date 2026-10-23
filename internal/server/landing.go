@@ -262,6 +262,7 @@ type landingStrings struct {
 
 	// An event's embed (embed-event.html), on another site.
 	EmbedBuyCTA  string
+	EmbedFreeCTA string // a free event's
 	EmbedOffSale string
 	EmbedSeeMore string
 

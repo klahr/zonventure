@@ -51,16 +51,18 @@ func TestEventLanguages(t *testing.T) {
 		Edges:        []graph.Edge{{From: "start", FromPort: "out", To: "end"}},
 		Translations: map[string]map[string]string{"en": {graph.MetaKey("title"): "The Treasure"}},
 	}
-	v, rep, err := graphstore.Publish(ctx, db, advID, userID, g, "v1")
+	_, rep, err := graphstore.Publish(ctx, db, advID, userID, g, "v1")
 	if err != nil {
 		t.Fatalf("publish: %v %+v", err, rep)
 	}
+	// Scheduled, so it plays no version yet: its languages are the
+	// latest published version's, the one it will start on.
 	var eventID int64
 	if err := db.QueryRow(`
-		INSERT INTO events(adventure_slug, org_id, created_by_user_id, state, scheduled_at, live_token, name, meeting_place, graph_id, translations)
-		VALUES ('skatt', $1, $2, 'scheduled', '2026-05-01 10:00:00', 'lt-' || md5(random()::text), 'Skattjakten', 'Vid fontänen', $3,
+		INSERT INTO events(adventure_slug, org_id, created_by_user_id, state, scheduled_at, live_token, name, meeting_place, translations)
+		VALUES ('skatt', $1, $2, 'scheduled', '2026-05-01 10:00:00', 'lt-' || md5(random()::text), 'Skattjakten', 'Vid fontänen',
 		        '{"en": {"name": "The Treasure Hunt", "meeting_place": "By the fountain"}}')
-		RETURNING id`, orgID, userID, v.ID).Scan(&eventID); err != nil {
+		RETURNING id`, orgID, userID).Scan(&eventID); err != nil {
 		t.Fatal(err)
 	}
 	teams := map[string]int64{}

@@ -214,6 +214,10 @@ type adventureDTO struct {
 	// Playable says an event could run it now: it has a published
 	// graph. A new adventure has none.
 	Playable bool `json:"playable"`
+	// Languages are those its published version is played in, the main
+	// one first: what a new event's name and blurb can be written in.
+	// None with no published version or no translations.
+	Languages []string `json:"languages,omitempty"`
 }
 
 // ListAdventures returns adventures visible to the caller's org: its
@@ -236,6 +240,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 		       (a.published_graph_id IS NOT NULL)::int AS playable,
 		       (a.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       a.published, a.language, ` + lookCoverSQL("a") + `,
+		       ` + listing.VersionLanguages("pg", "a") + `,
 	`
 	query += `
 	       (EXISTS (
@@ -243,6 +248,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	         WHERE s.adventure_slug = a.slug AND s.org_id = $1
 	       ))::int AS shared
 	FROM adventures a
+	LEFT JOIN adventure_graphs pg ON pg.id = a.published_graph_id
 	WHERE NOT a.trail_hidden AND (
 	  a.org_id = $1
 	  OR ` + CatalogFilter() + `
@@ -274,11 +280,19 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 			published int
 			shared    int
 			playable  int
+			mainLang  string
+			langsJSON []byte
+			langs     []string
 		)
-		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount, &playable, &hasAvatar, &published, &d.Language, &d.Theme, &d.Cover, &shared); err != nil {
+		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount, &playable, &hasAvatar, &published, &d.Language, &d.Theme, &d.Cover, &mainLang, &langsJSON, &shared); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
+		if err := json.Unmarshal(langsJSON, &langs); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "scan failed")
+			return
+		}
+		d.Languages = listing.Languages(mainLang, langs)
 		if orgID.Valid {
 			v := orgID.Int64
 			d.OrgID = &v

@@ -60,6 +60,9 @@ type Handlers struct {
 	// that hit a 404). Cached at construction since the env var
 	// can't change during the process lifetime.
 	MCPEnabled bool
+	// HomeOrg is the slug of the organisation the site is (ZV_HOME_ORG),
+	// empty for none: its admins may give self-guided events away.
+	HomeOrg string
 }
 
 // Pricing is what the platform charges for teams (pay per team), so the
@@ -106,6 +109,9 @@ type membershipDTO struct {
 	SoleMember bool `json:"sole_member,omitempty"`
 	// VerifiedCreator: its listings are approved as they are submitted.
 	VerifiedCreator bool `json:"verified_creator,omitempty"`
+	// HomeOrg: the org is the site's own (ZV_HOME_ORG), whose admins may
+	// make a self-guided event free.
+	HomeOrg bool `json:"home_org,omitempty"`
 }
 
 type whoamiResponse struct {
@@ -208,6 +214,7 @@ func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
 				dto := membershipDTO{
 					OrgID: m.OrgID, OrgName: m.OrgName, Role: m.Role,
 					Trusted: m.Trusted, IsPublisher: m.IsPublisher, SoleMember: m.SoleMember, VerifiedCreator: m.VerifiedCreator,
+					HomeOrg: h.HomeOrg != "" && m.OrgSlug == h.HomeOrg,
 				}
 				if m.HasLogo {
 					dto.OrgLogoURL = "/org-logo/" + strconv.FormatInt(m.OrgID, 10)

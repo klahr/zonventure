@@ -45,5 +45,8 @@
   "Each team costs {{price}} as it joins a game, from your organisation's balance.": "Varje lag kostar {{price}} när det går med i en omgång, från organisationens saldo.",
   "Free on this server.": "Gratis på den här servern.",
   "Nothing to pay now: each team costs {{price}} as it starts, its first {{n}} phones included, from your organisation's balance.": "Inget att betala nu: varje lag kostar {{price}} när det startar, de första {{n}} telefonerna ingår, från organisationens saldo.",
-  "{{teams}} teams cost {{cost}} as they start.": "{{teams}} lag kostar {{cost}} när de startar."
+  "{{teams}} teams cost {{cost}} as they start.": "{{teams}} lag kostar {{cost}} när de startar.",
+  "Event created, but its names in other languages were not saved": "Eventet skapades, men namnen på andra språk sparades inte",
+  "Free": "Gratis",
+  "A free trial: the store gives a ticket for an email address, and the teams cost nothing.": "En gratis provtur: butiken ger en biljett för en e-postadress och lagen kostar ingenting."
 }

@@ -11,6 +11,34 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- The new-event and new self-guided adventure dialogs take the event's
+  name, and a self-guided one's description, in the adventure's other
+  languages, as "In other languages" does on the event's page.
+- The site's own organisation can make a new self-guided adventure free
+  in the dialog that creates it, rather than pricing it first and then
+  making it free on its page.
+
+### Changed
+
+- The one-row embed button shows the adventure's icon or cover, gives
+  the title two lines and puts the price under it. A free event's button
+  says "Play free" instead of "Buy ticket".
+
+### Fixed
+
+- An event that has not started yet now shows "In other languages" in
+  the console, and its invitations go out translated. Until an event
+  starts it plays no version, so its languages are now those of the
+  adventure's latest published version, the one it will start on.
+- The store's list of adventures falls back to the visitor's language
+  cookie and browser language when the page asks for none.
+- The email with lost play links names each event in the language of
+  whoever asked for it.
+- A free event's price in the embed no longer has a stray "·" before
+  its team size.
+
 ## [0.35.2] - 2026-10-23
 
 ### Added

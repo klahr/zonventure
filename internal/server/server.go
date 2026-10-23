@@ -295,6 +295,7 @@ func New(cfg Config) http.Handler {
 		PublicURL:     cfg.PublicURL,
 		OIDC:          cfg.OIDC,
 		MCPEnabled:    mcp.Enabled(),
+		HomeOrg:       cfg.HomeOrg,
 	}
 	playerH := &player.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, SecureCookie: cfg.SecureCookie,

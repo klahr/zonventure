@@ -76,6 +76,24 @@ func (it *StoreItemDTO) In(lang string) {
 	it.EventName, it.Blurb, it.AdventureTitle, it.StartLabel, it.Area, it.AccessNote = t.Name, t.Blurb, t.Title, t.StartLabel, t.Area, t.AccessNote
 }
 
+// storeLang is the language a store request asks for: ?lang, else the
+// site's language cookie, else the browser's first language. "sv-SE"
+// is "sv".
+func storeLang(r *http.Request) string {
+	tag := r.URL.Query().Get("lang")
+	if tag == "" {
+		if c, err := r.Cookie("zv_lang"); err == nil {
+			tag = c.Value
+		} else {
+			tag = r.Header.Get("Accept-Language")
+		}
+	}
+	if i := strings.IndexAny(tag, ",;-_"); i >= 0 {
+		tag = tag[:i]
+	}
+	return strings.ToLower(strings.TrimSpace(tag))
+}
+
 // TicketTeamTokenDTO is the response shape for the post-purchase
 // poll endpoint. The buyer's browser hits the endpoint after Stripe
 // redirects back to /store?paid={id}&session_id={cs_...}; the JS
@@ -177,7 +195,7 @@ func (h *Handlers) StoreEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "store event failed", err)
 		return
 	}
-	item.In(r.URL.Query().Get("lang"))
+	item.In(storeLang(r))
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, item)
 }
@@ -203,7 +221,7 @@ func (h *Handlers) StoreListByOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for i := range items {
-		items[i].In(r.URL.Query().Get("lang"))
+		items[i].In(storeLang(r))
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, struct {
@@ -240,7 +258,7 @@ func (h *Handlers) StoreEventByOrg(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "store event failed", err)
 		return
 	}
-	item.In(r.URL.Query().Get("lang"))
+	item.In(storeLang(r))
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, item)
 }

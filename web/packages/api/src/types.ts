@@ -21,6 +21,8 @@ export interface Membership {
   sole_member?: boolean;
   /** Its listings go public without review. */
   verified_creator?: boolean;
+  /** The site's own organisation: its admins may make a self-guided event free. */
+  home_org?: boolean;
 }
 
 /** internal/auth/handlers.go: whoamiResponse */

@@ -708,6 +708,8 @@ type Membership struct {
 	SoleMember bool
 	// VerifiedCreator: the org's listings go public without review.
 	VerifiedCreator bool
+	// OrgSlug is the org's slug.
+	OrgSlug string
 }
 
 // ListMemberships returns every (org, role) the user belongs to,
@@ -719,7 +721,8 @@ func ListMemberships(ctx context.Context, db *sql.DB, userID int64) ([]Membershi
 		SELECT m.org_id, o.name, m.role,
 		       (o.logo_mime_type IS NOT NULL)::int AS has_logo,
 		       o.trusted, o.is_publisher, o.verified_creator,
-		       NOT EXISTS (SELECT 1 FROM org_memberships x WHERE x.org_id = m.org_id AND x.user_id <> m.user_id)
+		       NOT EXISTS (SELECT 1 FROM org_memberships x WHERE x.org_id = m.org_id AND x.user_id <> m.user_id),
+		       o.slug
 		FROM org_memberships m
 		JOIN organizations o ON o.id = m.org_id
 		WHERE m.user_id = $1
@@ -736,7 +739,7 @@ func ListMemberships(ctx context.Context, db *sql.DB, userID int64) ([]Membershi
 			hasLogo int
 			trusted int
 		)
-		if err := rows.Scan(&m.OrgID, &m.OrgName, &m.Role, &hasLogo, &trusted, &m.IsPublisher, &m.VerifiedCreator, &m.SoleMember); err != nil {
+		if err := rows.Scan(&m.OrgID, &m.OrgName, &m.Role, &hasLogo, &trusted, &m.IsPublisher, &m.VerifiedCreator, &m.SoleMember, &m.OrgSlug); err != nil {
 			return nil, err
 		}
 		m.HasLogo = hasLogo != 0

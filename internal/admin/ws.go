@@ -540,7 +540,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		LEFT JOIN event_listings l ON l.event_id = ar.id
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		LEFT JOIN adventures adv ON adv.slug = ar.adventure_slug
-		LEFT JOIN adventure_graphs gv ON gv.id = COALESCE(ar.next_graph_id, ar.graph_id)
+		LEFT JOIN adventure_graphs gv ON gv.id = COALESCE(ar.next_graph_id, ar.graph_id, adv.published_graph_id)
 		WHERE ar.id = $1
 	`, eventID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.AdventureTitle, &d.State, &d.ScheduledAt, &d.StartedAt,
 		&d.CompletedAt, &d.CancelledAt,

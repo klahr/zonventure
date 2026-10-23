@@ -12,6 +12,7 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/icscal"
+	"github.com/klahr/zonventure/internal/listing"
 	"github.com/klahr/zonventure/internal/logx"
 	mailerpkg "github.com/klahr/zonventure/internal/mailer"
 )
@@ -64,10 +65,13 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 	// been cancelled — there's nothing to recover into a finished
 	// event, and re-emailing dead links would be confusing UX.
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT ps.token, ps.name, t.name, e.name, e.id
+		SELECT ps.token, ps.name, t.name, e.name, e.id, `+listing.Columns+`
 		FROM player_slots ps
 		JOIN teams t ON t.id = ps.team_id
 		JOIN events e ON e.id = t.event_id
+		CROSS JOIN LATERAL (SELECT e.translations) AS l (translations)
+		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
+		LEFT JOIN adventure_graphs g ON g.id = COALESCE(e.graph_id, a.published_graph_id)
 		WHERE LOWER(t.email) = $1
 		  AND e.state IN ('scheduled', 'running', 'paused')
 	`, email)
@@ -82,15 +86,21 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 		TeamName   string
 		EventName  string
 		EventID    int64
+		Words      listing.Listing
 	}
 	var slots []slotRow
 	for rows.Next() {
-		var s slotRow
-		if err := rows.Scan(&s.Token, &s.PlayerName, &s.TeamName, &s.EventName, &s.EventID); err != nil {
+		var (
+			s        slotRow
+			lang     string
+			adv, own []byte
+		)
+		if err := rows.Scan(&s.Token, &s.PlayerName, &s.TeamName, &s.EventName, &s.EventID, &lang, &adv, &own); err != nil {
 			rows.Close()
 			httpx.JSON(w, http.StatusNoContent, nil)
 			return
 		}
+		s.Words, _ = listing.Scan(lang, adv, own)
 		slots = append(slots, s)
 	}
 	rows.Close()
@@ -103,6 +113,7 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 		URL     string
 	}
 	var links []freshLink
+	lang := emailtpl.LangFromRequest(r)
 	for _, s := range slots {
 		base := domains.BaseForEvent(r.Context(), h.DB, s.EventID, h.PublicURL)
 		// Origin-relative fallback for misconfigured self-host:
@@ -111,7 +122,7 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 		// as buildResetLink.
 		url := base + "/play?t=" + s.Token
 		links = append(links, freshLink{
-			Player: s.PlayerName, Team: s.TeamName, Event: s.EventName, EventID: s.EventID,
+			Player: s.PlayerName, Team: s.TeamName, Event: s.Words.In(lang, listing.Texts{Name: s.EventName}).Name, EventID: s.EventID,
 			URL: url,
 		})
 	}
@@ -124,7 +135,7 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 		// In the look of the organisation that runs the first game.
 		// In the language of whoever asked, on the play page.
 		lk := emailtpl.Lookup(r.Context(), h.DB, h.PublicURL, 0, links[0].EventID)
-		lk.Lang = emailtpl.LangFromRequest(r)
+		lk.Lang = lang
 		subject, content := emailtpl.PlayLinks(lk.Lang, players, lk.Brand.Name)
 		content.Picture = lk.Cover
 		// Build one .ics per unique event referenced by the
