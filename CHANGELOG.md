@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.36.3] - 2026-10-24
+
 ### Changed
 
 - The backpack shows an item by its picture, the first in what it shows
