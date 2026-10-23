@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.36.1] - 2026-10-23
+
 ### Changed
 
 - A free event's card in the store and on the front page says "Play now"
