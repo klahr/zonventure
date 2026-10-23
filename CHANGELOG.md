@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.36.2] - 2026-10-24
+
 ### Fixed
 
 - A team's page names the adventure in the visitor's language when the
