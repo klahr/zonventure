@@ -11,6 +11,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- A free event's card in the store and on the front page says "Play now"
+  rather than "Buy", and its embed button "Play now" rather than "Play
+  free".
+
 ## [0.36.0] - 2026-10-23
 
 ### Added
@@ -26,9 +32,7 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 - The one-row embed button shows the adventure's icon or cover, gives
   the title two lines and puts the price under it. A free event's button
-  says "Play now" instead of "Buy ticket".
-- A free event's card in the store and on the front page says "Play now"
-  rather than "Buy".
+  says "Play free" instead of "Buy ticket".
 
 ### Fixed
 
