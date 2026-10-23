@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/settings"
@@ -89,7 +90,10 @@ func (h *Handlers) giveStoreFreeTicket(w http.ResponseWriter, r *http.Request, e
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "this email address already has a ticket", "code": "already_have"})
 		return
 	}
-	teamID, teamToken, voucher, err := createTicketTeam(ctx, tx, eventID, email, teamSize)
+	// The email and the players' names are in the language the visitor
+	// browsed in, as a bought ticket's are.
+	lang := emailtpl.LangFromRequest(r)
+	teamID, teamToken, voucher, err := createTicketTeamIn(ctx, tx, eventID, email, teamSize, lang)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "free ticket failed", err)
 		return
@@ -99,7 +103,7 @@ func (h *Handlers) giveStoreFreeTicket(w http.ResponseWriter, r *http.Request, e
 		return
 	}
 	logx.Info("admin.store.free_ticket", "event_id", eventID, "team_id", teamID)
-	if err := h.sendTicketTeamLink(ctx, eventID, email, teamToken, voucher, "", nil, true); err != nil {
+	if err := h.sendTicketTeamLink(ctx, eventID, email, teamToken, voucher, lang, nil, true); err != nil {
 		logx.Warn("admin.store.free_ticket.mail", "event_id", eventID, "team_id", teamID, "err", err.Error())
 	}
 	w.Header().Set("Cache-Control", "no-store")

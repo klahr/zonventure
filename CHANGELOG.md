@@ -11,6 +11,17 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed
+
+- A team's page names the adventure in the visitor's language when the
+  team hasn't chosen one, as a ticket for an adventure with no letter
+  leaves it, rather than in the adventure's main language.
+- A free ticket from the store is mailed, and its players named, in the
+  language the visitor browsed in, as a bought one is, rather than in
+  the event's main language.
+- A redeemed gift box's players are named in the buyer's language, as
+  its emails are, rather than in the event's main language.
+
 ## [0.36.1] - 2026-10-23
 
 ### Changed

@@ -1264,7 +1264,8 @@ func (h *Handlers) approveRedemption(ctx context.Context, id, by int64) (*redeem
 	if eventState != "running" {
 		return &redeemError{http.StatusConflict, "event_closed", "the product's event isn't running"}, nil
 	}
-	teamID, teamToken, voucher, err := createTicketTeam(ctx, tx, eventID, email, teamSize)
+	// The players are named in the buyer's language, as the emails are.
+	teamID, teamToken, voucher, err := createTicketTeamIn(ctx, tx, eventID, email, teamSize, mailLang)
 	if err != nil {
 		return nil, err
 	}

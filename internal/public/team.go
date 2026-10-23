@@ -122,8 +122,12 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 		// adventure's own.
 		teamLang string
 	)
+	// The page speaks the visitor's language; the adventure's own words
+	// (its title) are in the language the team plays in, or the
+	// visitor's for a team that hasn't chosen one.
+	view.Lang = emailtpl.LangFromRequest(r)
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT t.id, t.event_id, t.name, COALESCE(NULLIF(g.graph->'translations'->t.lang->>'meta:title', ''), a.title),
+		SELECT t.id, t.event_id, t.name, COALESCE(NULLIF(g.graph->'translations'->COALESCE(NULLIF(t.lang, ''), $2)->>'meta:title', ''), a.title),
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       ar.state, ar.scheduled_at, ar.started_at, ar.public_for_sale, t.lang
 		FROM teams t
@@ -131,7 +135,7 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN adventures a ON a.slug = ar.adventure_slug
 		LEFT JOIN adventure_graphs g ON g.id = ar.graph_id
 		WHERE t.token = $1
-	`, token).Scan(&teamID, &eventID, &view.TeamName, &title, &hasAvatar,
+	`, token, view.Lang).Scan(&teamID, &eventID, &view.TeamName, &title, &hasAvatar,
 		&view.State, &schedAt, &startAt, &forSale, &teamLang)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "team not found — ask your arranger for a fresh link", http.StatusNotFound)
@@ -142,9 +146,6 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view.AdventureTitle = title.String
-	// The page speaks the visitor's language; the adventure's own words
-	// (its title) are in the language the team plays in.
-	view.Lang = emailtpl.LangFromRequest(r)
 	view.Token = token
 	view.ScheduledAt = schedAt.String
 	view.StartedAt = startAt.String
