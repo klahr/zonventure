@@ -42,10 +42,15 @@ test("escapes", () => {
 });
 
 test("unsafe links are shown as text, never as links", () => {
-  for (const href of ["javascript:alert(1)", "JavaScript:alert(1)", "data:text/html,x", "vbscript:x", "/relative"]) {
+  for (const href of ["javascript:alert(1)", "JavaScript:alert(1)", "data:text/html,x", "vbscript:x", "relative", "//evil.example", "/\\evil.example", "/\t/evil.example"]) {
     assert.equal(safeHref(href), null, href);
     const out = parseInline(`[tap](${href})`);
     assert.ok(out.every((n) => n.t === "text"), `${href} became ${JSON.stringify(out)}`);
   }
   assert.equal(safeHref("geo:59.3,18.0"), "geo:59.3,18.0");
+});
+
+test("a path on this site is a link", () => {
+  for (const href of ["/store", "/", "/o/acme/store?lang=sv"]) assert.equal(safeHref(href), href);
+  assert.deepEqual(parseInline("[Find one](/store)"), [{ t: "link", href: "/store", c: [{ t: "text", v: "Find one" }] }]);
 });

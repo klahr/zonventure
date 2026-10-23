@@ -1201,6 +1201,14 @@
   color: var(--accent);
   font: 700 2.5rem / 1 var(--font-body);
 }
+.pv-bag__icon--pic {
+  overflow: hidden;
+}
+.pv-bag__icon--pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 .pv-bag__qty {
   position: absolute;
   top: var(--sp-2);
@@ -1338,6 +1346,12 @@
   background: var(--surface);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
   animation: pv-rise 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* In a sheet, an item opened or a full backpack scrolls under the head. */
+.pv-sheet > .pv-item,
+.pv-sheet > .pv-bag {
+  min-height: 0;
+  overflow-y: auto;
 }
 .pv-sheet__head {
   display: flex;

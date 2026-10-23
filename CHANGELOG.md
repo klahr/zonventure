@@ -11,6 +11,24 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- The backpack shows an item by its picture, the first in what it shows
+  when examined, rather than by its icon, and an item examined no longer
+  puts its icon above that picture. One without a picture keeps its
+  icon.
+
+### Fixed
+
+- A team with a free ticket, or a bought one for an adventure with no
+  letter, starts playing in the language its visitor browsed in, where
+  the adventure is translated into it, rather than in its main language.
+- An item examined from the game's items sheet, or a backpack too full
+  for it, scrolls rather than being cut off at the sheet's bottom.
+- A link in an adventure's text to a page on the site, such as
+  `[Find a real adventure](/store)`, is a link rather than its markdown
+  shown as text.
+
 ## [0.36.2] - 2026-10-24
 
 ### Fixed

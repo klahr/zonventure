@@ -91,10 +91,15 @@ func (h *Handlers) giveStoreFreeTicket(w http.ResponseWriter, r *http.Request, e
 		return
 	}
 	// The email and the players' names are in the language the visitor
-	// browsed in, as a bought ticket's are.
+	// browsed in, as a bought ticket's are, and the team starts playing
+	// in it; it can switch.
 	lang := emailtpl.LangFromRequest(r)
 	teamID, teamToken, voucher, err := createTicketTeamIn(ctx, tx, eventID, email, teamSize, lang)
 	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "free ticket failed", err)
+		return
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE teams SET lang = $1 WHERE id = $2`, lang, teamID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "free ticket failed", err)
 		return
 	}

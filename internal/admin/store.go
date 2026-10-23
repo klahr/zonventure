@@ -533,10 +533,15 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 	if err != nil {
 		return fmt.Errorf("ticket team create: %w", err)
 	}
-	// The team starts in the posted letter's language; it can switch.
-	// Its ticket paid for it and its phones: nothing more is charged to
-	// the organisation until a phone past them joins.
-	if _, err := tx.ExecContext(ctx, `UPDATE teams SET lang = $1, paid_phones = $3 WHERE id = $2`, letterLang, teamID, teamSize); err != nil {
+	// The team starts in the posted letter's language, or with no letter
+	// the buyer's; it can switch. Its ticket paid for it and its phones:
+	// nothing more is charged to the organisation until a phone past
+	// them joins.
+	playLang := letterLang
+	if playLang == "" {
+		playLang = buyerLang
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE teams SET lang = $1, paid_phones = $3 WHERE id = $2`, playLang, teamID, teamSize); err != nil {
 		return fmt.Errorf("team language: %w", err)
 	}
 	var address []string

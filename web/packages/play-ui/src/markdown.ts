@@ -26,13 +26,16 @@ export type Block =
   | { t: "ol"; items: Inline[][] };
 
 /**
- * Only these schemes become links. A javascript: or data: URL is shown
- * as text instead — a link a player taps must not run anything.
+ * Only these schemes become links, and a path on this site (/store). A
+ * javascript: or data: URL is shown as text instead — a link a player
+ * taps must not run anything — and so is //host, /\host or /<tab>/host,
+ * which a browser takes for another site.
  */
 const SAFE_SCHEMES = ["http:", "https:", "mailto:", "tel:", "geo:"];
 
 export function safeHref(raw: string): string | null {
   const href = raw.trim();
+  if (href.startsWith("/")) return /^\/[^/\\\s\x00-\x1f]/.test(href) || href === "/" ? href : null;
   const colon = href.indexOf(":");
   if (colon < 0) return null;
   const scheme = href.slice(0, colon + 1).toLowerCase();

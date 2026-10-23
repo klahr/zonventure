@@ -1464,6 +1464,22 @@ function EndStep(props: StepProps) {
   );
 }
 
+/** The item's first picture, if it has one: its face in the backpack. */
+function itemPicture(it: play.ItemView) {
+  const b = it.blocks?.find((b) => b.kind === "image" && !b.locked);
+  return b && b.kind === "image" ? b : undefined;
+}
+
+/** An item's face in the backpack: its picture, else its icon, else its first letter. */
+function ItemFace({ item }: { item: play.ItemView }) {
+  const pic = itemPicture(item);
+  return (
+    <span className={"pv-bag__icon" + (pic ? " pv-bag__icon--pic" : "")} aria-hidden>
+      {pic ? <img src={playApi.mediaURL(pic.media)} alt="" loading="lazy" decoding="async" /> : item.icon || [...(item.name || item.slug).trim()][0]?.toUpperCase()}
+    </span>
+  );
+}
+
 /**
  * What the team carries. With give, the player's own kit items can be
  * handed on: tapping Give shows a code for a teammate to scan from their
@@ -1517,9 +1533,8 @@ function Bag({ view, t, give, receive, titled, content }: { view: play.View; t: 
           <span aria-hidden>←</span> {t("All items")}
         </button>
         <header className="pv-item__head">
-          <span className="pv-bag__icon" aria-hidden>
-            {open.icon || [...(open.name || open.slug).trim()][0]?.toUpperCase()}
-          </span>
+          {/* Its picture follows in the body: the face only stands in for one. */}
+          {!itemPicture(open) && <ItemFace item={open} />}
           <h3>{open.name || open.slug}</h3>
         </header>
         <div className="pv-item__body">{content(open.blocks ?? [])}</div>
@@ -1536,17 +1551,13 @@ function Bag({ view, t, give, receive, titled, content }: { view: play.View; t: 
               <li key={it.slug} className={"pv-bag__item" + (it.not_mine ? " is-away" : "")}>
                 {content && it.blocks?.length ? (
                   <button type="button" className="pv-bag__open" onClick={() => setOpened(it.slug)} aria-label={t("Examine the {{item}}", { item: it.name || it.slug })}>
-                    <span className="pv-bag__icon" aria-hidden>
-                      {it.icon || [...(it.name || it.slug).trim()][0]?.toUpperCase()}
-                    </span>
+                    <ItemFace item={it} />
                     <span className="pv-bag__name">{it.name || it.slug}</span>
                     <span className="pv-bag__hint" aria-hidden>{t("Tap to examine")}</span>
                   </button>
                 ) : (
                   <>
-                    <span className="pv-bag__icon" aria-hidden>
-                      {it.icon || [...(it.name || it.slug).trim()][0]?.toUpperCase()}
-                    </span>
+                    <ItemFace item={it} />
                     <span className="pv-bag__name">{it.name || it.slug}</span>
                   </>
                 )}
