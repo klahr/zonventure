@@ -73,7 +73,7 @@
 "StoreEventFeature4": "Återbetalning hanteras av arrangören",
 "StoreEventGenericErr": "Något gick fel. Försök igen.",
 "StoreEventNotForSale": "Det här äventyret säljs inte just nu. Försök igen senare.",
-"StoreEventAlreadyHave": "Den här e-postadressen har redan en biljett — leta efter länken i din inkorg.",
+"StoreEventAlreadyHave": "Den här e-postadressen har redan en biljett som inte är färdigspelad — leta efter länken i din inkorg.",
 "StoreEventOffSaleHeading": "Inte till salu just nu",
 "RedeemTitle": "Lös in ett presentkort",
 "RedeemIntro": "Har du fått ett äventyr från {{SITE_NAME}} i en upplevelsebox? Skriv in koden här. Vi kontrollerar den med partnern och mejlar dig en länk till ditt lag, oftast inom en arbetsdag.",

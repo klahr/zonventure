@@ -70,8 +70,10 @@ func (h *Handlers) updateEventBilling(w http.ResponseWriter, r *http.Request, ev
 // giveStoreFreeTicket is the store's "buy" on a free event: no
 // checkout, the team made at once and its link mailed, as a gift from
 // the organisation. The buyer's browser goes straight to the team page.
-// One ticket per email address and event, so the form can't be used to
-// mail someone over and over; the route's per-IP limiter does the rest.
+// One unfinished ticket per email address and event, so the form can't
+// be used to mail someone over and over; once its team has completed
+// the adventure or withdrawn, the address can get another. The route's
+// per-IP limiter does the rest.
 func (h *Handlers) giveStoreFreeTicket(w http.ResponseWriter, r *http.Request, eventID int64, email string, teamSize int) {
 	ctx := r.Context()
 	tx, err := h.DB.BeginTx(ctx, nil)
@@ -82,7 +84,7 @@ func (h *Handlers) giveStoreFreeTicket(w http.ResponseWriter, r *http.Request, e
 	defer func() { _ = tx.Rollback() }()
 	var had bool
 	if err := tx.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM teams WHERE event_id = $1 AND email = $2)`, eventID, email).Scan(&had); err != nil {
+		`SELECT EXISTS (SELECT 1 FROM teams WHERE event_id = $1 AND email = $2 AND completed_at IS NULL AND withdrawn_at IS NULL)`, eventID, email).Scan(&had); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "free ticket failed", err)
 		return
 	}

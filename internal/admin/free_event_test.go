@@ -110,6 +110,21 @@ func TestFreeEvent(t *testing.T) {
 	if w := do("POST", "/api/store/buy", nil, buy); w.Code != http.StatusConflict {
 		t.Errorf("second ticket for the address: status %d", w.Code)
 	}
+	if _, err := db.Exec(`UPDATE teams SET completed_at = now() WHERE id = $1`, teamID); err != nil {
+		t.Fatal(err)
+	}
+	if w := do("POST", "/api/store/buy", nil, buy); w.Code != http.StatusOK {
+		t.Errorf("ticket after the first one completed: status %d: %s", w.Code, w.Body.String())
+	}
+	if w := do("POST", "/api/store/buy", nil, buy); w.Code != http.StatusConflict {
+		t.Errorf("third ticket while the second is unfinished: status %d", w.Code)
+	}
+	if _, err := db.Exec(`UPDATE teams SET withdrawn_at = now() WHERE event_id = $1 AND completed_at IS NULL`, eventID); err != nil {
+		t.Fatal(err)
+	}
+	if w := do("POST", "/api/store/buy", nil, buy); w.Code != http.StatusOK {
+		t.Errorf("ticket after the second one withdrew: status %d: %s", w.Code, w.Body.String())
+	}
 
 	tx, err := db.BeginTx(context.Background(), nil)
 	if err != nil {
