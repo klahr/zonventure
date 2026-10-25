@@ -11,6 +11,14 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.36.4] - 2026-10-25
+
+### Fixed
+
+- An email address can get another free ticket for an event once its
+  team has completed the adventure or withdrawn, rather than only ever
+  one; it still can't while its team is playing.
+
 ## [0.36.3] - 2026-10-24
 
 ### Changed
