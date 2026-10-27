@@ -121,6 +121,8 @@ An adventure is a graph. Nodes are steps; edges run from a node's output port to
 
 Node types: start (port out), story (text to read; port out), puzzle (a question; one port per output), hub (a choice or shuffle of branches), gate and switch (conditions), effect (grant an item, add score…; port out), split and join (parallel paths), end.
 
+A hub's branches lead back to it, and it leaves by its done port once enough are done (required). For a fork in the road, where the team picks one way and carries on, set the hub's one_way: true: its branches lead on and never back, and it has no done port.
+
 The adventure's look is its main theme: the graph's "main_theme" names one of its saved themes, in "themes": {slug, name, look}, a whole look (colours, fonts, corners, cards, backdrop, style). Add or change one with edit_adventure_graph put_theme, with main: true to make it the main theme; like the rest of the draft it reaches players when published. A theme effect restyles the phone from that step on: "theme" is the slug of another saved theme, or default to go back to the main theme. A look's style.transition (none, fade, slide, zoom, flip, pop) sets how each step comes in.
 
 Print materials are PDFs that come with the adventure on paper, such as a letter with the first clue that the organiser posts to the buyer; players never see them in the game. Upload each PDF with get_upload_link or upload_adventure_media, then add it with edit_adventure_graph put_print_material {id, name, delivery, files}: delivery is posted (the organiser prints and posts it), emailed (the buyer prints it) or organiser (for the organiser alone), and files maps each language the adventure is played in to its PDF's media id. A posted material missing a language can't be published.

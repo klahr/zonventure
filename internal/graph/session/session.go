@@ -1641,7 +1641,7 @@ func (t *Team) rescueHub(n graph.Node) string {
 		return ""
 	}
 	port := ""
-	if !cfg.Home && t.CompletedBranches(n.Slug) >= cfg.RequiredBranches() && t.towardJoin(n.Slug, graph.PortDone) {
+	if cfg.Finishes() && t.CompletedBranches(n.Slug) >= cfg.RequiredBranches() && t.towardJoin(n.Slug, graph.PortDone) {
 		port = graph.PortDone
 	} else {
 		join := t.groupJoin()

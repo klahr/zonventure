@@ -1477,3 +1477,6 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .item-res + .item-res { margin-top: var(--sp-2); }
 .box__row > .item-res__icon { flex: 0 0 3.25rem; text-align: center; font-size: 1.15rem; }
 .item-res__content { margin: var(--sp-2) 0 var(--sp-3) var(--sp-3); padding-left: var(--sp-3); border-left: 2px solid var(--border-soft); }
+
+/* A group of radios set out like a field: no frame of its own. */
+fieldset.field { margin: 0; padding: 0; border: 0; min-width: 0; }

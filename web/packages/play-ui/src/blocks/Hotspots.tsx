@@ -1,17 +1,21 @@
 import { Fragment, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { play } from "@zonventure/api";
+import { MarkdownInline } from "../Markdown.tsx";
 import { bubbleSide } from "../pictures.ts";
-import type { Of, Renderer } from "./context.ts";
+import { fillTeam, type Of, type Renderer } from "./context.ts";
 import "./hotspots.css";
 
 /**
  * A picture with details to find: a pulsing marker on each, and its
  * caption in a bubble beside it when tapped. One bubble at a time; a tap
- * anywhere else, or on the same marker, closes it.
+ * anywhere else, or on the same marker, closes it. With a mouse, hovering
+ * a marker shows its caption too, until the pointer leaves it.
  */
 export const HotspotsBlock: Renderer<"hotspots"> = ({ block, ctx }) => {
   const spots = block.spots ?? [];
   const [open, setOpen] = useState<number | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  const shown = open ?? hover;
   const root = useRef<HTMLElement>(null);
   const id = useId();
 
@@ -51,8 +55,10 @@ export const HotspotsBlock: Renderer<"hotspots"> = ({ block, ctx }) => {
               aria-expanded={open === i}
               aria-controls={`${id}-${i}`}
               onClick={() => setOpen(open === i ? null : i)}
+              onPointerEnter={(e) => e.pointerType === "mouse" && setHover(i)}
+              onPointerLeave={() => setHover(null)}
             />
-            {open === i && <Bubble id={`${id}-${i}`} spot={s} />}
+            {shown === i && <Bubble id={`${id}-${i}`} spot={s} text={fillTeam(s.text, ctx)} />}
           </Fragment>
         ))}
       </div>
@@ -62,14 +68,14 @@ export const HotspotsBlock: Renderer<"hotspots"> = ({ block, ctx }) => {
 
 type Spot = NonNullable<Of<"hotspots">["spots"]>[number];
 
-function Bubble({ id, spot }: { id: string; spot: Spot }) {
+function Bubble({ id, spot, text }: { id: string; spot: Spot; text: string }) {
   const side = bubbleSide(spot);
   const style: CSSProperties = side.v === "above" ? { bottom: `${(1 - spot.y) * 100}%` } : { top: `${spot.y * 100}%` };
   if (side.h === "end") style.right = `${(1 - spot.x) * 100}%`;
   else style.left = `${spot.x * 100}%`;
   return (
     <div id={id} className={`pv-hotspots__bubble is-${side.v} is-${side.h}`} style={style}>
-      {spot.text}
+      <MarkdownInline text={text} />
     </div>
   );
 }

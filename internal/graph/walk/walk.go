@@ -428,7 +428,8 @@ func resolveHub(s State, hub graph.Node) (chosen string, offer []graph.Branch, s
 		return "", open, false, false, nil
 	}
 
-	met := s.CompletedBranches(hub.Slug) >= cfg.RequiredBranches()
+	// A one-way choice is never met: the team leaves it down a branch.
+	met := cfg.Finishes() && s.CompletedBranches(hub.Slug) >= cfg.RequiredBranches()
 
 	open := make([]graph.Branch, 0, len(cfg.Branches))
 	for _, b := range cfg.Branches {
@@ -450,7 +451,7 @@ func resolveHub(s State, hub graph.Node) (chosen string, offer []graph.Branch, s
 		if !met && branchesWait(s, hub) {
 			return "", []graph.Branch{}, false, false, nil
 		}
-		if met || allBranchesAccountedFor(s, hub) {
+		if met || cfg.Finishes() && allBranchesAccountedFor(s, hub) {
 			return "", nil, met, true, nil
 		}
 		return "", nil, false, false, fmt.Errorf("%w: hub %s", ErrStuck, hub.Slug)

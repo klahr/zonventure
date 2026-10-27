@@ -19,7 +19,7 @@ import { hasPicture } from "./backdrop.ts";
 import "./fonts/adventure-fonts.css";
 import "./animations.css";
 import { formatSeconds, secondsUntil, useEngineClock } from "./clock.ts";
-import { english, type Feedback, type Translate } from "./feedback.ts";
+import { english, inLookWords, type Feedback, type Translate } from "./feedback.ts";
 
 /**
  * One step of an adventure, as a player sees it.
@@ -184,7 +184,8 @@ export function PlayView(props: PlayViewProps) {
   }, [view.node]);
 
   const kind = view.finished || view.type === "end" ? "end" : view.type;
-  const step: StepProps = { ...props, t, now, openHints: () => setHintsOpen(true) };
+  const feedback = useMemo(() => inLookWords(props.feedback ?? null, brand?.style), [props.feedback, brand?.style]);
+  const step: StepProps = { ...props, feedback, t, now, openHints: () => setHintsOpen(true) };
 
   let body: ReactNode;
   if (kind === "start" && view.starts?.length) body = <StartChoice {...step} />;

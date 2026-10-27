@@ -1309,7 +1309,7 @@ func (t *Team) view() View {
 				v.Offer = append(v.Offer, OfferEntry{Port: b.Port, Label: b.Label, Locked: !open, Visited: visited, Note: b.Note, Image: b.Image})
 			}
 			v.Text = n.HubCfg.Text
-			v.CanFinish = !n.HubCfg.Home && t.CompletedBranches(n.Slug) >= n.HubCfg.RequiredBranches()
+			v.CanFinish = n.HubCfg.Finishes() && t.CompletedBranches(n.Slug) >= n.HubCfg.RequiredBranches()
 		}
 	}
 	return v

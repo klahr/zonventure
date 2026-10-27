@@ -579,5 +579,12 @@
   "Replace the file": "Byt fil",
   "Add a file in this language": "Lägg till en fil på det här språket",
   "The original file has been replaced since this one was added.": "Originalfilen har bytts ut sedan den här lades till.",
-  "Outdated: the original file has been replaced since this one was added.": "Inaktuell: originalfilen har bytts ut sedan den här lades till."
+  "Outdated: the original file has been replaced since this one was added.": "Inaktuell: originalfilen har bytts ut sedan den här lades till.",
+  "After a branch": "Efter en gren",
+  "Come back here when done": "Kom tillbaka hit efteråt",
+  "Each branch leads back here. Teams move on once enough branches are done.": "Varje gren leder tillbaka hit. Lagen går vidare när tillräckligt många grenar är klara.",
+  "One way: pick one and carry on": "Enkel väg: välj en och fortsätt",
+  "Teams pick one branch and carry on down it. They never come back here, so there is no way on from this step itself.": "Lagen väljer en gren och fortsätter längs den. De kommer aldrig tillbaka hit, så steget har ingen egen väg vidare.",
+  "One way": "Enkel väg",
+  "yes — teams pick one and carry on": "ja — lagen väljer en och fortsätter"
 }

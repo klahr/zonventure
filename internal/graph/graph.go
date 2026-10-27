@@ -1319,10 +1319,20 @@ type HubConfig struct {
 	// It has no done output, and Required does not apply.
 	Home bool `json:"home,omitempty"`
 
+	// OneWay makes the hub a fork in the road: the team picks one branch
+	// and carries on down it, never back to the hub. It has no done
+	// output, and Required does not apply. A home screen is not one.
+	OneWay bool `json:"one_way,omitempty"`
+
 	// Text is shown above the branches, in place of "choose where to go
 	// next": a home screen's welcome, a suspect's opening words.
 	Text string `json:"text,omitempty"`
 }
+
+// Finishes reports whether the hub has a done output to leave by once
+// enough branches are done: not a home screen, which never finishes, nor
+// a one-way choice, which the team leaves down the branch it picks.
+func (c HubConfig) Finishes() bool { return !c.Home && !c.OneWay }
 
 // GateConfig routes on a condition, to PortPass or PortFail.
 type GateConfig struct {
@@ -1799,8 +1809,9 @@ func (n Node) Ports() []string {
 		for _, b := range n.HubCfg.Branches {
 			out = append(out, b.Port)
 		}
-		if n.HubCfg.Home {
-			// A home screen never finishes, so it has no exit to wire.
+		if !n.HubCfg.Finishes() {
+			// A home screen never finishes, and a one-way choice is left
+			// down a branch, so neither has an exit of its own to wire.
 			return out
 		}
 		return append(out, PortDone)

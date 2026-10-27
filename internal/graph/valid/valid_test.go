@@ -122,6 +122,38 @@ func TestDuplicateAndEmptySlugs(t *testing.T) {
 	assertCode(t, Check(g2), "node.slug.empty")
 }
 
+// A one-way choice has no done output to wire, and must stay one way.
+func TestOneWayHub(t *testing.T) {
+	fork := func(cfg graph.HubConfig, back bool) *graph.Graph {
+		cfg.Branches = []graph.Branch{{Port: "a"}, {Port: "b"}}
+		g := &graph.Graph{
+			Nodes: []graph.Node{{Slug: "start", Type: graph.Start}, {Slug: "hub", Type: graph.Hub, HubCfg: &cfg}, puzzle("p1"), puzzle("p2"), {Slug: "end", Type: graph.End}},
+			Edges: []graph.Edge{edge("start", graph.PortOut, "hub"), edge("hub", "a", "p1"), edge("hub", "b", "p2"), edge("p1", "solved", "end"), edge("p2", "solved", "end")},
+		}
+		if back {
+			g.Edges[len(g.Edges)-1] = edge("p2", "solved", "hub")
+		}
+		return g
+	}
+	t.Run("no done wire needed", func(t *testing.T) {
+		r := Check(fork(graph.HubConfig{Policy: graph.PolicyChoice, OneWay: true}, false))
+		assertNoCode(t, r, "port.unconnected")
+		assertNoCode(t, r, "hub.oneway.back")
+	})
+	t.Run("an ordinary hub still needs one", func(t *testing.T) {
+		assertCode(t, Check(fork(graph.HubConfig{Policy: graph.PolicyChoice}, false)), "port.unconnected")
+	})
+	t.Run("a branch that comes back", func(t *testing.T) {
+		assertCode(t, Check(fork(graph.HubConfig{Policy: graph.PolicyChoice, OneWay: true}, true)), "hub.oneway.back")
+	})
+	t.Run("not chosen by the team", func(t *testing.T) {
+		assertCode(t, Check(fork(graph.HubConfig{Policy: graph.PolicySequence, OneWay: true}, false)), "hub.oneway.policy")
+	})
+	t.Run("not a home screen too", func(t *testing.T) {
+		assertCode(t, Check(fork(graph.HubConfig{Policy: graph.PolicyChoice, OneWay: true, Home: true}, false)), "hub.oneway.home")
+	})
+}
+
 // The check that most directly stops a team being stranded.
 func TestUnconnectedPort(t *testing.T) {
 	g := valid3()

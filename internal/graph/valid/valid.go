@@ -123,6 +123,7 @@ func Check(g *graph.Graph) Report {
 	checkNodeConfigs(r, g)
 	checkEdges(r, g)
 	checkPortsConnected(r, g)
+	checkOneWayHubs(r, g)
 	checkReferences(r, g)
 	checkMatchers(r, g)
 	checkReachability(r, g)
@@ -285,7 +286,13 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 			if n.HubCfg.Home && n.HubCfg.Policy != graph.PolicyChoice {
 				r.err("hub.home.policy", n.Slug, "", "a home screen lets the team choose; its policy must be choice")
 			}
-			if !n.HubCfg.Home && n.HubCfg.Required > len(n.HubCfg.Branches) {
+			if n.HubCfg.OneWay && n.HubCfg.Home {
+				r.err("hub.oneway.home", n.Slug, "", "a hub is a home screen or a one-way choice, not both")
+			}
+			if n.HubCfg.OneWay && n.HubCfg.Policy != graph.PolicyChoice {
+				r.err("hub.oneway.policy", n.Slug, "", "a one-way choice lets the team choose; its policy must be choice")
+			}
+			if n.HubCfg.Finishes() && n.HubCfg.Required > len(n.HubCfg.Branches) {
 				r.err("hub.required.exceeds", n.Slug, "",
 					"hub requires %d branches but only has %d, so it can never complete",
 					n.HubCfg.Required, len(n.HubCfg.Branches))
@@ -859,6 +866,41 @@ func checkEdges(r *reporter, g *graph.Graph) {
 
 		if nodes[e.To].Type == graph.Start {
 			r.err("edge.to.start", e.From, e.FromPort, "an edge leads back to the start node")
+		}
+	}
+}
+
+// checkOneWayHubs keeps a one-way choice one way: a branch that leads back
+// to it would bring the team to a hub with no way on.
+func checkOneWayHubs(r *reporter, g *graph.Graph) {
+	next := map[string][]string{}
+	for _, e := range g.Edges {
+		next[e.From] = append(next[e.From], e.To)
+	}
+	for _, n := range g.Nodes {
+		if n.Type != graph.Hub || n.HubCfg == nil || !n.HubCfg.OneWay {
+			continue
+		}
+		for _, b := range n.HubCfg.Branches {
+			start, ok := g.Target(n.Slug, b.Port)
+			if !ok {
+				continue
+			}
+			seen := map[string]bool{start: true}
+			for todo := []string{start}; len(todo) > 0; {
+				cur := todo[0]
+				todo = todo[1:]
+				if cur == n.Slug {
+					r.err("hub.oneway.back", n.Slug, b.Port, "this branch comes back to the one-way choice, where the team finds no way on")
+					break
+				}
+				for _, to := range next[cur] {
+					if !seen[to] {
+						seen[to] = true
+						todo = append(todo, to)
+					}
+				}
+			}
 		}
 	}
 }

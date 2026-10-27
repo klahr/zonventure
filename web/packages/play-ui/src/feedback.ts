@@ -147,3 +147,14 @@ export function feedbackForRefusal(code: string | undefined, t: Translate): Feed
       return { tone: "bad", text: t("Something went wrong. Try again.") };
   }
 }
+
+/**
+ * A right answer's line in the look's own words, as its burst says them:
+ * "Mapped! +10 points" rather than "Correct! +10 points" under a burst
+ * that cheers "Mapped!".
+ */
+export function inLookWords(feedback: Feedback | null, style?: play.LookStyle): Feedback | null {
+  const own = style?.cheer_text?.trim();
+  if (!feedback || feedback.burst?.kind !== "celebrate" || !own) return feedback;
+  return { ...feedback, text: feedback.burst.sub ? `${own} ${feedback.burst.sub}` : own };
+}

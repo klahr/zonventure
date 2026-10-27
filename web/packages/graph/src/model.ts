@@ -217,8 +217,9 @@ export function portsOf(n: Node): string[] {
       // as in Go; the validator reports it. Offering "done" here would draw
       // a handle the server does not consider to exist.
       if (!n.hub) return [];
-      // A home screen never finishes, so it has no done to wire — as in Go.
-      if (n.hub.home) return (n.hub.branches ?? []).map((b) => b.port);
+      // A home screen never finishes, and a one-way choice is left down a
+      // branch, so neither has a done to wire — as in Go.
+      if (n.hub.home || n.hub.one_way) return (n.hub.branches ?? []).map((b) => b.port);
       return [...(n.hub.branches ?? []).map((b) => b.port), PORT_DONE];
   }
 }

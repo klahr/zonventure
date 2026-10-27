@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { english, feedbackForRefusal, feedbackForResult } from "./feedback.ts";
+import { english, feedbackForRefusal, feedbackForResult, inLookWords } from "./feedback.ts";
 
 const view = { score: 0, penalty_score: 0, penalty_seconds: 0, now: "2026-09-22T10:00:00Z" };
 
@@ -66,4 +66,14 @@ test("english interpolates and leaves unknown names alone", () => {
 test("not yours is about a group while the team is split, else a role", () => {
   assert.equal(feedbackForRefusal("not_yours", english).text, "That's for another role on your team to do.");
   assert.equal(feedbackForRefusal("other_group", english).text, "That's for another group of your team to do.");
+});
+
+test("a right answer's line takes the look's own cheer, as its burst does", () => {
+  const right = feedbackForResult("answer", { accepted: true, points: 10, view }, english);
+  assert.equal(inLookWords(right, { cheer_text: " Mapped! " })?.text, "Mapped! +10 points");
+  const noPoints = feedbackForResult("answer", { accepted: true, view }, english);
+  assert.equal(inLookWords(noPoints, { cheer_text: "Mapped!" })?.text, "Mapped!");
+  assert.equal(inLookWords(right, {})?.text, "Correct! +10 points", "no cheer of its own: as written");
+  const wrong = feedbackForResult("answer", { accepted: false, view }, english);
+  assert.equal(inLookWords(wrong, { cheer_text: "Mapped!" }), wrong, "a wrong answer is left alone");
 });

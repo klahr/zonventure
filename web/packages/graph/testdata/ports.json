@@ -137,6 +137,28 @@
     },
     {
       "node": {
+        "slug": "fork",
+        "type": "hub",
+        "hub": {
+          "policy": "choice",
+          "branches": [
+            {
+              "port": "a"
+            },
+            {
+              "port": "b"
+            }
+          ],
+          "one_way": true
+        }
+      },
+      "ports": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "node": {
         "slug": "h0",
         "type": "hub"
       },

@@ -537,6 +537,8 @@ export interface HubConfig {
   hide_locked?: boolean;
   /** A home screen: branches stay open, back works from inside them, it never finishes. */
   home?: boolean;
+  /** A fork in the road: the team picks one branch and carries on down it, never back. No done output. */
+  one_way?: boolean;
   /** Shown above the branches instead of "choose where to go next". Markdown. */
   text?: string;
 }

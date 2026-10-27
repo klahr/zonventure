@@ -11,6 +11,24 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- A hub can be a one-way choice: the team picks one branch and carries
+  on down it, never back. It has no done output to wire, and the
+  validator says when a branch leads back to it. In the designer, a
+  hub's "After a branch" setting chooses between coming back, one way
+  and a home screen.
+
+### Fixed
+
+- After a right answer, the line under the answer box speaks in the
+  look's own words, as the burst above it does: "Mapped! +10 points"
+  rather than "Correct! +10 points".
+- A tappable picture's captions show **bold**, *italic* and `{{team}}` as
+  everywhere else, rather than the Markdown as typed.
+- With a mouse, as in the designer's simulator, hovering a tappable
+  picture's marker shows its caption; a click still keeps it open.
+
 ## [0.36.4] - 2026-10-25
 
 ### Fixed

@@ -322,8 +322,8 @@ function clip(s: string | undefined, n = 60): string {
 function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onEdit: StepEdit, t: T, openPart: (id: string) => void, editingAs: EditingAs): Part[] {
   // An edit beside the step: the step itself stays as it is.
   const onGraphChange = (g: Graph, opts?: StepEditOpts) => onEdit(g, (n) => n, opts);
-  // A hub's wire from Done, which a home screen takes away: not something a
-  // suggestion, the step alone, can do.
+  // A hub's wire from Done, which a home screen or a one-way choice takes
+  // away: not something a suggestion, the step alone, can do.
   const doneWire = (e: Edge) => e.from === node.slug && e.from_port === "done";
   const parts: Part[] = [];
   switch (node.type) {
@@ -380,11 +380,17 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onEdit: 
     case "hub":
       if (node.hub)
         parts.push(
-          ...hubParts(node.hub, graph, (hub) => onChange({ ...node, hub }), editingAs.suggesting && graph.edges.some(doneWire) ? undefined : (home) => {
-            // A home screen has no done output; drop a wire from it with it.
-            onEdit(home && graph.edges.some(doneWire) ? { ...graph, edges: graph.edges.filter((e) => !doneWire(e)) } : graph, (n) => ({
+          ...hubParts(node.hub, graph, (hub) => onChange({ ...node, hub }), editingAs.suggesting && graph.edges.some(doneWire) ? undefined : (kind) => {
+            // A home screen and a one-way choice have no done output; drop a
+            // wire from it with it.
+            const leaves = kind === "back";
+            onEdit(!leaves && graph.edges.some(doneWire) ? { ...graph, edges: graph.edges.filter((e) => !doneWire(e)) } : graph, (n) => ({
               ...n,
-              hub: withOptional(withOptional({ ...n.hub! }, "required", home ? undefined : n.hub!.required), "home", home || undefined),
+              hub: withOptional(
+                withOptional(withOptional({ ...n.hub! }, "required", leaves ? n.hub!.required : undefined), "home", kind === "home" || undefined),
+                "one_way",
+                kind === "one_way" || undefined,
+              ),
             }));
           }, t),
         );
@@ -1348,7 +1354,19 @@ const POLICIES: { p: Policy; label: string; hint: string }[] = [
   { p: "random", label: "Random", hint: "Random, but reproducible for each team." },
 ];
 
-function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void, onHome: ((home: boolean) => void) | undefined, t: T): Part[] {
+/** What a team does after a hub's branch: come back to it, carry on (one way), or keep coming back (home screen). */
+type HubKind = "back" | "one_way" | "home";
+const HUB_KINDS: { k: HubKind; label: string; hint: string }[] = [
+  { k: "back", label: "Come back here when done", hint: "Each branch leads back here. Teams move on once enough branches are done." },
+  { k: "one_way", label: "One way: pick one and carry on", hint: "Teams pick one branch and carry on down it. They never come back here, so there is no way on from this step itself." },
+  {
+    k: "home",
+    label: "Home screen",
+    hint: "Teams keep coming back here. Branches stay open after a visit, teams can go back here from anywhere inside them, and it never finishes — end the adventure from one of its branches.",
+  },
+];
+
+function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void, onKind: ((kind: HubKind) => void) | undefined, t: T): Part[] {
   const branches = cfg.branches ?? [];
   const policy = POLICIES.find((p) => p.p === cfg.policy);
   const setBranch = (i: number, b: Branch) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? b : x)) });
@@ -1361,6 +1379,8 @@ function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void
           <SumRow label={t.t("Picked")}>{policy ? t.t(policy.label) : cfg.policy}</SumRow>
           {cfg.home ? (
             <SumRow label={t.t("Home screen")}>{t.t("yes — teams keep coming back")}</SumRow>
+          ) : cfg.one_way ? (
+            <SumRow label={t.t("One way")}>{t.t("yes — teams pick one and carry on")}</SumRow>
           ) : (
             <SumRow label={t.t("Moves on after")}>{cfg.required ? t.t("{{n}} of {{total}} branches", { n: cfg.required, total: branches.length }) : t.t("all branches")}</SumRow>
           )}
@@ -1379,18 +1399,27 @@ function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void
             </select>
           </Field>
           {cfg.policy === "choice" && (
-            <label className="check">
-              <input type="checkbox" checked={!!cfg.home} disabled={!onHome} onChange={(e) => onHome?.(e.target.checked)} />
-              <span>
-                {t.t("Home screen")}
-                <span className="field__hint check__hint">
-                  {t.t("Teams keep coming back here. Branches stay open after a visit, teams can go back here from anywhere inside them, and it never finishes — end the adventure from one of its branches.")}
-                </span>
-                {!onHome && <span className="field__hint check__hint">{t.t("Switched on outside a suggestion: it takes away the step's wire onward.")}</span>}
-              </span>
-            </label>
+            <fieldset className="field">
+              <legend className="field__label">{t.t("After a branch")}</legend>
+              {HUB_KINDS.map(({ k, label, hint }) => (
+                <label key={k} className="check">
+                  <input
+                    type="radio"
+                    name={`hub-kind-${cfg.branches?.map((b) => b.port).join("-") ?? ""}`}
+                    checked={(cfg.home ? "home" : cfg.one_way ? "one_way" : "back") === k}
+                    disabled={!onKind}
+                    onChange={() => onKind?.(k)}
+                  />
+                  <span>
+                    {t.t(label)}
+                    <span className="field__hint check__hint">{t.t(hint)}</span>
+                  </span>
+                </label>
+              ))}
+              {!onKind && <span className="field__hint check__hint">{t.t("Switched on outside a suggestion: it takes away the step's wire onward.")}</span>}
+            </fieldset>
           )}
-          {!cfg.home && (
+          {!cfg.home && !cfg.one_way && (
             <Field label={t.t("Branches required before moving on")} hint={t.t("Leave empty for all of them.")}>
               <input
                 className="field__input"
