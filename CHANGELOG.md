@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.36.5] - 2026-10-27
+
 ### Added
 
 - A hub can be a one-way choice: the team picks one branch and carries
