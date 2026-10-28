@@ -11,6 +11,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- A Morse lamp beeps its message as it flashes, so a player who cannot
+  see it can play it on an iPhone too, which cannot vibrate. "Beep too"
+  beside "Vibrate too" turns it off.
+
 ## [0.37.0] - 2026-10-28
 
 ### Added
