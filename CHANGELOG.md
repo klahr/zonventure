@@ -11,6 +11,16 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.36.6] - 2026-10-28
+
+### Fixed
+
+- A team that begins straight away, as one with a store ticket does,
+  sees where to meet before it sets off: the intro shows the
+  adventure's starting point, its map a tap away, as the lobby of a
+  scheduled event does. Before, an adventure whose start needs no
+  radius never showed it at all.
+
 ## [0.36.5] - 2026-10-27
 
 ### Added
