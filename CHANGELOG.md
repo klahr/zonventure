@@ -11,6 +11,22 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-10-28
+
+### Added
+
+- An adventure can say it is playable without sight, with a screen
+  reader: a checkbox in its details. The store's cards and ticket page
+  show "Playable without sight", and the designer and the simulator
+  then warn about what stands in a blind player's way: a picture with
+  no description, a block or puzzle solved by looking (torch, spot the
+  difference, overlay, photo, draw, tiles, a code to scan) and a hidden
+  place.
+- The radar can beep and buzz with every beat, faster and higher as
+  the team gets warmer, so it can be played by ear or with the phone
+  in a pocket.
+- The phone buzzes as its player arrives at a step's place.
+
 ## [0.36.6] - 2026-10-28
 
 ### Fixed
