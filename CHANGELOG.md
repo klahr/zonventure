@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.37.1] - 2026-10-28
+
 ### Added
 
 - A Morse lamp beeps its message as it flashes, so a player who cannot
