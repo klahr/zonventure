@@ -92,6 +92,8 @@ export interface AdventureFacts {
   min_age?: number;
   difficulty?: "easy" | "medium" | "hard";
   access?: "step_free" | "some_steps" | "not_step_free";
+  /** Playable without sight, with a screen reader. */
+  blind?: boolean;
 }
 
 /** internal/admin/authoring.go: adventureEditDTO, the fields the details dialog edits. */

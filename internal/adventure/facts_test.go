@@ -3,7 +3,7 @@ package adventure
 import "testing"
 
 func TestFactsValidate(t *testing.T) {
-	for _, f := range []Facts{{}, {Minutes: 90, DistanceM: 2400, MinAge: 10, Difficulty: "medium", Access: "step_free"}} {
+	for _, f := range []Facts{{}, {Minutes: 90, DistanceM: 2400, MinAge: 10, Difficulty: "medium", Access: "step_free", Blind: true}} {
 		if err := f.Validate(); err != nil {
 			t.Errorf("%+v: %v", f, err)
 		}

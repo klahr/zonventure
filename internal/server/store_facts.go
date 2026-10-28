@@ -10,7 +10,7 @@ import (
 // factTexts are an adventure's facts as its ticket page says them, each
 // empty when unknown.
 type factTexts struct {
-	Duration, Distance, Age, Difficulty, Access string
+	Duration, Distance, Age, Difficulty, Access, Blind string
 }
 
 // formatFacts says f in s's words. Playing time is in minutes under an
@@ -45,5 +45,8 @@ func formatFacts(lang string, s landingStrings, f adventure.Facts) factTexts {
 	}
 	t.Difficulty = map[string]string{"easy": s.StoreFactEasy, "medium": s.StoreFactMedium, "hard": s.StoreFactHard}[f.Difficulty]
 	t.Access = map[string]string{"step_free": s.StoreFactStepFree, "some_steps": s.StoreFactSomeSteps, "not_step_free": s.StoreFactNotStepFree}[f.Access]
+	if f.Blind {
+		t.Blind = s.StoreFactBlind
+	}
 	return t
 }

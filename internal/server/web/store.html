@@ -311,7 +311,8 @@
   }
   // An adventure's playing time, walk and age, as its ticket page says
   // them (formatFacts in store_facts.go): minutes under an hour, half
-  // hours above; metres under a kilometre, tenths above.
+  // hours above; metres under a kilometre, tenths above. One that can be
+  // played without sight says so too.
   function factLabels(f) {
     var out = [];
     if (!f) return out;
@@ -320,6 +321,7 @@
     if (f.minutes > 0) out.push(f.minutes < 60 ? t('factMinutes').replace('{n}', f.minutes) : t('factHours').replace('{n}', num(Math.floor((f.minutes + 15) / 30) / 2)));
     if (f.distance_m > 0) out.push(f.distance_m < 1000 ? t('factMetres').replace('{n}', f.distance_m) : t('factKm').replace('{n}', num(Math.floor((f.distance_m + 50) / 100) / 10)));
     if (f.min_age > 0) out.push(t('factAge').replace('{n}', f.min_age));
+    if (f.blind) out.push(t('factBlind'));
     return out;
   }
 

@@ -260,6 +260,7 @@ type landingStrings struct {
 	StoreFactStepFree    string
 	StoreFactSomeSteps   string
 	StoreFactNotStepFree string
+	StoreFactBlind       string
 
 	// An event's embed (embed-event.html), on another site.
 	EmbedBuyCTA  string
@@ -514,6 +515,7 @@ func storeI18nJSON(s landingStrings) string {
 		"factMetres":           s.StoreFactMetres,
 		"factKm":               s.StoreFactKm,
 		"factAge":              s.StoreFactAge,
+		"factBlind":            s.StoreFactBlind,
 		"emptyHeading":         s.StoreEmptyHeading,
 		"emptyBody":            s.StoreEmptyBody,
 		"errorHeading":         s.StoreErrorHeading,

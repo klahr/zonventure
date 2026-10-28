@@ -120,7 +120,7 @@ func (h *Handlers) graphState(ctx context.Context, advID int64) (graphResponse, 
 	default:
 		return resp, false, err
 	}
-	resp.Report = valid.Check(&resp.Envelope.Graph)
+	resp.Report = h.withSight(ctx, advID, &resp.Envelope.Graph, valid.Check(&resp.Envelope.Graph))
 	return resp, true, nil
 }
 
@@ -195,7 +195,7 @@ func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 	// Answer from what was just saved and checked, rather than reading
 	// the draft back and checking it again: the designer saves every
 	// time the author pauses.
-	resp := graphResponse{Envelope: *env, SavedAt: &d.UpdatedAt, Report: report}
+	resp := graphResponse{Envelope: *env, SavedAt: &d.UpdatedAt, Report: h.withSight(r.Context(), advID, &env.Graph, report)}
 	pub, err := graphstore.Published(r.Context(), h.DB, advID)
 	if err != nil && !errors.Is(err, graphstore.ErrNotFound) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading graph failed", err)
@@ -383,7 +383,7 @@ func (h *Handlers) GetAdventureGraphVersion(w http.ResponseWriter, r *http.Reque
 	httpx.JSON(w, http.StatusOK, graphResponse{
 		Version:  s.Version,
 		Envelope: graph.Envelope{Format: graph.FormatV2, Graph: *s.Graph},
-		Report:   valid.Check(s.Graph),
+		Report:   h.withSight(r.Context(), advID, s.Graph, valid.Check(s.Graph)),
 	})
 }
 
@@ -534,14 +534,29 @@ func (h *Handlers) userID(r *http.Request) int64 {
 // the editor calls as the author works, so problems appear on the canvas
 // before they press save.
 func (h *Handlers) ValidateAdventureGraph(w http.ResponseWriter, r *http.Request) {
-	if _, ok := h.graphTarget(w, r); !ok {
+	advID, ok := h.graphTarget(w, r)
+	if !ok {
 		return
 	}
 	env, ok := readEnvelope(w, r)
 	if !ok {
 		return
 	}
-	httpx.JSON(w, http.StatusOK, graphResponse{Envelope: *env, Report: valid.Check(&env.Graph)})
+	httpx.JSON(w, http.StatusOK, graphResponse{Envelope: *env, Report: h.withSight(r.Context(), advID, &env.Graph, valid.Check(&env.Graph))})
+}
+
+// withSight adds valid.Sight's warnings to a report when the adventure
+// says it can be played without sight (Facts.Blind), so the author sees
+// what still stands in such a player's way. A failed read leaves the
+// report as it was: these are only warnings.
+func (h *Handlers) withSight(ctx context.Context, advID int64, g *graph.Graph, report valid.Report) valid.Report {
+	var raw []byte
+	var f adventure.Facts
+	if err := h.DB.QueryRowContext(ctx, `SELECT facts FROM adventures WHERE id = $1`, advID).Scan(&raw); err != nil || json.Unmarshal(raw, &f) != nil || !f.Blind {
+		return report
+	}
+	report.Issues = append(slices.Clip(report.Issues), valid.Sight(g)...)
+	return report
 }
 
 // graphTarget authorises the caller against the adventure in the URL and

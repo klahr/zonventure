@@ -254,6 +254,10 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		// A note alone is the tile's value.
 		ft.Access, accessNote = accessNote, ""
 	}
+	if ft.Access == "" {
+		// So is playing without sight.
+		ft.Access, ft.Blind = ft.Blind, ""
+	}
 
 	// Canonical path always points at the org-scoped URL — the
 	// legacy /store/event/{id} surface 301s here, so search engines
@@ -275,7 +279,8 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{START_LABEL}}", html.EscapeString(strings.TrimSpace(startLabel.String))},
 		[2]string{"{{START_LABEL_HIDDEN}}", hiddenIf(strings.TrimSpace(startLabel.String) == "")},
 		// The adventure's facts, each tile hidden when its author
-		// hasn't said; access is the access fact, its note or both.
+		// hasn't said; access is the access fact, its note, whether it
+		// can be played without sight, or any of them together.
 		[2]string{"{{DURATION}}", html.EscapeString(ft.Duration)},
 		[2]string{"{{DURATION_HIDDEN}}", hiddenIf(ft.Duration == "")},
 		[2]string{"{{DISTANCE}}", html.EscapeString(ft.Distance)},
@@ -286,6 +291,8 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{DIFFICULTY_HIDDEN}}", hiddenIf(ft.Difficulty == "")},
 		[2]string{"{{ACCESS}}", html.EscapeString(ft.Access)},
 		[2]string{"{{ACCESS_NOTE}}", html.EscapeString(accessNote)},
+		[2]string{"{{BLIND}}", html.EscapeString(ft.Blind)},
+		[2]string{"{{BLIND_HIDDEN}}", hiddenIf(ft.Blind == "")},
 		[2]string{"{{ACCESS_HIDDEN}}", hiddenIf(ft.Access == "")},
 		[2]string{"{{LANGUAGES}}", html.EscapeString(strings.Join(texts.Languages(), ", "))},
 		[2]string{"{{LANGUAGES_HIDDEN}}", hiddenIf(len(texts.Languages()) == 0)},

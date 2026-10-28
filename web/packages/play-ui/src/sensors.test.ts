@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { HOLD_START, bubble, elevation, holdStep, loudness, rms, tilt, warmth, warmthAt } from "./sensors.ts";
+import { HOLD_START, beatMs, beepHz, bubble, elevation, holdStep, loudness, rms, tilt, warmth, warmthAt } from "./sensors.ts";
 
 const near = (a: number, b: number, eps = 0.01) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
 
@@ -15,6 +15,15 @@ test("the radar warms as the zone gets closer", () => {
 test("a tiny zone counts as reached within GPS reach", () => {
   assert.equal(warmth(15, 5).band, "there");
   assert.notEqual(warmth(30, 5).band, "there");
+});
+
+test("the radar beeps faster and higher as it warms", () => {
+  assert.equal(beatMs(0), 2400);
+  assert.equal(beatMs(1), 500);
+  assert.ok(beatMs(0.6) < beatMs(0.4));
+  assert.equal(beepHz(0), 440);
+  assert.equal(beepHz(1), 880);
+  assert.equal(beepHz(7), 880);
 });
 
 test("a huge zone stretches the scale instead of being hot from anywhere", () => {

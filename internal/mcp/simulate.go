@@ -30,7 +30,7 @@ func (s *Server) registerSimulateTools() {
 			"move there and begin {port: <start node slug>}. Then: answer {node, guess}; continue {node}; choose {node, port} at a hub; skip {node}; hint {node}; " +
 			"pick {node, block, choice} for quiz blocks; wait {seconds} jumps the clock; move {zone} puts the team in a zone (or nowhere when empty), " +
 			"move {lat, lng} at a point; language {lang} switches to a translation. Stops at the first refused action and says how many after it were not run; a hint before its delay is refused, so wait {seconds} first. Each step reports the node the team is now at, " +
-			"whether an answer was accepted, the port it left by, points, wrong-answer response and hint text. " +
+			"whether an answer was accepted, the port it left by, points, wrong-answer response and hint text; for an adventure whose facts say blind, sight lists what stands in a blind player's way on a step the first time it is reached. " +
 			"A team split up into groups (a split step) is played one group after another, as one player alone would: while split, at is the step of the group to play next, group its name and group_key its key, and groups where every group is, each with its key; continue {node: <split>} sets the next group off down its path, and walk {port: <group key>} turns to another group not waiting at the join.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -86,6 +86,10 @@ type simStep struct {
 	Group    string     `json:"group,omitempty"`
 	GroupKey string     `json:"group_key,omitempty"`
 	Groups   []simGroup `json:"groups,omitempty"`
+	// Sight is what stands in a blind player's way on the step, the
+	// first time the team reaches it, for an adventure that says it can
+	// be played without sight.
+	Sight []string `json:"sight,omitempty"`
 }
 
 // simGroup is one group of a split team: its name, its key (walk's
@@ -126,6 +130,7 @@ func simulateAdventure(ctx context.Context, s *Server, raw json.RawMessage) (Too
 
 	var team json.RawMessage
 	steps := []simStep{}
+	sighted := map[string]bool{}
 	for _, act := range a.Actions {
 		status, body, err := callAdmin(ctx, s.Admin.SimulateAdventureGraph, "POST", "/api/admin/adventures/"+a.Slug+"/simulate",
 			map[string]string{"slug": a.Slug}, nil, map[string]any{"envelope": json.RawMessage(env), "team": team, "action": act, "any_place": a.Anywhere})
@@ -139,6 +144,10 @@ func simulateAdventure(ctx context.Context, s *Server, raw json.RawMessage) (Too
 			Team   json.RawMessage `json:"team"`
 			Passed []string        `json:"passed"`
 			Refuse json.RawMessage `json:"refusal"`
+			Sight  []struct {
+				Node    string `json:"node"`
+				Message string `json:"message"`
+			} `json:"sight"`
 			Result struct {
 				Accepted bool    `json:"accepted"`
 				Port     string  `json:"port"`
@@ -172,6 +181,14 @@ func simulateAdventure(ctx context.Context, s *Server, raw json.RawMessage) (Too
 			Accepted: resp.Result.Accepted, Port: resp.Result.Port, Points: resp.Result.Points,
 			Response: resp.Result.Response, Hint: resp.Result.Hint, TimeUp: resp.Result.TimeUp,
 			Passed: resp.Passed, Refusal: resp.Refuse,
+		}
+		for _, i := range resp.Sight {
+			if !sighted[i.Node] {
+				step.Sight = append(step.Sight, i.Message)
+			}
+		}
+		for _, i := range resp.Sight {
+			sighted[i.Node] = true
 		}
 		if v := resp.Result.View; len(v.Groups) > 0 {
 			step.At, step.Group = v.Node, v.Group

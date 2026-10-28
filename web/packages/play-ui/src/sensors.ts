@@ -53,6 +53,20 @@ export function warmthAt(pos: { lat: number; lng: number }, zone: Zone): Warmth 
   return warmth(metresBetween(pos.lat, pos.lng, lat, lng), r);
 }
 
+/**
+ * How often the radar beats at a heat, in ms: what radar.css's pulse
+ * does, from 2.4 s far away to half a second at the zone's edge, so the
+ * beep and the buzz keep time with the dot.
+ */
+export function beatMs(heat: number): number {
+  return Math.round((2.4 - clamp(heat, 0, 1) * 1.9) * 1000);
+}
+
+/** The radar's beep at a heat: an octave from A4 far away to A5 at the edge, so warmer also sounds higher. */
+export function beepHz(heat: number): number {
+  return 440 * 2 ** clamp(heat, 0, 1);
+}
+
 /** Root mean square of an analyser's time-domain samples, 0…1. */
 export function rms(samples: ArrayLike<number>): number {
   if (samples.length === 0) return 0;

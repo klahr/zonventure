@@ -19,9 +19,10 @@
     {{PRICE_DISPLAY}} {{PRICE_MAJOR}} {{CURRENCY}}
     {{TEAM_SIZE}} {{TEAM_LABEL}} {{START_LABEL}}
     {{LANGUAGES}} {{LANGUAGES_HIDDEN}} {{STORE_PLAYED_IN}} (the languages it is played in, as tags)
-    {{DURATION}} {{DISTANCE}} {{AGE}} {{DIFFICULTY}} {{ACCESS}} {{ACCESS_NOTE}} (the adventure's
-      facts, when its author gave them), each with its own _HIDDEN placeholder
-      (ACCESS_HIDDEN covers both access ones) and a STORE_EVENT_META_ label
+    {{DURATION}} {{DISTANCE}} {{AGE}} {{DIFFICULTY}} {{ACCESS}} {{ACCESS_NOTE}} {{BLIND}} (the
+      adventure's facts, when its author gave them), each with its own _HIDDEN
+      placeholder (ACCESS_HIDDEN covers all three access ones, BLIND_HIDDEN the
+      line saying it is playable without sight) and a STORE_EVENT_META_ label
     {{COVER_URL}} {{HAS_COVER}} (the event's cover, else its look's)
     {{LOOK_FONT}} (the look's title typeface: a stylesheet and a rule)
     {{EVENT_ID}} {{ADVENTURE_SLUG}} {{CANONICAL_URL}}
@@ -277,6 +278,7 @@
         <div class="meta-tile"{{ACCESS_HIDDEN}}>
           <div class="k">{{STORE_EVENT_META_ACCESS}}</div>
           <div class="v">{{ACCESS}}</div>
+          <div class="v"{{BLIND_HIDDEN}}>{{BLIND}}</div>
           <div class="note">{{ACCESS_NOTE}}</div>
         </div>
         <div class="meta-tile"{{LANGUAGES_HIDDEN}}>

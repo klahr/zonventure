@@ -124,7 +124,7 @@ export function PickPassDialog({ title, passes, onPick, onClose }: { title: stri
   );
 }
 
-type Form = { slug: string; title: string; description: string; author: string; intro_text: string; outro_text: string; buyer_note: string; area: string; minutes: string; distance_km: string; min_age: string; difficulty: string; access: string; access_note: string; strict_assets: boolean; lat: string; lng: string; start_label: string; require_start: boolean; radius: string; cheat_password: string };
+type Form = { slug: string; title: string; description: string; author: string; intro_text: string; outro_text: string; buyer_note: string; area: string; minutes: string; distance_km: string; min_age: string; difficulty: string; access: string; access_note: string; blind: boolean; strict_assets: boolean; lat: string; lng: string; start_label: string; require_start: boolean; radius: string; cheat_password: string };
 
 /** The presentation fields review may hold back (internal/admin/presentation.go). */
 const HELD = ["title", "description", "author", "intro_text", "outro_text", "buyer_note", "area", "access_note", "start_label"] as const;
@@ -155,6 +155,7 @@ function formOf(a: AdventureEdit): Form {
     difficulty: a.facts?.difficulty ?? "",
     access: a.facts?.access ?? "",
     access_note: a.access_note || "",
+    blind: !!a.facts?.blind,
     strict_assets: !!a.strict_assets,
     lat: a.start_lat == null ? "" : String(a.start_lat),
     lng: a.start_lng == null ? "" : String(a.start_lng),
@@ -184,6 +185,7 @@ function factsOf(x: Form): AdventureFacts {
   if (age) out.min_age = age;
   if (x.difficulty) out.difficulty = x.difficulty as NonNullable<AdventureFacts["difficulty"]>;
   if (x.access) out.access = x.access as NonNullable<AdventureFacts["access"]>;
+  if (x.blind) out.blind = true;
   return out;
 }
 
@@ -450,6 +452,11 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
               <Field label={t.t("Access note")} hint={t.t("What the choice above leaves unsaid, such as “Stairs at the fourth stop; a step-free way round is signposted”.")}>
                 <input value={f.access_note} maxLength={200} onChange={(e) => set("access_note", e.target.value)} />
               </Field>
+              <label className="adv-check">
+                <input type="checkbox" checked={f.blind} onChange={(e) => set("blind", e.target.checked)} />
+                <span>{t.t("Playable without sight (blind-friendly)")}</span>
+                <HelpPopover label={t.t("Playable without sight (blind-friendly)")} body={t.t("Someone who cannot see can play the whole adventure with a screen reader: every zone named, every puzzle heard or felt, every picture described, and no answer that needs eyes.")} />
+              </label>
             </div>
           )}
           {section === "start" && (

@@ -33,6 +33,7 @@ import (
 
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/session"
+	"github.com/klahr/zonventure/internal/graph/valid"
 	"github.com/klahr/zonventure/internal/graph/walk"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/play"
@@ -129,6 +130,10 @@ type simulateResponse struct {
 	// view is then the acting player's.
 	Crew   *simCrew   `json:"crew,omitempty"`
 	Phones []simPhone `json:"phones,omitempty"`
+	// Sight is what stands in a blind player's way on the step the team
+	// is now at, for an adventure that says it can be played without
+	// sight: valid.Sight's warnings for that step.
+	Sight []valid.Issue `json:"sight,omitempty"`
 }
 
 // SimulateAdventureGraph runs one simulated action.
@@ -165,6 +170,13 @@ func (h *Handlers) SimulateAdventureGraph(w http.ResponseWriter, r *http.Request
 	if status != http.StatusOK {
 		httpx.JSON(w, status, graphRefusal{Error: msg, Code: "simulate_malformed"})
 		return
+	}
+	if node := resp.Result.View.Node; node != "" {
+		for _, i := range h.withSight(r.Context(), advID, &env.Graph, valid.Report{}).Issues {
+			if i.Node == node {
+				resp.Sight = append(resp.Sight, i)
+			}
+		}
 	}
 	httpx.JSON(w, http.StatusOK, resp)
 }

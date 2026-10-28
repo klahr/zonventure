@@ -203,6 +203,7 @@
 "StoreFactStepFree": "Utan trappor: går bra med rullstol och barnvagn",
 "StoreFactSomeSteps": "Några trappor eller ojämnt underlag",
 "StoreFactNotStepFree": "Inte framkomlig med rullstol",
+"StoreFactBlind": "Spelbart utan syn",
 "StoreFilterHome": "Hemma",
 "StoreEventMetaFormatHome": "Spelas hemma, i mobilen",
 "StoreEventStartMap": "Här börjar äventyret",

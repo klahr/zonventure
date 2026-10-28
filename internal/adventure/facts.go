@@ -22,6 +22,10 @@ type Facts struct {
 	// Access is one of Accesses: whether a wheelchair or a pram can
 	// follow the route. The adventure's access_note says the rest.
 	Access string `json:"access,omitempty"`
+	// Blind says the whole adventure can be played by someone who
+	// cannot see, with a screen reader: every zone named, every puzzle
+	// heard or felt, every picture described.
+	Blind bool `json:"blind,omitempty"`
 }
 
 // Difficulties and Accesses are the values Facts take.

@@ -8,9 +8,9 @@ import (
 
 func TestFormatFacts(t *testing.T) {
 	s := landingStrings{StoreFactMinutes: "{n} min", StoreFactHours: "{n} h", StoreFactMetres: "{n} m", StoreFactKm: "{n} km",
-		StoreFactAgeLong: "{n}+", StoreFactMedium: "Medium", StoreFactStepFree: "Step-free"}
-	got := formatFacts("en", s, adventure.Facts{Minutes: 100, DistanceM: 2449, MinAge: 10, Difficulty: "medium", Access: "step_free"})
-	want := factTexts{Duration: "1.5 h", Distance: "2.4 km", Age: "10+", Difficulty: "Medium", Access: "Step-free"}
+		StoreFactAgeLong: "{n}+", StoreFactMedium: "Medium", StoreFactStepFree: "Step-free", StoreFactBlind: "Without sight"}
+	got := formatFacts("en", s, adventure.Facts{Minutes: 100, DistanceM: 2449, MinAge: 10, Difficulty: "medium", Access: "step_free", Blind: true})
+	want := factTexts{Duration: "1.5 h", Distance: "2.4 km", Age: "10+", Difficulty: "Medium", Access: "Step-free", Blind: "Without sight"}
 	if got != want {
 		t.Errorf("got %+v, want %+v", got, want)
 	}

@@ -479,6 +479,7 @@ function Title({ view }: { view: play.View }) {
 const mapURL = (z: play.PlayZone) => `https://www.openstreetmap.org/?mlat=${z.lat}&mlon=${z.lng}#map=18/${z.lat}/${z.lng}`;
 
 function ZoneCard({ view, t, note, onStation, busy }: { view: play.View; t: Translate; note?: ReactNode; onStation?: (code: string) => void; busy?: boolean }) {
+  useArrivalBuzz(!!view.zone && !!(view.here_me ?? view.here));
   const z = view.zone;
   if (!z) return null;
   if (view.stations) return <StationCard view={view} zone={z} t={t} {...(onStation ? { onStation } : {})} busy={!!busy} />;
@@ -515,6 +516,19 @@ function ZoneCard({ view, t, note, onStation, busy }: { view: play.View; t: Tran
       )}
     </div>
   );
+}
+
+/**
+ * Buzzes the phone as its player arrives at the place, so one who cannot
+ * see the screen, or keeps it in a pocket, knows to stop. Not when the
+ * step opens with them already there: they did not just arrive.
+ */
+function useArrivalBuzz(here: boolean) {
+  const was = useRef(here);
+  useEffect(() => {
+    if (here && !was.current && typeof navigator.vibrate === "function") navigator.vibrate([150, 100, 150]);
+    was.current = here;
+  }, [here]);
 }
 
 /**

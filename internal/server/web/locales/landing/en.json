@@ -203,6 +203,7 @@
 "StoreFactStepFree": "Step-free: fine for wheelchairs and prams",
 "StoreFactSomeSteps": "Some steps or rough ground",
 "StoreFactNotStepFree": "Not step-free",
+"StoreFactBlind": "Playable without sight",
 "StoreFilterHome": "At home",
 "StoreEventMetaFormatHome": "Played at home, on your phones",
 "StoreEventStartMap": "Where it starts",
