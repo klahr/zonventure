@@ -364,7 +364,6 @@ function Lobby({ state, t, locale, usesLocation }: { state: play.PlayState; t: T
   const counting = state.event.state === "scheduled" && !!at && !Number.isNaN(at.getTime());
   const now = useEngineClock(state.event.server_now ?? new Date().toISOString(), counting);
   const startsIn = counting && at ? (at.getTime() - now) / 1000 : null;
-  const [mapOpen, setMapOpen] = useState(false);
   if (state.event.state === "cancelled" || state.event.state === "completed") {
     return <EventOver state={state} t={t} />;
   }
@@ -385,29 +384,39 @@ function Lobby({ state, t, locale, usesLocation }: { state: play.PlayState; t: T
         </div>
       )}
       {state.event.intro_text && <Markdown className="app-lobby__intro" text={fillTeam(state.event.intro_text, { teamName: state.team.name })} />}
-      {state.event.start && (
-        <p className="app-lobby__start">
-          <strong>{t("Meet at")}</strong>{" "}
-          {/* On the app's own map: a link out would leave the game. */}
-          <button type="button" className="app-lobby__place" onClick={() => setMapOpen(true)}>
-            {state.event.start.label || t("the starting point")}
-          </button>
-        </p>
-      )}
-      {mapOpen && state.event.start && (
-        <div className="pv app-inbox__pv">
-          <Sheet title={state.event.start.label || t("the starting point")} t={t} onClose={() => setMapOpen(false)}>
-            <div className="pv-sheet__body">
-              <FitMap className="pv-map" zone={{ slug: "start", lat: state.event.start.lat, lng: state.event.start.lng, radius_m: state.event.start.radius_m || 25 }} />
-            </div>
-          </Sheet>
-        </div>
-      )}
-      {state.event.start?.radius_m ? <p className="app-muted">{t("You can only begin once you're there.")}</p> : null}
+      <MeetingPoint state={state} t={t} />
       {usesLocation && <p className="app-muted">{t("This adventure uses your location to know when your team reaches a place. When your phone asks, allow it.")}</p>}
       <Files files={state.event.files ?? []} t={t} locale={locale} />
       <p className="app-muted">{t("Keep this page open. It will change by itself.")}</p>
     </div>
+  );
+}
+
+/** Where the adventure begins, with its map a tap away, before the team sets off. */
+function MeetingPoint({ state, t }: { state: play.PlayState; t: Translate }) {
+  const [mapOpen, setMapOpen] = useState(false);
+  const start = state.event.start;
+  if (!start) return null;
+  return (
+    <>
+      <p className="app-lobby__start">
+        <strong>{t("Meet at")}</strong>{" "}
+        {/* On the app's own map: a link out would leave the game. */}
+        <button type="button" className="app-lobby__place" onClick={() => setMapOpen(true)}>
+          {start.label || t("the starting point")}
+        </button>
+      </p>
+      {mapOpen && (
+        <div className="pv app-inbox__pv">
+          <Sheet title={start.label || t("the starting point")} t={t} onClose={() => setMapOpen(false)}>
+            <div className="pv-sheet__body">
+              <FitMap className="pv-map" zone={{ slug: "start", lat: start.lat, lng: start.lng, radius_m: start.radius_m || 25 }} />
+            </div>
+          </Sheet>
+        </div>
+      )}
+      {start.radius_m ? <p className="app-muted">{t("You can only begin once you're there.")}</p> : null}
+    </>
   );
 }
 
@@ -503,6 +512,7 @@ function Intro({ state, t, usesLocation, onDone, onRenamed }: { state: play.Play
           : t("Your team: {{team}}", { team: state.team.name })}
       </p>
       {state.event.intro_text && <Markdown className="app-lobby__intro" text={fillTeam(state.event.intro_text, { teamName: state.team.name })} />}
+      <MeetingPoint state={state} t={t} />
       {/* Until it begins, the team can swap a given name such as "Team 2" for its own. */}
       {own && !state.team.locked && (
         <div className="app-lobby__name">
