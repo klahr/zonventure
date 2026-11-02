@@ -11,6 +11,25 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- A gained item gets a full-screen reveal that waits for Continue.
+- An event's page links to the adventure version it plays.
+- MCP `set_text` can edit a translation with `lang`.
+
+### Changed
+
+- CI and Docker build with Go 1.27 and Node 26.
+
+### Fixed
+
+- Elapsed times of a day or more show years, months and days.
+- A new step opens scrolled to the top.
+
+### Security
+
+- Updated chi, go-jose and excelize.
+
 ## [0.37.4] - 2026-11-02
 
 ### Fixed
