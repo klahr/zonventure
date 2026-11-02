@@ -114,10 +114,17 @@ export function groupSeconds(event: Parameters<typeof playEnd>[0], since: string
   return Math.max(0, Math.floor((playEnd(event, now + offsetMs) - at) / 1000));
 }
 
-/** "1h 12m", "5m", "40s" — short enough for a stat tile. */
+/** "1y 2mo 3d", "2d 4h", "1h 12m", "5m", "40s" — short enough for a stat tile. A month is 30 days, a year 365. */
 export function fmtElapsedShort(sec: number): string {
   if (sec <= 0) return "0m";
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const days = Math.floor(h / 24);
+  if (days > 0) {
+    const y = Math.floor(days / 365), mo = Math.floor((days % 365) / 30), d = (days % 365) % 30;
+    const parts = [y && `${y}y`, mo && `${mo}mo`, d && `${d}d`].filter(Boolean);
+    if (days < 7 && h % 24) parts.push(`${h % 24}h`);
+    return parts.join(" ");
+  }
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m`;
   return `${s}s`;

@@ -33,14 +33,7 @@ export function elapsedSeconds(e: EventInfo, offsetMs: number, now: number): num
   return Math.max(0, Math.floor((playEnd(e, now + offsetMs) - start) / 1000 - (e.paused_seconds ?? 0)));
 }
 
-export function fmtElapsedShort(sec: number): string {
-  if (sec <= 0) return "0m";
-  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
-  if (h >= 24) return `${Math.floor(h / 24)}d ${h % 24}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m`;
-  return `${s}s`;
-}
+export { fmtElapsedShort } from "../event/util.ts";
 
 // One shared second tick, for every clock and "5m ago" on the page.
 let now = Date.now();
