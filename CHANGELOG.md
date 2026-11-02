@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.37.4] - 2026-11-02
+
 ### Fixed
 
 - A new store cover shows at once: on the store, its event pages and
