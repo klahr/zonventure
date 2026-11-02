@@ -318,6 +318,56 @@ interface StepProps extends PlayViewProps {
 
 type Burst = NonNullable<Feedback["burst"]> & { id: number };
 
+/**
+ * A search's button. With seconds set it searches first, the button
+ * filling as a bar, and answers when full — the legacy scanner's look-up.
+ * Leaving the step unmounts it and calls the search off.
+ */
+function SearchButton({
+  seconds,
+  disabled,
+  label,
+  t,
+  onSearching,
+  onSearched,
+}: {
+  seconds: number;
+  disabled: boolean;
+  label: string;
+  t: Translate;
+  onSearching: (on: boolean) => void;
+  onSearched: () => void;
+}) {
+  const [searching, setSearching] = useState(false);
+  const done = useRef(onSearched);
+  done.current = onSearched;
+  const busy = useRef(onSearching);
+  busy.current = onSearching;
+  useEffect(() => {
+    if (!searching) return;
+    busy.current(true);
+    const id = setTimeout(() => {
+      setSearching(false);
+      done.current();
+    }, seconds * 1000);
+    return () => {
+      clearTimeout(id);
+      busy.current(false);
+    };
+  }, [searching, seconds]);
+  return (
+    <button
+      type="button"
+      className={"pv-btn pv-btn--primary pv-btn--wide" + (searching ? " pv-btn--searching" : "")}
+      style={searching ? ({ "--pv-search-s": `${seconds}s` } as CSSProperties) : undefined}
+      disabled={disabled || searching}
+      onClick={() => (seconds > 0 ? setSearching(true) : onSearched())}
+    >
+      {searching ? t("Searching…") : label}
+    </button>
+  );
+}
+
 const BURST_MS = { celebrate: 1500, rebuff: 900 } as const;
 
 /** Plays each new feedback's burst once, unless motion is reduced. */
@@ -654,6 +704,7 @@ function PuzzleStep(props: StepProps) {
   const mine = !input.not_yours;
   const tiles = mine && input.kind === "tiles" && input.image && input.rows && input.cols ? input : null;
   const search = mine && input.kind === "search";
+  const [searching, setSearching] = useState(false);
   const choices = mine && input.kind === "choice" && input.fields?.length ? input.fields : null;
   const lock = mine && input.kind === "lock" && input.wheels && input.symbols?.length ? input : null;
   const slots = mine && input.kind === "items" && input.slots?.length ? input : null;
@@ -752,7 +803,9 @@ function PuzzleStep(props: StepProps) {
             {input.at ? "⌖" : "?"}
           </span>
           <div className="pv-zone__body">
-            <strong role="status">{input.at ? t("You are at {{place}}.", { place: input.at }) : t("You're not there yet.")}</strong>
+            <strong role="status">
+              {input.at ? t("You are at {{place}}.", { place: input.at }) : input.placeholder || (input.area ? t("You're outside the area.") : t("You're not there yet."))}
+            </strong>
             {/* A compass on the step already says how far. */}
             {!input.at && props.zoneNote && !view.blocks?.some((b) => b.kind === "compass") && <span className="pv-zone__note">{props.zoneNote}</span>}
           </div>
@@ -792,7 +845,8 @@ function PuzzleStep(props: StepProps) {
       )}
 
       <div className="pv-dock">
-        <FeedbackLine feedback={feedback} />
+        {/* A search under way has no result yet: the last one would read as its answer. */}
+        <FeedbackLine feedback={searching ? null : feedback} />
         {!mine ? (
           <p className="pv-muted pv-not-yours">{t("Only the {{role}} can answer this. Find them and work it out together.", { role: input.by ?? "" })}</p>
         ) : keys && !timeUp ? (
@@ -805,14 +859,15 @@ function PuzzleStep(props: StepProps) {
             {needsPlace ? t("Not there yet") : view.together?.mine ? t("Turn it again") : t("Turn your key")}
           </button>
         ) : search && !timeUp ? (
-          <button
-            type="button"
-            className="pv-btn pv-btn--primary pv-btn--wide"
+          <SearchButton
+            key={node}
+            seconds={input.searching ?? 0}
             disabled={locked}
-            onClick={() => answer("")}
-          >
-            {blockedFor > 0 ? formatSeconds(blockedFor) : t("We're here")}
-          </button>
+            label={blockedFor > 0 ? formatSeconds(blockedFor) : input.button || t("Search here")}
+            t={t}
+            onSearching={setSearching}
+            onSearched={() => answer("")}
+          />
         ) : scan && !timeUp ? (
           <>
             <QrButton

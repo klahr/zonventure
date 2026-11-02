@@ -939,6 +939,23 @@
 .pv-dock .pv-btn--primary {
   color: var(--pv-dock-fg);
 }
+/* A search under way: the button fills, left to right, as a bar. */
+.pv-btn--searching {
+  position: relative;
+  overflow: hidden;
+}
+.pv-btn--searching:disabled {
+  opacity: 1;
+}
+.pv-btn--searching::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: currentColor;
+  opacity: 0.25;
+  animation: pv-fill var(--pv-search-s, 3s) linear forwards;
+}
 .pv--dock-brand .pv-dock .pv-btn--primary {
   color: var(--pv-dock-bg);
   background: var(--pv-dock-fg);

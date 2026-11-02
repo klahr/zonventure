@@ -11,6 +11,23 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- A search can take its time: "Seconds spent searching" makes the phone
+  search for that long, the button filling as a bar, before it says what
+  is there, as a scanner looking something up. Leaving the step calls
+  the search off.
+- A search step has its own words: the button (now "Search here" unless
+  the author names it) and the line shown while the team stands in none
+  of its zones. A search over a map's cells says "You're outside the
+  area." there rather than "You're not there yet."
+
+### Fixed
+
+- The player's menu no longer scrolls under its ✕: the ✕ and the menu's
+  title stay on a solid band at the top, also in a draft preview, where
+  the DEV strip used to put the ✕ over the menu's fields.
+
 ## [0.37.1] - 2026-10-28
 
 ### Added

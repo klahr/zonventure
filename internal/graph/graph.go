@@ -752,6 +752,8 @@ type PuzzleConfig struct {
 // AnswerBar is how the answer bar at the bottom of a typed puzzle looks.
 // Placeholder and Button are translated under NodeKey(…, "bar:placeholder")
 // and "bar:button"; empty is the phone's own "Your answer" and "Answer".
+// A search has no box: Button labels its search button, and Placeholder
+// is the line shown while the team stands in none of its zones.
 type AnswerBar struct {
 	Placeholder string `json:"placeholder,omitempty"`
 	// Button labels the answer button, or a scan's scan button.
@@ -866,6 +868,11 @@ type Answer struct {
 	// standing in — "You are in sector C3" — including those with
 	// nothing to find. Empty means the zones of the puzzle's own outputs.
 	Group string `json:"group,omitempty"`
+	// SearchSeconds is how long the phone spends searching, with a bar
+	// filling, before it answers — a scanner taking a moment to look
+	// something up. Leaving the step meanwhile calls it off. Zero answers
+	// at once.
+	SearchSeconds int `json:"search_seconds,omitempty"`
 
 	// Choice: the questions.
 	Fields []ChoiceField `json:"fields,omitempty"`
@@ -1160,6 +1167,9 @@ const (
 	MinTiles = 2
 	MaxTiles = 8
 )
+
+// MaxSearchSeconds bounds a search's wait: longer is a team staring at a bar.
+const MaxSearchSeconds = 60
 
 // StoryConfig is content with no challenge — an intro, an interstitial,
 // a reveal. Shares its implementation with a puzzle that has no answer

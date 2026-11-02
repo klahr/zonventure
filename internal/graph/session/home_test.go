@@ -333,7 +333,8 @@ func TestSearchByPlace(t *testing.T) {
 		Nodes: []graph.Node{
 			{Slug: "start", Type: graph.Start},
 			{Slug: "scan", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
-				Answer:     &graph.Answer{Kind: graph.AnswerSearch, Group: "grid"},
+				Answer:     &graph.Answer{Kind: graph.AnswerSearch, Group: "grid", SearchSeconds: 3},
+				Bar:        &graph.AnswerBar{Button: "Scan", Placeholder: "Outside the grid."},
 				Repeatable: true,
 				Outputs:    []graph.Output{{Port: "c3", Trigger: graph.OnAnswer, Zone: "c3"}},
 				Responses:  []graph.Response{{Text: "Nothing on record here."}},
@@ -355,8 +356,8 @@ func TestSearchByPlace(t *testing.T) {
 		t.Fatal(err)
 	}
 	tm.Apply(step)
-	if in := tm.View().Input; in == nil || in.Kind != "search" || in.At != "" {
-		t.Fatalf("a search, and nowhere yet: %+v", in)
+	if in := tm.View().Input; in == nil || in.Kind != "search" || in.At != "" || in.Searching != 3 || !in.Area || in.Button != "Scan" || in.Placeholder != "Outside the grid." {
+		t.Fatalf("a three-second search of an area, with its own words, and nowhere yet: %+v", in)
 	}
 
 	tm.Position = &Position{Lat: 59.340, Lng: 18.070}

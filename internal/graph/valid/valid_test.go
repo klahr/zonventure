@@ -842,6 +842,10 @@ func TestAnswerBarValidation(t *testing.T) {
 	r = Check(g)
 	assertCode(t, r, "bar.keyboard")
 	assertCode(t, r, "bar.unused")
+
+	// A search shows its button and its words for standing nowhere.
+	g.Nodes[1].PuzzleCfg.Bar = &graph.AnswerBar{Placeholder: "Outside the map.", Button: "Search here"}
+	assertNoCode(t, Check(g), "bar.unused")
 }
 
 func TestStaleTranslations(t *testing.T) {

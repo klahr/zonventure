@@ -27,7 +27,11 @@ func (t *Team) answerInput(n graph.Node) *Input {
 	case graph.AnswerTiles:
 		return &Input{Kind: "tiles", Rows: a.Rows, Cols: a.Cols, Image: a.Image}
 	case graph.AnswerSearch:
-		return &Input{Kind: "search", At: t.searchAt(cfg)}
+		in := &Input{Kind: "search", At: t.searchAt(cfg), Searching: a.SearchSeconds, Area: a.Group != ""}
+		if b := cfg.Bar; b != nil {
+			in.Placeholder, in.Button = b.Placeholder, b.Button
+		}
+		return in
 	case graph.AnswerChoice:
 		in := &Input{Kind: "choice"}
 		for _, f := range a.Fields {

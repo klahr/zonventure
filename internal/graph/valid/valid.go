@@ -1514,6 +1514,9 @@ func checkAnswer(r *reporter, g *graph.Graph, n graph.Node, owners map[string]st
 			r.err("tiles.image", n.Slug, "", "a tile puzzle needs a picture to cut up")
 		}
 	case graph.AnswerSearch:
+		if a.SearchSeconds < 0 || a.SearchSeconds > graph.MaxSearchSeconds {
+			r.err("search.seconds", n.Slug, "", "a search takes 0 to %d seconds", graph.MaxSearchSeconds)
+		}
 		if hub, ok := owners[n.Slug]; ok && !n.PuzzleCfg.Repeatable {
 			if h, _ := g.Node(hub); h.HubCfg != nil && h.HubCfg.Home {
 				r.warn("search.repeatable", n.Slug, "",
@@ -1592,7 +1595,14 @@ func checkBar(r *reporter, n graph.Node) {
 	if !slices.Contains(graph.Keyboards, b.Keyboard) {
 		r.err("bar.keyboard", n.Slug, "", "the answer bar asks for keyboard %q; it must be text or number", b.Keyboard)
 	}
-	if kind != "" && kind != graph.AnswerScan {
+	switch {
+	case kind == graph.AnswerSearch:
+		// A search shows its button and, standing in none of its zones,
+		// the placeholder; a keyboard it has none of.
+		if b.Keyboard != "" || b.NoScan {
+			r.warn("bar.unused", n.Slug, "", "a search shows only the bar's button and placeholder; its keyboard and scan settings are never used")
+		}
+	case kind != "" && kind != graph.AnswerScan:
 		r.warn("bar.unused", n.Slug, "", "the answer bar's settings are for typed or scanned answers; this puzzle is answered by %s, so they are never shown", kind)
 	}
 }

@@ -429,7 +429,7 @@ export interface AnswerBar {
  * kind, and only that kind's fields.
  *
  * - tiles: a picture cut into a grid and shuffled; solved when whole.
- * - search: answered by where the team stands ("We're here"). Group names
+ * - search: answered by where the team stands ("Search here"). Group names
  *   the zones the phone reports the team as in; empty is the outputs' own.
  * - choice: options to pick. Ungraded (no answers), the picked value goes
  *   through the outputs' matchers; graded (every question has an answer),
@@ -453,7 +453,7 @@ export interface AnswerBar {
  */
 export type Answer =
   | { kind: "tiles"; image?: Media; rows: number; cols: number }
-  | { kind: "search"; group?: string }
+  | { kind: "search"; group?: string; search_seconds?: number }
   | { kind: "choice"; fields: ChoiceField[] }
   | { kind: "lock"; wheels: number; symbols: LockSymbol[]; start?: number[] }
   | { kind: "questions" }

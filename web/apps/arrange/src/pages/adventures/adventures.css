@@ -56,11 +56,6 @@
 .adv-pin.is-gated { background: var(--pin); color: #fff; border-color: #fff; }
 
 /* A published graph's steps. */
-.dz .adv-steps { list-style: none; margin: 0; padding: 0; }
-.dz .adv-step { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--dz-space-2); padding: var(--dz-space-2) var(--dz-space-4); border-top: 1px solid var(--dz-border); }
-.dz .adv-step:first-child { border-top: 0; }
-.dz .adv-step .cs-pill { min-width: 4.5rem; justify-content: center; }
-.dz .adv-step__zone { display: inline-flex; align-items: center; gap: var(--dz-space-1); font-size: var(--dz-text-sm); }
 
 /* Dialogs. */
 .dz .adv-choices { display: flex; flex-direction: column; gap: var(--dz-space-2); }

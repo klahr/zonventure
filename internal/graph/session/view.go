@@ -237,6 +237,12 @@ type Input struct {
 	// At is, for a search (Kind "search"), the zone the team stands in —
 	// "sector C3" — or empty when it is in none of them.
 	At string `json:"at,omitempty"`
+	// Searching is how many seconds the phone searches before it answers
+	// (graph.Answer.SearchSeconds).
+	Searching int `json:"searching,omitempty"`
+	// Area says a search names the zones of a group — the cells of a map —
+	// so a team in none of them is outside the area, not merely elsewhere.
+	Area bool `json:"area,omitempty"`
 
 	// Rows, Cols and Image describe a tile puzzle (Kind "tiles"): the
 	// picture to cut up and the grid to cut it into.

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { ApiError, play } from "@zonventure/api";
 import { RoleCards, type Translate } from "@zonventure/play-ui";
 import type { I18n } from "@zonventure/i18n";
@@ -42,6 +42,9 @@ export function Menu(props: {
   const panel = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
+  // Where the ✕ stands, so the drawer's title band lines up with it — lower
+  // under the author's DEV strip than in a team's own app.
+  const [burgerTop, setBurgerTop] = useState<number | null>(null);
   // A translated adventure: this player reads it in one of its languages,
   // and the app's words follow where the app has them. Otherwise only the
   // app's words change.
@@ -72,6 +75,7 @@ export function Menu(props: {
       return;
     }
     setOpened((n) => n + 1);
+    setBurgerTop(button.current?.getBoundingClientRect().top ?? null);
     setOpen(true);
   };
 
@@ -121,6 +125,7 @@ export function Menu(props: {
         id="app-menu"
         ref={panel}
         className={"app-drawer" + (open ? " is-open" : "")}
+        style={burgerTop === null ? undefined : ({ "--app-drawer-top": `${burgerTop}px` } as CSSProperties)}
         role="dialog"
         aria-modal="true"
         aria-label={t("Menu")}

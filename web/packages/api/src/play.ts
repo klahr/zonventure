@@ -65,6 +65,10 @@ export interface PlayInput {
   fields?: { label?: string; options: { value: string; label?: string }[] }[];
   /** A search: the zone the team stands in, if any. */
   at?: string;
+  /** A search: seconds the phone searches, a bar filling, before it answers. */
+  searching?: number;
+  /** A search names a group's zones (a map's cells): in none of them is outside the area. */
+  area?: boolean;
   /** Set when the answer is a list: how many items to give. */
   parts?: number;
   ordered?: boolean;

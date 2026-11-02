@@ -287,31 +287,6 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
         </Card>
       )}
 
-      {g && (
-        <Card title={t.t("Steps")} flush>
-          {g.steps.length === 0 ? (
-            <p className="cs-card__note cs-muted">{t.t("Nothing designed yet.")}</p>
-          ) : (
-            <ol className="adv-steps">
-              {g.steps.map((s, i) => (
-                <li key={s.slug + i} className="adv-step">
-                  <Pill tone={s.type === "puzzle" ? "accent" : "neutral"}>{stepKind(t, s.type)}</Pill>
-                  {s.title && <strong>{s.title}</strong>}
-                  {s.zone && zoneNames.has(s.zone) && (
-                    <span className="cs-muted adv-step__zone">
-                      <MapPin size={ICON.xs} aria-hidden />
-                      {zoneNames.get(s.zone)}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ol>
-          )}
-          {g.has_quiz && <p className="cs-card__note cs-muted">{t.t("Includes a quiz walk.")}</p>}
-        </Card>
-      )}
-
-
       {editing && (
         <EditDetailsDialog
           slug={a.slug}
@@ -346,17 +321,6 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
       {hosting && <HostItDialog slug={a.slug} title={a.title || a.slug} onClose={() => setHosting(false)} />}
     </Page>
   );
-}
-
-function stepKind(t: ReturnType<typeof useT>, type: string): string {
-  switch (type) {
-    case "puzzle": return t.t("Puzzle");
-    case "story": return t.t("Story");
-    case "hub": return t.t("Choice");
-    case "split": return t.t("Split up");
-    case "end": return t.t("End");
-    default: return type;
-  }
 }
 
 /** Server-rendered markdown (the same goldmark pipeline as puzzle prompts), else the raw text. */

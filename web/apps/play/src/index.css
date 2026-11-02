@@ -398,6 +398,8 @@ html {
 .app-drawer-back.is-open { opacity: 1; pointer-events: auto; }
 
 .app-drawer {
+  /* Level with the ✕: Menu sets where it stands as the drawer opens. */
+  --pad-top: var(--app-drawer-top, calc(var(--sp-2) + env(safe-area-inset-top)));
   position: fixed;
   top: 0;
   bottom: 0;
@@ -406,7 +408,7 @@ html {
   width: min(86vw, 22rem);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: calc(var(--sp-2) + env(safe-area-inset-top)) var(--sp-4) calc(var(--sp-6) + env(safe-area-inset-bottom));
+  padding: var(--pad-top) var(--sp-4) calc(var(--sp-6) + env(safe-area-inset-bottom));
   background: var(--surface);
   box-shadow: var(--shadow-lg);
   transform: translateX(-100%);
@@ -420,13 +422,19 @@ html {
   visibility: visible;
   transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s;
 }
-/* Level with the ✕, which sits at the same spot in the bar. */
+/* Level with the ✕, which sits at the same spot in the bar. It stays
+ * put as a solid band over the drawer's top edge, so the menu scrolls
+ * under it rather than under the ✕. */
 .app-drawer__title {
+  position: sticky;
+  top: calc(-1 * var(--pad-top));
+  z-index: 1;
   display: flex;
   align-items: center;
-  min-height: 2.75rem;
-  margin: 0 0 var(--sp-4);
-  padding-left: calc(2.75rem + var(--sp-1));
+  min-height: calc(var(--pad-top) + 2.75rem + var(--sp-2));
+  margin: calc(-1 * var(--pad-top)) calc(-1 * var(--sp-4)) var(--sp-2);
+  padding: var(--pad-top) var(--sp-4) var(--sp-2) calc(var(--sp-4) + 2.75rem + var(--sp-1));
+  background: var(--surface);
   font-family: var(--font-brand);
   font-size: var(--text-xl);
   font-weight: 400;

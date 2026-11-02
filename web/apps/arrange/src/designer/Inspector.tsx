@@ -695,10 +695,11 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
     case "search":
       how = {
         title: t.t("Search by place"),
-        hint: t.t("No typing: the team presses We're here, and the route below whose zone it stands in is taken. Anywhere else, the wrong-answer replies say what it found."),
+        hint: t.t("No typing: the team presses Search here, and the route below whose zone it stands in is taken. Anywhere else, the wrong-answer replies say what it found."),
         summary: (
           <>
             <SumRow label={t.t("Names")}>{answer.group ?? t.t("the zones of the routes")}</SumRow>
+            <SumRow label={t.t("Button")}>{cfg.bar?.button || t.t("Search here")}</SumRow>
             <SumRow label={t.t("Again later")}>{cfg.repeatable ? t.t("yes") : t.t("no")}</SumRow>
           </>
         ),
@@ -2196,7 +2197,7 @@ function AnswerQRs({ node, cfg }: { node: string; cfg: PuzzleConfig }) {
  * The answer bar of a typed or scanned answer: its words, and for typing
  * the keyboard. Empty fields are the phone's own.
  */
-function BarForm({ cfg, onChange, scan }: { cfg: PuzzleConfig; onChange: (c: PuzzleConfig) => void; scan?: boolean }) {
+function BarForm({ cfg, onChange, scan, search }: { cfg: PuzzleConfig; onChange: (c: PuzzleConfig) => void; scan?: boolean; search?: boolean }) {
   const t = useT();
   const bar = cfg.bar ?? {};
   const set = (field: keyof AnswerBar, value: AnswerBar[keyof AnswerBar] | undefined) => {
@@ -2205,15 +2206,26 @@ function BarForm({ cfg, onChange, scan }: { cfg: PuzzleConfig; onChange: (c: Puz
   };
   return (
     <>
-      {!scan && (
-        <Field label={t.t("Placeholder")} hint={t.t("Greyed-out text in the empty box, such as “The ship's name”.")}>
-          <input className="field__input" value={bar.placeholder ?? ""} placeholder={t.t("Your answer")} onChange={(e) => set("placeholder", e.target.value)} />
+      {search ? (
+        <Field label={t.t("Outside the zones")} hint={t.t("What the phone says while the team stands in none of the zones, such as “You are outside the map. Go to the park.”")}>
+          <input
+            className="field__input"
+            value={bar.placeholder ?? ""}
+            placeholder={(cfg.answer?.kind === "search" && cfg.answer.group) ? t.t("You're outside the area.") : t.t("You're not there yet.")}
+            onChange={(e) => set("placeholder", e.target.value)}
+          />
         </Field>
+      ) : (
+        !scan && (
+          <Field label={t.t("Placeholder")} hint={t.t("Greyed-out text in the empty box, such as “The ship's name”.")}>
+            <input className="field__input" value={bar.placeholder ?? ""} placeholder={t.t("Your answer")} onChange={(e) => set("placeholder", e.target.value)} />
+          </Field>
+        )
       )}
       <Field label={t.t("Button")}>
-        <input className="field__input" value={bar.button ?? ""} placeholder={scan ? t.t("Scan the code") : t.t("Answer")} onChange={(e) => set("button", e.target.value)} />
+        <input className="field__input" value={bar.button ?? ""} placeholder={scan ? t.t("Scan the code") : search ? t.t("Search here") : t.t("Answer")} onChange={(e) => set("button", e.target.value)} />
       </Field>
-      {!scan && (
+      {!scan && !search && (
         <Field label={t.t("Keyboard")}>
           <select className="field__input" value={bar.keyboard ?? ""} onChange={(e) => set("keyboard", e.target.value as AnswerBar["keyboard"])}>
             {(Object.keys(KEYBOARD_LABEL) as (keyof typeof KEYBOARD_LABEL)[]).map((k) => (
@@ -2229,7 +2241,7 @@ function BarForm({ cfg, onChange, scan }: { cfg: PuzzleConfig; onChange: (c: Puz
 }
 
 /**
- * A search: the team presses "We're here" and the route whose zone it
+ * A search: the team presses "Search here" and the route whose zone it
  * stands in is taken. The group decides which zones the phone names —
  * "You are in sector C3" — including cells with nothing to find.
  */
@@ -2242,7 +2254,7 @@ function SearchForm({ cfg, search, graph, onChange }: { cfg: PuzzleConfig; searc
         <select
           className="field__input"
           value={search.group ?? ""}
-          onChange={(e) => onChange({ ...cfg, answer: e.target.value ? { kind: "search", group: e.target.value } : { kind: "search" } })}
+          onChange={(e) => onChange({ ...cfg, answer: withOptional({ ...search }, "group", e.target.value || undefined) })}
         >
           <option value="">{t.t("The zones of the routes below")}</option>
           {groups.map((g) => (
@@ -2252,10 +2264,21 @@ function SearchForm({ cfg, search, graph, onChange }: { cfg: PuzzleConfig; searc
           ))}
         </select>
       </Field>
+      <Field label={t.t("Seconds spent searching")} hint={t.t("The phone searches this long, a bar filling, before it answers. Leave empty to answer at once.")}>
+        <input
+          className="field__input"
+          type="number"
+          min={0}
+          max={60}
+          value={search.search_seconds ?? ""}
+          onChange={(e) => onChange({ ...cfg, answer: withOptional({ ...search }, "search_seconds", e.target.value === "" || e.target.value === "0" ? undefined : Number(e.target.value)) })}
+        />
+      </Field>
       <label className="check">
         <input type="checkbox" checked={!!cfg.repeatable} onChange={(e) => onChange(withOptional({ ...cfg }, "repeatable", e.target.checked || undefined))} />
         {t.t("Can be searched again on a later visit")}
       </label>
+      <BarForm cfg={cfg} onChange={onChange} search />
     </>
   );
 }

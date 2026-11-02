@@ -1030,9 +1030,15 @@ func (ps *playSession) input(b *strings.Builder, v session.View) {
 		}
 		b.WriteString("Answer with their numbers in the order you put them, joined by commas.\n")
 	case "search":
-		b.WriteString("→ Say \"We're here\" where you stand (answer with an empty guess). Walk to the place first.")
+		label := in.Button
+		if label == "" {
+			label = "Search here"
+		}
+		fmt.Fprintf(b, "→ Press %q where you stand (answer with an empty guess). Walk to the place first.", label)
 		if in.At != "" {
 			fmt.Fprintf(b, " You are at %s.", in.At)
+		} else if in.Placeholder != "" {
+			fmt.Fprintf(b, " The phone says: %s", in.Placeholder)
 		}
 		b.WriteString("\n")
 	case "choice":
