@@ -11,6 +11,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed
+
+- A search step's button says "We're here" again unless the author names
+  it, as for a scanner's "Search here". 0.37.2 put "Search here" on every
+  search, also where the team only had to find a place.
+
 ## [0.37.2] - 2026-11-02
 
 ### Added
@@ -19,9 +25,9 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   search for that long, the button filling as a bar, before it says what
   is there, as a scanner looking something up. Leaving the step calls
   the search off.
-- A search step has its own words: the button ("We're here" unless the
-  author names it, such as "Search here" for a scanner) and the line
-  shown while the team stands in none of its zones. A search over a map's cells says "You're outside the
+- A search step has its own words: the button (now "Search here" unless
+  the author names it) and the line shown while the team stands in none
+  of its zones. A search over a map's cells says "You're outside the
   area." there rather than "You're not there yet."
 
 ### Fixed
