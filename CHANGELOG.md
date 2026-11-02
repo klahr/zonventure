@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.37.5] - 2026-11-02
+
 ### Added
 
 - A gained item gets a full-screen reveal that waits for Continue.
