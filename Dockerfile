@@ -2,7 +2,7 @@
 # internal/server/web/dist/<app>/, which the Go build then embeds. Split
 # into its own stage so Node never reaches the runtime image and so the
 # dependency install caches on the lockfile alone.
-FROM node:22-alpine AS web
+FROM node:26-alpine AS web
 WORKDIR /src
 # The whole workspace in one copy. A manifests-first layer would cache
 # `npm ci` more tightly, but `COPY web/apps/*/package.json` flattens
@@ -24,7 +24,7 @@ RUN cd web && npm ci && npm run build --workspaces --if-present
 # Build stage. Pure-Go build (CGO off) so the runtime image can be the
 # tiny distroless static one. Migrations and web/ assets are embedded via
 # go:embed so the resulting binary is fully self-contained.
-FROM golang:1.26 AS build
+FROM golang:1.27 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

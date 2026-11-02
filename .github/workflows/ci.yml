@@ -48,16 +48,16 @@ jobs:
             postgres:16-alpine \
             -c fsync=off -c synchronous_commit=off -c full_page_writes=off
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "26"
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -103,9 +103,9 @@ jobs:
     name: Go lint and build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -136,11 +136,11 @@ jobs:
     name: JS
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "26"
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -159,7 +159,7 @@ jobs:
     name: Docker
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # `git describe` needs tags and full history. actions/checkout
           # is shallow and tagless by default, which would otherwise
@@ -170,13 +170,13 @@ jobs:
         id: version
         run: echo "version=$(git describe --tags --always 2>/dev/null || echo dev)" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       # Layers cached in the GitHub Actions cache, so a change that
       # touches only Go skips the npm install and frontend build stage,
       # and vice versa for go mod download.
       - name: build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           build-args: VERSION=${{ steps.version.outputs.version }}
@@ -196,7 +196,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: log in to ghcr.io
         run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin

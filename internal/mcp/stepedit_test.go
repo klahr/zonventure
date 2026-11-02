@@ -44,6 +44,76 @@ func TestSetText(t *testing.T) {
 	}
 }
 
+func TestSetTextInTranslation(t *testing.T) {
+	t.Parallel()
+	g := stepGraph(t)
+	g.Language = "en"
+	g.Items = []graph.Item{{Slug: "stamp", Name: "Stamp"}}
+	g.Translations = map[string]map[string]string{"sv": {
+		"n:fish:block:b1":  "Räkna fiskarna. De ligger i din väska nu.",
+		"n:fish:block:b2":  "Räkna fiskarna igen.",
+		"n:fish:title":     "Fisken",
+		"n:other:title":    "Räkna fiskarna",
+		"i:stamp:block:b1": "Stämpel nr 17",
+	}}
+	g.TranslationOriginals = map[string]map[string]string{"sv": {"n:fish:block:b1": "Count the fish. They're in your bag now.", "n:fish:title": "The fish"}}
+	g.TranslationSources = map[string]map[string]string{"sv": {"n:fish:block:b1": "abcd1234"}}
+
+	mustApply(t, g, graphOp{Op: "set_text", Slug: "fish", Lang: "sv", Find: " De ligger i din väska nu.", Replace: ""})
+	sv := g.Translations["sv"]
+	if sv["n:fish:block:b1"] != "Räkna fiskarna." {
+		t.Errorf("translation = %q", sv["n:fish:block:b1"])
+	}
+	if b := g.Nodes[0].PuzzleCfg.Blocks[0].Text; b != "Count the fish on the fountain." {
+		t.Errorf("the main text must not change: %q", b)
+	}
+	// Edited, it is made from the main text as it is now: no stale original.
+	if _, ok := g.TranslationOriginals["sv"]["n:fish:block:b1"]; ok {
+		t.Error("the edited translation keeps its old original")
+	}
+	if _, ok := g.TranslationSources["sv"]["n:fish:block:b1"]; ok {
+		t.Error("the edited translation keeps its old fingerprint")
+	}
+	if g.TranslationOriginals["sv"]["n:fish:title"] != "The fish" {
+		t.Error("an untouched translation lost its original")
+	}
+
+	// Only this step's texts: another step's title is not searched.
+	err := applyGraphOp(g, graphOp{Op: "set_text", Slug: "fish", Lang: "sv", Find: "Räkna fiskarna", Replace: "x"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "2 times") {
+		t.Fatalf("ambiguous find: %v", err)
+	}
+	err = applyGraphOp(g, graphOp{Op: "set_text", Slug: "fish", Lang: "sv", Find: "val", Replace: "x"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "n:fish:title: Fisken") {
+		t.Errorf("a missing text should list the translation's texts: %v", err)
+	}
+
+	// Emptied, the translation goes, and the main text shows.
+	mustApply(t, g, graphOp{Op: "set_text", Slug: "fish", Lang: "sv", Find: "Fisken", Replace: " "})
+	if _, ok := sv["n:fish:title"]; ok {
+		t.Error("an emptied translation should be dropped")
+	}
+
+	// An item's translation, by its slug.
+	mustApply(t, g, graphOp{Op: "set_text", Slug: "stamp", Lang: "sv", Find: "nr 17", Replace: "nr 18"})
+	if sv["i:stamp:block:b1"] != "Stämpel nr 18" {
+		t.Errorf("item translation = %q", sv["i:stamp:block:b1"])
+	}
+
+	// The main language is the step's own text.
+	mustApply(t, g, graphOp{Op: "set_text", Slug: "fish", Lang: "en", Find: "on the fountain", Replace: "in the pond"})
+	if b := g.Nodes[0].PuzzleCfg.Blocks[0].Text; b != "Count the fish in the pond." {
+		t.Errorf("main-language set_text: %q", b)
+	}
+
+	if err := applyGraphOp(g, graphOp{Op: "set_text", Slug: "fish", Lang: "de", Find: "a"}, nil); err == nil || !strings.Contains(err.Error(), "[sv]") {
+		t.Errorf("an unknown language should name the ones there are: %v", err)
+	}
+	if applyGraphOp(g, graphOp{Op: "set_text", Slug: "ghost", Lang: "sv", Find: "a"}, nil) == nil {
+		t.Error("a missing step should fail")
+	}
+}
+
 func TestPatchNode(t *testing.T) {
 	t.Parallel()
 	g := stepGraph(t)

@@ -38,6 +38,7 @@ func (s *Server) registerGraphEditTools() {
 			"put_item {item} adds or replaces an item {slug, name, icon, blocks?}: blocks are what a player sees opening it from the bag — text, note (a letter), image, audio and video blocks, as on a step, with no rule for when they show; an effect grant_item gives it. " +
 			"set_option {options} turns adventure-wide settings on or off: hide_score keeps the running score off the team's phone (points still count at the end), journal_by_unlock lists the journal in the order the team found its notes, quiz_puzzles adds every typed-answer puzzle to the end screen's quiz walk, tour makes it a walk rather than a game (the phone speaks of the walk and of \"you\", not of a game and its players, and the end has no trophy), min_players and max_players bound a team (it waits until the least have joined, no one beyond the most joins; 0 is no bound); send only the ones to change. " +
 			"set_text {slug?, find, replace, all?} changes a text of one step by quoting it exactly — the fastest way to change words; it fails, listing the step's texts, if find is not there, and asks for more of the text if it appears more than once (or all: true to change every one); " +
+			"with lang (a translation's language, e.g. sv) it changes that translation's texts of the step instead, or of the item when slug names one — a translation emptied falls back to the main text, and one edited counts as made from the main text as it is now; " +
 			"patch_node {slug?, patch} merges a JSON merge patch into one step (null removes a field; lists of items with ids — blocks, matchers — merge by id, and outputs by port: a known one is patched, a new one added, {id or port, _delete: true} removed; other lists, like hints, are replaced whole) — e.g. add an accepted answer with {\"puzzle\":{\"outputs\":[{\"port\":\"right\",\"matchers\":[{\"id\":\"seven\",\"kind\":\"exact\",\"value\":\"seven\"}]}]}}, without resending the step. " +
 			"Without slug, set_text and patch_node edit the step the author's dev phone shows; the phone shows the change within a second. " +
 			"An adventure without a graph starts from an empty one.",
@@ -64,6 +65,7 @@ func (s *Server) registerGraphEditTools() {
 							"find":           map[string]any{"type": "string", "description": "set_text: the text to change, quoted exactly as it is."},
 							"replace":        map[string]any{"type": "string", "description": "set_text: what it becomes."},
 							"all":            map[string]any{"type": "boolean", "description": "set_text: change every occurrence in the step."},
+							"lang":           map[string]any{"type": "string", "description": "set_text: edit this translation (a language code) instead of the main text."},
 							"patch":          map[string]any{"type": "object", "description": "patch_node: the fields to change."},
 							"options": map[string]any{
 								"type":                 "object",
@@ -152,6 +154,7 @@ type graphOp struct {
 	Find     string          `json:"find,omitempty"`
 	Replace  string          `json:"replace,omitempty"`
 	All      bool            `json:"all,omitempty"`
+	Lang     string          `json:"lang,omitempty"`
 	Main     bool            `json:"main,omitempty"`
 }
 
@@ -376,6 +379,9 @@ func applyGraphOp(g *graph.Graph, op graphOp, here *position) error {
 		}
 		g.Nodes = append(g.Nodes, n)
 	case "set_text":
+		if op.Lang != "" && op.Lang != g.Language {
+			return setTranslatedText(g, op.Lang, op.Slug, op.Find, op.Replace, op.All)
+		}
 		return setText(g, op.Slug, op.Find, op.Replace, op.All)
 	case "patch_node":
 		return patchNode(g, op.Slug, op.Patch)

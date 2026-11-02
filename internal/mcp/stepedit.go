@@ -203,6 +203,68 @@ func setText(g *graph.Graph, slug, find, replace string, all bool) error {
 	return nil
 }
 
+// setTranslatedText is setText in a translation: find replaced in lang's
+// texts of the step, or of the item when no step has the slug. A text
+// emptied is dropped, so the main text shows. An edited one loses the main
+// text it was kept as made from: a translation without one counts as up
+// to date, and the designer keeps the main text as it is now on its next
+// load.
+func setTranslatedText(g *graph.Graph, lang, slug, find, replace string, all bool) error {
+	if find == "" {
+		return fmt.Errorf("find is required: the text to change, quoted exactly")
+	}
+	tr, ok := g.Translations[lang]
+	if !ok {
+		langs := make([]string, 0, len(g.Translations))
+		for l := range g.Translations {
+			langs = append(langs, l)
+		}
+		sort.Strings(langs)
+		return fmt.Errorf("no %q translation; the adventure has %v", lang, langs)
+	}
+	prefix, what := graph.NodeKey(slug, ""), "step"
+	if nodeIndex(g, slug) < 0 {
+		item := false
+		for _, it := range g.Items {
+			item = item || it.Slug == slug
+		}
+		if !item {
+			return fmt.Errorf("no step or item %q", slug)
+		}
+		prefix, what = graph.ItemKey(slug, ""), "item"
+	}
+	var found, texts []string
+	count := 0
+	for k, v := range tr {
+		if !strings.HasPrefix(k, prefix) || strings.HasSuffix(k, ":media") {
+			continue
+		}
+		texts = append(texts, k+": "+clip(v, 120))
+		if n := strings.Count(v, find); n > 0 {
+			count += n
+			found = append(found, k)
+		}
+	}
+	switch {
+	case count == 0:
+		sort.Strings(texts)
+		return fmt.Errorf("%q is not in the %s translation of %s %q. Its texts:\n%s", find, lang, what, slug, strings.Join(texts, "\n"))
+	case count > 1 && !all:
+		sort.Strings(found)
+		return fmt.Errorf("%q appears %d times in the %s translation of %s %q (%s): quote more of the text to pick one, or set all: true", find, count, lang, what, slug, strings.Join(found, ", "))
+	}
+	for _, k := range found {
+		if v := strings.ReplaceAll(tr[k], find, replace); strings.TrimSpace(v) != "" {
+			tr[k] = v
+		} else {
+			delete(tr, k)
+		}
+		delete(g.TranslationOriginals[lang], k)
+		delete(g.TranslationSources[lang], k)
+	}
+	return nil
+}
+
 func clip(s string, max int) string {
 	if r := []rune(s); len(r) > max {
 		return string(r[:max]) + "…"

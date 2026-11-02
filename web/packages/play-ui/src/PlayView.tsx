@@ -20,6 +20,7 @@ import "./fonts/adventure-fonts.css";
 import "./animations.css";
 import { formatSeconds, secondsUntil, useEngineClock } from "./clock.ts";
 import { english, inLookWords, type Feedback, type Translate } from "./feedback.ts";
+import { gainedItems, mergeGains } from "./gains.ts";
 
 /**
  * One step of an adventure, as a player sees it.
@@ -149,6 +150,7 @@ export function PlayView(props: PlayViewProps) {
   }, [leaving]);
   const [bagOpen, setBagOpen] = useState(false);
   const [journalOpen, setJournalOpen] = useState(false);
+  const [gains, clearGains] = useGains(view.items);
   const storageKey = props.storageKey ?? "local";
   const unread = useUnreadNotes(view.journal, storageKey, journalOpen);
   const endsIn = view.ends_at ? secondsUntil(view.ends_at, now) : null;
@@ -304,6 +306,19 @@ export function PlayView(props: PlayViewProps) {
         </Sheet>
       )}
       {burst && <BurstOverlay burst={burst} style={brand?.style} />}
+      {gains && burst?.kind !== "celebrate" && (
+        <ItemReveal
+          key={gains.id}
+          items={gains.items}
+          t={t}
+          style={brand?.style}
+          onContinue={clearGains}
+          onOpenBag={() => {
+            clearGains();
+            setBagOpen(true);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -423,6 +438,100 @@ function Leaving({ page, top, transition }: { page: HTMLElement; top: number; tr
     layer.current?.replaceChildren(copy);
   }, [page]);
   return <div ref={layer} className="pv-leave" data-transition={transition} style={{ top }} aria-hidden inert />;
+}
+
+/**
+ * What the team just gained, kept until the player continues. The first
+ * view is what the team already had (a reload, a rejoin): no gain. A
+ * gain while one is shown joins it.
+ */
+function useGains(items: play.ItemView[] | undefined): [{ items: play.ItemView[]; id: number } | null, () => void] {
+  const last = useRef<play.ItemView[] | undefined | null>(null);
+  const [gains, setGains] = useState<{ items: play.ItemView[]; id: number } | null>(null);
+  useEffect(() => {
+    const before = last.current;
+    last.current = items;
+    if (before === null) return;
+    const more = gainedItems(before, items);
+    if (more.length) setGains((g) => ({ items: g ? mergeGains(g.items, more) : more, id: g?.id ?? Date.now() }));
+  }, [items]);
+  return [gains, () => setGains(null)];
+}
+
+/** When an item lands: the moment it slams down, for the shake, flash and buzz. */
+const REVEAL_IMPACT_MS = 380;
+
+/**
+ * A gained item's arrival, game style: it zooms in, slams down, the card
+ * shakes and sparks fly. It stays until the player continues, since a
+ * found thing is often needed later; Continue waits a moment so a tap
+ * meant for the step below does not dismiss it unseen.
+ */
+function ItemReveal({ items, t, style, onContinue, onOpenBag }: { items: play.ItemView[]; t: Translate; style?: play.LookStyle | undefined; onContinue: () => void; onOpenBag: () => void }) {
+  const [still] = useState(() => prefersReducedMotion() || style?.celebrate === "none");
+  const quiet = style?.celebrate === "quiet";
+  const [ready, setReady] = useState(still);
+  const go = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (still) return;
+    const buzz = quiet ? undefined : setTimeout(() => navigator.vibrate?.([40, 30, 90]), REVEAL_IMPACT_MS);
+    const id = setTimeout(() => setReady(true), 900);
+    return () => {
+      clearTimeout(buzz);
+      clearTimeout(id);
+    };
+  }, [still, quiet]);
+  useEffect(() => {
+    if (ready) go.current?.focus();
+  }, [ready]);
+  const colours = style?.confetti_colors?.filter(isHex).slice(0, 8);
+  const palette = colours?.length ? colours : CONFETTI;
+  const sparks = useMemo(
+    () =>
+      still || quiet
+        ? []
+        : Array.from({ length: 16 }, (_, i) => ({
+            "--a": `${Math.round((i / 16) * 360 + Math.random() * 14)}deg`,
+            "--r": `${Math.round(110 + Math.random() * 70)}px`,
+            "--c": palette[i % palette.length],
+            "--d": `${REVEAL_IMPACT_MS + Math.round(Math.random() * 60)}ms`,
+          })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const names = items.map((it) => (it.qty > 1 ? `${it.name || it.slug} ×${it.qty}` : it.name || it.slug)).join(" · ");
+  return (
+    <div className={"pv-reveal" + (still ? " is-still" : quiet ? " is-quiet" : "")} role="dialog" aria-modal="true" aria-labelledby="pv-reveal-head" aria-describedby="pv-reveal-names">
+      <div className="pv-reveal__stage">
+        <div className="pv-reveal__rays" aria-hidden />
+        <div className="pv-reveal__ring" aria-hidden />
+        {sparks.map((p, i) => (
+          <i key={i} className="pv-reveal__spark" style={p as CSSProperties} aria-hidden />
+        ))}
+        <ul className={"pv-reveal__items" + (items.length > 1 ? " is-many" : "")} aria-hidden>
+          {items.slice(0, 4).map((it, i) => (
+            <li key={it.slug} className="pv-reveal__item" style={{ "--i": i } as CSSProperties}>
+              <ItemFace item={it} />
+              {it.qty > 1 && <span className="pv-reveal__qty">×{it.qty}</span>}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <p className="pv-reveal__head" id="pv-reveal-head">
+        {items.length === 1 ? t("New item!") : t("{{n}} new items!", { n: items.length })}
+      </p>
+      <p className="pv-reveal__names" id="pv-reveal-names">{names}</p>
+      <div className="pv-reveal__actions">
+        <button ref={go} type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={!ready} onClick={onContinue}>
+          {t("Continue")}
+        </button>
+        <button type="button" className="pv-btn pv-btn--wide" disabled={!ready} onClick={onOpenBag}>
+          <span aria-hidden>🎒</span> {t("Open bag")}
+        </button>
+      </div>
+      <div className="pv-reveal__flash" aria-hidden />
+    </div>
+  );
 }
 
 function prefersReducedMotion(): boolean {
