@@ -485,11 +485,20 @@ func TestListingReview_Cover(t *testing.T) {
 	if w := f.decide(t, "event", f.eventID, "approve", q[0].Revision, ""); w.Code != http.StatusOK {
 		t.Fatalf("approve cover: %d %s", w.Code, w.Body)
 	}
-	if w := call(t, f.store, "GET", coverPath, nil); w.Code != http.StatusOK {
-		t.Fatalf("public cover after review: %d", w.Code)
+	if w := call(t, f.store, "GET", coverPath, nil); w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "public, max-age=300" {
+		t.Fatalf("public cover after review: %d %q", w.Code, w.Header().Get("Cache-Control"))
 	}
-	if items := f.storeItems(t); items[0].CoverImageURL != coverPath {
-		t.Fatalf("store cover = %q", items[0].CoverImageURL)
+	// The store names the cover by its approval, so a new one gets a new
+	// address and the current one keeps.
+	versioned := f.storeItems(t)[0].CoverImageURL
+	if !strings.HasPrefix(versioned, coverPath+"?v=") {
+		t.Fatalf("store cover = %q, want %s?v=…", versioned, coverPath)
+	}
+	if w := call(t, f.store, "GET", versioned, nil); w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
+		t.Fatalf("versioned cover: %d %q", w.Code, w.Header().Get("Cache-Control"))
+	}
+	if w := call(t, f.store, "GET", coverPath+"?v=old", nil); w.Header().Get("Cache-Control") != "public, max-age=300" {
+		t.Fatalf("an outdated version is cached as long as the current: %q", w.Header().Get("Cache-Control"))
 	}
 }
 

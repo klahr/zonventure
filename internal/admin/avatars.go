@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
+	"github.com/klahr/zonventure/internal/listing"
 	"github.com/klahr/zonventure/internal/storage"
 )
 
@@ -274,12 +276,13 @@ func (h *Handlers) ServeEventCover(w http.ResponseWriter, r *http.Request) {
 // listing: what the public may see.
 func (h *Handlers) serveListedEventCover(w http.ResponseWriter, r *http.Request, eventID int64) {
 	var (
-		mime    string
-		content []byte
+		mime       string
+		content    []byte
+		approvedAt time.Time
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT cover_mime_type, cover_content FROM event_listings
-		WHERE event_id = $1 AND cover_mime_type IS NOT NULL AND cover_content IS NOT NULL`, eventID).Scan(&mime, &content)
+		SELECT cover_mime_type, cover_content, approved_at FROM event_listings
+		WHERE event_id = $1 AND cover_mime_type IS NOT NULL AND cover_content IS NOT NULL`, eventID).Scan(&mime, &content, &approvedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -290,8 +293,13 @@ func (h *Handlers) serveListedEventCover(w http.ResponseWriter, r *http.Request,
 	}
 	w.Header().Set("Content-Type", mime)
 	w.Header().Set("Content-Length", strconv.Itoa(len(content)))
-	// public, since /store hits this with no cookie. 5-minute window
-	// matches how often a cover changes once it is approved.
-	w.Header().Set("Cache-Control", "public, max-age=300")
+	// public, since /store hits this with no cookie. The address of the
+	// current cover (listing.CoverURL) never shows another, so it keeps;
+	// an unversioned or outdated one may change at the next approval.
+	if r.URL.Query().Get("v") == listing.CoverVersion(approvedAt) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=300")
+	}
 	_, _ = w.Write(content)
 }

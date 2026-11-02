@@ -20,7 +20,9 @@ import (
 	"encoding/json"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Texts are an event's words in one language. Empty is "as in the main
@@ -54,6 +56,19 @@ const Columns = `COALESCE(NULLIF(g.graph->>'language', ''), a.language, ''),
 	    'access_note', t.value->>'meta:access_note', 'buyer_note', t.value->>'meta:buyer_note'))
 	  FROM jsonb_each(CASE WHEN jsonb_typeof(g.graph->'translations') = 'object' THEN g.graph->'translations' ELSE '{}' END) t), '{}'),
 	COALESCE(l.translations, '{}')`
+
+// CoverURL is the public address of an event's approved store cover,
+// versioned by the listing's approval: a cover changes only when its
+// listing is approved, so a new one gets a new address and shows at
+// once, while each address can be cached for long.
+func CoverURL(eventID int64, approvedAt time.Time) string {
+	return "/store-cover/event/" + strconv.FormatInt(eventID, 10) + "?v=" + CoverVersion(approvedAt)
+}
+
+// CoverVersion is the version CoverURL puts in the address.
+func CoverVersion(approvedAt time.Time) string {
+	return strconv.FormatInt(approvedAt.UnixMilli(), 36)
+}
 
 // Listing is a listing's languages and its words in each.
 type Listing struct {

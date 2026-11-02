@@ -11,6 +11,13 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed
+
+- A new store cover shows at once: on the store, its event pages and
+  embeds, the cover's address now changes with each approval. Before, a
+  browser could keep showing the old cover for up to five minutes. The
+  current cover's address can now be kept for a year.
+
 ## [0.37.3] - 2026-11-02
 
 ### Fixed

@@ -47,6 +47,7 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		name, blurb, currency, advTitle, orgName, orgSlug, advSlug string
 		priceCents, teamSize                                       int
 		hasCover, hasIcon, tour, home                              bool
+		approvedAt                                                 sql.NullTime
 		accent, accent2, bg, ink                                   sql.NullString
 		brandFont                                                  string
 		mainLang                                                   string
@@ -56,7 +57,7 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		SELECT COALESCE(l.name, e.name), COALESCE(l.blurb, ''), COALESCE(l.currency, ''),
 		       COALESCE(a.title, e.adventure_slug), e.adventure_slug, o.name, o.slug,
 		       COALESCE(l.price_cents, 0), COALESCE(l.team_size, 0),
-		       COALESCE(l.cover_mime_type IS NOT NULL, FALSE), COALESCE(a.avatar_mime_type IS NOT NULL, FALSE),
+		       COALESCE(l.cover_mime_type IS NOT NULL, FALSE), l.approved_at, COALESCE(a.avatar_mime_type IS NOT NULL, FALSE),
 		       COALESCE((g.graph->>'tour')::boolean, FALSE),
 		       (a.start_lat IS NULL AND NOT COALESCE(jsonb_typeof(g.graph->'zones') = 'array' AND jsonb_array_length(g.graph->'zones') > 0, FALSE)),
 		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color, o.brand_font,
@@ -68,7 +69,7 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		LEFT JOIN adventure_graphs g ON g.id = e.graph_id
 		WHERE e.id = $1 AND e.public_for_sale
 	`, id).Scan(&name, &blurb, &currency, &advTitle, &advSlug, &orgName, &orgSlug, &priceCents, &teamSize,
-		&hasCover, &hasIcon, &tour, &home, &accent, &accent2, &bg, &ink, &brandFont, &mainLang, &advTexts, &ownTexts)
+		&hasCover, &approvedAt, &hasIcon, &tour, &home, &accent, &accent2, &bg, &ink, &brandFont, &mainLang, &advTexts, &ownTexts)
 	found := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "lookup failed", http.StatusInternalServerError)
@@ -121,8 +122,8 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		buyURL, orgURL = base, base
 	}
 	coverURL := ""
-	if hasCover {
-		coverURL = "/store-cover/event/" + strconv.FormatInt(id, 10)
+	if hasCover && approvedAt.Valid {
+		coverURL = listing.CoverURL(id, approvedAt.Time)
 	}
 	// The adventure's icon, beside the title of a button.
 	iconURL := ""

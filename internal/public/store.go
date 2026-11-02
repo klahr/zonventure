@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
@@ -292,7 +293,7 @@ const storeItemSelect = `
 	       l.team_size,
 	       a.start_label, a.start_lat, a.start_lng, COALESCE(a.area, ''),
 	       COALESCE(a.facts, '{}'), COALESCE(a.access_note, ''),
-	       (l.cover_mime_type IS NOT NULL) AS has_cover,
+	       (l.cover_mime_type IS NOT NULL) AS has_cover, l.approved_at,
 	       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,
 	       COALESCE((g.graph->>'tour')::boolean, FALSE) AS tour,
 	       (a.start_lat IS NULL AND NOT COALESCE(jsonb_typeof(g.graph->'zones') = 'array' AND jsonb_array_length(g.graph->'zones') > 0, FALSE)) AS home,` + pageLookColumns + `,
@@ -410,6 +411,7 @@ func (h *Handlers) scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 		startLng   sql.NullFloat64
 		priceCents sql.NullInt64
 		hasCover   bool
+		approvedAt time.Time
 		hasIcon    bool
 		lookFont   string
 		lookTheme  string
@@ -422,7 +424,7 @@ func (h *Handlers) scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 	if err := s.Scan(
 		&item.EventID, &eventName, &item.AdventureSlug, &item.AdventureTitle,
 		&item.OrgName, &item.OrgVerified, &blurb, &priceCents, &item.Currency, &item.TeamSize,
-		&startLabel, &startLat, &startLng, &item.Area, &facts, &item.AccessNote, &hasCover, &hasIcon, &item.Tour, &item.Home,
+		&startLabel, &startLat, &startLng, &item.Area, &facts, &item.AccessNote, &hasCover, &approvedAt, &hasIcon, &item.Tour, &item.Home,
 		&lookFont, &lookTheme, &ownCover, &mainLang, &advTexts, &ownTexts,
 	); err != nil {
 		return StoreItemDTO{}, err
@@ -437,7 +439,7 @@ func (h *Handlers) scanStoreItem(s rowScanner) (StoreItemDTO, error) {
 	}
 	item.Look = h.Looks.pageLook(item.AdventureSlug, lookFont, lookTheme, ownCover)
 	if hasCover {
-		item.CoverImageURL = "/store-cover/event/" + strconv.FormatInt(item.EventID, 10)
+		item.CoverImageURL = listing.CoverURL(item.EventID, approvedAt)
 	} else if item.Look != nil {
 		item.CoverImageURL = item.Look.CoverURL
 	}

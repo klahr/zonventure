@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/adventure"
@@ -70,6 +71,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		// startLat and startLng put the starting point on the page's map.
 		startLat, startLng sql.NullFloat64
 		hasCover           bool
+		approvedAt         time.Time
 		hasIcon            bool
 		// orgVerified is a verified creator: the page shows a badge.
 		orgVerified bool
@@ -103,7 +105,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		       l.team_size,
 		       a.start_label, a.start_lat, a.start_lng,
 		       COALESCE(a.facts, '{}'), COALESCE(a.access_note, ''),
-		       (l.cover_mime_type IS NOT NULL) AS has_cover,
+		       (l.cover_mime_type IS NOT NULL) AS has_cover, l.approved_at,
 		       COALESCE(a.avatar_mime_type IS NOT NULL, FALSE) AS has_icon,
 		       COALESCE((g.graph->>'tour')::boolean, FALSE) AS tour,
 		       (a.start_lat IS NULL AND NOT COALESCE(jsonb_typeof(g.graph->'zones') = 'array' AND jsonb_array_length(g.graph->'zones') > 0, FALSE)) AS home,
@@ -120,7 +122,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		  AND e.state = 'running'
 		  AND NOT e.sales_stopped
 	`, id).Scan(&eventName, &advSlug, &advTitle, &orgName, &orgSlug, &orgVerified, &blurb, &priceCents,
-		&currency, &teamSize, &startLabel, &startLat, &startLng, &facts, &accessNote, &hasCover, &hasIcon, &tour, &home,
+		&currency, &teamSize, &startLabel, &startLat, &startLng, &facts, &accessNote, &hasCover, &approvedAt, &hasIcon, &tour, &home,
 		&brandAccent, &brandAccentSecondary, &brandBackground, &brandText, &brandFont,
 		&mainLang, &advTexts, &ownTexts)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -197,7 +199,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	}
 	coverURL, lookFont := "", ""
 	if hasCover {
-		coverURL = "/store-cover/event/" + strconv.FormatInt(id, 10)
+		coverURL = listing.CoverURL(id, approvedAt)
 	} else if look != nil && look.CoverURL != "" {
 		coverURL, hasCover = look.CoverURL, true
 	}
