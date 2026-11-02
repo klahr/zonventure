@@ -186,6 +186,7 @@
   "How each of the adventure's print materials reaches each team of this event.": "Hur varje trycksak i äventyret når varje lag i det här eventet.",
   "Starts on version {{n}}": "Börjar på version {{n}}",
   "Version {{n}}": "Version {{n}}",
+  "Open this version in the designer": "Öppna den här versionen i designern",
   "Version {{n}} (latest {{latest}})": "Version {{n}} (senaste {{latest}})",
   "Supported: CSV, Excel (.xlsx), OpenDocument (.ods), IOF XML. First column is the team name; the rest become player slots. A class list with First name, Last name and Group columns is grouped by Group.": "Stöds: CSV, Excel (.xlsx), OpenDocument (.ods), IOF XML. Första kolumnen är lagnamnet; övriga blir spelarplatser. En klasslista med kolumnerna Förnamn, Efternamn och Grupp delas upp i lag efter Grupp.",
   "Skipped rows without a team name: {{rows}}.": "Hoppade över rader utan lagnamn: {{rows}}.",

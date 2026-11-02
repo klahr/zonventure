@@ -32,7 +32,7 @@
 .dz .ev-live-dlg, .dz .ev-mail__form, .dz .vc { display: flex; flex-direction: column; gap: var(--dz-space-3); }
 .dz .ev-live-dlg > p { margin: 0; }
 .dz .ev-sub { display: inline-flex; flex-wrap: wrap; gap: 0 var(--dz-space-1h); }
-.dz .ev-sub a { color: inherit; font-weight: 600; text-decoration: none; }
+.dz .ev-sub a { color: var(--dz-accent); font-weight: 600; text-decoration: none; }
 .dz .ev-sub a:hover { color: var(--dz-accent); text-decoration: underline; }
 .dz .ev-num { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dz .ev-joined { font-size: var(--dz-text-sm); color: var(--dz-muted); white-space: nowrap; }

@@ -150,10 +150,10 @@ export function EventPage({ id }: { id: number }) {
           subtitle={
             <span className="ev-sub">
               <a href={href({ name: "adventure", slug: event.adventure_slug })}>{adv?.title || event.adventure_title || event.adventure_slug}</a>
-              {!quest && (event.state === "scheduled" || event.state === "running" || event.state === "paused") && (
+              {event.state !== "cancelled" && (
                 <>
                   <span aria-hidden>·</span>
-                  <AdventureVersion eventId={event.id} />
+                  <AdventureVersion eventId={event.id} slug={event.adventure_slug} />
                 </>
               )}
               <span aria-hidden>·</span>

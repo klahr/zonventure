@@ -230,7 +230,7 @@ const envelope = (g: Graph): Envelope => ({ format: FORMAT_V2, graph: cleanGraph
  * Version history previews any release, restores it into the draft, or
  * rolls the published pointer back to it.
  */
-export function Designer({ slug }: { slug: string }) {
+export function Designer({ slug, version }: { slug: string; version?: number }) {
   const t = useT();
   const toast = useToast();
   const [loaded, setLoaded] = useState<Loaded>({ state: "loading" });
@@ -940,6 +940,15 @@ export function Designer({ slug }: { slug: string }) {
       setSaveError(errorText(e));
     }
   };
+
+  // Opened on a version (an event's link to what it plays): show it once loaded.
+  const openedVersion = useRef<number | null>(null);
+  useEffect(() => {
+    if (!version || openedVersion.current === version || loaded.state !== "ready") return;
+    openedVersion.current = version;
+    openHistory();
+    void previewVersion(version);
+  }, [version, loaded.state]);
 
   // Restore makes the old version the new draft — undoable, like any edit.
   const restore = () => {

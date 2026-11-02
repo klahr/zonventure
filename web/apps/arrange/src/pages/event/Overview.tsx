@@ -293,12 +293,14 @@ export function CheatCard({ password }: { password: string }) {
 }
 
 /** Which adventure version an event plays, and the latest published, read-only. */
-export function AdventureVersion({ eventId }: { eventId: number }) {
+/** The adventure version the event plays, linking to it in the designer. */
+export function AdventureVersion({ eventId, slug }: { eventId: number; slug: string }) {
   const t = useT();
   const v = useLoad((s) => api.getEventVersion(eventId, s), [eventId]).data;
   if (!v?.latest) return null;
-  if (!v.version) return <span>{t.t("Starts on version {{n}}", { n: v.latest })}</span>;
-  return <span>{v.version === v.latest ? t.t("Version {{n}}", { n: v.version }) : t.t("Version {{n}} (latest {{latest}})", { n: v.version, latest: v.latest })}</span>;
+  const n = v.version || v.latest;
+  const text = !v.version ? t.t("Starts on version {{n}}", { n }) : v.version === v.latest ? t.t("Version {{n}}", { n }) : t.t("Version {{n}} (latest {{latest}})", { n, latest: v.latest });
+  return <a href={href({ name: "designer", slug, version: n })} title={t.t("Open this version in the designer")}>{text}</a>;
 }
 
 export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () => void }) {

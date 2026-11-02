@@ -20,7 +20,7 @@ export type Route =
   | { name: "dashboard" }
   | { name: "adventures" }
   | { name: "adventure"; slug: string }
-  | { name: "designer"; slug: string }
+  | { name: "designer"; slug: string; version?: number }
   | { name: "trail"; slug: string }
   | { name: "keep"; token: string }
   | { name: "field" }
@@ -73,7 +73,12 @@ export function parseRoute(hash: string): Route {
       // its summary. "#/adventures/x/design" opens the designer.
       // "#/adventures/x/cards" opens a quiz trail in the simple creator.
       if (sub === "cards") return { name: "trail", slug: arg };
-      return sub === "design" ? { name: "designer", slug: arg } : { name: "adventure", slug: arg };
+      // "#/adventures/x/design/3" opens it on version 3, read-only.
+      if (sub === "design") {
+        const v = num(parts[3]);
+        return v ? { name: "designer", slug: arg, version: v } : { name: "designer", slug: arg };
+      }
+      return { name: "adventure", slug: arg };
     case "design":
       return arg ? { name: "designer", slug: arg } : { name: "adventures" };
     case "field":
@@ -152,7 +157,7 @@ export function href(r: Route): string {
     case "adventure":
       return `#/adventures/${e(r.slug)}`;
     case "designer":
-      return `#/adventures/${e(r.slug)}/design`;
+      return r.version ? `#/adventures/${e(r.slug)}/design/${r.version}` : `#/adventures/${e(r.slug)}/design`;
     case "trail":
       return `#/adventures/${e(r.slug)}/cards`;
     case "keep":

@@ -586,7 +586,7 @@ function Page({ route, user }: { route: Route; user: Whoami }) {
     case "adventure":
       return <AdventurePage key={route.slug} slug={route.slug} />;
     case "designer":
-      return <Designer key={route.slug} slug={route.slug} />;
+      return <Designer key={route.slug} slug={route.slug} {...(route.version ? { version: route.version } : {})} />;
     case "trail":
       return <TrailPage key={route.slug} slug={route.slug} />;
     case "keep":

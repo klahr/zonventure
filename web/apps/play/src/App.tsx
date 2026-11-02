@@ -117,10 +117,11 @@ export function App() {
     meta.content = barColour && /^#[0-9a-f]{6}$/i.test(barColour) ? barColour : initial;
   }, [barColour]);
 
-  // A new step takes focus, so keyboard and screen-reader users start
-  // at its top instead of on whatever button they last pressed.
+  // A new step opens at its top and takes focus, so keyboard and
+  // screen-reader users start there instead of on whatever button they
+  // last pressed. A held step is still the one on screen.
   const mainRef = useRef<HTMLElement>(null);
-  const node = view?.node;
+  const node = (game.held?.view ?? view)?.node;
   const firstNode = useRef(true);
   useEffect(() => {
     if (!node) return;
@@ -128,7 +129,8 @@ export function App() {
       firstNode.current = false;
       return;
     }
-    mainRef.current?.focus({ preventScroll: false });
+    window.scrollTo(0, 0);
+    mainRef.current?.focus({ preventScroll: true });
   }, [node]);
 
   useLiveRefresh(game.status === "ready", game.refresh);
