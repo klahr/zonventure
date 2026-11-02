@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.37.3] - 2026-11-02
+
 ### Fixed
 
 - A search step's button says "We're here" again unless the author names
