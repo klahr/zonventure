@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.37.2] - 2026-11-02
+
 ### Added
 
 - A search can take its time: "Seconds spent searching" makes the phone
