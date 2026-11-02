@@ -863,7 +863,7 @@ function PuzzleStep(props: StepProps) {
             key={node}
             seconds={input.searching ?? 0}
             disabled={locked}
-            label={blockedFor > 0 ? formatSeconds(blockedFor) : input.button || t("Search here")}
+            label={blockedFor > 0 ? formatSeconds(blockedFor) : input.button || t("We're here")}
             t={t}
             onSearching={setSearching}
             onSearched={() => answer("")}

@@ -695,11 +695,11 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
     case "search":
       how = {
         title: t.t("Search by place"),
-        hint: t.t("No typing: the team presses Search here, and the route below whose zone it stands in is taken. Anywhere else, the wrong-answer replies say what it found."),
+        hint: t.t("No typing: the team presses We're here, and the route below whose zone it stands in is taken. Anywhere else, the wrong-answer replies say what it found."),
         summary: (
           <>
             <SumRow label={t.t("Names")}>{answer.group ?? t.t("the zones of the routes")}</SumRow>
-            <SumRow label={t.t("Button")}>{cfg.bar?.button || t.t("Search here")}</SumRow>
+            <SumRow label={t.t("Button")}>{cfg.bar?.button || t.t("We're here")}</SumRow>
             <SumRow label={t.t("Again later")}>{cfg.repeatable ? t.t("yes") : t.t("no")}</SumRow>
           </>
         ),
@@ -2223,7 +2223,7 @@ function BarForm({ cfg, onChange, scan, search }: { cfg: PuzzleConfig; onChange:
         )
       )}
       <Field label={t.t("Button")}>
-        <input className="field__input" value={bar.button ?? ""} placeholder={scan ? t.t("Scan the code") : search ? t.t("Search here") : t.t("Answer")} onChange={(e) => set("button", e.target.value)} />
+        <input className="field__input" value={bar.button ?? ""} placeholder={scan ? t.t("Scan the code") : search ? t.t("We're here") : t.t("Answer")} onChange={(e) => set("button", e.target.value)} />
       </Field>
       {!scan && !search && (
         <Field label={t.t("Keyboard")}>
@@ -2241,7 +2241,7 @@ function BarForm({ cfg, onChange, scan, search }: { cfg: PuzzleConfig; onChange:
 }
 
 /**
- * A search: the team presses "Search here" and the route whose zone it
+ * A search: the team presses "We're here" and the route whose zone it
  * stands in is taken. The group decides which zones the phone names —
  * "You are in sector C3" — including cells with nothing to find.
  */

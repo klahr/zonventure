@@ -1032,7 +1032,7 @@ func (ps *playSession) input(b *strings.Builder, v session.View) {
 	case "search":
 		label := in.Button
 		if label == "" {
-			label = "Search here"
+			label = "We're here"
 		}
 		fmt.Fprintf(b, "→ Press %q where you stand (answer with an empty guess). Walk to the place first.", label)
 		if in.At != "" {
