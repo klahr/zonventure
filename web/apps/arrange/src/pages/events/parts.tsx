@@ -8,7 +8,7 @@ import { lookCover } from "../adventures/parts.tsx";
 import { startEvent, type EventRow } from "./api.ts";
 
 /** A new event's name and store blurb in its adventure's other languages, by language tag. */
-export type EventTexts = Record<string, { name?: string; blurb?: string }>;
+export type EventTexts = Record<string, { name?: string }>;
 
 /**
  * A new event's name, and with blurb its store blurb, in each of the
@@ -16,30 +16,24 @@ export type EventTexts = Record<string, { name?: string; blurb?: string }>;
  * Nothing for an adventure played in one language. Left empty, a text
  * shows as written.
  */
-export function OtherLanguages({ languages, texts, onChange, name, blurb }: {
+export function OtherLanguages({ languages, texts, onChange, name }: {
   languages: string[] | undefined;
   texts: EventTexts;
   onChange: (texts: EventTexts) => void;
   name: string;
-  blurb?: string;
 }) {
   const t = useT();
   const others = (languages ?? []).slice(1);
   if (others.length === 0) return null;
-  const edit = (lang: string, field: "name" | "blurb", value: string) => onChange({ ...texts, [lang]: { ...texts[lang], [field]: value } });
+  const edit = (lang: string, value: string) => onChange({ ...texts, [lang]: { ...texts[lang], name: value } });
   return (
     <fieldset className="evs-fieldset">
       <legend className="cs-field__label">{t.t("In other languages")}</legend>
       {others.map((l) => (
         <div key={l}>
           <Field label={t.t("Name in {{lang}}", { lang: languageName(l) })}>
-            <input maxLength={200} placeholder={name} value={texts[l]?.name ?? ""} onChange={(e) => edit(l, "name", e.target.value)} />
+            <input maxLength={200} placeholder={name} value={texts[l]?.name ?? ""} onChange={(e) => edit(l, e.target.value)} />
           </Field>
-          {blurb !== undefined && (
-            <Field label={t.t("Public description in {{lang}}", { lang: languageName(l) })}>
-              <textarea rows={2} maxLength={1000} placeholder={blurb} value={texts[l]?.blurb ?? ""} onChange={(e) => edit(l, "blurb", e.target.value)} />
-            </Field>
-          )}
         </div>
       ))}
     </fieldset>
@@ -48,11 +42,10 @@ export function OtherLanguages({ languages, texts, onChange, name, blurb }: {
 
 /** texts for the adventure's other languages as an event's translations take them, or none when nothing is written. */
 export function eventTranslations(languages: string[] | undefined, texts: EventTexts) {
-  const out: Record<string, { name: string; blurb: string }> = {};
+  const out: Record<string, { name: string }> = {};
   for (const l of (languages ?? []).slice(1)) {
     const name = texts[l]?.name?.trim() ?? "";
-    const blurb = texts[l]?.blurb?.trim() ?? "";
-    if (name || blurb) out[l] = { name, blurb };
+    if (name) out[l] = { name };
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }

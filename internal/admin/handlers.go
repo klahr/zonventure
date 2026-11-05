@@ -215,7 +215,7 @@ type adventureDTO struct {
 	// graph. A new adventure has none.
 	Playable bool `json:"playable"`
 	// Languages are those its published version is played in, the main
-	// one first: what a new event's name and blurb can be written in.
+	// one first: what a new event's name can be written in.
 	// None with no published version or no translations.
 	Languages []string `json:"languages,omitempty"`
 }
@@ -382,15 +382,17 @@ type eventDTO struct {
 	TicketPriceCents int    `json:"ticket_price_cents,omitempty"`
 	TicketCurrency   string `json:"ticket_currency,omitempty"`
 	TicketTeamSize   int    `json:"ticket_team_size,omitempty"`
-	PublicBlurb      string `json:"public_blurb,omitempty"`
+	// AdventureDescription is what the store says about it: the
+	// adventure's description, written and translated with the adventure.
+	AdventureDescription string `json:"adventure_description,omitempty"`
 	// Billing is 'free' for a free trial in the store, 'prepaid' for a
 	// party paid at checkout, else 'teams': each team charged as it starts.
 	Billing string `json:"billing,omitempty"`
 	// HomeOrg: the event is the site's own organisation's (ZV_HOME_ORG),
 	// whose admins may make it free. Set on its detail.
 	HomeOrg bool `json:"home_org,omitempty"`
-	// Translations are the event's name, store blurb and meeting place
-	// in the other languages the adventure is played in, and Languages those
+	// Translations are the event's name and meeting place in the other
+	// languages the adventure is played in, and Languages those
 	// languages, the adventure's own first (the version the event plays
 	// or moves to). Detail payload only.
 	Translations listing.Translations `json:"translations,omitempty"`
@@ -1126,9 +1128,8 @@ type updateEventRequest struct {
 	TicketPriceCents *int    `json:"ticket_price_cents,omitempty"`
 	TicketCurrency   *string `json:"ticket_currency,omitempty"`
 	TicketTeamSize   *int    `json:"ticket_team_size,omitempty"`
-	PublicBlurb      *string `json:"public_blurb,omitempty"`
-	// Translations replaces the event's name, store blurb and meeting
-	// place in other languages, by language tag: {"en": {"name": "…"}}.
+	// Translations replaces the event's name and meeting place in other
+	// languages, by language tag: {"en": {"name": "…"}}.
 	// An empty one takes them all away.
 	Translations *listing.Translations `json:"translations,omitempty"`
 	// SecretRoles turns the adventure's saboteur on or off for this
@@ -1164,7 +1165,7 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ScheduledAt == nil && req.ShowMap == nil && req.Name == nil &&
 		req.PublicForSale == nil && req.TicketPriceCents == nil &&
-		req.TicketCurrency == nil && req.TicketTeamSize == nil && req.PublicBlurb == nil && req.Translations == nil && req.SecretRoles == nil && req.SalesStopped == nil && req.MeetingPlace == nil && req.Billing == nil {
+		req.TicketCurrency == nil && req.TicketTeamSize == nil && req.Translations == nil && req.SecretRoles == nil && req.SalesStopped == nil && req.MeetingPlace == nil && req.Billing == nil {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
@@ -1322,18 +1323,6 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if req.PublicBlurb != nil {
-		blurb := strings.TrimSpace(*req.PublicBlurb)
-		if len(blurb) > 1000 {
-			httpx.Error(w, http.StatusBadRequest, "public_blurb is too long (max 1000 chars)")
-			return
-		}
-		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE events SET public_blurb = $1 WHERE id = $2`, blurb, eventID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "update failed")
-			return
-		}
-	}
 	if req.Translations != nil {
 		tr, err := cleanEventTranslations(*req.Translations)
 		if err != nil {
@@ -1348,7 +1337,7 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// What the store shows changed: a draft until it is submitted for review.
-	if req.Name != nil || req.TicketPriceCents != nil || req.TicketTeamSize != nil || req.PublicBlurb != nil || req.Translations != nil || req.Billing != nil {
+	if req.Name != nil || req.TicketPriceCents != nil || req.TicketTeamSize != nil || req.Translations != nil || req.Billing != nil {
 		if err := h.settleEventListing(r.Context(), eventID); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "listing review failed", err)
 			return

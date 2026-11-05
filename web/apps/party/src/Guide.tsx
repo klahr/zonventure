@@ -25,6 +25,7 @@ import { useT } from "./i18n.tsx";
  * one screen's content, and its buttons at the foot within thumb reach.
  */
 export function GuideShell({
+  className,
   style,
   back,
   close,
@@ -34,6 +35,7 @@ export function GuideShell({
   foot,
   hero,
 }: {
+  className?: string;
   style?: CSSProperties;
   back?: (() => void) | undefined;
   close?: (() => void) | undefined;
@@ -47,7 +49,7 @@ export function GuideShell({
 }) {
   const t = useT().t;
   return (
-    <div className="trail trail-guide" style={style}>
+    <div className={"trail trail-guide" + (className ? " " + className : "")} style={style}>
       <header className="trail-guide__bar">
         {back ? (
           <button type="button" className="trail-guide__back" onClick={back}>

@@ -73,7 +73,7 @@ func (s *Server) registerEventTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "update_event",
 		Scope:       scopeWrite,
-		Description: "Change an event's settings: name, scheduled_at (only while scheduled), meeting_place, show_map, secret_roles, and for a self-guided event (public_for_sale) its store listing — ticket_price_cents, ticket_currency, ticket_team_size, public_blurb, translations. A self-guided event is sold in the store once it is running, has a price and its listing is approved: a platform admin reviews each new or changed listing (name, price, team size, blurb, cover) unless the organisation is a verified creator, and until then the store keeps showing the last approved version. get_event's listing_review says where it is (pending, approved, rejected with listing_reject_reason). The site's own organisation can make a self-guided event a free trial with billing: free — price 0, the store gives a ticket for an email address, and nobody is charged, the organisation included. Only the keys you pass change.",
+		Description: "Change an event's settings: name, scheduled_at (only while scheduled), meeting_place, show_map, secret_roles, and for a self-guided event (public_for_sale) its store listing — ticket_price_cents, ticket_currency, ticket_team_size, translations. What the store says about it is the adventure's description (update_adventure_meta description, translated in the adventure's graph under meta:description). A self-guided event is sold in the store once it is running, has a price and its listing is approved: a platform admin reviews each new or changed listing (name, price, team size, cover) unless the organisation is a verified creator, and until then the store keeps showing the last approved version. get_event's listing_review says where it is (pending, approved, rejected with listing_reject_reason). The site's own organisation can make a self-guided event a free trial with billing: free — price 0, the store gives a ticket for an email address, and nobody is charged, the organisation included. Only the keys you pass change.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},
@@ -86,16 +86,14 @@ func (s *Server) registerEventTools() {
 				"ticket_price_cents": map[string]any{"type": "integer", "description": "Self-guided: price per ticket in cents, e.g. 19900 for 199.00."},
 				"ticket_currency":    map[string]any{"type": "string", "description": "Self-guided: always the platform's currency, the one tickets are sold in; may be left out."},
 				"ticket_team_size":   map[string]any{"type": "integer", "description": "Self-guided: players per ticket."},
-				"public_blurb":       map[string]any{"type": "string", "description": "Self-guided: the line shown in the store."},
 				"billing":            map[string]any{"type": "string", "enum": []string{"free", "teams"}, "description": "The site's own organisation's admins, self-guided: free gives tickets away in the store and charges nobody (its price becomes 0); teams sells them again, its price to be set."},
 				"translations": map[string]any{
 					"type":        "object",
-					"description": "The event's name, store blurb and meeting place in the other languages the adventure is played in (get_event's languages), by language tag: {\"en\": {\"name\": \"…\", \"blurb\": \"…\", \"meeting_place\": \"…\"}}. Teams get their invitations, calendar entries and messages in the language they play in, the store shows the page's. Replaces them all; {} removes them. A self-guided event's are reviewed with its listing. The adventure's own title, meeting point (meta:start_label), area (meta:area), access note (meta:access_note) and note to buyers (meta:buyer_note) are translated in the adventure's graph.",
+					"description": "The event's name and meeting place in the other languages the adventure is played in (get_event's languages), by language tag: {\"en\": {\"name\": \"…\", \"meeting_place\": \"…\"}}. Teams get their invitations, calendar entries and messages in the language they play in, the store shows the page's. Replaces them all; {} removes them. A self-guided event's are reviewed with its listing. The adventure's own title, description (meta:description), meeting point (meta:start_label), area (meta:area), access note (meta:access_note) and note to buyers (meta:buyer_note) are translated in the adventure's graph.",
 					"additionalProperties": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
 							"name":          map[string]any{"type": "string"},
-							"blurb":         map[string]any{"type": "string"},
 							"meeting_place": map[string]any{"type": "string"},
 						},
 					},
@@ -376,7 +374,6 @@ type updateEventArgs struct {
 	TicketPriceCents *int    `json:"ticket_price_cents,omitempty"`
 	TicketCurrency   *string `json:"ticket_currency,omitempty"`
 	TicketTeamSize   *int    `json:"ticket_team_size,omitempty"`
-	PublicBlurb      *string `json:"public_blurb,omitempty"`
 	SalesStopped     *bool   `json:"sales_stopped,omitempty"`
 	MeetingPlace     *string `json:"meeting_place,omitempty"`
 	Billing          *string `json:"billing,omitempty"`
@@ -387,7 +384,6 @@ type updateEventArgs struct {
 // eventTexts are an event's own words in one language.
 type eventTexts struct {
 	Name         string `json:"name,omitempty"`
-	Blurb        string `json:"blurb,omitempty"`
 	MeetingPlace string `json:"meeting_place,omitempty"`
 }
 

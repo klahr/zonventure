@@ -383,11 +383,11 @@ export function Designer({ slug, version }: { slug: string; version?: number }) 
     (signal?: AbortSignal) =>
       adventures
         .getLook(slug, signal)
-        .then(({ title, intro, outro, start_label, area, access_note, buyer_note, language, brand: b }) => {
+        .then(({ title, description, intro, outro, start_label, area, access_note, buyer_note, language, brand: b }) => {
           if (signal?.aborted) return;
           if (title) setAdventureTitle(title);
           setAdventureLang(language);
-          setMeta({ title, intro, outro, start_label, area, access_note, buyer_note });
+          setMeta({ title, description, intro, outro, start_label, area, access_note, buyer_note });
           setBrand(b);
           return { title, intro, outro };
         })

@@ -69,8 +69,8 @@ func validateBlurb(s string, maxRunes int) (string, error) {
 	return s, nil
 }
 
-// cleanEventTranslations checks an event's name, blurb and meeting
-// place in other languages, as the main ones are checked, trimmed, and
+// cleanEventTranslations checks an event's name and meeting place in
+// other languages, as the main ones are checked, trimmed, and
 // leaves out a language with nothing in it. Only the event's own words
 // are its to translate: the adventure's are translated in the adventure.
 func cleanEventTranslations(in listing.Translations) (listing.Translations, error) {
@@ -79,20 +79,17 @@ func cleanEventTranslations(in listing.Translations) (listing.Translations, erro
 		if !validLanguageTag(lang) {
 			return nil, fmt.Errorf("%q is not a language tag", lang)
 		}
-		if t.Title != "" || t.StartLabel != "" || t.Area != "" || t.AccessNote != "" || t.BuyerNote != "" {
-			return nil, fmt.Errorf("%s: only name, blurb and meeting_place are the event's to translate", lang)
+		if t.Title != "" || t.Description != "" || t.StartLabel != "" || t.Area != "" || t.AccessNote != "" || t.BuyerNote != "" {
+			return nil, fmt.Errorf("%s: only name and meeting_place are the event's to translate", lang)
 		}
-		t.Name, t.Blurb, t.MeetingPlace = strings.TrimSpace(t.Name), strings.TrimSpace(t.Blurb), strings.TrimSpace(t.MeetingPlace)
+		t.Name, t.MeetingPlace = strings.TrimSpace(t.Name), strings.TrimSpace(t.MeetingPlace)
 		if _, err := validateBlurb(t.Name, MaxNameLen); err != nil {
 			return nil, fmt.Errorf("%s: name %w", lang, err)
-		}
-		if len(t.Blurb) > 1000 {
-			return nil, fmt.Errorf("%s: blurb is too long (max 1000 chars)", lang)
 		}
 		if _, err := validateBlurb(t.MeetingPlace, MaxNameLen); err != nil {
 			return nil, fmt.Errorf("%s: meeting_place %w", lang, err)
 		}
-		if t.Name != "" || t.Blurb != "" || t.MeetingPlace != "" {
+		if t.Name != "" || t.MeetingPlace != "" {
 			out[lang] = t
 		}
 	}

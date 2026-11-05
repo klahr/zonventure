@@ -144,7 +144,6 @@ type pendingListing struct {
 	ID       int64  `json:"id"`
 	Revision string `json:"revision"`
 	Draft    struct {
-		Blurb      string `json:"blurb"`
 		PriceCents int    `json:"price_cents"`
 		CoverURL   string `json:"cover_url"`
 	} `json:"draft"`
@@ -224,7 +223,7 @@ func TestListingReview_Event(t *testing.T) {
 	f, cleanup := newListingFixture(t)
 	defer cleanup()
 
-	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "public_blurb": "Find it"})
+	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "name": "Find it"})
 	if got := f.eventState(t); got != "draft" {
 		t.Fatalf("state after first save = %q, want draft", got)
 	}
@@ -256,7 +255,7 @@ func TestListingReview_Event(t *testing.T) {
 		t.Fatalf("approve: %d %s", w.Code, w.Body)
 	}
 	items := f.storeItems(t)
-	if len(items) != 1 || items[0].PriceCents != 9900 || items[0].Blurb != "Find it" || items[0].OrgVerified {
+	if len(items) != 1 || items[0].PriceCents != 9900 || items[0].EventName != "Find it" || items[0].OrgVerified {
 		t.Fatalf("store after approval = %+v", items)
 	}
 	if got := f.mailTo("boss@acme.com"); len(got) != 1 || !strings.Contains(got[0], "approved") {
@@ -308,10 +307,10 @@ func TestListingReview_Event(t *testing.T) {
 
 	// An edit made after submitting withdraws the submission: what the
 	// reviewer saw is not what it would approve.
-	f.patchEvent(t, map[string]any{"public_blurb": "Seen"})
+	f.patchEvent(t, map[string]any{"name": "Seen"})
 	f.submitEvent(t)
 	seen := f.queue(t)[0].Revision
-	f.patchEvent(t, map[string]any{"public_blurb": "Not seen"})
+	f.patchEvent(t, map[string]any{"name": "Not seen"})
 	if got := f.eventState(t); got != "draft" {
 		t.Fatalf("state after editing a submitted draft = %q, want draft", got)
 	}
@@ -322,8 +321,8 @@ func TestListingReview_Event(t *testing.T) {
 	if w := f.decide(t, "event", f.eventID, "approve", seen, ""); w.Code != http.StatusConflict || code(w) != "changed" {
 		t.Fatalf("approve an older revision: %d %s", w.Code, w.Body)
 	}
-	if items := f.storeItems(t); items[0].Blurb != "Find it" {
-		t.Fatalf("blurb = %q, want the approved one", items[0].Blurb)
+	if items := f.storeItems(t); items[0].EventName != "Find it" {
+		t.Fatalf("name = %q, want the approved one", items[0].EventName)
 	}
 
 	// Clearing the price takes it down at once.
@@ -401,7 +400,7 @@ func TestListingReview_ContentAndAssistant(t *testing.T) {
 	f, cleanup := newListingFixture(t)
 	defer cleanup()
 
-	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "public_blurb": "Find it"})
+	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "name": "Find it"})
 	f.submitEvent(t)
 	w := call(t, f.reviewer, "GET", fmt.Sprintf("/api/admin/listing-reviews/event/%d", f.eventID), nil)
 	if w.Code != http.StatusOK {
@@ -688,12 +687,12 @@ func TestListingReview_HashChain(t *testing.T) {
 	defer cleanup()
 	db := f.h.DB
 
-	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "public_blurb": "Find it"})
+	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "name": "Find it"})
 	f.submitEvent(t)
 	if w := f.decide(t, "event", f.eventID, "reject", f.queue(t)[0].Revision, "Too vague"); w.Code != http.StatusOK {
 		t.Fatalf("reject: %d %s", w.Code, w.Body)
 	}
-	f.patchEvent(t, map[string]any{"public_blurb": "Find the acorns"})
+	f.patchEvent(t, map[string]any{"name": "Find the acorns"})
 	f.submitEvent(t)
 	if w := f.decide(t, "event", f.eventID, "approve", f.queue(t)[0].Revision, ""); w.Code != http.StatusOK {
 		t.Fatalf("approve: %d %s", w.Code, w.Body)
@@ -726,7 +725,7 @@ func TestListingReview_HashChain(t *testing.T) {
 		t.Fatalf("verify = ok %v, %d entries, head %q, %v", ok, entries, head, problems)
 	}
 
-	// The approval fingerprints the blurb it approved.
+	// The approval fingerprints the name it approved.
 	var snapshot string
 	if err := db.QueryRow(`
 		SELECT s.content::text FROM listing_review_log l JOIN listing_review_snapshots s ON s.content_hash = l.content_hash
@@ -752,7 +751,7 @@ func TestListingReview_HashChain(t *testing.T) {
 	if _, err := db.Exec(`
 		ALTER TABLE listing_review_log DISABLE TRIGGER listing_review_log_append_only;
 		UPDATE listing_review_log SET reason = 'Fine' WHERE action = 'rejected';
-		UPDATE listing_review_snapshots SET content = jsonb_set(content, '{draft,blurb}', '"Something else"')
+		UPDATE listing_review_snapshots SET content = jsonb_set(content, '{draft,name}', '"Something else"')
 		WHERE content_hash = (SELECT content_hash FROM listing_review_log WHERE action = 'approved');
 		ALTER TABLE listing_review_log ENABLE TRIGGER listing_review_log_append_only;`); err != nil {
 		t.Fatal(err)
@@ -838,7 +837,7 @@ func TestListingReview_ServedMatchesApproved(t *testing.T) {
 	defer cleanup()
 	db := f.h.DB
 
-	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "public_blurb": "Find it"})
+	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "name": "Find it"})
 	f.submitEvent(t)
 	if w := f.decide(t, "event", f.eventID, "approve", f.queue(t)[0].Revision, ""); w.Code != http.StatusOK {
 		t.Fatalf("approve: %d %s", w.Code, w.Body)

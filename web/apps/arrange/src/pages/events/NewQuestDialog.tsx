@@ -26,7 +26,6 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
   const advs = useLoad((signal) => listAdventures(signal).then((l) => l.filter((a) => (a.mine_to_edit || a.shared) && (!slug || a.slug === slug))), [slug]);
   const [picked, setPicked] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [blurb, setBlurb] = useState("");
   const [texts, setTexts] = useState<EventTexts>({});
   const [price, setPrice] = useState("199");
   const [free, setFree] = useState(false);
@@ -83,7 +82,7 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
       // Free first, on its own: an event takes its billing or its price, not both at once.
       if (free) await updateEvent(id, { billing: "free" });
       const translations = eventTranslations(adv.languages, texts);
-      await updateEvent(id, { public_blurb: blurb.trim(), ...(free ? {} : { ticket_price_cents: priceN * 100 }), ticket_team_size: teamN, ...(translations ? { translations } : {}) });
+      await updateEvent(id, { ...(free ? {} : { ticket_price_cents: priceN * 100 }), ticket_team_size: teamN, ...(translations ? { translations } : {}) });
     } catch {
       toast.err(t.t("Self-guided adventure created, but its ticket details were not saved"));
       onClose();
@@ -168,10 +167,7 @@ export function NewQuestDialog({ slug, onClose, onCreated }: { slug?: string; on
       <Field label={t.t("Name in the store")}>
         <input required maxLength={200} value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
-      <Field label={t.t("Public description")}>
-        <textarea rows={4} maxLength={1000} value={blurb} onChange={(e) => setBlurb(e.target.value)} placeholder={t.t("Short description shown in your store.")} />
-      </Field>
-      <OtherLanguages languages={advs.data.find((a) => a.slug === picked)?.languages} texts={texts} onChange={setTexts} name={name} blurb={blurb} />
+      <OtherLanguages languages={advs.data.find((a) => a.slug === picked)?.languages} texts={texts} onChange={setTexts} name={name} />
       <div className="evs-grid3">
         <Field label={t.t("Ticket price ({{cur}})", { cur: currencySymbol(t.current()) })}>
           {free ? <input disabled value={t.t("Free")} aria-label={t.t("Free")} /> : <input type="number" min={1} step={1} value={price} onChange={(e) => setPrice(e.target.value)} />}

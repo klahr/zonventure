@@ -36,7 +36,8 @@ type StoreItemDTO struct {
 	// Home is played where the buyer is — at home, at school: the
 	// version the event plays has no places and the adventure no
 	// starting point. The store labels it so, beside games and walks.
-	Home       bool   `json:"home"`
+	Home bool `json:"home"`
+	// Blurb is the adventure's description.
 	Blurb      string `json:"blurb,omitempty"`
 	PriceCents int    `json:"price_cents"`
 	Currency   string `json:"currency"`
@@ -70,11 +71,11 @@ type StoreItemDTO struct {
 }
 
 // In puts the item's words into lang where they are translated:
-// the listing's name and blurb, and the adventure's title, meeting
-// point, area and access note.
+// the listing's name, and the adventure's title, description,
+// meeting point, area and access note.
 func (it *StoreItemDTO) In(lang string) {
-	t := it.texts.In(lang, listing.Texts{Name: it.EventName, Blurb: it.Blurb, Title: it.AdventureTitle, StartLabel: it.StartLabel, Area: it.Area, AccessNote: it.AccessNote})
-	it.EventName, it.Blurb, it.AdventureTitle, it.StartLabel, it.Area, it.AccessNote = t.Name, t.Blurb, t.Title, t.StartLabel, t.Area, t.AccessNote
+	t := it.texts.In(lang, listing.Texts{Name: it.EventName, Description: it.Blurb, Title: it.AdventureTitle, StartLabel: it.StartLabel, Area: it.Area, AccessNote: it.AccessNote})
+	it.EventName, it.Blurb, it.AdventureTitle, it.StartLabel, it.Area, it.AccessNote = t.Name, t.Description, t.Title, t.StartLabel, t.Area, t.AccessNote
 }
 
 // storeLang is the language a store request asks for: ?lang, else the
@@ -287,7 +288,7 @@ const storeItemSelect = `
 	SELECT e.id, l.name, e.adventure_slug,
 	       COALESCE(a.title, e.adventure_slug) AS adv_title,
 	       o.name AS org_name, o.verified_creator,
-	       l.blurb,
+	       a.description,
 	       l.price_cents,
 	       l.currency,
 	       l.team_size,

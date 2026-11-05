@@ -24,7 +24,7 @@ func TestStorePages(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`
-		INSERT INTO adventures(slug, title, org_id, start_label) VALUES ('demo', 'Demo Adv', $1, 'By the fountain')
+		INSERT INTO adventures(slug, title, description, org_id, start_label) VALUES ('demo', 'Demo Adv', 'A two-hour outdoor adventure.', $1, 'By the fountain')
 	`, orgID); err != nil {
 		t.Fatal(err)
 	}
@@ -38,9 +38,9 @@ func TestStorePages(t *testing.T) {
 		var eventID int64
 		if err := db.QueryRow(`
 			INSERT INTO events(adventure_slug, org_id, state, live_token, name,
-			                   public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size, public_blurb)
+			                   public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size)
 			VALUES ('demo', $1, 'running', 'lt-' || md5(random()::text), 'Always-on demo',
-			        TRUE, 2500, 'eur', 5, 'A two-hour outdoor adventure.')
+			        TRUE, 2500, 'eur', 5)
 			RETURNING id
 		`, orgID).Scan(&eventID); err != nil {
 			t.Fatal(err)
@@ -76,7 +76,7 @@ func TestStorePages(t *testing.T) {
 		for _, want := range []string{
 			"Demo Adv",                      // adventure title
 			"Acme",                          // org name
-			"A two-hour outdoor adventure.", // blurb
+			"A two-hour outdoor adventure.", // the adventure's description
 			"https://zv.example.com/o/acme/store/event/", // canonical URL
 			"€25", // formatted price
 			"Payment by Stripe.",

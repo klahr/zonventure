@@ -254,7 +254,6 @@ func (h *Handlers) contentOf(ctx context.Context, kind string, id int64, served 
 	sort.Strings(langs)
 	for _, lang := range langs {
 		text("Listing ("+lang+"): name", c.Draft.Translations[lang].Name)
-		text("Listing ("+lang+"): blurb", c.Draft.Translations[lang].Blurb)
 		text("Listing ("+lang+"): meeting place", c.Draft.Translations[lang].MeetingPlace)
 	}
 	if draftCover {

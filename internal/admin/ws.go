@@ -525,7 +525,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		         JOIN teams t ON t.id = ps.team_id
 		        WHERE t.event_id = ar.id) AS player_slots_count,
 		       ar.public_for_sale, ar.ticket_price_cents,
-		       ar.ticket_currency, ar.ticket_team_size, ar.public_blurb,
+		       ar.ticket_currency, ar.ticket_team_size, COALESCE(adv.description, ''),
 		       (ar.cover_image_mime_type IS NOT NULL) AS has_cover_image,
 		       ar.paused_seconds, COALESCE(ar.paused_at, ''),
 		       ar.secret_roles, COALESCE(ar.graph_id, 0), ar.party,
@@ -546,7 +546,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		&d.CompletedAt, &d.CancelledAt,
 		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
 		&d.LiveToken, &showMap, &d.TeamsCount, &d.PlayerSlotsCount,
-		&d.PublicForSale, &priceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.PublicBlurb,
+		&d.PublicForSale, &priceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.AdventureDescription,
 		&d.HasCoverImage, &d.PausedSeconds, &d.PausedAt, &secretRoles, &graphID, &d.Party,
 		&d.ListingReview, &d.ListingRejectReason, &d.Listed, &d.ListedPriceCents, &d.ListedCurrency, &connect,
 		&d.SalesStopped, &d.Billing, &orgSlug, &d.CheatPassword, &d.MeetingPlace,

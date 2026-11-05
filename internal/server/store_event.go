@@ -99,7 +99,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		       a.title AS adv_title,
 		       o.name AS org_name,
 		       o.slug AS org_slug, o.verified_creator,
-		       l.blurb,
+		       COALESCE(a.description, ''),
 		       l.price_cents,
 		       l.currency,
 		       l.team_size,
@@ -141,8 +141,8 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 
 	// The listing in the page's language, where it is translated.
 	lang := resolveLang(w, r)
-	tr := texts.In(lang, listing.Texts{Name: eventName.String, Blurb: blurb, Title: advTitle.String, StartLabel: startLabel.String, AccessNote: accessNote})
-	eventName.String, blurb, advTitle.String, startLabel.String, accessNote = tr.Name, tr.Blurb, tr.Title, tr.StartLabel, strings.TrimSpace(tr.AccessNote)
+	tr := texts.In(lang, listing.Texts{Name: eventName.String, Description: blurb, Title: advTitle.String, StartLabel: startLabel.String, AccessNote: accessNote})
+	eventName.String, blurb, advTitle.String, startLabel.String, accessNote = tr.Name, tr.Description, tr.Title, tr.StartLabel, strings.TrimSpace(tr.AccessNote)
 	var f adventure.Facts
 	if err := json.Unmarshal(facts, &f); err != nil {
 		http.Error(w, "lookup failed", http.StatusInternalServerError)

@@ -11,6 +11,11 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- Store cards say "See adventure" instead of "Buy", since they open the adventure's page, not checkout.
+- What the store says about an adventure is now the adventure's description, translated in the designer with its title, instead of each event's own description. An event keeps its name and meeting place. Migration 0187 moves each listed event's store text and its translations to the adventure (translations into the draft, live with the next published version).
+
 ## [0.37.5] - 2026-11-02
 
 ### Added

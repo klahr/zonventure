@@ -116,6 +116,7 @@ export function refusedReport<Rep>(e: unknown): Rep | undefined {
 /** internal/admin: adventureEditDTO, the palette part. */
 interface AdventureEdit {
   title: string;
+  description?: string;
   intro_text: string;
   outro_text: string;
   start_label?: string;
@@ -157,12 +158,14 @@ export async function getLook(slug: string, signal?: AbortSignal): Promise<Look>
   if (a.card_outline) b.card_outline = true;
   if (a.backdrop) b.backdrop = a.backdrop;
   if (a.style) b.style = a.style;
-  return { title: a.title, intro: a.intro_text, outro: a.outro_text, start_label: a.start_label ?? "", area: a.area ?? "", access_note: a.access_note ?? "", buyer_note: a.buyer_note ?? "", language: a.language, brand: b };
+  return { title: a.title, description: a.description ?? "", intro: a.intro_text, outro: a.outro_text, start_label: a.start_label ?? "", area: a.area ?? "", access_note: a.access_note ?? "", buyer_note: a.buyer_note ?? "", language: a.language, brand: b };
 }
 
 /** The adventure's own settings the designer shows beside its graph. */
 export interface Look {
   title: string;
+  /** What the store says about it. */
+  description: string;
   intro: string;
   outro: string;
   /** Where teams meet, and where it is played: the store's words, and the start screen's. */

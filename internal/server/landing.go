@@ -195,6 +195,7 @@ type landingStrings struct {
 	StoreBrowseCTA     string
 	StoreCodeCTA       string
 	StoreRequestCTA    string // the request form's button, when it takes requests
+	StoreRequestHint   string // what the request form is for, beside its button
 	StoreCountOne      string
 	StoreCountPlural   string
 	StoreCodeEyebrow   string
@@ -626,6 +627,7 @@ func storeSubs(s landingStrings) [][2]string {
 		{"{{STORE_BROWSE_CTA}}", s.StoreBrowseCTA},
 		{"{{STORE_CODE_CTA}}", s.StoreCodeCTA},
 		{"{{STORE_REQUEST_CTA}}", s.StoreRequestCTA},
+		{"{{STORE_REQUEST_HINT}}", s.StoreRequestHint},
 		{"{{STORE_CODE_EYEBROW}}", s.StoreCodeEyebrow},
 		{"{{STORE_CODE_HEADING}}", s.StoreCodeHeading},
 		{"{{STORE_CODE_BODY}}", s.StoreCodeBody},

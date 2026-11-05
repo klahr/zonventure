@@ -910,17 +910,16 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The logo as drawn, uncropped; only the initial gets a tile. */
 .req-brand img,
 .req-brand__initial {
   flex: none;
   width: 1.9rem;
   height: 1.9rem;
-  border-radius: 50%;
   object-fit: contain;
-  background: var(--surface);
-  box-shadow: 0 0 0 1px var(--border-soft);
 }
 .req-brand__initial {
+  border-radius: 8px;
   display: grid;
   place-items: center;
   background: var(--trail-brand, var(--accent));
@@ -935,12 +934,6 @@ body {
   height: clamp(9rem, 26vh, 16rem);
   margin: 0 calc(-1 * var(--sp-4)) 0;
   background: var(--trail-brand, var(--accent)) center / cover no-repeat;
-}
-.req-hero::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(transparent 45%, color-mix(in srgb, var(--trail-bg, var(--bg)) 92%, transparent));
 }
 .req-hero__logo {
   position: absolute;
@@ -958,6 +951,54 @@ body {
 }
 .trail-guide__main.has-hero:has(.req-hero__logo) .trail-guide__body {
   padding-top: 2.25rem;
+}
+
+/* On a large screen the form is a card on a tinted page: its bar, its
+   content and its buttons one block, the buttons right under the content. */
+@media (min-width: 900px) {
+  .req-page {
+    padding: clamp(2rem, 6vh, 4rem) var(--sp-4);
+    background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  }
+  .req-page > .trail-guide__bar,
+  .req-page > .trail-guide__main,
+  .req-page > .trail-guide__foot {
+    width: 100%;
+    max-width: 46rem;
+    margin-inline: auto;
+    border-inline: 1px solid var(--border-soft);
+    background: var(--trail-bg, var(--surface));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .req-page > .trail-guide__bar {
+    position: relative;
+    padding: var(--sp-3) var(--sp-4);
+    border-top: 1px solid var(--border-soft);
+    border-radius: 24px 24px 0 0;
+  }
+  .req-page > .trail-guide__main {
+    flex: none;
+    padding: var(--sp-5) var(--sp-6) var(--sp-5);
+  }
+  .req-page .req-hero {
+    margin: calc(-1 * var(--sp-5)) calc(-1 * var(--sp-6)) 0;
+  }
+  .req-page > .trail-guide__foot {
+    position: static;
+    padding: var(--sp-4) var(--sp-6);
+    border-bottom: 1px solid var(--border-soft);
+    border-radius: 0 0 24px 24px;
+    box-shadow: 0 40px 80px -40px rgba(0, 0, 0, 0.3);
+  }
+  .req-page > .trail-guide__foot > div {
+    max-width: none;
+    justify-content: flex-end;
+  }
+  .req-page .trail-guide__next {
+    flex: 0 0 auto;
+    min-width: 12rem;
+  }
 }
 
 .req-step {

@@ -17,7 +17,7 @@ export const roleKey = (slug: string, field: "name" | "text" | "cover") => `r:${
 /** A journal section's heading: one per section, however many notes share it. */
 export const sectionKey = (section: string) => `js:${section}`;
 /** The adventure's own title, intro, outro, meeting point, area and access note, which live outside the graph. */
-export const metaKey = (field: "title" | "intro" | "outro" | "start_label" | "area" | "access_note" | "buyer_note") => `meta:${field}`;
+export const metaKey = (field: "title" | "description" | "intro" | "outro" | "start_label" | "area" | "access_note" | "buyer_note") => `meta:${field}`;
 export const TIME_UP_KEY = "time-up";
 export const itemKey = (slug: string, field: "name") => `i:${slug}:${field}`;
 /** graph.ItemBlockKey: an item block's text. */
@@ -37,6 +37,8 @@ export const mediaKey = (owner: string) => `${owner}:media`;
 /** The adventure's own texts, from its settings rather than its graph. */
 export interface AdventureMeta {
   title?: string;
+  /** What the store says about it. */
+  description?: string;
   intro?: string;
   outro?: string;
   /** Where teams meet and where it is played: the store's, and the start screen's. */
@@ -493,6 +495,7 @@ export function translateSideEdit(before: Graph, after: Graph, lang: string, mai
 export function adventureTexts(g: Graph, meta: AdventureMeta = {}): Translatable[] {
   const out: Translatable[] = [];
   if (meta.title?.trim()) out.push({ key: metaKey("title"), label: "Adventure title", main: meta.title });
+  if (meta.description?.trim()) out.push({ key: metaKey("description"), label: "Store description", main: meta.description, multiline: true });
   if (meta.intro?.trim()) out.push({ key: metaKey("intro"), label: "Introduction", main: meta.intro, multiline: true });
   if (meta.outro?.trim()) out.push({ key: metaKey("outro"), label: "Closing words", main: meta.outro, multiline: true });
   if (meta.start_label?.trim()) out.push({ key: metaKey("start_label"), label: "Meeting point", main: meta.start_label });

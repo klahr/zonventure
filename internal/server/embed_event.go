@@ -54,7 +54,7 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 		advTexts, ownTexts                                         []byte
 	)
 	err = db.QueryRowContext(r.Context(), `
-		SELECT COALESCE(l.name, e.name), COALESCE(l.blurb, ''), COALESCE(l.currency, ''),
+		SELECT COALESCE(l.name, e.name), COALESCE(a.description, ''), COALESCE(l.currency, ''),
 		       COALESCE(a.title, e.adventure_slug), e.adventure_slug, o.name, o.slug,
 		       COALESCE(l.price_cents, 0), COALESCE(l.team_size, 0),
 		       COALESCE(l.cover_mime_type IS NOT NULL, FALSE), l.approved_at, COALESCE(a.avatar_mime_type IS NOT NULL, FALSE),
@@ -86,8 +86,8 @@ func renderEmbedEvent(w http.ResponseWriter, r *http.Request, db *sql.DB, public
 			http.Error(w, "lookup failed", http.StatusInternalServerError)
 			return
 		}
-		tr := texts.In(lang, listing.Texts{Name: name, Blurb: blurb, Title: advTitle})
-		name, blurb, advTitle = tr.Name, tr.Blurb, tr.Title
+		tr := texts.In(lang, listing.Texts{Name: name, Description: blurb, Title: advTitle})
+		name, blurb, advTitle = tr.Name, tr.Description, tr.Title
 	}
 	name, advTitle = strings.TrimSpace(name), strings.TrimSpace(advTitle)
 	subtitle := ""

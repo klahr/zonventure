@@ -239,14 +239,16 @@ export function Request({ org }: { org: string }) {
       <span>{form.org_name}</span>
     </span>
   );
-  // The welcome and the thanks open on the organisation's cover, with its logo.
-  const hero = (
-    <div className="req-hero" style={form.cover_url ? { backgroundImage: `url(${form.cover_url})` } : undefined}>
+  // The welcome and the thanks open on the organisation's cover, with its
+  // logo; without a cover the top bar's name and logo are enough.
+  const hero = form.cover_url ? (
+    <div className="req-hero" style={{ backgroundImage: `url(${form.cover_url})` }}>
       {form.logo_url && <img className="req-hero__logo" src={form.logo_url} alt={form.org_name} />}
     </div>
-  );
+  ) : undefined;
   const shell = (body: ReactNode, foot: ReactNode, opts: { hero?: boolean } = {}) => (
     <GuideShell
+      className="req-page"
       style={themeStyle(form.look)}
       back={step !== "welcome" && step !== "done" ? () => history.back() : undefined}
       close={step === "done" ? undefined : close}

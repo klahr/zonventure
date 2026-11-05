@@ -147,8 +147,8 @@ export function ConnectBanner({ event, status, user }: { event: EventInfo; statu
 }
 
 /**
- * A quest's store settings: ticket price, currency, team size, blurb and
- * cover. Whether it is listed follows its state (running → listed,
+ * A quest's store settings: ticket price, currency, team size and cover,
+ * beside the adventure's description that the store shows. Whether it is listed follows its state (running → listed,
  * paused → not), so there is no listing switch here.
  */
 /**
@@ -218,7 +218,7 @@ export function MeetingPlaceCard({ event, onSaved }: { event: EventInfo; onSaved
 
 /**
  * The event's own words in the adventure's other languages: its name,
- * and its meeting place or, sold in the store, its blurb. A team gets its
+ * and its meeting place unless it is sold in the store. A team gets its
  * invitation, calendar entry and emails in the language it plays in, and
  * the store shows the visitor's; left empty, a text shows as written.
  */
@@ -229,13 +229,13 @@ export function LanguagesCard({ event, onSaved }: { event: EventInfo; onSaved: (
   const quest = event.public_for_sale;
   const [texts, setTexts] = useState(event.translations ?? {});
   const [busy, setBusy] = useState(false);
-  const edit = (lang: string, field: "name" | "blurb" | "meeting_place", value: string) =>
+  const edit = (lang: string, field: "name" | "meeting_place", value: string) =>
     setTexts((m) => ({ ...m, [lang]: { ...m[lang], [field]: value } }));
   const save = async () => {
     setBusy(true);
     try {
       const translations = Object.fromEntries(
-        Object.entries(texts).map(([l, x]) => [l, { name: x.name?.trim() ?? "", blurb: x.blurb?.trim() ?? "", meeting_place: x.meeting_place?.trim() ?? "" }]),
+        Object.entries(texts).map(([l, x]) => [l, { name: x.name?.trim() ?? "", meeting_place: x.meeting_place?.trim() ?? "" }]),
       );
       await api.patchEvent(event.id, { translations });
       toast.ok(t.t("Saved"));
@@ -249,7 +249,7 @@ export function LanguagesCard({ event, onSaved }: { event: EventInfo; onSaved: (
   return (
     <Card
       title={t.t("In other languages")}
-      subtitle={t.t("A team gets its invitation and emails in the language it plays in. Left empty, a text shows as written. The adventure's own title and meeting point are translated in the designer.")}
+      subtitle={t.t("A team gets its invitation and emails in the language it plays in. Left empty, a text shows as written. The adventure's own title, description and meeting point are translated in the designer.")}
     >
       <form onSubmit={(e) => { e.preventDefault(); void save(); }}>
         {others.map((l) => (
@@ -257,11 +257,7 @@ export function LanguagesCard({ event, onSaved }: { event: EventInfo; onSaved: (
             <Field label={t.t("Name in {{lang}}", { lang: languageName(l) })}>
               <input maxLength={200} placeholder={event.name} value={texts[l]?.name ?? ""} onChange={(e) => edit(l, "name", e.target.value)} />
             </Field>
-            {quest ? (
-              <Field label={t.t("Public description in {{lang}}", { lang: languageName(l) })}>
-                <textarea rows={2} maxLength={1000} placeholder={event.public_blurb} value={texts[l]?.blurb ?? ""} onChange={(e) => edit(l, "blurb", e.target.value)} />
-              </Field>
-            ) : (
+            {!quest && (
               <Field label={t.t("Meeting place in {{lang}}", { lang: languageName(l) })}>
                 <input maxLength={200} placeholder={event.meeting_place} value={texts[l]?.meeting_place ?? ""} onChange={(e) => edit(l, "meeting_place", e.target.value)} />
               </Field>
@@ -309,7 +305,6 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
   const saved = event.ticket_price_cents ? (event.ticket_price_cents / 100).toFixed(2) : "";
   const [price, setPrice] = useState(saved);
   const [size, setSize] = useState(String(event.ticket_team_size || 5));
-  const [blurb, setBlurb] = useState(event.public_blurb || "");
   const [busy, setBusy] = useState(false);
   const [cover, setCover] = useState<{ has: boolean; bust: number }>({ has: !!event.has_cover_image, bust: 0 });
   const [submitting, setSubmitting] = useState(false);
@@ -379,7 +374,7 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
     if (!Number.isFinite(n) || n < 1 || n > 50) return toast.err(t.t("Team size must be between 1 and 50"));
     setBusy(true);
     try {
-      await api.patchEvent(event.id, free ? { ticket_team_size: n, public_blurb: blurb.trim() } : { ticket_price_cents: cents, ticket_team_size: n, public_blurb: blurb.trim() });
+      await api.patchEvent(event.id, free ? { ticket_team_size: n } : { ticket_price_cents: cents, ticket_team_size: n });
       toast.ok(t.t("Saved"));
       onSaved();
     } catch (e) {
@@ -497,8 +492,12 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
           <input type="number" min="1" max="50" className="ev-w5" value={size} onChange={(e) => setSize(e.target.value)} />
         </Field>
       </Row>
+      {/* What the store says is the adventure's, written and translated with it. */}
       <Field label={t.t("Public description")}>
-        <textarea rows={2} maxLength={1000} placeholder={t.t("Two-hour treasure hunt around the old town.")} value={blurb} onChange={(e) => setBlurb(e.target.value)} />
+        <p className="cs-muted">
+          {event.adventure_description || t.t("The adventure has no description yet, so its store card shows none.")}{" "}
+          <a href={href({ name: "adventure", slug: event.adventure_slug })}>{t.t("Edit in the adventure")}</a>
+        </p>
       </Field>
       <Row>
         <Button variant="primary" size="sm" loading={busy} disabled={tooLow} onClick={() => void save()}>{t.t("Save")}</Button>

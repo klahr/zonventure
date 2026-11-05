@@ -14,16 +14,16 @@ import (
 	"github.com/klahr/zonventure/internal/public"
 )
 
-// A listing in the adventure's other languages: its own name and blurb
-// go through review with the rest of it, and the store shows them, with
-// the adventure's own words translated in the version it plays, in the
-// language the page asks for.
+// A listing in the adventure's other languages: its own name goes
+// through review with the rest of it, and the store shows it, with the
+// adventure's own words — its description among them — translated in
+// the version it plays, in the language the page asks for.
 func TestListingReview_Translations(t *testing.T) {
 	t.Parallel()
 	f, cleanup := newListingFixture(t)
 	defer cleanup()
 	db := f.h.DB
-	if _, err := db.Exec(`UPDATE adventures SET language = 'sv', area = 'Gamla stan', start_label = 'Vid eken' WHERE slug = 'treasure' AND org_id = $1`, f.orgID); err != nil {
+	if _, err := db.Exec(`UPDATE adventures SET language = 'sv', description = 'Hitta den', area = 'Gamla stan', start_label = 'Vid eken' WHERE slug = 'treasure' AND org_id = $1`, f.orgID); err != nil {
 		t.Fatal(err)
 	}
 	// The adventure, translated into English in a version of its own,
@@ -39,7 +39,7 @@ func TestListingReview_Translations(t *testing.T) {
 	}
 	g := *was.Graph
 	g.Translations = map[string]map[string]string{"en": {
-		graph.MetaKey("title"): "The Treasure", graph.MetaKey("area"): "Old town", graph.MetaKey("start_label"): "By the oak",
+		graph.MetaKey("title"): "The Treasure", graph.MetaKey("description"): "Find it", graph.MetaKey("area"): "Old town", graph.MetaKey("start_label"): "By the oak",
 	}}
 	v, _, err := graphstore.Publish(ctx, db, advID, 0, &g, "English")
 	if err != nil {
@@ -52,6 +52,7 @@ func TestListingReview_Translations(t *testing.T) {
 	for _, bad := range []map[string]any{
 		{"e n": map[string]string{"name": "x"}},
 		{"en": map[string]string{"title": "Only the adventure translates its title"}},
+		{"en": map[string]string{"description": "Nor its description"}},
 	} {
 		w := call(t, f.console, "PATCH", fmt.Sprintf("/api/admin/events/%d", f.eventID), map[string]any{"translations": bad})
 		if w.Code != http.StatusBadRequest {
@@ -59,12 +60,12 @@ func TestListingReview_Translations(t *testing.T) {
 		}
 	}
 
-	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900, "public_blurb": "Hitta den",
-		"translations": map[string]any{"en": map[string]string{"name": " Treasure hunt ", "blurb": "Find it"}, "de": map[string]string{}}})
+	f.patchEvent(t, map[string]any{"ticket_price_cents": 9900,
+		"translations": map[string]any{"en": map[string]string{"name": " Treasure hunt "}, "de": map[string]string{}}})
 	f.submitEvent(t)
 	c := f.content(t)
-	if !slices.ContainsFunc(c.Texts, func(x admin.ReviewText) bool { return x.Where == "Listing (en): blurb" && x.Text == "Find it" }) {
-		t.Errorf("the reviewer is not shown the English blurb: %+v", c.Texts)
+	if !slices.ContainsFunc(c.Texts, func(x admin.ReviewText) bool { return x.Where == "Listing (en): name" && x.Text == "Treasure hunt" }) {
+		t.Errorf("the reviewer is not shown the English name: %+v", c.Texts)
 	}
 	if w := f.decide(t, "event", f.eventID, "approve", c.Revision, ""); w.Code != http.StatusOK {
 		t.Fatalf("approve: %d %s", w.Code, w.Body)
@@ -92,7 +93,7 @@ func TestListingReview_Translations(t *testing.T) {
 	}
 
 	// A changed translation waits for review; the approved one stays up.
-	f.patchEvent(t, map[string]any{"translations": map[string]any{"en": map[string]string{"blurb": "Find it now"}}})
+	f.patchEvent(t, map[string]any{"translations": map[string]any{"en": map[string]string{"name": "Hunt"}}})
 	if got := f.eventState(t); got != "draft" {
 		t.Fatalf("state after editing a translation = %q, want draft", got)
 	}
@@ -103,8 +104,8 @@ func TestListingReview_Translations(t *testing.T) {
 	if w := f.decide(t, "event", f.eventID, "approve", f.content(t).Revision, ""); w.Code != http.StatusOK {
 		t.Fatalf("approve the edit: %d %s", w.Code, w.Body)
 	}
-	if it := in("en"); it.Blurb != "Find it now" || it.EventName != "Treasure" {
-		t.Errorf("store after the edit = %+v: the English blurb, and no English name left", it)
+	if it := in("en"); it.Blurb != "Find it" || it.EventName != "Hunt" {
+		t.Errorf("store after the edit = %+v: the new English name, the adventure's description", it)
 	}
 }
 
