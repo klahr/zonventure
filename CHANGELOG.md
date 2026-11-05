@@ -11,6 +11,8 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+## [0.37.6] - 2026-11-05
+
 ### Changed
 
 - Store cards say "See adventure" instead of "Buy", since they open the adventure's page, not checkout.
