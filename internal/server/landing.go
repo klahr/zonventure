@@ -3,13 +3,15 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/klahr/zonventure/internal/settings"
 	"html"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/klahr/zonventure/internal/settings"
+	"github.com/klahr/zonventure/internal/social"
 
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
@@ -36,7 +38,8 @@ func cachedRender(lang, name, extraKey string, build func() []byte) []byte {
 	if webOverrideDir != "" {
 		return build()
 	}
-	key := lang + "|" + name + "|" + extraKey
+	// The footer's social links change from the console without a restart.
+	key := lang + "|" + name + "|" + extraKey + "|" + social.Key()
 	landingPageCacheMu.RLock()
 	if v, ok := landingPageCache[key]; ok {
 		landingPageCacheMu.RUnlock()
@@ -471,11 +474,51 @@ func topbarSubs(s landingStrings, lang string) [][2]string {
 		{"{{FOOTER_PRIVACY}}", s.FooterPrivacy},
 		{"{{FOOTER_TERMS}}", s.FooterTerms},
 		{"{{FOOTER_COPY}}", s.FooterCopy},
+		{"{{FOOTER_SOCIAL}}", footerSocial(social.Site())},
+		{"{{SAME_AS_JSON}}", sameAsJSON(social.Site())},
 		{"{{EN_CURRENT}}", ariaCurrentIf(lang == "en")},
 		{"{{SV_CURRENT}}", ariaCurrentIf(lang == "sv")},
 		{"{{EN_ACTIVE}}", activeClassIf(lang == "en")},
 		{"{{SV_ACTIVE}}", activeClassIf(lang == "sv")},
 	}
+}
+
+// footerSocial is the footer's row of links to the site's own
+// organisation's social profiles, "" when it has none. The URLs passed
+// social.Clean, so each is an http(s) link on its network's domain.
+func footerSocial(l social.Links) string {
+	links := l.Ordered()
+	if len(links) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(`<div class="social">`)
+	for _, o := range links {
+		fmt.Fprintf(&b, `<a href="%s" aria-label="%s" rel="noopener">%s</a>`,
+			html.EscapeString(o.URL), html.EscapeString(o.Label), socialIcons[o.Key])
+	}
+	b.WriteString(`</div>`)
+	return b.String()
+}
+
+// sameAsJSON is schema.org's sameAs for the site's organisation: its
+// social profiles as a JSON array, safe inside a <script> block.
+func sameAsJSON(l social.Links) string {
+	urls := []string{}
+	for _, o := range l.Ordered() {
+		urls = append(urls, o.URL)
+	}
+	b, _ := json.Marshal(urls)
+	return string(b)
+}
+
+// socialIcons are the networks' marks, drawn in currentColor.
+var socialIcons = map[string]string{
+	"instagram": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r=".8" fill="currentColor"/></svg>`,
+	"facebook":  `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M14 8.5V6.8c0-.8.2-1.3 1.4-1.3H17V2.2c-.3 0-1.3-.2-2.5-.2-2.5 0-4.2 1.5-4.2 4.3v2.2H7.5V12h2.8v10H14V12h2.8l.4-3.5H14Z"/></svg>`,
+	"linkedin":  `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5ZM3 9.5h4V21H3V9.5Zm6.5 0h3.8v1.6h.1c.5-1 1.8-2 3.8-2 4 0 4.8 2.6 4.8 6V21h-4v-5.2c0-1.3 0-2.9-1.8-2.9s-2 1.4-2 2.8V21h-4V9.5Z"/></svg>`,
+	"youtube":   `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23 7.2a3 3 0 0 0-2.1-2.1C19 4.6 12 4.6 12 4.6s-7 0-8.9.5A3 3 0 0 0 1 7.2 31 31 0 0 0 .5 12 31 31 0 0 0 1 16.8a3 3 0 0 0 2.1 2.1c1.9.5 8.9.5 8.9.5s7 0 8.9-.5a3 3 0 0 0 2.1-2.1c.4-1.6.5-4.8.5-4.8s0-3.2-.5-4.8ZM9.8 15.1V8.9L15.6 12l-5.8 3.1Z"/></svg>`,
+	"tiktok":    `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.6 2h-3.4v13.4a2.9 2.9 0 1 1-2.9-2.9c.3 0 .6 0 .9.1V9.1a6.4 6.4 0 1 0 5.4 6.3V8.6a8 8 0 0 0 4.4 1.3V6.5a4.5 4.5 0 0 1-4.4-4.5Z"/></svg>`,
 }
 
 // storeI18nJSON returns the JSON blob the /store listing's inline
@@ -851,6 +894,7 @@ func renderErrorPage(w http.ResponseWriter, r *http.Request, status int, title, 
 		{"{{NOT_FOUND_BODY}}", body},
 		{"{{NOT_FOUND_CTA_HOME}}", s.NotFoundCTAHome},
 		{"{{NOT_FOUND_CTA_MANUAL}}", s.NotFoundCTAManual},
+		{"{{FOOTER_SOCIAL}}", footerSocial(social.Site())},
 	}
 	out := string(page)
 	for _, sub := range subs {

@@ -11,6 +11,10 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added
+
+- The site's own organisation sets its social media links in Settings → General, one field per network (Instagram, Facebook, LinkedIn, YouTube, TikTok); every page's footer and the landing page's schema.org data show them. Each link must be on its network's domain. Migration 0188.
+
 ## [0.37.6] - 2026-11-05
 
 ### Changed

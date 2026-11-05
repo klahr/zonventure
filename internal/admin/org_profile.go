@@ -2,6 +2,7 @@ package admin
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/social"
 	"github.com/klahr/zonventure/internal/storage"
 )
 
@@ -40,6 +42,9 @@ type orgProfileDTO struct {
 	// TitleFont is its pages' title typeface (a look font key), "" for
 	// the site's. Left out of a PUT, it stays as it is.
 	TitleFont *string `json:"title_font,omitempty"`
+	// Social is its profiles on social networks, by network
+	// (internal/social). Left out of a PUT, they stay as they are.
+	Social *map[string]string `json:"social,omitempty"`
 }
 
 // orgProfileMaxTagline caps the tagline length. Long enough for a
@@ -78,6 +83,7 @@ func (h *Handlers) GetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 		backgroundColor      sql.NullString
 		textColor            sql.NullString
 		titleFont            string
+		socialRaw            []byte
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT slug,
@@ -85,17 +91,23 @@ func (h *Handlers) GetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 		       public_website,
 		       (logo_content IS NOT NULL AND length(logo_content) > 0),
 		       (cover_image_content IS NOT NULL AND length(cover_image_content) > 0),
-		       accent_color, accent_secondary_color, background_color, text_color, brand_font
+		       accent_color, accent_secondary_color, background_color, text_color, brand_font,
+		       social_links
 		FROM organizations
 		WHERE id = $1
 	`, orgID).Scan(&slug, &tagline, &website, &hasLogo, &hasCover,
-		&accentColor, &accentSecondaryColor, &backgroundColor, &textColor, &titleFont)
+		&accentColor, &accentSecondaryColor, &backgroundColor, &textColor, &titleFont, &socialRaw)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "organization not found")
 			return
 		}
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	links := map[string]string{}
+	if err := json.Unmarshal(socialRaw, &links); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, orgProfileDTO{
@@ -111,6 +123,7 @@ func (h *Handlers) GetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 		BackgroundColor:      backgroundColor.String,
 		TextColor:            textColor.String,
 		TitleFont:            &titleFont,
+		Social:               &links,
 	})
 }
 
@@ -180,6 +193,21 @@ func (h *Handlers) SetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Social links: each on its own network's domain, so a link in the
+	// footer can only lead to a profile there.
+	var socialJSON []byte
+	if req.Social != nil {
+		links, err := social.Clean(*req.Social)
+		if err != nil {
+			httpx.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if socialJSON, err = json.Marshal(links); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
+			return
+		}
+	}
+
 	// Once something of theirs is for sale, a changed tagline or website
 	// is reviewed afterwards (org_page_changes.go); it applies at once.
 	gated, err := orgGated(r.Context(), h.DB, orgID)
@@ -210,18 +238,24 @@ func (h *Handlers) SetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 		       accent_secondary_color = NULLIF($4, ''),
 		       background_color = NULLIF($5, ''),
 		       text_color = NULLIF($6, ''),
-		       brand_font = COALESCE($8, brand_font)
+		       brand_font = COALESCE($8, brand_font),
+		       social_links = COALESCE($9::jsonb, social_links)
 		 WHERE id = $7
 	`, tagline, website,
 		colors["accent"], colors["accent_secondary"],
 		colors["background"], colors["text"],
-		orgID, req.TitleFont); err != nil {
+		orgID, req.TitleFont, nullIfEmpty(string(socialJSON))); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
 	}
 	logx.Info("admin.org.profile.updated", "org_id", orgID, "by", me.Username)
 	if req.TitleFont != nil {
 		h.reloadDomains(r.Context())
+	}
+	if req.Social != nil {
+		if err := social.Load(r.Context(), h.DB, h.HomeOrg); err != nil {
+			logx.Warn("social.load", "err", err.Error())
+		}
 	}
 	// Re-render the GET payload so the frontend doesn't need a second
 	// round-trip to refresh has_cover / has_logo derived booleans.

@@ -15,7 +15,18 @@ export interface OrgProfile {
   text_color?: string;
   /** The title typeface (a look font key), "" for the site's. */
   title_font: string;
+  /** Its profiles on social networks, by network (internal/social). */
+  social?: Record<string, string>;
 }
+
+/** The networks internal/social takes, in the order they show. */
+export const SOCIAL_NETWORKS = [
+  { key: "instagram", label: "Instagram", placeholder: "https://www.instagram.com/…" },
+  { key: "facebook", label: "Facebook", placeholder: "https://www.facebook.com/…" },
+  { key: "linkedin", label: "LinkedIn", placeholder: "https://www.linkedin.com/company/…" },
+  { key: "youtube", label: "YouTube", placeholder: "https://www.youtube.com/@…" },
+  { key: "tiktok", label: "TikTok", placeholder: "https://www.tiktok.com/@…" },
+] as const;
 
 export type ProfileEdit = Pick<OrgProfile, "tagline" | "public_website"> & {
   accent_color: string;
@@ -24,6 +35,7 @@ export type ProfileEdit = Pick<OrgProfile, "tagline" | "public_website"> & {
   text_color: string;
   /** Left out, it stays as it is. */
   title_font?: string;
+  social: Record<string, string>;
 };
 
 export const getProfile = (signal?: AbortSignal) => get<OrgProfile>("/api/admin/orgs/me/profile", signal ? { signal } : {});
