@@ -82,8 +82,6 @@ export function OrganizationTab() {
   const user = state.status === "authenticated" ? state.user : null;
   const orgID = user?.org_id ?? 0;
   const orgName = user?.memberships.find((m) => m.org_id === orgID)?.org_name || t.t("Your organization");
-  // The site's own organisation: its social links are the site footer's.
-  const isHome = !!user?.memberships.find((m) => m.org_id === orgID)?.home_org;
 
   const [edit, setEdit] = useState<ProfileEdit | null>(null);
   const [slug, setSlug] = useState("");
@@ -480,27 +478,25 @@ export function OrganizationTab() {
                 />
               </Field>
             </section>
-            {isHome && (
-              <section className="og-section">
-                <h3>{t.t("Social media")}</h3>
-                <p className="cs-note">{t.t("Shown in the footer of every page on the site. Leave a network empty to hide it.")}</p>
-                {SOCIAL_NETWORKS.map((n) => (
-                  <Field key={n.key} label={<>{n.label} {saved("social-" + n.key)}</>}>
-                    <input
-                      type="url"
-                      placeholder={n.placeholder}
-                      value={edit.social[n.key] ?? ""}
-                      disabled={user?.role !== "org_admin"}
-                      onChange={(e) => typeSocial(n.key, e.target.value)}
-                      onBlur={() => {
-                        typeSocial(n.key, withScheme((edit.social[n.key] ?? "").trim()));
-                        blurText("social-" + n.key);
-                      }}
-                    />
-                  </Field>
-                ))}
-              </section>
-            )}
+            <section className="og-section">
+              <h3>{t.t("Social media")}</h3>
+              <p className="cs-note">{t.t("Shown in the footer of your store pages. Leave a network empty to hide it.")}</p>
+              {SOCIAL_NETWORKS.map((n) => (
+                <Field key={n.key} label={<>{n.label} {saved("social-" + n.key)}</>}>
+                  <input
+                    type="url"
+                    placeholder={n.placeholder}
+                    value={edit.social[n.key] ?? ""}
+                    disabled={user?.role !== "org_admin"}
+                    onChange={(e) => typeSocial(n.key, e.target.value)}
+                    onBlur={() => {
+                      typeSocial(n.key, withScheme((edit.social[n.key] ?? "").trim()));
+                      blurText("social-" + n.key);
+                    }}
+                  />
+                </Field>
+              ))}
+            </section>
             {err && <p className="cs-err" role="alert">{err}</p>}
           </div>
 

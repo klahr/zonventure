@@ -12,7 +12,6 @@ import (
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/dbtest"
-	"github.com/klahr/zonventure/internal/social"
 )
 
 // brandingFixture seeds a single org + an org_admin and returns the
@@ -270,14 +269,10 @@ func TestBranding_TitleFont(t *testing.T) {
 }
 
 // TestBranding_Social: social links save by network, a save without
-// them keeps them, a link off its network's domain is refused, and the
-// site's own organisation's reach the footer's cache.
+// them keeps them, and a link off its network's domain is refused.
 func TestBranding_Social(t *testing.T) {
-	db, _, h, r := brandingFixture(t)
-	if _, err := db.Exec(`UPDATE organizations SET slug = 'acme' WHERE name = 'Acme'`); err != nil {
-		t.Fatal(err)
-	}
-	h.HomeOrg = "acme"
+	t.Parallel()
+	_, _, _, r := brandingFixture(t)
 	put := func(body map[string]any) *httptest.ResponseRecorder {
 		b, _ := json.Marshal(body)
 		w := httptest.NewRecorder()
@@ -290,17 +285,14 @@ func TestBranding_Social(t *testing.T) {
 	if w := put(map[string]any{"social": map[string]string{"instagram": ig, "tiktok": ""}}); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"social":{"instagram":"`+ig+`"}`) {
 		t.Fatalf("PUT: %d %s", w.Code, w.Body)
 	}
-	if got := social.Site()["instagram"]; got != ig {
-		t.Fatalf("site links: instagram %q", got)
-	}
 	if w := put(map[string]any{"tagline": "Hi"}); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), ig) {
 		t.Fatalf("a save without links dropped them: %d %s", w.Code, w.Body)
 	}
 	if w := put(map[string]any{"social": map[string]string{"facebook": "https://evil.example/facebook.com"}}); w.Code != http.StatusBadRequest {
 		t.Fatalf("off-network link: %d %s", w.Code, w.Body)
 	}
-	if w := put(map[string]any{"social": map[string]string{}}); w.Code != http.StatusOK || len(social.Site()) != 0 {
-		t.Fatalf("clearing: %d, site %v", w.Code, social.Site())
+	if w := put(map[string]any{"social": map[string]string{}}); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"social":{}`) {
+		t.Fatalf("clearing: %d %s", w.Code, w.Body)
 	}
 }
 

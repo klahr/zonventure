@@ -38,8 +38,7 @@ func cachedRender(lang, name, extraKey string, build func() []byte) []byte {
 	if webOverrideDir != "" {
 		return build()
 	}
-	// The footer's social links change from the console without a restart.
-	key := lang + "|" + name + "|" + extraKey + "|" + social.Key()
+	key := lang + "|" + name + "|" + extraKey
 	landingPageCacheMu.RLock()
 	if v, ok := landingPageCache[key]; ok {
 		landingPageCacheMu.RUnlock()
@@ -474,8 +473,6 @@ func topbarSubs(s landingStrings, lang string) [][2]string {
 		{"{{FOOTER_PRIVACY}}", s.FooterPrivacy},
 		{"{{FOOTER_TERMS}}", s.FooterTerms},
 		{"{{FOOTER_COPY}}", s.FooterCopy},
-		{"{{FOOTER_SOCIAL}}", footerSocial(social.Site())},
-		{"{{SAME_AS_JSON}}", sameAsJSON(social.Site())},
 		{"{{EN_CURRENT}}", ariaCurrentIf(lang == "en")},
 		{"{{SV_CURRENT}}", ariaCurrentIf(lang == "sv")},
 		{"{{EN_ACTIVE}}", activeClassIf(lang == "en")},
@@ -483,9 +480,9 @@ func topbarSubs(s landingStrings, lang string) [][2]string {
 	}
 }
 
-// footerSocial is the footer's row of links to the site's own
-// organisation's social profiles, "" when it has none. The URLs passed
-// social.Clean, so each is an http(s) link on its network's domain.
+// footerSocial is an organisation's store pages' row of links to its
+// social profiles, "" when it has none. The URLs passed social.Clean,
+// so each is an http(s) link on its network's domain.
 func footerSocial(l social.Links) string {
 	links := l.Ordered()
 	if len(links) == 0 {
@@ -499,17 +496,6 @@ func footerSocial(l social.Links) string {
 	}
 	b.WriteString(`</div>`)
 	return b.String()
-}
-
-// sameAsJSON is schema.org's sameAs for the site's organisation: its
-// social profiles as a JSON array, safe inside a <script> block.
-func sameAsJSON(l social.Links) string {
-	urls := []string{}
-	for _, o := range l.Ordered() {
-		urls = append(urls, o.URL)
-	}
-	b, _ := json.Marshal(urls)
-	return string(b)
 }
 
 // socialIcons are the networks' marks, drawn in currentColor.
@@ -776,6 +762,7 @@ func renderOrgPage(w http.ResponseWriter, r *http.Request, org orgProfile) {
 		{"{{HERO_BG_STYLE}}", org.heroBgStyle()},
 		{"{{HERO_COVER_STYLE}}", org.heroCoverStyle()},
 		{"{{ORG_CONTACT_BLOCK}}", org.contactBlock(s.StoreFooterContact)},
+		{"{{ORG_SOCIAL_BLOCK}}", footerSocial(org.Social)},
 		{"{{ORG_BRAND_OVERRIDES}}", org.brandStyle()},
 		{"{{ORG_VERIFIED}}", boolAttr(org.Verified)},
 		// "Ask for a quote": shown when the organisation takes requests.
@@ -894,7 +881,6 @@ func renderErrorPage(w http.ResponseWriter, r *http.Request, status int, title, 
 		{"{{NOT_FOUND_BODY}}", body},
 		{"{{NOT_FOUND_CTA_HOME}}", s.NotFoundCTAHome},
 		{"{{NOT_FOUND_CTA_MANUAL}}", s.NotFoundCTAManual},
-		{"{{FOOTER_SOCIAL}}", footerSocial(social.Site())},
 	}
 	out := string(page)
 	for _, sub := range subs {

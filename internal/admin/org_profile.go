@@ -193,8 +193,8 @@ func (h *Handlers) SetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Social links: each on its own network's domain, so a link in the
-	// footer can only lead to a profile there.
+	// Social links: each on its own network's domain, so a link in its
+	// pages' footer can only lead to a profile there.
 	var socialJSON []byte
 	if req.Social != nil {
 		links, err := social.Clean(*req.Social)
@@ -251,11 +251,6 @@ func (h *Handlers) SetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 	logx.Info("admin.org.profile.updated", "org_id", orgID, "by", me.Username)
 	if req.TitleFont != nil {
 		h.reloadDomains(r.Context())
-	}
-	if req.Social != nil {
-		if err := social.Load(r.Context(), h.DB, h.HomeOrg); err != nil {
-			logx.Warn("social.load", "err", err.Error())
-		}
 	}
 	// Re-render the GET payload so the frontend doesn't need a second
 	// round-trip to refresh has_cover / has_logo derived booleans.

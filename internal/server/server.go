@@ -38,7 +38,6 @@ import (
 	"github.com/klahr/zonventure/internal/player"
 	"github.com/klahr/zonventure/internal/public"
 	"github.com/klahr/zonventure/internal/settings"
-	"github.com/klahr/zonventure/internal/social"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/storage/dbblob"
 	"github.com/klahr/zonventure/internal/teamimport"
@@ -238,10 +237,6 @@ func New(cfg Config) http.Handler {
 	if cfg.DB != nil {
 		if err := domains.Load(context.Background(), cfg.DB); err != nil {
 			logx.Warn("domains.load", "err", err.Error())
-		}
-		// The site's own organisation's social links, in every footer.
-		if err := social.Load(context.Background(), cfg.DB, cfg.HomeOrg); err != nil {
-			logx.Warn("social.load", "err", err.Error())
 		}
 	}
 	r.Use(customDomains(cfg.PublicURL, cfg.ShopHost))

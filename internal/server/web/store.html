@@ -147,6 +147,10 @@
   .foot-org strong { display: block; font-family: var(--font-brand); font-size: 1.25rem; color: var(--ink); margin-bottom: .25rem; }
   .foot-org p { margin: .15rem 0; }
   .foot nav a { color: var(--ink-soft); }
+  .foot-org .social { display: flex; gap: .4rem; margin-top: .7rem; }
+  .foot-org .social a { width: 2.2rem; height: 2.2rem; display: grid; place-items: center; border-radius: 50%; color: var(--ink-soft); border: 1px solid var(--border-soft); }
+  .foot-org .social a:hover { color: var(--accent); border-color: var(--accent); }
+  .foot-org .social svg { width: 1rem; height: 1rem; }
 
   @media (max-width: 52rem) {
     .steps { grid-template-columns: minmax(0, 1fr); gap: 2.25rem; }
@@ -277,6 +281,7 @@
     <div class="foot-org">
       <strong>{{ORG_NAME}}</strong>
       {{ORG_CONTACT_BLOCK}}
+      {{ORG_SOCIAL_BLOCK}}
       <!--platform--><p class="copy">{{FOOTER_COPY}}</p><!--/platform-->
       <!--ZV_SELLER-->
     </div>

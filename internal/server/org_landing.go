@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/klahr/zonventure/internal/graph/look"
+	"github.com/klahr/zonventure/internal/social"
 )
 
 // orgProfile is the public face of an organisation: what /o/{slug}
@@ -39,22 +41,28 @@ type orgProfile struct {
 	Contact string
 	// RequestsOpen shows "Ask for a quote" (admin/quote_requests.go).
 	RequestsOpen bool
+	// Social is its profiles on social networks, in its pages' footer.
+	Social social.Links
 }
 
 // loadOrgProfile looks an organisation up by slug. sql.ErrNoRows means
 // no such organisation.
 func loadOrgProfile(ctx context.Context, db *sql.DB, slug string) (orgProfile, error) {
 	p := orgProfile{Slug: slug}
+	var links []byte
 	err := db.QueryRowContext(ctx, `
 		SELECT id, name, tagline, public_website,
 		       (logo_content IS NOT NULL AND length(logo_content) > 0),
 		       (cover_image_content IS NOT NULL AND length(cover_image_content) > 0),
 		       accent_color, accent_secondary_color, background_color, text_color, verified_creator, contact_email, brand_font,
-		       requests_open
+		       requests_open, social_links
 		FROM organizations
 		WHERE slug = $1
 	`, slug).Scan(&p.ID, &p.Name, &p.Tagline, &p.Website, &p.HasLogo, &p.HasCover,
-		&p.Accent, &p.Accent2, &p.Bg, &p.Ink, &p.Verified, &p.Contact, &p.Font, &p.RequestsOpen)
+		&p.Accent, &p.Accent2, &p.Bg, &p.Ink, &p.Verified, &p.Contact, &p.Font, &p.RequestsOpen, &links)
+	if err == nil {
+		err = json.Unmarshal(links, &p.Social)
+	}
 	return p, err
 }
 

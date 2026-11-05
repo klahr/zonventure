@@ -11,6 +11,10 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed
+
+- An organisation's social media links (Settings → General) show in the footer of its store pages, including on its own domain, and every organisation can set them. They no longer replace the site footer's links, which are part of the site's own pages again.
+
 ## [0.37.7] - 2026-11-05
 
 ### Added

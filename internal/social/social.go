@@ -1,17 +1,12 @@
 // Package social holds an organisation's profiles on social networks
-// (organizations.social_links): which networks there are, what a link
-// to each may be, and the site's own organisation's, which every page's
-// footer shows.
+// (organizations.social_links): which networks there are and what a
+// link to each may be. Its store pages' footer shows them.
 package social
 
 import (
-	"context"
-	"database/sql"
-	"encoding/json"
 	"errors"
 	"net/url"
 	"strings"
-	"sync/atomic"
 )
 
 // Network is one social network an organisation can link to.
@@ -96,46 +91,4 @@ func (l Links) Ordered() []Link {
 		}
 	}
 	return out
-}
-
-var site atomic.Pointer[Links]
-
-// Load reads the site's own organisation's links (ZV_HOME_ORG), which
-// Site then returns. Call it again when they change.
-func Load(ctx context.Context, db *sql.DB, homeOrg string) error {
-	l := Links{}
-	if homeOrg != "" {
-		var raw []byte
-		err := db.QueryRowContext(ctx, `SELECT social_links FROM organizations WHERE slug = $1`, homeOrg).Scan(&raw)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if len(raw) > 0 {
-			if err := json.Unmarshal(raw, &l); err != nil {
-				return err
-			}
-		}
-	}
-	site.Store(&l)
-	return nil
-}
-
-// Site returns the site's own organisation's links, none before Load.
-func Site() Links {
-	if l := site.Load(); l != nil {
-		return *l
-	}
-	return Links{}
-}
-
-// Key identifies the site's links, for caching pages that show them.
-func Key() string {
-	var b strings.Builder
-	for _, o := range Site().Ordered() {
-		b.WriteString(o.Key)
-		b.WriteByte('=')
-		b.WriteString(o.URL)
-		b.WriteByte(0)
-	}
-	return b.String()
 }
